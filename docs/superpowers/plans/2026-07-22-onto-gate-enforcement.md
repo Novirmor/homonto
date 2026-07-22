@@ -193,13 +193,13 @@ if st.CloseConfirmed == "" {
 - Modify: `internal/ontocli/advance.go`
 - Test: `internal/ontocli/advance_test.go`
 
-- [ ] **Step 1:** Failing tests: fix preset at open with isolation set
+- [x] **Step 1:** Failing tests: fix preset at open with isolation set
   reaches build in one call; full refused (`advance one gate at a time`);
   `--to verify` refused; a failing hop (missing tasks.md) surfaces that
   hop's error.
-- [ ] **Step 2:** `--to` flag; loop single hops reloading state until
+- [x] **Step 2:** `--to` flag; loop single hops reloading state until
   `build`, preset-only.
-- [ ] **Step 3:** Tests pass; commit `feat(onto): one-call gated preset advance`.
+- [x] **Step 3:** Tests pass; commit `feat(onto): one-call gated preset advance`.
 
 ### Task 10: skills + guide + version
 

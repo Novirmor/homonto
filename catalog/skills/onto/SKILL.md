@@ -130,10 +130,15 @@ dispatch:
    reading this SKILL.md's own tables, and continue — degrade, never halt;
    but note that a reconstructed lint or grammar is weaker than the real
    one, so flag any close run made without them.
-2. Independently derive the phase from artifacts with this table
-   (**first match from the top wins — strongest evidence first**; this
-   table is authoritative — any repo README points here, never re-states
-   it):
+2. Read the derived WORKING phase from the binary: **`onto state <name>
+   --json`** returns `derived_phase` (artifact-based) and
+   `phase_mismatch` — the evidence table below is implemented as tested Go
+   (`ontostate.DeriveWorkingPhase`), so consume the binary's answer rather
+   than re-running the table by hand. The table remains here as the
+   specification of what the binary computes (**first match from the top
+   wins — strongest evidence first**; any repo README points here, never
+   re-states it). On an older binary whose `state --json` lacks
+   `derived_phase`, fall back to hand-running the table:
 
 | Evidence | Real phase |
 |---|---|

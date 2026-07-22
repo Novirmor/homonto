@@ -80,7 +80,13 @@ Everything in the proposal must trace back to the confirmed clarification
 summary — no invented scope.
 
 > **GATE (artifact review):** summarize the proposal and ask the user to approve
-> or request adjustments. Iterate until approved. Always fresh input.
+> or request adjustments. Iterate until approved. Always fresh input. When
+> approved, record the evidence token — the binary refuses to leave open
+> without it:
+>
+> ```
+> onto set proposal-approved <name> "YYYY-MM-DD <one-line approval summary>"
+> ```
 
 ## Exit checklist
 
@@ -93,6 +99,8 @@ summary — no invented scope.
       blank (the close lint blocks a blank Grounding at archive)
 - [ ] Every gate that fired answered by the user (clarification, split
       when one was proposed, artifact review)
+- [ ] `onto set proposal-approved <name> "<evidence>"` recorded — `onto
+      advance` refuses to leave open without it
 - [ ] Phase advanced open → design via `onto advance <name>` — run **only
       after** the artifact-review gate is answered, never before (the
       dispatcher treats a lagging phase as an unanswered gate and re-presents it)

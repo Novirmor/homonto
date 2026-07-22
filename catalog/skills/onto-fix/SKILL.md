@@ -69,12 +69,11 @@ mechanically through the skipped phases. The gates are workflow-aware
 a fix can leave `open` and `design` without writing a `design.md`. The
 dispatcher still derives the *working* phase (build) from the workspace, but
 the canonical `phase` field must reach `close` before `onto close` will
-archive. Run the advances up front, right after `onto new`:
+archive. Reach build in one gated call, right after `onto new`:
 
 ```
 onto set isolation <name> branch    # required before entering build
-onto advance <name>                 # open  → design (no design.md needed for fix)
-onto advance <name>                 # design → build
+onto advance <name> --to build      # walks open → design → build, every gate firing
 ```
 
 Then execute the build. After verify, advance once more into close.
@@ -135,8 +134,8 @@ handoff offered.
 
 - [ ] Open-lite: workspace + reproduction confirmed by the user, scope
       gate acknowledged (bug fix, no new design), workspace committed;
-      `onto set isolation <name> branch` recorded; advanced open → design
-      → build via `onto advance <name>` (mechanical, no design.md needed
+      `onto set isolation <name> branch` recorded; advanced to build via
+      `onto advance <name> --to build` (gated hops, no design.md needed
       for a fix)
 - [ ] Build: failing test seen failing, root cause stated, fix committed,
       test seen passing, tree clean (workspace docs committed)

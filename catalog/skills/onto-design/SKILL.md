@@ -67,7 +67,13 @@ before ending the turn, not after.
 
 > **GATE (approach confirmation):** the user picks or adjusts an approach.
 > The final `design.md` MUST NOT be written before this gate is answered.
-> Always fresh input — a blanket directive does not pre-answer it.
+> Always fresh input — a blanket directive does not pre-answer it. When
+> answered, record the evidence token — the binary refuses design → build
+> without it:
+>
+> ```
+> onto set approach-confirmed <name> "YYYY-MM-DD <chosen approach>"
+> ```
 
 **No implementation code in this phase.** Writing source code before a
 confirmed design exists is prohibited, regardless of how simple the change
@@ -141,8 +147,9 @@ so a design that produced no task list is not done.
 - [ ] onto-no-slop pass run over `design.md`, every ADR draft, and
       `notes.md`, each pass recorded in `notes.md` (`no-slop: <artifact>
       done`)
-- [ ] Isolation chosen via `onto set isolation <name> branch|worktree` — the
-      binary refuses design → build without it
+- [ ] Isolation chosen via `onto set isolation <name> branch|worktree` and
+      the approach token recorded via `onto set approach-confirmed <name>
+      "<evidence>"` — the binary refuses design → build without both
 - [ ] Phase advanced design → build via `onto advance <name>`
 - [ ] **Commit the workspace**: `git add docs/changes/<name> && git commit`
       — every phase exits with its workspace committed

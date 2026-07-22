@@ -148,6 +148,7 @@ func TestWorktreeDirt_RenameParsedAsOneEntry(t *testing.T) {
 func TestAdvanceCommand_VerifyToCloseAllowsForeignChangeDirt(t *testing.T) {
 	dir := prepWorkspace(t)
 	seedChange(t, dir, "feature-x", "verify")
+	writeFile(t, filepath.Join(dir, "docs", "changes", "feature-x", "verification.md"), "Result: pass\n")
 	setVerifyResult(t, dir, "feature-x", "pass")
 	commitAll(t, dir, "seed change")
 	writeFile(t, filepath.Join(dir, "docs", "changes", "in-flight", "proposal.md"), "another change's WIP\n")
@@ -176,6 +177,7 @@ func TestAdvanceCommand_VerifyToCloseAllowsForeignChangeDirt(t *testing.T) {
 func TestAdvanceCommand_CloseBlockErrorListsPaths(t *testing.T) {
 	dir := prepWorkspace(t)
 	seedChange(t, dir, "feature-x", "verify")
+	writeFile(t, filepath.Join(dir, "docs", "changes", "feature-x", "verification.md"), "Result: pass\n")
 	setVerifyResult(t, dir, "feature-x", "pass")
 	commitAll(t, dir, "seed change")
 	writeFile(t, filepath.Join(dir, "uncommitted.txt"), "source dirt\n")

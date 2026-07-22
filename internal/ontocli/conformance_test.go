@@ -93,7 +93,7 @@ func TestConformance_FullLifecycle_HappyPath(t *testing.T) {
 	// is not blocked by an open task.
 	writeFile(t, filepath.Join(changeDir, "design.md"), "design")
 	writeFile(t, filepath.Join(changeDir, "plan.md"), "plan")
-	writeFile(t, filepath.Join(changeDir, "verification.md"), "verification")
+	writeFile(t, filepath.Join(changeDir, "verification.md"), "Result: pass\n")
 	writeFile(t, filepath.Join(changeDir, "tasks.md"), "- [x] done\n")
 
 	// Walk the phases. Commit before each advance so the worktree is clean:

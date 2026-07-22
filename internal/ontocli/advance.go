@@ -115,6 +115,20 @@ func runAdvance(cmd *cobra.Command, root, name string) error {
 		}
 		return fmt.Errorf("onto advance: cannot leave verify: missing passing verification (verify.result=%s)", result)
 	}
+	// The state's pass is self-asserted; the report is the evidence. Both must
+	// agree before verify closes — a `Result: fail` (or absent Result line) in
+	// verification.md beside verify.result=pass is a contradiction to fix, not
+	// a technicality to advance past. Prefix match tolerates the accepted-
+	// deviations suffix (`Result: pass (N accepted deviations)`).
+	if st.Phase == "verify" {
+		line, vErr := verificationResultLine(filepath.Join(changeDir, "verification.md"))
+		if vErr != nil {
+			return fmt.Errorf("onto advance: cannot leave verify: %w", vErr)
+		}
+		if !strings.HasPrefix(line, "Result: pass") {
+			return fmt.Errorf("onto advance: cannot leave verify: verification.md says %q but verify.result=pass — the report and the state must agree", line)
+		}
+	}
 	if next == "build" {
 		if st.Isolation == "" {
 			return fmt.Errorf("onto advance: cannot enter build: missing isolation (set branch or worktree)")
@@ -159,4 +173,20 @@ func runAdvance(cmd *cobra.Command, root, name string) error {
 
 	fmt.Fprintf(cmd.OutOrStdout(), "%s: %s → %s\n", name, old, next)
 	return nil
+}
+
+// verificationResultLine returns the first "Result: "-prefixed line of the
+// file at path. A missing file, unreadable file, or absent Result: line is an
+// error naming what the verify exit needed.
+func verificationResultLine(path string) (string, error) {
+	b, err := os.ReadFile(path)
+	if err != nil {
+		return "", fmt.Errorf("reading %s: %w", filepath.Base(path), err)
+	}
+	for _, line := range strings.Split(string(b), "\n") {
+		if strings.HasPrefix(line, "Result: ") {
+			return strings.TrimRight(line, "\r"), nil
+		}
+	}
+	return "", fmt.Errorf("%s has no \"Result:\" line — write the report before leaving verify", filepath.Base(path))
 }

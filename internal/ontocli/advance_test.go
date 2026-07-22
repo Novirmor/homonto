@@ -316,6 +316,7 @@ func TestAdvanceCommand_LeavingVerifyBlockedWithoutPass(t *testing.T) {
 func TestAdvanceCommand_LeavingVerifyAllowedWithPass(t *testing.T) {
 	dir := prepWorkspace(t)
 	seedChange(t, dir, "feature-x", "verify")
+	writeFile(t, filepath.Join(dir, "docs", "changes", "feature-x", "verification.md"), "Result: pass\n")
 	setVerifyResult(t, dir, "feature-x", "pass")
 	commitAll(t, dir, "seed change")
 
@@ -439,6 +440,7 @@ func TestAdvanceCommand_EnteringBuildRefusesInvalidIsolationValue(t *testing.T) 
 func TestAdvanceCommand_VerifyToCloseBlockedByDirtyWorktree(t *testing.T) {
 	dir := prepWorkspace(t)
 	seedChange(t, dir, "feature-x", "verify")
+	writeFile(t, filepath.Join(dir, "docs", "changes", "feature-x", "verification.md"), "Result: pass\n")
 	setVerifyResult(t, dir, "feature-x", "pass")
 	commitAll(t, dir, "seed change")
 	dirtyWorktree(t, dir)
@@ -597,5 +599,47 @@ func TestAdvanceCommand_EnteringBuildRequiresApproachConfirmed(t *testing.T) {
 	cmd.SetArgs([]string{"advance", "feature-x", "--dir", dir})
 	if err := cmd.Execute(); err != nil {
 		t.Fatalf("advance with token: %v", err)
+	}
+}
+
+// TestAdvanceCommand_LeavingVerifyCrossChecksReport: verify.result=pass in
+// state is not enough — verification.md's own Result: line must agree.
+func TestAdvanceCommand_LeavingVerifyCrossChecksReport(t *testing.T) {
+	cases := []struct {
+		name    string
+		report  string
+		wantErr string // empty = advance succeeds
+	}{
+		{"report says fail", "# V\nResult: fail\n", "Result: fail"},
+		{"accepted deviations still pass", "# V\nResult: pass (2 accepted deviations)\n", ""},
+		{"no Result line", "# V\nall good probably\n", "Result:"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			dir := prepWorkspace(t)
+			seedChange(t, dir, "feature-x", "verify")
+			writeFile(t, filepath.Join(dir, "docs", "changes", "feature-x", "verification.md"), tc.report)
+			setVerifyResult(t, dir, "feature-x", "pass")
+			commitAll(t, dir, "seed change")
+
+			cmd := NewRootCmd()
+			var out bytes.Buffer
+			cmd.SetOut(&out)
+			cmd.SetErr(&out)
+			cmd.SetArgs([]string{"advance", "feature-x", "--dir", dir})
+			err := cmd.Execute()
+			if tc.wantErr == "" {
+				if err != nil {
+					t.Fatalf("advance should pass: %v", err)
+				}
+				return
+			}
+			if err == nil {
+				t.Fatalf("advance should refuse (%s)", tc.name)
+			}
+			if !strings.Contains(err.Error(), tc.wantErr) {
+				t.Errorf("error %q must mention %q", err.Error(), tc.wantErr)
+			}
+		})
 	}
 }

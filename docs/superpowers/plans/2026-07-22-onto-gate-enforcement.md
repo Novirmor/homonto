@@ -57,12 +57,12 @@ that ask the gates. Every gate is a refuse/pass pair with a test on each side.
 **Interfaces:**
 - Consumes: Task 1 fields.
 
-- [ ] **Step 1:** Failing tests: (a) full change at open with artifacts
+- [x] **Step 1:** Failing tests: (a) full change at open with artifacts
   present refuses advance naming `proposal-approved`; (b) same change with
   the field set advances; (c) fix preset at open advances without it;
   (d) full change at design with isolation set but no `approach_confirmed`
   refuses naming `approach-confirmed`; (e) set → advances; (f) preset exempt.
-- [ ] **Step 2:** In `runAdvance`, in the evidence-gate section:
+- [x] **Step 2:** In `runAdvance`, in the evidence-gate section:
 
 ```go
 full := st.Workflow == "" || st.Workflow == "full"
@@ -74,7 +74,7 @@ if next == "build" && full && st.ApproachConfirmed == "" {
 }
 ```
 
-- [ ] **Step 3:** Tests pass; commit `feat(onto): judgment-gate evidence tokens gate advance`.
+- [x] **Step 3:** Tests pass; commit `feat(onto): judgment-gate evidence tokens gate advance`.
 
 ### Task 3: verify cross-check
 

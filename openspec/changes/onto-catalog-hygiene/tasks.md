@@ -12,14 +12,14 @@
 
 ## 2. Tier purge (D2)
 
-- [ ] 2.1 Subagent frontmatter comments: `onto-explorer.md`,
+- [x] 2.1 Subagent frontmatter comments: `onto-explorer.md`,
   `onto-reviewer.md`, `onto-skeptic.md`, `onto-implementer.md`,
   `to-explorer.md`, `to-reviewer.md`, `to-skeptic.md` — model-neutral wording.
-- [ ] 2.2 `catalog/skills/onto/SKILL.md` delegation table: remove the
+- [x] 2.2 `catalog/skills/onto/SKILL.md` delegation table: remove the
   "Role/model" column.
-- [ ] 2.3 `catalog/skills/onto-build/references/subagent-protocol.md`:
+- [x] 2.3 `catalog/skills/onto-build/references/subagent-protocol.md`:
   neutral wording for implementer/reviewer model references.
-- [ ] 2.4 Grep gate: no `tier` / `trivial-tier` / `review-tier` /
+- [x] 2.4 Grep gate: no `tier` / `trivial-tier` / `review-tier` /
   `coding-tier` in `catalog/` outside legitimate uses (to-do's "trivial ones"
   prose is unrelated and stays).
 

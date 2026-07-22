@@ -2,9 +2,9 @@
 name: onto-implementer
 description: Use to execute one bite-sized implementation task from a precise spec — write the edits and run the task's verification, then return a diff summary. It does not plan, judge scope, or spawn further agents; the orchestrator hands it a spec and reviews what comes back.
 mode: subagent
-# Neutral capability intent (internal/agentfm). The implementer is the cheap,
-# fast worker in the division of labor: it EDITS (not read-only) on the coding
-# model, may use bash for build/test, spawns nothing (no nested delegation), and
+# Neutral capability intent (internal/agentfm). The implementer is the
+# workhorse of the division of labor: it EDITS (not read-only) on an
+# installer-picked model, may use bash for build/test, spawns nothing, and
 # returns questions instead of prompting (subagents never prompt the user).
 homonto:
   read_only: false

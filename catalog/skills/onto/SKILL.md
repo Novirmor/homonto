@@ -277,15 +277,17 @@ child sessions and **Claude Code** runs them as parallel Task-tool agents (send
 multiple Task calls in one turn). Each carries an enforced capability profile
 (homonto renders it per tool): only the implementer may edit.
 
-**Match the task to the agent — this table is the mapping:**
+**Match the task to the agent — this table is the mapping** (each agent's
+model is installer config, `[subagents.<name>.<tool>]` — not workflow
+doctrine):
 
-| Task in hand | Dispatch | Role/model | Capabilities |
-|---|---|---|---|
-| Understand something, or locate where behavior lives | `onto-explorer` | trivial (fast/cheap) | read-only, no shell, no spawn |
-| Execute one bite-sized task from a precise spec | `onto-implementer` | coding | **edits**, bash, no spawn |
-| Audit a diff for correctness/security/contract/clarity | `onto-reviewer` | review | read-only, keeps bash, no spawn |
-| Refute a verification claim, or hunt what the scenarios miss | `onto-skeptic` **×2, parallel** | review | read-only, keeps bash, no spawn |
-| **Plan, judge scope, decide, commit** | **nobody — you do it** | — | — |
+| Task in hand | Dispatch | Capabilities |
+|---|---|---|
+| Understand something, or locate where behavior lives | `onto-explorer` | read-only, keeps bash (grounding CLIs), no spawn |
+| Execute one bite-sized task from a precise spec | `onto-implementer` | **edits**, bash, no spawn |
+| Audit a diff for correctness/security/contract/clarity | `onto-reviewer` | read-only, keeps bash, no spawn |
+| Refute a verification claim, or hunt what the scenarios miss | `onto-skeptic` **×2, parallel** | read-only, keeps bash, no spawn |
+| **Plan, judge scope, decide, commit** | **nobody — you do it** | — |
 
 That last row is the rule the others serve: the orchestrator (this session)
 plans, judges scope, and decides, because those steps are gated on user

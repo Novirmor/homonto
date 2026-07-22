@@ -6,9 +6,11 @@ implements** — it plans, dispatches, verifies, and keeps state true.
 The framework ships the two agents this protocol uses, each with an enforced
 capability profile (homonto renders it per tool):
 
-- **`onto-implementer`** — the worker. Edits on the coding-tier model, runs
-  build/test, **spawns nothing**. Hand it one task's spec; it returns a diff.
-- **`onto-reviewer`** — the reviewer. Read-only on the review-tier model.
+- **`onto-implementer`** — the worker. Edits, runs build/test, **spawns
+  nothing**. Hand it one task's spec; it returns a diff.
+- **`onto-reviewer`** — the reviewer. Read-only, keeps bash for inspection.
+  (Each agent's model comes from the installer's `[subagents.<name>.<tool>]`
+  block, not from this protocol.)
 
 **A subagent never prompts the user.** If the implementer hits an ambiguous spec
 it **returns** the question (a `Questions:` section), and the coordinator asks the

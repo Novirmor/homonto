@@ -4,7 +4,7 @@ description: Use in the verify phase to attack a verification claim from a fresh
 mode: subagent
 # Neutral capability intent — homonto renders it into each tool's native fields:
 # Claude's `tools:` allowlist and OpenCode's `permission:` map (internal/agentfm).
-# A skeptic judges (review-tier model) and must RE-RUN evidence, so it keeps
+# A skeptic judges on a strong reviewing model (installer-picked) and must RE-RUN evidence, so it keeps
 # bash; it never edits (read-only) — a skeptic that fixes what it finds has
 # contaminated the very context that makes it independent. Spawns nothing.
 homonto:

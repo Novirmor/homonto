@@ -36,12 +36,12 @@
 
 ## 4. Misc prose (D4)
 
-- [ ] 4.1 `catalog/subagents/onto.md`: slim body to persona + dispatcher
+- [x] 4.1 `catalog/subagents/onto.md`: slim body to persona + dispatcher
   pointer; add step-exhaustion recovery sentence.
-- [ ] 4.2 `catalog/skills/onto-verify/SKILL.md`: failure-gate wording (present
+- [x] 4.2 `catalog/skills/onto-verify/SKILL.md`: failure-gate wording (present
   both options, recommend fix, never recommend acceptance); skeptic scaling
   sentence in step 2b.
-- [ ] 4.3 `catalog/skills/onto/SKILL.md` preflight: rtk/graphify warn once per
+- [x] 4.3 `catalog/skills/onto/SKILL.md` preflight: rtk/graphify warn once per
   change (recorded in notes.md Grounding), skip re-warning on later
   dispatches.
 

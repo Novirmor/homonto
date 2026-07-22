@@ -60,7 +60,10 @@ After the self-evidence table is drafted, follow
 `references/adversarial.md`: **full mode requires two parallel
 fresh-context skeptics** — dispatch the **`onto-skeptic`** subagent twice at
 once, naming one lens per dispatch: conformance (refute each scenario claim)
-and robustness (edge cases, drift/recovery paths). Both are prompted to
+and robustness (edge cases, drift/recovery paths). Two is the floor, not the
+ceiling: a large full verify (many scenarios, several capabilities) MAY shard
+the conformance lens across additional skeptics — one per capability, each
+dispatch naming its capability's scenarios — while robustness stays one. Both are prompted to
 refute, never approve; light mode uses one optional skeptic with skips
 recorded. Triage
 findings per the protocol: a refuted claim fails its scenario; new defects
@@ -98,9 +101,9 @@ result via `onto set verify-result <name> pass|fail`.
 > accepted deviation + its rationale in `verification.md`; the `Result:` line
 > stays `pass`, run `onto set verify-result <name> pass` (accepted deviations
 > recorded in `verification.md`), with the deviation count on the Result
-> line). Always fresh input —
-> never auto-accept a failure, and never *propose* acceptance as the easy
-> path — the user raises it or it stays a failure. Record the failure with
+> line). Always fresh input. Present both options honestly, with **fix
+> recommended** — never *recommend* acceptance, never auto-accept, and never
+> frame acceptance as the easy path. Record the failure with
 > `onto set verify-result <name> fail` — this **increments `observed.verify_rounds`**,
 > the measured round counter that `onto doctor` surfaces at **≥3** ("decide
 > accept-deviation or continue"). Note the date + failing items in `notes.md`

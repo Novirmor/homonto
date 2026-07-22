@@ -36,6 +36,12 @@ the user what they are missing and how to fix it.
    CLI proxy) was not found on PATH — token costs will be higher; install
    rtk to reduce them.
 
+   **Warn once per change, not per dispatch**: when the active change's
+   `notes.md` Grounding section already records an rtk or graphify
+   absence, skip re-warning about that same tool — the situation is known
+   and recorded; repeating it every dispatch is noise. Record a new
+   absence there the first time it is seen.
+
 2. **graphify** — confirm codebase-understanding tooling is available: the
    `graphify` skill is loadable, or a `graphify-out/` directory or
    `.codegraph/` index exists at the repo root. The open and design phases

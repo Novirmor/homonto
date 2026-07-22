@@ -42,11 +42,11 @@ that ask the gates. Every gate is a refuse/pass pair with a test on each side.
 - Produces: `State.ProposalApproved`, `State.ApproachConfirmed`,
   `State.CloseConfirmed` (all `string`).
 
-- [ ] **Step 1:** Failing test: round-trip the three fields through
+- [x] **Step 1:** Failing test: round-trip the three fields through
   Marshal/Parse; assert a state without them parses with empty strings.
-- [ ] **Step 2:** Add the three fields after `Directive` in the struct with
+- [x] **Step 2:** Add the three fields after `Directive` in the struct with
   `yaml:"…,omitempty" json:"…,omitempty"` tags. Run tests → pass.
-- [ ] **Step 3:** Commit `feat(ontostate): evidence-token fields`.
+- [x] **Step 3:** Commit `feat(ontostate): evidence-token fields`.
 
 ### Task 2: proposal_approved + approach_confirmed advance gates
 

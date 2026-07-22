@@ -94,7 +94,20 @@ func runAdvance(cmd *cobra.Command, root, name string) error {
 	// Phase-evidence gates: beyond artifact existence and checked tasks,
 	// certain transitions require a recorded evidence token. Leaving verify
 	// requires a passing verification; entering build requires a chosen
-	// isolation so planning work is never committed unisolated.
+	// isolation so planning work is never committed unisolated. The judgment
+	// gates (proposal approval, approach confirmation) require their tokens
+	// for full-workflow changes — the binary checks presence, never content
+	// (B1: an honest agent cannot skip the gate; it can still be asked lies).
+	// Presets are exempt: their scope gate lives in the preset skill, and
+	// blocking a preset on design-phase tokens would contradict its reason to
+	// exist.
+	full := st.Workflow == "" || st.Workflow == "full"
+	if st.Phase == "open" && full && st.ProposalApproved == "" {
+		return fmt.Errorf("onto advance: cannot leave open: proposal approval not recorded (answer the artifact-review gate, then run `onto set proposal-approved %s \"<evidence>\"`)", name)
+	}
+	if next == "build" && full && st.ApproachConfirmed == "" {
+		return fmt.Errorf("onto advance: cannot enter build: approach confirmation not recorded (answer the approach gate, then run `onto set approach-confirmed %s \"<evidence>\"`)", name)
+	}
 	if st.Phase == "verify" && st.Verify.Result != "pass" {
 		result := st.Verify.Result
 		if result == "" {

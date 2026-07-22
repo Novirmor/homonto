@@ -144,6 +144,7 @@ func TestWorktreeDirty_NonRepo(t *testing.T) {
 func TestAdvanceCommand_OpenToDesign(t *testing.T) {
 	dir := prepWorkspace(t)
 	seedChange(t, dir, "feature-x", "open")
+	mutateState(t, dir, "feature-x", func(s *ontostate.State) { s.ProposalApproved = "2026-07-22 approved" })
 	commitAll(t, dir, "seed change")
 
 	cmd := NewRootCmd()
@@ -343,6 +344,7 @@ func TestAdvanceCommand_LeavingVerifyAllowedWithPass(t *testing.T) {
 func TestAdvanceCommand_EnteringBuildBlockedWithoutIsolation(t *testing.T) {
 	dir := prepWorkspace(t)
 	seedChange(t, dir, "feature-x", "design")
+	mutateState(t, dir, "feature-x", func(s *ontostate.State) { s.ApproachConfirmed = "2026-07-22 approach" })
 	commitAll(t, dir, "seed change")
 
 	cmd := NewRootCmd()
@@ -373,6 +375,7 @@ func TestAdvanceCommand_EnteringBuildBlockedWithoutIsolation(t *testing.T) {
 func TestAdvanceCommand_EnteringBuildAllowedWithIsolation(t *testing.T) {
 	dir := prepWorkspace(t)
 	seedChange(t, dir, "feature-x", "design")
+	mutateState(t, dir, "feature-x", func(s *ontostate.State) { s.ApproachConfirmed = "2026-07-22 approach" })
 	if _, err := runOnto(t, "set", "isolation", "feature-x", "worktree", "--dir", dir); err != nil {
 		t.Fatalf("set isolation: %v", err)
 	}
@@ -465,6 +468,7 @@ func TestAdvanceCommand_VerifyToCloseBlockedByDirtyWorktree(t *testing.T) {
 func TestAdvanceCommand_DirtyWorktreeWarnsAndProceedsForNonCloseTransition(t *testing.T) {
 	dir := prepWorkspace(t)
 	seedChange(t, dir, "feature-x", "open")
+	mutateState(t, dir, "feature-x", func(s *ontostate.State) { s.ProposalApproved = "2026-07-22 approved" })
 	commitAll(t, dir, "seed change")
 	dirtyWorktree(t, dir)
 
@@ -488,5 +492,110 @@ func TestAdvanceCommand_DirtyWorktreeWarnsAndProceedsForNonCloseTransition(t *te
 	}
 	if !bytes.Contains(errOut.Bytes(), []byte("warning")) {
 		t.Errorf("stderr = %q, want it to contain %q", errOut.String(), "warning")
+	}
+}
+
+// mutateState loads, mutates, and saves a change's onto-state.yaml.
+func mutateState(t *testing.T, root, name string, mutate func(*ontostate.State)) {
+	t.Helper()
+	statePath := filepath.Join(root, "docs", "changes", name, "onto-state.yaml")
+	st, err := ontostate.Load(statePath)
+	if err != nil {
+		t.Fatalf("mutateState: load: %v", err)
+	}
+	mutate(&st)
+	if err := ontostate.Save(statePath, st); err != nil {
+		t.Fatalf("mutateState: save: %v", err)
+	}
+}
+
+// TestAdvanceCommand_LeavingOpenRequiresProposalApproved: a full change at
+// open with every artifact present still refuses to advance until the
+// artifact-review gate's evidence token is recorded; the refusal names the
+// setter. Presets are exempt (their scope gate lives in the preset skill).
+func TestAdvanceCommand_LeavingOpenRequiresProposalApproved(t *testing.T) {
+	dir := prepWorkspace(t)
+	seedChange(t, dir, "feature-x", "open")
+	commitAll(t, dir, "seed change")
+
+	cmd := NewRootCmd()
+	var out bytes.Buffer
+	cmd.SetOut(&out)
+	cmd.SetErr(&out)
+	cmd.SetArgs([]string{"advance", "feature-x", "--dir", dir})
+
+	err := cmd.Execute()
+	if err == nil {
+		t.Fatal("execute() = nil, want proposal-approved refusal")
+	}
+	if !strings.Contains(err.Error(), "proposal-approved") {
+		t.Errorf("error %q must name the proposal-approved setter", err.Error())
+	}
+
+	// Token recorded → advances.
+	mutateState(t, dir, "feature-x", func(s *ontostate.State) { s.ProposalApproved = "2026-07-22 approved" })
+	commitAll(t, dir, "record token")
+	cmd = NewRootCmd()
+	cmd.SetOut(&out)
+	cmd.SetErr(&out)
+	cmd.SetArgs([]string{"advance", "feature-x", "--dir", dir})
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("advance with token: %v", err)
+	}
+}
+
+// TestAdvanceCommand_PresetLeavesOpenWithoutProposalApproved: fix presets are
+// exempt from the full-only proposal_approved token.
+func TestAdvanceCommand_PresetLeavesOpenWithoutProposalApproved(t *testing.T) {
+	dir := prepWorkspace(t)
+	changeDir := filepath.Join(dir, "docs", "changes", "fix-y")
+	st := ontostate.State{Change: "fix-y", Workflow: "fix", Phase: "open", Created: "2026-07-10"}
+	if err := ontostate.Save(filepath.Join(changeDir, "onto-state.yaml"), st); err != nil {
+		t.Fatal(err)
+	}
+	writeFile(t, filepath.Join(changeDir, "proposal.md"), "")
+	writeFile(t, filepath.Join(changeDir, "tasks.md"), "- [ ] fix\n")
+	commitAll(t, dir, "seed fix")
+
+	cmd := NewRootCmd()
+	var out bytes.Buffer
+	cmd.SetOut(&out)
+	cmd.SetErr(&out)
+	cmd.SetArgs([]string{"advance", "fix-y", "--dir", dir})
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("preset advance must not need proposal_approved: %v", err)
+	}
+}
+
+// TestAdvanceCommand_EnteringBuildRequiresApproachConfirmed: isolation alone
+// no longer suffices — the approach gate's token is required too (full only).
+func TestAdvanceCommand_EnteringBuildRequiresApproachConfirmed(t *testing.T) {
+	dir := prepWorkspace(t)
+	seedChange(t, dir, "feature-x", "design")
+	mutateState(t, dir, "feature-x", func(s *ontostate.State) { s.Isolation = "branch" })
+	commitAll(t, dir, "seed change")
+
+	cmd := NewRootCmd()
+	var out bytes.Buffer
+	cmd.SetOut(&out)
+	cmd.SetErr(&out)
+	cmd.SetArgs([]string{"advance", "feature-x", "--dir", dir})
+
+	err := cmd.Execute()
+	if err == nil {
+		t.Fatal("execute() = nil, want approach-confirmed refusal")
+	}
+	if !strings.Contains(err.Error(), "approach-confirmed") {
+		t.Errorf("error %q must name the approach-confirmed setter", err.Error())
+	}
+
+	mutateState(t, dir, "feature-x", func(s *ontostate.State) { s.ApproachConfirmed = "2026-07-22 approach B" })
+	commitAll(t, dir, "record token")
+	cmd = NewRootCmd()
+	cmd.SetOut(&out)
+	cmd.SetErr(&out)
+	cmd.SetArgs([]string{"advance", "feature-x", "--dir", dir})
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("advance with token: %v", err)
 	}
 }

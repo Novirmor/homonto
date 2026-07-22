@@ -47,8 +47,8 @@
 
 ## 5. Versions + verification (D5)
 
-- [ ] 5.1 `catalog/frameworks/onto/framework.toml` version 0.4.1 → 0.5.0;
+- [x] 5.1 `catalog/frameworks/onto/framework.toml` version 0.4.1 → 0.5.0;
   `catalog/frameworks/to/framework.toml` 0.3.1 → 0.4.0.
-- [ ] 5.2 `go build ./... && go test ./internal/catalog/... ./internal/agentfm/...`
+- [x] 5.2 `go build ./... && go test ./internal/catalog/... ./internal/agentfm/...`
   green (catalog content is embedded; render tests must still pass).
-- [ ] 5.3 Full `go test ./...` green.
+- [x] 5.3 Full `go test ./...` green.

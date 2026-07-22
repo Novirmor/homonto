@@ -1,5 +1,5 @@
 name = "onto"
-version = "0.4.1"
+version = "0.5.0"
 description = "Onto self-contained development workflow"
 
 [dependencies]

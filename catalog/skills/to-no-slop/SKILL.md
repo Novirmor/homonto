@@ -51,7 +51,8 @@ Before delivering prose:
 
 ## Scoring
 
-Rate 1-10 on each dimension:
+Walk each dimension as an edit question — if the honest answer is the bad
+half, revise that aspect before the gate:
 
 | Dimension | Question |
 |-----------|----------|
@@ -61,7 +62,9 @@ Rate 1-10 on each dimension:
 | Authenticity | Sounds human? |
 | Density | Anything cuttable? |
 
-Below 35/50: revise.
+There is no numeric self-score: a model grading its own prose against a
+threshold always passes itself. The questions are the control; answer them
+honestly and edit.
 
 ## Examples
 

@@ -139,8 +139,8 @@ so a design that produced no task list is not done.
       never blank
 - [ ] `notes.md` records the confirmed approach and every decision made
 - [ ] onto-no-slop pass run over `design.md`, every ADR draft, and
-      `notes.md`, scores recorded in `notes.md` (`no-slop: <artifact>
-      <total>/50`; below 35 means revise before this gate)
+      `notes.md`, each pass recorded in `notes.md` (`no-slop: <artifact>
+      done`)
 - [ ] Isolation chosen via `onto set isolation <name> branch|worktree` — the
       binary refuses design → build without it
 - [ ] Phase advanced design → build via `onto advance <name>`

@@ -116,10 +116,9 @@ result via `onto set verify-result <name> pass|fail`.
       rationale in the report)
 - [ ] Adversarial pass run (or its skip recorded in the report's
       Adversarial section)
-- [ ] onto-no-slop pass run over `verification.md`, score recorded in
-      `notes.md` (`no-slop: verification <total>/50`; below 35 means
-      revise before this gate) — never touch the machine-read `Result:`
-      line or the evidence table structure
+- [ ] onto-no-slop pass run over `verification.md`, recorded in
+      `notes.md` (`no-slop: verification done`) — never touch the
+      machine-read `Result:` line or the evidence table structure
 - [ ] Phase advanced verify → close via `onto advance <name>`
 - [ ] **Commit the workspace**: `git add docs/changes/<name> && git commit`
       — every phase exits with its workspace committed

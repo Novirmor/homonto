@@ -122,5 +122,6 @@ offered.
       final gate **before** any spec/ADR mutation, close prep committed,
       archived in its own commit
 - [ ] onto-no-slop pass run over each prose artifact (proposal,
-      verification, new guide prose), score noted in `notes.md`; never a
+      verification, new guide prose), noted in `notes.md` (`no-slop: <artifact>
+done`); never a
       machine-read marker or a requirement's normative wording

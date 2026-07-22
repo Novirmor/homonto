@@ -25,14 +25,14 @@
 
 ## 3. no-slop score removal (D3)
 
-- [ ] 3.1 `catalog/skills/onto/SKILL.md` Prose discipline: drop the
+- [x] 3.1 `catalog/skills/onto/SKILL.md` Prose discipline: drop the
   `<total>/50` record + threshold; new contract `no-slop: <artifact> done`.
-- [ ] 3.2 Exit checklists: onto-open, onto-design, onto-verify, onto-close,
+- [x] 3.2 Exit checklists: onto-open, onto-design, onto-verify, onto-close,
   onto-fix, onto-tweak — same replacement.
-- [ ] 3.3 `onto-no-slop/SKILL.md` + `to-no-slop/SKILL.md`: scoring mandate
+- [x] 3.3 `onto-no-slop/SKILL.md` + `to-no-slop/SKILL.md`: scoring mandate
   removed, rubric retained as editing guidance; `to/SKILL.md` + b
   `to-plan/SKILL.md` score references updated.
-- [ ] 3.4 Grep gate: no `/50` or `no-slop:.*<total>` left in `catalog/`.
+- [x] 3.4 Grep gate: no `/50` or `no-slop:.*<total>` left in `catalog/`.
 
 ## 4. Misc prose (D4)
 

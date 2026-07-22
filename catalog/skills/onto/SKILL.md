@@ -359,9 +359,10 @@ onto writes prose a human reads later: `proposal.md`, `design.md`, `notes.md`,
 ADR drafts, `verification.md`, guide updates, and commit messages. Run the
 **onto-no-slop** skill (bundled with this framework) over each prose artifact
 before its phase gate — cut filler and adverbs, use active voice, name the
-actor, be specific, vary the rhythm, no em dashes. Record the score in
-`notes.md` (`no-slop: <artifact> <total>/50`; below 35 means revise before the
-gate) — the checkbox is worth nothing without the number behind it.
+actor, be specific, vary the rhythm, no em dashes. Record the pass in
+`notes.md` (`no-slop: <artifact> done`). There is no numeric self-score — a
+model grading its own prose against a threshold is decoration; the edit pass
+itself is the control.
 
 It edits prose, never contract. Machine-read markers (`Status:`, `Result:`,
 `Preset:`, checkbox syntax, `SHALL`/`MUST` lines, GIVEN/WHEN/THEN), a

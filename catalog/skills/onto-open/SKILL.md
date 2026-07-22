@@ -96,9 +96,8 @@ summary — no invented scope.
 - [ ] Phase advanced open → design via `onto advance <name>` — run **only
       after** the artifact-review gate is answered, never before (the
       dispatcher treats a lagging phase as an unanswered gate and re-presents it)
-- [ ] onto-no-slop pass run over `proposal.md` and `notes.md`, its score
-      recorded in `notes.md` (`no-slop: <artifact> <total>/50`; below 35
-      means revise before this gate)
+- [ ] onto-no-slop pass run over `proposal.md` and `notes.md`, the pass
+      recorded in `notes.md` (`no-slop: <artifact> done`)
 - [ ] **Commit the workspace**: `git add docs/changes/<name> && git commit`
       — every phase exits with its workspace committed; state recovery,
       `base_ref` rebuild, and the close-phase `git mv` all depend on the

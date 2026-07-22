@@ -171,8 +171,8 @@ unrelated to this git integration — both happen at close.
 - [ ] Every ADR draft numbered, accepted, moved to `docs/adr/`; workspace
       references rewritten to the final paths
 - [ ] `onto set guides <name> updated` or `… "waived: <reason>"` — never pending
-- [ ] onto-no-slop pass run over **new** guide/ADR prose only, scores in
-      `notes.md`; no requirement wording, `SHALL`/`MUST` line, scenario, or
+- [ ] onto-no-slop pass run over **new** guide/ADR prose only, recorded in
+      `notes.md` (`no-slop: <artifact> done`); no requirement wording, `SHALL`/`MUST` line, scenario, or
       machine-read marker was rewritten
 - [ ] Close preparation committed (specs, ADRs, guides, workspace references,
       `onto-state.yaml`) — the worktree is clean before `onto close`

@@ -163,16 +163,16 @@ if st.CloseConfirmed == "" {
 - Produces: `func DeriveWorkingPhase(changeDir string, st State) string`
   (never errors; missing files = absent evidence).
 
-- [ ] **Step 1:** Failing tests, one per table row: archived→done;
+- [x] **Step 1:** Failing tests, one per table row: archived→done;
   `Status: Under revision`→design; `Result: pass`→close; all-checked
   tasks→verify; `Status: Confirmed`→build; preset workspace→build; full
   incomplete-tasks→design; full unconfirmed design→design; full
   proposal-only + claimed open→open, claimed design→design; missing
   proposal→open.
-- [ ] **Step 2:** Implement with a line-prefix scanner (`fileHasLinePrefix`)
+- [x] **Step 2:** Implement with a line-prefix scanner (`fileHasLinePrefix`)
   and the existing `TasksAllChecked`; first match wins, exactly the design
   order.
-- [ ] **Step 3:** Tests pass; commit `feat(ontostate): artifact-based working-phase derivation`.
+- [x] **Step 3:** Tests pass; commit `feat(ontostate): artifact-based working-phase derivation`.
 
 ### Task 8: truthful state output
 

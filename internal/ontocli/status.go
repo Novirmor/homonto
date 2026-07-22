@@ -52,10 +52,17 @@ func runStatus(cmd *cobra.Command, root string) error {
 		case "malformed":
 			cmd.Printf("%s: malformed (%v)\n", e.Name(), classErr)
 		default: // valid — label by the enumerated directory (consistent with doctor)
+			// Surface a claim the artifacts cannot support: the derived
+			// WORKING phase differs from the recorded one (the state file is
+			// a cache of truth; see ontostate.DeriveWorkingPhase).
+			working := ""
+			if derived := ontostate.DeriveWorkingPhase(changeDir, st); derived != st.Phase {
+				working = " (working: " + derived + ")"
+			}
 			if skeletonErr := ontostate.ValidateSkeleton(changeDir); skeletonErr != nil {
-				cmd.Printf("%s: %s — skeleton: %v\n", e.Name(), st.Phase, skeletonErr)
+				cmd.Printf("%s: %s%s — skeleton: %v\n", e.Name(), st.Phase, working, skeletonErr)
 			} else {
-				cmd.Printf("%s: %s — skeleton ok\n", e.Name(), st.Phase)
+				cmd.Printf("%s: %s%s — skeleton ok\n", e.Name(), st.Phase, working)
 			}
 		}
 	}

@@ -22,6 +22,9 @@ func fileHasLinePrefix(path, prefix string) bool {
 			return true
 		}
 	}
+	// A scan error means the evidence could not be read — same answer as a
+	// missing file: absent, never an error.
+	_ = scanner.Err()
 	return false
 }
 

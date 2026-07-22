@@ -133,11 +133,11 @@ if st.CloseConfirmed == "" {
 - Produces: `onto set proposal-approved|approach-confirmed|close-confirmed
   <change> <evidence>`.
 
-- [ ] **Step 1:** Failing tests: each setter stores its value; empty evidence
+- [x] **Step 1:** Failing tests: each setter stores its value; empty evidence
   refused.
-- [ ] **Step 2:** `evidenceSetterCmd(field string, assign func(*State, string))`
+- [x] **Step 2:** `evidenceSetterCmd(field string, assign func(*State, string))`
   on the `directiveCmd` pattern; register the three.
-- [ ] **Step 3:** Tests pass; commit `feat(onto): evidence-token setters`.
+- [x] **Step 3:** Tests pass; commit `feat(onto): evidence-token setters`.
 
 ### Task 6: pendingGates
 

@@ -37,9 +37,23 @@ func pendingGates(name string, st ontostate.State) []pendingGate {
 	set := func(field string) string {
 		return fmt.Sprintf("onto set %s %s <value>", field, name)
 	}
+	full := st.Workflow == "" || st.Workflow == "full"
 	var out []pendingGate
 	switch st.Phase {
+	case "open":
+		if full && st.ProposalApproved == "" {
+			out = append(out, pendingGate{
+				ID: "proposal-approved", Header: "Proposal", SetCommand: fmt.Sprintf("onto set proposal-approved %s \"<evidence>\"", name),
+				Question: "Has the user reviewed and approved the proposal (artifact-review gate)?",
+			})
+		}
 	case "design":
+		if full && st.ApproachConfirmed == "" {
+			out = append(out, pendingGate{
+				ID: "approach-confirmed", Header: "Approach", SetCommand: fmt.Sprintf("onto set approach-confirmed %s \"<evidence>\"", name),
+				Question: "Has the user confirmed the design approach (approach gate)?",
+			})
+		}
 		if st.Isolation == "" {
 			out = append(out, pendingGate{
 				ID: "isolation", Header: "Isolation", SetCommand: set("isolation"),
@@ -83,6 +97,12 @@ func pendingGates(name string, st ontostate.State) []pendingGate {
 			})
 		}
 	case "close":
+		if st.CloseConfirmed == "" {
+			out = append(out, pendingGate{
+				ID: "close-confirmed", Header: "Close plan", SetCommand: fmt.Sprintf("onto set close-confirmed %s \"<evidence>\"", name),
+				Question: "Has the user confirmed the close plan (final-confirmation gate)? merge-deltas and close refuse without this.",
+			})
+		}
 		if !st.Close.Merged {
 			out = append(out, pendingGate{
 				ID: "close-merged", Header: "Specs merged", SetCommand: fmt.Sprintf("onto set close-merged %s", name),

@@ -209,18 +209,18 @@ if st.CloseConfirmed == "" {
   `catalog/skills/onto/SKILL.md`, `docs/guides/onto-workflow.md`,
   `catalog/frameworks/onto/framework.toml`
 
-- [ ] **Step 1:** Gate blocks record their tokens (open artifact-review →
+- [x] **Step 1:** Gate blocks record their tokens (open artifact-review →
   `proposal-approved`; design approach → `approach-confirmed`; close final →
   `close-confirmed`); exit checklists updated; fix/tweak use
   `onto advance <name> --to build`; dispatcher §3 consumes
   `onto state <name> --json` derivation; guide gate table + migration note;
   framework 0.5.0 → 0.6.0.
-- [ ] **Step 2:** Commit `feat(onto-skills): record evidence tokens at the gates`.
+- [x] **Step 2:** Commit `feat(onto-skills): record evidence tokens at the gates`.
 
 ### Task 11: full verification
 
-- [ ] **Step 1:** `go build ./... && go vet ./... && go test ./...` — all green.
-- [ ] **Step 2:** Extend `test/docker/onto-lifecycle.sh`: missing-token
+- [x] **Step 1:** `go build ./... && go vet ./... && go test ./...` — all green.
+- [x] **Step 2:** Extend `test/docker/onto-lifecycle.sh`: missing-token
   advance refusal, `--to build` leg for a preset, verify cross-check refusal.
   Run the suite (or the full docker gate) and paste results.
-- [ ] **Step 3:** Commit `test(e2e): onto-lifecycle exercises evidence gates`.
+- [x] **Step 3:** Commit `test(e2e): onto-lifecycle exercises evidence gates`.

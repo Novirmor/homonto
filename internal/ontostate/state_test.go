@@ -604,3 +604,36 @@ func TestSave_LeavesNoPredictableTempName(t *testing.T) {
 		t.Errorf("predictable temp %s.tmp must not be used; stat err = %v", path, err)
 	}
 }
+
+// TestEvidenceTokens_RoundTripAndAbsentDecode: the three judgment-gate
+// evidence tokens survive a Marshal/Parse round-trip, and a state written
+// before they existed decodes with all three empty (no schema bump).
+func TestEvidenceTokens_RoundTripAndAbsentDecode(t *testing.T) {
+	s := State{
+		Change: "c", Phase: "design", Workflow: "full",
+		ProposalApproved:  "2026-07-22 proposal ok",
+		ApproachConfirmed: "2026-07-22 approach B",
+		CloseConfirmed:    "2026-07-22 close plan shown",
+	}
+	b, err := Marshal(s)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := Parse(b)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.ProposalApproved != s.ProposalApproved ||
+		got.ApproachConfirmed != s.ApproachConfirmed ||
+		got.CloseConfirmed != s.CloseConfirmed {
+		t.Fatalf("round-trip lost evidence tokens: %+v", got)
+	}
+
+	old, err := Parse([]byte("change: c\nphase: open\n"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if old.ProposalApproved != "" || old.ApproachConfirmed != "" || old.CloseConfirmed != "" {
+		t.Fatalf("legacy state must decode with empty tokens: %+v", old)
+	}
+}

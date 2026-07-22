@@ -21,7 +21,7 @@ verified_at: null
 archived: false
 direct_override: null
 handoff_context: openspec/changes/onto-gate-enforcement/.comet/handoff/design-context.json
-handoff_hash: 4e4446b7d33580e7a314e96e1cbb93ec9ca2bc3db1227d6a820fd704bdf980a7
+handoff_hash: 56b1329856623fea473c86f5b467388ca2d51a0dd7f146a0bb153401b7f78ea5
 classic_profile: full
 classic_migration: 1
 run_id: 6d77b284-077d-416f-a4e8-68d106b90f73

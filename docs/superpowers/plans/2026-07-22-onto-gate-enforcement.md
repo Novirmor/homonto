@@ -145,13 +145,13 @@ if st.CloseConfirmed == "" {
 - Modify: `internal/ontocli/gate.go`
 - Test: `internal/ontocli/gate_test.go`
 
-- [ ] **Step 1:** Failing tests: open/full lists `proposal-approved`;
+- [x] **Step 1:** Failing tests: open/full lists `proposal-approved`;
   design/full lists `approach-confirmed` before `isolation`; close lists
   `close-confirmed` first; fix preset lists neither full-only token; answered
   tokens disappear.
-- [ ] **Step 2:** Add the three `pendingGate` entries (no fixed options;
+- [x] **Step 2:** Add the three `pendingGate` entries (no fixed options;
   SetCommand shows the evidence argument).
-- [ ] **Step 3:** Tests pass; commit `feat(onto): judgment gates in onto gate --json`.
+- [x] **Step 3:** Tests pass; commit `feat(onto): judgment gates in onto gate --json`.
 
 ### Task 7: DeriveWorkingPhase
 

@@ -101,11 +101,14 @@ func TestConformance_FullLifecycle_HappyPath(t *testing.T) {
 	// so a committed tree makes the whole lifecycle deterministic. Before
 	// leaving verify, record verify.result=pass so the advance evidence gate is
 	// satisfied (isolation, needed to enter build, was set above).
-	// TODO(task 5): switch to `onto set proposal-approved` once the setter lands.
-	mutateState(t, root, name, func(s *ontostate.State) { s.ProposalApproved = "2026-07-22 approved" })
+	if _, err := runOnto(t, "set", "proposal-approved", name, "2026-07-22 approved", "--dir", root); err != nil {
+		t.Fatalf("onto set proposal-approved: %v", err)
+	}
 	for _, want := range []string{"design", "build", "verify", "close"} {
 		if want == "build" {
-			mutateState(t, root, name, func(s *ontostate.State) { s.ApproachConfirmed = "2026-07-22 approach" })
+			if _, err := runOnto(t, "set", "approach-confirmed", name, "2026-07-22 approach", "--dir", root); err != nil {
+				t.Fatalf("onto set approach-confirmed: %v", err)
+			}
 		}
 		if want == "close" {
 			if _, err := runOnto(t, "set", "verify-result", name, "pass", "--dir", root); err != nil {
@@ -129,8 +132,9 @@ func TestConformance_FullLifecycle_HappyPath(t *testing.T) {
 	if _, err := runOnto(t, "set", "guides", name, "updated", "--dir", root); err != nil {
 		t.Fatalf("onto set guides updated: %v", err)
 	}
-	// TODO(task 5): switch to `onto set close-confirmed` once the setter lands.
-	mutateState(t, root, name, func(s *ontostate.State) { s.CloseConfirmed = "2026-07-22 confirmed" })
+	if _, err := runOnto(t, "set", "close-confirmed", name, "2026-07-22 confirmed", "--dir", root); err != nil {
+		t.Fatalf("onto set close-confirmed: %v", err)
+	}
 
 	// close archives the change: the directory moves under archive/ and the
 	// archived state is marked Archived, phase unchanged at close.

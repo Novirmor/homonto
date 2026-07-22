@@ -3,6 +3,7 @@ package ontocli
 import (
 	"fmt"
 	"path/filepath"
+	"strings"
 
 	"github.com/noviopenworks/homonto/internal/ontostate"
 	"github.com/spf13/cobra"
@@ -107,6 +108,15 @@ func setCmd() *cobra.Command {
 				s.BuildPause = v
 			}
 		}))
+	cmd.AddCommand(evidenceSetterCmd("proposal-approved",
+		"Record the open phase's artifact-review gate answer",
+		func(s *ontostate.State, v string) { s.ProposalApproved = v }))
+	cmd.AddCommand(evidenceSetterCmd("approach-confirmed",
+		"Record the design phase's approach gate answer",
+		func(s *ontostate.State, v string) { s.ApproachConfirmed = v }))
+	cmd.AddCommand(evidenceSetterCmd("close-confirmed",
+		"Record the close phase's final-confirmation gate answer",
+		func(s *ontostate.State, v string) { s.CloseConfirmed = v }))
 	cmd.AddCommand(closeMergedCmd())
 	cmd.AddCommand(directiveCmd())
 	cmd.AddCommand(baseRefCmd())
@@ -285,6 +295,32 @@ func directiveCmd() *cobra.Command {
 					return fmt.Errorf("onto set directive: text must not be empty")
 				}
 				st.Directive = text
+				return nil
+			})
+		},
+	}
+	cmd.Flags().StringVar(&dir, "dir", ".", "workspace root containing the change")
+	return cmd
+}
+
+// evidenceSetterCmd builds a judgment-gate evidence setter: a free-form,
+// non-empty value recording that the named gate was answered (convention:
+// "YYYY-MM-DD <summary>"). It cannot use enumSetterCmd because the evidence
+// is free text, not a fixed member — the binary checks presence, never
+// content (B1).
+func evidenceSetterCmd(field, short string, assign func(*ontostate.State, string)) *cobra.Command {
+	var dir string
+	cmd := &cobra.Command{
+		Use:   field + " <change> <evidence>",
+		Short: short,
+		Args:  cobra.ExactArgs(2),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			name, value := args[0], args[1]
+			return runTransition(cmd, dir, name, func(st *ontostate.State) error {
+				if strings.TrimSpace(value) == "" {
+					return fmt.Errorf("onto set %s: evidence must not be empty", field)
+				}
+				assign(st, value)
 				return nil
 			})
 		},

@@ -110,10 +110,10 @@ with `verificationResultLine` scanning for the first `Result: `-prefixed line
 - Modify: `internal/ontocli/mergedeltas.go`, `internal/ontocli/close.go`
 - Test: `internal/ontocli/mergedeltas_test.go`, `internal/ontocli/close_test.go`
 
-- [ ] **Step 1:** Failing tests: merge-deltas and close each refuse with
+- [x] **Step 1:** Failing tests: merge-deltas and close each refuse with
   empty `close_confirmed` (message names `onto set close-confirmed`), and the
   refusal happens before any file mutation (assert target spec untouched).
-- [ ] **Step 2:** First check after load+validate in both commands:
+- [x] **Step 2:** First check after load+validate in both commands:
 
 ```go
 if st.CloseConfirmed == "" {
@@ -121,7 +121,7 @@ if st.CloseConfirmed == "" {
 }
 ```
 
-- [ ] **Step 3:** Tests pass; commit `feat(onto): close-confirmed token gates global mutation`.
+- [x] **Step 3:** Tests pass; commit `feat(onto): close-confirmed token gates global mutation`.
 
 ### Task 5: setters
 

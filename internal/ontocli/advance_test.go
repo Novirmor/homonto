@@ -643,3 +643,67 @@ func TestAdvanceCommand_LeavingVerifyCrossChecksReport(t *testing.T) {
 		})
 	}
 }
+
+// TestAdvanceCommand_ToBuildPresetOneCall: a preset with isolation set walks
+// open→design→build through one gated call; each hop's gates still run.
+func TestAdvanceCommand_ToBuildPresetOneCall(t *testing.T) {
+	dir := prepWorkspace(t)
+	changeDir := filepath.Join(dir, "docs", "changes", "fix-y")
+	st := ontostate.State{Change: "fix-y", Workflow: "fix", Phase: "open", Created: "2026-07-10", Isolation: "branch"}
+	if err := ontostate.Save(filepath.Join(changeDir, "onto-state.yaml"), st); err != nil {
+		t.Fatal(err)
+	}
+	writeFile(t, filepath.Join(changeDir, "proposal.md"), "")
+	writeFile(t, filepath.Join(changeDir, "tasks.md"), "- [ ] fix\n")
+	commitAll(t, dir, "seed fix")
+
+	if _, err := runOnto(t, "advance", "fix-y", "--to", "build", "--dir", dir); err != nil {
+		t.Fatalf("advance --to build: %v", err)
+	}
+	loaded, err := ontostate.Load(filepath.Join(changeDir, "onto-state.yaml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if loaded.Phase != "build" {
+		t.Errorf("phase = %q, want build", loaded.Phase)
+	}
+}
+
+// TestAdvanceCommand_ToBuildRefusalCases: full workflows advance one gate at
+// a time; only build is a valid --to target; a failing hop surfaces its own
+// gate error.
+func TestAdvanceCommand_ToBuildRefusalCases(t *testing.T) {
+	t.Run("full refused", func(t *testing.T) {
+		dir := prepWorkspace(t)
+		seedChange(t, dir, "feature-x", "open")
+		commitAll(t, dir, "seed")
+		_, err := runOnto(t, "advance", "feature-x", "--to", "build", "--dir", dir)
+		if err == nil || !strings.Contains(err.Error(), "one gate at a time") {
+			t.Fatalf("full --to build must refuse naming the rule, got: %v", err)
+		}
+	})
+	t.Run("non-build target refused", func(t *testing.T) {
+		dir := prepWorkspace(t)
+		seedChange(t, dir, "feature-x", "open")
+		commitAll(t, dir, "seed")
+		_, err := runOnto(t, "advance", "feature-x", "--to", "verify", "--dir", dir)
+		if err == nil || !strings.Contains(err.Error(), "build") {
+			t.Fatalf("--to verify must refuse, got: %v", err)
+		}
+	})
+	t.Run("failing hop surfaces its gate", func(t *testing.T) {
+		dir := prepWorkspace(t)
+		changeDir := filepath.Join(dir, "docs", "changes", "fix-y")
+		st := ontostate.State{Change: "fix-y", Workflow: "fix", Phase: "open", Created: "2026-07-10"} // no isolation
+		if err := ontostate.Save(filepath.Join(changeDir, "onto-state.yaml"), st); err != nil {
+			t.Fatal(err)
+		}
+		writeFile(t, filepath.Join(changeDir, "proposal.md"), "")
+		writeFile(t, filepath.Join(changeDir, "tasks.md"), "- [ ] fix\n")
+		commitAll(t, dir, "seed fix")
+		_, err := runOnto(t, "advance", "fix-y", "--to", "build", "--dir", dir)
+		if err == nil || !strings.Contains(err.Error(), "isolation") {
+			t.Fatalf("the design→build hop's isolation gate must surface, got: %v", err)
+		}
+	})
+}

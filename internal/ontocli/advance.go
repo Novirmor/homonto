@@ -15,18 +15,56 @@ import (
 // single gated phase transition on that change's onto-state.yaml. It writes
 // nothing unless every precondition below passes.
 func advanceCmd() *cobra.Command {
-	var dir string
+	var (
+		dir string
+		to  string
+	)
 
 	cmd := &cobra.Command{
-		Use:   "advance <change>",
+		Use:   "advance <change> [--to build]",
 		Short: "Advance a change to its next workflow phase, if all gates pass",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return runAdvance(cmd, dir, args[0])
+			if to == "" {
+				return runAdvance(cmd, dir, args[0])
+			}
+			return runAdvanceTo(cmd, dir, args[0], to)
 		},
 	}
 	cmd.Flags().StringVar(&dir, "dir", ".", "workspace root containing the change")
+	cmd.Flags().StringVar(&to, "to", "", "preset-only: walk the gated advances up to this phase (only \"build\")")
 	return cmd
+}
+
+// runAdvanceTo walks single gated advances until the change reaches the
+// target phase. It exists so a preset (which skips design) reaches build in
+// one call instead of scripting two ceremonial advances — sugar, never a
+// bypass: every hop runs runAdvance's full gate set, and a failing hop's
+// error propagates unchanged. Full workflows are refused (they advance one
+// gate at a time — each boundary is a distinct user decision), as is any
+// target other than build (nothing past build is ever mechanical).
+func runAdvanceTo(cmd *cobra.Command, root, name, target string) error {
+	if target != "build" {
+		return fmt.Errorf("onto advance --to: only \"build\" is a valid target (got %q) — phases past build are never advanced mechanically", target)
+	}
+	changeDir := filepath.Join(root, "docs", "changes", name)
+	st, err := ontostate.Load(filepath.Join(changeDir, "onto-state.yaml"))
+	if err != nil {
+		return fmt.Errorf("onto advance: loading state: %w", err)
+	}
+	if st.Workflow != "fix" && st.Workflow != "tweak" {
+		return fmt.Errorf("onto advance --to build: workflow %q advances one gate at a time; --to is preset-only (fix/tweak skip design)", st.Workflow)
+	}
+	for st.Phase != "build" {
+		if err := runAdvance(cmd, root, name); err != nil {
+			return err
+		}
+		st, err = ontostate.Load(filepath.Join(changeDir, "onto-state.yaml"))
+		if err != nil {
+			return fmt.Errorf("onto advance: reloading state: %w", err)
+		}
+	}
+	return nil
 }
 
 // runAdvance enforces, in order: ontoFramework.Gate(root);

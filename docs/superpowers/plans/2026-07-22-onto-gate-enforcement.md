@@ -180,12 +180,12 @@ if st.CloseConfirmed == "" {
 - Modify: `internal/ontocli/statecmd.go`, `internal/ontocli/status.go`
 - Test: `internal/ontocli/statecmd_test.go`, `internal/ontocli/status_test.go`
 
-- [ ] **Step 1:** Failing tests: `onto state --json` on a confirmed-design
+- [x] **Step 1:** Failing tests: `onto state --json` on a confirmed-design
   workspace reports `derived_phase: build` + `phase_mismatch` true when
   claimed differs; `onto status` row shows ` (working: build)` on mismatch.
-- [ ] **Step 2:** Wire `DeriveWorkingPhase` into both; keep claimed `phase`
+- [x] **Step 2:** Wire `DeriveWorkingPhase` into both; keep claimed `phase`
   field untouched.
-- [ ] **Step 3:** Tests pass; commit `feat(onto): state/status report the derived working phase`.
+- [x] **Step 3:** Tests pass; commit `feat(onto): state/status report the derived working phase`.
 
 ### Task 9: advance --to build
 

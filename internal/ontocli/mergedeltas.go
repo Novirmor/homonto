@@ -63,6 +63,13 @@ func runMergeDeltas(cmd *cobra.Command, root, name string) error {
 	if st.Phase != "close" {
 		return fmt.Errorf("onto merge-deltas: change %q is at phase %q; merge-deltas runs only at close", name, st.Phase)
 	}
+	// The final-confirmation gate must be answered before the first global
+	// mutation: merging deltas rewrites the living specs, and a declined gate
+	// must leave the repo untouched. The token is checked here (and in onto
+	// close) so an agent cannot mutate shared files ahead of the user's yes.
+	if st.CloseConfirmed == "" {
+		return fmt.Errorf("onto merge-deltas: close not confirmed: answer the final-confirmation gate, then run `onto set close-confirmed %s \"<evidence>\"`", name)
+	}
 	if st.Close.Merged {
 		fmt.Fprintf(cmd.OutOrStdout(), "%s: already merged (close.merged=true)\n", name)
 		return nil

@@ -30,7 +30,7 @@ func TestAbandonedIsTerminalEverywhere(t *testing.T) {
 	t.Run("close refuses an abandoned change", func(t *testing.T) {
 		dir := prepWorkspace(t)
 		seedCloseState(t, dir, ontostate.State{
-			Change: "demo", Workflow: "full", Phase: "close", Created: "2026-07-10",
+			Change: "demo", Workflow: "full", Phase: "close", Created: "2026-07-10", CloseConfirmed: "2026-07-22 confirmed",
 			Verify: ontostate.Verify{Result: "pass"}, Close: ontostate.Close{Merged: true},
 			Guides: "updated", Abandoned: true,
 		})
@@ -58,7 +58,7 @@ func TestAbandonedIsTerminalEverywhere(t *testing.T) {
 	t.Run("set refuses an archived change", func(t *testing.T) {
 		dir := prepWorkspace(t)
 		seedCloseState(t, dir, ontostate.State{
-			Change: "demo", Workflow: "full", Phase: "close", Created: "2026-07-10",
+			Change: "demo", Workflow: "full", Phase: "close", Created: "2026-07-10", CloseConfirmed: "2026-07-22 confirmed",
 			Archived: true,
 		})
 		if _, err := run(t, "set", "verify-result", "demo", "pass", "--dir", dir); err == nil || !strings.Contains(err.Error(), "archived") {
@@ -69,7 +69,7 @@ func TestAbandonedIsTerminalEverywhere(t *testing.T) {
 	t.Run("merge-deltas refuses an abandoned change", func(t *testing.T) {
 		dir := prepWorkspace(t)
 		seedCloseState(t, dir, ontostate.State{
-			Change: "demo", Workflow: "full", Phase: "close", Created: "2026-07-10",
+			Change: "demo", Workflow: "full", Phase: "close", Created: "2026-07-10", CloseConfirmed: "2026-07-22 confirmed",
 			Abandoned: true,
 		})
 		delta := filepath.Join(dir, "docs", "changes", "demo", "specs", "ghostcap.md")
@@ -92,7 +92,7 @@ func TestAbandonedIsTerminalEverywhere(t *testing.T) {
 func TestMergeDeltasConvergesAfterPartialCommit(t *testing.T) {
 	dir := prepWorkspace(t)
 	seedCloseState(t, dir, ontostate.State{
-		Change: "demo", Workflow: "full", Phase: "close", Created: "2026-07-10",
+		Change: "demo", Workflow: "full", Phase: "close", Created: "2026-07-10", CloseConfirmed: "2026-07-22 confirmed",
 		Verify: ontostate.Verify{Result: "pass"},
 	})
 	changeSpecs := filepath.Join(dir, "docs", "changes", "demo", "specs")
@@ -122,7 +122,7 @@ func TestMergeDeltasConvergesAfterPartialCommit(t *testing.T) {
 	// conflict, not an applied post-state — it must still fail loudly.
 	dir2 := prepWorkspace(t)
 	seedCloseState(t, dir2, ontostate.State{
-		Change: "demo", Workflow: "full", Phase: "close", Created: "2026-07-10",
+		Change: "demo", Workflow: "full", Phase: "close", Created: "2026-07-10", CloseConfirmed: "2026-07-22 confirmed",
 	})
 	writeFile(t, filepath.Join(dir2, "docs", "changes", "demo", "specs", "alpha.md"),
 		"## ADDED Requirements\n\n### Requirement: Alpha\nSHALL alpha.\n")
@@ -210,7 +210,7 @@ func TestGuidesRejectsPlaceholderWaiver(t *testing.T) {
 func TestCloseMergedAcceptsSchemaValue(t *testing.T) {
 	dir := prepWorkspace(t)
 	seedCloseState(t, dir, ontostate.State{
-		Change: "demo", Workflow: "full", Phase: "close", Created: "2026-07-10",
+		Change: "demo", Workflow: "full", Phase: "close", Created: "2026-07-10", CloseConfirmed: "2026-07-22 confirmed",
 	})
 	if _, err := run(t, "set", "close-merged", "demo", "yes", "--dir", dir); err != nil {
 		t.Fatalf(`set close-merged <name> yes must succeed (gate schema value), got: %v`, err)

@@ -59,6 +59,13 @@ func closeEvidenceGate(st ontostate.State) error {
 			return fmt.Errorf("onto close: unresolved guides (guides=%s); update or waive guides before close", guides)
 		}
 	}
+	// Last, the final-confirmation token: the user's explicit yes to the close
+	// plan. It is checked after the plan's own inputs so an earlier gap
+	// surfaces as itself, and before any mutation so a declined gate leaves
+	// the repo untouched.
+	if st.CloseConfirmed == "" {
+		return fmt.Errorf("onto close: close not confirmed: answer the final-confirmation gate, then run `onto set close-confirmed %s \"<evidence>\"`", st.Change)
+	}
 	return nil
 }
 

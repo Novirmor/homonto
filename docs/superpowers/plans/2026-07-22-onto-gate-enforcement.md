@@ -82,11 +82,11 @@ if next == "build" && full && st.ApproachConfirmed == "" {
 - Modify: `internal/ontocli/advance.go`
 - Test: `internal/ontocli/advance_test.go`
 
-- [ ] **Step 1:** Failing tests: leaving verify with `verify.result: pass` but
+- [x] **Step 1:** Failing tests: leaving verify with `verify.result: pass` but
   (a) `verification.md` `Result: fail` refuses naming both; (b)
   `Result: pass (2 accepted deviations)` advances; (c) no `Result:` line
   refuses; (d) unreadable file refuses.
-- [ ] **Step 2:** After the existing verify.result check:
+- [x] **Step 2:** After the existing verify.result check:
 
 ```go
 if st.Phase == "verify" {
@@ -102,7 +102,7 @@ if st.Phase == "verify" {
 
 with `verificationResultLine` scanning for the first `Result: `-prefixed line
 (error when absent).
-- [ ] **Step 3:** Tests pass; commit `feat(onto): cross-check verification.md at the verify exit`.
+- [x] **Step 3:** Tests pass; commit `feat(onto): cross-check verification.md at the verify exit`.
 
 ### Task 4: close_confirmed enforcement
 

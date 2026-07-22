@@ -129,6 +129,8 @@ func TestConformance_FullLifecycle_HappyPath(t *testing.T) {
 	if _, err := runOnto(t, "set", "guides", name, "updated", "--dir", root); err != nil {
 		t.Fatalf("onto set guides updated: %v", err)
 	}
+	// TODO(task 5): switch to `onto set close-confirmed` once the setter lands.
+	mutateState(t, root, name, func(s *ontostate.State) { s.CloseConfirmed = "2026-07-22 confirmed" })
 
 	// close archives the change: the directory moves under archive/ and the
 	// archived state is marked Archived, phase unchanged at close.

@@ -1,6 +1,6 @@
 workflow: tweak
 language: en
-phase: build
+phase: verify
 context_compression: off
 build_mode: direct
 build_pause: null
@@ -8,7 +8,7 @@ subagent_dispatch: null
 tdd_mode: direct
 review_mode: off
 isolation: branch
-verify_mode: light
+verify_mode: full
 auto_transition: true
 base_ref: 9cd18ac70a611f752dced835f877a4ac63e52f4c
 design_doc: null

@@ -21,10 +21,12 @@ is what makes the assertion true before it is made.
    read the output. State honestly what it covered; record any unavailable or
    skipped checks as gaps rather than treating one green command as universal
    proof.
-2. **Obtain one completed `to-skeptic` pass on the final candidate.** Hand it
-   the complete `plan.md` (including `## Notes`) and the claim being made
-   ("this change works because …"). Dispatch sequentially; `to` never runs a
-   second lens or parallel skeptic.
+2. **Obtain at least one completed `to-skeptic` pass on the final candidate.**
+   Hand it the complete `plan.md` (including `## Notes`) and the claim being
+   made ("this change works because …"). Skeptics are read-only, so dispatch
+   several concurrently when the change warrants it, each with a distinct lens
+   (does it do what it claims / what breaks it / does the evidence hold). One
+   completed pass is the floor, not the ceiling.
    - A skeptic attempt that returns a blocking `Questions:` section is
      incomplete. Resolve the question, then re-dispatch against the same
      candidate.

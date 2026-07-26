@@ -1,6 +1,6 @@
 ---
 name: to-implementer
-description: Use to execute one bite-sized implementation task from the plan — write the edits and run the task's verification, then return a diff summary. It does not plan, judge scope, or spawn further agents; the to-do loop hands it a task and the to-reviewer judges what comes back. Dispatch one at a time — to never runs subagents in parallel.
+description: Use to execute one bite-sized implementation task from the plan — write the edits and run the task's verification, then return a diff summary. It does not plan, judge scope, or spawn further agents; the to-do loop hands it a task and the to-reviewer judges what comes back. Dispatch strictly one at a time — it is the only agent that edits, and to keeps a single working tree, so two at once corrupt it.
 mode: subagent
 # Neutral capability intent (internal/agentfm). The implementer is the
 # workhorse of the division of labor: it EDITS (not read-only) on an

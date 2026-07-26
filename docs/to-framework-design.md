@@ -123,28 +123,36 @@ Catalog framework `builtin:to`:
   phase, routes to the matching phase skill.
 - `/to-plan` — write `plan.md`; suggests (does not require) a branch.
 - `/to-do` — the code-writing skill: carries the code-writing standards
-  (below) and orchestrates the implementer/reviewer subagents (below),
-  strictly sequentially.
-- `/to-done` — verify for real, obtain one completed skeptic pass on the final
-  candidate, record the outcome, `to done --verified`, archive.
+  (below) and orchestrates the implementer/reviewer subagents (below): one
+  implementer at a time, reviewers concurrently.
+- `/to-done` — verify for real, obtain at least one completed skeptic pass on
+  the final candidate, record the outcome, `to done --verified`, archive.
 - `/to-no-slop` — vendored no-slop prose skill (below).
 
-### Subagents: onto's cast, adapted — no parallelization
+### Subagents: onto's cast, adapted — one writer at a time
 
 `to` vendors onto's four specialist subagents, renamed `to-*` and modified to
-match the `to` philosophy. The division of labor survives (a cheap worker
-edits, a judge reviews, neither plans); onto's parallel dispatch does not.
-**`to` never runs subagents in parallel** — one subagent at a time, in a fixed
-sequential loop. Parallel fan-out is enterprise machinery (onto's adversarial
-multi-agent verification, ADR 0007); `to` trades its coverage for
-predictability, lower cost, and a flow a human can follow in the transcript.
+match the `to` philosophy. The division of labor survives: a cheap worker
+edits, a judge reviews, neither plans.
+
+**Concurrency follows write-scope, not agent identity** (ADR 0019). Three of
+the four never edit, so they cannot corrupt a shared tree and run concurrently
+— several explorers on different questions, several reviewers or skeptics
+applying different lenses. `to-implementer` runs strictly one at a time: it is
+the only writer and `to` keeps a single working tree. Parallel implementers
+need a worktree each, which is onto's machinery and deliberately out of scope
+here.
+
+*Superseded:* this section originally read "no parallelization — `to` never
+runs subagents in parallel." That rule was broader than its own justification,
+which was only ever about the shared working tree and `plan.md`.
 
 | Subagent | From | Role in `to` |
 |---|---|---|
 | `to-explorer` | `onto-explorer` | Read-only codebase questions during `plan` and `do`; returns conclusions, not dumps. Unchanged apart from naming. |
 | `to-implementer` | `onto-implementer` | Executes one bite-sized task from the plan: edits, runs that task's verification, returns a diff summary. Never plans, never spawns. |
 | `to-reviewer` | `onto-reviewer` | Reviews the implementer's diff for correctness, security, and clarity; read-only plus git inspection; findings ranked by severity. |
-| `to-skeptic` | `onto-skeptic` | onto dispatches two in parallel, one per lens; `to` obtains **one completed pass on the final candidate**, sequentially in `/to-done`. A blocked attempt or a verdict invalidated by later code changes is rerun, never in parallel; only the verdict for the archived tree is kept. |
+| `to-skeptic` | `onto-skeptic` | Read-only, so `to` may run several concurrently, one per lens; **at least one completed pass on the final candidate** is required in `/to-done`. A verdict invalidated by later code changes is rerun against the new candidate; only verdicts for the archived tree are kept. |
 
 The `/to-do` loop is: pick the next plan task → `to-implementer` writes it →
 `to-reviewer` judges the diff → orchestrator applies accepted findings (via
@@ -189,8 +197,9 @@ code written inside it is held to the same bar:
   verification before claiming done.
 - **Division of labor.** onto's implementer/reviewer/explorer/skeptic
   subagents come along (as `to-*`), so code is still written from bite-sized
-  specs and judged by a fresh context before it lands — just one subagent at a
-  time, never in parallel (see [Subagents](#subagents-ontos-cast-adapted--no-parallelization)).
+  specs and judged by a fresh context before it lands — with one writer at a
+  time and read-only agents run concurrently (see
+  [Subagents](#subagents-ontos-cast-adapted--one-writer-at-a-time)).
 
 In one line: **simple flow, but a code-writing discipline** — the phases got
 lighter; the code and prose that come out of them did not.

@@ -19,8 +19,8 @@ artifact — write it for the person who reads the PR, not for yourself.
 1. **Understand before writing.** Ground every claim about the codebase in
    reading. Read the repository's relevant ADRs and nearby design documents
    before planning a behavior or architecture change. For questions that span
-   many files, dispatch `to-explorer` (one at a time, never in parallel) and
-   work from its conclusions.
+   many files, dispatch `to-explorer` — read-only, so run one per question
+   concurrently rather than serializing them — and work from its conclusions.
 2. **Suggest isolation.** Recommend a branch for the change (the binary is
    git-blind and will not check; this is process advice, not a gate). The user
    may decline — proceed either way.

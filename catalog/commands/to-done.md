@@ -1,14 +1,14 @@
 ---
 name: to-done
-description: Run the to done phase — real verification, one completed skeptic pass on the final candidate, then `to done --verified` archives the change.
+description: Run the to done phase — real verification, at least one completed skeptic pass on the final candidate, then `to done --verified` archives the change.
 argument-hint: "The change to finish (optional)"
 ---
 
 # /to-done
 
 Run to phase 3 (done): run the plan's `Final Verify:` command, dispatch
-`to-skeptic` sequentially until one pass completes on the unchanged final
-candidate, triage its findings, record the outcome in `plan.md`, then finish with
+one or more `to-skeptic` passes concurrently against the unchanged final
+candidate, triage their findings, record the outcome in `plan.md`, then finish with
 `to done <name> --verified`. The
 `--verified` flag is self-asserted by design — this skill is what makes the
 assertion true before it is made; never pass it early. Commit the resulting

@@ -36,9 +36,10 @@ workflows that reader is usually a fresh agent session.
 - **One artifact.** Planning, notes, review outcomes, and verification
   evidence all live in `plan.md`. Resist inventing sidecar documents; the
   contract exists so one file survives archiving as the whole story.
-- **Sequential subagents.** One implementer, then one reviewer, then (at
-  done) one skeptic. The transcript a human can follow top-to-bottom *is*
-  the simplicity feature; parallel orchestration is onto-scale machinery.
+- **One writer at a time.** A single implementer holds the working tree;
+  read-only agents (explorer, reviewer, skeptic) run as concurrently as the
+  work justifies. Simplicity here means one tree and one bookkeeper, not one
+  agent — worktree-per-implementer orchestration is onto-scale machinery.
 - **Match the surrounding code.** The code-writing standards bind every
   task: read first, match style, naming, idiom, and comment density. A
   locally-clever pattern that fights the codebase's conventions is

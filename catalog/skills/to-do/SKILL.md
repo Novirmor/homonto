@@ -1,6 +1,6 @@
 ---
 name: to-do
-description: to phase 2 — do. Use when an active change has phase do — executes plan.md one task at a time through the implementer/reviewer loop, strictly sequentially, holding the code to onto-grade standards.
+description: to phase 2 — do. Use when an active change has phase do — executes plan.md one task at a time through the implementer/reviewer loop, one implementer at a time with reviewers run concurrently, holding the code to onto-grade standards.
 ---
 
 # to-do — Phase 2: Do
@@ -27,13 +27,17 @@ For each unchecked task in `plan.md`, in order:
    files and symbols, behavioral contract, verification command, and expected
    passing signal. Include any directly relevant conclusion from the plan's
    grounding; do not silently add scope. One implementer at a time — **never in
-   parallel**.
+   parallel**: it is the only agent that edits, and `to` keeps a single working
+   tree.
 2. **Verify against the repository**, not the report: check the diff exists
    and the task's verification command passes.
 3. **Dispatch `to-reviewer`** with the original task contract, the resulting
    diff, and the verification result. Ask it to judge both correctness and
-   whether the stated outcome is actually complete. One reviewer, after the
-   implementer returns — never alongside it.
+   whether the stated outcome is actually complete. Reviewers are read-only and
+   may run concurrently — on a task worth more than one angle, dispatch several
+   at once with distinct lenses (correctness, security, completeness) rather
+   than one after another. Always **after** the implementer returns, never
+   alongside it: reviewing a tree still being written reviews nothing.
 4. **Act on findings.** Fix critical/major findings before moving on
    (re-dispatch the implementer for substantial fixes; apply trivial ones
    directly). Declined findings are recorded with a reason under `## Notes` in

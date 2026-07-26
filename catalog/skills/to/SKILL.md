@@ -61,10 +61,24 @@ start a new one.
 ## Delegation rules (all phases)
 
 The sub-skills delegate to the `to-explorer`, `to-implementer`, `to-reviewer`,
-and `to-skeptic` subagents. **One subagent at a time, strictly sequential —
-never dispatch subagents in parallel.** The sequential transcript a human can
-follow is the point; parallel fan-out is onto's territory. onto and to are
-mutually exclusive per repository — never mix their artifacts or advice.
+and `to-skeptic` subagents. Use them heavily — delegation is the point, not a
+last resort.
+
+**Parallelism is decided by what an agent writes, not by which agent it is:**
+
+- **Read-only agents run concurrently.** `to-explorer`, `to-reviewer`, and
+  `to-skeptic` never edit files, so they cannot race. Dispatch as many at once
+  as the work justifies — several explorers on different questions, several
+  reviewers or skeptics applying different lenses to the same diff.
+- **`to-implementer` runs strictly one at a time.** It is the only agent that
+  edits, and `to` keeps a single working tree — two implementers at once
+  corrupt it. Parallel implementers need a worktree per agent, which is
+  onto's territory; `to` deliberately does not go there.
+- **Bookkeeping stays with the coordinator, serially.** `plan.md` edits, task
+  checkoffs, and commits are never delegated and never concurrent.
+
+onto and to are mutually exclusive per repository — never mix their artifacts
+or advice.
 
 All prose the change keeps (`plan.md`, its notes and verification record, and
 commit messages) goes through the `to-no-slop` rules before it lands.

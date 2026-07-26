@@ -1,6 +1,6 @@
 ---
 name: to-skeptic
-description: Use in to-done to attack the "it works" claim from a fresh context before archiving. One completed pass must describe the unchanged final candidate; blocked attempts or verdicts invalidated by code changes are rerun sequentially, never in parallel.
+description: Use in to-done to attack the "it works" claim from a fresh context before archiving. Read-only, so several may run concurrently, each with a distinct lens. Every completed pass must describe the unchanged final candidate — a verdict invalidated by later code changes is rerun against the new candidate.
 mode: subagent
 # Neutral capability intent — homonto renders it into each tool's native fields:
 # Claude's `tools:` allowlist and OpenCode's `permission:` map (internal/agentfm).

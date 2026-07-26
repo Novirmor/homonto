@@ -1,6 +1,6 @@
 ---
 name: to-reviewer
-description: Use to review the implementer's diff for correctness, security, and clarity before it lands; reports findings ranked by severity. Dispatch one at a time — to never runs subagents in parallel.
+description: Use to review the implementer's diff for correctness, security, and clarity before it lands; reports findings ranked by severity. Read-only, so several may run concurrently on one diff — give each a distinct lens instead of dispatching the same review twice.
 mode: subagent
 # Neutral capability intent — homonto renders it into each tool's native fields:
 # Claude's `tools:` allowlist and OpenCode's `permission:` map (internal/agentfm).

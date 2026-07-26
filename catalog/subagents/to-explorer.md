@@ -1,6 +1,6 @@
 ---
 name: to-explorer
-description: Use to answer questions about how a codebase works or to locate where behavior lives, by reading across many files and returning conclusions rather than raw dumps. Dispatch one at a time — to never runs subagents in parallel.
+description: Use to answer questions about how a codebase works or to locate where behavior lives, by reading across many files and returning conclusions rather than raw dumps. Read-only, so several may run concurrently — dispatch one per question rather than serializing them.
 mode: subagent
 # Neutral capability intent — homonto renders it into each tool's native fields:
 # Claude's `tools:` allowlist and OpenCode's `permission:` map (internal/agentfm).

@@ -24,9 +24,9 @@ always written through the binary and never by hand.
 
 Unlike onto, **to enforces no evidence gates**: `to done --verified` records a
 self-asserted checkbox, not observed proof. The verification rigor lives
-entirely in the `to-done` skill (a real verify run plus one adversarial
-skeptic pass). That trade is the product: much less ceremony per change, no
-guarantee from the binary. Design rationale:
+entirely in the `to-done` skill (a real verify run plus at least one
+adversarial skeptic pass). That trade is the product: much less ceremony per
+change, no guarantee from the binary. Design rationale:
 [to-framework-design.md](../to-framework-design.md).
 
 ## onto or to — an exclusive choice
@@ -97,12 +97,12 @@ recovery, review, and final evidence.
 - **plan** (`/to-plan`) — ground the approach in reading (dispatch
   `to-explorer` for multi-file questions), write `plan.md` per the contract,
   de-slop it, then `to phase <name>`.
-- **do** (`/to-do`) — execute one task at a time: `to-implementer` writes it,
-  the orchestrator verifies against the repository, `to-reviewer` judges the
-  diff, findings are fixed or declined in writing, the task is checked off in
-  its own commit. Strictly sequential: **to never runs subagents in
-  parallel**.
-- **done** (`/to-done`) — run `Final Verify:`, obtain one completed
+- **do** (`/to-do`) — execute one task at a time: `to-implementer` writes it
+  (**one at a time — it is the only agent that edits, and `to` keeps a single
+  working tree**), the orchestrator verifies against the repository, one or
+  more `to-reviewer` passes judge the diff, findings are fixed or declined in
+  writing, the task is checked off in its own commit.
+- **done** (`/to-done`) — run `Final Verify:`, obtain at least one completed
   `to-skeptic` pass on the final candidate, record the outcome under
   `## Verification`, then `to done <name> --verified --evidence "…"` archives
   the change.
@@ -111,17 +111,21 @@ recovery, review, and final evidence.
 
 ## Specialist subagents
 
-onto's cast, adapted — one at a time, never in parallel:
+onto's cast, adapted. Delegate heavily — concurrency is decided by what an
+agent writes, not by which agent it is:
 
-| Subagent | Role |
-|---|---|
-| `to-explorer` | Read-only codebase questions; returns conclusions, not dumps. |
-| `to-implementer` | Executes one task from its written contract; reports (never does) discovered work. |
-| `to-reviewer` | Judges each diff for correctness, security, contract (including silent scope creep), clarity. |
-| `to-skeptic` | One fresh-context pass in `to-done`, prompted to refute the "it works" claim — claims first, then gaps. |
+| Subagent | Role | Concurrency |
+|---|---|---|
+| `to-explorer` | Read-only codebase questions; returns conclusions, not dumps. | Concurrent — one per question |
+| `to-implementer` | Executes one task from its written contract; reports (never does) discovered work. | **Serial** — the only agent that edits |
+| `to-reviewer` | Judges each diff for correctness, security, contract (including silent scope creep), clarity. | Concurrent — one per lens |
+| `to-skeptic` | Fresh-context passes in `to-done`, prompted to refute the "it works" claim — claims first, then gaps. | Concurrent — one per lens |
 
-The sequential transcript a human can follow is the point; parallel fan-out
-is onto's territory.
+Read-only agents cannot corrupt a shared tree, so `to` runs as many as the
+work justifies. The implementer is serial because `to` keeps one working
+tree; parallel implementers need a worktree each, which is onto's territory.
+Bookkeeping — `plan.md` edits, checkoffs, commits — stays with the
+orchestrator and never runs concurrently.
 
 ## Surviving context loss
 

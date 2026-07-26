@@ -35,7 +35,7 @@ func TestMaterializeWritesNestedContent(t *testing.T) {
 		t.Fatalf("load: %v", err)
 	}
 	dst := t.TempDir()
-	if err := c.Materialize(dst, []string{"brainstorming"}); err != nil {
+	if err := c.Materialize(dst, []string{"brainstorming"}, "none", "none"); err != nil {
 		t.Fatalf("materialize: %v", err)
 	}
 	if b, _ := os.ReadFile(filepath.Join(dst, "brainstorming", "SKILL.md")); string(b) != "top" {
@@ -56,7 +56,7 @@ func TestMaterializeRemovesStaleOnUpgrade(t *testing.T) {
 	os.MkdirAll(filepath.Join(dst, "brainstorming"), 0o755)
 	os.WriteFile(filepath.Join(dst, "brainstorming", "STALE.md"), []byte("old"), 0o644)
 
-	if err := c.Materialize(dst, []string{"brainstorming"}); err != nil {
+	if err := c.Materialize(dst, []string{"brainstorming"}, "none", "none"); err != nil {
 		t.Fatalf("materialize: %v", err)
 	}
 	if _, err := os.Stat(filepath.Join(dst, "brainstorming", "STALE.md")); !os.IsNotExist(err) {
@@ -66,7 +66,7 @@ func TestMaterializeRemovesStaleOnUpgrade(t *testing.T) {
 
 func TestMaterializeUnknownSkillErrors(t *testing.T) {
 	c, _ := Load(matFS())
-	if err := c.Materialize(t.TempDir(), []string{"nope"}); err == nil {
+	if err := c.Materialize(t.TempDir(), []string{"nope"}, "none", "none"); err == nil {
 		t.Fatal("expected error for unknown skill")
 	}
 }

@@ -17,7 +17,13 @@ import (
 // dstRoot/<name>/, removing any existing per-skill directory first so a stale
 // file from a previous version cannot survive an upgrade. It is the caller's
 // job (engine) to gate this on the catalog version.
-func (c *Catalog) Materialize(dstRoot string, skillNames []string) error {
+//
+// shellProxy and codeIntel are the resolved tooling providers. Every skill that
+// is a framework DISPATCHER — by convention the skill named after its own
+// framework — additionally receives a generated ToolingReferencePath describing
+// exactly those providers. The write lands in the staging directory before the
+// atomic swap, so a crash never leaves a half-written reference in place.
+func (c *Catalog) Materialize(dstRoot string, skillNames []string, shellProxy, codeIntel string) error {
 	for _, name := range skillNames {
 		sp, ok := c.skills[name]
 		if !ok {
@@ -61,6 +67,25 @@ func (c *Catalog) Materialize(dstRoot string, skillNames []string) error {
 			// partial staging so the next run starts clean.
 			_ = os.RemoveAll(staging)
 			return err
+		}
+		// A dispatcher skill carries the generated tooling reference. Writing it
+		// into staging (not dstDir) keeps the same all-or-nothing guarantee the
+		// verbatim walk above has.
+		if c.IsDispatcher(name) {
+			ref, rerr := c.RenderTooling(shellProxy, codeIntel)
+			if rerr != nil {
+				_ = os.RemoveAll(staging)
+				return rerr
+			}
+			target := filepath.Join(staging, filepath.FromSlash(ToolingReferencePath))
+			if mkerr := os.MkdirAll(filepath.Dir(target), 0o755); mkerr != nil {
+				_ = os.RemoveAll(staging)
+				return mkerr
+			}
+			if werr := fsutil.WriteControlPlane(target, ref, 0o644); werr != nil {
+				_ = os.RemoveAll(staging)
+				return werr
+			}
 		}
 		// Swap: remove the old dir, then rename staging into place. A crash in
 		// this window leaves dstDir absent (not partial), so the next run

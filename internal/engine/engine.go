@@ -305,7 +305,7 @@ func (e *Engine) materializeCatalog() error {
 	if p == nil || p.upToDate {
 		return nil
 	}
-	if err := p.cl.Materialize(e.CatalogRoot, p.skills); err != nil {
+	if err := p.cl.Materialize(e.CatalogRoot, p.skills, p.shellProxy, p.codeIntel); err != nil {
 		return err
 	}
 	if err := p.cl.MaterializeCommands(e.CommandCatalogRoot, p.commands); err != nil {
@@ -381,11 +381,15 @@ func gcCatalogRoots(skillRoot, cmdRoot, subRoot string, p *catalogPlan) error {
 
 // catalogPlan is what a materialize would extract, and whether it need bother.
 type catalogPlan struct {
-	cl          *catalog.Catalog
-	skills      []string
-	commands    []string
-	subagents   []string
-	renderCtx   map[string]agentfm.RenderContext
+	cl        *catalog.Catalog
+	skills    []string
+	commands  []string
+	subagents []string
+	renderCtx map[string]agentfm.RenderContext
+	// shellProxy/codeIntel are the resolved [tooling] providers rendered into
+	// each dispatcher skill's generated tooling reference.
+	shellProxy  string
+	codeIntel   string
 	fingerprint string
 	upToDate    bool
 }
@@ -486,10 +490,20 @@ func (e *Engine) planCatalog() (*catalogPlan, error) {
 	if err != nil {
 		return nil, err
 	}
-	fingerprint := subagentRenderFingerprint(renderCtx) + ":" + contentFP
+	//   - and the TOOLING fingerprint (the resolved [tooling] providers plus the
+	//     bytes of the two selected fragments — editing [tooling] leaves the
+	//     catalog version and every resource byte untouched, so without this the
+	//     gate would report up to date and serve a stale tooling reference
+	//     forever, the same defect class the content fingerprint closed).
+	tooling := e.Cfg.ResolvedTooling()
+	toolingFP, err := cl.ToolingFingerprint(tooling.ShellProxy, tooling.CodeIntel)
+	if err != nil {
+		return nil, err
+	}
+	fingerprint := subagentRenderFingerprint(renderCtx) + ":" + contentFP + ":" + toolingFP
 	upToDate := e.State.CatalogVersionRecorded() == cl.Version() &&
 		e.State.SubagentRenderFingerprintRecorded() == fingerprint &&
-		allSkillDirsExist(e.CatalogRoot, skillNames) &&
+		allSkillDirsExist(e.CatalogRoot, skillNames, cl) &&
 		allCommandFilesExist(e.CommandCatalogRoot, cmdNames) &&
 		allSubagentFilesExist(e.SubagentCatalogRoot, subNames, cl, renderCtx)
 	return &catalogPlan{
@@ -498,16 +512,29 @@ func (e *Engine) planCatalog() (*catalogPlan, error) {
 		commands:    cmdNames,
 		subagents:   subNames,
 		renderCtx:   renderCtx,
+		shellProxy:  tooling.ShellProxy,
+		codeIntel:   tooling.CodeIntel,
 		fingerprint: fingerprint,
 		upToDate:    upToDate,
 	}, nil
 }
 
-func allSkillDirsExist(root string, names []string) bool {
+// allSkillDirsExist reports whether every declared skill is materialized. For a
+// dispatcher skill it also requires the generated tooling reference: the
+// directory alone existing would otherwise mask a hand-deleted reference behind
+// an up-to-date fingerprint, leaving the skill pointing at a file that is not
+// there.
+func allSkillDirsExist(root string, names []string, cl *catalog.Catalog) bool {
 	for _, n := range names {
 		fi, err := os.Stat(filepath.Join(root, n))
 		if err != nil || !fi.IsDir() {
 			return false
+		}
+		if cl.IsDispatcher(n) {
+			ref := filepath.Join(root, n, filepath.FromSlash(catalog.ToolingReferencePath))
+			if st, err := os.Stat(ref); err != nil || st.IsDir() {
+				return false
+			}
 		}
 	}
 	return true

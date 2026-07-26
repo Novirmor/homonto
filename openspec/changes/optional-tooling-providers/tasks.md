@@ -10,33 +10,42 @@
 
 ## 2. Provider content
 
-- [ ] 2.1 Create `catalog/tooling/` fragments: `rtk.md`, `graphify.md`,
-      `okf.md`, and the `none` fallback text.
-- [ ] 2.2 Move the existing rtk and graphify preflight prose out of
+- [x] 2.1 Create `catalog/tooling/` fragments: `rtk.md`, `graphify.md`,
+      `okf.md`, and the two `none` fallbacks (shell-proxy and code-intel say
+      different things, so they are separate fragments).
+- [x] 2.2 Copy the existing rtk and graphify preflight prose from
       `catalog/skills/onto/SKILL.md` into the fragments verbatim, so no
-      instruction is lost in the move.
-- [ ] 2.3 Write the okf fragment (index/query/staleness guidance mirroring the
+      instruction is lost. Deleting it from SKILL.md is task 5.1, kept separate
+      so this reviews as a pure move.
+- [x] 2.3 Write the okf fragment (index/query/staleness guidance mirroring the
       graphify fragment's shape).
-- [ ] 2.4 Wire `catalog/tooling/` into the embedded catalog FS and into
-      `ContentFingerprint`'s digested set.
+- [x] 2.4 Wire `catalog/tooling/` into the embedded catalog FS. The fragment
+      bytes are digested by `ToolingFingerprint`, **not** `ContentFingerprint`
+      — the latter digests per named resource and fragments are not a declared
+      resource; digesting only the selected pair also avoids churn when an
+      unselected fragment is edited.
 
 ## 3. Sidecar generation
 
-- [ ] 3.1 `internal/catalog`: add the renderer that selects the two declared
+- [x] 3.1 `internal/catalog`: add the renderer that selects the two declared
       fragments and writes `references/tooling.md` under a generated header.
-- [ ] 3.2 Write the sidecar for dispatcher skills during `Materialize`,
+- [x] 3.2 Write the sidecar for dispatcher skills during `Materialize`,
       inside the existing stage-then-swap so a crash cannot leave it partial.
-- [ ] 3.3 Golden-file tests: both-none, rtk+graphify, rtk+okf, none+okf —
-      asserting the undeclared provider's name never appears.
+      Dispatchers are identified by `IsDispatcher` (skill named after its own
+      framework), so nothing has to be threaded in from the engine.
+- [x] 3.3 Assertion-based tests over all six combinations, each asserting the
+      undeclared provider's name never appears, plus determinism. Preferred
+      over golden files: goldens over prose fragments break on every wording
+      edit without catching anything these assertions miss.
 
 ## 4. Materialize gating
 
-- [ ] 4.1 `internal/engine`: compute `toolingFP` and append it to the
+- [x] 4.1 `internal/engine`: compute `toolingFP` and append it to the
       composite fingerprint.
-- [ ] 4.2 Extend the presence check so a deleted `references/tooling.md`
+- [x] 4.2 Extend the presence check so a deleted `references/tooling.md`
       forces re-materialization.
-- [ ] 4.3 Tests: editing `[tooling]` re-renders; an unchanged config is a
-      no-op; deleting the sidecar restores it.
+- [x] 4.3 Tests: editing `[tooling]` re-renders; deleting the sidecar restores
+      it; an absent `[tooling]` table still writes a provider-free reference.
 
 ## 5. Neutralize shipped catalog prose
 

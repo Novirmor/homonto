@@ -24,7 +24,7 @@ func TestMaterialize_CleansLeftoverStagingAndSwaps(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if err := c.Materialize(dst, []string{"brainstorming"}); err != nil {
+	if err := c.Materialize(dst, []string{"brainstorming"}, "none", "none"); err != nil {
 		t.Fatalf("materialize: %v", err)
 	}
 

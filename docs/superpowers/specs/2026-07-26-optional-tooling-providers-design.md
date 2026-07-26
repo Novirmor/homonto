@@ -2,6 +2,8 @@
 comet_change: optional-tooling-providers
 role: technical-design
 canonical_spec: openspec
+archived-with: 2026-07-26-optional-tooling-providers
+status: final
 ---
 
 # Optional tooling providers — technical design

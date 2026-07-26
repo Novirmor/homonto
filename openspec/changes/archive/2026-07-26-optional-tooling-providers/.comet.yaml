@@ -1,6 +1,6 @@
 workflow: full
 language: en
-phase: verify
+phase: archive
 context_compression: off
 build_mode: direct
 build_pause: null
@@ -16,14 +16,14 @@ plan: null
 verify_result: pass
 verify_failures: 0
 verification_report: docs/superpowers/reports/2026-07-26-optional-tooling-providers-verify.md
-branch_status: pending
+branch_status: handled
 created_at: 2026-07-26
-verified_at: null
-archive_confirmation: null
-archived: false
+verified_at: 2026-07-26
+archive_confirmation: confirmed
+archived: true
 bound_branch: feature/20260726/optional-tooling-providers
 direct_override: true
-handoff_context: openspec/changes/optional-tooling-providers/.comet/handoff/design-context.json
+handoff_context: openspec/changes/archive/2026-07-26-optional-tooling-providers/.comet/handoff/design-context.json
 handoff_hash: 895580432e8b1147185b550af4ac332b3eec1ef61dfe0cb4961da67cf00527d8
 classic_profile: full
 classic_migration: 1

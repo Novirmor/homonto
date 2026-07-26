@@ -1,9 +1,0 @@
-{
-  "openspec_proposal": "openspec/changes/remove-model-tiers/proposal.md",
-  "openspec_design": "openspec/changes/remove-model-tiers/design.md",
-  "openspec_tasks": "openspec/changes/remove-model-tiers/tasks.md",
-  "openspec_delta_spec": "openspec/changes/remove-model-tiers/specs/agent-models/spec.md",
-  "handoff_context": "openspec/changes/remove-model-tiers/.comet/handoff/design-context.json",
-  "handoff_markdown": "openspec/changes/remove-model-tiers/.comet/handoff/design-context.md",
-  "archive_directory": "openspec/changes/archive/2026-07-22-remove-model-tiers"
-}

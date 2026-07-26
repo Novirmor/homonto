@@ -159,9 +159,11 @@ in [troubleshooting](docs/guides/troubleshooting.md):
 ## For contributors
 
 The source of truth for shipped behavior is the code and its tests. Durable
-architecture rationale lives in [`docs/adr/`](docs/adr/). This repository is
-developed with the Comet workflow
-([`docs/guides/comet-workflow.md`](docs/guides/comet-workflow.md)); onto is
-the workflow we ship, and [`docs/personas.md`](docs/personas.md) explains the
+architecture rationale lives in [`docs/adr/`](docs/adr/). Start with
+[`AGENTS.md`](AGENTS.md) for how work is done here; big development uses the
+Comet workflow ([`docs/agents/comet.md`](docs/agents/comet.md)), whose
+artifacts are deliberately not committed
+([ADR 0017](docs/adr/0017-stop-committing-workflow-artifacts.md)). onto is the
+workflow we ship, and [`docs/personas.md`](docs/personas.md) explains the
 split. Releases follow
 [`docs/release-checklist.md`](docs/release-checklist.md).

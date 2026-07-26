@@ -44,8 +44,8 @@ step "cli smoke (plan on a current-format config)"
 printf '[mcps.demo]\ncommand = ["true"]\n' > /tmp/gate-homonto.toml
 /tmp/gate-homonto --config /tmp/gate-homonto.toml plan >/dev/null
 
-step "spec<->command correspondence"
-./scripts/spec-command-check.sh
+step "agent docs reference only things that exist"
+./scripts/agents-doc-check.sh
 
 step "workflow skills shell out (no direct state writes)"
 ./scripts/onto-skills-shell-out-check.sh

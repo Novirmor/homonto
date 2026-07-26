@@ -4,18 +4,16 @@
 decision: `NNNN-<slug>.md`. It is decision *history* — a record of what was
 decided and why, kept even after a decision is superseded.
 
-## Staging rule
-
-New ADRs are drafted inside an active OpenSpec change (staged with the change's
-design artifacts, `Status: Proposed`, and no number). The number is assigned
-only when the change is archived, which keeps `docs/adr/` free of
-abandoned-change noise and avoids collisions between parallel changes.
+Because workflow artifacts are not committed
+([ADR 0017](0017-stop-committing-workflow-artifacts.md)), an ADR is the durable
+record a change leaves behind. When one is owed, how to write it, and the
+format: [`../agents/adr.md`](../agents/adr.md).
 
 ## Numbering
 
 - Four digits, zero-padded, strictly increasing: `0001`, `0002`, …
 - The next number = highest existing number in `docs/adr/` + 1, assigned when
-  the producing change is archived.
+  the ADR is written.
 - Numbers are never reused. A superseded ADR keeps its file; its Status becomes
   `Superseded by NNNN`.
 
@@ -26,7 +24,9 @@ abandoned-change noise and avoids collisions between parallel changes.
 
 - **Status:** Proposed | Accepted | Superseded by NNNN
 - **Date:** YYYY-MM-DD
-- **Change:** <change name that produced this decision>
 
 ## Context / ## Decision ("We will …") / ## Consequences
 ```
+
+ADRs 0001–0016 also carry a `**Change:**` field naming the OpenSpec change that
+produced them. That field is retained as history and is not used for new ADRs.

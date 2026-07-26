@@ -1,33 +1,69 @@
 # Development Instructions
 
-The source of truth for shipped behavior is the code and its tests. The repo
-is developed with the Comet workflow: `openspec/specs/` holds the canonical
-capability specs, `openspec/changes/` the active and archived changes, and
-`docs/superpowers/` the design docs and verification reports those changes
-produced. Durable architecture rationale is in `docs/adr/`. When specs and
-code disagree, trust the code and fix the spec at the next archive.
+## Source of truth
 
-When `.codegraph/` exists, use CodeGraph before grep, glob, or direct reads to
-locate and understand code. If it is absent or unavailable, continue with the
-repository's normal inspection tools. Use Graphify only for broad architecture,
-documentation, or cross-cutting analysis.
+The code and its tests define shipped behavior. Nothing else outranks them.
+Durable rationale — why a thing is the way it is — lives in [`docs/adr/`](docs/adr/).
+When a document and the code disagree, the code wins and the document is wrong;
+fix it.
 
-Read the relevant ADRs and nearby implementation before changing behavior. Keep
-changes focused. Do not revert unrelated user work.
+## Two lanes
 
-For behavior changes, add or update focused tests and run the narrowest useful
-verification command. Before reporting completion, state the command result
-and any verification gap.
+**Big development** — a new capability, a public API or schema change, or work
+that spans modules — runs through Comet. Its artifacts (proposals, delta specs,
+tasks, plans, verification reports) are working-tree scratch and are **never
+committed**; `openspec/` and `docs/superpowers/` are gitignored. See
+[`docs/agents/comet.md`](docs/agents/comet.md).
 
-## graphify
+**Everything else** — bug fixes, mechanical edits, doc updates, repetitive
+sweeps — is done directly on a branch with no ceremony. No change directory, no
+phase guards. The verification bar below still applies.
 
-This project has a knowledge graph at graphify-out/ with god nodes, community structure, and cross-file relationships.
+Work moves up a lane when it turns out to change public API, storage schema, or
+behavior across modules. Say so and switch; do not quietly widen a direct edit.
 
-When the user types `/graphify`, use the installed graphify skill or instructions before doing anything else.
+## What a change leaves behind
 
-Rules:
-- For codebase questions, first run `graphify query "<question>"` when graphify-out/graph.json exists. Use `graphify path "<A>" "<B>"` for relationships and `graphify explain "<concept>"` for focused concepts. These return a scoped subgraph, usually much smaller than GRAPH_REPORT.md or raw grep output.
-- Dirty graphify-out/ files are expected after hooks or incremental updates; dirty graph files are not a reason to skip graphify. Only skip graphify if the task is about stale or incorrect graph output, or the user explicitly says not to use it.
-- If graphify-out/wiki/index.md exists, use it for broad navigation instead of raw source browsing.
-- Read graphify-out/GRAPH_REPORT.md only for broad architecture review or when query/path/explain do not surface enough context.
-- After modifying code, run `graphify update .` to keep the graph current (AST-only, no API cost).
+If work changed a decision someone could later question, write an ADR. Keep it
+short — context, decision, consequences, nothing ceremonial. Format and the
+test for whether one is owed: [`docs/agents/adr.md`](docs/agents/adr.md).
+
+Otherwise the commit and its tests are the whole record. Do not manufacture
+documents to prove work happened.
+
+## Grounding
+
+Ground claims about this codebase in the OKF bundle rather than guesswork —
+`okf_lookup.py` for concepts, generate with `okf_generator.py`. The bundle is
+gitignored and may be absent or stale; treat stale as absent, and say which you
+used. See [`docs/agents/okf.md`](docs/agents/okf.md).
+
+CodeGraph (`.codegraph/`) and Graphify (`graphify-out/`) are per-developer
+artifacts, gitignored and often absent. Use them when present. Neither is
+required, and no instruction here depends on them.
+
+Falling back to reading files directly is always acceptable. State which
+grounding you used when it affects a conclusion.
+
+## Verification
+
+Add or update focused tests for any behavior change. Run the narrowest command
+that actually proves the change, and report its real result — including
+failures, skips, and what you did not run.
+
+`./scripts/gate.sh` is the full pre-tag gate; it needs Docker and takes a while,
+so it is not the default for routine work. Details and the traps that waste the
+most time: [`docs/agents/verification.md`](docs/agents/verification.md).
+
+Never claim a command passed without having run it.
+
+## House rules
+
+- Read the relevant ADRs and the surrounding code before changing behavior.
+- Keep changes focused. Do not revert or restructure unrelated work.
+- This repo does **not** dogfood homonto. There is no root `homonto.toml`, no
+  `.homonto/`, and no projected `.claude/` or `.opencode/` content. Do not
+  create them; `.claude/` and `.opencode/` hold each developer's own setup and
+  are gitignored.
+- Three binaries ship from here: `homonto` (root), `onto` (`cmd/onto`), and
+  `to` (`cmd/to`). A change to shared internals affects all three.

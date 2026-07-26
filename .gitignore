@@ -16,7 +16,15 @@ __pycache__/
 
 # E2E matrix run logs (scratch)
 test/e2e/.out/
+
+# Workflow scaffolding. Comet drives big development, but its artifacts are
+# working-tree scratch, not repository content: proposals, delta specs, tasks,
+# plans, and verification reports describe how a change was produced, not what
+# the code does. The durable record of a decision is an ADR in docs/adr/.
+# See docs/agents/comet.md.
 /.superpowers/
-# Comet per-change runtime artifacts (trajectory, checkpoints, skill snapshots).
-# The tracked state file .comet.yaml and the durable artifacts stay tracked.
-openspec/changes/*/.comet/
+/openspec/
+/docs/superpowers/
+
+# OKF grounding bundle — generated from the code, regenerated on demand.
+/okf_bundle/

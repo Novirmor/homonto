@@ -53,7 +53,14 @@ func stateCmd() *cobra.Command {
 				fmt.Fprintln(cmd.OutOrStdout(), string(b))
 				return nil
 			}
-			fmt.Fprintf(cmd.OutOrStdout(), "%s: %s\n", name, phase)
+			// Text output keeps the CLAIMED phase as the primary value (what
+			// the state file records) and annotates a disagreeing derivation,
+			// mirroring `onto status` — so text consumers see both sides.
+			if phase != st.Phase {
+				fmt.Fprintf(cmd.OutOrStdout(), "%s: %s (working: %s)\n", name, st.Phase, phase)
+			} else {
+				fmt.Fprintf(cmd.OutOrStdout(), "%s: %s\n", name, st.Phase)
+			}
 			return nil
 		},
 	}

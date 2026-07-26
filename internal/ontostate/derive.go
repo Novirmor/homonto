@@ -34,6 +34,40 @@ func fileExists(path string) bool {
 	return err == nil
 }
 
+// VerificationResultLine returns the FIRST "Result: "-prefixed line of the
+// file at path (leading whitespace tolerated, trailing \r trimmed). The
+// verify-exit gate and the phase derivation both read the report through this
+// one scanner, so the two can never disagree about which line is the result.
+// A missing/unreadable file or an absent Result: line returns ok=false.
+func VerificationResultLine(path string) (line string, ok bool) {
+	f, err := os.Open(path)
+	if err != nil {
+		return "", false
+	}
+	defer f.Close()
+	scanner := bufio.NewScanner(f)
+	for scanner.Scan() {
+		trimmed := strings.TrimSpace(scanner.Text())
+		if strings.HasPrefix(trimmed, "Result: ") {
+			return trimmed, true
+		}
+	}
+	_ = scanner.Err() // unreadable tail = absent evidence, same as a missing file
+	return "", false
+}
+
+// ResultLineIsPass reports whether a verification Result line records a pass:
+// exactly "Result: pass", optionally followed by a space-separated suffix
+// (the accepted-deviations form, "Result: pass (2 accepted deviations)").
+// "Result: passing" is NOT a pass — the word must end where "pass" ends.
+func ResultLineIsPass(line string) bool {
+	rest, found := strings.CutPrefix(line, "Result: pass")
+	if !found {
+		return false
+	}
+	return rest == "" || strings.HasPrefix(rest, " ") || strings.HasPrefix(rest, "(")
+}
+
 // DeriveWorkingPhase derives a change's WORKING phase from its workspace
 // artifacts — the dispatcher's evidence table, ported verbatim so the skills
 // consume tested Go instead of re-running a prose table per dispatch. The
@@ -59,11 +93,17 @@ func DeriveWorkingPhase(changeDir string, st State) string {
 	if st.Archived {
 		return "done"
 	}
+	// An abandoned change is retired — deriving a live working phase for it
+	// would only decorate status rows with spurious mismatches. Echo the
+	// claim; discovery skips abandoned changes anyway.
+	if st.Abandoned {
+		return st.Phase
+	}
 	designPath := filepath.Join(changeDir, "design.md")
 	if fileHasLinePrefix(designPath, "Status: Under revision") {
 		return "design"
 	}
-	if fileHasLinePrefix(filepath.Join(changeDir, "verification.md"), "Result: pass") {
+	if line, ok := VerificationResultLine(filepath.Join(changeDir, "verification.md")); ok && ResultLineIsPass(line) {
 		return "close"
 	}
 	if done, err := TasksAllChecked(filepath.Join(changeDir, "tasks.md")); err == nil && done {

@@ -707,3 +707,85 @@ func TestAdvanceCommand_ToBuildRefusalCases(t *testing.T) {
 		}
 	})
 }
+
+// TestAdvanceCommand_ToBuildValidatesBeforeRead: --to build must validate the
+// change name (and the framework gate) before touching any path — a traversal
+// name must never cause an out-of-workspace read.
+func TestAdvanceCommand_ToBuildValidatesBeforeRead(t *testing.T) {
+	dir := prepWorkspace(t)
+	_, err := runOnto(t, "advance", "../../../etc/passwd", "--to", "build", "--dir", dir)
+	if err == nil {
+		t.Fatal("traversal name must refuse")
+	}
+	if strings.Contains(err.Error(), "loading state") || strings.Contains(err.Error(), "yaml") {
+		t.Errorf("refusal must come from name validation, not a file read: %v", err)
+	}
+}
+
+// TestAdvanceCommand_ToBuildRefusesAtOrPastBuild: --to build never advances a
+// change that is already at (or past) build — it must not walk past its target.
+func TestAdvanceCommand_ToBuildRefusesAtOrPastBuild(t *testing.T) {
+	for _, phase := range []string{"build", "verify"} {
+		dir := prepWorkspace(t)
+		changeDir := filepath.Join(dir, "docs", "changes", "fix-y")
+		st := ontostate.State{Change: "fix-y", Workflow: "fix", Phase: phase, Created: "2026-07-10", Isolation: "branch"}
+		if err := ontostate.Save(filepath.Join(changeDir, "onto-state.yaml"), st); err != nil {
+			t.Fatal(err)
+		}
+		writeFile(t, filepath.Join(changeDir, "proposal.md"), "")
+		writeFile(t, filepath.Join(changeDir, "tasks.md"), "- [x] fix\n")
+		commitAll(t, dir, "seed "+phase)
+		_, err := runOnto(t, "advance", "fix-y", "--to", "build", "--dir", dir)
+		if err == nil {
+			t.Fatalf("--to build at %s must refuse", phase)
+		}
+		loaded, _ := ontostate.Load(filepath.Join(changeDir, "onto-state.yaml"))
+		if loaded.Phase != phase {
+			t.Errorf("phase mutated %s → %s; --to build must not move a change at/past build", phase, loaded.Phase)
+		}
+	}
+}
+
+// TestVerificationResultLine_SharedScannerSemantics: the verify exit and the
+// phase derivation read the SAME Result line — leading whitespace tolerated,
+// first Result: line wins, and "pass" must be the exact word (a suffix like
+// "(2 accepted deviations)" is allowed; "passing" is not).
+func TestVerificationResultLine_SharedScannerSemantics(t *testing.T) {
+	cases := []struct {
+		name    string
+		report  string
+		advance bool // advance out of verify should succeed
+		derived string
+	}{
+		{"indented pass", "# V\n  Result: pass\n", true, "close"},
+		{"first line wins over later pass", "Result: fail\nResult: pass\n", false, "verify"},
+		{"passing is not pass", "Result: passing\n", false, "verify"},
+		{"deviations suffix", "Result: pass (2 accepted deviations)\n", true, "close"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			dir := prepWorkspace(t)
+			seedChange(t, dir, "feature-x", "verify")
+			// All-checked tasks so a non-pass report derives verify (row 4),
+			// not design — the fixture must make the intended row reachable.
+			writeFile(t, filepath.Join(dir, "docs", "changes", "feature-x", "tasks.md"), "- [x] done\n")
+			writeFile(t, filepath.Join(dir, "docs", "changes", "feature-x", "verification.md"), tc.report)
+			setVerifyResult(t, dir, "feature-x", "pass")
+			commitAll(t, dir, "seed")
+
+			derived := ontostate.DeriveWorkingPhase(filepath.Join(dir, "docs", "changes", "feature-x"),
+				ontostate.State{Change: "feature-x", Workflow: "full", Phase: "verify"})
+			if derived != tc.derived {
+				t.Errorf("derived = %q, want %q", derived, tc.derived)
+			}
+
+			_, err := runOnto(t, "advance", "feature-x", "--dir", dir)
+			if tc.advance && err != nil {
+				t.Errorf("advance should pass: %v", err)
+			}
+			if !tc.advance && err == nil {
+				t.Error("advance should refuse")
+			}
+		})
+	}
+}

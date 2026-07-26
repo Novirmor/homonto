@@ -44,6 +44,15 @@ func advanceCmd() *cobra.Command {
 // gate at a time — each boundary is a distinct user decision), as is any
 // target other than build (nothing past build is ever mechanical).
 func runAdvanceTo(cmd *cobra.Command, root, name, target string) error {
+	// Same entry invariant as every other command: the framework gate and the
+	// change-name validation run before ANY path is built from the name — a
+	// traversal-carrying name must never cause an out-of-workspace read.
+	if err := ontoFramework.Gate(root); err != nil {
+		return err
+	}
+	if err := ontoFramework.ValidChangeName(name); err != nil {
+		return err
+	}
 	if target != "build" {
 		return fmt.Errorf("onto advance --to: only \"build\" is a valid target (got %q) — phases past build are never advanced mechanically", target)
 	}
@@ -54,6 +63,13 @@ func runAdvanceTo(cmd *cobra.Command, root, name, target string) error {
 	}
 	if st.Workflow != "fix" && st.Workflow != "tweak" {
 		return fmt.Errorf("onto advance --to build: workflow %q advances one gate at a time; --to is preset-only (fix/tweak skip design)", st.Workflow)
+	}
+	// Only a change BEFORE build may walk to build — the loop must never carry
+	// a change past its declared target (a preset at verify running --to build
+	// would otherwise advance verify→close and fail beyond it, mutating state
+	// it was never asked to touch).
+	if st.Phase != "open" && st.Phase != "design" {
+		return fmt.Errorf("onto advance --to build: %q is at phase %q, not before build; nothing to walk", name, st.Phase)
 	}
 	for st.Phase != "build" {
 		if err := runAdvance(cmd, root, name); err != nil {
@@ -159,11 +175,11 @@ func runAdvance(cmd *cobra.Command, root, name string) error {
 	// a technicality to advance past. Prefix match tolerates the accepted-
 	// deviations suffix (`Result: pass (N accepted deviations)`).
 	if st.Phase == "verify" {
-		line, vErr := verificationResultLine(filepath.Join(changeDir, "verification.md"))
-		if vErr != nil {
-			return fmt.Errorf("onto advance: cannot leave verify: %w", vErr)
+		line, ok := ontostate.VerificationResultLine(filepath.Join(changeDir, "verification.md"))
+		if !ok {
+			return fmt.Errorf("onto advance: cannot leave verify: verification.md has no \"Result:\" line — write the report before leaving verify")
 		}
-		if !strings.HasPrefix(line, "Result: pass") {
+		if !ontostate.ResultLineIsPass(line) {
 			return fmt.Errorf("onto advance: cannot leave verify: verification.md says %q but verify.result=pass — the report and the state must agree", line)
 		}
 	}
@@ -211,20 +227,4 @@ func runAdvance(cmd *cobra.Command, root, name string) error {
 
 	fmt.Fprintf(cmd.OutOrStdout(), "%s: %s → %s\n", name, old, next)
 	return nil
-}
-
-// verificationResultLine returns the first "Result: "-prefixed line of the
-// file at path. A missing file, unreadable file, or absent Result: line is an
-// error naming what the verify exit needed.
-func verificationResultLine(path string) (string, error) {
-	b, err := os.ReadFile(path)
-	if err != nil {
-		return "", fmt.Errorf("reading %s: %w", filepath.Base(path), err)
-	}
-	for _, line := range strings.Split(string(b), "\n") {
-		if strings.HasPrefix(line, "Result: ") {
-			return strings.TrimRight(line, "\r"), nil
-		}
-	}
-	return "", fmt.Errorf("%s has no \"Result:\" line — write the report before leaving verify", filepath.Base(path))
 }

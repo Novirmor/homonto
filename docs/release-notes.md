@@ -15,6 +15,42 @@ bookkeeper) — for every supported OS/arch as separate archives under one
 `SHA256SUMS`. `onto` and `to` each require `homonto` to have installed their
 framework first (`[frameworks.onto]` / `[frameworks.to]` + `homonto apply`).
 
+### New in v0.9.0 — onto's judgment gates are enforced, not documented
+
+`onto` gated artifacts and bookkeeping but took a change's word on the three
+decisions that need human judgment, and on whether its verify actually passed.
+Those are now enforced in the binary (capability spec
+`openspec/specs/onto-evidence-gates/`, onto framework 0.6.0):
+
+- **BREAKING for in-flight `workflow: full` changes — three evidence tokens
+  gate the judgment decisions.** `onto advance` refuses to leave `open` without
+  `proposal_approved` and to enter `build` without `approach_confirmed`;
+  `onto merge-deltas` and `onto close` refuse for **every** workflow without
+  `close_confirmed`, checked before any shared file is mutated. Record them
+  with `onto set proposal-approved|approach-confirmed|close-confirmed <change>
+  "<evidence>"` (free-form, convention `YYYY-MM-DD <summary>`). A change
+  mid-flight when you upgrade blocks on its next `advance` until the token is
+  recorded — the unanswered gate is simply re-asked. Preset workflows (`fix`,
+  `tweak`) are exempt from the two design-phase tokens. Unanswered tokens show
+  up in `onto gate --json`.
+- **Leaving `verify` cross-checks the report against the state.** The first
+  `Result:` line of `verification.md` must agree with `verify.result=pass`, so
+  a recorded pass can no longer be self-asserted. `Result: pass (2 accepted
+  deviations)` still passes; `Result: passing` does not.
+- **`onto state <change> --json` now derives the working phase from workspace
+  artifacts** (`derived_phase`, plus `phase_mismatch` when the state file's
+  claim disagrees) instead of echoing the claim it is named to distrust.
+  `onto status` annotates a disagreeing row with `(working: <phase>)`, and
+  `onto state`'s text output does the same. The evidence table lives in tested
+  Go rather than being re-run from prose per dispatch.
+- **`onto advance <change> --to build` walks a preset from `open` to `build` in
+  one call**, running every per-hop gate. It refuses for `workflow: full`
+  (those advance one gate at a time), for any target other than `build`, and
+  for a change already at or past `build`.
+- The onto skills record their token at the gate they own, so an agent
+  following the workflow gets this for free; `docs/guides/onto-workflow.md`
+  carries the token table and the migration note. Catalog 0.9.0.
+
 ### New in v0.8.0 — explicit per-agent models; model tiers removed (BREAKING)
 
 The model tier system is gone (ADR 0016). Model selection no longer routes

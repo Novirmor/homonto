@@ -15,6 +15,7 @@ func TestAdvanceCommand_EnteringBuildRefusesDependencyCycle(t *testing.T) {
 	dir := prepWorkspace(t)
 	seedChange(t, dir, "a", "design")
 	seedChange(t, dir, "b", "design")
+	mutateState(t, dir, "a", func(s *ontostate.State) { s.ApproachConfirmed = "2026-07-22 approach" })
 	for _, args := range [][]string{
 		{"set", "isolation", "a", "branch", "--dir", dir},
 		{"set", "isolation", "b", "branch", "--dir", dir},
@@ -54,6 +55,7 @@ func TestAdvanceCommand_EnteringBuildAllowedWithAcyclicDeps(t *testing.T) {
 	dir := prepWorkspace(t)
 	seedChange(t, dir, "a", "design")
 	seedChange(t, dir, "b", "design")
+	mutateState(t, dir, "a", func(s *ontostate.State) { s.ApproachConfirmed = "2026-07-22 approach" })
 	for _, args := range [][]string{
 		{"set", "isolation", "a", "branch", "--dir", dir},
 		{"set", "deps", "a", "--dep", "b", "--dir", dir}, // a -> b, b has no dep back: acyclic

@@ -69,6 +69,14 @@ one interruption-prone step (mv + archived flag) is a single commit.
 > archive it when done"). A generic build directive like "run to
 > completion with defaults" does **not** reach this gate — archiving is
 > irreversible; a directive must name it. Still surface the plan.
+>
+> When confirmed, record the evidence token — `onto merge-deltas` and
+> `onto close` both refuse without it, so nothing global can mutate ahead
+> of the user's yes:
+>
+> ```
+> onto set close-confirmed <name> "YYYY-MM-DD <confirmation summary>"
+> ```
 
 ### 3. Execute the close (only after confirmation)
 
@@ -161,7 +169,9 @@ unrelated to this git integration — both happen at close.
 ## Exit checklist
 
 - [ ] Final confirmation given **before** any spec/ADR mutation (or a
-      directive that explicitly authorized closing/archiving)
+      directive that explicitly authorized closing/archiving), recorded via
+      `onto set close-confirmed <name> "<evidence>"` — merge-deltas and
+      close refuse without it
 - [ ] `onto merge-deltas <name>` run — living specs merged deterministically and
       lint-clean, `close.merged` set (idempotent; transactional)
 - [ ] Lint checklist fully passed (pre-merge §1–2, post-merge §3 incl. the

@@ -55,6 +55,11 @@ absent "$CH/tasks.md"   # full derives its task list from the confirmed design
 in_file "$CH/onto-state.yaml" 'phase: open'
 ok "open-phase skeleton created (no tasks.md)"
 
+log "judgment gate: leaving open refuses until proposal-approved is recorded"
+if "$ONTO" advance feat-a >/dev/null 2>&1; then fail "advance must refuse to leave open without proposal-approved"; fi
+"$ONTO" set proposal-approved feat-a "2026-07-22 approved" >/dev/null
+ok "open exit gated on the proposal-approved evidence token"
+
 log "advance open -> design (needs only proposal), then design exit gates on design.md + tasks.md"
 "$ONTO" advance feat-a >/dev/null
 in_file "$CH/onto-state.yaml" 'phase: design'
@@ -70,19 +75,30 @@ printf -- '- [x] done\n' > "$CH/tasks.md"   # derived from the confirmed design
 # Entering build requires a chosen isolation (branch|worktree); the binary
 # refuses otherwise, so record it before the design -> build advance.
 "$ONTO" set isolation feat-a branch >/dev/null
+# The approach gate's token is required too — isolation alone is refused.
+if "$ONTO" advance feat-a >/dev/null 2>&1; then fail "advance must refuse design->build without approach-confirmed"; fi
+"$ONTO" set approach-confirmed feat-a "2026-07-22 approach" >/dev/null
 "$ONTO" advance feat-a >/dev/null; in_file "$CH/onto-state.yaml" 'phase: build'
 printf '# Plan\n' > "$CH/plan.md"
 "$ONTO" advance feat-a >/dev/null; in_file "$CH/onto-state.yaml" 'phase: verify'
-printf '# Verification\n' > "$CH/verification.md"
-# Leaving verify requires a passing verification; set it before the commit so
-# the worktree is clean when the enter-close gate checks it.
+# The verify exit cross-checks the report: verify.result=pass beside a report
+# with no "Result: pass" line refuses — the state and the report must agree.
+printf '# Verification\nResult: fail\n' > "$CH/verification.md"
 "$ONTO" set verify-result feat-a pass >/dev/null
-git add -A && git commit -q -m "feat-a artifacts"
+git add -A && git commit -q -m "feat-a artifacts (failing report)"
+if "$ONTO" advance feat-a >/dev/null 2>&1; then fail "advance must refuse when verification.md disagrees with verify.result"; fi
+printf '# Verification\nResult: pass\n' > "$CH/verification.md"
+git add -A && git commit -q -m "feat-a report passes"
 "$ONTO" advance feat-a >/dev/null; in_file "$CH/onto-state.yaml" 'phase: close'
+ok "verify exit cross-checked verification.md against the recorded result"
 # close additionally requires the merged flag and resolved guides (full
 # workflow); record them before the commit so the worktree stays clean.
 "$ONTO" set close-merged feat-a >/dev/null
 "$ONTO" set guides feat-a updated >/dev/null
+# The final-confirmation gate's token: close refuses without it.
+git add -A && git commit -q -m "feat-a close evidence" >/dev/null 2>&1 || true
+if "$ONTO" close feat-a >/dev/null 2>&1; then fail "close must refuse without close-confirmed"; fi
+"$ONTO" set close-confirmed feat-a "2026-07-22 confirmed" >/dev/null
 git add -A && git commit -q -m "feat-a enters close"
 ok "feat-a advanced through every gate to close"
 
@@ -97,6 +113,7 @@ mv /tmp/fb.yaml "$W/docs/changes/feat-b/onto-state.yaml"
 "$ONTO" set verify-result feat-b pass >/dev/null
 "$ONTO" set close-merged feat-b >/dev/null
 "$ONTO" set guides feat-b updated >/dev/null
+"$ONTO" set close-confirmed feat-b "2026-07-22 confirmed" >/dev/null
 git add -A && git commit -q -m "feat-b at close depending on feat-a"
 if "$ONTO" close feat-b >/dev/null 2>&1; then fail "close must refuse while dependency feat-a is unresolved"; fi
 is_dir "$W/docs/changes/feat-b"
@@ -119,17 +136,17 @@ git add -A && git commit -q -m "archive feat-b" || true
 FX="$W/docs/changes/feat-fix"
 is_file "$FX/proposal.md"; is_file "$FX/tasks.md"   # presets scaffold tasks at open-lite
 printf -- '- [x] reproduce\n- [x] fix\n' > "$FX/tasks.md"
-"$ONTO" advance feat-fix >/dev/null; in_file "$FX/onto-state.yaml" 'phase: design'
 "$ONTO" set isolation feat-fix branch >/dev/null
-# The former N2 gap: a preset could not leave design because the gate demanded a
-# design.md it never writes. Workflow-aware gates let it pass straight through.
-"$ONTO" advance feat-fix >/dev/null; in_file "$FX/onto-state.yaml" 'phase: build'
+# Presets are exempt from the full-only judgment tokens and reach build in
+# ONE gated call (the former scripted double-advance is gone).
+"$ONTO" advance feat-fix --to build >/dev/null; in_file "$FX/onto-state.yaml" 'phase: build'
 "$ONTO" advance feat-fix >/dev/null; in_file "$FX/onto-state.yaml" 'phase: verify'
-printf '# Verification\n' > "$FX/verification.md"
+printf '# Verification\nResult: pass\n' > "$FX/verification.md"
 "$ONTO" set verify-result feat-fix pass >/dev/null
 git add -A && git commit -q -m "feat-fix artifacts"
 "$ONTO" advance feat-fix >/dev/null; in_file "$FX/onto-state.yaml" 'phase: close'
 "$ONTO" set close-merged feat-fix >/dev/null   # presets need no guides
+"$ONTO" set close-confirmed feat-fix "2026-07-22 confirmed" >/dev/null
 git add -A && git commit -q -m "feat-fix enters close"
 "$ONTO" close feat-fix >/dev/null
 [ -n "$(find "$W/docs/changes/archive" -maxdepth 1 -name '*-feat-fix' -type d)" ] || fail "preset did not archive"

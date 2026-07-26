@@ -76,7 +76,26 @@ docs/
 ## Phase walkthrough
 
 The `onto-*` skills carry the process discipline inside each phase; the
-binary gates the transitions between them.
+binary gates the transitions between them. Since v0.9.0 the judgment gates
+also carry **evidence tokens** — a recorded `onto set` answer the binary
+refuses to advance without, so an honest agent cannot skip a user gate:
+
+| Token | Gate it records | Refused without it |
+|---|---|---|
+| `proposal-approved` | open's artifact review (full) | `advance` out of open |
+| `approach-confirmed` | design's approach choice (full) | `advance` design → build |
+| `close-confirmed` | close's final confirmation (all) | `merge-deltas`, `close` |
+
+`onto gate <name> --json` lists whichever are still pending with the exact
+setter. Leaving verify additionally cross-checks `verification.md`'s
+`Result:` line against the recorded `verify.result` — the report and the
+state must agree. **Migration note:** a full change already in flight when
+you upgrade will refuse its next `advance` until the missing token is
+recorded — that is the unanswered gate being re-asked, not a fault; answer
+it and record the token. `onto state <name> --json` now also derives the
+**working phase** from the artifacts (`derived_phase`, with
+`phase_mismatch` when the claim disagrees), so skills route on tested
+derivation instead of re-reading the evidence table by hand.
 
 - **open** — clarify the requirement, decide whether the work should split
   into several changes, and create the workspace (`onto new`).
@@ -104,7 +123,10 @@ binary gates the transitions between them.
 Two **presets** run a reduced path for small work: `onto new --workflow fix`
 (an existing-behavior bug) and `--workflow tweak` (copy/config/docs-scale
 change) go `open-lite → build → verify → close`, skipping design, and
-upgrade to the full path when scope grows. `onto abandon` is the
+upgrade to the full path when scope grows. A preset reaches build in one
+gated call — `onto advance <name> --to build` — instead of two ceremonial
+advances; presets are exempt from the two full-only tokens but not from
+`close-confirmed`. `onto abandon` is the
 unsuccessful terminal state for work that stops rather than completes.
 
 ## Specialist subagents
@@ -113,19 +135,19 @@ unsuccessful terminal state for work that stops rather than completes.
 delegate to. Do not also declare them in a top-level `[subagents.*]` table;
 the names collide.
 
-- **`onto-explorer`** — read-only; reads across many files to answer "how
-  does X work / where does behavior live", returning conclusions rather than
-  dumps. Used for grounding in open and design. Runs on the `trivial` model
-  route.
+- **`onto-explorer`** — read-only; reads across many files (and keeps bash
+  for the code-intelligence CLIs and git history) to answer "how does X work
+  / where does behavior live", returning conclusions rather than dumps. Used
+  for grounding in open and design.
 - **`onto-reviewer`** — read-only; reviews a diff for correctness, security,
   contract, and clarity, ranked by severity. Used per task in build and
-  across the diff in verify. Runs on the `review` route.
-- **`onto-implementer`** — edit-capable executor on the `coding` route. It
+  across the diff in verify.
+- **`onto-implementer`** — edit-capable executor. It
   executes one bite-sized task from a precise spec and returns a diff. It
   does not plan or judge scope, and it reports discovered work rather than
   doing it.
-- **`onto-skeptic`** — read-only adversarial verifier on the
-  `review` route, used in the verify phase. It is dispatched **twice
+- **`onto-skeptic`** — read-only adversarial verifier
+  used in the verify phase. It is dispatched **twice
   in parallel**, one lens each (`conformance`: refute each scenario's
   evidence; `robustness`: attack the gaps the scenarios never cover), and is
   prompted to **refute, never approve** (ADR 0007). It keeps bash so it can

@@ -42,14 +42,15 @@ func seedCloseState(t *testing.T, root string, st ontostate.State) {
 func seedClose(t *testing.T, root, name string, deps []string) {
 	t.Helper()
 	seedCloseState(t, root, ontostate.State{
-		Change:   name,
-		Workflow: "full",
-		Phase:    "close",
-		Created:  "2026-07-10",
-		Deps:     deps,
-		Verify:   ontostate.Verify{Result: "pass"},
-		Close:    ontostate.Close{Merged: true},
-		Guides:   "updated",
+		Change:         name,
+		Workflow:       "full",
+		Phase:          "close",
+		Created:        "2026-07-10",
+		Deps:           deps,
+		Verify:         ontostate.Verify{Result: "pass"},
+		Close:          ontostate.Close{Merged: true},
+		Guides:         "updated",
+		CloseConfirmed: "2026-07-22 close plan confirmed",
 	})
 }
 
@@ -278,14 +279,15 @@ func TestCloseCommand_FullRefusedWithoutMerge(t *testing.T) {
 func TestCloseCommand_IntegrationChoiceCarriedThroughClose(t *testing.T) {
 	dir := prepWorkspace(t)
 	seedCloseState(t, dir, ontostate.State{
-		Change:      "demo",
-		Workflow:    "full",
-		Phase:       "close",
-		Created:     "2026-07-10",
-		Verify:      ontostate.Verify{Result: "pass"},
-		Integration: "pr",
-		Close:       ontostate.Close{Merged: true},
-		Guides:      "updated",
+		Change:         "demo",
+		Workflow:       "full",
+		Phase:          "close",
+		Created:        "2026-07-10",
+		Verify:         ontostate.Verify{Result: "pass"},
+		Integration:    "pr",
+		Close:          ontostate.Close{Merged: true},
+		Guides:         "updated",
+		CloseConfirmed: "2026-07-22 confirmed",
 	})
 	commitAll(t, dir, "seed change")
 
@@ -314,12 +316,13 @@ func TestCloseCommand_IntegrationChoiceCarriedThroughClose(t *testing.T) {
 func TestCloseCommand_TweakClosesWithoutGuides(t *testing.T) {
 	dir := prepWorkspace(t)
 	seedCloseState(t, dir, ontostate.State{
-		Change:   "demo",
-		Workflow: "tweak",
-		Phase:    "close",
-		Created:  "2026-07-10",
-		Verify:   ontostate.Verify{Result: "pass"},
-		Close:    ontostate.Close{Merged: true},
+		Change:         "demo",
+		Workflow:       "tweak",
+		Phase:          "close",
+		Created:        "2026-07-10",
+		Verify:         ontostate.Verify{Result: "pass"},
+		Close:          ontostate.Close{Merged: true},
+		CloseConfirmed: "2026-07-22 confirmed", // required for every workflow
 		// Guides deliberately unset: a tweak preset does not require it.
 	})
 	commitAll(t, dir, "seed change")
@@ -425,5 +428,26 @@ func TestCloseCommand_MalformedGuidesValueRejected(t *testing.T) {
 
 	if _, err := runOnto(t, "close", "demo", "--dir", dir); err == nil {
 		t.Fatalf("close must reject a guides value with an empty waived reason")
+	}
+}
+
+// TestCloseCommand_RefusedWithoutCloseConfirmed: onto close refuses to archive
+// until the final-confirmation gate's token is recorded, naming the setter.
+func TestCloseCommand_RefusedWithoutCloseConfirmed(t *testing.T) {
+	dir := prepWorkspace(t)
+	name := "demo"
+	seedClose(t, dir, name, nil)
+	mutateState(t, dir, name, func(s *ontostate.State) { s.CloseConfirmed = "" })
+	commitAll(t, dir, "seed change without token")
+
+	_, err := runOnto(t, "close", name, "--dir", dir)
+	if err == nil {
+		t.Fatal("close must refuse without close_confirmed")
+	}
+	if !strings.Contains(err.Error(), "close-confirmed") {
+		t.Errorf("error %q must name the close-confirmed setter", err.Error())
+	}
+	if _, statErr := os.Stat(filepath.Join(dir, "docs", "changes", name)); statErr != nil {
+		t.Error("refusal must leave the workspace unarchived")
 	}
 }

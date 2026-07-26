@@ -1,6 +1,6 @@
 workflow: full
 language: en
-phase: build
+phase: verify
 context_compression: off
 build_mode: executing-plans
 build_pause: null
@@ -13,11 +13,11 @@ auto_transition: true
 base_ref: 8c6f3a07a8c8a917f2c48f1a7da1ff5b1424883b
 design_doc: docs/superpowers/specs/2026-07-22-onto-gate-enforcement-design.md
 plan: docs/superpowers/plans/2026-07-22-onto-gate-enforcement.md
-verify_result: pending
-verification_report: null
+verify_result: pass
+verification_report: docs/superpowers/reports/2026-07-26-onto-gate-enforcement-verify.md
 branch_status: pending
 created_at: 2026-07-22
-verified_at: null
+verified_at: 2026-07-26
 archived: false
 direct_override: null
 handoff_context: openspec/changes/onto-gate-enforcement/.comet/handoff/design-context.json

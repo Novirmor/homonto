@@ -13,7 +13,7 @@ func TestMergeDeltasCommand_MergesAndMarksMerged(t *testing.T) {
 	root := prepWorkspace(t)
 	// a change in the close phase with a delta spec
 	changeDir := filepath.Join(root, "docs", "changes", "c")
-	if err := ontostate.Save(filepath.Join(changeDir, "onto-state.yaml"), ontostate.State{Change: "c", Workflow: "full", Phase: "close"}); err != nil {
+	if err := ontostate.Save(filepath.Join(changeDir, "onto-state.yaml"), ontostate.State{Change: "c", Workflow: "full", Phase: "close", CloseConfirmed: "2026-07-22 confirmed"}); err != nil {
 		t.Fatal(err)
 	}
 	writeFile(t, filepath.Join(root, "docs", "specs", "cap.md"),
@@ -44,7 +44,7 @@ func TestMergeDeltasCommand_MergesAndMarksMerged(t *testing.T) {
 func TestMergeDeltasCommand_InvalidDeltaWritesNothing(t *testing.T) {
 	root := prepWorkspace(t)
 	changeDir := filepath.Join(root, "docs", "changes", "c")
-	ontostate.Save(filepath.Join(changeDir, "onto-state.yaml"), ontostate.State{Change: "c", Workflow: "full", Phase: "close"})
+	ontostate.Save(filepath.Join(changeDir, "onto-state.yaml"), ontostate.State{Change: "c", Workflow: "full", Phase: "close", CloseConfirmed: "2026-07-22 confirmed"})
 	writeFile(t, filepath.Join(root, "docs", "specs", "cap.md"), "# Cap\n\n## Requirements\n\n### Requirement: A\n\nSHALL a.\n")
 	// MODIFIED targets a requirement that does not exist → error, nothing written.
 	writeFile(t, filepath.Join(changeDir, "specs", "cap.md"),
@@ -79,5 +79,27 @@ func TestMergeDeltasCommand_RefusesOutsideClosePhase(t *testing.T) {
 				t.Fatalf("merge-deltas must refuse at phase %q", phase)
 			}
 		})
+	}
+}
+
+// TestMergeDeltasCommand_RefusesWithoutCloseConfirmed: the final-confirmation
+// gate's token is required before any global mutation; the refusal names the
+// setter and the living spec is untouched.
+func TestMergeDeltasCommand_RefusesWithoutCloseConfirmed(t *testing.T) {
+	root := prepWorkspace(t)
+	changeDir := filepath.Join(root, "docs", "changes", "c")
+	ontostate.Save(filepath.Join(changeDir, "onto-state.yaml"), ontostate.State{Change: "c", Workflow: "full", Phase: "close"})
+	writeFile(t, filepath.Join(changeDir, "specs", "cap.md"),
+		"## ADDED Requirements\n\n### Requirement: A\n\nSHALL a.\n")
+
+	_, err := runOnto(t, "merge-deltas", "c", "--dir", root)
+	if err == nil {
+		t.Fatal("merge-deltas must refuse without close_confirmed")
+	}
+	if !strings.Contains(err.Error(), "close-confirmed") {
+		t.Errorf("error %q must name the close-confirmed setter", err.Error())
+	}
+	if _, statErr := os.Stat(filepath.Join(root, "docs", "specs", "cap.md")); statErr == nil {
+		t.Error("refusal must happen before any living-spec write")
 	}
 }

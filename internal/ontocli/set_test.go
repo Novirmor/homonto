@@ -182,3 +182,38 @@ func TestSetGuides_BadValueRejectedNoWrite(t *testing.T) {
 		t.Errorf("Guides = %q, want unchanged empty", st.Guides)
 	}
 }
+
+// TestSetEvidenceTokens: the three judgment-gate setters store free-form
+// evidence and refuse an empty value.
+func TestSetEvidenceTokens(t *testing.T) {
+	cases := []struct {
+		setter string
+		read   func(ontostate.State) string
+	}{
+		{"proposal-approved", func(s ontostate.State) string { return s.ProposalApproved }},
+		{"approach-confirmed", func(s ontostate.State) string { return s.ApproachConfirmed }},
+		{"close-confirmed", func(s ontostate.State) string { return s.CloseConfirmed }},
+	}
+	for _, tc := range cases {
+		t.Run(tc.setter, func(t *testing.T) {
+			dir := prepWorkspace(t)
+			seedChange(t, dir, "feature-x", "open")
+			commitAll(t, dir, "seed")
+
+			if _, err := runOnto(t, "set", tc.setter, "feature-x", "2026-07-22 evidence", "--dir", dir); err != nil {
+				t.Fatalf("set %s: %v", tc.setter, err)
+			}
+			st, err := ontostate.Load(filepath.Join(dir, "docs", "changes", "feature-x", "onto-state.yaml"))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got := tc.read(st); got != "2026-07-22 evidence" {
+				t.Errorf("%s stored %q", tc.setter, got)
+			}
+
+			if _, err := runOnto(t, "set", tc.setter, "feature-x", "", "--dir", dir); err == nil {
+				t.Errorf("set %s with empty evidence must refuse", tc.setter)
+			}
+		})
+	}
+}

@@ -257,3 +257,21 @@ func TestStatusCommand_ReportsInvalidPhase(t *testing.T) {
 		t.Errorf("output = %q, want a line for gamma containing %q", got, "malformed")
 	}
 }
+
+// TestStatusCommand_FlagsWorkingPhaseMismatch: a claim the artifacts cannot
+// support is annotated with the derived working phase.
+func TestStatusCommand_FlagsWorkingPhaseMismatch(t *testing.T) {
+	root := t.TempDir()
+	writeFile(t, filepath.Join(root, "docs", "changes", "c", "onto-state.yaml"),
+		"schema_version: 1\nchange: c\nworkflow: full\nphase: verify\n")
+	writeFile(t, filepath.Join(root, "docs", "changes", "c", "proposal.md"), "p")
+	writeFile(t, filepath.Join(root, "docs", "changes", "c", "tasks.md"), "- [ ] a\n")
+
+	out, err := runOnto(t, "status", "--dir", root)
+	if err != nil {
+		t.Fatalf("status: %v", err)
+	}
+	if !strings.Contains(out, "(working: design)") {
+		t.Errorf("status must flag the mismatch, got:\n%s", out)
+	}
+}

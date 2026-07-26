@@ -132,8 +132,15 @@ type State struct {
 	Verify     Verify `yaml:"verify,omitempty" json:"verify,omitempty"`
 	Close      Close  `yaml:"close,omitempty" json:"close,omitempty"`
 	Directive  string `yaml:"directive,omitempty" json:"directive,omitempty"`
-	Guides     string `yaml:"guides,omitempty" json:"guides,omitempty"` // "" | pending | updated | waived:<reason>
-	Archived   bool   `yaml:"archived,omitempty" json:"archived,omitempty"`
+	// Judgment-gate evidence tokens: free-form, non-empty = the gate was
+	// answered (convention: "YYYY-MM-DD <summary>"). The binary checks
+	// presence, never content — ceremony, not judgment (B1). Empty on states
+	// written before these fields existed; no schema bump needed.
+	ProposalApproved  string `yaml:"proposal_approved,omitempty" json:"proposal_approved,omitempty"`   // open's artifact-review gate (full only)
+	ApproachConfirmed string `yaml:"approach_confirmed,omitempty" json:"approach_confirmed,omitempty"` // design's approach gate (full only)
+	CloseConfirmed    string `yaml:"close_confirmed,omitempty" json:"close_confirmed,omitempty"`       // close's final-confirmation gate (all workflows)
+	Guides            string `yaml:"guides,omitempty" json:"guides,omitempty"`                         // "" | pending | updated | waived:<reason>
+	Archived          bool   `yaml:"archived,omitempty" json:"archived,omitempty"`
 	// Abandoned marks the unsuccessful terminal state — a change cancelled without
 	// completing, distinct from the successful archived/close terminal. Ungated:
 	// set by `onto abandon`, it never blocks a transition (it makes the change

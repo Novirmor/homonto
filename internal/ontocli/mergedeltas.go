@@ -67,6 +67,14 @@ func runMergeDeltas(cmd *cobra.Command, root, name string) error {
 		fmt.Fprintf(cmd.OutOrStdout(), "%s: already merged (close.merged=true)\n", name)
 		return nil
 	}
+	// The final-confirmation gate must be answered before the first global
+	// mutation: merging deltas rewrites the living specs, and a declined gate
+	// must leave the repo untouched. Checked AFTER the idempotent no-op above —
+	// an already-merged change re-running an interrupted close has nothing
+	// left to confirm.
+	if st.CloseConfirmed == "" {
+		return fmt.Errorf("onto merge-deltas: close not confirmed: answer the final-confirmation gate, then run `onto set close-confirmed %s \"<evidence>\"`", name)
+	}
 
 	deltaDir := filepath.Join(changeDir, "specs")
 	entries, _ := filepath.Glob(filepath.Join(deltaDir, "*.md"))

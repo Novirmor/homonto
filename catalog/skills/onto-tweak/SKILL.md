@@ -44,15 +44,13 @@ rev-parse HEAD)"`, `onto set guides <name> pending`, and the default decisions:
 set tdd-mode <name> direct`. Branch: `tweak/YYYYMMDD/<name>`. **Commit the
 workspace** before the first task. `onto new` records `phase: open`. The preset
 skips design, but the binary still walks the fixed phase sequence
-`open → design → build → verify → close`: advance mechanically through the
-skipped phases. The gates are workflow-aware (`RequiredArtifacts(phase,
-"tweak")` needs only `proposal.md` + `tasks.md`), so a tweak can leave `open`
-and `design` without writing a `design.md`. Run the advances up front, right
+`open → design → build → verify → close`. The gates are workflow-aware
+(`RequiredArtifacts(phase, "tweak")` needs only `proposal.md` + `tasks.md`),
+so a tweak reaches build without a `design.md` — in one gated call, right
 after `onto new` and the decision defaults:
 
 ```
-onto advance <name>    # open  → design (no design.md needed for tweak)
-onto advance <name>    # design → build
+onto advance <name> --to build    # walks open → design → build, every gate firing
 ```
 
 Then execute the build. After verify, advance once more into close.
@@ -110,8 +108,8 @@ offered.
 ## Exit checklist (per phase, lite)
 
 - [ ] Open-lite: workspace exists, scope gate acknowledged, workspace
-      committed; advanced open → design → build via `onto advance <name>`
-      (mechanical, no design.md needed for a tweak)
+      committed; advanced to build via `onto advance <name> --to build`
+      (gated hops, no design.md needed for a tweak)
 - [ ] Build: tasks checked + committed one by one, tree clean (workspace
       docs committed)
 - [ ] Verify: `verification.md` with fresh evidence + regression results;

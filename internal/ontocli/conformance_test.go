@@ -88,20 +88,39 @@ func TestConformance_FullLifecycle_HappyPath(t *testing.T) {
 		t.Fatalf("decisions not recorded in state: %+v", v)
 	}
 
-	// Seed the downstream deliverables so each phase's own required-artifact
-	// gate is satisfiable, and make tasks.md fully checked so build→verify
-	// is not blocked by an open task.
-	writeFile(t, filepath.Join(changeDir, "design.md"), "design")
-	writeFile(t, filepath.Join(changeDir, "plan.md"), "plan")
-	writeFile(t, filepath.Join(changeDir, "verification.md"), "verification")
-	writeFile(t, filepath.Join(changeDir, "tasks.md"), "- [x] done\n")
+	// Deliverables are written progressively, phase by phase, so the derived
+	// WORKING phase (artifact-based since gate-enforcement) agrees with the
+	// claimed phase at every assertion below.
 
 	// Walk the phases. Commit before each advance so the worktree is clean:
 	// the verify→close transition (and close itself) refuse a dirty worktree,
 	// so a committed tree makes the whole lifecycle deterministic. Before
 	// leaving verify, record verify.result=pass so the advance evidence gate is
 	// satisfied (isolation, needed to enter build, was set above).
+	if _, err := runOnto(t, "set", "proposal-approved", name, "2026-07-22 approved", "--dir", root); err != nil {
+		t.Fatalf("onto set proposal-approved: %v", err)
+	}
 	for _, want := range []string{"design", "build", "verify", "close"} {
+		switch want {
+		case "build":
+			// design's deliverables: a confirmed design + the derived (still
+			// unchecked) task list. plan.md is build's own deliverable but is
+			// required to LEAVE build, so write it now too.
+			writeFile(t, filepath.Join(changeDir, "design.md"), "Status: Confirmed\n")
+			writeFile(t, filepath.Join(changeDir, "tasks.md"), "- [ ] done\n")
+			writeFile(t, filepath.Join(changeDir, "plan.md"), "plan")
+		case "verify":
+			// build's exit: every task checked.
+			writeFile(t, filepath.Join(changeDir, "tasks.md"), "- [x] done\n")
+		case "close":
+			// verify's exit: the report with its machine-read Result line.
+			writeFile(t, filepath.Join(changeDir, "verification.md"), "Result: pass\n")
+		}
+		if want == "build" {
+			if _, err := runOnto(t, "set", "approach-confirmed", name, "2026-07-22 approach", "--dir", root); err != nil {
+				t.Fatalf("onto set approach-confirmed: %v", err)
+			}
+		}
 		if want == "close" {
 			if _, err := runOnto(t, "set", "verify-result", name, "pass", "--dir", root); err != nil {
 				t.Fatalf("onto set verify-result pass: %v", err)
@@ -123,6 +142,9 @@ func TestConformance_FullLifecycle_HappyPath(t *testing.T) {
 	}
 	if _, err := runOnto(t, "set", "guides", name, "updated", "--dir", root); err != nil {
 		t.Fatalf("onto set guides updated: %v", err)
+	}
+	if _, err := runOnto(t, "set", "close-confirmed", name, "2026-07-22 confirmed", "--dir", root); err != nil {
+		t.Fatalf("onto set close-confirmed: %v", err)
 	}
 
 	// close archives the change: the directory moves under archive/ and the

@@ -16,27 +16,42 @@ func gateIDs(gs []pendingGate) []string {
 }
 
 func TestPendingGates_ByPhaseAndState(t *testing.T) {
-	// design with no isolation → the isolation gate.
-	if ids := gateIDs(pendingGates("c", ontostate.State{Phase: "design"})); len(ids) != 1 || ids[0] != "isolation" {
-		t.Errorf("design/no-isolation gates = %v, want [isolation]", ids)
+	// full open with no token → the proposal-approved judgment gate.
+	if ids := gateIDs(pendingGates("c", ontostate.State{Phase: "open", Workflow: "full"})); strings.Join(ids, ",") != "proposal-approved" {
+		t.Errorf("full open gates = %v, want [proposal-approved]", ids)
 	}
-	// design with isolation set → no gate.
-	if ids := gateIDs(pendingGates("c", ontostate.State{Phase: "design", Isolation: "branch"})); len(ids) != 0 {
-		t.Errorf("design/isolation-set gates = %v, want none", ids)
+	// a preset open never gates proposal approval.
+	if ids := gateIDs(pendingGates("c", ontostate.State{Phase: "open", Workflow: "fix"})); len(ids) != 0 {
+		t.Errorf("fix open gates = %v, want none", ids)
+	}
+	// full design with nothing recorded → approach first, then isolation.
+	if ids := gateIDs(pendingGates("c", ontostate.State{Phase: "design", Workflow: "full"})); strings.Join(ids, ",") != "approach-confirmed,isolation" {
+		t.Errorf("design gates = %v, want [approach-confirmed isolation]", ids)
+	}
+	// design with both answered → no gate.
+	if ids := gateIDs(pendingGates("c", ontostate.State{Phase: "design", Workflow: "full", Isolation: "branch", ApproachConfirmed: "2026-07-22 ok"})); len(ids) != 0 {
+		t.Errorf("design/answered gates = %v, want none", ids)
+	}
+	// a preset design gates isolation only.
+	if ids := gateIDs(pendingGates("c", ontostate.State{Phase: "design", Workflow: "tweak"})); strings.Join(ids, ",") != "isolation" {
+		t.Errorf("tweak design gates = %v, want [isolation]", ids)
 	}
 	// build with nothing recorded → build-mode + tdd-mode.
 	if ids := gateIDs(pendingGates("c", ontostate.State{Phase: "build"})); strings.Join(ids, ",") != "build-mode,tdd-mode" {
 		t.Errorf("build gates = %v, want [build-mode tdd-mode]", ids)
 	}
-	// full close missing everything → merged, guides, integration.
+	// full close missing everything → confirmation first, then merged, guides, integration.
 	full := ontostate.State{Phase: "close", Workflow: "full"}
-	if ids := gateIDs(pendingGates("c", full)); strings.Join(ids, ",") != "close-merged,guides,integration" {
-		t.Errorf("full close gates = %v, want [close-merged guides integration]", ids)
+	if ids := gateIDs(pendingGates("c", full)); strings.Join(ids, ",") != "close-confirmed,close-merged,guides,integration" {
+		t.Errorf("full close gates = %v, want [close-confirmed close-merged guides integration]", ids)
 	}
-	// a tweak close does not gate guides.
+	// a tweak close does not gate guides but does gate confirmation.
 	tweak := ontostate.State{Phase: "close", Workflow: "tweak", Close: ontostate.Close{Merged: true}, Integration: "merge"}
-	if ids := gateIDs(pendingGates("c", tweak)); len(ids) != 0 {
-		t.Errorf("resolved tweak close gates = %v, want none", ids)
+	if ids := gateIDs(pendingGates("c", tweak)); strings.Join(ids, ",") != "close-confirmed" {
+		t.Errorf("resolved tweak close gates = %v, want [close-confirmed]", ids)
+	}
+	if ids := gateIDs(pendingGates("c", ontostate.State{Phase: "close", Workflow: "tweak", Close: ontostate.Close{Merged: true}, Integration: "merge", CloseConfirmed: "2026-07-22 ok"})); len(ids) != 0 {
+		t.Errorf("fully answered tweak close gates = %v, want none", ids)
 	}
 }
 

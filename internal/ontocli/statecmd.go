@@ -31,15 +31,21 @@ func stateCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			phase, err := st.DerivePhase()
-			if err != nil {
+			// Validate (DerivePhase's old contract) before deriving: a
+			// malformed state must not be reported as a healthy phase.
+			if _, err := st.DerivePhase(); err != nil {
 				return err
 			}
+			// The WORKING phase is derived from artifacts, not echoed from the
+			// claim — the state file is a cache of truth (see
+			// ontostate.DeriveWorkingPhase for the evidence table).
+			phase := ontostate.DeriveWorkingPhase(changeDir, st)
 			if asJSON {
 				payload := struct {
 					ontostate.State
-					DerivedPhase string `json:"derived_phase"`
-				}{State: st, DerivedPhase: phase}
+					DerivedPhase  string `json:"derived_phase"`
+					PhaseMismatch bool   `json:"phase_mismatch,omitempty"`
+				}{State: st, DerivedPhase: phase, PhaseMismatch: phase != st.Phase}
 				b, err := json.MarshalIndent(payload, "", "  ")
 				if err != nil {
 					return err
@@ -47,7 +53,14 @@ func stateCmd() *cobra.Command {
 				fmt.Fprintln(cmd.OutOrStdout(), string(b))
 				return nil
 			}
-			fmt.Fprintf(cmd.OutOrStdout(), "%s: %s\n", name, phase)
+			// Text output keeps the CLAIMED phase as the primary value (what
+			// the state file records) and annotates a disagreeing derivation,
+			// mirroring `onto status` — so text consumers see both sides.
+			if phase != st.Phase {
+				fmt.Fprintf(cmd.OutOrStdout(), "%s: %s (working: %s)\n", name, st.Phase, phase)
+			} else {
+				fmt.Fprintf(cmd.OutOrStdout(), "%s: %s\n", name, st.Phase)
+			}
 			return nil
 		},
 	}

@@ -48,6 +48,15 @@ Walk `design.md`'s key decisions and confirm the implementation matches —
 deviations are findings, not footnotes. Re-run stated verifications from
 `plan.md` where they are cheap.
 
+**Fan this out.** Gathering scenario evidence is read-only and the scenarios
+are independent, so with more than a handful, dispatch `onto-explorer` agents
+concurrently — one per capability or per group of related scenarios — each
+returning the literal commands it ran and their output. You draft the evidence
+table from the returns and stay accountable for it: an explorer that reports
+"passes" without pasting the output has not produced evidence, and a scenario
+whose evidence you did not see is a **fail**. Keep the run serial when
+scenarios share fixtures, a port, or a database.
+
 Rules of evidence:
 
 - Every claim needs a fresh command + its literal output. No "should work",
@@ -61,9 +70,12 @@ After the self-evidence table is drafted, follow
 fresh-context skeptics** — dispatch the **`onto-skeptic`** subagent twice at
 once, naming one lens per dispatch: conformance (refute each scenario claim)
 and robustness (edge cases, drift/recovery paths). Two is the floor, not the
-ceiling: a large full verify (many scenarios, several capabilities) MAY shard
-the conformance lens across additional skeptics — one per capability, each
-dispatch naming its capability's scenarios — while robustness stays one. Both are prompted to
+ceiling, and there are two ways to add: a large full verify (many scenarios,
+several capabilities) MAY shard the conformance lens across additional
+skeptics — one per capability, each dispatch naming its capability's scenarios
+— while robustness stays one; and a change may earn an extra **lens**
+(security, data/migration, contract) per `references/adversarial.md`. All are
+read-only, so they go in the same parallel batch. Both mandatory lenses are prompted to
 refute, never approve; light mode uses one optional skeptic with skips
 recorded. Triage
 findings per the protocol: a refuted claim fails its scenario; new defects

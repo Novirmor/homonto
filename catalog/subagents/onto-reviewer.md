@@ -1,6 +1,6 @@
 ---
 name: onto-reviewer
-description: Use to review a diff or set of changes for correctness, security, and clarity before merging; reports findings ranked by severity.
+description: Use to review a diff or set of changes for correctness, security, and clarity before merging; reports findings ranked by severity. Read-only, so several may run concurrently — across independent tasks, or on one diff with a distinct lens each.
 mode: subagent
 # Neutral capability intent — homonto renders it into each tool's native fields:
 # Claude's `tools:` allowlist and OpenCode's `permission:` map (internal/agentfm).

@@ -7,8 +7,9 @@ defects self-review missed).
 
 ## When
 
-- `verify.mode: full` → REQUIRED: two skeptics, dispatched in parallel,
-  after the self-evidence table is drafted.
+- `verify.mode: full` → REQUIRED: **at least** two skeptics, dispatched in
+  parallel, after the self-evidence table is drafted. Two is the floor, not
+  the ceiling — see "More than two" below.
 - `verify.mode: light` → one skeptic, optional; a skip is recorded in the
   report's Adversarial section with its reason.
 - No subagent capability → record "adversarial pass skipped: no dispatch
@@ -16,7 +17,7 @@ defects self-review missed).
   skips live there, need no acceptor); verification may still pass with
   it recorded.
 
-## The two skeptics
+## The two mandatory skeptics
 
 Both are the **`onto-skeptic`** subagent that ships with onto — the same
 agent dispatched **twice, concurrently**, with a different **lens** named
@@ -37,6 +38,24 @@ approving skeptic has failed its job; "I could not refute X because
 2. **Robustness skeptic** — attack the gaps: edge cases the scenarios
    don't cover, drift/recovery paths, failure modes, order-dependence,
    anything a hostile-but-honest reviewer would poke.
+
+## More than two
+
+Skeptics are read-only, so additional lenses race nothing and cost only
+tokens. Add them when the change earns it, dispatched in the same parallel
+batch and named in the report's Adversarial section like the mandatory two:
+
+- **security** — untrusted input, secrets, path traversal, privilege, deletion
+  and overwrite paths. Add for anything touching the projection engine,
+  remote sources, or file removal.
+- **data/migration** — existing state written by an older version, partial
+  writes, crash points, rollback. Add for any schema or state-format change.
+- **contract** — a public API, config key, or CLI flag that changed shape
+  without a stated migration. Add for anything a user's file could reference.
+
+Redundant lenses waste tokens and bury real findings in agreement; a lens
+that cannot name what it would look for is not a lens. Two skeptics with
+distinct angles beat four that overlap.
 
 ## Triage (coordinator, into the report)
 

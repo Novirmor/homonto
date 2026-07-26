@@ -149,22 +149,30 @@ the names collide.
   does not plan or judge scope, and it reports discovered work rather than
   doing it.
 - **`onto-skeptic`** — read-only adversarial verifier
-  used in the verify phase. It is dispatched **twice
-  in parallel**, one lens each (`conformance`: refute each scenario's
-  evidence; `robustness`: attack the gaps the scenarios never cover), and is
+  used in the verify phase. It is dispatched **at least twice
+  in parallel**, one lens each — `conformance` (refute each scenario's
+  evidence) and `robustness` (attack the gaps the scenarios never cover) are
+  mandatory in full mode, and a change may earn further lenses — and is
   prompted to **refute, never approve** (ADR 0007). It keeps bash so it can
   re-run the evidence itself, and it is read-only so it can never fix what
   it finds. That independence is the point.
 
-Everything else — planning, judging scope, deciding, committing — stays with
-the orchestrator, because those steps are gated on user confirmation and a
-subagent cannot prompt.
+Planning, judging scope, deciding, and every `onto` binary call stay with the
+orchestrator, because those steps are gated on user confirmation and a
+subagent cannot prompt. Who does the *editing* depends on `execution`: under
+`direct` the orchestrator does it, and under `subagent` the implementer edits
+and commits its own task's files.
 
 All declare their capabilities once in a tool-neutral `homonto:` frontmatter
 block, rendered into Claude's `disallowedTools:` denylist and OpenCode's
 `permission:` map (see [subagents](subagents.md)). Parallelization works in
-both tools: the build phase fans out independent tasks' investigation and
-review concurrently. Dialogs belong to the orchestrator alone — subagents
+both tools, and follows what an agent writes rather than which agent it is
+([ADR 0019](../adr/0019-parallelism-follows-write-scope.md)): the three
+read-only agents run concurrently wherever the work is independent — grounding
+in open and design, per-task and per-lens review in build, scenario evidence
+and the skeptic lenses in verify. The edit-capable implementer runs one at a
+time unless each has its own git worktree and a disjoint file set, which is
+what `isolation: worktree` is for. Dialogs belong to the orchestrator alone — subagents
 have the question tool denied and return a `Questions:` section instead —
 and gate decisions are asked through an interactive dialog (`onto gate
 --json` supplies the structured decision; the skill renders it). The

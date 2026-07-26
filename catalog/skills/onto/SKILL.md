@@ -277,7 +277,7 @@ doctrine):
 | Understand something, or locate where behavior lives | `onto-explorer` | read-only, keeps bash (grounding CLIs), no spawn |
 | Execute one bite-sized task from a precise spec | `onto-implementer` | **edits**, bash, no spawn |
 | Audit a diff for correctness/security/contract/clarity | `onto-reviewer` | read-only, keeps bash, no spawn |
-| Refute a verification claim, or hunt what the scenarios miss | `onto-skeptic` **×2, parallel** | read-only, keeps bash, no spawn |
+| Refute a verification claim, or hunt what the scenarios miss | `onto-skeptic` **×2 minimum, parallel** | read-only, keeps bash, no spawn |
 | **Plan, judge scope, decide, commit** | **nobody — you do it** | — |
 
 That last row is the rule the others serve: the orchestrator (this session)
@@ -286,9 +286,11 @@ confirmation and a subagent cannot ask. The **implementer** does mechanical edit
 from a handed spec; the read-only specialists investigate, audit, and attack. The
 orchestrator owns every commit and every `onto` binary call.
 
-`onto-skeptic` is dispatched **twice at once**, one per lens — `conformance`
-(refute each scenario's evidence) and `robustness` (attack the gaps the scenarios
-never cover). Name the lens in the dispatch; it attacks only that lens. Both are
+`onto-skeptic` is dispatched **at least twice at once**, one per lens —
+`conformance` (refute each scenario's evidence) and `robustness` (attack the gaps
+the scenarios never cover) are mandatory in full mode; further lenses and
+per-capability conformance shards go in the same batch when the change earns
+them. Name the lens in the dispatch; it attacks only that lens. All are
 prompted to refute, never approve — see
 [`onto-verify`'s adversarial protocol](../onto-verify/references/adversarial.md).
 
@@ -303,18 +305,39 @@ the subagent rather than doing it inline — and when the questions are
 **independent**, dispatch them **concurrently** (one subagent invocation per
 question) instead of serially:
 
+- **open / grounding** — split grounding that spans several areas into targeted
+  `onto-explorer` tasks, run at once, while you ask the user the clarifying
+  questions a subagent cannot.
 - **design / grounding** — split a broad "how does this subsystem work" into
   several targeted `onto-explorer` tasks and run them at once; synthesize the
-  returns into the design.
-- **build** — after each task's edits, hand the diff to `onto-reviewer`.
-  Independent tasks that touch **non-overlapping** files can be explored/reviewed
-  in parallel; tasks that share files stay serial (one commit each, in order).
-- **verify** — delegate the change-wide diff audit to `onto-reviewer` while you
-  check spec scenarios.
+  returns into the design. On genuinely open approaches, 2–3 agents may each
+  sketch one — you still present the comparison and the user still chooses.
+- **build** — after each task's edits, hand the diff to `onto-reviewer`; a diff
+  worth more than one opinion gets several at once, one per lens. Independent
+  tasks touching **non-overlapping** files can be explored/reviewed in parallel;
+  tasks that share files stay serial (one commit each, in order). Under
+  `execution: subagent` with `isolation: worktree`, disjoint tasks can also run
+  their **implementers** concurrently — one worktree each, joins merged in plan
+  order (`onto-build/references/subagent-protocol.md`).
+- **verify** — dispatch `onto-explorer` per capability to gather scenario
+  evidence concurrently, and the change-wide diff audit to `onto-reviewer`,
+  then run the mandatory skeptics in parallel (two lenses minimum, more when
+  the change earns it).
 
-The orchestrator (this session) still owns every edit, commit, and the `onto`
-binary calls — the subagents only read and report. Never let a subagent mutate
-workflow state.
+Who edits depends on `execution`, recorded on the change:
+
+- **`execution: direct`** — the orchestrator (this session) owns every edit and
+  commit; the subagents only read and report.
+- **`execution: subagent`** — `onto-implementer` edits and commits its own
+  task's files, one fresh context per task, per
+  [`onto-build`'s subagent protocol](../onto-build/references/subagent-protocol.md).
+  The orchestrator coordinates and verifies against the repository, never
+  against the agent's report.
+
+In **both** modes the orchestrator owns every `onto` binary call and all
+workflow state. Never let a subagent mutate workflow state, and never let a
+read-only specialist edit anything — its capability profile denies it, and a
+prompt that asks anyway is a bug.
 
 **Dialogs — prefer them, in either tool.** Whenever a `> **GATE:**` block or any
 either/or decision comes up, ask it through an **interactive choice dialog** — a

@@ -31,6 +31,14 @@ preflight may have recorded a direct-file-reading fallback in notes.md
 Grounding; grounding in real file reads is required either way, guesswork
 never is.
 
+When grounding spans more than one area of the codebase, split it into
+targeted questions and dispatch an `onto-explorer` per question
+**concurrently** — they are read-only, so there is no reason to serialize
+them. Synthesize the returns yourself and record what was actually run in
+`## Grounding`. Ask the user your clarifying questions in the meantime;
+a subagent cannot ask, and waiting on exploration to start the conversation
+wastes both.
+
 The clarification must end in a summary covering:
 
 - **Goals** — the problem actually being solved, expected outcome

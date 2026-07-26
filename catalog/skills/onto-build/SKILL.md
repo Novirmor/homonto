@@ -110,6 +110,17 @@ task, coordinator verifies commits and checkoffs against the repository
 the final task. If no real dispatch capability exists, fall back to
 `execution: direct`, record it, announce it.
 
+> **Parallel implementers are a supported option, not a theoretical one.**
+> When the next tasks touch **disjoint file sets** and `isolation` is
+> `worktree`, run their implementers **at the same time** — one worktree per
+> implementer, coordinator merging in plan order and doing every checkoff
+> itself, serially, after the joins. This is onto's biggest available
+> speedup on a wide change and the reason worktree isolation exists.
+> It is also the one place a subagent can corrupt the tree, so it is
+> conditional: `references/subagent-protocol.md` carries the five conditions,
+> and `references/worktree-protocol.md` the mechanics. Meet every condition
+> or stay serial — the shared-file race is silent.
+
 **`execution: direct`** → for each task, in order:
 
 1. **`tdd: tdd`** — write the failing test FIRST, run it, watch it fail for
@@ -162,9 +173,17 @@ whose file sets **do not overlap**, dispatch their reviews (and any needed
 task — via the Task tool (OpenCode runs each as a child session; Claude Code runs
 parallel Task agents when you send several calls in one turn), so the reviews
 proceed in parallel while you implement the next task. Tasks that share files
-stay serial (one commit each, in order). This is the concrete wiring of the
-dispatcher's "Delegation, parallelization, and dialogs" section: the orchestrator
-(this session) owns every edit and commit; the subagents only read and report.
+stay serial (one commit each, in order).
+
+A diff worth more than one opinion gets **several reviewers at once, one per
+lens** (correctness, security, contract/scope, clarity) rather than one
+generalist pass — they are read-only, so concurrency costs nothing but tokens.
+
+This is the concrete wiring of the dispatcher's "Delegation, parallelization,
+and dialogs" section. Under **`execution: direct`** the orchestrator (this
+session) owns every edit and commit and the subagents only read and report;
+under **`execution: subagent`** implementers edit and commit their own task's
+files. The orchestrator owns every `onto` binary call in both modes.
 Use the question dialog for the plan-ready and scope-change decisions when it is
 available.
 

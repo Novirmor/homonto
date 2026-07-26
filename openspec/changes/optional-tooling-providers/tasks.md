@@ -97,3 +97,20 @@ a declared-but-absent provider?") as yes, warning-level. Design section 7.
       apply.
 - [x] 8.2 Tests: declared-and-absent yields a finding; declared-and-present
       and `none` yield none; the finding never fails a projection.
+
+## 9. State field rename
+
+Appended after the design gate resolved open question 2 ("rename
+`State.SubagentRenderFingerprint`?") as rename-now-with-migration. Design
+section 6. Caught during verification: the decision was made but had no
+checklist entry, so it was nearly signed off as done while unimplemented.
+
+- [x] 9.1 Rename `SubagentRenderFingerprint` to `RenderFingerprint` (json
+      `renderFingerprint`) and its two accessors; bump
+      `CurrentStateSchemaVersion` 1 to 2.
+- [x] 9.2 No value-preserving migration, by design: the field is a cache whose
+      absent value already means "force re-render", and the catalog bump forces
+      a re-materialize for every user anyway.
+- [x] 9.3 Tests: a schema-1 file loads and re-renders once with unrelated
+      fields intact; a save writes the new key and not the old; a future schema
+      is still refused.

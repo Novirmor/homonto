@@ -245,10 +245,10 @@ func TestSubagentRenderFingerprintDistinguishesRoutes(t *testing.T) {
 	writeConfig(t, repo, "second/model-b")
 	b := buildEngine(t, home, repo).subagentRenderContext()
 
-	if subagentRenderFingerprint(a) == subagentRenderFingerprint(b) {
+	if renderFingerprint(a) == renderFingerprint(b) {
 		t.Fatal("fingerprint collided across different overrides: an override change would not re-render")
 	}
-	if subagentRenderFingerprint(a) != subagentRenderFingerprint(aAgain) {
+	if renderFingerprint(a) != renderFingerprint(aAgain) {
 		t.Fatal("fingerprint is not stable for identical overrides: every apply would re-materialize")
 	}
 }

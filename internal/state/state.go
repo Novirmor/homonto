@@ -40,17 +40,29 @@ type State struct {
 	// FrameworkVersions records the version of each builtin framework at the last
 	// apply (framework name -> version), so a version history is written down.
 	FrameworkVersions map[string]string `json:"frameworkVersions,omitempty"`
-	// SubagentRenderFingerprint digests the config-derived inputs behind the last
-	// subagent materialization (the per-tool model routes). A subagent's rendered
-	// frontmatter depends on config, not only on the catalog, so the catalog
-	// version alone cannot gate materialization: editing a model route leaves the
-	// version untouched and would otherwise freeze the rendered agents at their
-	// old model forever. Absent = force re-render.
-	SubagentRenderFingerprint string `json:"subagentRenderFingerprint,omitempty"`
+	// RenderFingerprint digests every config-derived input behind the last
+	// materialization: the per-tool subagent model routes, the source content of
+	// each declared resource, and the resolved [tooling] providers. Rendered
+	// output depends on config, not only on the catalog, so the catalog version
+	// alone cannot gate materialization: editing a model route or a tooling
+	// provider leaves the version untouched and would otherwise freeze the
+	// rendered content forever. Absent = force re-render.
+	//
+	// Named SubagentRenderFingerprint (json "subagentRenderFingerprint")
+	// through schema 1, when it held only the model routes. It has been a
+	// composite since v0.2.1; schema 2 renames it to match.
+	RenderFingerprint string `json:"renderFingerprint,omitempty"`
 }
 
 // CurrentStateSchemaVersion is the state.json schema version this binary writes.
-const CurrentStateSchemaVersion = 1
+//
+// 2 renamed "subagentRenderFingerprint" to "renderFingerprint". No value-preserving
+// migration exists on purpose: the field is a cache whose absent value already
+// means "force re-render", and the catalog version bump shipped alongside the
+// rename forces a re-materialize for every user regardless — so carrying the
+// old value across would buy nothing while adding a code path that could be
+// wrong. A schema-1 file loads with the field empty and re-renders once.
+const CurrentStateSchemaVersion = 2
 
 // CatalogVersionRecorded returns the catalog version last materialized, or "".
 func (s *State) CatalogVersionRecorded() string { return s.CatalogVersion }
@@ -58,13 +70,13 @@ func (s *State) CatalogVersionRecorded() string { return s.CatalogVersion }
 // SetCatalogVersion records the catalog version after a successful materialize.
 func (s *State) SetCatalogVersion(v string) { s.CatalogVersion = v }
 
-// SubagentRenderFingerprintRecorded returns the render fingerprint behind the
-// last subagent materialization, or "" (never materialized / legacy state).
-func (s *State) SubagentRenderFingerprintRecorded() string { return s.SubagentRenderFingerprint }
+// RenderFingerprintRecorded returns the render fingerprint behind the last
+// materialization, or "" (never materialized / pre-rename state).
+func (s *State) RenderFingerprintRecorded() string { return s.RenderFingerprint }
 
-// SetSubagentRenderFingerprint records the render fingerprint after a successful
-// subagent materialize.
-func (s *State) SetSubagentRenderFingerprint(v string) { s.SubagentRenderFingerprint = v }
+// SetRenderFingerprint records the render fingerprint after a successful
+// materialize.
+func (s *State) SetRenderFingerprint(v string) { s.RenderFingerprint = v }
 
 // HomontoVersionRecorded returns the homonto binary version that last applied,
 // or "" for a legacy/never-applied state.

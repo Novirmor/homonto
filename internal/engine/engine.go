@@ -323,7 +323,7 @@ func (e *Engine) materializeCatalog() error {
 		return err
 	}
 	e.State.SetCatalogVersion(p.cl.Version())
-	e.State.SetSubagentRenderFingerprint(p.fingerprint)
+	e.State.SetRenderFingerprint(p.fingerprint)
 	// Save immediately so a later adapter failure still records the completed
 	// materialization.
 	return e.State.Save(e.StateDir)
@@ -500,9 +500,9 @@ func (e *Engine) planCatalog() (*catalogPlan, error) {
 	if err != nil {
 		return nil, err
 	}
-	fingerprint := subagentRenderFingerprint(renderCtx) + ":" + contentFP + ":" + toolingFP
+	fingerprint := renderFingerprint(renderCtx) + ":" + contentFP + ":" + toolingFP
 	upToDate := e.State.CatalogVersionRecorded() == cl.Version() &&
-		e.State.SubagentRenderFingerprintRecorded() == fingerprint &&
+		e.State.RenderFingerprintRecorded() == fingerprint &&
 		allSkillDirsExist(e.CatalogRoot, skillNames, cl) &&
 		allCommandFilesExist(e.CommandCatalogRoot, cmdNames) &&
 		allSubagentFilesExist(e.SubagentCatalogRoot, subNames, cl, renderCtx)
@@ -550,7 +550,7 @@ func allCommandFilesExist(root string, names []string) bool {
 	return true
 }
 
-// subagentRenderFingerprint digests every render input — each tool's
+// renderFingerprint digests every render input — each tool's
 // per-subagent overrides, model + variant + effort — deterministically, so
 // the materialize gate re-renders exactly when something the agents are
 // stamped from actually changed. Every field the render reads must be digested
@@ -560,7 +560,7 @@ func allCommandFilesExist(root string, names []string) bool {
 // Sorted keys keep it stable across map iteration order; delimited fields keep
 // it unambiguous across values (an "a"+"bc" / "ab"+"c" collision would skip the
 // very re-render this gate exists to trigger).
-func subagentRenderFingerprint(ctx map[string]agentfm.RenderContext) string {
+func renderFingerprint(ctx map[string]agentfm.RenderContext) string {
 	h := sha256.New()
 	digestSpecs := func(kind, tool string, specs map[string]agentfm.ModelSpec) {
 		keys := make([]string, 0, len(specs))

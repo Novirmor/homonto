@@ -1,7 +1,15 @@
 # tasks.md — canonical template
 
-The change's checklist. Open creates the skeleton (boundaries); build
-refines and checks items off — one commit per checked item.
+The change's checklist, and the **single source of completion state**. Open
+creates the skeleton (boundaries); build refines and checks items off — one
+commit per checked item. The phase derivation and the build exit gate read
+these checkboxes and nothing else.
+
+On a full change, each item's executable detail (files, what to do, how it is
+verified) lives in `plan.md` under a matching `## Task N.M` heading. Same
+number, one detail block per item: `- [ ] 2.3` here pairs with `## Task 2.3`
+there. Items and tasks are added and superseded together, in the same edit;
+only this file carries the checkbox.
 
 ## Template
 

@@ -51,14 +51,15 @@ prompt contains:
 6. The debugging rule: on any failure, root cause before any fix —
    reproduce, read the whole error, trace; no symptom-patching
 7. The bookkeeping obligation: after verification passes, check the task
-   off in BOTH `tasks.md` and `plan.md` (its `- [ ] done` line), then
-   commit — files, not chat
+   off in `tasks.md` — the only file holding completion state; `plan.md`
+   has no checkbox — then commit; files, not chat
 8. Return contract: commit sha + diff summary + literal verification
    output + any **discovered work** (needed work outside this task's
    stated scope) — reported, never done. The coordinator appends each
-   reported item to `tasks.md`/`plan.md` as a new unchecked task (or
-   routes it through the scope-change gate) BEFORE the next dispatch, so
-   the task list never trails what the repository already knows.
+   reported item as an unchecked `- [ ] N.M` in `tasks.md` plus its matching
+   `## Task N.M` block in `plan.md` (or routes it through the scope-change
+   gate) BEFORE the next dispatch, so the task list never trails what the
+   repository already knows.
 
 ## Parallel dispatch (exception — meet every condition or stay serial)
 
@@ -84,7 +85,7 @@ and is not worth the speed.
 ## Coordinator duties after each return
 
 - **Verify against the repository, not the report**: the returned commit
-  sha exists (`git log`), the checkoffs landed in both files, the working
+  sha exists (`git log`), the `tasks.md` checkoff landed, the working
   tree is clean, and the stated verification output is plausible
   (spot-run it when cheap).
 - A failed or half-done task is re-dispatched with the failure context, or

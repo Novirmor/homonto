@@ -49,6 +49,13 @@ obligation: fix them or stop.
       plan, verification — checked against their references (deviation
       anywhere is a finding; presets legitimately lack design/plan and
       possibly notes)
+- [ ] **`tasks.md` ↔ `plan.md` correspondence** (full workflow only, where
+      `plan.md` exists): every `- [ ] N.M` / `- [x] N.M` item in `tasks.md`
+      has a matching `## Task N.M` heading in `plan.md`, and every such
+      heading has its item. A number in one file and not the other is a
+      finding — it means work was appended to one and not the other. Also a
+      finding: any `- [ ]` checkbox inside `plan.md`, which carries no
+      completion state (`tasks.md` is the single checkoff)
 - [ ] **Grounding is recorded, not blank**: the proposal's `## Grounding`
       section names the code-intelligence queries run or the recorded
       fallback (e.g. "index declined — direct file reading"); a full

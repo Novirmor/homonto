@@ -37,11 +37,15 @@ one small, verified task at a time.
 ### 1. Write the plan
 
 Write `docs/changes/<name>/plan.md` from the canonical template
-`references/plan.md`: bite-sized tasks mirroring `tasks.md`, each with
-exact file paths, what to do, and how to verify it; mark tasks warranting
-review `(risk: high)`. A task that can't state its verification isn't
-ready. One reviewable commit (~200 lines) per task — split anything
-bigger. Read `notes.md` first if present.
+`references/plan.md`: one `## Task N.M` detail block per `tasks.md` item,
+**numbered to match it**, each with exact file paths, what to do, and how to
+verify it; mark tasks warranting review `(risk: high)`. A task that can't
+state its verification isn't ready. One reviewable commit (~200 lines) per
+task — split anything bigger. Read `notes.md` first if present.
+
+`tasks.md` owns completion state; `plan.md` owns the detail. Every item must
+have its task and every task its item — a number in one file and not the
+other is drift, and the close lint checks for it.
 
 ### 2. Plan-ready gate
 
@@ -114,10 +118,10 @@ the final task. If no real dispatch capability exists, fall back to
    `references/tdd-protocol.md` — the discipline is in its defenses against
    "just this once", not the one-line rule.
    **`tdd: direct`** — implement, then run the task's stated verification.
-2. After verification passes: check the task off in `tasks.md` **and**
-   `plan.md`, then commit — one commit per task, message reflects design
-   intent. Never batch tasks into one commit; never leave checked-off tasks
-   uncommitted.
+2. After verification passes: check the task off in `tasks.md` — the only
+   file carrying completion state — then commit; one commit per task, message
+   reflects design intent. Never batch tasks into one commit; never leave
+   checked-off tasks uncommitted.
 
 **The task list is live state — append before doing, check off at landing.**
 The checkboxes are the change's ground truth; a fresh session resumes from
@@ -125,14 +129,14 @@ them alone, so any drift between the list and the repository is how a session
 gets lost. Four rules, no exceptions:
 
 - **No work outside a written task.** Discovered work — a missing edge case,
-  a prerequisite refactor, a test the plan forgot — is APPENDED to `tasks.md`
-  and `plan.md` as a new unchecked task (with its files and verification)
-  **before** any of its code is written. Append-then-do, never
-  do-then-maybe-note. A few lines inside the current task's stated scope
-  belong to that task; anything more is a new task.
-- **Check off at landing, in the task's own commit.** The `tasks.md` +
-  `plan.md` checkoffs ride the commit that completes the task — never before
-  the commit, never batched afterwards.
+  a prerequisite refactor, a test the plan forgot — is APPENDED as an
+  unchecked `- [ ] N.M` in `tasks.md` **and** a matching `## Task N.M` detail
+  block in `plan.md`, in the same edit, **before** any of its code is written.
+  Append-then-do, never do-then-maybe-note. A few lines inside the current
+  task's stated scope belong to that task; anything more is a new task.
+- **Check off at landing, in the task's own commit.** The `tasks.md` checkoff
+  rides the commit that completes the task — never before the commit, never
+  batched afterwards. `plan.md` has no checkbox to update.
 - **Never renumber, reorder, or delete tasks.** A task that becomes
   unnecessary is checked with a one-line reason
   (`- [x] N.N SUPERSEDED: <why>`); appended tasks take the next number.

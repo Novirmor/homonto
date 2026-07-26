@@ -104,11 +104,13 @@ derivation instead of re-reading the evidence table by hand.
   `Status: Proposed`), delta specs with testable scenarios, and the task
   list derived from the confirmed design. No implementation code in this
   phase.
-- **build** — `plan.md` of bite-sized verified tasks, one commit per task,
-  root-cause-first debugging on any failure. The task list is **live
-  state**: discovered work is appended as a new task before its code is
-  written, and checkoffs ride each task's own commit, so a fresh session
-  resumes from the first unchecked task. Entering build requires an
+- **build** — `plan.md` giving each `tasks.md` item its detail under a
+  matching `## Task N.M` heading (files, what to do, how it is verified),
+  one commit per task, root-cause-first debugging on any failure. The task
+  list is **live state**: discovered work is appended to both files before
+  its code is written. `tasks.md` holds the checkboxes — `plan.md` carries
+  no completion state — and each checkoff rides its task's own commit, so a
+  fresh session resumes from the first unchecked item. Entering build requires an
   isolation choice (`branch` or `worktree`); build work is never committed
   unisolated.
 - **verify** — scale-appropriate check of every delta-spec scenario with

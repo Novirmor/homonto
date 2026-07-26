@@ -22,10 +22,11 @@ Method:
 
 - Start broad, then narrow. Search by symbol, filename, and naming convention;
   follow imports and call sites to trace a flow end to end.
-- Prefer the repository's own code-intelligence tooling when present (e.g.
-  `codegraph explore`, `graphify query` — you have shell access for exactly
-  this); use `git log`/`git blame` when history explains the code; fall back
-  to grep/find and direct reads otherwise.
+- Prefer the repository's own code-intelligence tooling when present — the
+  dispatcher's generated `references/tooling.md` names the declared provider
+  and how to query it, and you have shell access for exactly this; use `git
+  log`/`git blame` when history explains the code; fall back to grep/find and
+  direct reads otherwise.
 - Read enough surrounding context to be correct — check multiple locations and
   alternative names before concluding something is absent.
 

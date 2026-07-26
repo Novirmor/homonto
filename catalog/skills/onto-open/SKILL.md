@@ -26,9 +26,10 @@ with an unambiguous proposal. Nothing is designed and nothing is built here.
 Ask questions until the requirement is unambiguous — one topic at a time,
 multiple-choice where possible. Do not treat a single Q&A round as enough
 for anything non-trivial. Ground every claim about the existing codebase in
-graphify/codegraph queries when available — the preflight may have
-recorded a direct-file-reading fallback in notes.md Grounding; grounding
-in real file reads is required either way, guesswork never is.
+your configured code-intelligence provider's queries when available — the
+preflight may have recorded a direct-file-reading fallback in notes.md
+Grounding; grounding in real file reads is required either way, guesswork
+never is.
 
 The clarification must end in a summary covering:
 
@@ -95,7 +96,7 @@ summary — no invented scope.
       (no `tasks.md` yet — it is derived in design)
 - [ ] `notes.md` Confirmed section reflects every answered gate
 - [ ] `proposal.md` `## Grounding` is filled — the queries run, or the
-      recorded fallback if graphify was unavailable/declined; never left
+      recorded fallback if the provider was unavailable/declined; never left
       blank (the close lint blocks a blank Grounding at archive)
 - [ ] Every gate that fired answered by the user (clarification, split
       when one was proposed, artifact review)

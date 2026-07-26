@@ -42,7 +42,7 @@ summary.
 
 ## Grounding
 
-<graphify/codegraph queries run, or the recorded fallback ("index
+<code-intelligence queries run, or the recorded fallback ("index
 declined — direct file reading", per the dispatcher preflight)>
 
 ## Impact

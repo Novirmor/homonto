@@ -25,7 +25,7 @@ marked *pending*.
 
 ## Grounding
 
-- <graphify/codegraph queries run and what they showed; file reads that
+- <code-intelligence queries run and what they showed; file reads that
   anchor claims>
 
 ## Approaches  <!-- design phase -->

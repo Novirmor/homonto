@@ -14,8 +14,9 @@ that simple, it was probably a `tweak`.
 
 ## The process
 
-**1. Ground the context.** Read the real code the change touches (graphify /
-codegraph / direct reads — record which). Never design against a guess.
+**1. Ground the context.** Read the real code the change touches (your
+configured code-intelligence provider, or direct reads — record which).
+Never design against a guess.
 
 **2. Clarify — one question at a time.** Ask until purpose, constraints, and
 success criteria are unambiguous. **One question per message** (prefer multiple

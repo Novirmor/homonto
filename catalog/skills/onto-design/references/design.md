@@ -39,7 +39,7 @@ each with the reason>
 
 ## Grounding
 
-<graphify/codegraph queries and file reads the design rests on>
+<code-intelligence queries and file reads the design rests on>
 ```
 
 ## Rules

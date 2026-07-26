@@ -37,9 +37,10 @@ per message, real alternatives (not a fait accompli), YAGNI, and the incremental
 
 ### 1. Explore ground truth
 
-Before proposing anything, read the real system: graphify/codegraph queries
-for structure and call paths when available (the preflight may have
-recorded a direct-file-reading fallback), then the actual files. Map the
+Before proposing anything, read the real system: your configured
+code-intelligence provider's queries for structure and call paths when
+available (the preflight may have recorded a direct-file-reading fallback),
+then the actual files. Map the
 integration points the proposal touches. Never design against an imagined
 codebase.
 
@@ -140,7 +141,7 @@ so a design that produced no task list is not done.
 - [ ] `tasks.md` written from the confirmed design — bite-sized tasks, each
       tracing to a decision or delta scenario (required to leave design)
 - [ ] No implementation code was written
-- [ ] `design.md` `## Grounding` is filled — the graphify/codegraph
+- [ ] `design.md` `## Grounding` is filled — the code-intelligence
       queries and file reads the design rests on, or the recorded fallback;
       never blank
 - [ ] `notes.md` records the confirmed approach and every decision made

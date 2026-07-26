@@ -49,17 +49,17 @@
 
 ## 5. Neutralize shipped catalog prose
 
-- [ ] 5.1 `catalog/skills/onto/SKILL.md`: replace the inline rtk and graphify
+- [x] 5.1 `catalog/skills/onto/SKILL.md`: replace the inline rtk and graphify
       preflight steps with a pointer to `references/tooling.md`.
-- [ ] 5.2 `catalog/skills/onto-open/SKILL.md` and its `references/notes.md`
+- [x] 5.2 `catalog/skills/onto-open/SKILL.md` and its `references/notes.md`
       and `references/proposal.md`: provider-neutral grounding wording.
-- [ ] 5.3 `catalog/skills/onto-design/SKILL.md` and its
+- [x] 5.3 `catalog/skills/onto-design/SKILL.md` and its
       `references/brainstorm-protocol.md` and `references/design.md`: same.
-- [ ] 5.4 `catalog/skills/onto-close/references/lint-checklist.md`,
+- [x] 5.4 `catalog/skills/onto-close/references/lint-checklist.md`,
       `catalog/commands/onto.md`, `catalog/subagents/onto-explorer.md`,
       `catalog/subagents/to-explorer.md`: same.
-- [ ] 5.5 The `to` dispatcher gains the same preflight pointer.
-- [ ] 5.6 Add a test asserting no provider name appears in shipped catalog
+- [x] 5.5 The `to` dispatcher gains the same preflight pointer.
+- [x] 5.6 Add a test asserting no provider name appears in shipped catalog
       content outside `catalog/tooling/`.
 
 ## 6. Docs and versioning

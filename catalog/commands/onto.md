@@ -20,7 +20,8 @@ never performs phase work itself:
 
 1. **Preflight** — verify the `onto` binary is available (`onto version`); it is
    the single authority for `onto-state.yaml` and a hard dependency. Warn (never
-   halt) on missing `rtk` / `graphify`.
+   halt) on any declared tooling provider that is missing — the dispatcher's
+   generated `references/tooling.md` says which are declared.
 2. **Discover** — find the active change under `docs/changes/` (or, if there is
    none and `$ARGUMENTS` describes new work, start one with `onto new`).
 3. **Derive** — cross-check the recorded phase against real file state; the state

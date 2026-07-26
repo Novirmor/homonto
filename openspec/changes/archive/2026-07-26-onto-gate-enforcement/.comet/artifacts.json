@@ -1,0 +1,8 @@
+{
+  "openspec_proposal": "openspec/changes/onto-gate-enforcement/proposal.md",
+  "openspec_design": "openspec/changes/onto-gate-enforcement/design.md",
+  "openspec_tasks": "openspec/changes/onto-gate-enforcement/tasks.md",
+  "openspec_delta_spec": "openspec/changes/onto-gate-enforcement/specs/onto-evidence-gates/spec.md",
+  "handoff_context": "openspec/changes/onto-gate-enforcement/.comet/handoff/design-context.json",
+  "handoff_markdown": "openspec/changes/onto-gate-enforcement/.comet/handoff/design-context.md"
+}

@@ -89,9 +89,9 @@
 Appended after the design gate resolved open question 1 ("should doctor report
 a declared-but-absent provider?") as yes, warning-level. Design section 7.
 
-- [ ] 8.1 `doctor`: warning-level finding when `[tooling]` declares a provider
+- [x] 8.1 `doctor`: warning-level finding when `[tooling]` declares a provider
       that is not present. Detection is `exec.LookPath` and file existence
       only — nothing is executed, so the v0.7.0 exec-timeout concerns do not
       apply.
-- [ ] 8.2 Tests: declared-and-absent yields a finding; declared-and-present
+- [x] 8.2 Tests: declared-and-absent yields a finding; declared-and-present
       and `none` yield none; the finding never fails a projection.

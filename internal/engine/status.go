@@ -143,6 +143,7 @@ func (e *Engine) Doctor() []string {
 	} else {
 		out = append(out, e.doctorSubagents("opencode", opencodeSubagents)...)
 	}
+	out = append(out, e.doctorTooling()...)
 	out = append(out, e.doctorRemoteDigests()...)
 	return out
 }

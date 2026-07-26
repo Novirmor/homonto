@@ -42,6 +42,52 @@ log "homonto apply installs the onto framework"
 is_dir "$W/.homonto/catalog/skills/onto"
 ok "framework materialized"
 
+log "tooling reference is generated for the dispatcher"
+TOOLING="$W/.homonto/catalog/skills/onto/references/tooling.md"
+is_file "$TOOLING"
+# No [tooling] table declared: both providers default to none, so the generated
+# reference must name no third-party tool at all.
+for provider in rtk graphify okf; do
+  if grep -qi -- "$provider" "$TOOLING"; then
+    fail "default tooling reference must not name $provider"
+  fi
+done
+in_file "$TOOLING" "direct file reading"
+# A phase skill is not a dispatcher and must not carry the reference.
+absent "$W/.homonto/catalog/skills/onto-build/references/tooling.md"
+ok "default reference names no provider; non-dispatcher has none"
+
+log "editing [tooling] re-renders the reference"
+cat >> homonto.toml <<'EOF'
+
+[tooling]
+shell_proxy = "rtk"
+code_intel = "okf"
+EOF
+"$HOMONTO" apply --yes >/dev/null
+in_file "$TOOLING" "okf"
+in_file "$TOOLING" "rtk"
+if grep -qi -- "graphify" "$TOOLING"; then
+  fail "undeclared provider graphify leaked into the reference"
+fi
+ok "reference follows the declared providers"
+
+log "a deleted tooling reference is restored"
+rm "$TOOLING"
+"$HOMONTO" apply --yes >/dev/null
+is_file "$TOOLING"
+ok "deleted reference repaired by the next apply"
+
+log "an unknown provider fails at load"
+cp homonto.toml homonto.toml.bak
+sed -i 's/code_intel = "okf"/code_intel = "ctags"/' homonto.toml
+if "$HOMONTO" apply --yes >/dev/null 2>&1; then
+  fail "an unknown code_intel provider must fail at load"
+fi
+mv homonto.toml.bak homonto.toml
+"$HOMONTO" apply --yes >/dev/null
+ok "unknown provider rejected; config restored"
+
 log "onto init scaffolds the workspace"
 "$ONTO" init >/dev/null
 for d in changes specs adr guides; do is_dir "$W/docs/$d"; done

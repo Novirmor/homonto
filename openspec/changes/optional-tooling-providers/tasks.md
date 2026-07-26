@@ -81,10 +81,10 @@
 > Runs last, after group 8. Groups are never renumbered, so 8 was appended
 > rather than inserted.
 
-- [ ] 7.1 `go build ./... && go vet ./...` clean; `go test ./...` green.
-- [ ] 7.2 Extend the onto and to Docker E2E suites to assert the sidecar is
+- [x] 7.1 `go build ./... && go vet ./...` clean; `go test ./...` green.
+- [x] 7.2 Extend the onto and to Docker E2E suites to assert the sidecar is
       written and matches the declared providers.
-- [ ] 7.3 `./scripts/gate.sh` green.
+- [x] 7.3 `./scripts/gate.sh` green.
 
 ## 8. Doctor findings
 

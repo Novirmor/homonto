@@ -49,6 +49,31 @@ is_dir "$W/.homonto/catalog/skills/to"
 is_file "$W/.homonto/catalog/subagents/to-skeptic.md"
 ok "framework materialized (skills + subagents)"
 
+log "tooling reference is generated for the to dispatcher"
+TOOLING="$W/.homonto/catalog/skills/to/references/tooling.md"
+is_file "$TOOLING"
+# No [tooling] table declared: the reference must name no third-party tool.
+for provider in rtk graphify okf; do
+  if grep -qi -- "$provider" "$TOOLING"; then
+    fail "default tooling reference must not name $provider"
+  fi
+done
+absent "$W/.homonto/catalog/skills/to-do/references/tooling.md"
+ok "default reference names no provider; non-dispatcher has none"
+
+log "editing [tooling] re-renders the to reference"
+cat >> homonto.toml <<'EOF'
+
+[tooling]
+code_intel = "graphify"
+EOF
+"$HOMONTO" apply --yes >/dev/null
+in_file "$TOOLING" "graphify"
+if grep -qi -- "okf" "$TOOLING"; then
+  fail "undeclared provider okf leaked into the reference"
+fi
+ok "reference follows the declared provider"
+
 log "to init scaffolds docs/tasks + archive"
 "$TO" init >/dev/null
 is_dir "$W/docs/tasks"; is_dir "$W/docs/tasks/archive"

@@ -83,9 +83,16 @@ edit while catching nothing these assertions miss.
   `docs/adr/README.md` exists to prevent. Corrected: it is staged unnumbered at
   `openspec/changes/optional-tooling-providers/adr/` with `Status: Proposed`;
   the number is assigned at archive.
-- **Task group 8 was appended, not inserted.** The doctor work was decided at
-  the design gate but postdated the task list. Appended per the never-renumber
-  rule, with a note on group 7 that it runs last.
+- **Task groups 8 and 9 were appended, not inserted.** Both the doctor work and
+  the state-field rename were decided at the design gate but postdated the task
+  list. Appended per the never-renumber rule, with a note on group 7 that it
+  runs last.
+- **The rename was nearly signed off while unimplemented.** Group 9 existed
+  only in the design doc, so nothing in the task list would have caught its
+  absence; it was found while cross-checking this report's claims against the
+  code. Two design decisions reaching the build phase with no checklist entry
+  is the pattern worth noting — a decision made after `tasks.md` is written has
+  no home unless it is explicitly appended.
 - **OpenSpec 1.4.1 vs the `>= 1.5.0` gate.** `/comet-open` requires 1.5.0+. The
   installed CLI is 1.4.1, but it emits all four contracts the gate protects
   (`changeRoot`, `artifactPaths.resolvedOutputPath`, `applyRequires`, core

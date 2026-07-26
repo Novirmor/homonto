@@ -12,6 +12,7 @@ __pycache__/
 # Claude Code / OpenCode setup.
 /.claude/
 /.opencode/
+/opencode.json
 
 # E2E matrix run logs (scratch)
 test/e2e/.out/

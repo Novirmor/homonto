@@ -1,11 +1,11 @@
 ## 1. Config surface
 
-- [ ] 1.1 `internal/config`: add the `Tooling` struct with `ShellProxy` and
+- [x] 1.1 `internal/config`: add the `Tooling` struct with `ShellProxy` and
       `CodeIntel`, decoded from a `[tooling]` table, with unknown keys rejected.
-- [ ] 1.2 `internal/config/validate.go`: validate both keys against their
+- [x] 1.2 `internal/config/validate.go`: validate both keys against their
       closed value sets, failing with an error that names the offending key and
       lists the accepted values.
-- [ ] 1.3 Resolve an absent table or an omitted key to `none`; add tests
+- [x] 1.3 Resolve an absent table or an omitted key to `none`; add tests
       covering absent, partial, full, and invalid configs.
 
 ## 2. Provider content

@@ -22,6 +22,9 @@ func validate(c *Config) error {
 	if err := rejectLegacyModels(c.Models); err != nil {
 		return err
 	}
+	if err := validateTooling(c.Tooling); err != nil {
+		return err
+	}
 	for kind, resources := range map[string]map[string]Resource{
 		"skills":   c.Skills,
 		"commands": c.Commands,

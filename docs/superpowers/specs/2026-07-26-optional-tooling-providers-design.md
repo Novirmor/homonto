@@ -21,8 +21,16 @@ type Tooling struct {
 }
 ```
 
-Unknown keys inside `[tooling]` are rejected by the existing strict-decode
-path — no bespoke handling. Value validation lives in `validate.go` alongside
+**Correction found during build:** the decoder is *not* strict. `decode` in
+`load.go` notes that "TOML unmarshal drops unknown keys", so an unknown key
+inside `[tooling]` would be silently ignored rather than rejected. The table is
+therefore captured as a raw `map[string]string` (`toolingTable`) — the same
+shape-capture trick `modelsTable` uses to reject the legacy `[models]` block —
+and `ResolvedTooling()` applies the defaults. That keeps the spec's
+unknown-key scenario honest without making decoding strict repo-wide, which
+would change behavior for every other table.
+
+Value validation lives in `validate.go` alongside
 the other closed-set checks and follows the v0.8.0 precedent of naming the
 offender rather than failing anonymously:
 

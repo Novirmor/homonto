@@ -270,7 +270,12 @@ type Config struct {
 	// detect and reject it. The field must be exported for pelletier/go-toml/v2
 	// to populate it; the private type is not an access restriction, since
 	// callers can read its exported fields.
-	Models       modelsTable      `toml:"models"`
+	Models modelsTable `toml:"models"`
+	// Tooling captures the raw [tooling] table (shell-proxy and
+	// code-intelligence provider selection). It is a raw map so an unknown key
+	// survives decode and can be rejected by name; read it through
+	// ResolvedTooling, which applies the "none" defaults.
+	Tooling      toolingTable     `toml:"tooling"`
 	Plugins      Plugins          `toml:"plugins"`
 	Settings     Settings         `toml:"settings"`
 	TUI          TUI              `toml:"tui"`

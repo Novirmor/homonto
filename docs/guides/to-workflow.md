@@ -132,6 +132,23 @@ sections. A fresh session reads it, then continues from the first unchecked
 task. `to doctor` is the health check (and, with `--quiet`, the enforcement
 hook primitive — see [enforcement](enforcement.md)).
 
+## Tooling providers
+
+Like onto, `to` names no tool of its own. Declare what you use in `[tooling]`
+and `homonto apply` renders it into the dispatcher's generated
+`references/tooling.md`:
+
+```toml
+[tooling]
+shell_proxy = "rtk"       # or "none" (default)
+code_intel  = "graphify"  # or "okf", or "none" (default)
+```
+
+Both default to `none`, so declaring nothing means the preflight names
+nothing. A declared-but-missing provider warns and the workflow proceeds; it
+never halts. homonto never installs or runs a provider. Full reference:
+[configuration](configuration.md#tooling).
+
 ## Where the details live
 
 Every command, flag, and crash-safety behavior:

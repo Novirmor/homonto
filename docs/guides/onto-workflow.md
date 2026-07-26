@@ -201,17 +201,25 @@ fresh session resumes without re-deriving state. `onto set build-pause
 plan-ready` records a first-class pause at the plan-ready gate for the same
 reason.
 
-## Recommended tooling
+## Tooling providers
 
-The onto skills recommend two tools; when either is missing they warn and
-proceed. A degraded session still works:
+onto names no tool of its own. You declare which providers the workflow uses
+in `[tooling]`, and `homonto apply` renders them into the dispatcher's
+generated `references/tooling.md`:
 
-- **rtk** — a token-optimized CLI proxy; workflow shell operations go
-  through it when installed. Missing rtk means higher token cost, never a
-  stop.
-- **graphify** (https://graphify.net) — codebase understanding; the open and
-  design phases ground claims in graphify/codegraph queries when available,
-  falling back to direct file reading otherwise.
+```toml
+[tooling]
+shell_proxy = "rtk"       # or "none" (default)
+code_intel  = "graphify"  # or "okf", or "none" (default)
+```
+
+Both keys default to `none`, so a config that declares nothing gets a
+preflight that names nothing and grounds by direct file reading. A declared
+provider that is missing produces a warning and the workflow proceeds — a
+degraded session still works. `homonto doctor` reports the same as a warning.
+
+homonto never installs, updates, or runs a provider; you install it yourself.
+See [configuration](configuration.md#tooling) for the full reference.
 
 The principles the skills enforce throughout — build only what the change
 needs, as simply as it can be built — are spelled out in [YAGNI](yagni.md)

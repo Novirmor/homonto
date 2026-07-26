@@ -64,15 +64,17 @@
 
 ## 6. Docs and versioning
 
-- [ ] 6.1 `docs/guides/configuration.md`: document the `[tooling]` table, the
+- [x] 6.1 `docs/guides/configuration.md`: document the `[tooling]` table, the
       closed value sets, and the `none` defaults.
-- [ ] 6.2 `docs/guides/onto-workflow.md` and `docs/guides/to-workflow.md`:
+- [x] 6.2 `docs/guides/onto-workflow.md` and `docs/guides/to-workflow.md`:
       replace the named-tool preflight prose with the provider model.
-- [ ] 6.3 New ADR recording provider-neutrality and the referenced-not-vendored
-      rule, superseding the tool-naming parts of ADR 0005 and ADR 0008.
-- [ ] 6.4 `docs/release-notes.md`: the behavior change plus the config snippet
+- [x] 6.3 New ADR recording provider-neutrality and the referenced-not-vendored
+      rule, superseding the tool-naming parts of ADR 0005 and ADR 0008. Staged
+      unnumbered at `adr/` inside this change with `Status: Proposed`, per the
+      staging rule in `docs/adr/README.md`; the number is assigned at archive.
+- [x] 6.4 `docs/release-notes.md`: the behavior change plus the config snippet
       that restores rtk and graphify.
-- [ ] 6.5 Bump `catalog/version.txt` and both framework versions.
+- [x] 6.5 Bump `catalog/version.txt` and both framework versions.
 
 ## 7. Verification
 

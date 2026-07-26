@@ -15,6 +15,45 @@ bookkeeper) — for every supported OS/arch as separate archives under one
 `SHA256SUMS`. `onto` and `to` each require `homonto` to have installed their
 framework first (`[frameworks.onto]` / `[frameworks.to]` + `homonto apply`).
 
+### New in v0.10.0 — tooling providers are declared, not shipped
+
+The `onto` and `to` frameworks no longer name `rtk` and `graphify` in their
+shipped prose. Which tools the workflow grounds against is now configuration
+([ADR 0017](https://github.com/noviopenworks/homonto/blob/main/docs/adr/0017-tooling-providers-are-declared-not-shipped.md),
+capability spec `openspec/specs/tooling-providers/`, catalog 0.10.0, onto
+0.7.0, to 0.5.0):
+
+```toml
+[tooling]
+shell_proxy = "rtk"       # "rtk" | "none"
+code_intel  = "graphify"  # "graphify" | "okf" | "none"
+```
+
+- **BREAKING for the rendered workflow — both keys default to `none`.** A
+  config with no `[tooling]` table now gets a preflight that names no tool at
+  all, and grounding falls back to direct file reading (already the documented
+  fallback). **Existing configs keep loading unchanged**; only the rendered
+  skill text differs. To keep the previous behavior, add the two lines above.
+- **`okf` is a selectable code-intelligence provider**
+  ([okf-generator](https://github.com/UmairBaig8/okf-generator)). homonto
+  **references** it and never downloads, installs, updates, or executes it —
+  exactly as it never installed `rtk` or `graphify`. Installing a provider
+  stays your job.
+- **`homonto apply` generates `references/tooling.md`** inside each framework's
+  dispatcher skill, describing exactly the declared pair. Shipped `SKILL.md`
+  files defer to it, so a provider you did not declare is never mentioned. The
+  file is regenerated on every apply — do not hand-edit it.
+- **An unknown key or provider name fails at load**, naming the offender and
+  the accepted set (`tooling.code_intel "ctags" is not a known provider
+  (accepted: graphify, okf, none)`).
+- **`homonto doctor` warns when a declared provider is not detected.** It
+  probes `PATH` and index/bundle directories only and never runs the provider,
+  so it cannot hang. The finding never fails a projection.
+
+Editing `[tooling]` re-renders on the next apply: the materialize fingerprint
+gained a tooling component, so a provider change is no longer invisible to the
+"everything up to date" gate.
+
 ### New in v0.9.0 — onto's judgment gates are enforced, not documented
 
 `onto` gated artifacts and bookkeeping but took a change's word on the three
@@ -371,7 +410,7 @@ finding for an OpenCode-primary agent's by-design absent Claude variant.
 
 ## Known limitations
 
-homonto is a young, deliberately narrow tool. For the v0.3 beta line:
+homonto is a young, deliberately narrow tool. For the current 0.x line:
 
 - **OpenCode JSONC comments are not preserved** on any apply that writes
   `opencode.jsonc` (the file is rewritten as normalized JSON). Accepted for beta.

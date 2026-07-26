@@ -268,6 +268,48 @@ homonto no longer derives a default `model` (or `small_model`) from any route.
 Each tool uses its own default unless the operator pins one explicitly via
 `[settings.<tool>].model` (see [Settings](#settings--settingstool)).
 
+## Tooling — `[tooling]`
+
+Which optional developer tools the shipped workflow frameworks (`onto`, `to`)
+ground against. Both keys are optional and both default to `none`.
+
+```toml
+[tooling]
+shell_proxy = "rtk"       # "rtk" | "none"
+code_intel  = "graphify"  # "graphify" | "okf" | "none"
+```
+
+| Key | Accepted | Meaning |
+|---|---|---|
+| `shell_proxy` | `rtk`, `none` | Routes workflow shell operations through a token-optimizing proxy. Purely a cost optimization. |
+| `code_intel` | `graphify`, `okf`, `none` | The code-intelligence provider the open and design phases ground codebase claims in. |
+
+`okf` is [okf-generator](https://github.com/UmairBaig8/okf-generator).
+
+**Both default to `none`.** A config with no `[tooling]` table gets a
+preflight that names no tool at all, and grounding falls back to direct file
+reading. This is deliberate: before this table existed the frameworks named
+`rtk` and `graphify` in their shipped prose, so every user was told about two
+tools they might never run.
+
+**homonto never installs, updates, version-checks, or executes a provider.**
+Declaring one only changes the rendered instructions. Install it yourself.
+
+**How it reaches the skills.** `homonto apply` writes a generated
+`references/tooling.md` into each framework's dispatcher skill describing
+exactly the declared pair. The shipped `SKILL.md` files name no provider and
+defer to that file, so a provider you did not declare is never mentioned. The
+generated file is overwritten on every apply — do not hand-edit it.
+
+Unknown keys and unknown provider names fail at load, naming the offender:
+
+```
+tooling.code_intel "ctags" is not a known provider (accepted: graphify, okf, none)
+```
+
+`homonto doctor` reports a declared-but-undetected provider as a warning. It
+probes `PATH` and index/bundle directories only; it never runs the provider.
+
 ## Plugins — `[plugins.<tool>.<name>]`
 
 ```toml

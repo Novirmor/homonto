@@ -3,7 +3,7 @@ name: onto-skeptic
 description: Use in the verify phase to attack a verification claim from a fresh context — dispatch at least two in parallel, one per lens (conformance and robustness are mandatory; add more when the change earns them). Prompted to refute, never to approve; returns findings for the coordinator to triage.
 mode: subagent
 # Neutral capability intent — homonto renders it into each tool's native fields:
-# Claude's `tools:` allowlist and OpenCode's `permission:` map (internal/agentfm).
+# Claude's `disallowedTools:` denylist and OpenCode's `permission:` map (internal/agentfm).
 # A skeptic judges on a strong reviewing model (installer-picked) and must RE-RUN evidence, so it keeps
 # bash; it never edits (read-only) — a skeptic that fixes what it finds has
 # contaminated the very context that makes it independent. Spawns nothing.

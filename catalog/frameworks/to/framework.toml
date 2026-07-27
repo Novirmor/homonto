@@ -1,5 +1,5 @@
 name = "to"
-version = "0.5.0"
+version = "0.6.0"
 description = "to — minimal coding framework for LLMs (plan → do → done)"
 
 [dependencies]
@@ -19,8 +19,10 @@ to-do = "commands/to-do.md"
 to-done = "commands/to-done.md"
 to-no-slop = "commands/to-no-slop.md"
 
-# The to skills delegate to these specialist subagents — onto's cast, adapted:
-# one subagent at a time, strictly sequential, never in parallel. Every
+# The to skills delegate to these specialist subagents — onto's cast, adapted.
+# Concurrency follows write-scope (ADR 0019): the three read-only agents run
+# as concurrently as the work allows; to-implementer is the only writer and
+# runs strictly one at a time, because `to` keeps a single working tree. Every
 # resource this framework ships is namespaced `to-*` (the dispatcher skill is
 # the bare namespace root, `to`), so installing to never collides with another
 # framework's — or your own — agent of the same generic name. Do NOT also

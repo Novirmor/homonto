@@ -55,9 +55,14 @@ Subagents are used heavily in both frameworks. The distinction between onto and
   anyone relying on transcript order will notice.
 - The safety argument rests on enforcement, not on agent good behavior:
   `read_only: true` in a subagent's `homonto:` block is rendered by
-  `internal/agentfm` into Claude's `tools:` allowlist and OpenCode's
-  `permission:` map, denying the file-mutating tools in both. An agent that
-  cannot edit cannot race, whatever its prompt says.
+  `internal/agentfm` into Claude's `disallowedTools:` denylist (`Edit`,
+  `Write`, `NotebookEdit`) and OpenCode's `permission:` map (`edit: deny`),
+  denying the file-mutating tools in both. An agent that cannot edit cannot
+  race, whatever its prompt says. *(Corrected 2026-07-27: this originally said
+  "Claude's `tools:` allowlist", repeating a stale comment in the subagent
+  files. Claude has been rendered a denylist since catalog 0.6.0 — an
+  allowlist would silently strip every unlisted default the OpenCode variant
+  keeps.)*
 - That enforcement is also the new failure mode. Flipping a subagent's
   `read_only` to false now silently converts a safely-concurrent agent into a
   racing one, because the concurrency rule reads that flag rather than naming

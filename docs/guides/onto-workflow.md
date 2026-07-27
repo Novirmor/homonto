@@ -133,9 +133,19 @@ unsuccessful terminal state for work that stops rather than completes.
 
 ## Specialist subagents
 
-`homonto apply` installs the framework's subagents, which the onto skills
-delegate to. Do not also declare them in a top-level `[subagents.*]` table;
-the names collide.
+`homonto apply` installs the framework's agents. Do not also declare them in a
+top-level `[subagents.*]` table; the names collide.
+
+onto ships **five** agent definitions: the `onto` orchestrator plus four
+specialists the skills delegate to.
+
+- **`onto`** — the orchestrator, and the one agent that is not a specialist.
+  It is declared `primary: true`, which renders **only for OpenCode**
+  (`mode: primary`), where the `/onto` command carries `agent: onto` and routes
+  into it. Claude has no primary-agent concept, so agentfm skips the Claude
+  variant entirely and `/onto` there loads the `onto` skill instead. Both paths
+  end at the same dispatcher doctrine — the agent prompt deliberately does not
+  restate the skill, so the two cannot drift.
 
 - **`onto-explorer`** — read-only; reads across many files (and keeps bash
   for the code-intelligence CLIs and git history) to answer "how does X work
@@ -159,7 +169,8 @@ the names collide.
 
 Planning, judging scope, deciding, and every `onto` binary call stay with the
 orchestrator, because those steps are gated on user confirmation and a
-subagent cannot prompt. Who does the *editing* depends on `execution`: under
+subagent cannot prompt. Who does the *editing* depends on the change's
+`build_mode` field (`onto set build-mode <change> direct|subagent`): under
 `direct` the orchestrator does it, and under `subagent` the implementer edits
 and commits its own task's files.
 
@@ -172,9 +183,13 @@ read-only agents run concurrently wherever the work is independent — grounding
 in open and design, per-task and per-lens review in build, scenario evidence
 and the skeptic lenses in verify. The edit-capable implementer runs one at a
 time unless each has its own git worktree and a disjoint file set, which is
-what `isolation: worktree` is for. Dialogs belong to the orchestrator alone — subagents
-have the question tool denied and return a `Questions:` section instead —
-and gate decisions are asked through an interactive dialog (`onto gate
+what `isolation: worktree` is for. Dialogs belong to the orchestrator alone:
+a subagent that needs a decision returns a `Questions:` section and stops,
+and the orchestrator asks, then re-dispatches with the answer. That protocol
+is the real guarantee — the rendering only backs it in OpenCode, where
+`dialogs: false` becomes `question: deny`. Claude has no equivalent field, and
+none is needed: a Claude subagent never has AskUserQuestion in the first
+place. Gate decisions are asked through an interactive dialog (`onto gate
 --json` supplies the structured decision; the skill renders it). The
 orchestrator — your main session — still owns every edit and commit.
 
@@ -210,6 +225,26 @@ plus a content hash — and `--write` persists it under the workspace, so a
 fresh session resumes without re-deriving state. `onto set build-pause
 plan-ready` records a first-class pause at the plan-ready gate for the same
 reason.
+
+## Picking the work up cold
+
+The reason onto costs more per change than [`to`](to-workflow.md) is that
+someone who was not there has to resume it or check what was done. Four things
+carry that, and nothing else claims to:
+
+| Question | What answers it |
+|---|---|
+| Where is this change, really? | `onto state <name> --json` — `derived_phase` is read from the artifacts, so a stale claim shows up as `phase_mismatch` |
+| What do I do next? | `onto handoff <name>` — identity, phase, pending gate, artifact excerpts; the first unchecked `tasks.md` item is the resume point, and its detail is under the matching `## Task N.M` in `plan.md` (`onto doctor` reports any drift between the two) |
+| Was this actually decided, or assumed? | the evidence tokens — `proposal-approved`, `approach-confirmed`, `close-confirmed` are recorded answers the binary refuses to advance without, and `notes.md` keeps the user's words |
+| Did it really pass? | `verification.md` — every delta-spec scenario with the literal command output, cross-checked against the recorded `verify.result` on leaving verify |
+
+**Who** answered and **when** come from git, not from onto: the state file and
+every artifact are committed, so `git log`/`git blame` over
+`docs/changes/<name>/` attributes each gate answer and each task's checkoff to
+a person and a time. onto deliberately stores no identity of its own — it would
+be a second, weaker copy of what the VCS already guarantees. The archived
+workspace under `docs/changes/archive/` is that whole record, kept.
 
 ## Tooling providers
 

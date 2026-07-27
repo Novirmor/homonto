@@ -13,10 +13,12 @@ onto doctor --quiet
 ```
 
 `onto doctor` is read-only and config-independent; `--quiet` prints nothing
-and signals health **only through its exit code** (non-zero when there are
-findings: a missing or broken change state, an unresolved dependency, a
-version skew, ≥3 failed verify rounds, an active change marked archived).
-That exit code is what a hook acts on.
+and signals health **only through its exit code**. It is non-zero when there
+are findings: a missing docs directory, a missing or malformed change state,
+a phase whose required artifact is absent, an unresolved dependency, an active
+change marked archived, ≥3 failed verify rounds, `tasks.md` ↔ `plan.md` drift,
+a malformed archive entry, or version skew between the binary and the homonto
+that installed the framework. That exit code is what a hook acts on.
 
 In a repository using the `to` framework instead, `to doctor --quiet` has
 the identical contract (read-only, config-independent, exit-code-only).

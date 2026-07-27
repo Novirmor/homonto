@@ -9,6 +9,11 @@
 # Deliberately coarse, like spec-command-check.sh was: it verifies EXISTENCE,
 # not correctness. It cannot tell you the advice went stale — only that a
 # reference points at nothing.
+#
+# Scope is BOTH the repo's own agent docs (§1–4) and the shipped catalog (§5–7).
+# The catalog is the larger body of agent-facing prose by far, and it was
+# unchecked until a review pointed out that the guard covered everything except
+# the tree it was written to protect.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
@@ -63,8 +68,72 @@ for p in docs/agents/comet.md docs/agents/okf.md docs/agents/verification.md \
   [ -e "$p" ] || { echo "missing required doc: $p"; fails=$((fails + 1)); }
 done
 
+# --- the shipped catalog ------------------------------------------------
+# Skills and subagents are agent-facing docs too, and cross-skill references
+# are the same failure mode as the /graphify one: a skill telling an agent to
+# read a file that ships nowhere. `references/tooling.md` is the one legitimate
+# dangling name — `homonto apply` generates it per install from `[tooling]`.
+GENERATED='references/tooling.md'
+
+CATALOG_DOCS=()
+while IFS= read -r f; do CATALOG_DOCS+=("$f"); done < <(find catalog -name '*.md' | sort)
+
+# 5. Relative markdown links in catalog docs resolve. Placeholder targets
+#    (`<capability>`) are template text, not references — skipped.
+for doc in "${CATALOG_DOCS[@]}"; do
+  dir="$(dirname "$doc")"
+  while IFS= read -r target; do
+    case "$target" in
+      http://*|https://*|mailto:*|'#'*|*'<'*|*'>'*) continue ;;
+    esac
+    target="${target%%#*}"
+    [ -n "$target" ] || continue
+    if [ ! -e "$dir/$target" ]; then
+      echo "$doc: link target does not exist: $target"
+      fails=$((fails + 1))
+    fi
+  done < <(grep -oE '\]\([^)]+\)' "$doc" | sed -E 's/^\]\(//; s/\)$//')
+done
+
+# 6. Backticked path-like references in catalog docs resolve against one of the
+#    three roots a skill can name: its own directory (`references/x.md`), the
+#    skills root (`onto-verify/references/x.md`), or the repo (`docs/x.md`).
+#    Bare filenames (`plan.md`) are change-workspace artifacts, not repo files.
+for doc in "${CATALOG_DOCS[@]}"; do
+  dir="$(dirname "$doc")"
+  skilldir="$dir"
+  case "$dir" in */references) skilldir="$(dirname "$dir")" ;; esac
+  while IFS= read -r ref; do
+    case "$ref" in */*) ;; *) continue ;; esac
+    [ "$ref" = "$GENERATED" ] && continue
+    # Adopter-workspace paths: `onto init` / `to init` scaffold these in the
+    # repo that adopts the framework. homonto does not dogfood onto, so they
+    # are correctly absent here and are not this check's business.
+    case "$ref" in docs/changes/*|docs/specs/*|docs/tasks/*) continue ;; esac
+    if [ ! -e "$skilldir/$ref" ] && [ ! -e "catalog/skills/$ref" ] && [ ! -e "$ref" ]; then
+      echo "$doc: references nothing that ships: $ref"
+      fails=$((fails + 1))
+    fi
+  done < <(grep -oE '`[A-Za-z0-9_./-]+\.(md|sh|py)`' "$doc" | tr -d '`' | sort -u)
+done
+
+# 7. Every subagent a skill or subagent declares in `spawn:` actually ships.
+#    A dispatch to a name with no definition fails at runtime, not at build.
+while IFS= read -r line; do
+  doc="${line%%:*}"
+  names="${line#*spawn: [}"
+  names="${names%]*}"
+  [ -n "$names" ] || continue
+  for n in ${names//,/ }; do
+    [ -e "catalog/subagents/$n.md" ] || {
+      echo "$doc: spawns a subagent that does not ship: $n"
+      fails=$((fails + 1))
+    }
+  done
+done < <(grep -rn '^  spawn: \[.\+\]' catalog/skills catalog/subagents || true)
+
 if [ "$fails" -ne 0 ]; then
   echo "agents-doc-check: $fails problem(s)" >&2
   exit 1
 fi
-echo "agents-doc-check: agent docs reference only things that exist"
+echo "agents-doc-check: agent docs and catalog reference only things that exist"

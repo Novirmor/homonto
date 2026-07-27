@@ -28,10 +28,12 @@ discipline its skills impose on the LLM (see
 A repository uses **one** workflow framework, never both:
 
 - **`to`** — simple development. Solo or small-team repos, straightforward
-  changes, minimal ceremony per change.
-- **onto** — enterprise tooling. Large or regulated changes that need
-  evidence-gated transitions, spec deltas, dependency graphs, and
-  non-skippable enforcement.
+  changes, minimal ceremony per change. The record it leaves is one `plan.md`
+  and the git history.
+- **onto** — work that is **handed off or audited**. Someone who was not there
+  has to resume the change or check what was done, so onto pays for an
+  archived workspace, recorded gate answers, spec deltas, and evidence-gated
+  transitions. That is the axis, not company size.
 
 Declaring both `[frameworks.onto]` and `[frameworks.to]` in one `homonto.toml`
 is a **config validation error**. The exclusivity is also structural: the two

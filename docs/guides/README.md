@@ -33,13 +33,16 @@ User-facing documentation, one topic per file.
 
 ## The workflow frameworks
 
-onto and `to` are an **exclusive choice** per repository: enterprise tooling
-vs. simple development.
+onto and `to` are an **exclusive choice** per repository. onto is for work that
+someone else has to pick up or audit — it leaves an archived, gate-stamped
+record a stranger can read; `to` is for a fast solo loop that still wants a
+real verification pass.
 
 - [`onto-workflow.md`](onto-workflow.md) — concepts: the binary/skills split,
   the five phases, presets, and the specialist subagents.
 - [`to-workflow.md`](to-workflow.md) — concepts: the bookkeeper/skills split,
-  `plan → do → done`, the plan contract, and the sequential-only subagents.
+  `plan → do → done`, the plan contract, and the subagents (read-only ones
+  concurrent, the single implementer serial).
 - [`enforcement.md`](enforcement.md) — making the workflow non-skippable at
   the tool boundary with hooks (`onto doctor --quiet` / `to doctor --quiet`
   plus Claude `settings.json` hooks or an OpenCode plugin).

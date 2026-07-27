@@ -23,11 +23,6 @@ marked *pending*.
 
 - <open question / candidate not yet confirmed>
 
-## Grounding
-
-- <code-intelligence queries run and what they showed; file reads that
-  anchor claims>
-
 ## Approaches  <!-- design phase -->
 
 - <candidate approaches with one-line trade-offs; mark the CONFIRMED one
@@ -36,6 +31,11 @@ marked *pending*.
 
 ## Rules
 
+- **Grounding does not live here.** What was queried and read belongs to the
+  artifact that rests on it: open-phase grounding (including the preflight's
+  tooling record) in `proposal.md` `## Grounding`, design-phase grounding in
+  `design.md` `## Grounding`. Those two are checked at close; a third copy
+  here was checked by nothing and read by no one.
 - Move items from Pending to Confirmed the moment the user answers —
   never leave an answered gate in Pending.
 - Never record a decision here that wasn't actually made; notes.md is a

@@ -10,7 +10,7 @@
 (`cmd/to`, plan → do → done, JSON output on its workflow commands, git-blind,
 gated bootstrap),
 the `builtin:to` catalog framework (dispatcher + three phase skills,
-`to-no-slop`, four sequential-only subagents), the onto-xor-to config
+`to-no-slop`, four subagents), the onto-xor-to config
 exclusivity, and the `to-lifecycle` Docker E2E suite in the release gate.
 Design record: [to-framework-design.md](to-framework-design.md).
 

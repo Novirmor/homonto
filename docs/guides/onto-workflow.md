@@ -211,6 +211,26 @@ fresh session resumes without re-deriving state. `onto set build-pause
 plan-ready` records a first-class pause at the plan-ready gate for the same
 reason.
 
+## Picking the work up cold
+
+The reason onto costs more per change than [`to`](to-workflow.md) is that
+someone who was not there has to resume it or check what was done. Four things
+carry that, and nothing else claims to:
+
+| Question | What answers it |
+|---|---|
+| Where is this change, really? | `onto state <name> --json` — `derived_phase` is read from the artifacts, so a stale claim shows up as `phase_mismatch` |
+| What do I do next? | `onto handoff <name>` — identity, phase, pending gate, artifact excerpts; the first unchecked `tasks.md` item is the resume point, and its detail is under the matching `## Task N.M` in `plan.md` (`onto doctor` reports any drift between the two) |
+| Was this actually decided, or assumed? | the evidence tokens — `proposal-approved`, `approach-confirmed`, `close-confirmed` are recorded answers the binary refuses to advance without, and `notes.md` keeps the user's words |
+| Did it really pass? | `verification.md` — every delta-spec scenario with the literal command output, cross-checked against the recorded `verify.result` on leaving verify |
+
+**Who** answered and **when** come from git, not from onto: the state file and
+every artifact are committed, so `git log`/`git blame` over
+`docs/changes/<name>/` attributes each gate answer and each task's checkoff to
+a person and a time. onto deliberately stores no identity of its own — it would
+be a second, weaker copy of what the VCS already guarantees. The archived
+workspace under `docs/changes/archive/` is that whole record, kept.
+
 ## Tooling providers
 
 onto names no tool of its own. You declare which providers the workflow uses

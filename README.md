@@ -34,7 +34,7 @@ only what homonto authors:
 - **`onto`** — the native, binary-enforced workflow framework: skills, slash
   commands, and four specialist subagents.
 - **`to`** — the native minimal coding framework for LLMs: a dispatcher, three
-  phase skills, `to-no-slop`, and four sequential-only subagents. onto and
+  phase skills, `to-no-slop`, and four subagents. onto and
   `to` are an exclusive choice; declaring both is a config error.
 - **Loose skills and commands** (`handoff`, `grilling`, …) — framework-agnostic
   and installed individually.
@@ -133,7 +133,7 @@ Full flags, exit codes, and examples:
 | [Remote source trust](docs/guides/remote-source-trust.md) | Pinned, fail-closed remote installs: threat model and lifecycle. |
 | [The onto workflow](docs/guides/onto-workflow.md) | Concepts: phases, skills, specialist subagents. |
 | [onto reference](docs/guides/onto-reference.md) | Every onto command and every gate the binary enforces. |
-| [The to workflow](docs/guides/to-workflow.md) | Concepts: `plan → do → done`, the plan contract, sequential-only subagents. |
+| [The to workflow](docs/guides/to-workflow.md) | Concepts: `plan → do → done`, the plan contract, the subagents. |
 | [to reference](docs/guides/to-reference.md) | Every `to` command: the gate, flags, archive naming, crash safety. |
 | [Enforcement](docs/guides/enforcement.md) | Making the workflow non-skippable with tool hooks (`onto doctor --quiet` / `to doctor --quiet`). |
 | [YAGNI](docs/guides/yagni.md) · [KISS](docs/guides/kiss.md) | The principles both frameworks enforce: what to build, and how simply. |

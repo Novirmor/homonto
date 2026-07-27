@@ -178,6 +178,10 @@ stay serial (one commit each, in order).
 A diff worth more than one opinion gets **several reviewers at once, one per
 lens** (correctness, security, contract/scope, clarity) rather than one
 generalist pass — they are read-only, so concurrency costs nothing but tokens.
+These lenses read **the diff**; verify's skeptic lenses attack **the running
+system's claims** and are named differently for that reason
+(`onto-verify/references/adversarial.md`). A reviewer pass never discharges a
+skeptic pass.
 
 This is the concrete wiring of the dispatcher's "Delegation, parallelization,
 and dialogs" section. Under **`execution: direct`** the orchestrator (this

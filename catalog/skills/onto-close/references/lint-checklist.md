@@ -49,13 +49,12 @@ obligation: fix them or stop.
       plan, verification — checked against their references (deviation
       anywhere is a finding; presets legitimately lack design/plan and
       possibly notes)
-- [ ] **`tasks.md` ↔ `plan.md` correspondence** (full workflow only, where
-      `plan.md` exists): every `- [ ] N.M` / `- [x] N.M` item in `tasks.md`
-      has a matching `## Task N.M` heading in `plan.md`, and every such
-      heading has its item. A number in one file and not the other is a
-      finding — it means work was appended to one and not the other. Also a
-      finding: any `- [ ]` checkbox inside `plan.md`, which carries no
-      completion state (`tasks.md` is the single checkoff)
+- [ ] **`tasks.md` ↔ `plan.md` correspondence** — **run `onto doctor`, do not
+      eyeball this.** The binary reports every task number in one file and not
+      the other, and any checkbox in `plan.md` (which carries no completion
+      state; `tasks.md` is the single checkoff). A change with no `plan.md` is
+      a preset and reports nothing. Drift means work was appended to one file
+      and not the other, which breaks resuming from the first unchecked item
 - [ ] **Grounding is recorded, not blank**: the proposal's `## Grounding`
       section names the code-intelligence queries run or the recorded
       fallback (e.g. "index declined — direct file reading"); a full

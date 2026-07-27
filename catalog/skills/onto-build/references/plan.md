@@ -32,7 +32,8 @@ Design: `design.md` (Status: Confirmed <date>). Completion state lives in
   `execution: subagent` (and deserve extra scrutiny under `direct`).
 - **Number tasks to match `tasks.md`.** `## Task 2.3` here is the detail for
   `- [ ] 2.3` there. Check the task off in `tasks.md` only; never add a
-  checkbox here.
+  checkbox here. **`onto doctor` enforces both halves** — a number in one file
+  and not the other, or any checkbox in this file, is a reported finding.
 - **The plan is live**: work discovered during execution is appended as
   `## Task N.M — <outcome> (discovered <date>)` with the same Files/Do/Verify
   fields, BEFORE its code is written — and appended to `tasks.md` in the same

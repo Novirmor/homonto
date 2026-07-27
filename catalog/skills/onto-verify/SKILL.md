@@ -74,7 +74,9 @@ ceiling, and there are two ways to add: a large full verify (many scenarios,
 several capabilities) MAY shard the conformance lens across additional
 skeptics — one per capability, each dispatch naming its capability's scenarios
 — while robustness stays one; and a change may earn an extra **lens**
-(security, data/migration, contract) per `references/adversarial.md`. All are
+(abuse, data/migration, compatibility) per `references/adversarial.md` — those
+names differ from build's reviewer lenses on purpose, because a skeptic attacks
+the running system, not the diff. All are
 read-only, so they go in the same parallel batch. Both mandatory lenses are prompted to
 refute, never approve; light mode uses one optional skeptic with skips
 recorded. Triage

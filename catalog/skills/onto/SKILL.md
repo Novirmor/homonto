@@ -286,43 +286,29 @@ confirmation and a subagent cannot ask. The **implementer** does mechanical edit
 from a handed spec; the read-only specialists investigate, audit, and attack. The
 orchestrator owns every commit and every `onto` binary call.
 
-`onto-skeptic` is dispatched **at least twice at once**, one per lens —
-`conformance` (refute each scenario's evidence) and `robustness` (attack the gaps
-the scenarios never cover) are mandatory in full mode; further lenses and
-per-capability conformance shards go in the same batch when the change earns
-them. Name the lens in the dispatch; it attacks only that lens. All are
-prompted to refute, never approve — see
-[`onto-verify`'s adversarial protocol](../onto-verify/references/adversarial.md).
-
 > **Subagents never prompt the user.** A subagent needing a decision **returns**
 > it as a `Questions:` section; the orchestrator asks the user (via a dialog) and
 > re-dispatches with the answer. This is a hard protocol because a **Claude** Task
 > subagent *cannot* prompt mid-run (AskUserQuestion belongs to the main session);
 > OpenCode subagents can but must not either, so the flow is identical everywhere.
 
-**Delegate, and fan out.** When a phase needs investigation or review, hand it to
-the subagent rather than doing it inline — and when the questions are
-**independent**, dispatch them **concurrently** (one subagent invocation per
-question) instead of serially:
+**Delegate, and fan out — concurrency follows what an agent writes, not which
+agent it is:**
 
-- **open / grounding** — split grounding that spans several areas into targeted
-  `onto-explorer` tasks, run at once, while you ask the user the clarifying
-  questions a subagent cannot.
-- **design / grounding** — split a broad "how does this subsystem work" into
-  several targeted `onto-explorer` tasks and run them at once; synthesize the
-  returns into the design. On genuinely open approaches, 2–3 agents may each
-  sketch one — you still present the comparison and the user still chooses.
-- **build** — after each task's edits, hand the diff to `onto-reviewer`; a diff
-  worth more than one opinion gets several at once, one per lens. Independent
-  tasks touching **non-overlapping** files can be explored/reviewed in parallel;
-  tasks that share files stay serial (one commit each, in order). Under
-  `execution: subagent` with `isolation: worktree`, disjoint tasks can also run
-  their **implementers** concurrently — one worktree each, joins merged in plan
-  order (`onto-build/references/subagent-protocol.md`).
-- **verify** — dispatch `onto-explorer` per capability to gather scenario
-  evidence concurrently, and the change-wide diff audit to `onto-reviewer`,
-  then run the mandatory skeptics in parallel (two lenses minimum, more when
-  the change earns it).
+- The three **read-only** agents (`onto-explorer`, `onto-reviewer`,
+  `onto-skeptic`) cannot corrupt a shared tree, so dispatch as many at once as
+  the work has independent questions — one invocation per question, never a
+  serial queue.
+- `onto-implementer` **edits**, so it runs one at a time unless each has its own
+  git worktree and a disjoint file set (`execution: subagent` plus
+  `isolation: worktree`).
+- Every `onto` binary call, commit, and user dialog stays with the orchestrator
+  and never runs concurrently.
+
+Each phase skill names its own fan-out — which questions split, and where
+concurrency is unsafe because the work shares a fixture, a port, or a file.
+Follow the phase skill; this section is the rule it applies, not a second copy
+of it.
 
 Who edits depends on `execution`, recorded on the change:
 

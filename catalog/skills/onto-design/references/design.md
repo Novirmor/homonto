@@ -17,9 +17,11 @@ Confirmed: YYYY-MM-DD (<which approach, in a few words>)
 <the chosen approach in one paragraph; rejected alternatives in one line
 each with the reason>
 
-## Goals / Non-Goals
+## Goals
 
-**Goals:** <what this design delivers>. **Non-goals:** <explicitly out>.
+<what this design delivers. Scope boundaries are the proposal's `## Non-Goals`
+and are not repeated here — state one only if the design narrows further than
+the proposal did, marked `Narrows scope:`.>
 
 ## Architecture
 
@@ -39,7 +41,8 @@ each with the reason>
 
 ## Grounding
 
-<code-intelligence queries and file reads the design rests on>
+<the design-phase grounding only: the queries and file reads *this design*
+rests on. Open-phase grounding stays in proposal.md — do not restate it.>
 ```
 
 ## Rules

@@ -42,8 +42,10 @@ summary.
 
 ## Grounding
 
-<code-intelligence queries run, or the recorded fallback ("index
-declined — direct file reading", per the dispatcher preflight)>
+<the sole record of open-phase grounding: code-intelligence queries run and
+what they showed, file reads that anchor the claims above, or the recorded
+fallback ("index declined — direct file reading", per the dispatcher
+preflight). Design-phase grounding goes in design.md; notes.md keeps none.>
 
 ## Impact
 

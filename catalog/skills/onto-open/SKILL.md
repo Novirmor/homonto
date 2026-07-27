@@ -27,8 +27,8 @@ Ask questions until the requirement is unambiguous — one topic at a time,
 multiple-choice where possible. Do not treat a single Q&A round as enough
 for anything non-trivial. Ground every claim about the existing codebase in
 your configured code-intelligence provider's queries when available — the
-preflight may have recorded a direct-file-reading fallback in notes.md
-Grounding; grounding in real file reads is required either way, guesswork
+preflight may have recorded a direct-file-reading fallback in `proposal.md`
+`## Grounding`; grounding in real file reads is required either way, guesswork
 never is.
 
 When grounding spans more than one area of the codebase, split it into

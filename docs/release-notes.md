@@ -15,13 +15,55 @@ bookkeeper) — for every supported OS/arch as separate archives under one
 `SHA256SUMS`. `onto` and `to` each require `homonto` to have installed their
 framework first (`[frameworks.onto]` / `[frameworks.to]` + `homonto apply`).
 
+### New in v0.11.0 — a resumable record, enforced
+
+onto's axis is now stated plainly: a change survives being handed to someone
+who was not there. `to` matches onto's code standards and skips its record;
+company size was never the distinction and is no longer claimed
+([ADR 0021](https://github.com/noviopenworks/homonto/blob/main/docs/adr/0021-onto-is-for-handoff-and-audit.md),
+catalog 0.11.0, onto 0.8.0, to 0.6.0).
+
+- **`onto doctor` now reports `tasks.md` ↔ `plan.md` drift** — a task number
+  in one file and not the other, or any checkbox in `plan.md`. That pairing is
+  the resume mechanism (continue at the first unchecked item, read its detail
+  under the matching `## Task N.M`), and it was previously checked only by a
+  prose item in the close-phase lint. **A workspace carrying existing drift
+  will start failing `onto doctor`, including the `--quiet` enforcement hook.**
+  That is the unreported problem surfacing, not a regression. A change with no
+  `plan.md` is a preset and reports nothing.
+- **Subagent concurrency follows write-scope, not framework**
+  ([ADR 0019](https://github.com/noviopenworks/homonto/blob/main/docs/adr/0019-parallelism-follows-write-scope.md),
+  [ADR 0020](https://github.com/noviopenworks/homonto/blob/main/docs/adr/0020-onto-parallel-implementers-are-supported.md)).
+  `to` previously forbade all subagent parallelism; the justification only ever
+  covered agents that *write*, and three of its four never do. Read-only agents
+  now run concurrently in both frameworks; the single implementer stays serial
+  in `to`, and in onto may run in parallel given a worktree each.
+- **Verify's skeptic lenses were renamed** to `abuse`, `data-migration`, and
+  `compatibility`. They previously collided with build's reviewer lenses on
+  "security" and "contract" despite asking a different question — a reviewer
+  reads the diff, a skeptic attacks the running system. Prose-only; nothing in
+  the binary keys on lens names.
+- **Docs corrected against the shipped binaries.** An audit found and fixed
+  nine mismatches, including: the state field is `build_mode` (not
+  `execution`); `read_only` renders as Claude's `disallowedTools:` **denylist**
+  (not a `tools:` allowlist); the three evidence tokens
+  (`proposal_approved`, `approach_confirmed`, `close_confirmed`) were absent
+  from both the canonical schema and the command reference; `onto advance
+  --to build` was undocumented; onto ships **five** agents, not four (the
+  `onto` orchestrator renders for OpenCode only); and `schema_version` is a
+  real top-level config key that rejects a newer config fail-closed.
+- **Artifact sections have one owner.** Grounding is recorded in `proposal.md`
+  (open) and `design.md` (design) and no longer duplicated into `notes.md`;
+  scope `Non-Goals` belong to `proposal.md` alone.
+
 ### New in v0.10.0 — tooling providers are declared, not shipped
+
+*(Prepared but never tagged; it ships as part of v0.11.0.)*
 
 The `onto` and `to` frameworks no longer name `rtk` and `graphify` in their
 shipped prose. Which tools the workflow grounds against is now configuration
-([ADR 0017](https://github.com/noviopenworks/homonto/blob/main/docs/adr/0017-tooling-providers-are-declared-not-shipped.md),
-capability spec `openspec/specs/tooling-providers/`, catalog 0.10.0, onto
-0.7.0, to 0.5.0):
+([ADR 0022](https://github.com/noviopenworks/homonto/blob/main/docs/adr/0022-tooling-providers-are-declared-not-shipped.md),
+catalog 0.10.0, onto 0.7.0, to 0.5.0):
 
 ```toml
 [tooling]

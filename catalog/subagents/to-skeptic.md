@@ -3,7 +3,7 @@ name: to-skeptic
 description: Use in to-done to attack the "it works" claim from a fresh context before archiving. Read-only, so several may run concurrently, each with a distinct lens. Every completed pass must describe the unchanged final candidate — a verdict invalidated by later code changes is rerun against the new candidate.
 mode: subagent
 # Neutral capability intent — homonto renders it into each tool's native fields:
-# Claude's `tools:` allowlist and OpenCode's `permission:` map (internal/agentfm).
+# Claude's `disallowedTools:` denylist and OpenCode's `permission:` map (internal/agentfm).
 # A skeptic judges on a strong reviewing model (installer-picked) and must RE-RUN evidence, so it keeps
 # bash; it never edits (read-only) — a skeptic that fixes what it finds has
 # contaminated the very context that makes it independent. Spawns nothing.

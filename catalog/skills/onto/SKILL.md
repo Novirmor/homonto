@@ -300,7 +300,7 @@ agent it is:**
   the work has independent questions — one invocation per question, never a
   serial queue.
 - `onto-implementer` **edits**, so it runs one at a time unless each has its own
-  git worktree and a disjoint file set (`execution: subagent` plus
+  git worktree and a disjoint file set (`build_mode: subagent` plus
   `isolation: worktree`).
 - Every `onto` binary call, commit, and user dialog stays with the orchestrator
   and never runs concurrently.
@@ -310,11 +310,11 @@ concurrency is unsafe because the work shares a fixture, a port, or a file.
 Follow the phase skill; this section is the rule it applies, not a second copy
 of it.
 
-Who edits depends on `execution`, recorded on the change:
+Who edits depends on `build_mode`, recorded on the change (`onto set build-mode`):
 
-- **`execution: direct`** — the orchestrator (this session) owns every edit and
+- **`build_mode: direct`** — the orchestrator (this session) owns every edit and
   commit; the subagents only read and report.
-- **`execution: subagent`** — `onto-implementer` edits and commits its own
+- **`build_mode: subagent`** — `onto-implementer` edits and commits its own
   task's files, one fresh context per task, per
   [`onto-build`'s subagent protocol](../onto-build/references/subagent-protocol.md).
   The orchestrator coordinates and verifies against the repository, never

@@ -19,7 +19,7 @@ one small, verified task at a time.
 - **Resume from a pause**: if `onto state <name> --json` shows
   `build_pause: plan-ready`, `plan.md` is already written — do NOT re-run the
   planning step. Tell the user the build is stopped at plan-ready; once they
-  confirm continuing, `onto set build-pause <name> clear`, choose the execution
+  confirm continuing, `onto set build-pause <name> clear`, choose the build
   config, and proceed.
 - On resume (fresh session, context loss): run `onto dirt <name> --json`
   FIRST (falling back to `git status` on an old binary). Dirt classified
@@ -49,8 +49,8 @@ other is drift, and the close lint checks for it.
 
 ### 2. Plan-ready gate
 
-> **GATE (plan-ready + execution config):** pause. The user reviews the plan
-> and chooses the execution configuration, recorded through the binary:
+> **GATE (plan-ready + build config):** pause. The user reviews the plan
+> and chooses the build configuration, recorded through the binary:
 >
 > - `onto set build-mode <name> direct|subagent` — direct in-session; subagent
 >   only when real background dispatch capability exists
@@ -65,7 +65,7 @@ other is drift, and the close lint checks for it.
 >
 > **Pausing here is first-class.** If the user wants to stop after the plan
 > (e.g. to review it later or switch models/sessions), run `onto set build-pause
-> <name> plan-ready` and end the invocation — do not choose the execution config
+> <name> plan-ready` and end the invocation — do not choose the build config
 > or start executing. On the next dispatch the plan-ready pause is recorded state,
 > so a fresh session resumes cleanly (see Entry check) rather than re-planning.
 > Clear it with `onto set build-pause <name> clear` when resuming to execute.
@@ -103,12 +103,12 @@ name).
 
 ### 3. Execute task by task
 
-**`execution: subagent`** → follow `references/subagent-protocol.md`: the
+**`build_mode: subagent`** → follow `references/subagent-protocol.md`: the
 main session coordinates only — one fresh-context implementer agent per
 task, coordinator verifies commits and checkoffs against the repository
 (never the agent's report), reviewer agent after `(risk: high)` tasks and
 the final task. If no real dispatch capability exists, fall back to
-`execution: direct`, record it, announce it.
+`build_mode: direct`, record it, announce it.
 
 > **Parallel implementers are a supported option, not a theoretical one.**
 > When the next tasks touch **disjoint file sets** and `isolation` is
@@ -121,7 +121,7 @@ the final task. If no real dispatch capability exists, fall back to
 > and `references/worktree-protocol.md` the mechanics. Meet every condition
 > or stay serial — the shared-file race is silent.
 
-**`execution: direct`** → for each task, in order:
+**`build_mode: direct`** → for each task, in order:
 
 1. **`tdd: tdd`** — write the failing test FIRST, run it, watch it fail for
    the expected reason; then write the minimal implementation; watch it
@@ -184,9 +184,9 @@ system's claims** and are named differently for that reason
 skeptic pass.
 
 This is the concrete wiring of the dispatcher's "Delegation, parallelization,
-and dialogs" section. Under **`execution: direct`** the orchestrator (this
+and dialogs" section. Under **`build_mode: direct`** the orchestrator (this
 session) owns every edit and commit and the subagents only read and report;
-under **`execution: subagent`** implementers edit and commit their own task's
+under **`build_mode: subagent`** implementers edit and commit their own task's
 files. The orchestrator owns every `onto` binary call in both modes.
 Use the question dialog for the plan-ready and scope-change decisions when it is
 available.

@@ -40,6 +40,9 @@ verify:
 close:
   merged: false            # set true by `onto merge-deltas` after spec deltas land
 directive: null            # verbatim user pre-authorization text, if any
+proposal_approved: null    # open's artifact-review answer, verbatim; refuses `advance` out of open (full only)
+approach_confirmed: null   # design's approach answer, verbatim; refuses design → build (full only)
+close_confirmed: null      # close's final-confirmation answer, verbatim; refuses `merge-deltas` and `close` (all workflows)
 guides: pending            # pending | updated | "waived: <reason>" (quoted — bare waived: is invalid YAML)
 archived: false            # set true at archive; phase stays "close"
                            # ("done" is derived-only, never written)
@@ -60,6 +63,14 @@ observed:                  # observational only — never a gate, never blocking
 - `isolation` is required before entering build (the binary refuses the
   design→build advance without it). Choose it at the design exit gate (see
   `onto-design`).
+- The three **evidence tokens** hold the user's answer verbatim and are set
+  only by `onto set proposal-approved|approach-confirmed|close-confirmed
+  <change> <evidence>`. They are what makes a user gate non-skippable: the
+  binary refuses the transition while the token is empty, so an honest agent
+  cannot advance past a question it never asked. `onto gate <change> --json`
+  lists whichever are still pending with the exact setter. The two full-only
+  tokens are not required of `fix`/`tweak` presets; `close_confirmed` is
+  required of every workflow.
 - `deps` names other changes under `docs/changes/`; a dep is archived iff
   `docs/changes/archive/????-??-??-<dep>/` exists (date-anchored exact name,
   never bare suffix). The dispatcher warns before resuming a change whose deps

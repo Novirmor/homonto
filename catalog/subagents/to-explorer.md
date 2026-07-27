@@ -3,7 +3,7 @@ name: to-explorer
 description: Use to answer questions about how a codebase works or to locate where behavior lives, by reading across many files and returning conclusions rather than raw dumps. Read-only, so several may run concurrently — dispatch one per question rather than serializing them.
 mode: subagent
 # Neutral capability intent — homonto renders it into each tool's native fields:
-# Claude's `tools:` allowlist and OpenCode's `permission:` map (internal/agentfm).
+# Claude's `disallowedTools:` denylist and OpenCode's `permission:` map (internal/agentfm).
 # Exploration is read-only and spawns nothing, but KEEPS bash: the grounding
 # tools it is told to prefer (code-intelligence CLIs, `git log`) are shell
 # commands. The installer picks its model ([subagents.to-explorer.<tool>]) —

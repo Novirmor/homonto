@@ -51,10 +51,13 @@ overwrites existing content.
 It requires the framework installed, refuses to clobber an existing change,
 and validates that the name is kebab-case with no path traversal.
 
-## Advancing — `onto advance <change>`
+## Advancing — `onto advance <change> [--to build]`
 
 Each call attempts **one** transition and writes nothing unless every gate
-below passes, in this order:
+below passes, in this order. `--to build` is **preset-only** and the only
+accepted value: it walks the gated advances up to build in one call, so a
+`fix`/`tweak` change reaches build without two ceremonial advances. Every gate
+below still applies to each step it walks.
 
 1. **Framework installed** (the install gate) and a **valid change name**.
 2. State **loads** and the change is **not abandoned**.
@@ -80,11 +83,22 @@ below passes, in this order:
 5. **Leaving `build`:** `tasks.md` has **no unchecked items** (`- [ ]`).
 6. **Evidence / entry tokens** (recorded via `onto set`, not inferred from
    files):
+   - **Leaving `open`** (full only): `proposal_approved` is non-empty — the
+     open phase's artifact-review answer, recorded verbatim.
    - **Entering `build`** (design→build): `isolation` is set (`branch` or
-     `worktree`), so planning and build work is never committed unisolated —
-     **and** the change is **not in a dependency cycle** (no valid build
-     order exists).
+     `worktree`), so planning and build work is never committed unisolated;
+     **and** `approach_confirmed` is non-empty (full only) — the design
+     phase's approach answer; **and** the change is **not in a dependency
+     cycle** (no valid build order exists).
    - **Leaving `verify`** (verify→close): `verify.result == pass`.
+
+   The approval tokens are what make a user gate non-skippable: the binary
+   refuses the transition while the token is empty, so an honest agent cannot
+   advance past a question it never asked. Presets are exempt from the two
+   full-only tokens (they have no open/design phases) but not from
+   `close_confirmed`, below. A change already in flight when these landed
+   refuses its next `advance` until the missing token is recorded — that is
+   the unanswered gate being re-asked, not a fault.
 7. **Worktree cleanliness:** entering `close` is **blocked** by uncommitted
    paths — except paths under *another* change's `docs/changes/<other>/`,
    which are that change's own close gate's obligation (parallel changes
@@ -104,6 +118,10 @@ RENAMED → MODIFIED → REMOVED → ADDED application, lint-checked,
 **idempotent** (it sets and honors `close.merged`). This replaces the
 by-hand merge that was the workflow's most destructive step.
 
+It shares the close phase's confirmation gate: `merge-deltas` refuses while
+`close_confirmed` is empty, so the specs never move before the user has
+confirmed the close.
+
 ## Exiting — `onto close <change>`
 
 Archives a change that has reached the `close` phase. Gates, in order:
@@ -111,6 +129,8 @@ Archives a change that has reached the `close` phase. Gates, in order:
 1. Framework installed; valid name; state loads.
 2. Phase **is `close`** (advance until it reaches close first).
 3. **Close-evidence gate** — the tokens the workflow produces:
+   - `close_confirmed` is non-empty — the final-confirmation answer, recorded
+     verbatim, required of **every** workflow including presets, **and**
    - `verify.result == pass`, **and**
    - `close.merged == true`, **and**
    - for the **full** workflow only, **guides resolved**: `guides` is
@@ -137,6 +157,9 @@ by hand:
 
 | `onto set` field | Gate it satisfies / records |
 |---|---|
+| `proposal-approved <change> <evidence>` | required to **leave open** (full only); the user's answer, verbatim |
+| `approach-confirmed <change> <evidence>` | required to **enter build** (full only); the user's answer, verbatim |
+| `close-confirmed <change> <evidence>` | required for **`merge-deltas`** and **`close`** (all workflows); the user's answer, verbatim |
 | `isolation <branch\|worktree>` | required to **enter build** |
 | `integration <merge\|pr>` | how the branch is integrated at close — merge into base, or open a PR (the onto-close skill performs the git work) |
 | `build-pause <plan-ready\|clear>` | record/clear a first-class pause at the plan-ready gate so a fresh session resumes without re-planning |

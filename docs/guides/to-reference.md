@@ -63,5 +63,11 @@ a killed process names its pid and is removed by hand.
 
 No evidence gates (the `--verified` checkbox is an assertion, not a
 guarantee — the `to-done` skill is where verification rigor lives), no spec
-deltas, no dependency graph, no git awareness, no parallel subagents, and no
-escalation path to onto. If a change needs those, the repo needs onto.
+deltas, no dependency graph, no git awareness, no worktree-per-implementer
+orchestration, and no escalation path to onto. If a change needs those, the
+repo needs onto.
+
+`to` does run subagents concurrently — the three read-only ones, per
+[ADR 0019](../adr/0019-parallelism-follows-write-scope.md). What it does not
+do is run two *writers*: `to-implementer` is strictly one at a time, because
+`to` keeps a single working tree.

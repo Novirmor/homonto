@@ -9,6 +9,7 @@ Quick map of every table:
 
 | Table | Declares | Reference |
 |---|---|---|
+| `schema_version` | The config format version (top-level key, not a table) | [Schema version](#schema-version) |
 | `[mcps.<name>]` | MCP servers | [MCP servers](#mcp-servers--mcpsname) |
 | `[skills.<name>]` | Skills (symlinked) | [Skills](#skills--skillsname) |
 | `[commands.<name>]` | Slash commands | [Commands](#commands--commandsname) |
@@ -20,6 +21,22 @@ Quick map of every table:
 | `[tui.opencode]` | OpenCode TUI settings | [TUI](#tui--tuiopencode) |
 | `[marketplaces.claude.<name>]` | Claude plugin marketplaces | [Marketplaces](#marketplaces--marketplacesclaudename) |
 | `[agents.<name>]` | Legacy — folds into `[subagents.<name>]` | [Legacy agents](#legacy-agents--agentsname) |
+
+## Schema version
+
+`schema_version` is an optional top-level key (not a table) naming the
+`homonto.toml` format version. The current version is **1**.
+
+```toml
+schema_version = 1
+```
+
+Omitting it, or setting `0`, means a legacy pre-versioning config and is
+treated as the current version — so existing files keep working untouched. A
+value **greater** than the binary supports is **rejected fail-closed at
+load**, rather than partially applied: an older `homonto` never silently
+mis-projects a config written for a newer one. Upgrade the binary, or lower
+the declared version.
 
 ## Common concepts
 

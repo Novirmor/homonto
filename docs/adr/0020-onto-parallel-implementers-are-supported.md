@@ -3,6 +3,10 @@
 - **Status:** Accepted
 - **Date:** 2026-07-27
 
+*(Corrected 2026-07-27: this originally named the state field `execution`. The
+field is `build_mode`, set by `onto set build-mode`; the values `direct` and
+`subagent` are unchanged.)*
+
 ## Context
 
 [ADR 0019](0019-parallelism-follows-write-scope.md) set the rule that
@@ -12,7 +16,7 @@ review fan-out in build — but the guidance had drifted in three ways.
 
 The dispatcher and `onto-build` both stated, without qualification, that "the
 orchestrator owns every edit and commit; the subagents only read and report."
-That is true under `execution: direct` and false under `execution: subagent`,
+That is true under `build_mode: direct` and false under `build_mode: subagent`,
 where `onto-implementer` is the one agent granted write capability. It sat
 three lines from a table listing that agent as **edits**, in exactly the place
 an agent decides whether to delegate.
@@ -45,7 +49,7 @@ We will apply the write-scope rule at every phase and state it consistently.
 
 ## Consequences
 
-- The division of labor works as designed under `execution: subagent`, where
+- The division of labor works as designed under `build_mode: subagent`, where
   the unqualified sentence had been telling agents not to use it.
 - Parallel implementers are now discoverable, which means they will be used —
   including by agents that skim the five conditions. This is the one place a

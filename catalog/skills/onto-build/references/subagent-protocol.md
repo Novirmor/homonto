@@ -1,4 +1,4 @@
-# Subagent build protocol (`execution: subagent`)
+# Subagent build protocol (`build_mode: subagent`)
 
 Coordinator/worker execution for the build phase. **The main session NEVER
 implements** — it plans, dispatches, verifies, and keeps state true.

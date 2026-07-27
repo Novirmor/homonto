@@ -307,3 +307,58 @@ func execDoctorArgs(t *testing.T, args ...string) (string, error) {
 	cmd.SetArgs(append([]string{"doctor"}, args...))
 	return buf.String(), cmd.Execute()
 }
+
+// 12. tasks.md <-> plan.md drift is a doctor finding, not just close-time prose.
+// This is the resumability guarantee: a fresh session resumes at the first
+// unchecked tasks.md item and needs its detail under a matching plan.md heading.
+func TestDoctorCommand_TaskPlanDrift(t *testing.T) {
+	tmp := t.TempDir()
+	seedDocsLayout(t, tmp)
+	seedActive(t, tmp, "drifted", "build", []string{"proposal.md", "design.md"}, nil)
+	changeDir := filepath.Join(tmp, "docs", "changes", "drifted")
+	writeFile(t, filepath.Join(changeDir, "tasks.md"), "# Tasks\n\n- [ ] 1.1 a\n- [ ] 1.2 discovered\n")
+	writeFile(t, filepath.Join(changeDir, "plan.md"), "# Plan\n\n## Task 1.1 — a\n")
+
+	out, err := execDoctor(t, tmp)
+	if err == nil {
+		t.Fatalf("execute() = nil, want error; out=%q", out)
+	}
+	if !strings.Contains(out, "1.2") {
+		t.Errorf("out = %q, want it to name the task number missing from plan.md", out)
+	}
+}
+
+// 13. A preset has no plan.md, and that must not read as drift — otherwise
+// doctor is permanently unhappy on every fix/tweak change.
+func TestDoctorCommand_PresetWithoutPlanIsHealthy(t *testing.T) {
+	tmp := t.TempDir()
+	seedDocsLayout(t, tmp)
+	seedActive(t, tmp, "preset", "open", []string{"proposal.md"}, nil)
+	writeFile(t, filepath.Join(tmp, "docs", "changes", "preset", "tasks.md"), "# Tasks\n\n- [ ] 1.1 a\n")
+
+	out, err := execDoctor(t, tmp)
+	if err != nil {
+		t.Fatalf("execute() = %v, want nil; out=%q", err, out)
+	}
+	if !strings.Contains(out, "healthy") {
+		t.Errorf("out = %q, want healthy", out)
+	}
+}
+
+// 14. plan.md must carry no completion state (ADR 0018).
+func TestDoctorCommand_CheckboxInPlanIsFinding(t *testing.T) {
+	tmp := t.TempDir()
+	seedDocsLayout(t, tmp)
+	seedActive(t, tmp, "boxed", "build", []string{"proposal.md", "design.md"}, nil)
+	changeDir := filepath.Join(tmp, "docs", "changes", "boxed")
+	writeFile(t, filepath.Join(changeDir, "tasks.md"), "# Tasks\n\n- [ ] 1.1 a\n")
+	writeFile(t, filepath.Join(changeDir, "plan.md"), "# Plan\n\n## Task 1.1 — a\n\n- [x] 1.1 done\n")
+
+	out, err := execDoctor(t, tmp)
+	if err == nil {
+		t.Fatalf("execute() = nil, want error; out=%q", out)
+	}
+	if !strings.Contains(out, "single checkoff") {
+		t.Errorf("out = %q, want it to name tasks.md as the single checkoff", out)
+	}
+}

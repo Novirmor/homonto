@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"sort"
 	"strings"
 
 	"github.com/noviopenworks/homonto/internal/fsutil"
@@ -309,6 +310,112 @@ func NextPhase(phase string) (string, bool) {
 		}
 	}
 	return "", false
+}
+
+// taskItemNum matches a tasks.md checklist item's number: "- [ ] 2.3 …".
+var taskItemNum = regexp.MustCompile(`^- \[[ xX]\]\s+(\d+\.\d+)`)
+
+// planTaskNum matches a plan.md detail heading's number: "## Task 2.3 — …".
+var planTaskNum = regexp.MustCompile(`^## Task\s+(\d+\.\d+)`)
+
+// TaskPlanDrift is the divergence between a change's tasks.md checklist and
+// its plan.md detail blocks (ADR 0018: tasks.md is the single checkoff,
+// plan.md carries the detail under a matching "## Task N.M" heading).
+type TaskPlanDrift struct {
+	// MissingFromPlan holds tasks.md item numbers with no plan.md heading.
+	MissingFromPlan []string
+	// MissingFromTasks holds plan.md heading numbers with no tasks.md item.
+	MissingFromTasks []string
+	// PlanCheckboxes counts checkbox lines in plan.md. Any is a defect:
+	// completion state lives in tasks.md alone, and a second checkbox is how
+	// the two lists silently disagree about what is done.
+	PlanCheckboxes int
+}
+
+// Empty reports whether the two files correspond exactly.
+func (d TaskPlanDrift) Empty() bool {
+	return len(d.MissingFromPlan) == 0 && len(d.MissingFromTasks) == 0 && d.PlanCheckboxes == 0
+}
+
+// CheckTaskPlan compares a change's tasks.md against its plan.md and reports
+// where they diverge. It exists because the pairing is what makes a change
+// resumable by someone who was not there: a fresh session resumes at the first
+// unchecked tasks.md item and reads its detail under the matching plan.md
+// heading. A number in one file and not the other breaks that handoff, and
+// until now nothing but a prose checklist at close looked for it.
+//
+// A missing plan.md is not drift — presets legitimately run without one — so
+// the check reports an empty result. A missing or unreadable tasks.md is an
+// error.
+func CheckTaskPlan(tasksPath, planPath string) (TaskPlanDrift, error) {
+	var drift TaskPlanDrift
+
+	if _, err := os.Stat(planPath); err != nil {
+		if os.IsNotExist(err) {
+			return drift, nil
+		}
+		return drift, fmt.Errorf("onto-state: failed to stat %s: %w", planPath, err)
+	}
+
+	taskNums, err := scanNumbers(tasksPath, taskItemNum, nil)
+	if err != nil {
+		return drift, err
+	}
+	var planCheckboxes int
+	planNums, err := scanNumbers(planPath, planTaskNum, &planCheckboxes)
+	if err != nil {
+		return drift, err
+	}
+	drift.PlanCheckboxes = planCheckboxes
+
+	for _, n := range sortedKeys(taskNums) {
+		if !planNums[n] {
+			drift.MissingFromPlan = append(drift.MissingFromPlan, n)
+		}
+	}
+	for _, n := range sortedKeys(planNums) {
+		if !taskNums[n] {
+			drift.MissingFromTasks = append(drift.MissingFromTasks, n)
+		}
+	}
+	return drift, nil
+}
+
+// scanNumbers collects the capture group of re over each line of path. When
+// checkboxes is non-nil it also counts checkbox lines, which is how the plan is
+// caught carrying completion state it must not have.
+func scanNumbers(path string, re *regexp.Regexp, checkboxes *int) (map[string]bool, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return nil, fmt.Errorf("onto-state: failed to read %s: %w", path, err)
+	}
+	defer f.Close()
+
+	found := map[string]bool{}
+	scanner := bufio.NewScanner(f)
+	for scanner.Scan() {
+		line := strings.TrimSpace(scanner.Text())
+		if m := re.FindStringSubmatch(line); m != nil {
+			found[m[1]] = true
+		}
+		if checkboxes != nil && (strings.HasPrefix(line, "- [ ]") ||
+			strings.HasPrefix(line, "- [x]") || strings.HasPrefix(line, "- [X]")) {
+			*checkboxes++
+		}
+	}
+	if err := scanner.Err(); err != nil {
+		return nil, fmt.Errorf("onto-state: failed to read %s: %w", path, err)
+	}
+	return found, nil
+}
+
+func sortedKeys(m map[string]bool) []string {
+	out := make([]string, 0, len(m))
+	for k := range m {
+		out = append(out, k)
+	}
+	sort.Strings(out)
+	return out
 }
 
 // TasksAllChecked reads the file at tasksPath and reports whether every

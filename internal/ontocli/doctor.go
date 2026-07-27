@@ -112,6 +112,35 @@ func runDoctor(cmd *cobra.Command, root string) error {
 			if st.Archived {
 				findings = append(findings, name+": active change marked archived: true (belongs under docs/changes/archive/)")
 			}
+			// tasks.md <-> plan.md correspondence (ADR 0018). This is the
+			// pairing that makes a change resumable by someone who was not
+			// there: resume at the first unchecked tasks.md item, read its
+			// detail under the matching plan.md heading. Drift used to be
+			// caught only by a prose checklist at close — which is to say,
+			// after every chance to act on it had passed.
+			drift, driftErr := ontostate.CheckTaskPlan(
+				filepath.Join(changeDir, "tasks.md"),
+				filepath.Join(changeDir, "plan.md"),
+			)
+			switch {
+			case driftErr != nil:
+				// A missing tasks.md is already reported by ValidateSkeleton
+				// for the phases that require it; staying silent here avoids
+				// two findings for one cause.
+			case !drift.Empty():
+				if len(drift.MissingFromPlan) > 0 {
+					findings = append(findings, fmt.Sprintf(
+						"%s: tasks.md items with no `## Task N.M` in plan.md: %v", name, drift.MissingFromPlan))
+				}
+				if len(drift.MissingFromTasks) > 0 {
+					findings = append(findings, fmt.Sprintf(
+						"%s: plan.md tasks with no item in tasks.md: %v", name, drift.MissingFromTasks))
+				}
+				if drift.PlanCheckboxes > 0 {
+					findings = append(findings, fmt.Sprintf(
+						"%s: plan.md holds %d checkbox(es); tasks.md is the single checkoff", name, drift.PlanCheckboxes))
+				}
+			}
 			// A change that has failed verification 3+ times needs a decision, not
 			// another silent retry (accept the deviation or keep fixing).
 			if st.Observed.VerifyRounds >= 3 {

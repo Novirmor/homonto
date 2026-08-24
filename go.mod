@@ -1,6 +1,6 @@
 module github.com/noviopenworks/homonto
 
-go 1.25
+go 1.25.0
 
 // Pin a patched toolchain: remote-source fetch introduces reachable call paths
 // into crypto/tls, crypto/x509, and net/textproto, whose go1.26.3 advisories

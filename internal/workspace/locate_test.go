@@ -82,7 +82,11 @@ func TestLocateNonGitMemberViaStateRoot(t *testing.T) {
 		MemberRoot:    CanonicalPathOf(t, docs),
 		Kind:          workspacecfg.KindNonGit,
 	}
-	if err := registration.Claim(registration.NonGitRegistrationPath(stateRoot, CanonicalPathOf(t, docs)), reg); err != nil {
+	slot, err := registration.NonGitRegistrationPath(stateRoot, CanonicalPathOf(t, docs))
+	if err != nil {
+		t.Fatalf("NonGitRegistrationPath: %v", err)
+	}
+	if err := registration.Claim(slot, reg); err != nil {
 		t.Fatalf("claim: %v", err)
 	}
 
@@ -116,7 +120,7 @@ func TestLocateConflictingControlRoots(t *testing.T) {
 	// Retarget the member's registration to a different control root by
 	// taking ownership within the same workspace.
 	next := gitReg(other, member)
-	if err := registration.TakeOwnership(registration.GitRegistrationPath(filepath.Join(member, ".git")), next, false); err != nil {
+	if err := registration.TakeOwnership(registration.GitRegistrationPath(filepath.Join(member, ".git")), next); err != nil {
 		t.Fatalf("take ownership: %v", err)
 	}
 

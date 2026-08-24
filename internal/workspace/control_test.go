@@ -104,3 +104,40 @@ func TestCreateControlRepositoryRejectsForeignMember(t *testing.T) {
 		t.Fatal("CreateControlRepository: expected error for member outside root")
 	}
 }
+
+func TestCreateControlRepositoryEscapesGitignoreMetacharacters(t *testing.T) {
+	root := t.TempDir()
+	canon := CanonicalPathOf(t, root)
+	// Directory names that are gitignore glob/comment syntax when written
+	// verbatim.
+	star := filepath.Join(root, "a*b")
+	hash := filepath.Join(root, "#proj")
+	mkdir(t, star, hash)
+
+	if _, err := CreateControlRepository(context.Background(), canon, []Candidate{
+		{Path: hash, Kind: "non_git"},
+		{Path: star, Kind: "non_git"},
+	}, gitx.ExecRunner{}); err != nil {
+		t.Fatalf("CreateControlRepository: %v", err)
+	}
+	got, err := os.ReadFile(filepath.Join(canon, ".gitignore"))
+	if err != nil {
+		t.Fatalf("read .gitignore: %v", err)
+	}
+	s := string(got)
+	if !strings.Contains(s, "a\\*b/\n") {
+		t.Errorf(".gitignore = %q, want escaped entry %q", s, "a\\*b/")
+	}
+	if !strings.Contains(s, "\\#proj/\n") {
+		t.Errorf(".gitignore = %q, want escaped entry %q", s, "\\#proj/")
+	}
+	// The escaped pattern must actually ignore the directories.
+	r := gitx.ExecRunner{}
+	checks := []string{"check-ignore -q -- a*b", "check-ignore -q -- #proj"}
+	for _, c := range checks {
+		args := strings.Split(c, " ")
+		if _, err := r.Run(context.Background(), canon, args...); err != nil {
+			t.Errorf("git %s: %v", c, err)
+		}
+	}
+}

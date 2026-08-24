@@ -33,10 +33,12 @@ type Location struct {
 
 // Locate walks up from start and reads the registrations that claim
 // ownership of each ancestor: a git member's registration lives in its git
-// common directory, a non-git member's under stateRoot keyed by canonical
-// path. Every registration found must lead to the same control root: zero
-// is ErrNoWorkspace, more than one distinct control root is
-// ErrConflictingRegistrations naming both.
+// common directory, a non-git member's under the state root keyed by
+// canonical path (stateRoot is the platform state base —
+// registration.DefaultStateRoot's result; the homonto component is
+// appended by the path functions). Every registration found must lead to
+// the same control root: zero is ErrNoWorkspace, more than one distinct
+// control root is ErrConflictingRegistrations naming both.
 func Locate(ctx context.Context, start, stateRoot string) (Location, error) {
 	cur, err := CanonicalPath(start)
 	if err != nil {
@@ -80,7 +82,10 @@ func Locate(ctx context.Context, start, stateRoot string) (Location, error) {
 // side. A directory may carry at most one: a .git entry makes it a git
 // member. found is false when nothing is registered.
 func readRegistration(ctx context.Context, cur, stateRoot string) (registration.Registration, bool, error) {
-	path := registration.NonGitRegistrationPath(stateRoot, cur)
+	path, err := registration.NonGitRegistrationPath(stateRoot, cur)
+	if err != nil {
+		return registration.Registration{}, false, err
+	}
 	if _, err := os.Stat(filepath.Join(cur, ".git")); err == nil {
 		repo, isGit, err := gitx.Inspect(ctx, gitx.ExecRunner{}, cur)
 		if err != nil {

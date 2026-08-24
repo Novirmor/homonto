@@ -151,6 +151,31 @@ func TestScanManifestDetection(t *testing.T) {
 	}
 }
 
+func TestScanSymlinkedManifestNotDetected(t *testing.T) {
+	// A named manifest must be a regular file, not a symlink pointing at
+	// one — matching the .sln behavior which never follows links.
+	root := t.TempDir()
+	writeFile(t, filepath.Join(root, "real", "go.mod"), "module real\n")
+	linkDir := filepath.Join(root, "linked")
+	mkdir(t, linkDir)
+	if err := os.Symlink(filepath.Join(root, "real", "go.mod"), filepath.Join(linkDir, "go.mod")); err != nil {
+		t.Fatalf("symlink: %v", err)
+	}
+
+	got, err := newScanner(t).Scan(context.Background(), CanonicalPathOf(t, root), ScanOptions{})
+	if err != nil {
+		t.Fatalf("Scan: %v", err)
+	}
+	for _, c := range got {
+		if c.Path == CanonicalPathOf(t, linkDir) {
+			t.Errorf("symlinked manifest detected: %+v", c)
+		}
+	}
+	if len(got) != 1 {
+		t.Fatalf("candidates = %v, want only the real manifest directory", paths(got))
+	}
+}
+
 func TestScanClassifiesGitAndSkipsNested(t *testing.T) {
 	root := t.TempDir()
 	app := initRepo(t, filepath.Join(root, "app"))

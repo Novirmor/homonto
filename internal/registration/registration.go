@@ -35,6 +35,9 @@ var (
 	ErrOwnedByOther = errors.New("registration: owned by another workspace")
 	// ErrLeaseActive: takeover was refused because a lease exists.
 	ErrLeaseActive = errors.New("registration: active lease blocks takeover")
+	// ErrRegistrationChanged: the registration changed on disk between
+	// the read and the write of a takeover.
+	ErrRegistrationChanged = errors.New("registration: registration changed during takeover")
 )
 
 // Registration is the ownership record stored beside a member repository.

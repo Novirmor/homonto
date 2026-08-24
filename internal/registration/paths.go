@@ -3,8 +3,16 @@ package registration
 import (
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
+	"fmt"
+	"path"
 	"path/filepath"
 )
+
+// ErrInvalidStateRoot rejects a state root that is not the platform state
+// base: empty, or one that already carries the homonto component (which
+// the slot functions append themselves).
+var ErrInvalidStateRoot = errors.New("registration: invalid state root")
 
 // registrationName and leaseName are the file names inside every
 // registration directory, whichever side of the git/non-git split it lives
@@ -28,27 +36,55 @@ func GitLeasePath(commonDir string) string {
 }
 
 // NonGitMemberDir returns the state directory holding the registration for
-// a non-git member at canonicalPath: stateRoot/members/<sha256(path)>.
-// canonicalPath must already be canonical; hashing happens here so every
-// caller derives the same slot.
-func NonGitMemberDir(stateRoot, canonicalPath string) string {
-	return filepath.Join(stateRoot, "members", hashPath(canonicalPath))
+// a non-git member at canonicalPath:
+// stateRoot/homonto/members/<sha256(canonicalPath)>. stateRoot is the
+// platform state BASE (DefaultStateRoot's result — the functions here
+// append the homonto component), so a root that already ends in homonto
+// is rejected as off-layout rather than silently doubled.
+func NonGitMemberDir(stateRoot, canonicalPath string) (string, error) {
+	if err := validateStateRoot(stateRoot); err != nil {
+		return "", err
+	}
+	return filepath.Join(stateRoot, "homonto", "members", hashPath(canonicalPath)), nil
 }
 
 // NonGitRegistrationPath returns the registration file path for a non-git
-// member at canonicalPath under stateRoot.
-func NonGitRegistrationPath(stateRoot, canonicalPath string) string {
-	return filepath.Join(NonGitMemberDir(stateRoot, canonicalPath), registrationName)
+// member at canonicalPath under the state base stateRoot.
+func NonGitRegistrationPath(stateRoot, canonicalPath string) (string, error) {
+	dir, err := NonGitMemberDir(stateRoot, canonicalPath)
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(dir, registrationName), nil
 }
 
 // NonGitLeasePath returns the lease file path for a non-git member at
-// canonicalPath under stateRoot.
-func NonGitLeasePath(stateRoot, canonicalPath string) string {
-	return filepath.Join(NonGitMemberDir(stateRoot, canonicalPath), leaseName)
+// canonicalPath under the state base stateRoot.
+func NonGitLeasePath(stateRoot, canonicalPath string) (string, error) {
+	dir, err := NonGitMemberDir(stateRoot, canonicalPath)
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(dir, leaseName), nil
 }
 
-// hashPath digests a canonical path to its lowercase hex sha256.
+// validateStateRoot enforces the state-root contract: non-empty, and not
+// already carrying the homonto component the slot functions append.
+func validateStateRoot(stateRoot string) error {
+	if stateRoot == "" {
+		return fmt.Errorf("registration: state root must not be empty: %w", ErrInvalidStateRoot)
+	}
+	if base := filepath.Base(filepath.Clean(stateRoot)); base == "homonto" {
+		return fmt.Errorf("registration: state root %s already ends in %q; pass the platform state base (DefaultStateRoot result) instead: %w",
+			stateRoot, "homonto", ErrInvalidStateRoot)
+	}
+	return nil
+}
+
+// hashPath digests a canonical path (cleaned with slash semantics, so a
+// trailing-slash variant of the same directory hashes identically) to its
+// lowercase hex sha256.
 func hashPath(canonicalPath string) string {
-	sum := sha256.Sum256([]byte(canonicalPath))
+	sum := sha256.Sum256([]byte(path.Clean(canonicalPath)))
 	return hex.EncodeToString(sum[:])
 }

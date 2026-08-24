@@ -194,10 +194,11 @@ func (s Scanner) classify(ctx context.Context, runner gitx.Runner, dir string) (
 }
 
 // manifestAt returns the recognized manifest file name directly inside
-// dir, or "".
+// dir, or "". A manifest must be a regular file — a symlink named go.mod
+// is not a manifest, matching the .sln scan which never follows links.
 func manifestAt(dir string) string {
 	for _, m := range manifests {
-		if info, err := os.Stat(filepath.Join(dir, m)); err == nil && !info.IsDir() {
+		if info, err := os.Lstat(filepath.Join(dir, m)); err == nil && info.Mode().IsRegular() {
 			return m
 		}
 	}

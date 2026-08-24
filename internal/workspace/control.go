@@ -56,7 +56,7 @@ func CreateControlRepository(ctx context.Context, root string, members []Candida
 		if err != nil {
 			return Control{}, fmt.Errorf("workspace: member %s: %w", m.Path, err)
 		}
-		entries = append(entries, filepath.ToSlash(rel)+"/")
+		entries = append(entries, escapeGitignore(filepath.ToSlash(rel))+"/")
 	}
 	sort.Strings(entries[1:])
 
@@ -94,4 +94,19 @@ func CreateControlRepository(ctx context.Context, root string, members []Candida
 		return Control{}, fmt.Errorf("workspace: control root %s: not a repository after init", canon)
 	}
 	return Control{Root: canon, Git: repo}, nil
+}
+
+// escapeGitignore escapes glob and comment metacharacters in one member
+// path component so a directory literally named "a*b" or "#proj" is
+// ignored as that exact name instead of acting as a gitignore pattern.
+func escapeGitignore(s string) string {
+	var b strings.Builder
+	for _, r := range s {
+		switch r {
+		case '\\', '*', '?', '[', ']', '#', '!', ' ':
+			b.WriteByte('\\')
+		}
+		b.WriteRune(r)
+	}
+	return b.String()
 }

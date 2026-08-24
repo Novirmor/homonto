@@ -1,0 +1,64 @@
+schema_version = 1
+
+[workspace]
+id = "0a1b2c3d-4e5f-4a6b-8c7d-0e1f2a3b4c5d"
+workflow = "task"
+
+[control]
+id = "11223344-5566-4777-8888-99aabbccdde0"
+path = "."
+remotes = ["git@example.com:acme/control.git"]
+
+[[members]]
+id = "11223344-5566-4777-8888-99aabbccdde0"
+path = "."
+kind = "git"
+remotes = ["git@example.com:acme/control.git"]
+
+[[members.verification]]
+name = "unit"
+command = ["go", "test", "./..."]
+timeout = "5m"
+
+[[members.verification]]
+name = "lint"
+command = ["golangci-lint", "run"]
+working_dir = "cmd/onto"
+environment = ["CI", "GOFLAGS"]
+
+[members.paths]
+tests = ["**/*_test.go"]
+generated = ["**/zz_generated*.go"]
+vendored = ["vendor/**"]
+
+[[members]]
+id = "aaaabbbb-cccc-4ddd-8eee-000011112222"
+path = "services/api"
+kind = "git"
+remotes = ["git@example.com:acme/api.git"]
+
+[[members.verification]]
+name = "test"
+command = ["make", "test"]
+
+[[members]]
+id = "7777aaaa-bbbb-4ccc-8ddd-333344445555"
+path = "docs/notes"
+kind = "non_git"
+
+[routes.claude.explorer]
+model = "claude-opus-4-5"
+effort = "high"
+
+[routes.claude.implementer]
+model = "claude-sonnet-4-5"
+
+[routes.opencode.skeptic]
+model = "g-5"
+variant = "plan"
+
+[integrations]
+commit_generated = false
+
+[update]
+channel = "stable"

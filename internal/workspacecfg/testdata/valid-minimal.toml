@@ -1,0 +1,9 @@
+schema_version = 1
+
+[workspace]
+id = "0a1b2c3d-4e5f-4a6b-8c7d-0e1f2a3b4c5d"
+workflow = "change"
+
+[control]
+id = "11223344-5566-4777-8888-99aabbccdde0"
+path = "."

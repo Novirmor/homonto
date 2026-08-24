@@ -8,6 +8,22 @@ import (
 	"github.com/noviopenworks/homonto/internal/store"
 )
 
+// RecoverOne drives one journaled operation to a terminal state, leaving
+// every other pending operation untouched. In-process failure cleanup uses it
+// so that a failed run never recovers (and never mis-decides policy for) a
+// sibling operation another goroutine is still executing.
+func (m *Manager) RecoverOne(ctx context.Context, id identity.OperationID) error {
+	rec, err := m.db.Operation(ctx, id)
+	if err != nil {
+		return fmt.Errorf("operation: load %s for recovery: %w", id, err)
+	}
+	switch rec.State {
+	case store.OpFinalized, store.OpRolledBack:
+		return nil
+	}
+	return m.recoverOne(ctx, rec)
+}
+
 // RecoverPending drives every journaled-but-unfinished operation to a
 // terminal state, oldest first, per each operation's persisted policy:
 //

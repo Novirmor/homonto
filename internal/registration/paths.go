@@ -68,6 +68,13 @@ func NonGitLeasePath(stateRoot, canonicalPath string) (string, error) {
 	return filepath.Join(dir, leaseName), nil
 }
 
+// LeasePath returns the lease file path that sits beside the registration
+// at registrationPath — the same directory, the lease name — whichever side
+// of the git/non-git split the registration lives on.
+func LeasePath(registrationPath string) string {
+	return filepath.Join(filepath.Dir(registrationPath), leaseName)
+}
+
 // validateStateRoot enforces the state-root contract: non-empty, and not
 // already carrying the homonto component the slot functions append.
 func validateStateRoot(stateRoot string) error {

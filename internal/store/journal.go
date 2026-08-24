@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"time"
 
@@ -79,6 +80,19 @@ func (tx *Tx) SetOperationState(ctx context.Context, id identity.OperationID, st
 	return requireUpdated(res, fmt.Sprintf("operation %s", id))
 }
 
+// SetOperationPolicy replaces the persisted crash-recovery policy of an
+// operation. Recovery uses it to switch a prepared operation to roll-back
+// when rolling forward is impossible; the transition is its own committed
+// step so an interrupted recovery pass re-decides on the next pass.
+func (tx *Tx) SetOperationPolicy(ctx context.Context, id identity.OperationID, policy string) error {
+	res, err := tx.ExecContext(ctx, `UPDATE operations SET policy=?, updated_at=? WHERE id=?`,
+		policy, formatTime(time.Now()), string(id))
+	if err != nil {
+		return fmt.Errorf("store: update operation %s policy to %s: %w", id, policy, err)
+	}
+	return requireUpdated(res, fmt.Sprintf("operation %s", id))
+}
+
 // InsertEffect commits one journalled effect of an operation.
 func (tx *Tx) InsertEffect(ctx context.Context, row EffectRow) error {
 	_, err := tx.ExecContext(ctx, `
@@ -130,6 +144,49 @@ func (db *DB) PendingOperations(ctx context.Context) ([]OperationRecord, error) 
 		return nil, fmt.Errorf("store: list pending operations on %s: %w", db.path, err)
 	}
 	return recs, nil
+}
+
+// Operation returns one operation row by id, in every lifecycle state. It
+// fails when no such row exists, wrapping ErrNoJournalRow.
+func (db *DB) Operation(ctx context.Context, id identity.OperationID) (OperationRecord, error) {
+	var rec OperationRecord
+	err := db.View(ctx, func(tx *Tx) error {
+		row := tx.QueryRowContext(ctx, `
+			SELECT id, kind, state, work_id, generation, policy, payload, created_at, updated_at
+			FROM operations WHERE id=?`, string(id))
+		if err := scanOperationRow(row, &rec); err != nil {
+			return err
+		}
+		return nil
+	})
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return OperationRecord{}, fmt.Errorf("store: operation %s: %w", id, ErrNoJournalRow)
+		}
+		return OperationRecord{}, fmt.Errorf("store: load operation %s: %w", id, err)
+	}
+	return rec, nil
+}
+
+// scanOperationRow scans one operations row into rec.
+func scanOperationRow(row *sql.Row, rec *OperationRecord) error {
+	var id, payload, createdAt, updatedAt string
+	var workID sql.NullString
+	if err := row.Scan(&id, &rec.Kind, &rec.State, &workID, &rec.Generation,
+		&rec.Policy, &payload, &createdAt, &updatedAt); err != nil {
+		return err
+	}
+	rec.ID = identity.OperationID(id)
+	rec.WorkID = identity.WorkID(workID.String)
+	rec.Payload = json.RawMessage(payload)
+	var err error
+	if rec.CreatedAt, err = parseTime(createdAt); err != nil {
+		return fmt.Errorf("store: scan created_at of operation %s: %w", id, err)
+	}
+	if rec.UpdatedAt, err = parseTime(updatedAt); err != nil {
+		return fmt.Errorf("store: scan updated_at of operation %s: %w", id, err)
+	}
+	return nil
 }
 
 // OperationEffects returns the effect journal of one operation in apply
@@ -185,6 +242,10 @@ func scanOperation(rows *sql.Rows) (OperationRecord, error) {
 	return rec, nil
 }
 
+// ErrNoJournalRow is the sentinel requireUpdated wraps: an UPDATE matched no
+// row, so the named journal entity does not exist.
+var ErrNoJournalRow = errors.New("store: no such journal row")
+
 // requireUpdated fails when an UPDATE matched no row, so journal transitions
 // cannot silently no-op on unknown ids.
 func requireUpdated(res sql.Result, what string) error {
@@ -193,7 +254,7 @@ func requireUpdated(res sql.Result, what string) error {
 		return fmt.Errorf("store: update %s: rows affected: %w", what, err)
 	}
 	if n != 1 {
-		return fmt.Errorf("store: update %s: no such journal row", what)
+		return fmt.Errorf("store: update %s: %w", what, ErrNoJournalRow)
 	}
 	return nil
 }

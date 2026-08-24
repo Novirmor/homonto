@@ -99,3 +99,15 @@ func failpoint(point string) {
 		failNow(point)
 	}
 }
+
+// SetFailpointHook installs the process-wide fault-injection hook and
+// returns a restore function that reinstalls the previous hook. This is the
+// exported seam for packages that drive journaled effects through the crash
+// matrix without living inside package operation. It is TEST-ONLY: panics
+// from the hook simulate process death at the named journal boundary, and no
+// production code path should ever install one.
+func SetFailpointHook(hook func(point string)) (restore func()) {
+	prev := failNow
+	failNow = hook
+	return func() { failNow = prev }
+}

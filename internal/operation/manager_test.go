@@ -254,6 +254,19 @@ func setUnrecordedApplyFailpoint(t *testing.T, opID identity.OperationID, seq in
 	})
 }
 
+// setUnrecordedRevertFailpoint crashes at the unrecorded-revert window of
+// one journal position: after Revert returned but before its row is
+// committed.
+func setUnrecordedRevertFailpoint(t *testing.T, opID identity.OperationID, seq int64) (restore func()) {
+	t.Helper()
+	point := fmt.Sprintf("effect-reverted-unrecorded:%s:%d", opID, seq)
+	return setFailpointHook(t, func(p string) {
+		if p == point {
+			panic(fmt.Sprintf("simulated crash at %s", p))
+		}
+	})
+}
+
 // mustCrash runs op and fails the test unless the failpoint panicked.
 func mustCrash(t *testing.T, mgr *Manager, op Operation) {
 	t.Helper()

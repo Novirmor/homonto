@@ -114,6 +114,8 @@ func (m *Manager) rollBack(ctx context.Context, id identity.OperationID, rows []
 			}); err != nil {
 				return fmt.Errorf("operation: revert effect %d of %s: %w", row.Seq, id, err)
 			}
+			// Mirror of Run's unrecorded window: reverted but not yet journaled.
+			failpoint(fmt.Sprintf("effect-reverted-unrecorded:%s:%d", id, row.Seq))
 		}
 		if err := m.db.Update(ctx, func(tx *store.Tx) error {
 			return tx.SetEffectState(ctx, id, row.Seq, store.EffectReverted)

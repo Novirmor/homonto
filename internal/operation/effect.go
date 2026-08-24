@@ -58,8 +58,10 @@ type Effect interface {
 	// Apply performs the side effect described by rec. It MUST be
 	// idempotent (see RollForward).
 	Apply(ctx context.Context, rec EffectRecord) error
-	// Revert undoes the side effect described by rec. It must tolerate
-	// being called only for effects recorded as applied.
+	// Revert undoes the side effect described by rec. It MUST be
+	// idempotent (see RollBack): a crash between performing the revert
+	// and committing its journal row leaves recovery to revert it again.
+	// It is called only for effects recorded as applied.
 	Revert(ctx context.Context, rec EffectRecord) error
 }
 
@@ -85,6 +87,10 @@ type Effect interface {
 //     the window whose crash semantics are the idempotency contract
 //     (RollForward re-applies) and the documented leak (RollBack cannot
 //     revert what it never saw recorded)
+//   - "effect-reverted-unrecorded:<op>:<seq>": an effect's Revert returned
+//     but its reverted row is not yet committed (roll-back recovery) — the
+//     mirror of the apply window, closed by the same contract: RollBack
+//     re-reverts
 var failNow func(point string)
 
 // failpoint invokes the fault-injection hook, if installed.

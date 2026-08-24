@@ -332,24 +332,61 @@ func TestValidateTransition(t *testing.T) {
 	}
 }
 
+// forbiddenNameTokens are the substrings no portable checkpoint field name
+// may carry: recovery tokens, secrets, raw report text, command output, or
+// anything recovery related must never gain a place in the checkpoint.
+var forbiddenNameTokens = []string{"token", "secret", "output", "report", "recovery"}
+
 // TestCheckpointCarriesNoSecrets walks the checkpoint schema via reflection
-// and fails if any JSON field name carries a forbidden token: recovery
-// tokens, secrets, raw report text, command output, or anything recovery
-// related must never gain a place in the portable checkpoint.
+// and fails if any JSON field name carries a forbidden token. The detector
+// itself is proven by TestForbiddenNameDetectorFires.
 func TestCheckpointCarriesNoSecrets(t *testing.T) {
-	forbidden := []string{"token", "secret", "output", "report", "recovery"}
 	var names []string
 	collectJSONNames(reflect.TypeOf(Checkpoint{}), nil, &names)
 	if len(names) == 0 {
 		t.Fatal("reflection walked the schema and found no JSON names; the guard is broken")
 	}
 	for _, name := range names {
-		for _, bad := range forbidden {
-			if strings.Contains(name, bad) {
-				t.Errorf("checkpoint field %q matches forbidden name %q", name, bad)
-			}
+		if bad, ok := forbiddenNameMatch(name); ok {
+			t.Errorf("checkpoint field %q matches forbidden name %q", name, bad)
 		}
 	}
+}
+
+// TestForbiddenNameDetectorFires is the positive control for
+// TestCheckpointCarriesNoSecrets: a synthetic schema carrying a tagged
+// secret field, a mixed-case one, and an untagged one must have all three
+// collected and flagged. Without it the negative test only proves the real
+// schema is currently clean, not that the detector fires.
+func TestForbiddenNameDetectorFires(t *testing.T) {
+	type leaky struct {
+		SessionToken string `json:"session_token"`
+		RecoveryKey  string `json:"Recovery_Key"`
+		Secret       string
+	}
+	var names []string
+	collectJSONNames(reflect.TypeOf(leaky{}), nil, &names)
+	if len(names) != 3 {
+		t.Fatalf("collector visited %d fields (%v), want 3: untagged fields must not slip through", len(names), names)
+	}
+	for _, name := range names {
+		if _, ok := forbiddenNameMatch(name); !ok {
+			t.Errorf("field %q escaped the forbidden-name detector", name)
+		}
+	}
+}
+
+// forbiddenNameMatch reports which forbidden token a collected field name
+// carries, comparing lowercased substrings so spellings like
+// "Recovery_Key" cannot evade the guard.
+func forbiddenNameMatch(name string) (bad string, ok bool) {
+	lower := strings.ToLower(name)
+	for _, bad := range forbiddenNameTokens {
+		if strings.Contains(lower, bad) {
+			return bad, true
+		}
+	}
+	return "", false
 }
 
 func TestEncodeOmitsInactiveWorkAndNext(t *testing.T) {
@@ -414,9 +451,11 @@ func collectJSONNames(ty reflect.Type, seen map[reflect.Type]bool, names *[]stri
 				continue
 			}
 			name := strings.Split(tag, ",")[0]
-			if name != "" {
-				*names = append(*names, name)
+			if name == "" {
+				// An untagged field marshals under its Go field name.
+				name = f.Name
 			}
+			*names = append(*names, name)
 			collectJSONNames(f.Type, seen, names)
 		}
 	}

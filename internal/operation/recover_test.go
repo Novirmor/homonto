@@ -270,6 +270,45 @@ func TestRecoverCrashWhileAbortingPendingOperationConverges(t *testing.T) {
 	}
 }
 
+func TestRecoverCrashInUnrecordedRevertWindowConverges(t *testing.T) {
+	e := newEnv(t, 3, RollBack)
+	restore := setFailpoint(t, "effect-applied", 2)
+	mustCrash(t, e.mgr, e.op)
+	restore()
+
+	// Interrupted recovery on the revert path: the reversed loop closes
+	// effect 3 (never applied, no Revert), reverts effect 2, then dies
+	// before effect 2's reverted row is committed.
+	restore = setUnrecordedRevertFailpoint(t, e.op.ID(), 2)
+	mustRecoverCrash(t, e.reopen(t, true))
+	restore()
+
+	// Effect 2 was reverted but its row still reads applied, so the next
+	// pass must revert it again — the idempotency contract on Revert.
+	states := effectStates(t, e.db, e.op.ID())
+	if states[3] != store.EffectReverted || states[2] != store.EffectApplied || states[1] != store.EffectApplied {
+		t.Fatalf("operation: effect states after unrecorded revert crash = %v, want applied/applied/reverted", states)
+	}
+
+	if err := e.reopen(t, true).RecoverPending(context.Background()); err != nil {
+		t.Fatalf("operation: re-recover: %v", err)
+	}
+	if state := opState(t, e.db, e.op.ID()); state != store.OpRolledBack {
+		t.Errorf("operation: state after re-recovery = %s, want %s", state, store.OpRolledBack)
+	}
+	// Effect 2 reverted exactly twice (once per pass) and still preceded
+	// effect 1: reverse order preserved across the crash.
+	if got, want := e.rec.revertedSeqs(), []int64{2, 2, 1}; len(got) != len(want) || got[0] != want[0] || got[1] != want[1] || got[2] != want[2] {
+		t.Errorf("operation: reverts = %v, want %v (effect 2 reverted twice, reverse order kept)", got, want)
+	}
+	states = effectStates(t, e.db, e.op.ID())
+	for seq := int64(1); seq <= 3; seq++ {
+		if states[seq] != store.EffectReverted {
+			t.Errorf("operation: effect %d state = %s, want %s", seq, states[seq], store.EffectReverted)
+		}
+	}
+}
+
 func TestRecoverCrashInUnrecordedApplyWindowConverges(t *testing.T) {
 	e := newEnv(t, 3, RollForward)
 	restore := setFailpoint(t, "effect-applied", 1)

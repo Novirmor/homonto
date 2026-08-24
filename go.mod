@@ -9,8 +9,6 @@ go 1.25.0
 // govulncheck remains clean.
 toolchain go1.26.6
 
-// modernc.org/sqlite and golang.org/x/sys are required by the workflow
-// runtime foundation being built on this branch; later tasks import them.
 require (
 	github.com/pelletier/go-toml/v2 v2.4.2
 	github.com/spf13/cobra v1.10.2

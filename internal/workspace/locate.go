@@ -110,6 +110,11 @@ func readRegistration(ctx context.Context, cur, stateRoot string) (registration.
 // path. A path that does not exist is returned in its lexical absolute
 // form — canonicalization must remain usable for lookups of paths the
 // caller is about to create.
+//
+// Scope normalization is intentionally forked from gitx's samePath
+// (internal/gitx/worktree.go): physical resolution with a lexical
+// fallback. Drift risk: a change in either normalization that is not
+// mirrored here changes what "the same directory" means across packages.
 func CanonicalPath(path string) (string, error) {
 	abs, err := filepath.Abs(path)
 	if err != nil {

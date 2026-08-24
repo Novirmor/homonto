@@ -26,8 +26,14 @@ func ConfigPath(controlRoot string) string {
 }
 
 // IntegrationsDir returns the per-work integration directory for one member
-// under a control root. This task's "unintegrated assignments" check is the
-// existence of this directory; Task 3 owns the real branch state inside it.
+// under a control root. The "unintegrated assignments" removal check is the
+// existence of this directory — a proxy that never clears: gitx Cleanup
+// removes only the worktree leaf (the .git subdirectory), and snapshot
+// blobs persist by design (content-addressed, shared, never garbage
+// collected). Every member with assignment history is therefore
+// unremovable today. WS3 must replace the directory-existence proxy with
+// real assignment state (registered worktree / in-progress patches) before
+// removal can mean anything.
 func IntegrationsDir(controlRoot string, workID identity.WorkID, repoID identity.RepositoryID) string {
 	return filepath.Join(controlRoot, ".homonto", "integrations", string(workID), string(repoID))
 }
@@ -38,7 +44,10 @@ var (
 	// the work, so there is no active work to change membership of.
 	ErrNotActiveWork = errors.New("workspace: no active work sentinel for this work")
 	// ErrUnintegratedAssignments: a removed member still has unintegrated
-	// assignments under .homonto/integrations.
+	// assignments. The check is the existence of .homonto/integrations/
+	// <work>/<repo>, a proxy that never clears (see IntegrationsDir), so
+	// today every member with assignment history is unremovable; WS3
+	// replaces the proxy with assignment state.
 	ErrUnintegratedAssignments = errors.New("workspace: member removal blocked by unintegrated assignments")
 	// ErrRemovedMemberNotLeased: the active lease set does not record a
 	// lease for a removed member.
@@ -119,7 +128,8 @@ func (r RescanRequest) Validate() error {
 //   - adding a member claims its registration and acquires its lease BEFORE
 //     the config activation; failure rolls both back,
 //   - removing a member is blocked while it has unintegrated assignments
-//     (this task: any directory under .homonto/integrations/<work>/<repo>),
+//     (the existence of .homonto/integrations/<work>/<repo> — a proxy that
+//     never clears, see IntegrationsDir),
 //   - the committed membership update invalidates downstream evidence: the
 //     rescan is journaled and the checkpoint commit marker's version is
 //     bumped (engine-side evidence invalidation is the workflow workstreams'
@@ -130,6 +140,13 @@ func (r RescanRequest) Validate() error {
 // Crash recovery rolls the operation forward (membership converges); an
 // in-process failure rolls it back, restoring the config, the sentinel
 // version, and the released leases exactly.
+//
+// Contract: RescanActive updates the config and the sentinel only. The
+// checkpoint commit itself must be folded into the same journaled operation
+// by the membership-change flow (WS3); otherwise PreparePortable fails on a
+// workspace whose membership was reduced after its checkpoint was written
+// (the checkpoint still lists the removed member), and Attach silently
+// drops added members (handoff attach iterates cp.Members only).
 func (s *Service) RescanActive(ctx context.Context, req RescanRequest) error {
 	if err := req.Validate(); err != nil {
 		return err

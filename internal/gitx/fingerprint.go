@@ -4,10 +4,8 @@ import (
 	"bytes"
 	"context"
 	"fmt"
-	"io/fs"
-	"os"
-	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 
 	"github.com/noviopenworks/homonto/internal/fingerprint"
@@ -19,12 +17,23 @@ const treeDomain = "git.tree"
 
 // SourceFingerprint digests a member repository's clean baseline at commit:
 // the commit's tree (mode/type/name/content, recursively, with submodules
-// recorded as gitlinks and never recursed into) plus the untracked
-// non-ignored files. The executable bit is part of a blob's mode; a symlink
-// is a blob whose content is its target. Equal trees yield equal digests —
-// a digest changes exactly when the committed tree or the untracked set
-// changes.
+// recorded as gitlinks and never recursed into). The executable bit is part
+// of a blob's mode; a symlink is a blob whose content is its target. Equal
+// trees yield equal digests — a digest changes exactly when the committed
+// tree changes.
+//
+// A dirty worktree is refused with a typed DirtyWorktreeError naming the
+// dirty paths (ADR 0024: dirty trees are rejected, never tidied, never
+// folded into a baseline): a digest of an in-progress tree would silently
+// drift from every later digest of the same checkout.
 func (s *Service) SourceFingerprint(ctx context.Context, dir, commit string) (fingerprint.Digest, error) {
+	files, err := dirtyPaths(ctx, s.runner, dir)
+	if err != nil {
+		return "", err
+	}
+	if len(files) > 0 {
+		return "", &DirtyWorktreeError{Files: files}
+	}
 	tree, err := revParse(ctx, s.runner, dir, commit, "^{tree}")
 	if err != nil {
 		return "", err
@@ -33,12 +42,7 @@ func (s *Service) SourceFingerprint(ctx context.Context, dir, commit string) (fi
 	if err != nil {
 		return "", err
 	}
-	untracked, err := untrackedRecords(ctx, s.runner, dir)
-	if err != nil {
-		return "", err
-	}
-	payload := append(root, untracked...)
-	return fingerprint.Bytes(treeDomain, payload), nil
+	return fingerprint.Bytes(treeDomain, root), nil
 }
 
 // treeEntry is one git ls-tree record.
@@ -139,62 +143,19 @@ func parseTreeEntries(out string) ([]treeEntry, error) {
 	return entries, nil
 }
 
-// treeRecord is the deterministic record bytes of one tree entry.
+// treeRecord is the deterministic record bytes of one tree entry. Every
+// field is length-framed ("<len>:<bytes>") so adjacent fields can never
+// merge: without framing, a file named "a" containing "x y" and a file
+// named "a x" containing "y" join to identical bytes.
 func treeRecord(mode, typ, name string, content []byte) []byte {
 	var b bytes.Buffer
-	b.WriteString(mode)
-	b.WriteByte(' ')
-	b.WriteString(typ)
-	b.WriteByte(' ')
-	b.WriteString(name)
-	b.WriteByte(' ')
+	for _, f := range []string{mode, typ, name} {
+		b.WriteString(strconv.Itoa(len(f)))
+		b.WriteByte(':')
+		b.WriteString(f)
+	}
+	b.WriteString(strconv.Itoa(len(content)))
+	b.WriteByte(':')
 	b.Write(content)
 	return b.Bytes()
-}
-
-// untrackedRecords hashes the untracked non-ignored files of dir (from git
-// ls-files --others --exclude-standard) as blob records, sorted by path:
-// regular files carry their bytes, symlinks their target, and anything else
-// fails loudly.
-func untrackedRecords(ctx context.Context, r Runner, dir string) ([]byte, error) {
-	out, err := r.Run(ctx, dir, "ls-files", "--others", "--exclude-standard", "-z")
-	if err != nil {
-		return nil, fmt.Errorf("gitx: ls-files --others of %s: %w", dir, err)
-	}
-	var paths []string
-	for _, seg := range strings.Split(out, "\x00") {
-		if seg != "" {
-			paths = append(paths, seg)
-		}
-	}
-	sort.Strings(paths)
-	var buf bytes.Buffer
-	for _, p := range paths {
-		full := filepath.Join(dir, filepath.FromSlash(p))
-		info, err := os.Lstat(full)
-		if err != nil {
-			return nil, fmt.Errorf("gitx: lstat untracked %s: %w", full, err)
-		}
-		switch {
-		case info.Mode()&fs.ModeSymlink != 0:
-			target, err := os.Readlink(full)
-			if err != nil {
-				return nil, fmt.Errorf("gitx: readlink untracked %s: %w", full, err)
-			}
-			buf.Write(treeRecord("120000", "blob", p, []byte(target)))
-		case info.Mode().IsRegular():
-			mode := "100644"
-			if info.Mode().Perm()&0o111 != 0 {
-				mode = "100755"
-			}
-			content, err := os.ReadFile(full)
-			if err != nil {
-				return nil, fmt.Errorf("gitx: read untracked %s: %w", full, err)
-			}
-			buf.Write(treeRecord(mode, "blob", p, content))
-		default:
-			return nil, fmt.Errorf("gitx: untracked %s is not a regular file or symlink", full)
-		}
-	}
-	return buf.Bytes(), nil
 }

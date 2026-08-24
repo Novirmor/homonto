@@ -379,10 +379,15 @@ func runOperation(ctx context.Context, db *store.DB, op operation.Operation) err
 	return nil
 }
 
-// Recover drives every pending journaled operation — this package's and the
-// lease package's — to a terminal state: prepared handoff/attach operations
-// roll forward to convergence, pending ones never ran a side effect and
-// close as rolled back.
+// Recover registers the lease and handoff effect kinds and drives every
+// pending operation of those kinds to a terminal state: prepared
+// handoff/attach operations roll forward to convergence, pending ones never
+// ran a side effect and close as rolled back.
+//
+// Contract: this is NOT the entry point of a full recovery pass. It
+// registers only lease + handoff kinds, and the operation manager fails on
+// a pending foreign-kind operation (rescan, gitx, snapshot) — so the CLI
+// must run a sequenced pass workspace→gitx→snapshot→lease/handoff (WS4).
 func Recover(ctx context.Context, db *store.DB) error {
 	ops := operation.NewManager(db)
 	lmg := lease.NewManager(db, ops) // registers the lease effect kinds

@@ -4,8 +4,10 @@ import (
 	"context"
 	"crypto/hmac"
 	"crypto/sha256"
+	"database/sql"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"path/filepath"
 	"strings"
@@ -52,7 +54,7 @@ func RuntimeKey(ctx context.Context, db *store.DB) (identity.Token, error) {
 		}
 		return token, nil
 	}
-	if err.Error() == "sql: no rows in result set" {
+	if errors.Is(err, sql.ErrNoRows) {
 		token := mustNewToken()
 		if err := db.Update(ctx, func(tx *store.Tx) error {
 			return tx.SetMeta(ctx, MetaRuntimeKey, string(token))

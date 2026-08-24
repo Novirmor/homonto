@@ -60,3 +60,8 @@ both leak classes and the bytes-coincide re-attach (no second commit).
 Force takeover doubles the checkpoint write and adds decision/evidence
 rows; the force crash matrix pins convergence at every one of the eleven
 force effects.
+
+Single-hop is the default: the checkpoint state machine admits exactly one
+transferable→consumed hop, and the consumed→transferable re-mark is
+reachable only through the human-initiated forced takeover. A
+human-confirmed re-handoff command is future work (WS4).

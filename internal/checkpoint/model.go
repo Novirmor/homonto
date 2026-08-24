@@ -382,6 +382,14 @@ func ValidateTransition(prev, next Checkpoint) error {
 			return fmt.Errorf("checkpoint: backwards transition %s→%s requires a generation bump (%d → %d)",
 				prev.Handoff.State, next.Handoff.State, pg, ng)
 		}
+		// consumed→transferable is the multi-hop (re-handoff) path: the
+		// only backwards hop the machine admits. Today only the forced
+		// takeover reaches it, and it re-marks consumed and consumes again
+		// in the same operation — the checkpoint never persists as
+		// transferable after a consume, so a true multi-hop handoff is
+		// unreachable: no API leaves a consumed checkpoint transferable for
+		// a later attach. WS4 ships a human-confirmed re-handoff command
+		// or documents single-hop-only; see ADR 0027.
 		return nil
 	default:
 		return fmt.Errorf("checkpoint: illegal transition %s→%s (states advance one step at a time)",

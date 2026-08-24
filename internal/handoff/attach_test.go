@@ -841,5 +841,3 @@ func TestAttachValidatesConfigAgainstCheckpoint(t *testing.T) {
 		t.Errorf("handoff: control claimed despite config mismatch")
 	}
 }
-
-var _ = gitx.ExecRunner{}

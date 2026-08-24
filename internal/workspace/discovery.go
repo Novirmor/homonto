@@ -226,7 +226,11 @@ func depth(root, p string) int {
 	return strings.Count(rel, string(filepath.Separator)) + 1
 }
 
-// within reports whether sub is root or inside it (both canonical).
+// within reports whether sub is root or inside it (both canonical). This
+// scope normalization is intentionally forked from gitx's samePath
+// (internal/gitx/worktree.go): physical (symlink-resolved) comparison with
+// a lexical fallback. The two must not drift apart — a change on either
+// side is a candidate for sharing a helper.
 func within(root, sub string) bool {
 	rel, err := filepath.Rel(root, sub)
 	if err != nil {

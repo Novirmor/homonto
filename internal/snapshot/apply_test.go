@@ -281,7 +281,7 @@ func TestApplyConflictsNeverOverwrite(t *testing.T) {
 		{Path: "d/x.txt", Kind: KindFile, Mode: 0o644},
 	}}
 	// content "new\n" under the blob domain.
-	digest := fingerprint.Bytes(domainBlob, []byte("new\n"))
+	digest := DigestBlob([]byte("new\n"))
 	store := t.TempDir()
 	blobDir := BlobDir(store)
 	if err := os.MkdirAll(blobDir, 0o700); err != nil {
@@ -386,7 +386,7 @@ func TestApplyRejectsSymlinkParentEscape(t *testing.T) {
 		t.Fatalf("snapshot: mkdir outside: %v", err)
 	}
 	// A crafted patch plants a symlink and then a file "through" it.
-	target := fingerprint.Bytes(domainBlob, []byte("pwned"))
+	target := DigestBlob([]byte("pwned"))
 	blobDir := BlobDir(t.TempDir())
 	if err := os.MkdirAll(blobDir, 0o700); err != nil {
 		t.Fatalf("snapshot: mkdir blobs: %v", err)
@@ -399,7 +399,7 @@ func TestApplyRejectsSymlinkParentEscape(t *testing.T) {
 		BaseDigest:   DigestManifest(seed),
 		ResultDigest: fingerprint.Digest(strings.Repeat("e", 64)),
 		Operations: []PatchOp{
-			{Op: OpAdd, Path: "escape", Kind: KindSymlink, Mode: 0o777, Size: 3, Digest: string(fingerprint.Bytes(domainBlob, []byte("../outside"))), LinkTarget: "../outside"},
+			{Op: OpAdd, Path: "escape", Kind: KindSymlink, Mode: 0o777, Size: 3, Digest: string(DigestBlob([]byte("../outside"))), LinkTarget: "../outside"},
 			{Op: OpAdd, Path: "escape/pwned", Kind: KindFile, Mode: 0o644, Size: 5, Digest: string(target)},
 		}}
 	err := Apply(context.Background(), stage, blobDir, patch)
@@ -409,8 +409,10 @@ func TestApplyRejectsSymlinkParentEscape(t *testing.T) {
 	if entries, _ := os.ReadDir(outside); len(entries) != 0 {
 		t.Fatalf("snapshot: content escaped the stage: %v", entries)
 	}
-	if !errors.Is(err, ErrPatchConflict) && !errors.Is(err, ErrResultMismatch) {
-		t.Fatalf("snapshot: escape must fail closed with a typed error, got %v", err)
+	// The file-below-symlink shape is rejected at validation now — the
+	// after-tree shape check — before any preimage or mutation work.
+	if !errors.Is(err, ErrInvalidPatch) {
+		t.Fatalf("snapshot: escape must fail closed at validation, got %v", err)
 	}
 }
 
@@ -436,6 +438,159 @@ func TestApplyEmptyDirAndKindChange(t *testing.T) {
 	}
 	if st, err := os.Lstat(filepath.Join(stage, "newempty")); err != nil || st.Mode().Perm() != 0o750 {
 		t.Fatalf("snapshot: added dir mode wrong: %v", st)
+	}
+}
+
+func TestApplyRenameOrphanDetected(t *testing.T) {
+	fx := buildFixture(t,
+		map[string]string{"old": "content"},
+		func(t *testing.T, dir string) {
+			if err := os.Rename(filepath.Join(dir, "old"), filepath.Join(dir, "new")); err != nil {
+				t.Fatalf("snapshot: rename: %v", err)
+			}
+		})
+	stage := filepath.Join(t.TempDir(), "stage")
+	if err := Materialize(context.Background(), fx.base, fx.store, stage); err != nil {
+		t.Fatalf("snapshot: seed: %v", err)
+	}
+	if err := Apply(context.Background(), stage, fx.blobDir, fx.patch); err != nil {
+		t.Fatalf("snapshot: apply: %v", err)
+	}
+
+	// Recreate the source after the apply: the destination still matches
+	// the after-state, but a lingering source means the rename is not
+	// (or no longer) the patch's own result. The re-apply must fail as a
+	// structural conflict at the source, never skip silently — an
+	// orphaned source would poison every later inverse apply.
+	if err := os.WriteFile(filepath.Join(stage, "old"), []byte("content"), 0o644); err != nil {
+		t.Fatalf("snapshot: recreate source: %v", err)
+	}
+	err := Apply(context.Background(), stage, fx.blobDir, fx.patch)
+	if !errors.Is(err, ErrPatchConflict) {
+		t.Fatalf("snapshot: want ErrPatchConflict for orphaned rename source, got %v", err)
+	}
+}
+
+func TestVerifyStageCumulative(t *testing.T) {
+	// A single-material stage: VerifyStage agrees with the per-apply
+	// digest check.
+	source := t.TempDir()
+	writeTree(t, source, map[string]string{"a.txt": "aaa"})
+	base, store := captureTree(t, source, CaptureOptions{})
+	patch, err := Diff(context.Background(), base, source, BlobDir(store))
+	if err != nil {
+		t.Fatalf("snapshot: diff: %v", err)
+	}
+	stage := filepath.Join(t.TempDir(), "stage")
+	if err := Materialize(context.Background(), base, store, stage); err != nil {
+		t.Fatalf("snapshot: seed: %v", err)
+	}
+	if err := Apply(context.Background(), stage, BlobDir(store), patch); err != nil {
+		t.Fatalf("snapshot: apply: %v", err)
+	}
+	if err := VerifyStage(context.Background(), base, []PatchManifest{patch}, stage); err != nil {
+		t.Fatalf("snapshot: verify stage: %v", err)
+	}
+
+	// A divergent extra file in the stage is a typed verify failure
+	// naming the path.
+	if err := os.WriteFile(filepath.Join(stage, "rogue"), []byte("x"), 0o644); err != nil {
+		t.Fatalf("snapshot: plant rogue: %v", err)
+	}
+	err = VerifyStage(context.Background(), base, []PatchManifest{patch}, stage)
+	if !errors.Is(err, ErrVerifyFailed) {
+		t.Fatalf("snapshot: want ErrVerifyFailed, got %v", err)
+	}
+	var ve *VerifyError
+	if !errors.As(err, &ve) || ve.Path != "rogue" {
+		t.Fatalf("snapshot: verify error names wrong path: %v", err)
+	}
+}
+
+func TestVerifyStageMultiPatch(t *testing.T) {
+	// Two patches applied sequentially to one stage: the cumulative
+	// expected state is base + A + B, verified entry by entry.
+	source := t.TempDir()
+	writeTree(t, source, map[string]string{"one.txt": "one", "gone.txt": "gone"})
+	base, store := captureTree(t, source, CaptureOptions{})
+	blobDir := BlobDir(store)
+
+	// Patch A (a real Diff): modify one.txt and delete gone.txt.
+	if err := os.WriteFile(filepath.Join(source, "one.txt"), []byte("changed"), 0o644); err != nil {
+		t.Fatalf("snapshot: write: %v", err)
+	}
+	if err := os.Remove(filepath.Join(source, "gone.txt")); err != nil {
+		t.Fatalf("snapshot: remove: %v", err)
+	}
+	patchA, err := Diff(context.Background(), base, source, blobDir)
+	if err != nil {
+		t.Fatalf("snapshot: diff A: %v", err)
+	}
+	// Patch B (hand-built, as engines may compose): re-add gone.txt with
+	// new content after patch A deleted it.
+	reborn := DigestBlob([]byte("reborn"))
+	if err := os.WriteFile(filepath.Join(blobDir, string(reborn)), []byte("reborn"), 0o600); err != nil {
+		t.Fatalf("snapshot: write blob: %v", err)
+	}
+	patchB := PatchManifest{SchemaVersion: 1, BaseDigest: base.RootDigest, ResultDigest: fingerprint.Digest(strings.Repeat("c", 64)),
+		Operations: []PatchOp{{Op: OpAdd, Path: "gone.txt", Kind: KindFile, Mode: 0o644, Size: 6, Digest: string(reborn)}}}
+
+	stage := filepath.Join(t.TempDir(), "stage")
+	if err := Materialize(context.Background(), base, store, stage); err != nil {
+		t.Fatalf("snapshot: seed: %v", err)
+	}
+	for _, p := range []PatchManifest{patchA, patchB} {
+		if err := applyPatch(context.Background(), stage, blobDir, p, false); err != nil {
+			t.Fatalf("snapshot: sequential apply: %v", err)
+		}
+	}
+	if err := VerifyStage(context.Background(), base, []PatchManifest{patchA, patchB}, stage); err != nil {
+		t.Fatalf("snapshot: cumulative verify: %v", err)
+	}
+	// Reordering the sequence is a different cumulative state (the fold
+	// is order-sensitive for delete-then-readd): the add lands and then
+	// the delete removes it.
+	if err := VerifyStage(context.Background(), base, []PatchManifest{patchB, patchA}, stage); err == nil {
+		t.Fatal("snapshot: reordered patches must not verify")
+	}
+}
+
+func TestApplySymlinkOpConvergesAfterCrash(t *testing.T) {
+	// A crash between a symlink-creating op and its completion must
+	// converge on re-apply: the stage lookup digests the symlink's
+	// target bytes exactly as the capture did, so the op is recognized
+	// as already applied instead of conflicting.
+	fx := buildFixture(t,
+		map[string]string{"plain": "file"},
+		func(t *testing.T, dir string) {
+			_ = os.Remove(filepath.Join(dir, "plain"))
+			_ = os.Symlink("elsewhere", filepath.Join(dir, "plain"))
+			_ = os.MkdirAll(filepath.Join(dir, "d2"), 0o755)
+			if err := os.Symlink("../out", filepath.Join(dir, "d2", "up")); err != nil {
+				t.Fatalf("snapshot: symlink: %v", err)
+			}
+		})
+	stage := filepath.Join(t.TempDir(), "stage")
+	if err := Materialize(context.Background(), fx.base, fx.store, stage); err != nil {
+		t.Fatalf("snapshot: seed: %v", err)
+	}
+	// Half-apply: only the first op (path order) lands, as a crash after
+	// the first mutation would leave it.
+	op := fx.patch.Operations[0]
+	st := &stageState{root: stage, blobDir: fx.blobDir}
+	if err := st.applyOp(op); err != nil {
+		t.Fatalf("snapshot: half-apply: %v", err)
+	}
+	// The full apply must converge over the partial stage.
+	if err := Apply(context.Background(), stage, fx.blobDir, fx.patch); err != nil {
+		t.Fatalf("snapshot: re-apply over partial stage: %v", err)
+	}
+	if err := Verify(context.Background(), stage, fx.result); err != nil {
+		t.Fatalf("snapshot: converged stage wrong: %v", err)
+	}
+	// And it stays converged on a third apply.
+	if err := Apply(context.Background(), stage, fx.blobDir, fx.patch); err != nil {
+		t.Fatalf("snapshot: third apply: %v", err)
 	}
 }
 

@@ -123,6 +123,11 @@ var (
 	ErrScopeViolation = errors.New("snapshot: changed paths outside declared scope")
 	// ErrCaseCollision: operation paths collide case-insensitively.
 	ErrCaseCollision = errors.New("snapshot: case-insensitive path collision")
+	// ErrSourceNotDirectory: a capture/diff source root is not a real
+	// directory (a regular file, or a symlink to a directory).
+	ErrSourceNotDirectory = errors.New("snapshot: source is not a directory")
+	// ErrBlobCorrupt: a stored blob's bytes do not match its digest.
+	ErrBlobCorrupt = errors.New("snapshot: stored blob is corrupt")
 )
 
 // ManifestError carries the reason a manifest is invalid.
@@ -299,6 +304,33 @@ func (e *CaseCollisionError) Error() string {
 // Unwrap exposes the sentinel for errors.Is.
 func (e *CaseCollisionError) Unwrap() error { return ErrCaseCollision }
 
+// SourceNotDirectoryError names the source root that is not a real
+// directory and what lstat saw instead.
+type SourceNotDirectoryError struct {
+	Path string
+	Got  string // e.g. "regular file", "symlink"
+}
+
+func (e *SourceNotDirectoryError) Error() string {
+	return fmt.Sprintf("snapshot: source %s is a %s, not a directory (symlinks are never followed)", e.Path, e.Got)
+}
+
+// Unwrap exposes the sentinel for errors.Is.
+func (e *SourceNotDirectoryError) Unwrap() error { return ErrSourceNotDirectory }
+
+// BlobCorruptError names the blob whose stored bytes do not hash to its
+// own digest.
+type BlobCorruptError struct {
+	Digest string
+}
+
+func (e *BlobCorruptError) Error() string {
+	return fmt.Sprintf("snapshot: blob %s does not match its digest", e.Digest)
+}
+
+// Unwrap exposes the sentinel for errors.Is.
+func (e *BlobCorruptError) Unwrap() error { return ErrBlobCorrupt }
+
 // Entry is one manifest entry: a file, symlink, or directory of the
 // captured tree, root-relative and slash-clean.
 type Entry struct {
@@ -435,7 +467,9 @@ func DecodeManifest(data []byte) (Manifest, error) {
 }
 
 // ValidateManifest checks every structural rule of a manifest, including
-// that RootDigest matches its entries.
+// that RootDigest matches its entries and that no two entries collide
+// case-insensitively (mirroring the patch rule — such a tree cannot
+// round-trip on a case-insensitive filesystem).
 func ValidateManifest(m Manifest) error {
 	if m.SchemaVersion != SchemaVersion {
 		return fmt.Errorf("snapshot: manifest schema version %d: %w", m.SchemaVersion, ErrUnsupportedSchema)
@@ -458,6 +492,13 @@ func ValidateManifest(m Manifest) error {
 		if err := validateEntry(e); err != nil {
 			return err
 		}
+	}
+	paths := make([]string, len(m.Entries))
+	for i, e := range m.Entries {
+		paths[i] = e.Path
+	}
+	if err := checkCaseCollisionPaths(paths); err != nil {
+		return err
 	}
 	if DigestManifest(m) != m.RootDigest {
 		return fmt.Errorf("snapshot: manifest root digest %s does not cover its entries: %w", m.RootDigest, ErrDigestMismatch)
@@ -572,7 +613,8 @@ func DecodePatch(data []byte) (PatchManifest, error) {
 }
 
 // ValidatePatch checks every structural rule of a patch manifest: schema,
-// repository id, digests, operation shapes, path safety and disjointness,
+// repository id, digests, operation shapes, path safety, pairwise
+// disjointness, after-tree shape (no path is both a file and a parent),
 // sorting, and case-insensitive collisions among operation paths.
 func ValidatePatch(p PatchManifest) error {
 	if p.SchemaVersion != SchemaVersion {
@@ -659,8 +701,36 @@ func ValidatePatch(p PatchManifest) error {
 			}
 		}
 	}
+	if err := checkAfterTreeShapes(p.Operations); err != nil {
+		return err
+	}
 	if err := checkCaseCollisions(p.Operations); err != nil {
 		return err
+	}
+	return nil
+}
+
+// checkAfterTreeShapes rejects after-tree prefix conflicts: a path the
+// patch leaves as a file or symlink cannot also carry a path below it —
+// git's "not a tree" rule, caught at validation instead of mid-apply.
+// Only after-state paths participate (adds, modifies, rename
+// destinations): a directory add with children is the normal
+// nested-create shape, and a delete frees its subtree.
+func checkAfterTreeShapes(ops []PatchOp) error {
+	after := make([]Entry, 0, len(ops))
+	for _, op := range ops {
+		switch op.Op {
+		case OpAdd, OpModify, OpRename:
+			after = append(after, Entry{Path: op.Path, Kind: op.Kind})
+		}
+	}
+	sort.Slice(after, func(i, j int) bool { return after[i].Path < after[j].Path })
+	for i := 1; i < len(after); i++ {
+		prev, cur := after[i-1], after[i]
+		if prev.Kind != KindDir && strings.HasPrefix(cur.Path, prev.Path+"/") {
+			return &PatchError{Reason: fmt.Sprintf(
+				"paths %s and %s overlap: %s is not a directory in the result", prev.Path, cur.Path, prev.Path)}
+		}
 	}
 	return nil
 }
@@ -720,11 +790,10 @@ func opPaths(ops []PatchOp) []string {
 	return out
 }
 
-// checkCaseCollisions fails closed when two operation paths differ only
-// by case — applying such a patch on a case-insensitive filesystem
-// (macOS, Windows) would clobber one of the two paths.
-func checkCaseCollisions(ops []PatchOp) error {
-	paths := opPaths(ops)
+// checkCaseCollisionPaths fails closed when two paths differ only by
+// case — a tree or patch holding both would clobber one of them on a
+// case-insensitive filesystem (macOS, Windows).
+func checkCaseCollisionPaths(paths []string) error {
 	lower := make(map[string]string, len(paths))
 	for _, p := range paths {
 		key := strings.ToLower(p)
@@ -734,4 +803,10 @@ func checkCaseCollisions(ops []PatchOp) error {
 		lower[key] = p
 	}
 	return nil
+}
+
+// checkCaseCollisions is checkCaseCollisionPaths over every path an
+// operation set touches (Path and OldPath).
+func checkCaseCollisions(ops []PatchOp) error {
+	return checkCaseCollisionPaths(opPaths(ops))
 }

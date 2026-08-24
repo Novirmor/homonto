@@ -19,8 +19,8 @@ import (
 // from the (already excluded) base snapshot.
 //
 // Rename inference is deterministic: a pure delete and a pure add with an
-// identical content digest AND identical mode collapse into one rename
-// only when each is the only entry with that (digest, mode) — any
+// identical content digest, kind, AND mode collapse into one rename only
+// when each is the only entry with that (digest, kind, mode) — any
 // ambiguity stays delete+add. Kind changes are modify operations that
 // carry both the before and after entry shape.
 func Diff(ctx context.Context, base Manifest, resultDir, blobDir string) (PatchManifest, error) {
@@ -112,24 +112,27 @@ func modifyOp(b, r Entry) PatchOp {
 		BeforeKind: b.Kind, BeforeMode: b.Mode, BeforeDigest: b.Digest}
 }
 
-// pairRenames consumes 1:1 delete+add pairs with identical (digest, mode)
-// content and rewrites them as renames; ambiguous multiplicities stay
-// delete+add. Directories carry no content and never pair.
+// pairRenames consumes 1:1 delete+add pairs with identical (digest, kind,
+// mode) content and rewrites them as renames; ambiguous multiplicities
+// stay delete+add. Kind is part of the key — a deleted file and an added
+// symlink can share bytes and mode bits but are not a rename — and
+// directories carry no content and never pair.
 func pairRenames(deletes, adds []PatchOp) []PatchOp {
 	type key struct {
 		digest string
+		kind   string
 		mode   uint32
 	}
 	delCount := map[key]int{}
 	addCount := map[key]int{}
 	for _, op := range deletes {
 		if op.Kind != KindDir {
-			delCount[key{op.BeforeDigest, op.BeforeMode}]++
+			delCount[key{op.BeforeDigest, op.Kind, op.BeforeMode}]++
 		}
 	}
 	for _, op := range adds {
 		if op.Kind != KindDir {
-			addCount[key{op.Digest, op.Mode}]++
+			addCount[key{op.Digest, op.Kind, op.Mode}]++
 		}
 	}
 
@@ -140,11 +143,11 @@ func pairRenames(deletes, adds []PatchOp) []PatchOp {
 			ops = append(ops, del)
 			continue
 		}
-		k := key{del.BeforeDigest, del.BeforeMode}
+		k := key{del.BeforeDigest, del.Kind, del.BeforeMode}
 		if delCount[k] == 1 && addCount[k] == 1 {
 			// Find the unique add with this content and pair it.
 			for _, add := range adds {
-				if add.Kind != KindDir && add.Digest == k.digest && add.Mode == k.mode {
+				if add.Kind != KindDir && add.Digest == k.digest && add.Kind == k.kind && add.Mode == k.mode {
 					pairedAdds[add.Path] = true
 					ops = append(ops, PatchOp{
 						Op: OpRename, Path: add.Path, OldPath: del.Path,
@@ -300,4 +303,62 @@ func contentSize(p PatchManifest, digest string) int64 {
 		}
 	}
 	return 0
+}
+
+// VerifyStage verifies a sequentially-integrated stage: applying patches
+// in the given order to base must produce exactly the tree at stageDir.
+// This is the terminal verification for a multi-material integration —
+// no single patch's result digest can cover a stage carrying earlier
+// materials, so the engine calls this after the LAST ApplyToStage. It is
+// read-only: a failure names the offending path (typed VerifyError) and
+// reverts nothing; the journaled applies are already final.
+func VerifyStage(ctx context.Context, base Manifest, patches []PatchManifest, stageDir string) error {
+	if err := ValidateManifest(base); err != nil {
+		return fmt.Errorf("snapshot: verify stage: %w", err)
+	}
+	for _, p := range patches {
+		if err := ValidatePatch(p); err != nil {
+			return fmt.Errorf("snapshot: verify stage: %w", err)
+		}
+	}
+	if err := validateAbsDir("stage dir", stageDir); err != nil {
+		return err
+	}
+	expected := expectedStageEntries(base, patches)
+	got, err := capture(ctx, stageDir, Limits{}.withDefaults(), nil, "")
+	if err != nil {
+		return err
+	}
+	return compareEntries(expected, got.Entries)
+}
+
+// expectedStageEntries folds the operations of patches (in order) into
+// base's entry set. Well-formed (Diff-produced) patches are explicit —
+// every directory is an entry, every removal an operation — so the fold
+// is literal, with no implicit pruning or creation.
+func expectedStageEntries(base Manifest, patches []PatchManifest) []Entry {
+	m := make(map[string]Entry, len(base.Entries))
+	for _, e := range base.Entries {
+		m[e.Path] = e
+	}
+	for _, p := range patches {
+		for _, op := range p.Operations {
+			after := Entry{Path: op.Path, Kind: op.Kind, Mode: op.Mode, Size: op.Size, Digest: op.Digest, LinkTarget: op.LinkTarget}
+			switch op.Op {
+			case OpDelete:
+				delete(m, op.Path)
+			case OpAdd, OpModify:
+				m[op.Path] = after
+			case OpRename:
+				delete(m, op.OldPath)
+				m[op.Path] = after
+			}
+		}
+	}
+	out := make([]Entry, 0, len(m))
+	for _, e := range m {
+		out = append(out, e)
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].Path < out[j].Path })
+	return out
 }

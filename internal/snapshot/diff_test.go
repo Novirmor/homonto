@@ -5,7 +5,10 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
+
+	"github.com/noviopenworks/homonto/internal/fingerprint"
 )
 
 func TestDiffNoChangeIsEmpty(t *testing.T) {
@@ -198,6 +201,72 @@ func TestDiffCaseCollisionFailsClosed(t *testing.T) {
 			t.Fatalf("snapshot: distinct-case add must not collide: %v", err)
 		}
 	})
+}
+
+func TestDiffFileToSymlinkSameBytesStaysDeleteAdd(t *testing.T) {
+	// A deleted 0777 file and an added symlink whose target bytes equal
+	// the file's content collide on (digest, mode) on Linux. The pairing
+	// key must include Kind, or the produced rename (file -> symlink)
+	// would be rejected by ValidatePatch as a kind change.
+	source := t.TempDir()
+	f := filepath.Join(source, "f")
+	if err := os.WriteFile(f, []byte("shared-target"), 0o777); err != nil {
+		t.Fatalf("snapshot: write: %v", err)
+	}
+	base, store := captureTree(t, source, CaptureOptions{})
+	if err := os.Remove(f); err != nil {
+		t.Fatalf("snapshot: remove: %v", err)
+	}
+	if err := os.Symlink("shared-target", filepath.Join(source, "l")); err != nil {
+		t.Fatalf("snapshot: symlink: %v", err)
+	}
+
+	patch, err := Diff(context.Background(), base, source, BlobDir(store))
+	if err != nil {
+		t.Fatalf("snapshot: diff must not reject the legitimate tree: %v", err)
+	}
+	kinds := map[string]int{}
+	for _, op := range patch.Operations {
+		kinds[op.Op]++
+	}
+	if kinds[OpDelete] != 1 || kinds[OpAdd] != 1 || kinds[OpRename] != 0 {
+		t.Fatalf("snapshot: cross-kind pair must stay delete+add: %+v", patch.Operations)
+	}
+}
+
+func TestValidatePatchParentChildOverlap(t *testing.T) {
+	digest := strings.Repeat("a", 64)
+	mk := func(ops ...PatchOp) PatchManifest {
+		seed := Manifest{SchemaVersion: 1}
+		return PatchManifest{SchemaVersion: 1, BaseDigest: DigestManifest(seed),
+			ResultDigest: fingerprint.Digest(strings.Repeat("b", 64)), Operations: ops}
+	}
+	addFile := func(path string) PatchOp {
+		return PatchOp{Op: OpAdd, Path: path, Kind: KindFile, Mode: 0o644, Size: 1, Digest: digest}
+	}
+
+	// A file "a" and a path under "a/": "a" cannot be both a file and a
+	// directory — rejected at validation, not mid-apply.
+	if err := ValidatePatch(mk(addFile("a"), addFile("a/b"))); !errors.Is(err, ErrInvalidPatch) {
+		t.Fatalf("snapshot: file/child overlap: want ErrInvalidPatch, got %v", err)
+	}
+	// Rename destination under a file path.
+	renameUnder := PatchOp{Op: OpRename, Path: "x/y", OldPath: "old", Kind: KindFile, Mode: 0o644, Size: 1, Digest: digest, BeforeDigest: digest}
+	if err := ValidatePatch(mk(addFile("x"), renameUnder)); !errors.Is(err, ErrInvalidPatch) {
+		t.Fatalf("snapshot: rename under file: want ErrInvalidPatch, got %v", err)
+	}
+	// A directory add with a child add is the normal nested-create shape.
+	dirAdd := PatchOp{Op: OpAdd, Path: "a", Kind: KindDir, Mode: 0o755}
+	if err := ValidatePatch(mk(dirAdd, addFile("a/b"))); err != nil {
+		t.Fatalf("snapshot: dir add + child add must be valid: %v", err)
+	}
+	// A dir-to-file modify with the old child deleted: no after-tree
+	// conflict — the child is going away.
+	dirToFile := PatchOp{Op: OpModify, Path: "a", Kind: KindFile, Mode: 0o644, Size: 1, Digest: digest, BeforeKind: KindDir, BeforeMode: 0o755}
+	delChild := PatchOp{Op: OpDelete, Path: "a/x", Kind: KindFile, Mode: 0o644, BeforeKind: KindFile, BeforeMode: 0o644, BeforeDigest: digest}
+	if err := ValidatePatch(mk(dirToFile, delChild)); err != nil {
+		t.Fatalf("snapshot: dir-to-file with child delete must be valid: %v", err)
+	}
 }
 
 func TestValidateScope(t *testing.T) {

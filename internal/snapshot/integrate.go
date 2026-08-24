@@ -245,6 +245,29 @@ func (s *Service) DiffResult(ctx context.Context, a Assignment) (PatchManifest, 
 	return patch, nil
 }
 
+// applyConfig carries the options of one ApplyToStage run.
+type applyConfig struct {
+	terminal bool
+	prior    []Assignment
+}
+
+// ApplyOption configures one ApplyToStage run.
+type ApplyOption func(*applyConfig)
+
+// WithTerminalVerify marks this apply as the LAST of a sequential
+// integration: after the journaled apply finalizes, the stage is verified
+// against the cumulative expected state — the first listed assignment's
+// (or, with none listed, this one's own) base manifest plus every prior
+// patch and this one, in order. This is the terminal verification a
+// multi-material stage needs (no single patch's result digest covers a
+// stage carrying earlier materials). The verification is read-only: a
+// typed failure (ErrVerifyFailed naming the path) reverts nothing — the
+// journaled applies are already final — it is the engine's signal that
+// the stage diverged.
+func WithTerminalVerify(prior ...Assignment) ApplyOption {
+	return func(c *applyConfig) { c.terminal = true; c.prior = prior }
+}
+
 // ApplyToStage applies the assignment's patch to the integration stage,
 // journaled as one RollForward effect. An empty or missing stage is
 // seeded from the assignment's base snapshot first (correct for the
@@ -253,7 +276,16 @@ func (s *Service) DiffResult(ctx context.Context, a Assignment) (PatchManifest, 
 // preimage and already-applied checks converge a partial stage — and its
 // Revert rolls the patch back through its inverse operations, so
 // earlier materials applied to the stage survive.
-func (s *Service) ApplyToStage(ctx context.Context, a Assignment) error {
+//
+// The journaled effect verifies the whole-stage digest only when it
+// seeded the stage itself (single-material case); sequential applies are
+// guarded per-op and the engine terminates a sequence with
+// WithTerminalVerify for the cumulative check.
+func (s *Service) ApplyToStage(ctx context.Context, a Assignment, opts ...ApplyOption) error {
+	var cfg applyConfig
+	for _, o := range opts {
+		o(&cfg)
+	}
 	patchPath := PatchManifestPath(s.store, a.ActionID)
 	if _, err := os.Stat(patchPath); err != nil {
 		return fmt.Errorf("snapshot: apply to stage: patch of action %s: %w", a.ActionID, err)
@@ -281,7 +313,36 @@ func (s *Service) ApplyToStage(ctx context.Context, a Assignment) error {
 		}
 		return fmt.Errorf("snapshot: apply to stage %s: %w", opID, err)
 	}
+	if cfg.terminal {
+		return s.verifyStageFrom(ctx, cfg.prior, a)
+	}
 	return nil
+}
+
+// verifyStageFrom runs the terminal stage verification: the base is the
+// seed assignment's base manifest (the first prior, else the last apply's
+// own), the patches are the prior sequence followed by the last apply.
+func (s *Service) verifyStageFrom(ctx context.Context, prior []Assignment, last Assignment) error {
+	seed := last
+	if len(prior) > 0 {
+		seed = prior[0]
+	}
+	base, err := readManifestFile(seed.ManifestPath)
+	if err != nil {
+		return fmt.Errorf("snapshot: terminal verify: %w", err)
+	}
+	sequence := make([]Assignment, 0, len(prior)+1)
+	sequence = append(sequence, prior...)
+	sequence = append(sequence, last)
+	patches := make([]PatchManifest, 0, len(sequence))
+	for _, as := range sequence {
+		patch, err := readPatchFile(PatchManifestPath(s.store, as.ActionID))
+		if err != nil {
+			return fmt.Errorf("snapshot: terminal verify: %w", err)
+		}
+		patches = append(patches, patch)
+	}
+	return VerifyStage(ctx, base, patches, s.StagePath())
 }
 
 // Recover drives every pending journaled operation of this store to a

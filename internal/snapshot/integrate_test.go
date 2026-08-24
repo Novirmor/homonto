@@ -440,6 +440,71 @@ func TestApplyToStageRollBackRestoresStage(t *testing.T) {
 	})
 }
 
+func TestApplyToStageTerminalVerify(t *testing.T) {
+	e := newSenv(t, map[string]string{"one.txt": "one"})
+	first, second := e.action(t), e.action(t)
+	a1 := e.assign(t, first)
+	implementWork(t, a1, map[string]string{"one.txt": "first change"})
+	if _, err := e.svc.DiffResult(context.Background(), a1); err != nil {
+		t.Fatalf("snapshot: diff 1: %v", err)
+	}
+	if err := e.svc.ApplyToStage(context.Background(), a1); err != nil {
+		t.Fatalf("snapshot: apply 1: %v", err)
+	}
+	a2 := e.assign(t, second)
+	implementWork(t, a2, map[string]string{"two.txt": "two"})
+	if _, err := e.svc.DiffResult(context.Background(), a2); err != nil {
+		t.Fatalf("snapshot: diff 2: %v", err)
+	}
+
+	// The last apply of the sequence carries terminal verification: the
+	// cumulative state (base + both patches) must equal the stage.
+	if err := e.svc.ApplyToStage(context.Background(), a2, WithTerminalVerify(a1)); err != nil {
+		t.Fatalf("snapshot: terminal apply: %v", err)
+	}
+
+	// A divergent extra file planted before the final apply sails past
+	// the per-op preimage checks (no op touches it) and is caught by the
+	// terminal verification, typed and named.
+	e2 := newSenv(t, map[string]string{"one.txt": "one"})
+	b1, b2 := e2.action(t), e2.action(t)
+	c1 := e2.assign(t, b1)
+	implementWork(t, c1, map[string]string{"one.txt": "first change"})
+	if _, err := e2.svc.DiffResult(context.Background(), c1); err != nil {
+		t.Fatalf("snapshot: diff 1: %v", err)
+	}
+	if err := e2.svc.ApplyToStage(context.Background(), c1); err != nil {
+		t.Fatalf("snapshot: apply 1: %v", err)
+	}
+	c2 := e2.assign(t, b2)
+	implementWork(t, c2, map[string]string{"two.txt": "two"})
+	if _, err := e2.svc.DiffResult(context.Background(), c2); err != nil {
+		t.Fatalf("snapshot: diff 2: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(e2.svc.StagePath(), "rogue"), []byte("x"), 0o644); err != nil {
+		t.Fatalf("snapshot: plant rogue: %v", err)
+	}
+	err := e2.svc.ApplyToStage(context.Background(), c2, WithTerminalVerify(c1))
+	if !errors.Is(err, ErrVerifyFailed) {
+		t.Fatalf("snapshot: want ErrVerifyFailed from terminal verify, got %v", err)
+	}
+	var ve *VerifyError
+	if !errors.As(err, &ve) || ve.Path != "rogue" {
+		t.Fatalf("snapshot: terminal verify names wrong path: %v", err)
+	}
+
+	// Single-material terminal verify: no prior assignments.
+	e3 := newSenv(t, map[string]string{"solo.txt": "solo"})
+	a := e3.assign(t, e3.action(t))
+	implementWork(t, a, map[string]string{"solo.txt": "changed"})
+	if _, err := e3.svc.DiffResult(context.Background(), a); err != nil {
+		t.Fatalf("snapshot: diff: %v", err)
+	}
+	if err := e3.svc.ApplyToStage(context.Background(), a, WithTerminalVerify()); err != nil {
+		t.Fatalf("snapshot: solo terminal apply: %v", err)
+	}
+}
+
 func TestRollBackKeepsEarlierMaterials(t *testing.T) {
 	e := newSenv(t, map[string]string{"one.txt": "one"})
 	first, second := e.action(t), e.action(t)

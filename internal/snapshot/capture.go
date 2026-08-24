@@ -88,12 +88,21 @@ func Capture(ctx context.Context, source, store string, opts CaptureOptions) (Ma
 }
 
 // capture is the shared engine: blobDir == "" performs a digest-only walk
-// (Verify) that writes nothing.
+// (Verify) that writes nothing. The source root must be a real directory —
+// lstat'd, never followed — so a symlink or file source is a typed
+// ErrSourceNotDirectory instead of an empty manifest.
 func capture(ctx context.Context, source string, limits Limits, patterns []string, blobDir string) (Manifest, error) {
+	info, err := os.Lstat(source)
+	if err != nil {
+		return Manifest{}, fmt.Errorf("snapshot: stat source %s: %w", source, err)
+	}
+	if !info.IsDir() {
+		return Manifest{}, &SourceNotDirectoryError{Path: source, Got: fileKind(info)}
+	}
 	m := Manifest{SchemaVersion: SchemaVersion, Entries: []Entry{}}
 	var treeBytes int64
 
-	err := filepath.WalkDir(source, func(p string, d fs.DirEntry, err error) error {
+	err = filepath.WalkDir(source, func(p string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return fmt.Errorf("snapshot: walk %s: %w", p, err)
 		}
@@ -183,11 +192,13 @@ func capture(ctx context.Context, source string, limits Limits, patterns []strin
 
 // captureFile streams one regular file: digest under the blob domain and
 // a store blob (temp file + rename, 0600, fsynced). The file is opened
-// with O_NOFOLLOW so a symlink swapped in after lstat cannot redirect the
-// read, and the byte count — not the lstat size — bounds the limits, so a
-// file growing mid-capture still fails closed.
+// with O_NOFOLLOW (a symlink swapped in after lstat cannot redirect the
+// read) and O_NONBLOCK (a swap to a FIFO cannot wedge the read — the
+// fstat below still fails closed on non-regular content), and the byte
+// count — not the lstat size — bounds the limits, so a file growing
+// mid-capture still fails closed.
 func captureFile(p, rel string, size, maxFile int64, blobDir string) (string, int64, error) {
-	f, err := os.OpenFile(p, os.O_RDONLY|syscall.O_NOFOLLOW, 0)
+	f, err := os.OpenFile(p, os.O_RDONLY|syscall.O_NOFOLLOW|syscall.O_NONBLOCK, 0)
 	if err != nil {
 		return "", 0, fmt.Errorf("snapshot: open %s: %w", p, err)
 	}
@@ -235,8 +246,16 @@ func digestStream(r io.Reader) (string, error) {
 
 // digestBytes digests data under the blob domain.
 func digestBytes(data []byte) string {
-	return hex.EncodeToString(blobHasher().Sum(data))
+	h := blobHasher()
+	h.Write(data)
+	return hex.EncodeToString(h.Sum(nil))
 }
+
+// DigestBlob returns the content digest of data under the blob domain —
+// the digest that names store blobs and manifest entry content. Use this
+// (not fingerprint.Bytes with the domain constant, which would
+// double-prefix) whenever content digests are composed by hand.
+func DigestBlob(data []byte) string { return digestBytes(data) }
 
 // streamToBlob digests r under the blob domain while copying it to a
 // store blob. When blobDir is "" nothing is written (digest-only walks).
@@ -281,7 +300,13 @@ func streamToBlob(r io.Reader, max int64, blobDir string) (string, int64, error)
 	}
 	final := filepath.Join(blobDir, digest)
 	if info, err := os.Lstat(final); err == nil && info.Mode().IsRegular() && info.Size() == n {
-		// Idempotent: identical blob already stored.
+		// Idempotent: a blob of this digest is already stored — but its
+		// name alone is not trusted. Bytes that no longer hash to the
+		// digest (same-length corruption) fail closed here instead of
+		// poisoning every later materialize.
+		if err := verifyBlobFile(final, digest); err != nil {
+			return "", 0, err
+		}
 		return digest, n, nil
 	}
 	if err := tmp.Sync(); err != nil {
@@ -301,6 +326,25 @@ func streamToBlob(r io.Reader, max int64, blobDir string) (string, int64, error)
 		dir.Close()
 	}
 	return digest, n, nil
+}
+
+// verifyBlobFile reads the blob at path (O_NOFOLLOW|O_NONBLOCK — the
+// store is machine-owned but never trusted blindly) and requires its
+// bytes to hash to digest under the blob domain.
+func verifyBlobFile(path, digest string) error {
+	f, err := os.OpenFile(path, os.O_RDONLY|syscall.O_NOFOLLOW|syscall.O_NONBLOCK, 0)
+	if err != nil {
+		return &BlobMissingError{Digest: digest}
+	}
+	defer f.Close()
+	got, err := digestStream(f)
+	if err != nil {
+		return fmt.Errorf("snapshot: read blob %s: %w", digest, err)
+	}
+	if got != digest {
+		return &BlobCorruptError{Digest: digest}
+	}
+	return nil
 }
 
 // compileExclusions validates each pattern as a relative slash-clean path

@@ -258,6 +258,90 @@ func TestCaptureValidatesPaths(t *testing.T) {
 	}
 }
 
+func TestCaptureRejectsNonDirectorySource(t *testing.T) {
+	realDir := t.TempDir()
+	writeTree(t, realDir, map[string]string{"f.txt": "x"})
+	store := t.TempDir()
+	base, err := Capture(context.Background(), realDir, store, CaptureOptions{})
+	if err != nil {
+		t.Fatalf("snapshot: capture real dir: %v", err)
+	}
+
+	// A regular file as the source root.
+	fileSource := filepath.Join(realDir, "f.txt")
+	m, err := Capture(context.Background(), fileSource, store, CaptureOptions{})
+	if !errors.Is(err, ErrSourceNotDirectory) {
+		t.Fatalf("snapshot: file source: want ErrSourceNotDirectory, got %v", err)
+	}
+	if len(m.Entries) != 0 {
+		t.Fatalf("snapshot: failed capture produced a manifest: %+v", m)
+	}
+	var se *SourceNotDirectoryError
+	if !errors.As(err, &se) || se.Path != fileSource {
+		t.Fatalf("snapshot: error lacks path: %v", err)
+	}
+
+	// A symlink to a directory: lstat must refuse it — following it would
+	// capture a tree the caller never named.
+	linkSource := filepath.Join(t.TempDir(), "link")
+	if err := os.Symlink(realDir, linkSource); err != nil {
+		t.Fatalf("snapshot: symlink: %v", err)
+	}
+	if _, err := Capture(context.Background(), linkSource, store, CaptureOptions{}); !errors.Is(err, ErrSourceNotDirectory) {
+		t.Fatalf("snapshot: symlinked source: want ErrSourceNotDirectory, got %v", err)
+	}
+
+	// Diff's result tree is validated the same way.
+	if _, err := Diff(context.Background(), base, linkSource, BlobDir(store)); !errors.Is(err, ErrSourceNotDirectory) {
+		t.Fatalf("snapshot: diff symlinked result: want ErrSourceNotDirectory, got %v", err)
+	}
+}
+
+func TestBlobCorruptionDetected(t *testing.T) {
+	source := t.TempDir()
+	writeTree(t, source, map[string]string{"a.txt": "aaaa", "b.txt": "bbbb"})
+	m1, store := captureTree(t, source, CaptureOptions{})
+
+	// Corrupt one stored blob, keeping its length: the size-only reuse
+	// check must not bless it.
+	var digest string
+	for _, e := range m1.Entries {
+		if e.Path == "a.txt" {
+			digest = e.Digest
+		}
+	}
+	blobPath := filepath.Join(BlobDir(store), digest)
+	data, err := os.ReadFile(blobPath)
+	if err != nil {
+		t.Fatalf("snapshot: read blob: %v", err)
+	}
+	data[0] ^= 0xff
+	if err := os.WriteFile(blobPath, data, 0o600); err != nil {
+		t.Fatalf("snapshot: corrupt blob: %v", err)
+	}
+
+	// Re-capture reuses the blob by name and must verify its bytes.
+	_, err = Capture(context.Background(), source, store, CaptureOptions{})
+	if !errors.Is(err, ErrBlobCorrupt) {
+		t.Fatalf("snapshot: capture over corrupt blob: want ErrBlobCorrupt, got %v", err)
+	}
+	var ce *BlobCorruptError
+	if !errors.As(err, &ce) || ce.Digest != digest {
+		t.Fatalf("snapshot: corrupt error lacks digest: %v", err)
+	}
+
+	// Materialize hashes while copying and must refuse the same blob.
+	dest := filepath.Join(t.TempDir(), "clone")
+	err = Materialize(context.Background(), m1, store, dest)
+	if !errors.Is(err, ErrBlobCorrupt) {
+		t.Fatalf("snapshot: materialize from corrupt blob: want ErrBlobCorrupt, got %v", err)
+	}
+	// The corrupt content never landed.
+	if _, err := os.Lstat(filepath.Join(dest, "a.txt")); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("snapshot: corrupt content landed at a.txt: %v", err)
+	}
+}
+
 func TestParallelCapturesShareStore(t *testing.T) {
 	source, store := t.TempDir(), t.TempDir()
 	writeTree(t, source, map[string]string{

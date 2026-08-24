@@ -188,6 +188,25 @@ func TestManifestEncodeDecodeRoundTrip(t *testing.T) {
 	}
 }
 
+func TestDecodeManifestRejectsCaseCollisions(t *testing.T) {
+	// Two entries differing only by case round-trip on case-sensitive
+	// filesystems but clobber on case-insensitive ones: manifests reject
+	// them up front, mirroring the patch rule.
+	doc := `{"schema_version":1,"repository_id":"","root_digest":"` +
+		string(DigestManifest(Manifest{SchemaVersion: 1, Entries: []Entry{
+			{Path: "a", Kind: "dir", Mode: 0o700},
+			{Path: "A", Kind: "dir", Mode: 0o700},
+		}})) + `","entries":[{"path":"A","kind":"dir","mode":448},{"path":"a","kind":"dir","mode":448}]}`
+	_, err := DecodeManifest([]byte(doc))
+	if !errors.Is(err, ErrCaseCollision) {
+		t.Fatalf("snapshot: want ErrCaseCollision, got %v", err)
+	}
+	var cc *CaseCollisionError
+	if !errors.As(err, &cc) || (cc.A != "a" && cc.B != "a") {
+		t.Fatalf("snapshot: collision error lacks paths: %v", err)
+	}
+}
+
 func TestDigestManifestIgnoresEntryOrderAndRepoID(t *testing.T) {
 	entries := []Entry{
 		{Path: "a", Kind: "dir", Mode: 0o700},

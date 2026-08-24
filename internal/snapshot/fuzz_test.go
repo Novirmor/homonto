@@ -60,7 +60,8 @@ func FuzzDecodeManifest(f *testing.F) {
 				errors.Is(err, ErrUnsupportedSchema) ||
 				errors.Is(err, ErrInvalidPath) ||
 				errors.Is(err, ErrDuplicatePath) ||
-				errors.Is(err, ErrDigestMismatch)
+				errors.Is(err, ErrDigestMismatch) ||
+				errors.Is(err, ErrCaseCollision)
 			if !typed {
 				t.Fatalf("DecodeManifest returned untyped error: %v", err)
 			}

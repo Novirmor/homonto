@@ -2,6 +2,7 @@ package snapshot
 
 import (
 	"context"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"io"
@@ -121,15 +122,18 @@ func dirEmpty(dir string) (bool, error) {
 
 // materializeFile copies one blob into a tree with the recorded mode:
 // content lands in a temp file (0600), is fsynced, renamed over the final
-// name, then chmod'ed to the exact recorded permission. Parent
-// directories are created only through symlink-refusing traversal.
+// name, then chmod'ed to the exact recorded permission. The copy is
+// hashed as it goes — bytes that do not hash to the entry's digest (a
+// corrupted same-length blob) abort before the rename, so corrupt
+// content never lands. Parent directories are created only through
+// symlink-refusing traversal; the blob itself is opened O_NOFOLLOW.
 func materializeFile(destination string, e Entry, blobDir string) error {
 	full := filepath.Join(destination, filepath.FromSlash(e.Path))
 	parent := filepath.Dir(full)
 	if err := secureMkdirAll(parent, storeDirPerm); err != nil {
 		return err
 	}
-	src, err := os.Open(filepath.Join(blobDir, e.Digest))
+	src, err := os.OpenFile(filepath.Join(blobDir, e.Digest), os.O_RDONLY|syscall.O_NOFOLLOW, 0)
 	if err != nil {
 		return &BlobMissingError{Digest: e.Digest}
 	}
@@ -146,8 +150,12 @@ func materializeFile(destination string, e Entry, blobDir string) error {
 			os.Remove(name)
 		}
 	}()
-	if _, err := io.Copy(tmp, src); err != nil {
+	h := blobHasher()
+	if _, err := io.Copy(io.MultiWriter(tmp, h), src); err != nil {
 		return fmt.Errorf("snapshot: copy blob for %s: %w", e.Path, err)
+	}
+	if got := hex.EncodeToString(h.Sum(nil)); got != e.Digest {
+		return &BlobCorruptError{Digest: e.Digest}
 	}
 	if err := tmp.Sync(); err != nil {
 		return fmt.Errorf("snapshot: fsync %s: %w", e.Path, err)
@@ -360,7 +368,9 @@ func (s *stageState) lookup(rel string) (entryState, error) {
 }
 
 // verifyPreimages classifies every operation against the current stage:
-// operations already holding their after-state are skipped, operations
+// operations already holding their after-state are skipped (a rename
+// additionally requires its source gone — a destination match with a
+// lingering source is an orphan, not a completed rename), operations
 // whose preimage holds are returned as pending, and anything divergent
 // aborts with a typed error naming the path. Blob existence for pending
 // after-content is checked here too — before any mutation.
@@ -373,6 +383,16 @@ func (s *stageState) verifyPreimages(ops []PatchOp) (map[string]bool, error) {
 			return nil, err
 		}
 		if opApplied(op, state) {
+			if op.Op == OpRename {
+				src, err := s.lookup(op.OldPath)
+				if err != nil {
+					return nil, err
+				}
+				if src.kind != "" {
+					return nil, &PatchConflictError{Path: op.OldPath,
+						Reason: fmt.Sprintf("rename result present at %s but source still exists (orphan)", op.Path)}
+				}
+			}
 			continue
 		}
 		if err := s.checkPreimage(op, state); err != nil {

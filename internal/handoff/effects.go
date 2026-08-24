@@ -214,7 +214,7 @@ type commitPayload struct {
 //
 // Apply is idempotent: after the commit exists, staging finds nothing and
 // the HEAD message comparison recognizes the completed commit. Revert
-// cannot uncommit and is a documented no-op leak (ADR 0025) — a rolled-back
+// cannot uncommit and is a documented no-op leak (ADR 0027) — a rolled-back
 // attach that already committed leaves the commit; the checkpoint revert
 // restores the working tree, which is what the next attempt diffs against.
 type commitEffect struct {

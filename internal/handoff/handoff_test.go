@@ -109,35 +109,9 @@ func TestPreparePortableNothingToCommit(t *testing.T) {
 	// pre-committed id is supplied through the request to make the
 	// transition deterministic.
 	token := mustToken(t)
-	cp := readCP(t, m.root)
-	next := cp
-	next.Handoff = checkpoint.Handoff{State: checkpoint.HandoffTransferable, Generation: 2, TransferID: token}
-	data, err := checkpoint.Encode(next)
-	if err != nil {
-		t.Fatalf("handoff: encode: %v", err)
-	}
-	if err := os.WriteFile(CheckpointPath(m.root), data, 0o600); err != nil {
-		t.Fatalf("handoff: write checkpoint: %v", err)
-	}
-	if _, err := m.runner.Run(context.Background(), m.root,
-		"add", "-f", "--", ".homonto/checkpoint.json", ".homonto/config.toml"); err != nil {
-		t.Fatalf("handoff: stage: %v", err)
-	}
-	if _, err := m.runner.Run(context.Background(), m.root,
-		"-c", "user.name=homonto", "-c", "user.email=homonto@localhost",
-		"-c", "commit.gpgsign=false", "commit", "-m", "preflight"); err != nil {
-		t.Fatalf("handoff: preflight commit: %v", err)
-	}
-	// Rewind the working tree to the local state the handoff starts from.
-	local, err := checkpoint.Encode(cp)
-	if err != nil {
-		t.Fatalf("handoff: encode local: %v", err)
-	}
-	if err := os.WriteFile(CheckpointPath(m.root), local, 0o600); err != nil {
-		t.Fatalf("handoff: restore local checkpoint: %v", err)
-	}
+	precommitTransition(t, m, token)
 
-	err = PreparePortable(context.Background(), PortableRequest{
+	err := PreparePortable(context.Background(), PortableRequest{
 		WorkspaceID: m.wsID,
 		WorkID:      m.workID,
 		ControlRoot: m.root,
@@ -163,6 +137,81 @@ func TestPreparePortableNothingToCommit(t *testing.T) {
 	}
 	if subject := headSubject(t, m.runner, m.root); subject != "preflight" {
 		t.Errorf("handoff: HEAD subject = %q, want preflight", subject)
+	}
+}
+
+// precommitTransition writes the transferable@2 transition with token to
+// disk, commits it as "preflight", and rewinds the working tree to the
+// local state the handoff starts from.
+func precommitTransition(t *testing.T, m *machine, token identity.Token) {
+	t.Helper()
+	cp := readCP(t, m.root)
+	next := cp
+	next.Handoff = checkpoint.Handoff{State: checkpoint.HandoffTransferable, Generation: 2, TransferID: token}
+	data, err := checkpoint.Encode(next)
+	if err != nil {
+		t.Fatalf("handoff: encode: %v", err)
+	}
+	if err := os.WriteFile(CheckpointPath(m.root), data, 0o600); err != nil {
+		t.Fatalf("handoff: write checkpoint: %v", err)
+	}
+	if _, err := m.runner.Run(context.Background(), m.root,
+		"add", "-f", "--", ".homonto/checkpoint.json", ".homonto/config.toml"); err != nil {
+		t.Fatalf("handoff: stage: %v", err)
+	}
+	if _, err := m.runner.Run(context.Background(), m.root,
+		"-c", "user.name=homonto", "-c", "user.email=homonto@localhost",
+		"-c", "commit.gpgsign=false", "commit", "-m", "preflight"); err != nil {
+		t.Fatalf("handoff: preflight commit: %v", err)
+	}
+	local, err := checkpoint.Encode(cp)
+	if err != nil {
+		t.Fatalf("handoff: encode local: %v", err)
+	}
+	if err := os.WriteFile(CheckpointPath(m.root), local, 0o600); err != nil {
+		t.Fatalf("handoff: restore local checkpoint: %v", err)
+	}
+}
+
+// TestPreparePortableRecoveryNothingToCommit pins the recovery boundary of
+// the nothing-to-commit refusal: when the transition is pre-committed with
+// identical bytes (the TransferID override scenario), recovery's re-apply
+// of the required commit refuses again and the operation stays prepared —
+// a diagnosable stuck state, never a silent success. Production cannot
+// reach it (fresh transfer ids always produce a staged diff), so the test
+// documents the boundary rather than fixing it.
+func TestPreparePortableRecoveryNothingToCommit(t *testing.T) {
+	m := newMachine(t)
+	m.close(t)
+
+	token := mustToken(t)
+	precommitTransition(t, m, token)
+
+	restore := setFailpoint(t, "prepared", 1)
+	mustCrash(t, func() error {
+		return PreparePortable(context.Background(), PortableRequest{
+			WorkspaceID: m.wsID,
+			WorkID:      m.workID,
+			ControlRoot: m.root,
+			Git:         m.runner,
+			TransferID:  token,
+		})
+	})
+	restore()
+
+	db := openDB(t, m.root)
+	defer func() { _ = db.Close() }()
+	err := Recover(context.Background(), db)
+	if !errors.Is(err, ErrNothingToCommit) {
+		t.Fatalf("handoff: recovery err = %v, want ErrNothingToCommit", err)
+	}
+	if state := opState(t, db, "handoff.portable"); state != store.OpPrepared {
+		t.Fatalf("handoff: op state = %s, want prepared (diagnosable, not silent success)", state)
+	}
+	// The boundary is stuck: a second recovery pass refuses the same way.
+	err = Recover(context.Background(), db)
+	if !errors.Is(err, ErrNothingToCommit) {
+		t.Fatalf("handoff: second recovery err = %v, want ErrNothingToCommit", err)
 	}
 }
 
@@ -381,6 +430,22 @@ func opState(t *testing.T, db *store.DB, kind string) string {
 	err := db.View(context.Background(), func(tx *store.Tx) error {
 		return tx.QueryRowContext(context.Background(),
 			`SELECT state FROM operations WHERE kind=? ORDER BY created_at LIMIT 1`, kind).Scan(&state)
+	})
+	if err != nil {
+		t.Fatalf("handoff: op state of %s: %v", kind, err)
+	}
+	return state
+}
+
+// latestOpState returns the state of the most recently created operation of
+// kind (a host that attached once and then crashed a force attach holds two
+// handoff.attach rows; the first is finalized and only the latest matters).
+func latestOpState(t *testing.T, db *store.DB, kind string) string {
+	t.Helper()
+	var state string
+	err := db.View(context.Background(), func(tx *store.Tx) error {
+		return tx.QueryRowContext(context.Background(),
+			`SELECT state FROM operations WHERE kind=? ORDER BY created_at DESC, rowid DESC LIMIT 1`, kind).Scan(&state)
 	})
 	if err != nil {
 		t.Fatalf("handoff: op state of %s: %v", kind, err)

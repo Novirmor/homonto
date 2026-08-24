@@ -37,7 +37,8 @@ type AttachRequest struct {
 	Mappings []ConfirmedMapping
 	// Force is the human-confirmed takeover of an already-consumed
 	// checkpoint: generation increment, forced_takeover decision, all
-	// evidence marked stale.
+	// evidence marked stale. On an already-transferable checkpoint force
+	// is a normal attach — the takeover bump applies only to consumed.
 	Force bool
 	// StateRoot is this machine's platform state base — where non-git
 	// member registrations and leases are slotted (a fresh HOME works; the
@@ -145,10 +146,13 @@ func Attach(ctx context.Context, req AttachRequest) error {
 
 	effectiveGen := cp.Handoff.Generation
 	var effects []operation.Effect
-	if req.Force {
+	forceTakeover := req.Force && cp.Handoff.State == checkpoint.HandoffConsumed
+	if forceTakeover {
 		// The only legal way out of consumed: re-mark transferable at
 		// generation+1 with a fresh transfer id (ValidateTransition
-		// demands the bump), then consume at that generation below.
+		// demands the bump), then consume at that generation below. A
+		// transferable checkpoint needs no takeover: force is the remedy
+		// for consumption elsewhere, not a mode flag.
 		takeover := cp
 		takeover.Handoff = checkpoint.Handoff{
 			State:      checkpoint.HandoffTransferable,
@@ -242,7 +246,7 @@ func Attach(ctx context.Context, req AttachRequest) error {
 		return fmt.Errorf("handoff: attach: sentinel: %w", err)
 	}
 
-	rebuild, err := buildRebuildPayload(cfg, cp, memberRootsForRebuild(cp, cfg, memberRoots, root), req.Force)
+	rebuild, err := buildRebuildPayload(cfg, cp, memberRootsForRebuild(cp, cfg, memberRoots, root), forceTakeover)
 	if err != nil {
 		return fmt.Errorf("handoff: attach: %w", err)
 	}
@@ -276,7 +280,7 @@ func Attach(ctx context.Context, req AttachRequest) error {
 		payload: attachPayload{
 			WorkspaceID: cp.WorkspaceID, WorkID: cp.Work.ID,
 			Generation: effectiveGen, ControlRoot: root,
-			TransferID: consumed.Handoff.TransferID, Force: req.Force,
+			TransferID: consumed.Handoff.TransferID, Force: forceTakeover,
 			Mappings: req.Mappings,
 			Targets:  targets,
 		},

@@ -28,7 +28,9 @@
 // transferable at generation +1 (the only legal way out of consumed —
 // ValidateTransition demands the bump), records a forced_takeover decision
 // in the runtime database, and marks all evidence stale via the
-// evidence_stale meta key before consuming at the bumped generation.
+// evidence_stale meta key before consuming at the bumped generation. Force
+// on an already-transferable checkpoint is a normal attach: the takeover
+// bump applies only to consumed checkpoints.
 //
 // The attach itself is one journaled all-or-none operation: claim every
 // checkpoint member's registration (sorted by repository id), acquire the
@@ -37,9 +39,13 @@
 // re-create the lease sentinel, rebuild the runtime database from portable
 // inputs, mark the checkpoint consumed at the same generation and transfer
 // id, and — when the control repository is dirty after that — commit
-// `homonto: attach <generation>`. Every effect has a real revert, so a
-// failed attach (a foreign registration, a broken commit hook) leaves no
-// claims, leases, sentinel, or runtime rows behind. Actions, reports, and
+// `homonto: attach <generation>`. Every effect except the control commit
+// has a real revert, so a failed attach (a foreign registration, a broken
+// commit hook) leaves no claims, leases, sentinel, or runtime rows behind;
+// the commit effect cannot uncommit and its revert is the documented no-op
+// leak (ADR 0027) — a rolled-back attach may leave its commit, and the
+// checkpoint revert restores the working tree the next attempt diffs
+// against. Actions, reports, and
 // decisions from the old machine are never recreated: attach issues fresh
 // action identities under a newly minted runtime HMAC key, so every
 // freshness token from before the handoff fails verification.

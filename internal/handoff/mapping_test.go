@@ -1,6 +1,7 @@
 package handoff
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/noviopenworks/homonto/internal/checkpoint"
@@ -135,6 +136,29 @@ func TestProposeMappingsChanged(t *testing.T) {
 	p := findProposal(t, proposals, f.memberB)
 	if p.Status != StatusChanged {
 		t.Fatalf("handoff: remote-matching proposal = %s (%v), want changed", p.Status, p.Reasons)
+	}
+}
+
+func TestProposeMappingsChangedByKindAtSamePath(t *testing.T) {
+	f := newMappingFixture(t)
+	// member-b is declared git at "member-b"; a candidate sits at the same
+	// workspace path but with the wrong kind, and still carries the
+	// declared remote — the member did not move, its kind changed, so the
+	// proposal is changed and the reason names the kind, not the path.
+	candidates := []workspace.Candidate{
+		{Path: "/new/ws/member-a", Kind: workspacecfg.KindNonGit},
+		{Path: "/new/ws/member-b", Kind: workspacecfg.KindNonGit, Manifest: "go.mod", Git: &gitx.Repository{
+			TopLevel: "/new/ws/member-b",
+			Remotes:  []gitx.Remote{{Name: "origin", URL: "https://example.com/b.git"}},
+		}},
+	}
+	proposals := ProposeMappings(f.cp, f.cfg, candidates)
+	p := findProposal(t, proposals, f.memberB)
+	if p.Status != StatusChanged {
+		t.Fatalf("handoff: kind-mismatched proposal = %s (%v), want changed", p.Status, p.Reasons)
+	}
+	if len(p.Reasons) == 0 || !strings.Contains(p.Reasons[0], "kind") {
+		t.Errorf("handoff: changed reason = %v, want it to name the kind", p.Reasons)
 	}
 }
 

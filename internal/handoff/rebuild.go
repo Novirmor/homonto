@@ -129,8 +129,9 @@ func rebuildAt(ctx context.Context, db *store.DB, cfg workspacecfg.Config, cp ch
 }
 
 // rebuildPayload is the journalled identity of the runtime rebuild: every
-// row it writes, with identities and timestamps minted once at prepare so
-// recovery replays the same values.
+// row it writes. Identities (ids, the runtime key) are minted once at
+// prepare so recovery replays the same values; timestamps are written by
+// apply, so a re-applied rebuild records fresh ones.
 type rebuildPayload struct {
 	Work     workRow      `json:"work"`
 	Members  []memberRow  `json:"members"`

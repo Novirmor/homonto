@@ -613,6 +613,24 @@ func setFailpoint(t *testing.T, point string, nth int) (restore func()) {
 	})
 }
 
+// setFailpointPrefix installs a hook that panics the nth time a point with
+// the given prefix and suffix is reached. Points like
+// "effect-applied-unrecorded:<op>:<seq>" embed the operation id, so exact
+// matching is impossible before the run.
+func setFailpointPrefix(t *testing.T, prefix, suffix string, nth int) (restore func()) {
+	t.Helper()
+	counts := map[string]int{}
+	return operation.SetFailpointHook(func(p string) {
+		if !strings.HasPrefix(p, prefix) || !strings.HasSuffix(p, suffix) {
+			return
+		}
+		counts[p]++
+		if counts[p] == nth {
+			panic(fmt.Sprintf("simulated crash at %s", p))
+		}
+	})
+}
+
 // mustCrash runs run and fails the test unless the failpoint panicked.
 func mustCrash(t *testing.T, run func() error) {
 	t.Helper()

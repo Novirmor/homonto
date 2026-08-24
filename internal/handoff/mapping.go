@@ -100,6 +100,9 @@ func proposeMember(m workspacecfg.Member, candidates []workspace.Candidate) Prop
 				continue
 			}
 			kindMismatched = append(kindMismatched, c)
+			if remotesIntersect(m.Remotes, c.Git) {
+				remoteMatch = append(remoteMatch, c)
+			}
 			continue
 		}
 		if remotesIntersect(m.Remotes, c.Git) {
@@ -124,9 +127,16 @@ func proposeMember(m workspacecfg.Member, candidates []workspace.Candidate) Prop
 	case len(remoteMatch) == 1:
 		p.Status = StatusChanged
 		p.Candidates = remoteMatch
-		p.Reasons = []string{fmt.Sprintf(
-			"remotes intersect but the candidate path %s differs from workspace path %q",
-			remoteMatch[0].Path, m.Path)}
+		c := remoteMatch[0]
+		if hasWorkspacePath(c.Path, m.Path) {
+			p.Reasons = []string{fmt.Sprintf(
+				"remotes intersect but the candidate kind %s differs from the declared kind %q at workspace path %q",
+				c.Kind, m.Kind, m.Path)}
+		} else {
+			p.Reasons = []string{fmt.Sprintf(
+				"remotes intersect but the candidate path %s differs from workspace path %q",
+				c.Path, m.Path)}
+		}
 	case len(remoteMatch) > 1:
 		p.Status = StatusAmbiguous
 		p.Candidates = remoteMatch

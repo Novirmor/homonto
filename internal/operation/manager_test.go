@@ -89,6 +89,35 @@ func (r *recorder) revertedSeqs() []int64 {
 	return append([]int64(nil), r.reverts...)
 }
 
+// applyCount reports how many times the effect at journal position seq has
+// been applied (an unrecorded crash window makes double-apply the documented
+// contract, so tests count rather than assert presence).
+func (r *recorder) applyCount(seq int64) int {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	n := 0
+	for _, c := range r.applies {
+		if c.Seq == seq {
+			n++
+		}
+	}
+	return n
+}
+
+// tokensFor returns the token of every Apply of the effect at journal
+// position seq, in call order.
+func (r *recorder) tokensFor(seq int64) []string {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	var tokens []string
+	for _, c := range r.applies {
+		if c.Seq == seq {
+			tokens = append(tokens, c.Token)
+		}
+	}
+	return tokens
+}
+
 // mapEffect is the in-memory effect double: Prepare mints a token, Apply
 // records it from the journal record, Revert records the journal position.
 type mapEffect struct {
@@ -180,13 +209,29 @@ func (e *env) reopen(t *testing.T, register bool) *Manager {
 	return mgr
 }
 
-// setFailpoint installs a failNow hook that panics (simulating process death
-// at the boundary) the nth time the named point is reached.
-func setFailpoint(t *testing.T, point string, nth int) {
+// setFailpointHook installs an arbitrary failNow hook and returns a restore
+// function (also run at test cleanup, LIFO with later installs). Tests that
+// crash at one boundary and then drive recovery cleanly restore explicitly
+// before the recovery run.
+func setFailpointHook(t *testing.T, hook func(point string)) (restore func()) {
 	t.Helper()
 	prev := failNow
+	var once sync.Once
+	restore = func() {
+		once.Do(func() { failNow = prev })
+	}
+	failNow = hook
+	t.Cleanup(restore)
+	return restore
+}
+
+// setFailpoint installs a failNow hook that panics (simulating process death
+// at the boundary) the nth time the named point is reached. The returned
+// restore function clears the hook before a clean recovery run.
+func setFailpoint(t *testing.T, point string, nth int) (restore func()) {
+	t.Helper()
 	counts := map[string]int{}
-	failNow = func(p string) {
+	return setFailpointHook(t, func(p string) {
 		if p != point {
 			return
 		}
@@ -194,8 +239,19 @@ func setFailpoint(t *testing.T, point string, nth int) {
 		if counts[p] == nth {
 			panic(fmt.Sprintf("simulated crash at %s", p))
 		}
-	}
-	t.Cleanup(func() { failNow = prev })
+	})
+}
+
+// setUnrecordedApplyFailpoint crashes at the unrecorded-apply window of one
+// journal position: after Apply performed but before its row is committed.
+func setUnrecordedApplyFailpoint(t *testing.T, opID identity.OperationID, seq int64) (restore func()) {
+	t.Helper()
+	point := fmt.Sprintf("effect-applied-unrecorded:%s:%d", opID, seq)
+	return setFailpointHook(t, func(p string) {
+		if p == point {
+			panic(fmt.Sprintf("simulated crash at %s", p))
+		}
+	})
 }
 
 // mustCrash runs op and fails the test unless the failpoint panicked.
@@ -214,6 +270,26 @@ func mustCrash(t *testing.T, mgr *Manager, op Operation) {
 	}()
 	if !panicked {
 		t.Fatal("operation: expected simulated crash at failpoint")
+	}
+}
+
+// mustRecoverCrash runs RecoverPending and fails the test unless the
+// failpoint panicked mid-recovery.
+func mustRecoverCrash(t *testing.T, mgr *Manager) {
+	t.Helper()
+	panicked := false
+	func() {
+		defer func() {
+			if recover() != nil {
+				panicked = true
+			}
+		}()
+		if err := mgr.RecoverPending(context.Background()); err != nil {
+			panic(fmt.Sprintf("RecoverPending returned error before crash point: %v", err))
+		}
+	}()
+	if !panicked {
+		t.Fatal("operation: expected simulated crash at recovery failpoint")
 	}
 }
 
@@ -500,5 +576,65 @@ func TestConcurrentRunsSerialize(t *testing.T) {
 	}
 	if len(pending) != 0 {
 		t.Errorf("operation: pending after concurrent runs = %+v, want none", pending)
+	}
+}
+
+func TestRunCrashInUnrecordedApplyWindowRollForwardAppliesTwice(t *testing.T) {
+	e := newEnv(t, 3, RollForward)
+	restore := setUnrecordedApplyFailpoint(t, e.op.ID(), 2)
+	mustCrash(t, e.mgr, e.op)
+	restore()
+
+	// Effect 2's side effect performed but its row still reads pending.
+	states := effectStates(t, e.db, e.op.ID())
+	if states[1] != store.EffectApplied || states[2] != store.EffectPending || states[3] != store.EffectPending {
+		t.Fatalf("operation: effect states after unrecorded crash = %v, want applied/pending/pending", states)
+	}
+
+	if err := e.reopen(t, true).RecoverPending(context.Background()); err != nil {
+		t.Fatalf("operation: recover: %v", err)
+	}
+	if state := opState(t, e.db, e.op.ID()); state != store.OpFinalized {
+		t.Errorf("operation: state after recovery = %s, want %s", state, store.OpFinalized)
+	}
+	// The idempotency contract, not exactly-once: effect 2 applied twice.
+	for seq, want := range map[int64]int{1: 1, 2: 2, 3: 1} {
+		if got := e.rec.applyCount(seq); got != want {
+			t.Errorf("operation: effect %d applied %d times, want %d", seq, got, want)
+		}
+	}
+	// Both runs of effect 2 carried the token minted by the one Prepare.
+	tokens := e.rec.tokensFor(2)
+	if len(tokens) != 2 || tokens[0] != "token-2" || tokens[1] != "token-2" {
+		t.Errorf("operation: effect 2 tokens = %v, want token-2 twice (journaled identity)", tokens)
+	}
+}
+
+func TestRunCrashInUnrecordedApplyWindowRollBackLeaksEffect(t *testing.T) {
+	e := newEnv(t, 3, RollBack)
+	restore := setUnrecordedApplyFailpoint(t, e.op.ID(), 2)
+	mustCrash(t, e.mgr, e.op)
+	restore()
+
+	if err := e.reopen(t, true).RecoverPending(context.Background()); err != nil {
+		t.Fatalf("operation: recover: %v", err)
+	}
+	if state := opState(t, e.db, e.op.ID()); state != store.OpRolledBack {
+		t.Errorf("operation: state after recovery = %s, want %s", state, store.OpRolledBack)
+	}
+	// Documented leak, asserted precisely: roll-back reverts only recorded
+	// effects. Effect 2's side effect was performed (once, in the
+	// unrecorded window) yet is never reverted and never re-applied.
+	if got, want := e.rec.revertedSeqs(), []int64{1}; len(got) != len(want) || got[0] != want[0] {
+		t.Errorf("operation: reverts = %v, want %v (effect 2 leaks un-reverted)", got, want)
+	}
+	if got := e.rec.applyCount(2); got != 1 {
+		t.Errorf("operation: effect 2 applied %d times, want exactly 1 (performed in the window, never re-applied under roll-back)", got)
+	}
+	states := effectStates(t, e.db, e.op.ID())
+	for seq := int64(1); seq <= 3; seq++ {
+		if states[seq] != store.EffectReverted {
+			t.Errorf("operation: effect %d state = %s, want %s (closed without Revert)", seq, states[seq], store.EffectReverted)
+		}
 	}
 }

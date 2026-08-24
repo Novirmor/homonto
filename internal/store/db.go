@@ -8,12 +8,24 @@ package store
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"net/url"
+	"os"
 	"path/filepath"
 
 	_ "modernc.org/sqlite" // registers the "sqlite" driver
 )
+
+// ErrUnrecoveredWAL is the cause attached to a failed read-only open of a
+// database whose WAL still holds committed frames — exactly what a crashed
+// process leaves behind. SQLite cannot run WAL recovery through a read-only
+// connection (it must build the wal-index), so the raw failure is an opaque
+// "unable to open database file"; this sentinel names the remedy: one
+// read-write open performs the recovery pass.
+//
+// The underlying SQLite error remains wrapped for errors.Is/As.
+var ErrUnrecoveredWAL = errors.New("read-only open of a database with an unrecovered WAL requires a read-write recovery pass first")
 
 // OpenOptions selects how Open treats the database file.
 type OpenOptions struct {
@@ -80,13 +92,17 @@ func Open(ctx context.Context, path string, opts OpenOptions) (*DB, error) {
 	// under mode=ro, a non-database file, permission errors) surface here.
 	if err := conn.PingContext(ctx); err != nil {
 		_ = conn.Close()
-		return nil, fmt.Errorf("store: connect %s: %w", path, err)
+		err = fmt.Errorf("store: connect %s: %w", path, err)
+		if opts.ReadOnly {
+			err = withWALHint(path, abs, err)
+		}
+		return nil, err
 	}
 
 	if opts.ReadOnly {
 		if err := db.checkReadOnly(ctx); err != nil {
 			_ = conn.Close()
-			return nil, err
+			return nil, withWALHint(path, abs, err)
 		}
 		return db, nil
 	}
@@ -110,3 +126,15 @@ func (db *DB) Path() string { return db.path }
 
 // ReadOnly reports whether the database was opened read-only.
 func (db *DB) ReadOnly() bool { return db.readOnly }
+
+// withWALHint decorates a failed read-only open with the unrecovered-WAL
+// cause when a non-empty WAL file sits beside the database. Deliberately not
+// immutable=1: lying about the file's mutability to sneak a read through
+// would report a stale main database and silently drop the committed WAL
+// frames — the hint and a read-write recovery pass are the honest fix.
+func withWALHint(path, abs string, err error) error {
+	if st, statErr := os.Stat(abs + "-wal"); statErr == nil && st.Size() > 0 {
+		return fmt.Errorf("store: %s: %w: %w", path, ErrUnrecoveredWAL, err)
+	}
+	return err
+}

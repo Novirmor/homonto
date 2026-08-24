@@ -77,8 +77,14 @@ type Effect interface {
 //     in seq order)
 //   - "finalized":       the finalized state is committed
 //   - "effect-reverted": one effect's reverted row is committed during
-//     roll-back recovery (reverse seq order)
+//     roll-back recovery (reverse seq order, including
+//     rows closed without a Revert call)
 //   - "rolled-back":     the rolled_back state is committed
+//   - "effect-applied-unrecorded:<op>:<seq>": an effect's Apply returned but
+//     its applied row is not yet committed (Run and roll-forward recovery) —
+//     the window whose crash semantics are the idempotency contract
+//     (RollForward re-applies) and the documented leak (RollBack cannot
+//     revert what it never saw recorded)
 var failNow func(point string)
 
 // failpoint invokes the fault-injection hook, if installed.

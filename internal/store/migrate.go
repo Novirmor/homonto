@@ -156,6 +156,14 @@ func (db *DB) checkReadOnly(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
+	// A migrations table with no rows is an initialized-then-emptied (or
+	// hand-planted) database: nothing was ever applied, so it is unmigrated
+	// and must fail here, not at the first query of a missing table.
+	if maxApplied < 1 {
+		return fmt.Errorf(
+			"store: %s: database is not migrated — open it read-write once to initialize (read-only open never migrates or creates)",
+			db.path)
+	}
 	if maxApplied > SchemaVersion() {
 		return &SchemaTooNewError{Path: db.path, Have: maxApplied, Supported: SchemaVersion()}
 	}

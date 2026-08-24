@@ -148,6 +148,11 @@ func (m *Manager) Run(ctx context.Context, op Operation) error {
 		if err := eff.Apply(ctx, rec); err != nil {
 			return fmt.Errorf("operation: apply effect %d of %s: %w", i+1, op.ID(), err)
 		}
+		// The unrecorded window: the side effect is performed but its
+		// applied row is not yet committed. A crash here means recovery
+		// cannot know the effect ran — roll-forward re-applies (idempotency
+		// contract), roll-back leaks it (documented RollBack semantics).
+		failpoint(fmt.Sprintf("effect-applied-unrecorded:%s:%d", op.ID(), rec.Seq))
 		if err := m.db.Update(ctx, func(tx *store.Tx) error {
 			return tx.SetEffectState(ctx, op.ID(), rec.Seq, store.EffectApplied)
 		}); err != nil {

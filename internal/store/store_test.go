@@ -253,3 +253,140 @@ func TestConcurrentUpdatesSerialize(t *testing.T) {
 		t.Errorf("store: counter = %s, want 40 (lost updates under MaxOpenConns(1))", counter)
 	}
 }
+
+func TestOpenReadOnlyUnrecoveredWALHintsAtRecoveryPass(t *testing.T) {
+	dir := t.TempDir()
+	live := filepath.Join(dir, "live.sqlite")
+	crashDir := filepath.Join(dir, "crash")
+	crashed := filepath.Join(crashDir, "crashed.sqlite")
+	ctx := context.Background()
+
+	db, err := Open(ctx, live, OpenOptions{})
+	if err != nil {
+		t.Fatalf("store: open live: %v", err)
+	}
+	t.Cleanup(func() { _ = db.Close() })
+	// The committed row lives in the hot WAL: the connection stays open, so
+	// no clean shutdown checkpoints it away.
+	err = db.Update(ctx, func(tx *Tx) error {
+		_, err := tx.ExecContext(ctx, `INSERT INTO meta (key, value) VALUES ('k', 'v')`)
+		return err
+	})
+	if err != nil {
+		t.Fatalf("store: seed live row: %v", err)
+	}
+
+	// Plant the crash debris — db + hot WAL, no -shm — in a directory the
+	// reading process cannot write. That is the post-crash configuration
+	// where a read-only open genuinely fails: SQLite cannot build the
+	// wal-index without creating the -shm, and reports only an opaque
+	// "unable to open database file".
+	main, err := os.ReadFile(live)
+	if err != nil {
+		t.Fatalf("store: read live database: %v", err)
+	}
+	wal, err := os.ReadFile(live + "-wal")
+	if err != nil {
+		t.Fatalf("store: read live WAL: %v (test premise: WAL is hot while the writer is open)", err)
+	}
+	if len(wal) == 0 {
+		t.Fatal("store: live WAL is empty — test premise broken")
+	}
+	if err := os.MkdirAll(crashDir, 0o700); err != nil {
+		t.Fatalf("store: create crash dir: %v", err)
+	}
+	if err := os.WriteFile(crashed, main, 0o600); err != nil {
+		t.Fatalf("store: plant crashed database: %v", err)
+	}
+	if err := os.WriteFile(crashed+"-wal", wal, 0o600); err != nil {
+		t.Fatalf("store: plant crashed WAL: %v", err)
+	}
+	// Restore writability no matter where the test ends: t.TempDir's
+	// cleanup must be able to remove the directory.
+	writable := func() { _ = os.Chmod(crashDir, 0o700) }
+	t.Cleanup(writable)
+	if err := os.Chmod(crashDir, 0o500); err != nil {
+		t.Fatalf("store: make crash dir read-only: %v", err)
+	}
+
+	_, err = Open(ctx, crashed, OpenOptions{ReadOnly: true})
+	if !errors.Is(err, ErrUnrecoveredWAL) {
+		t.Errorf("store: read-only open of unrecovered WAL: errors.Is(ErrUnrecoveredWAL) = false, err = %v", err)
+	}
+
+	// The remedy the hint names: one read-write pass recovers the WAL.
+	writable()
+	db2, err := Open(ctx, crashed, OpenOptions{})
+	if err != nil {
+		t.Fatalf("store: read-write recovery open: %v", err)
+	}
+	defer func() { _ = db2.Close() }()
+	var value string
+	err = db2.View(ctx, func(tx *Tx) error {
+		return tx.QueryRowContext(ctx, `SELECT value FROM meta WHERE key='k'`).Scan(&value)
+	})
+	if err != nil || value != "v" {
+		t.Errorf("store: WAL-lost row after recovery pass: value=%q err=%v", value, err)
+	}
+}
+
+func TestOpenReadOnlyEmptyMigrationsLedgerErrorsAtOpen(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "runtime.sqlite")
+	db := openRW(t, path)
+	ctx := context.Background()
+
+	err := db.Update(ctx, func(tx *Tx) error {
+		_, err := tx.ExecContext(ctx, `DELETE FROM migrations`)
+		return err
+	})
+	if err != nil {
+		t.Fatalf("store: empty migrations ledger: %v", err)
+	}
+	if err := db.Close(); err != nil {
+		t.Fatalf("store: close: %v", err)
+	}
+
+	_, err = Open(ctx, path, OpenOptions{ReadOnly: true})
+	if err == nil {
+		t.Error("store: read-only open of a database with an empty migrations ledger succeeded, want error at open")
+	}
+}
+
+func TestOpenReadOnlyReadsRowsAndRejectsWrites(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "runtime.sqlite")
+	db := openRW(t, path)
+	ctx := context.Background()
+
+	err := db.Update(ctx, func(tx *Tx) error {
+		_, err := tx.ExecContext(ctx, `INSERT INTO meta (key, value) VALUES ('ro', 'ok')`)
+		return err
+	})
+	if err != nil {
+		t.Fatalf("store: seed row: %v", err)
+	}
+	if err := db.Close(); err != nil {
+		t.Fatalf("store: close read-write handle: %v", err)
+	}
+
+	ro, err := Open(ctx, path, OpenOptions{ReadOnly: true})
+	if err != nil {
+		t.Fatalf("store: read-only open of migrated database: %v", err)
+	}
+	t.Cleanup(func() { _ = ro.Close() })
+
+	var value string
+	err = ro.View(ctx, func(tx *Tx) error {
+		return tx.QueryRowContext(ctx, `SELECT value FROM meta WHERE key='ro'`).Scan(&value)
+	})
+	if err != nil || value != "ok" {
+		t.Errorf("store: read-only read: value=%q err=%v, want ok", value, err)
+	}
+
+	err = ro.Update(ctx, func(tx *Tx) error {
+		_, err := tx.ExecContext(ctx, `INSERT INTO meta (key, value) VALUES ('write', 'attempt')`)
+		return err
+	})
+	if err == nil {
+		t.Error("store: write through a read-only open succeeded, want error")
+	}
+}

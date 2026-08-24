@@ -80,6 +80,8 @@ func (m *Manager) rollForward(ctx context.Context, id identity.OperationID, rows
 		}); err != nil {
 			return fmt.Errorf("operation: re-apply effect %d of %s: %w", row.Seq, id, err)
 		}
+		// Same unrecorded window as Run: performed but not yet journaled.
+		failpoint(fmt.Sprintf("effect-applied-unrecorded:%s:%d", id, row.Seq))
 		if err := m.db.Update(ctx, func(tx *store.Tx) error {
 			return tx.SetEffectState(ctx, id, row.Seq, store.EffectApplied)
 		}); err != nil {

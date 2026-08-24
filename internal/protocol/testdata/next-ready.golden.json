@@ -1,0 +1,69 @@
+{
+  "protocol_version": 1,
+  "state": "ready",
+  "actions": [
+    {
+      "id": "23456789-01ab-4cde-9f01-234567890abc",
+      "kind": "assignment",
+      "freshness_token": "ESIzRFVmd4iZqrvM3e7_ECEyQ1RldoeYqbrL3O3-DyA",
+      "workflow": "task",
+      "path": "docs/homonto/tasks/retry-backoff.md",
+      "phase": "do",
+      "reason": "implement the retry budget change in services/api",
+      "role": "implementer",
+      "prompt": "Implement the exponential backoff budget described in the plan section of docs/homonto/tasks/retry-backoff.md.",
+      "repository": {
+        "id": "11111111-2222-4333-8444-555555555555",
+        "path": "services/api"
+      },
+      "working_directory": ".",
+      "write_scope": {
+        "read_only": false,
+        "paths": [
+          "internal/retry"
+        ]
+      },
+      "parallel_group_id": "do-retry-budget",
+      "input_fingerprints": [
+        "d83306dd5bd697696fba8805fe3c02bbb1d9484cc7748823884484c566e6bfee"
+      ],
+      "expected_report": {
+        "kind": "implementer",
+        "schema_version": 1
+      }
+    },
+    {
+      "id": "3456789a-01ab-4cde-af01-234567890abc",
+      "kind": "assignment",
+      "freshness_token": "ZR6tzJlu3E95T_uBUGANWLneGaxIYESSNlJeAxp7NJc",
+      "workflow": "task",
+      "path": "docs/homonto/tasks/retry-backoff.md",
+      "phase": "do",
+      "reason": "document the retry budget change in the docs notes",
+      "role": "implementer",
+      "prompt": "Update docs/notes/retry.md to describe the new backoff budget.",
+      "repository": {
+        "id": "aaaaaaa1-bbbb-4cc2-9ddd-eeeeeeeeeeee",
+        "path": "docs/notes"
+      },
+      "working_directory": ".",
+      "write_scope": {
+        "read_only": false,
+        "paths": [
+          "retry.md"
+        ]
+      },
+      "parallel_group_id": "do-retry-budget",
+      "dependencies": [
+        "456789ab-01ab-4cde-8f01-234567890abc"
+      ],
+      "input_fingerprints": [
+        "f26c5d15507a2a7e36d61c364bf25a6d3acfafc76d3698559bac7c80041c7334"
+      ],
+      "expected_report": {
+        "kind": "implementer",
+        "schema_version": 1
+      }
+    }
+  ]
+}

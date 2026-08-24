@@ -1,0 +1,45 @@
+{
+  "protocol_version": 1,
+  "state": "blocked",
+  "actions": [
+    {
+      "id": "3456789a-01ab-4cde-af01-234567890abc",
+      "kind": "decision",
+      "freshness_token": "voGi0hBZWih60fCG-LQCaAy2j4vXkEg6RQbYBOzMszM",
+      "workflow": "change",
+      "path": "docs/homonto/changes/parallel-importer.md",
+      "phase": "fix",
+      "reason": "reviewer reported a blocking finding that needs a human decision",
+      "prompt": "The skeptic found a race in the parallel importer. Decide whether to accept the finding and order a repair.",
+      "repository": {
+        "id": "11223344-5566-4777-8888-99aabbccdde0",
+        "path": "."
+      },
+      "working_directory": ".",
+      "write_scope": {
+        "read_only": true,
+        "paths": []
+      },
+      "input_fingerprints": [
+        "f26c5d15507a2a7e36d61c364bf25a6d3acfafc76d3698559bac7c80041c7334"
+      ],
+      "decision": {
+        "kind": "accept_finding",
+        "prompt": "Accept finding F-2 (race on the shared importer state) and open a repair round?",
+        "choices": [
+          {
+            "value": "accept",
+            "label": "Accept the finding and order a repair",
+            "requires_rationale": true
+          },
+          {
+            "value": "reject",
+            "label": "Reject the finding as a false positive",
+            "requires_rationale": true
+          }
+        ],
+        "finding_id": "F-2"
+      }
+    }
+  ]
+}

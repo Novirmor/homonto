@@ -47,7 +47,6 @@ const tmpPrefix = ".securefs-tmp-"
 // traversal is fd-anchored and refuses symlinked components.
 type Root struct {
 	fd    int
-	path  string
 	once  sync.Once
 	close error
 }
@@ -63,7 +62,7 @@ func OpenRoot(path string) (*Root, error) {
 	if err != nil {
 		return nil, fmt.Errorf("securefs: open root %s: %w", path, err)
 	}
-	return &Root{fd: fd, path: path}, nil
+	return &Root{fd: fd}, nil
 }
 
 // Close releases the anchor. It is idempotent. Operations after Close fail.

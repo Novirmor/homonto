@@ -19,7 +19,8 @@ import (
 //
 // mode is the permission for a newly created file (subject to no umask: the
 // exact perm is set with fchmod). An existing regular destination keeps its
-// on-disk mode. A destination that exists and is not a regular file — a
+// on-disk permission bits; special bits (setuid/setgid/sticky) are not
+// carried. A destination that exists and is not a regular file — a
 // directory, fifo, device, or symlink — is refused, and a failed write
 // leaves the original bytes intact.
 func (r *Root) WriteAtomic(rel string, data []byte, mode fs.FileMode) error {
@@ -60,10 +61,15 @@ func (r *Root) WriteAtomic(rel string, data []byte, mode fs.FileMode) error {
 	if err := unix.Fsync(tmpFd); err != nil {
 		return pathErr("fsync", rel, err)
 	}
-	if err := unix.Close(tmpFd); err != nil {
+	// close() releases the fd even when it reports an error, so the
+	// sentinel must be cleared before checking: the deferred cleanup must
+	// never close the fd twice (a reused fd number could close an
+	// unrelated descriptor).
+	err = unix.Close(tmpFd)
+	tmpFd = -1
+	if err != nil {
 		return pathErr("close", rel, err)
 	}
-	tmpFd = -1
 	if err := unix.Renameat(dirfd, tmpName, dirfd, base); err != nil {
 		return pathErr("renameat", rel, err)
 	}
@@ -78,8 +84,10 @@ func (r *Root) WriteAtomic(rel string, data []byte, mode fs.FileMode) error {
 // open uses O_CREAT|O_EXCL|O_NOFOLLOW, so the call fails if anything —
 // including a symlink — already exists at rel, and never resolves one. The
 // exact perm is set with fchmod regardless of umask. The file and its
-// parent directory are fsynced before the call returns; a failed write
-// removes the partial file.
+// parent directory are fsynced before the call returns. A failure before
+// the content is durable removes the partial file; a failure afterwards
+// (close or directory fsync) returns the error but keeps the completed
+// object.
 func (r *Root) CreateExclusive(rel string, data []byte, mode fs.FileMode) error {
 	dirfd, base, borrowed, err := r.openParent(rel)
 	if err != nil {
@@ -93,10 +101,21 @@ func (r *Root) CreateExclusive(rel string, data []byte, mode fs.FileMode) error 
 	if err != nil {
 		return pathErr("openat", rel, err)
 	}
-	complete := false
+	// fdOpen tracks whether the deferred cleanup still owns the fd: it
+	// must be cleared after every close attempt, because close() releases
+	// the fd even when it reports an error, and a second close could hit a
+	// reused fd number. keepObject separates the failure regimes: before
+	// the content fsync completes, a failure leaves a partial file that
+	// the cleanup unlinks; after it, the object is complete and durable,
+	// so failures return the error but never destroy the file — unlinking
+	// a file-fsynced object over a directory-durability error would
+	// discard confirmed-durable bytes.
+	fdOpen, keepObject := true, false
 	defer func() {
-		if !complete {
+		if fdOpen {
 			unix.Close(fd)
+		}
+		if !keepObject {
 			if rmErr := unix.Unlinkat(dirfd, base, 0); rmErr == nil {
 				_ = unix.Fsync(dirfd)
 			}
@@ -112,20 +131,22 @@ func (r *Root) CreateExclusive(rel string, data []byte, mode fs.FileMode) error 
 	if err := unix.Fsync(fd); err != nil {
 		return pathErr("fsync", rel, err)
 	}
-	if err := unix.Close(fd); err != nil {
+	keepObject = true
+	err = unix.Close(fd)
+	fdOpen = false
+	if err != nil {
 		return pathErr("close", rel, err)
 	}
 	if err := unix.Fsync(dirfd); err != nil {
 		return pathErr("fsync", rel, err)
 	}
-	complete = true
 	return nil
 }
 
-// destMode returns the perm a WriteAtomic temp must carry: the on-disk mode
-// of an existing regular destination, or the caller's mode for a new file.
-// Anything else at the destination — including a symlink, which lstat-style
-// Fstatat reports without resolving — fails closed.
+// destMode returns the perm a WriteAtomic temp must carry: the on-disk
+// permission bits of an existing regular destination, or the caller's mode
+// for a new file. Anything else at the destination — including a symlink,
+// which lstat-style Fstatat reports without resolving — fails closed.
 func destMode(dirfd int, base, rel string, mode fs.FileMode) (fs.FileMode, error) {
 	var st unix.Stat_t
 	if err := unix.Fstatat(dirfd, base, &st, unix.AT_SYMLINK_NOFOLLOW); err != nil {

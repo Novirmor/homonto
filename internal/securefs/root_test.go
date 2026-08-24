@@ -385,20 +385,25 @@ func TestSyncDirAcceptsDirectoriesOnly(t *testing.T) {
 
 // TestConcurrentWriteAtomicSamePath: concurrent writers must serialize as
 // whole-content last-writer-wins; the file can never hold a mix of two
-// writers' bytes. Run under -race.
+// writers' bytes. Concurrent readers must observe, on every successful
+// read, exactly one writer's full payload — never partial or mixed
+// content, because each write renames a fresh inode over the path. Run
+// under -race.
 func TestConcurrentWriteAtomicSamePath(t *testing.T) {
 	root, dir := newRoot(t)
 	const (
 		writers = 8
+		readers = 4
 		rounds  = 25
 		size    = 1 << 16
 	)
 	start := make(chan struct{})
-	var wg sync.WaitGroup
+	stop := make(chan struct{})
+	var writerWG, readerWG sync.WaitGroup
 	for w := 0; w < writers; w++ {
-		wg.Add(1)
+		writerWG.Add(1)
 		go func(w int) {
-			defer wg.Done()
+			defer writerWG.Done()
 			payload := bytes.Repeat([]byte{byte('A' + w)}, size)
 			<-start
 			for k := 0; k < rounds; k++ {
@@ -409,8 +414,46 @@ func TestConcurrentWriteAtomicSamePath(t *testing.T) {
 			}
 		}(w)
 	}
+	for rd := 0; rd < readers; rd++ {
+		readerWG.Add(1)
+		go func() {
+			defer readerWG.Done()
+			<-start
+			for {
+				select {
+				case <-stop:
+					return
+				default:
+				}
+				got, err := root.ReadFile("shared.bin")
+				if err != nil {
+					if errors.Is(err, fs.ErrNotExist) {
+						continue // not yet created by the first writer
+					}
+					t.Errorf("reader: %v", err)
+					return
+				}
+				if len(got) != size {
+					t.Errorf("reader saw partial content: %d bytes, want %d", len(got), size)
+					return
+				}
+				if got[0] < 'A' || got[0] > 'A'+writers-1 {
+					t.Errorf("reader saw content from unknown writer %q", got[0])
+					return
+				}
+				for i := 1; i < len(got); i++ {
+					if got[i] != got[0] {
+						t.Errorf("read %d: byte %d differs: content mixes two writers", got[0]-'A', i)
+						return
+					}
+				}
+			}
+		}()
+	}
 	close(start)
-	wg.Wait()
+	writerWG.Wait()
+	close(stop)
+	readerWG.Wait()
 
 	got, err := root.ReadFile("shared.bin")
 	if err != nil {

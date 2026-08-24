@@ -3,6 +3,7 @@ package workspace
 import (
 	"context"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -101,6 +102,54 @@ func (e *wsEnv) open(t *testing.T) {
 	e.ops = operation.NewManager(db)
 	e.lmg = lease.NewManager(db, e.ops)
 	e.svc = NewService(db, e.ops, e.stateRoot, nil)
+}
+
+// close releases the database handle so a reopen can simulate a new process
+// against the same journal after a crash.
+func (e *wsEnv) close(t *testing.T) {
+	t.Helper()
+	if e.db == nil {
+		return
+	}
+	if err := e.db.Close(); err != nil {
+		t.Fatalf("workspace: close store: %v", err)
+	}
+	e.db = nil
+}
+
+// setFailpoint installs a hook that panics (simulating process death) the
+// nth time point is reached. The returned restore clears the hook.
+func setFailpoint(t *testing.T, point string, nth int) (restore func()) {
+	t.Helper()
+	counts := map[string]int{}
+	return operation.SetFailpointHook(func(p string) {
+		if p != point {
+			return
+		}
+		counts[p]++
+		if counts[p] == nth {
+			panic(fmt.Sprintf("simulated crash at %s", p))
+		}
+	})
+}
+
+// mustCrash runs run and fails the test unless the failpoint panicked.
+func mustCrash(t *testing.T, run func() error) {
+	t.Helper()
+	panicked := false
+	func() {
+		defer func() {
+			if recover() != nil {
+				panicked = true
+			}
+		}()
+		if err := run(); err != nil {
+			panic(fmt.Sprintf("returned error before crash point: %v", err))
+		}
+	}()
+	if !panicked {
+		t.Fatal("workspace: expected simulated crash at failpoint")
+	}
 }
 
 func (e *wsEnv) writeConfig(t *testing.T, cfg workspacecfg.Config) {
@@ -492,4 +541,244 @@ func mustMarshal(t *testing.T, c lease.LeaseContent) []byte {
 		t.Fatalf("workspace: marshal lease: %v", err)
 	}
 	return data
+}
+
+// nonGitLeasePath is the lease slot for a member directory under the env's
+// state root.
+func (e *wsEnv) nonGitLeasePath(t *testing.T, rel string) string {
+	t.Helper()
+	p, err := registration.NonGitLeasePath(e.stateRoot, filepath.Join(e.wsRoot, rel))
+	if err != nil {
+		t.Fatalf("workspace: lease path for %s: %v", rel, err)
+	}
+	return p
+}
+
+// leaseSet returns the sentinel's lease list keyed by repository id.
+func leaseSet(t *testing.T, e *wsEnv) map[identity.RepositoryID]string {
+	t.Helper()
+	set := map[identity.RepositoryID]string{}
+	for _, l := range e.sentinel(t).Leases {
+		set[l.RepositoryID] = l.Path
+	}
+	return set
+}
+
+// assertSentinelMatchesDisk verifies the marker's lease list is exactly the
+// set of leases present on disk: every listed path exists, and no listed
+// path is missing.
+func assertSentinelMatchesDisk(t *testing.T, e *wsEnv) {
+	t.Helper()
+	for _, l := range e.sentinel(t).Leases {
+		if _, err := lease.ReadLease(l.Path); err != nil {
+			t.Errorf("workspace: sentinel lists %s but no lease on disk: %v", l.Path, err)
+		}
+	}
+}
+
+// TestRescanActiveAddThenRemoveKeepsSentinelCurrent: a member added by one
+// rescan must appear in the marker's lease list, so a second rescan can
+// remove it — and the marker must then drop it again, always describing the
+// leases actually held (ADR 0026).
+func TestRescanActiveAddThenRemoveKeepsSentinelCurrent(t *testing.T) {
+	e := newWSEnv(t)
+	newID, err := identity.NewRepositoryID()
+	if err != nil {
+		t.Fatalf("workspace: repository id: %v", err)
+	}
+	withC := e.addMember(t, e.cfg, newID, "member-c", string(workspacecfg.KindNonGit))
+	if err := e.svc.RescanActive(context.Background(), e.req(t, e.cfg, withC)); err != nil {
+		t.Fatalf("workspace: rescan add: %v", err)
+	}
+
+	sent := e.sentinel(t)
+	if sent.Version != 2 {
+		t.Fatalf("workspace: sentinel version = %d, want 2 after add", sent.Version)
+	}
+	afterAdd := leaseSet(t, e)
+	if _, ok := afterAdd[newID]; !ok {
+		t.Fatalf("workspace: sentinel lease list %v does not include the added member %s", afterAdd, newID)
+	}
+	if afterAdd[newID] != e.nonGitLeasePath(t, "member-c") {
+		t.Errorf("workspace: sentinel lease path for %s = %q, want %q",
+			newID, afterAdd[newID], e.nonGitLeasePath(t, "member-c"))
+	}
+	assertSentinelMatchesDisk(t, e)
+
+	withoutC := e.withoutMember(withC, newID)
+	if err := e.svc.RescanActive(context.Background(), e.req(t, withC, withoutC)); err != nil {
+		t.Fatalf("workspace: rescan remove of previously added member: %v", err)
+	}
+
+	sent = e.sentinel(t)
+	if sent.Version != 3 {
+		t.Fatalf("workspace: sentinel version = %d, want 3 after remove", sent.Version)
+	}
+	afterRemove := leaseSet(t, e)
+	if _, ok := afterRemove[newID]; ok {
+		t.Errorf("workspace: sentinel lease list %v still lists the removed member %s", afterRemove, newID)
+	}
+	if len(afterRemove) != 3 {
+		t.Errorf("workspace: sentinel lease list %v, want the 3 remaining members", afterRemove)
+	}
+	if _, err := lease.ReadLease(e.nonGitLeasePath(t, "member-c")); !errors.Is(err, os.ErrNotExist) {
+		t.Errorf("workspace: removed member's lease still present, err = %v", err)
+	}
+	assertSentinelMatchesDisk(t, e)
+}
+
+// TestRescanActiveRejectsStaleOldConfig: the operation must refuse to act on
+// a base that is not the committed config on disk, before any effect runs —
+// otherwise a never-claimed member could be activated by a stale delta.
+func TestRescanActiveRejectsStaleOldConfig(t *testing.T) {
+	e := newWSEnv(t)
+	newID, err := identity.NewRepositoryID()
+	if err != nil {
+		t.Fatalf("workspace: repository id: %v", err)
+	}
+	// Stale base: claims member-a is absent although the committed config
+	// lists it.
+	stale := e.withoutMember(e.cfg, e.memberA)
+	newCfg := e.addMember(t, e.cfg, newID, "member-c", string(workspacecfg.KindNonGit))
+
+	err = e.svc.RescanActive(context.Background(), e.req(t, stale, newCfg))
+	if !errors.Is(err, ErrConfigMismatch) {
+		t.Fatalf("workspace: rescan with stale OldConfig = %v, want ErrConfigMismatch", err)
+	}
+
+	// No effects fired: the committed config is untouched, no claim or lease
+	// was created, and nothing was journaled.
+	if got := e.readConfig(t); workspacecfg.MembershipFingerprint(got) != workspacecfg.MembershipFingerprint(e.cfg) {
+		t.Errorf("workspace: config changed by stale-base rescan: %+v", got.Members)
+	}
+	if _, err := lease.ReadLease(e.nonGitLeasePath(t, "member-c")); !errors.Is(err, os.ErrNotExist) {
+		t.Errorf("workspace: lease created despite stale base, err = %v", err)
+	}
+	regPath, err := registration.NonGitRegistrationPath(e.stateRoot, filepath.Join(e.wsRoot, "member-c"))
+	if err != nil {
+		t.Fatalf("workspace: registration path: %v", err)
+	}
+	if _, err := registration.Read(regPath); !errors.Is(err, registration.ErrNotRegistered) {
+		t.Errorf("workspace: claim created despite stale base, err = %v", err)
+	}
+	if counts := e.rescanOps(t); len(counts) != 0 {
+		t.Errorf("workspace: stale-base rescan journaled an op: %v", counts)
+	}
+	if v := e.sentinel(t).Version; v != 1 {
+		t.Errorf("workspace: sentinel version = %d, want unchanged 1", v)
+	}
+}
+
+// TestRescanActiveRejectsGenerationMismatch: the request generation must
+// match the active work's generation recorded in the marker; a stale
+// projection is refused before any effect runs.
+func TestRescanActiveRejectsGenerationMismatch(t *testing.T) {
+	e := newWSEnv(t)
+	newID, err := identity.NewRepositoryID()
+	if err != nil {
+		t.Fatalf("workspace: repository id: %v", err)
+	}
+	newCfg := e.addMember(t, e.cfg, newID, "member-c", string(workspacecfg.KindNonGit))
+	req := e.req(t, e.cfg, newCfg)
+	req.Generation = 2
+
+	err = e.svc.RescanActive(context.Background(), req)
+	if !errors.Is(err, ErrGenerationMismatch) {
+		t.Fatalf("workspace: rescan with stale generation = %v, want ErrGenerationMismatch", err)
+	}
+	if counts := e.rescanOps(t); len(counts) != 0 {
+		t.Errorf("workspace: stale-generation rescan journaled an op: %v", counts)
+	}
+	if v := e.sentinel(t).Version; v != 1 {
+		t.Errorf("workspace: sentinel version = %d, want unchanged 1", v)
+	}
+}
+
+// TestRescanActiveCrashAfterConfigWriteRollsForward: the process dies after
+// the config activation effect committed but before the marker bump. Crash
+// recovery must finish the projection forward: the marker is bumped with the
+// updated lease list and the operation finalizes.
+func TestRescanActiveCrashAfterConfigWriteRollsForward(t *testing.T) {
+	e := newWSEnv(t)
+	newID, err := identity.NewRepositoryID()
+	if err != nil {
+		t.Fatalf("workspace: repository id: %v", err)
+	}
+	newCfg := e.addMember(t, e.cfg, newID, "member-c", string(workspacecfg.KindNonGit))
+	// Effects: claim, lease, config, bump. Crash after the config effect.
+	restore := setFailpoint(t, "effect-applied", 3)
+	mustCrash(t, func() error { return e.svc.RescanActive(context.Background(), e.req(t, e.cfg, newCfg)) })
+	restore()
+
+	// The config activation committed before the crash.
+	if got := e.readConfig(t); workspacecfg.MembershipFingerprint(got) != workspacecfg.MembershipFingerprint(newCfg) {
+		t.Fatalf("workspace: config not activated before crash: %+v", got.Members)
+	}
+	if counts := e.rescanOps(t); counts["prepared"] != 1 {
+		t.Fatalf("workspace: rescan ops = %v, want one prepared", counts)
+	}
+
+	e.close(t)
+	e.open(t)
+	if err := e.svc.Recover(context.Background()); err != nil {
+		t.Fatalf("workspace: recover after crash: %v", err)
+	}
+
+	if counts := e.rescanOps(t); counts["finalized"] != 1 {
+		t.Fatalf("workspace: rescan ops = %v, want one finalized", counts)
+	}
+	sent := e.sentinel(t)
+	if sent.Version != 2 {
+		t.Errorf("workspace: sentinel version = %d, want 2 after recovery", sent.Version)
+	}
+	if _, ok := leaseSet(t, e)[newID]; !ok {
+		t.Errorf("workspace: sentinel lease list %v misses the added member %s", leaseSet(t, e), newID)
+	}
+	if _, err := lease.ReadLease(e.nonGitLeasePath(t, "member-c")); err != nil {
+		t.Errorf("workspace: added member's lease missing after recovery: %v", err)
+	}
+	assertSentinelMatchesDisk(t, e)
+}
+
+// TestRescanActiveCrashMidRemovalRollsForward: the process dies after the
+// removal's release effect committed but before the membership commit
+// (finalize). Crash recovery must converge forward: the marker keeps its
+// updated lease list and the operation finalizes with the removed member's
+// lease gone.
+func TestRescanActiveCrashMidRemovalRollsForward(t *testing.T) {
+	e := newWSEnv(t)
+	newCfg := e.withoutMember(e.cfg, e.memberB)
+	// Effects: config, bump, release. Crash after the release effect.
+	restore := setFailpoint(t, "effect-applied", 3)
+	mustCrash(t, func() error { return e.svc.RescanActive(context.Background(), e.req(t, e.cfg, newCfg)) })
+	restore()
+
+	// The release committed before the crash.
+	if _, err := lease.ReadLease(e.nonGitLeasePath(t, "member-b")); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("workspace: member-b lease still present after crash, err = %v", err)
+	}
+	if counts := e.rescanOps(t); counts["prepared"] != 1 {
+		t.Fatalf("workspace: rescan ops = %v, want one prepared", counts)
+	}
+
+	e.close(t)
+	e.open(t)
+	if err := e.svc.Recover(context.Background()); err != nil {
+		t.Fatalf("workspace: recover after crash: %v", err)
+	}
+
+	if counts := e.rescanOps(t); counts["finalized"] != 1 {
+		t.Fatalf("workspace: rescan ops = %v, want one finalized", counts)
+	}
+	sent := e.sentinel(t)
+	if sent.Version != 2 {
+		t.Errorf("workspace: sentinel version = %d, want 2 after recovery", sent.Version)
+	}
+	if _, ok := leaseSet(t, e)[e.memberB]; ok {
+		t.Errorf("workspace: sentinel lease list %v still lists the removed member %s", leaseSet(t, e), e.memberB)
+	}
+	if _, err := lease.ReadLease(e.nonGitLeasePath(t, "member-b")); !errors.Is(err, os.ErrNotExist) {
+		t.Errorf("workspace: removed member's lease still present after recovery, err = %v", err)
+	}
+	assertSentinelMatchesDisk(t, e)
 }

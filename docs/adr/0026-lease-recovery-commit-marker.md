@@ -36,9 +36,12 @@ then it is the commit point. The recovery policy per pending acquisition:
   no timeout-based reclamation exists.
 - A membership rescan during active work converges forward after a crash
   (the membership change completes) but rolls back on an in-process
-  failure (the caller sees the partial change undone); the sentinel's
-  version field is bumped on any membership change to mark downstream
-  evidence stale.
+  failure (the caller sees the partial change undone). The marker is
+  rewritten on every membership change: its version field is bumped to
+  mark downstream evidence stale, and its lease list is updated to the
+  post-change set (added members appended, released members dropped), so
+  the marker always describes the leases actually held — a later rescan
+  can release a member added by an earlier one.
 
 ## Consequences
 

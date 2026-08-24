@@ -341,6 +341,56 @@ func TestValidateAfterRollBackFails(t *testing.T) {
 	}
 }
 
+// TestDeadProcessIsDiagnosticOnly pins the liveness contract: a lease whose
+// holder process is dead is still valid (PID liveness is diagnostic, never a
+// validation or takeover criterion), and a dead-pid lease still blocks
+// another workspace's acquisition — no timeout-based or liveness-based
+// reclamation exists.
+func TestDeadProcessIsDiagnosticOnly(t *testing.T) {
+	e := newEnv(t)
+	dead := startExitChild(t)
+	if dead.Alive() {
+		t.Fatalf("lease: fixture pid %d unexpectedly alive", dead.PID)
+	}
+	req := e.req(t, e.allTargets())
+	req.Provenance = dead
+
+	leases, err := e.mgr.AcquireAll(context.Background(), req)
+	if err != nil {
+		t.Fatalf("lease: acquire with dead-pid provenance: %v", err)
+	}
+	for _, l := range leases {
+		if l.Content.Process.Alive() {
+			t.Errorf("lease: %s process reported alive despite dead pid %d", l.Path, l.Content.Process.PID)
+		}
+	}
+	// Liveness is not a validation criterion: the dead-pid leases validate.
+	if err := e.mgr.ValidateAll(context.Background(), leases); err != nil {
+		t.Errorf("lease: ValidateAll rejected dead-pid lease: %v", err)
+	}
+
+	// Takeover is still refused even though the holder is dead: another
+	// workspace acquiring the same targets fails, and the dead-pid leases
+	// are untouched.
+	foreignReq := req
+	otherWS, err := identity.NewWorkspaceID()
+	if err != nil {
+		t.Fatalf("lease: workspace id: %v", err)
+	}
+	foreignReq.WorkspaceID = otherWS
+	if _, err := e.mgr.AcquireAll(context.Background(), foreignReq); !errors.Is(err, ErrLeaseConflict) {
+		t.Fatalf("lease: takeover of dead-pid lease = %v, want ErrLeaseConflict", err)
+	}
+	for _, l := range leases {
+		if _, err := ReadLease(l.Path); err != nil {
+			t.Errorf("lease: dead-pid lease %s disturbed by refused takeover: %v", l.Path, err)
+		}
+	}
+	if err := e.mgr.ValidateAll(context.Background(), leases); err != nil {
+		t.Errorf("lease: ValidateAll after refused takeover: %v", err)
+	}
+}
+
 // TestRecoverOneScopedCleanup proves the in-process failure cleanup targets
 // only the failed operation, leaving a crashed sibling untouched — the
 // contract AcquireAll's rollback path depends on when two acquisitions run

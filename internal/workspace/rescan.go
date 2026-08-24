@@ -45,6 +45,12 @@ var (
 	ErrRemovedMemberNotLeased = errors.New("workspace: removed member has no active lease")
 	// ErrMemberUnusable: an added member is not usable on disk.
 	ErrMemberUnusable = errors.New("workspace: member not usable on disk")
+	// ErrConfigMismatch: the request's OldConfig does not match the
+	// committed config on disk; the rescan would act on a stale base.
+	ErrConfigMismatch = errors.New("workspace: rescan old config does not match the committed config on disk")
+	// ErrGenerationMismatch: the request's generation does not match the
+	// active work's generation recorded in the checkpoint commit marker.
+	ErrGenerationMismatch = errors.New("workspace: rescan generation does not match the active work's generation")
 	// ErrInvalidRescanRequest: a RescanRequest is not valid.
 	ErrInvalidRescanRequest = errors.New("workspace: invalid rescan request")
 )
@@ -132,6 +138,18 @@ func (s *Service) RescanActive(ctx context.Context, req RescanRequest) error {
 	if err != nil {
 		return fmt.Errorf("workspace: read config: %w", err)
 	}
+	// The operation must act on exactly the committed base: marshal the
+	// request's OldConfig and compare byte-for-byte with the config on disk
+	// (the same path the config effect writes). A stale OldConfig would
+	// compute the wrong delta and could activate a member that was never
+	// claimed or leased.
+	expectedOld, err := workspacecfg.Marshal(req.OldConfig)
+	if err != nil {
+		return fmt.Errorf("workspace: marshal old config: %w", err)
+	}
+	if string(oldBytes) != string(expectedOld) {
+		return fmt.Errorf("workspace: rescan: %w", ErrConfigMismatch)
+	}
 	newBytes, err := workspacecfg.Marshal(req.NewConfig)
 	if err != nil {
 		return fmt.Errorf("workspace: marshal config: %w", err)
@@ -153,6 +171,10 @@ func (s *Service) RescanActive(ctx context.Context, req RescanRequest) error {
 	if sentinel.WorkspaceID != req.WorkspaceID {
 		return fmt.Errorf("workspace: rescan: commit marker names workspace %s, not %s: %w",
 			sentinel.WorkspaceID, req.WorkspaceID, ErrNotActiveWork)
+	}
+	if sentinel.Generation != req.Generation {
+		return fmt.Errorf("workspace: rescan: commit marker generation %d, request generation %d: %w",
+			sentinel.Generation, req.Generation, ErrGenerationMismatch)
 	}
 
 	added, removed := membershipDelta(req.OldConfig, req.NewConfig)
@@ -192,6 +214,7 @@ func (s *Service) RescanActive(ctx context.Context, req RescanRequest) error {
 		payload.Removed = append(payload.Removed, m.ID)
 	}
 	var effects []operation.Effect
+	addedLeasePaths := make(map[identity.RepositoryID]string, len(added))
 	for _, m := range added {
 		regPath, leasePath, err := s.memberSlots(ctx, runner, req, m)
 		if err != nil {
@@ -209,6 +232,7 @@ func (s *Service) RescanActive(ctx context.Context, req RescanRequest) error {
 		if err != nil {
 			return err
 		}
+		addedLeasePaths[m.ID] = leasePath
 		effects = append(effects, &claimEffect{payload: claimPayload{Path: regPath, Registration: reg}})
 		effects = append(effects, lease.NewCreateLeaseEffect(leasePath, content))
 	}
@@ -216,8 +240,16 @@ func (s *Service) RescanActive(ctx context.Context, req RescanRequest) error {
 	effects = append(effects, &writeConfigEffect{payload: writeConfigPayload{
 		Path: ConfigPath(req.ControlRoot), Data: newBytes, Previous: oldBytes,
 	}})
+	// The marker always describes the leases actually held after this
+	// operation: drop the members being released and append the members
+	// being acquired, alongside the evidence-staleness version bump.
+	removedIDs := make(map[identity.RepositoryID]bool, len(removed))
+	for _, m := range removed {
+		removedIDs[m.ID] = true
+	}
 	bumped := sentinel
 	bumped.Version++
+	bumped.Leases = updatedLeaseList(sentinel.Leases, addedLeasePaths, removedIDs)
 	effects = append(effects, &sentinelBumpEffect{payload: sentinelBumpPayload{
 		Path: sentinelPath, Content: bumped, Previous: sentinel,
 	}})
@@ -334,6 +366,26 @@ func memberByID(leases []lease.SentinelLease) map[identity.RepositoryID]lease.Se
 	for _, l := range leases {
 		out[l.RepositoryID] = l
 	}
+	return out
+}
+
+// updatedLeaseList rewrites the marker's lease list to the set that will be
+// held once the rescan completes: the current leases minus the members being
+// released, plus the members being acquired, sorted by repository id. The
+// marker must always describe the leases actually held (ADR 0026), so a
+// later rescan can release a member added by an earlier one.
+func updatedLeaseList(current []lease.SentinelLease, added map[identity.RepositoryID]string, removed map[identity.RepositoryID]bool) []lease.SentinelLease {
+	out := make([]lease.SentinelLease, 0, len(current)+len(added))
+	for _, l := range current {
+		if removed[l.RepositoryID] {
+			continue
+		}
+		out = append(out, l)
+	}
+	for id, path := range added {
+		out = append(out, lease.SentinelLease{RepositoryID: id, Path: path})
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].RepositoryID < out[j].RepositoryID })
 	return out
 }
 
@@ -495,17 +547,19 @@ func writeConfigFile(path string, data []byte) error {
 	return nil
 }
 
-// sentinelBumpPayload is the journalled identity of one evidence-staleness
-// bump of the checkpoint commit marker.
+// sentinelBumpPayload is the journalled identity of one checkpoint commit
+// marker rewrite: the full new content (version bumped AND lease list
+// updated to the post-rescan set) plus the previous content for revert.
 type sentinelBumpPayload struct {
 	Path     string                `json:"path"`
 	Content  lease.SentinelContent `json:"content"`
 	Previous lease.SentinelContent `json:"previous"`
 }
 
-// sentinelBumpEffect marks the checkpoint commit marker stale by bumping its
-// version, invalidating downstream evidence until it is re-derived. Revert
-// restores the previous version; the marker itself is never removed.
+// sentinelBumpEffect rewrites the checkpoint commit marker: the version bump
+// marks downstream evidence stale, and the lease list is updated so the
+// marker always describes the leases actually held. Revert restores the
+// previous content; the marker itself is never removed.
 type sentinelBumpEffect struct {
 	payload sentinelBumpPayload
 }

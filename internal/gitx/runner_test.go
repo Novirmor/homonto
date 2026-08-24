@@ -23,14 +23,14 @@ func writeScript(t *testing.T, name, body string) string {
 }
 
 func TestExecRunnerForcesGitEnvironment(t *testing.T) {
-	git := writeScript(t, "fake-git", `printf '%s\n%s\n' "$GIT_TERMINAL_PROMPT" "$LC_ALL"`)
+	git := writeScript(t, "fake-git", `printf '%s\n%s\n%s\n' "$GIT_TERMINAL_PROMPT" "$LC_ALL" "$GIT_EDITOR"`)
 	r := ExecRunner{Git: git}
 
 	out, err := r.Run(context.Background(), t.TempDir())
 	if err != nil {
 		t.Fatalf("Run: %v", err)
 	}
-	if got, want := out, "0\nC\n"; got != want {
+	if got, want := out, "0\nC\ntrue\n"; got != want {
 		t.Errorf("env output = %q, want %q", got, want)
 	}
 }

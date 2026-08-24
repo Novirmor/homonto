@@ -1,7 +1,11 @@
 // Package gitx runs git as a plain subprocess, never through a shell, with
 // a bounded timeout and a pinned environment (GIT_TERMINAL_PROMPT=0 so git
-// can never block on credentials, LC_ALL=C so diagnostics are stable).
-// Task 1 needs only init/inspect; later tasks extend this runner.
+// can never block on credentials, LC_ALL=C so diagnostics are stable,
+// GIT_EDITOR=true so no invocation can block on an editor). It provides the
+// workflow's git plumbing: repository inspection, isolated worktrees for
+// implementer assignments, integration worktrees that cherry-pick commit
+// materials, clean-baseline fingerprints, and journaled recovery for every
+// git side effect.
 package gitx
 
 import (
@@ -100,20 +104,24 @@ func IsNotRepository(err error) bool {
 	return ce.ExitCode == 128 && strings.Contains(ce.Stderr, "not a git repository")
 }
 
-// gitEnv returns the ambient environment with LC_ALL and
-// GIT_TERMINAL_PROMPT overridden to pinned values.
+// gitEnv returns the ambient environment with LC_ALL, GIT_TERMINAL_PROMPT,
+// and GIT_EDITOR overridden to pinned values. GIT_EDITOR=true makes any git
+// invocation that would open an editor (for example cherry-pick --continue
+// after a conflict resolution) succeed immediately instead of blocking on
+// an interactive prompt; Homonto never wants an editor session.
 func gitEnv() []string {
 	const (
 		lcAll    = "LC_ALL="
 		terminal = "GIT_TERMINAL_PROMPT="
+		editor   = "GIT_EDITOR="
 	)
 	ambient := os.Environ()
-	env := make([]string, 0, len(ambient)+2)
+	env := make([]string, 0, len(ambient)+3)
 	for _, e := range ambient {
-		if strings.HasPrefix(e, lcAll) || strings.HasPrefix(e, terminal) {
+		if strings.HasPrefix(e, lcAll) || strings.HasPrefix(e, terminal) || strings.HasPrefix(e, editor) {
 			continue
 		}
 		env = append(env, e)
 	}
-	return append(env, terminal+"0", lcAll+"C")
+	return append(env, terminal+"0", lcAll+"C", editor+"true")
 }

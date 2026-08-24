@@ -254,6 +254,19 @@ func setUnrecordedApplyFailpoint(t *testing.T, opID identity.OperationID, seq in
 	})
 }
 
+// setUnrecordedApplyFailureFailpoint crashes at the unrecorded apply-failure
+// window of one journal position: after Apply returned an error but before
+// its failed row is committed.
+func setUnrecordedApplyFailureFailpoint(t *testing.T, opID identity.OperationID, seq int64) (restore func()) {
+	t.Helper()
+	point := fmt.Sprintf("effect-failed-unrecorded:%s:%d", opID, seq)
+	return setFailpointHook(t, func(p string) {
+		if p == point {
+			panic(fmt.Sprintf("simulated crash at %s", p))
+		}
+	})
+}
+
 // setUnrecordedRevertFailpoint crashes at the unrecorded-revert window of
 // one journal position: after Revert returned but before its row is
 // committed.
@@ -318,6 +331,20 @@ func opState(t *testing.T, db *store.DB, id identity.OperationID) string {
 		t.Fatalf("operation: read state of %s: %v", id, err)
 	}
 	return state
+}
+
+// opPolicy reads the operation's persisted crash-recovery policy.
+func opPolicy(t *testing.T, db *store.DB, id identity.OperationID) string {
+	t.Helper()
+	var policy string
+	err := db.View(context.Background(), func(tx *store.Tx) error {
+		return tx.QueryRowContext(context.Background(),
+			`SELECT policy FROM operations WHERE id=?`, string(id)).Scan(&policy)
+	})
+	if err != nil {
+		t.Fatalf("operation: read policy of %s: %v", id, err)
+	}
+	return policy
 }
 
 // effectStates reads every effect row's persisted state keyed by seq.
@@ -504,7 +531,12 @@ func TestRunCrashAfterFinalizeNeedsNoRecovery(t *testing.T) {
 	}
 }
 
-func TestRunApplyFailureLeavesOperationRecoverable(t *testing.T) {
+// TestRunApplyFailureMarksEffectFailedAndRollsBackOnRecover proves the
+// error-path contract: a failed Apply journals its effect row failed and
+// switches the operation to roll_back before Run returns, so recovery
+// never re-applies the failed effect — it reverts the earlier applied
+// effects and closes the operation rolled back.
+func TestRunApplyFailureMarksEffectFailedAndRollsBackOnRecover(t *testing.T) {
 	e := newEnv(t, 3, RollForward)
 	e.rec.failApply = map[int64]error{2: errors.New("effect 2 boom")}
 	err := e.mgr.Run(context.Background(), e.op)
@@ -515,9 +547,12 @@ func TestRunApplyFailureLeavesOperationRecoverable(t *testing.T) {
 	if state := opState(t, e.db, e.op.ID()); state != store.OpPrepared {
 		t.Fatalf("operation: state after apply failure = %s, want %s", state, store.OpPrepared)
 	}
+	if policy := opPolicy(t, e.db, e.op.ID()); policy != string(RollBack) {
+		t.Fatalf("operation: policy after apply failure = %s, want %s", policy, RollBack)
+	}
 	states := effectStates(t, e.db, e.op.ID())
-	if states[1] != store.EffectApplied || states[2] != store.EffectPending || states[3] != store.EffectPending {
-		t.Errorf("operation: effect states after apply failure = %v", states)
+	if states[1] != store.EffectApplied || states[2] != store.EffectFailed || states[3] != store.EffectPending {
+		t.Errorf("operation: effect states after apply failure = %v, want applied/failed/pending", states)
 	}
 
 	e.rec.mu.Lock()
@@ -526,8 +561,94 @@ func TestRunApplyFailureLeavesOperationRecoverable(t *testing.T) {
 	if err := e.reopen(t, true).RecoverPending(context.Background()); err != nil {
 		t.Fatalf("operation: recover: %v", err)
 	}
+	if state := opState(t, e.db, e.op.ID()); state != store.OpRolledBack {
+		t.Errorf("operation: state after recovery = %s, want %s", state, store.OpRolledBack)
+	}
+	// The failed effect is never re-applied; only the applied one reverts.
+	if got := e.rec.applyCount(2); got != 0 {
+		t.Errorf("operation: failed effect applied %d times after recovery, want 0 (never re-applied)", got)
+	}
+	if got, want := e.rec.revertedSeqs(), []int64{1}; len(got) != len(want) || got[0] != want[0] {
+		t.Errorf("operation: reverts = %v, want %v", got, want)
+	}
+	// The failed marker survives roll-back as the row's terminal state.
+	states = effectStates(t, e.db, e.op.ID())
+	if states[1] != store.EffectReverted || states[2] != store.EffectFailed || states[3] != store.EffectReverted {
+		t.Errorf("operation: effect states after recovery = %v, want reverted/failed/reverted", states)
+	}
+}
+
+// TestRunCrashInUnrecordedApplyFailureWindow crashes between a failed
+// Apply's return and its failed row's commit: the row stays pending under
+// roll_forward, and recovery re-applies it under the ordinary idempotency
+// contract (for the gitx cherry-pick that means recognizing its own
+// conflicted stop — proven in package gitx).
+func TestRunCrashInUnrecordedApplyFailureWindow(t *testing.T) {
+	e := newEnv(t, 3, RollForward)
+	e.rec.failApply = map[int64]error{2: errors.New("effect 2 boom")}
+	restore := setUnrecordedApplyFailureFailpoint(t, e.op.ID(), 2)
+	mustCrash(t, e.mgr, e.op)
+	restore()
+
+	states := effectStates(t, e.db, e.op.ID())
+	if states[1] != store.EffectApplied || states[2] != store.EffectPending || states[3] != store.EffectPending {
+		t.Fatalf("operation: effect states after unrecorded crash = %v, want applied/pending/pending", states)
+	}
+	if policy := opPolicy(t, e.db, e.op.ID()); policy != string(RollForward) {
+		t.Fatalf("operation: policy after unrecorded crash = %s, want %s", policy, RollForward)
+	}
+
+	// The transient failure is gone: the pending row re-applies cleanly.
+	e.rec.mu.Lock()
+	e.rec.failApply = nil
+	e.rec.mu.Unlock()
+	if err := e.reopen(t, true).RecoverPending(context.Background()); err != nil {
+		t.Fatalf("operation: recover: %v", err)
+	}
 	if state := opState(t, e.db, e.op.ID()); state != store.OpFinalized {
 		t.Errorf("operation: state after recovery = %s, want %s", state, store.OpFinalized)
+	}
+	for seq := int64(1); seq <= 3; seq++ {
+		if got := e.rec.applyCount(seq); got != 1 {
+			t.Errorf("operation: effect %d applied %d times, want 1", seq, got)
+		}
+	}
+}
+
+// TestRunCrashAfterFailedRowBeforePolicySwitch crashes after the failed
+// row committed but before the roll_back policy did: recovery finds a
+// prepared roll_forward operation holding a failed row, switches it to
+// roll-back, and closes it there — the failed effect is never re-applied.
+func TestRunCrashAfterFailedRowBeforePolicySwitch(t *testing.T) {
+	e := newEnv(t, 3, RollForward)
+	e.rec.failApply = map[int64]error{2: errors.New("effect 2 boom")}
+	restore := setFailpoint(t, "effect-failed", 1)
+	mustCrash(t, e.mgr, e.op)
+	restore()
+
+	states := effectStates(t, e.db, e.op.ID())
+	if states[1] != store.EffectApplied || states[2] != store.EffectFailed || states[3] != store.EffectPending {
+		t.Fatalf("operation: effect states after crash = %v, want applied/failed/pending", states)
+	}
+	if policy := opPolicy(t, e.db, e.op.ID()); policy != string(RollForward) {
+		t.Fatalf("operation: policy after crash = %s, want %s (switch not yet committed)", policy, RollForward)
+	}
+
+	if err := e.reopen(t, true).RecoverPending(context.Background()); err != nil {
+		t.Fatalf("operation: recover: %v", err)
+	}
+	if state := opState(t, e.db, e.op.ID()); state != store.OpRolledBack {
+		t.Errorf("operation: state after recovery = %s, want %s", state, store.OpRolledBack)
+	}
+	if got := e.rec.applyCount(2); got != 0 {
+		t.Errorf("operation: failed effect applied %d times, want 0 (never re-applied)", got)
+	}
+	if got, want := e.rec.revertedSeqs(), []int64{1}; len(got) != len(want) || got[0] != want[0] {
+		t.Errorf("operation: reverts = %v, want %v", got, want)
+	}
+	states = effectStates(t, e.db, e.op.ID())
+	if states[1] != store.EffectReverted || states[2] != store.EffectFailed || states[3] != store.EffectReverted {
+		t.Errorf("operation: effect states after recovery = %v, want reverted/failed/reverted", states)
 	}
 }
 

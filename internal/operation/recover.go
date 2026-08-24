@@ -31,9 +31,12 @@ func (m *Manager) RecoverOne(ctx context.Context, id identity.OperationID) error
 //     operation is closed as rolled_back under both policies.
 //   - prepared, roll_forward: effects not yet recorded as applied are
 //     re-applied (idempotently, from their persisted payloads) and the
-//     operation is finalized.
+//     operation is finalized. A row recorded as failed switches the
+//     operation to roll-back instead: rolling forward past a failed Apply
+//     is impossible.
 //   - prepared, roll_back: effects recorded as applied are reverted in
-//     reverse apply order and the operation is closed as rolled_back.
+//     reverse apply order and the operation is closed as rolled_back. A
+//     failed row is closed as-is — never re-applied and never reverted.
 //
 // Recovery is idempotent: every transition it makes is journaled the same
 // way Run's are, so an interrupted recovery is recovered the same way.
@@ -81,8 +84,22 @@ func (m *Manager) recoverOne(ctx context.Context, rec store.OperationRecord) err
 // yet recorded as applied — from their persisted payloads, so identities
 // (tokens) match the original run — and finalizes the operation. Already
 // applied effects are skipped, which is what makes interrupted recovery
-// resumable.
+// resumable. A failed row makes rolling forward impossible (its Apply
+// errored and must never re-run), so the operation is switched to
+// roll-back — the switch is its own committed step, so an interrupted pass
+// re-decides — and closed there.
 func (m *Manager) rollForward(ctx context.Context, id identity.OperationID, rows []store.EffectRow) error {
+	for _, row := range rows {
+		if row.State != store.EffectFailed {
+			continue
+		}
+		if err := m.db.Update(ctx, func(tx *store.Tx) error {
+			return tx.SetOperationPolicy(ctx, id, string(RollBack))
+		}); err != nil {
+			return fmt.Errorf("operation: switch %s to roll-back after failed effect %d: %w", id, row.Seq, err)
+		}
+		return m.rollBack(ctx, id, rows)
+	}
 	for _, row := range rows {
 		if row.State == store.EffectApplied {
 			continue
@@ -116,10 +133,15 @@ func (m *Manager) rollForward(ctx context.Context, id identity.OperationID, rows
 
 // rollBack reverts the recorded-applied effects of a prepared operation in
 // reverse apply order and closes it as rolled_back. Rows never recorded as
-// applied are closed without a Revert call (see RollBack).
+// applied are closed without a Revert call (see RollBack). A failed row is
+// left untouched: a failed Apply is terminal — never re-applied, never
+// reverted — and the failed marker is the row's lasting state.
 func (m *Manager) rollBack(ctx context.Context, id identity.OperationID, rows []store.EffectRow) error {
 	for i := len(rows) - 1; i >= 0; i-- {
 		row := rows[i]
+		if row.State == store.EffectFailed {
+			continue
+		}
 		if row.State == store.EffectApplied {
 			eff, err := m.effectForRow(id, row)
 			if err != nil {

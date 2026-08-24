@@ -72,12 +72,15 @@ func (m *Manager) effectFor(kind string) (Effect, bool) {
 //  2. prepare:    every effect's Prepare runs; the effect rows (kind,
 //     payload, pending) and the prepared state commit together.
 //  3. apply:      per effect in seq order, Apply performs the side effect
-//     and then its applied row commits.
+//     and then its applied row commits. An Apply error is terminal for
+//     that effect: the row commits as failed and the policy commits as
+//     roll_back before Run returns, so recovery rolls the operation back
+//     instead of re-applying a failed effect.
 //  4. finalize:   the finalized state commits.
 //
-// A crash (or an Apply error) anywhere after step 1 leaves a pending
-// operation in the journal that RecoverPending drives to a terminal state
-// per the operation's policy.
+// A crash anywhere after step 1 leaves a pending operation in the journal
+// that RecoverPending drives to a terminal state per the operation's
+// policy.
 func (m *Manager) Run(ctx context.Context, op Operation) error {
 	payload, err := json.Marshal(op.Payload())
 	if err != nil {
@@ -146,6 +149,26 @@ func (m *Manager) Run(ctx context.Context, op Operation) error {
 			Payload: prepared[i].payload,
 		}
 		if err := eff.Apply(ctx, rec); err != nil {
+			// A failed Apply is terminal for this effect: journal the row
+			// failed, then leave the operation prepared under roll-back so
+			// recovery reverts the earlier applied effects and never
+			// re-applies this one. A crash inside this error path is the
+			// failed-row mirror of the unrecorded apply window: before the
+			// row commits the effect stays pending under roll-forward, and
+			// the effect's own Apply idempotency must make that re-apply
+			// safe.
+			failpoint(fmt.Sprintf("effect-failed-unrecorded:%s:%d", op.ID(), rec.Seq))
+			if ferr := m.db.Update(ctx, func(tx *store.Tx) error {
+				return tx.SetEffectState(ctx, op.ID(), rec.Seq, store.EffectFailed)
+			}); ferr != nil {
+				return fmt.Errorf("operation: journal effect %d of %s as failed: %v (apply: %w)", i+1, op.ID(), ferr, err)
+			}
+			failpoint("effect-failed")
+			if perr := m.db.Update(ctx, func(tx *store.Tx) error {
+				return tx.SetOperationPolicy(ctx, op.ID(), string(RollBack))
+			}); perr != nil {
+				return fmt.Errorf("operation: switch %s to roll-back after failed effect %d: %v (apply: %w)", op.ID(), rec.Seq, perr, err)
+			}
 			return fmt.Errorf("operation: apply effect %d of %s: %w", i+1, op.ID(), err)
 		}
 		// The unrecorded window: the side effect is performed but its

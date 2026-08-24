@@ -5,6 +5,8 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strconv"
+	"strings"
 	"testing"
 
 	"github.com/noviopenworks/homonto/internal/store"
@@ -282,4 +284,181 @@ func TestAbortIntegrationCrashConverges(t *testing.T) {
 func isConflict(err error) bool {
 	var ce *ConflictError
 	return errors.As(err, &ce)
+}
+
+// conflictFixture builds an integration whose second ApplyCommit conflicts:
+// two materials touching src/shared.txt with different content, the first
+// applied cleanly. It returns the env, the integration worktree, and the
+// conflicting material.
+func conflictFixture(t *testing.T) (*env, IntegrationWorktree, CommitMaterial) {
+	t.Helper()
+	e := newEnv(t)
+	w1 := e.assign(t, newAction(t), []string{"src"})
+	implement(t, w1, "src/shared.txt", "one\n", "one")
+	m1 := material(t, e, w1, []string{"src"})
+	w2 := e.assign(t, newAction(t), []string{"src"})
+	implement(t, w2, "src/shared.txt", "two\n", "two")
+	m2 := material(t, e, w2, []string{"src"})
+	iwt, err := e.svc.CreateIntegration(context.Background(), IntegrationRequest{
+		WorkID:        e.workID,
+		RepositoryID:  e.repoID,
+		RepositoryDir: e.member,
+		Commits:       []CommitMaterial{m1, m2},
+	})
+	if err != nil {
+		t.Fatalf("CreateIntegration: %v", err)
+	}
+	if _, err := e.svc.ApplyCommit(context.Background(), iwt, m1); err != nil {
+		t.Fatalf("ApplyCommit m1: %v", err)
+	}
+	return e, iwt, m2
+}
+
+// commitsAhead counts commits on HEAD not reachable from base.
+func commitsAhead(t *testing.T, dir, base string) int {
+	t.Helper()
+	out, err := ExecRunner{}.Run(context.Background(), dir, "rev-list", "--count", base+"..HEAD")
+	if err != nil {
+		t.Fatalf("gitx: rev-list in %s: %v", dir, err)
+	}
+	n, err := strconv.Atoi(strings.TrimSpace(out))
+	if err != nil {
+		t.Fatalf("gitx: rev-list printed %q", out)
+	}
+	return n
+}
+
+// pickInProgress reports whether a cherry-pick is in progress in dir.
+func pickInProgress(t *testing.T, dir string) bool {
+	t.Helper()
+	_, err := ExecRunner{}.Run(context.Background(), dir, "rev-parse", "-q", "--verify", "CHERRY_PICK_HEAD")
+	return err == nil
+}
+
+// resolveConflict stages an engine-style resolution of src/shared.txt.
+func resolveConflict(t *testing.T, dir, content string) {
+	t.Helper()
+	shared := filepath.Join(dir, "src", "shared.txt")
+	if err := os.WriteFile(shared, []byte(content), 0o644); err != nil {
+		t.Fatalf("gitx: write resolution: %v", err)
+	}
+	if _, err := (ExecRunner{}).Run(context.Background(), dir, "add", "src/shared.txt"); err != nil {
+		t.Fatalf("gitx: stage resolution: %v", err)
+	}
+}
+
+// TestApplyCommitConflictCrashConverges crashes the conflicted cherry-pick
+// inside the apply-error window — after Apply returned ConflictError but
+// before the failed row and the roll-back policy are both durable — and
+// proves the invariant: RecoverPending never re-runs the pick, so the
+// conflicted stop is preserved for the engine (or its completed resolution
+// is left alone) and the integration branch never gains a duplicate commit.
+func TestApplyCommitConflictCrashConverges(t *testing.T) {
+	t.Run("crash after conflict before failed row", func(t *testing.T) {
+		e, iwt, m2 := conflictFixture(t)
+		captured := captureUnrecordedCrash(t, "effect-failed-unrecorded:", 1)
+		mustCrash(t, func() error {
+			_, err := e.svc.ApplyCommit(context.Background(), iwt, m2)
+			return err
+		})
+		captured.restore()
+		if state := opState(t, e.db, captured.id); state != store.OpPrepared {
+			t.Fatalf("crashed op %s state = %q, want prepared", captured.id, state)
+		}
+
+		e.close(t)
+		e.open(t)
+		if err := e.svc.Recover(context.Background()); err != nil {
+			t.Fatalf("recover: %v", err)
+		}
+		if id, state := latestOp(t, e.db, OpKindCherryPick); state != store.OpFinalized {
+			t.Errorf("conflicted pick op %s state = %q, want finalized (re-apply recognized its own conflicted stop)", id, state)
+		}
+		if got := commitsAhead(t, iwt.Path, iwt.BaseCommit); got != 1 {
+			t.Errorf("commits ahead of base after recovery = %d, want 1 (m1 only; conflicted pick not re-run)", got)
+		}
+		if !pickInProgress(t, iwt.Path) {
+			t.Error("cherry-pick no longer in progress after recovery; the conflicted stop must survive for the engine")
+		}
+
+		// The engine flow still completes: resolve and continue, landing
+		// exactly one commit for the material.
+		resolveConflict(t, iwt.Path, "resolved\n")
+		if err := e.svc.ContinueConflict(context.Background(), iwt); err != nil {
+			t.Fatalf("ContinueConflict after recovery: %v", err)
+		}
+		if got := commitsAhead(t, iwt.Path, iwt.BaseCommit); got != 2 {
+			t.Errorf("commits ahead of base after continue = %d, want 2 (m1 + resolution; no duplicate pick)", got)
+		}
+	})
+
+	t.Run("crash after conflict, pick completed out of band", func(t *testing.T) {
+		e, iwt, m2 := conflictFixture(t)
+		captured := captureUnrecordedCrash(t, "effect-failed-unrecorded:", 1)
+		mustCrash(t, func() error {
+			_, err := e.svc.ApplyCommit(context.Background(), iwt, m2)
+			return err
+		})
+		captured.restore()
+
+		// The engine finishes the pick while the crashed operation still
+		// holds a pending row (ContinueConflict is a plain
+		// cherry-pick --continue): a resolution that differs from the
+		// material's tree.
+		resolveConflict(t, iwt.Path, "merged by hand\n")
+		if _, err := (ExecRunner{}).Run(context.Background(), iwt.Path, "cherry-pick", "--continue"); err != nil {
+			t.Fatalf("gitx: out-of-band continue: %v", err)
+		}
+		if got := commitsAhead(t, iwt.Path, iwt.BaseCommit); got != 2 {
+			t.Fatalf("commits ahead after continue = %d, want 2", got)
+		}
+
+		e.close(t)
+		e.open(t)
+		if err := e.svc.Recover(context.Background()); err != nil {
+			t.Fatalf("recover: %v", err)
+		}
+		if id, state := latestOp(t, e.db, OpKindCherryPick); state != store.OpFinalized {
+			t.Errorf("conflicted pick op %s state = %q, want finalized", id, state)
+		}
+		if got := commitsAhead(t, iwt.Path, iwt.BaseCommit); got != 2 {
+			t.Errorf("commits ahead of base after recovery = %d, want 2 (recovery must not re-apply the completed pick)", got)
+		}
+		if pickInProgress(t, iwt.Path) {
+			t.Error("cherry-pick in progress after recovery of a completed pick")
+		}
+	})
+
+	t.Run("crash after failed row before policy switch", func(t *testing.T) {
+		e, iwt, m2 := conflictFixture(t)
+		setFailpoint(t, "effect-failed", 1)
+		mustCrash(t, func() error {
+			_, err := e.svc.ApplyCommit(context.Background(), iwt, m2)
+			return err
+		})
+
+		e.close(t)
+		e.open(t)
+		if err := e.svc.Recover(context.Background()); err != nil {
+			t.Fatalf("recover: %v", err)
+		}
+		if id, state := latestOp(t, e.db, OpKindCherryPick); state != store.OpRolledBack {
+			t.Errorf("conflicted pick op %s state = %q, want rolled back (failed row switches recovery to roll-back)", id, state)
+		}
+		if got := commitsAhead(t, iwt.Path, iwt.BaseCommit); got != 1 {
+			t.Errorf("commits ahead of base after recovery = %d, want 1 (m1 only; failed row never re-applied)", got)
+		}
+		if !pickInProgress(t, iwt.Path) {
+			t.Error("cherry-pick no longer in progress after recovery; the conflicted stop must survive for the engine")
+		}
+
+		// The engine flow still completes on the rolled-back journal.
+		resolveConflict(t, iwt.Path, "resolved\n")
+		if err := e.svc.ContinueConflict(context.Background(), iwt); err != nil {
+			t.Fatalf("ContinueConflict after recovery: %v", err)
+		}
+		if got := commitsAhead(t, iwt.Path, iwt.BaseCommit); got != 2 {
+			t.Errorf("commits ahead of base after continue = %d, want 2", got)
+		}
+	})
 }

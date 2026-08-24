@@ -254,12 +254,15 @@ type cherryPickPayload struct {
 }
 
 // cherryPickEffect cherry-picks one commit into a worktree. Apply is
-// idempotent: an already-applied commit (an ancestor of HEAD) is success.
-// A conflict leaves the cherry-pick in progress for the engine to resolve
-// and returns a typed ConflictError naming the conflicted paths — recovery
-// never re-applies a conflicted pick because ApplyCommit switches the
-// operation to roll-back before returning. Revert undoes an applied pick by
-// resetting back to Before.
+// idempotent: an already-applied commit (an ancestor of HEAD, or any commit
+// whose first parent is the journaled pre-pick HEAD) is success, and so is
+// this pick's own conflicted stop — a CHERRY_PICK_HEAD naming the journaled
+// commit means the pick already ran and stopped on the conflict for the
+// engine to resolve. A conflict leaves the cherry-pick in progress and
+// returns a typed ConflictError naming the conflicted paths; Run journals
+// the effect failed and switches the operation to roll-back before
+// returning, so recovery never re-applies a conflicted pick. Revert undoes
+// an applied pick by resetting back to Before.
 type cherryPickEffect struct {
 	runner  Runner
 	payload cherryPickPayload
@@ -283,9 +286,10 @@ func (e *cherryPickEffect) Apply(ctx context.Context, rec operation.EffectRecord
 		return err
 	}
 	// Idempotency: the pick is already applied when the original commit is
-	// an ancestor of HEAD, or when HEAD is exactly the pick's result — the
-	// same tree on top of the journaled pre-pick HEAD (a cherry-pick
-	// creates a copy, never the original commit).
+	// an ancestor of HEAD, or when HEAD already holds the pick's outcome —
+	// any commit whose first parent is the journaled pre-pick HEAD (a
+	// cherry-pick creates a copy, never the original commit; a continued
+	// pick holds the engine's resolution, so the tree is not compared).
 	ancestor, err := isAncestor(ctx, e.runner, p.Dir, p.Commit, "HEAD")
 	if err != nil {
 		return err
@@ -293,11 +297,24 @@ func (e *cherryPickEffect) Apply(ctx context.Context, rec operation.EffectRecord
 	if ancestor {
 		return nil
 	}
-	pickApplied, err := pickApplied(ctx, e.runner, p.Dir, p.Commit, p.Before)
+	pickApplied, err := pickApplied(ctx, e.runner, p.Dir, p.Before)
 	if err != nil {
 		return err
 	}
 	if pickApplied {
+		return nil
+	}
+	// Idempotency for the crash window between a conflicted Apply and its
+	// failed row: this pick already ran and stopped on the conflict when
+	// CHERRY_PICK_HEAD names it. A different pick in progress is a loud
+	// error — never something to stack on.
+	if picking, ok, err := cherryPickHead(ctx, e.runner, p.Dir); err != nil {
+		return err
+	} else if ok {
+		if picking != p.Commit {
+			return fmt.Errorf("gitx: cherry-pick %s in %s: a cherry-pick of %s is already in progress",
+				p.Commit, p.Dir, picking)
+		}
 		return nil
 	}
 	if _, err := e.runner.Run(ctx, p.Dir, "cherry-pick", p.Commit); err != nil {
@@ -332,26 +349,33 @@ func (e *cherryPickEffect) Revert(ctx context.Context, rec operation.EffectRecor
 	return nil
 }
 
-// pickApplied reports whether HEAD already holds the pick: HEAD's tree
-// equals the material's tree and HEAD's first parent is the journaled
-// pre-pick HEAD. A HEAD without a parent is never an applied pick.
-func pickApplied(ctx context.Context, r Runner, dir, commit, before string) (bool, error) {
-	headTree, err := revParse(ctx, r, dir, "HEAD^{tree}", "")
-	if err != nil {
-		return false, err
-	}
-	pickTree, err := revParse(ctx, r, dir, commit+"^{tree}", "")
-	if err != nil {
-		return false, err
-	}
-	if headTree != pickTree {
-		return false, nil
-	}
+// pickApplied reports whether HEAD already holds the pick's outcome: HEAD
+// moved off the journaled pre-pick HEAD by exactly its first parent —
+// HEAD's first parent is Before. Between this effect's Prepare and a
+// recovery re-apply, the only writers on the branch are the pick itself
+// and its engine-resolved continuation, and both commit on top of Before
+// (a conflicted pick does not move HEAD). A HEAD still equal to Before,
+// or without a parent, is never an applied pick.
+func pickApplied(ctx context.Context, r Runner, dir, before string) (bool, error) {
 	parent, err := revParse(ctx, r, dir, "HEAD^", "")
 	if err != nil {
 		return false, nil // root commit: nothing was picked on top
 	}
 	return parent == before, nil
+}
+
+// cherryPickHead resolves the commit an in-progress cherry-pick is applying
+// (CHERRY_PICK_HEAD); ok is false when no pick is in progress.
+func cherryPickHead(ctx context.Context, r Runner, dir string) (commit string, ok bool, err error) {
+	out, err := r.Run(ctx, dir, "rev-parse", "-q", "--verify", "CHERRY_PICK_HEAD")
+	if err == nil {
+		return strings.TrimSpace(out), true, nil
+	}
+	var ce *CommandError
+	if errors.As(err, &ce) && ce.ExitCode == 1 {
+		return "", false, nil
+	}
+	return "", false, fmt.Errorf("gitx: rev-parse CHERRY_PICK_HEAD in %s: %w", dir, err)
 }
 
 // cherryPickContinueOperation is the journaled finish of a conflict

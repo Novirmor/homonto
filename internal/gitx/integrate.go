@@ -78,9 +78,10 @@ func (s *Service) CreateIntegration(ctx context.Context, req IntegrationRequest)
 // worktree, journaled as one operation. A clean pick returns Applied; a
 // conflict leaves the cherry-pick in progress — the worktree stays
 // mid-conflict, unmerged paths staged by git — and returns a typed
-// ConflictError naming the conflicted files, with the operation switched to
-// roll-back so recovery never re-applies it. The engine then orchestrates
-// resolution (ContinueConflict) or abandonment (AbortIntegration).
+// ConflictError naming the conflicted files, with the effect journalled
+// as failed and the operation switched to roll-back so recovery never
+// re-applies it. The engine then orchestrates resolution (ContinueConflict)
+// or abandonment (AbortIntegration).
 func (s *Service) ApplyCommit(ctx context.Context, dst IntegrationWorktree, src CommitMaterial) (ApplyResult, error) {
 	if src.BaseCommit != dst.BaseCommit {
 		return ApplyResult{}, fmt.Errorf("gitx: apply commit %s: base %s does not match integration base %s",

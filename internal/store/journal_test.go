@@ -171,6 +171,22 @@ func TestEffectRowsLifecycle(t *testing.T) {
 		}
 	}
 
+	// The failed state round-trips: a failed Apply is journalled terminal
+	// for the operation (migration 002 widened the CHECK for it).
+	err = db.Update(ctx, func(tx *Tx) error {
+		return tx.SetEffectState(ctx, opID, 2, EffectFailed)
+	})
+	if err != nil {
+		t.Fatalf("store: set effect state failed: %v", err)
+	}
+	rows, err = db.OperationEffects(ctx, opID)
+	if err != nil {
+		t.Fatalf("store: list effects after fail: %v", err)
+	}
+	if rows[1].State != EffectFailed {
+		t.Errorf("store: effect 2 state = %s, want %s", rows[1].State, EffectFailed)
+	}
+
 	err = db.Update(ctx, func(tx *Tx) error {
 		return tx.SetEffectState(ctx, opID, 99, EffectApplied)
 	})

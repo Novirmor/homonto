@@ -54,6 +54,12 @@ var (
 	ErrConflict = errors.New("gitx: cherry-pick conflict")
 	// ErrWorktreeMissing: the named worktree is not registered.
 	ErrWorktreeMissing = errors.New("gitx: worktree not found")
+	// ErrEmptyCommitMaterial: a validated result commit carries no changes
+	// against its base; cherry-picking it would stop empty and deadlock
+	// conflict continuation.
+	ErrEmptyCommitMaterial = errors.New("gitx: commit material is empty")
+	// ErrBranchMismatch: the worktree is not on its assigned branch.
+	ErrBranchMismatch = errors.New("gitx: worktree branch mismatch")
 )
 
 // DirtyWorktreeError names the paths that make a tree dirty.
@@ -93,6 +99,38 @@ func (e *ConflictError) Error() string {
 
 // Unwrap exposes the sentinel for errors.Is.
 func (e *ConflictError) Unwrap() error { return ErrConflict }
+
+// EmptyCommitMaterialError names the action and commit whose diff against
+// the base is empty.
+type EmptyCommitMaterialError struct {
+	ActionID identity.ActionID
+	Commit   string
+}
+
+func (e *EmptyCommitMaterialError) Error() string {
+	return fmt.Sprintf("gitx: action %s commit %s is empty against its base", e.ActionID, e.Commit)
+}
+
+// Unwrap exposes the sentinel for errors.Is.
+func (e *EmptyCommitMaterialError) Unwrap() error { return ErrEmptyCommitMaterial }
+
+// BranchMismatchError names the branch a worktree should be on and the one
+// it is on (empty when detached).
+type BranchMismatchError struct {
+	Path string
+	Want string
+	Got  string
+}
+
+func (e *BranchMismatchError) Error() string {
+	if e.Got == "" {
+		return fmt.Sprintf("gitx: worktree %s is detached, want branch %s", e.Path, e.Want)
+	}
+	return fmt.Sprintf("gitx: worktree %s is on branch %s, want %s", e.Path, e.Got, e.Want)
+}
+
+// Unwrap exposes the sentinel for errors.Is.
+func (e *BranchMismatchError) Unwrap() error { return ErrBranchMismatch }
 
 // Worktree describes one registered git worktree.
 type Worktree struct {
@@ -364,8 +402,10 @@ func (s *Service) CreateAssignment(ctx context.Context, req CreateRequest) (Assi
 }
 
 // ValidateResult turns an assignment worktree into a CommitMaterial: the
-// worktree must exist and be clean, hold exactly one commit ahead of the
-// base, and that commit's parent must be the base. Every changed path
+// worktree must exist, be on its assigned branch, and be clean, hold
+// exactly one commit ahead of the base, and that commit's parent must be
+// the base with a non-empty diff against it (an empty diff is a typed
+// EmptyCommitMaterialError naming the action). Every changed path
 // (from diff-tree --name-status, repo-root-relative) must fall inside the
 // declared scope — a violation is a typed ScopeViolationError naming the
 // offending paths.
@@ -374,6 +414,13 @@ func (s *Service) ValidateResult(ctx context.Context, wt AssignmentWorktree, sco
 		return CommitMaterial{}, err
 	} else if !ok {
 		return CommitMaterial{}, fmt.Errorf("gitx: validate %s: %w", wt.Path, ErrWorktreeMissing)
+	}
+	cur, err := currentBranch(ctx, s.runner, wt.Path)
+	if err != nil {
+		return CommitMaterial{}, err
+	}
+	if cur != wt.Branch {
+		return CommitMaterial{}, &BranchMismatchError{Path: wt.Path, Want: wt.Branch, Got: cur}
 	}
 	files, err := dirtyPaths(ctx, s.runner, wt.Path)
 	if err != nil {
@@ -408,6 +455,9 @@ func (s *Service) ValidateResult(ctx context.Context, wt AssignmentWorktree, sco
 	paths, err := changedPaths(ctx, s.runner, wt.Path, commit)
 	if err != nil {
 		return CommitMaterial{}, err
+	}
+	if len(paths) == 0 {
+		return CommitMaterial{}, &EmptyCommitMaterialError{ActionID: wt.ActionID, Commit: commit}
 	}
 	normScope, err := normalizeScope(scope)
 	if err != nil {
@@ -545,6 +595,20 @@ func (s *Service) finishOrRollBack(ctx context.Context, opID identity.OperationI
 		return fmt.Errorf("gitx: cleanup: switch %s to roll-back: %w", opID, err)
 	}
 	return s.ops.RecoverOne(ctx, opID)
+}
+
+// currentBranch returns the worktree's checked-out branch (short name,
+// from git symbolic-ref --short HEAD); empty means detached HEAD.
+func currentBranch(ctx context.Context, r Runner, dir string) (string, error) {
+	out, err := r.Run(ctx, dir, "symbolic-ref", "--short", "HEAD")
+	if err == nil {
+		return strings.TrimSpace(out), nil
+	}
+	var ce *CommandError
+	if errors.As(err, &ce) {
+		return "", nil // detached: symbolic-ref refuses, not a branch
+	}
+	return "", fmt.Errorf("gitx: symbolic-ref in %s: %w", dir, err)
 }
 
 // dirtyPaths returns the repo-root-relative paths with uncommitted changes

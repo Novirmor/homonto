@@ -31,6 +31,10 @@ const (
 	EffectPending  = "pending"
 	EffectApplied  = "applied"
 	EffectReverted = "reverted"
+	// EffectFailed: Apply returned an error. Terminal for the operation —
+	// recovery never re-applies the row (and never reverts it); the
+	// operation recovers under roll-back.
+	EffectFailed = "failed"
 )
 
 // OperationRecord is one row of the operations journal.

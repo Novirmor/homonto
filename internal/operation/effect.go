@@ -87,9 +87,17 @@ type Effect interface {
 //     the window whose crash semantics are the idempotency contract
 //     (RollForward re-applies) and the documented leak (RollBack cannot
 //     revert what it never saw recorded)
+//   - "effect-failed-unrecorded:<op>:<seq>": an effect's Apply returned an
+//     error but its failed row is not yet committed (Run's apply error
+//     path) — the error-path mirror of the apply window; a crash here
+//     leaves the row pending under roll_forward, so the effect's own
+//     Apply idempotency must make the recovery re-apply safe
+//   - "effect-failed": the failed row is committed but the operation's
+//     roll-back policy switch is not (Run's apply error path); recovery
+//     finds the failed row and switches the operation to roll-back
 //   - "effect-reverted-unrecorded:<op>:<seq>": an effect's Revert returned
-//     but its reverted row is not yet committed (roll-back recovery) — the
-//     mirror of the apply window, closed by the same contract: RollBack
+//     but its reverted row is not yet committed (roll-back recovery) —
+//     the mirror of the apply window, closed by the same contract: RollBack
 //     re-reverts
 var failNow func(point string)
 

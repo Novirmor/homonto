@@ -289,6 +289,74 @@ func TestValidateResultRejectsDirtyWorktree(t *testing.T) {
 	}
 }
 
+// TestValidateResultRejectsEmptyCommit proves an --allow-empty commit is
+// refused with the typed ErrEmptyCommitMaterial naming the action: an
+// empty diff cannot be cherry-picked (git stops with "previous cherry-pick
+// is now empty" and conflict continuation deadlocks).
+func TestValidateResultRejectsEmptyCommit(t *testing.T) {
+	e := newEnv(t)
+	action := newAction(t)
+	wt := e.assign(t, action, []string{"src"})
+	if _, err := (ExecRunner{}).Run(context.Background(), wt.Path, "commit", "--allow-empty", "-m", "empty"); err != nil {
+		t.Fatalf("gitx: allow-empty commit: %v", err)
+	}
+
+	_, err := e.svc.ValidateResult(context.Background(), wt, []string{"src"})
+	var ec *EmptyCommitMaterialError
+	if !errors.As(err, &ec) {
+		t.Fatalf("ValidateResult error = %v, want *EmptyCommitMaterialError", err)
+	}
+	if !errors.Is(err, ErrEmptyCommitMaterial) {
+		t.Error("errors.Is(err, ErrEmptyCommitMaterial) = false, want true")
+	}
+	if ec.ActionID != action {
+		t.Errorf("ActionID = %s, want %s", ec.ActionID, action)
+	}
+}
+
+// TestValidateResultRejectsForeignBranch proves ValidateResult verifies the
+// worktree's checked-out branch: a worktree stolen onto another branch (or
+// a detached commit structure) is rejected with the typed
+// ErrBranchMismatch, never minted into material.
+func TestValidateResultRejectsForeignBranch(t *testing.T) {
+	tests := []struct {
+		name    string
+		steal   func(t *testing.T, dir string)
+		wantGot string
+	}{
+		{"stolen onto another branch", func(t *testing.T, dir string) {
+			if _, err := (ExecRunner{}).Run(context.Background(), dir, "checkout", "-q", "-b", "intruder"); err != nil {
+				t.Fatalf("gitx: checkout intruder: %v", err)
+			}
+		}, "intruder"},
+		{"stolen onto detached commit", func(t *testing.T, dir string) {
+			if _, err := (ExecRunner{}).Run(context.Background(), dir, "checkout", "-q", "--detach"); err != nil {
+				t.Fatalf("gitx: detach: %v", err)
+			}
+		}, ""},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			e := newEnv(t)
+			wt := e.assign(t, newAction(t), []string{"src"})
+			implement(t, wt, "src/a.go", "package a\n", "implement a")
+			tc.steal(t, wt.Path)
+
+			_, err := e.svc.ValidateResult(context.Background(), wt, []string{"src"})
+			var be *BranchMismatchError
+			if !errors.As(err, &be) {
+				t.Fatalf("ValidateResult error = %v, want *BranchMismatchError", err)
+			}
+			if !errors.Is(err, ErrBranchMismatch) {
+				t.Error("errors.Is(err, ErrBranchMismatch) = false, want true")
+			}
+			if be.Want != wt.Branch || be.Got != tc.wantGot {
+				t.Errorf("branch mismatch want/got = %q/%q, want %q/%q", be.Want, be.Got, wt.Branch, tc.wantGot)
+			}
+		})
+	}
+}
+
 func TestValidateResultRejectsMissingWorktree(t *testing.T) {
 	e := newEnv(t)
 	wt := e.assign(t, newAction(t), nil)

@@ -1,0 +1,72 @@
+---
+name: {{.Entrypoint}}
+description: Drive the Homonto {{.Workflow}} workflow. Use when the user asks to start, continue, or finish {{.WorkflowNoun}} work in this repository, or types /{{.Entrypoint}}.
+---
+
+# Homonto {{.Workflow}}
+
+Homonto owns this workflow. You do not decide what happens next, which
+documents are required, which model runs a role, or when work is finished.
+You ask the binary, do exactly what it returns, and report the result.
+
+Everything below is the whole protocol. There is no other rule you are
+expected to know, and if you find yourself reasoning about workflow policy,
+stop and ask the binary instead.
+
+## The loop
+
+1. Ask what to do:
+
+   ```
+   {{.Binary}} next --json
+   ```
+
+2. Read the `state` field.
+
+   - `complete` — the work is finished. Say so and stop.
+   - `blocked` — there is exactly one decision, and it is the human's.
+     Show them the prompt and every choice, including which choices need a
+     rationale. Do not pick one. Do not recommend one unless asked.
+   - `ready` — every action in `actions` may run now, in parallel.
+
+3. For each `ready` action, dispatch it by `kind`:
+
+   - `assignment` — launch a subagent for `role` with the action's
+     `prompt`, in `working_directory`. It may write only inside
+     `write_scope.paths`; a read-only action writes nothing at all.
+   - `edit` — this one is yours, not a subagent's. Edit only the regions
+     `edit.regions` names, in the document `edit.document`. Then run:
+
+     ```
+     {{.Binary}} accept-edit --action <id> --token <edit.grant_token>
+     ```
+
+4. Report each finished assignment on stdin:
+
+   ```
+   {{.Binary}} report
+   ```
+
+   The payload is `{"protocol_version":1,"action_id":…,"freshness_token":…,
+   "role":…,"session":…,"report":…}`. The report schema is the one
+   `expected_report` names.
+
+5. Record the human's answer to a decision:
+
+   ```
+   {{.Binary}} decide --action <id> --token <freshness_token> --choice <value> \
+     [--rationale <why>] [--answer <text>]
+   ```
+
+6. Go back to step 1.
+
+## Things that will bite you
+
+- Re-running `next` while a group is outstanding returns the SAME group.
+  That is deliberate: it is safe to ask again, and it is not new work.
+- A refused report is not a failure of the protocol. Homonto checks what
+  actually changed on disk before recording anything, so a report backed by
+  out-of-scope changes is refused. Fix the change, do not retry the report.
+- Never edit a document outside an `edit` action's regions. The edit will
+  be refused and the action will stay open.
+- Never touch `.homonto/`. It is Homonto's own state.

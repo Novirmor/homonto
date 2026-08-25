@@ -1,0 +1,46 @@
+// The Homonto OpenCode plugin. It normalizes host events into the binary's
+// protocol and does nothing else: no workflow transitions, no artifact
+// rules, no routing policy, no prompts. Every one of those lives in the
+// binary, where it is versioned and tested.
+
+const BINARY = {{.BinaryJSON}};
+
+/** Run the binary with args, feeding it input on stdin. */
+async function homonto($, args, input) {
+  const proc = $`${BINARY} ${args}`;
+  if (input !== undefined) {
+    proc.stdin(input);
+  }
+  return await proc.quiet().nothrow();
+}
+
+export const HomontoPlugin = async ({ $, directory }) => ({
+  /**
+   * The read-only resume probe. It performs no write and no network
+   * access: it asks whether there is one unambiguous active workflow, and
+   * says so. A conflict or unrelated intent is the human's to resolve.
+   */
+  "session.created": async () => {
+    const result = await homonto($, ["host", "probe", "--json", "--host", "opencode"]);
+    if (result.exitCode !== 0) {
+      return;
+    }
+    return { context: result.stdout.toString() };
+  },
+
+  /**
+   * The write hook. It presents the operation to the guard and refuses
+   * what the guard refuses. This is a process gate for a cooperating host,
+   * not a sandbox: a shell command can walk past it, which is why Homonto
+   * validates the resulting diff independently before accepting anything.
+   */
+  "tool.execute.before": async (input, output) => {
+    const event = JSON.stringify({ directory, input, output });
+    const result = await homonto($, ["host", "guard", "--host", "opencode"], event);
+    if (result.exitCode === 0) {
+      return;
+    }
+    let reason = result.stdout.toString().trim() || result.stderr.toString().trim();
+    throw new Error(`homonto refused this operation: ${reason}`);
+  },
+});

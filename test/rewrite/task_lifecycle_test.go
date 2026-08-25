@@ -163,18 +163,25 @@ func mustWorkspaceID(t *testing.T) identity.WorkspaceID {
 	return id
 }
 
+// args prepends the workspace flag so every fixture invocation goes
+// through the real command path — the default opener, the real read-only
+// handling, the real root resolution. An injected opener would let the
+// harness quietly bypass exactly the behaviour these tests exist to
+// check.
+func (w *workspace) args(args []string) []string {
+	return append([]string{"--workspace", w.root}, args...)
+}
+
 // run executes one workflow command against the fixture and returns its
 // stdout. It goes through the real cobra tree, not the App, so the fixture
 // proves the commands are wired.
 func (w *workspace) run(t *testing.T, args ...string) (string, error) {
 	t.Helper()
-	root := cli.NewWorkflowRootCmd(func(ctx context.Context, _ string) (*app.App, error) {
-		return app.Open(ctx, app.Options{Root: w.root})
-	})
+	root := cli.NewWorkflowRootCmd(nil)
 	var out bytes.Buffer
 	root.SetOut(&out)
 	root.SetErr(&out)
-	root.SetArgs(args)
+	root.SetArgs(w.args(args))
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
 	defer cancel()
 	err := root.ExecuteContext(ctx)
@@ -188,8 +195,8 @@ func (w *workspace) runInput(t *testing.T, payload any, args ...string) (string,
 	if err != nil {
 		t.Fatalf("marshal payload: %v", err)
 	}
-	root := cli.NewWorkflowRootCmd(func(ctx context.Context, _ string) (*app.App, error) {
-		return app.Open(ctx, app.Options{Root: w.root})
+	root := cli.NewWorkflowRootCmd(func(ctx context.Context, _ string, readOnly bool) (*app.App, error) {
+		return app.Open(ctx, app.Options{Root: w.root, ReadOnly: readOnly})
 	})
 	var out bytes.Buffer
 	root.SetOut(&out)

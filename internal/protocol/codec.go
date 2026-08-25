@@ -147,3 +147,27 @@ func errIfNil(err error) error {
 func isUnknownFieldError(err error) bool {
 	return err != nil && bytes.Contains([]byte(err.Error()), []byte("unknown field"))
 }
+
+// EncodeProbeResponse renders a probe payload for a host to read.
+func EncodeProbeResponse(resp ProbeResponse) ([]byte, error) {
+	if err := resp.Validate(); err != nil {
+		return nil, err
+	}
+	encoded, err := json.MarshalIndent(resp, "", "  ")
+	if err != nil {
+		return nil, fmt.Errorf("protocol: encode probe response: %w", err)
+	}
+	return encoded, nil
+}
+
+// DecodeProbeResponse strictly decodes a probe payload.
+func DecodeProbeResponse(r io.Reader) (ProbeResponse, error) {
+	var resp ProbeResponse
+	if err := decodeStrict(r, &resp); err != nil {
+		return ProbeResponse{}, err
+	}
+	if err := resp.Validate(); err != nil {
+		return ProbeResponse{}, err
+	}
+	return resp, nil
+}

@@ -6,6 +6,7 @@ package identity
 
 import (
 	"crypto/rand"
+	"crypto/sha256"
 	"encoding/base64"
 	"fmt"
 )
@@ -139,4 +140,21 @@ func ValidateToken(s string) error {
 
 func isLowerHex(c byte) bool {
 	return c >= '0' && c <= '9' || c >= 'a' && c <= 'f'
+}
+
+// SessionIDFor derives a stable SessionID from a host's own session
+// identifier.
+//
+// A host's session id is its own namespace — a string of whatever shape
+// that tool likes — and the protocol requires a canonical UUID. Hashing it
+// rather than minting a fresh one keeps one host session looking like ONE
+// session across every event it produces, which is what makes a guard
+// refusal traceable back to the session that caused it.
+func SessionIDFor(host, session string) SessionID {
+	sum := sha256.Sum256([]byte("homonto.v1.host-session:" + host + ":" + session))
+	var b [16]byte
+	copy(b[:], sum[:16])
+	b[6] = b[6]&0x0f | 0x40 // version 4
+	b[8] = b[8]&0x3f | 0x80 // RFC 4122 variant
+	return SessionID(fmt.Sprintf("%x-%x-%x-%x-%x", b[0:4], b[4:6], b[6:8], b[8:10], b[10:16]))
 }

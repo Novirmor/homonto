@@ -38,24 +38,38 @@ func NewWorkflowRootCmd(opener Opener) *cobra.Command {
 		decideCmd(opener),
 		acceptEditCmd(opener),
 		guardCmd(opener),
+		hostCmd(opener),
 	)
 	return root
 }
 
 // Opener opens the workspace a command operates on. Tests substitute one
 // that returns an App over a fixture workspace.
-type Opener func(ctx context.Context, root string) (*app.App, error)
+//
+// The read-only flag is part of the signature because the resume probe
+// must not change anything, and a test opener that ignored it would let
+// the probe's read-only contract pass untested.
+type Opener func(ctx context.Context, root string, readOnly bool) (*app.App, error)
 
 // defaultOpener opens the real workspace.
-func defaultOpener(ctx context.Context, root string) (*app.App, error) {
-	return app.Open(ctx, app.Options{Root: root})
+func defaultOpener(ctx context.Context, root string, readOnly bool) (*app.App, error) {
+	return app.Open(ctx, app.Options{Root: root, ReadOnly: readOnly})
 }
 
-// open resolves the workspace flag and opens the workspace.
+// open resolves the workspace flag and opens the workspace for work.
 func open(cmd *cobra.Command, opener Opener) (*app.App, error) {
+	return openWith(cmd, opener, false)
+}
+
+// openReadOnly opens the workspace without changing anything.
+func openReadOnly(cmd *cobra.Command, opener Opener) (*app.App, error) {
+	return openWith(cmd, opener, true)
+}
+
+func openWith(cmd *cobra.Command, opener Opener, readOnly bool) (*app.App, error) {
 	root, err := cmd.Flags().GetString("workspace")
 	if err != nil {
 		return nil, fmt.Errorf("cli: read --workspace: %w", err)
 	}
-	return opener(cmd.Context(), root)
+	return opener(cmd.Context(), root, readOnly)
 }

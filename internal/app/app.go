@@ -65,6 +65,11 @@ type Options struct {
 	Git gitx.Runner
 	// Now overrides the clock.
 	Now func() time.Time
+	// ReadOnly opens the workspace without changing anything: no
+	// scaffolding, no migration, no recovery pass. It is what the resume
+	// probe uses, because a host runs that at the start of every session
+	// and starting a session must change nothing.
+	ReadOnly bool
 }
 
 // Open opens the workspace at Root: it reads and validates the manifest,
@@ -73,19 +78,10 @@ type Options struct {
 // recovered before anything new is started, because building on an
 // unfinished operation is how a half-applied effect becomes permanent.
 func Open(ctx context.Context, opts Options) (*App, error) {
-	root := opts.Root
-	if root == "" {
-		wd, err := os.Getwd()
-		if err != nil {
-			return nil, fmt.Errorf("app: resolve working directory: %w", err)
-		}
-		root = wd
-	}
-	abs, err := filepath.Abs(root)
+	abs, err := resolveRoot(opts.Root)
 	if err != nil {
-		return nil, fmt.Errorf("app: resolve %s: %w", root, err)
+		return nil, err
 	}
-	abs = filepath.Clean(abs)
 
 	manifest := filepath.Join(abs, ControlDir, ManifestName)
 	cfg, err := workspacecfg.Load(manifest)
@@ -100,11 +96,12 @@ func Open(ctx context.Context, opts Options) (*App, error) {
 	if now == nil {
 		now = time.Now
 	}
-	db, err := store.Open(ctx, filepath.Join(abs, ControlDir, "runtime.db"), store.OpenOptions{})
+	db, err := store.Open(ctx, filepath.Join(abs, ControlDir, "runtime.db"),
+		store.OpenOptions{ReadOnly: opts.ReadOnly})
 	if err != nil {
 		return nil, err
 	}
-	app, err := build(ctx, abs, cfg, db, opts.Git, now)
+	app, err := build(ctx, abs, cfg, db, opts.Git, now, opts.ReadOnly)
 	if err != nil {
 		_ = db.Close()
 		return nil, err
@@ -113,7 +110,7 @@ func Open(ctx context.Context, opts Options) (*App, error) {
 }
 
 // build wires every service over an already-open database.
-func build(ctx context.Context, root string, cfg workspacecfg.Config, db *store.DB, runner gitx.Runner, now func() time.Time) (*App, error) {
+func build(ctx context.Context, root string, cfg workspacecfg.Config, db *store.DB, runner gitx.Runner, now func() time.Time, readOnly bool) (*App, error) {
 	ops := operation.NewManager(db)
 	if runner == nil {
 		runner = gitx.ExecRunner{}
@@ -123,24 +120,28 @@ func build(ctx context.Context, root string, cfg workspacecfg.Config, db *store.
 		return nil, err
 	}
 	snapshotStore := filepath.Join(root, ControlDir, "snapshots")
-	if err := os.MkdirAll(snapshotStore, 0o700); err != nil {
-		return nil, fmt.Errorf("app: create the snapshot store: %w", err)
+	if !readOnly {
+		if err := os.MkdirAll(snapshotStore, 0o700); err != nil {
+			return nil, fmt.Errorf("app: create the snapshot store: %w", err)
+		}
 	}
 	snap, err := snapshot.NewService(db, ops, snapshotStore)
 	if err != nil {
 		return nil, err
 	}
-	// Finish what a previous run started before starting anything new.
-	if err := ops.RecoverPending(ctx); err != nil {
-		return nil, fmt.Errorf("app: recover pending operations: %w", err)
-	}
-
-	// The archive service never creates a directory itself, so the
-	// document tree is scaffolded here, once, when the workspace opens.
 	controlRoot := filepath.Join(root, filepath.FromSlash(normalizePath(cfg.Control.Path)))
-	for _, sub := range archive.Dirs() {
-		if err := os.MkdirAll(filepath.Join(controlRoot, filepath.FromSlash(sub)), 0o755); err != nil {
-			return nil, fmt.Errorf("app: create %s: %w", sub, err)
+	if !readOnly {
+		// Finish what a previous run started before starting anything new.
+		if err := ops.RecoverPending(ctx); err != nil {
+			return nil, fmt.Errorf("app: recover pending operations: %w", err)
+		}
+		// The archive service never creates a directory itself, so the
+		// document tree is scaffolded here, once, when the workspace
+		// opens for work.
+		for _, sub := range archive.Dirs() {
+			if err := os.MkdirAll(filepath.Join(controlRoot, filepath.FromSlash(sub)), 0o755); err != nil {
+				return nil, fmt.Errorf("app: create %s: %w", sub, err)
+			}
 		}
 	}
 	journal, err := artifact.NewStoreJournal(db)
@@ -195,6 +196,22 @@ func build(ctx context.Context, root string, cfg workspacecfg.Config, db *store.
 		assignments: assignments, artifacts: artifacts, findings: findings,
 		evidence: evidence, archive: arch, guard: g, now: now,
 	}, nil
+}
+
+// resolveRoot turns a possibly-empty root into an absolute clean path.
+func resolveRoot(root string) (string, error) {
+	if root == "" {
+		wd, err := os.Getwd()
+		if err != nil {
+			return "", fmt.Errorf("app: resolve working directory: %w", err)
+		}
+		root = wd
+	}
+	abs, err := filepath.Abs(root)
+	if err != nil {
+		return "", fmt.Errorf("app: resolve %s: %w", root, err)
+	}
+	return filepath.Clean(abs), nil
 }
 
 // Close releases the workspace.

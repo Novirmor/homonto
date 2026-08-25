@@ -1,18 +1,43 @@
 # Updates
 
-`homonto update` is the only command that touches the network. It runs only
-when you type it. Homonto never checks for updates on its own.
+No command in the current binary fetches an update. `homonto update` is a
+group with one visible member:
 
 ```bash
 homonto update trust
 ```
 
-tells you whether it is even available. A binary you built yourself carries
-no signing root, verifies nothing, and refuses to update. That is the safe
-default: a build that could replace itself from the network without a
-trusted signature would be worse than one that cannot update at all.
+reports whether this build could accept a release at all. A binary you
+built yourself carries no signing root, verifies nothing, and refuses to
+update. That is the safe default: a build that could replace itself from
+the network without a trusted signature would be worse than one that
+cannot update at all.
 
-## What happens
+No published build carries a root yet — the release packaging stamps the
+version and nothing else — so a release binary reports the same thing
+today. The trust store is compiled in at release time by design; no
+release has done so.
+
+## What is wired and what is not
+
+The update mechanism — manifest fetch, signature verification, candidate
+interrogation, staged activation under a journal, exact rollback — is
+implemented in the binary (`internal/update`) and tested there. It is
+**not yet exposed as a command**: nothing you can type fetches, stages, or
+activates a release. Until a command lands, and a release carries a
+signing root, upgrading means building from source.
+
+The recovery half **is** wired: if an activation was ever interrupted, the
+next command finishes or undoes it before anything else runs, and
+`homonto doctor` reports a journal that cannot be read. A mechanism that
+rolls back must be reachable even while the mechanism that rolls forward
+is not.
+
+The rest of this document describes the mechanism as built. Its
+guarantees are the reason the command surface is being withheld until
+they hold.
+
+## What a fetch does
 
 1. **Fetch the manifest.** HTTPS only, TLS 1.2 or better, bounded, timed
    out, and **redirects are refused**. A redirect moves the fetch to a host
@@ -24,10 +49,10 @@ trusted signature would be worse than one that cannot update at all.
    because a signature cannot cover itself. The same root signing twice is
    one signature; a threshold cannot be met by repetition. A signature from
    a root your binary does not know is refused, not skipped.
-3. **Check the channel.** It is inside the signed document, so a beta
-   manifest served at the stable address is refused even though its
-   signature is perfectly valid. The signature attests to what a manifest
-   says, not to where it was found.
+3. **Check the channel.** It is inside the signed document, so a
+   prerelease manifest served at the stable address is refused even though
+   its signature is perfectly valid. The signature attests to what a
+   manifest says, not to where it was found.
 4. **Fetch and checksum the artifact.**
 5. **Stage** it aside and **interrogate** it: run the candidate with an
    empty environment in a temporary directory and ask what it is. The

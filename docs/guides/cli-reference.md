@@ -41,7 +41,10 @@ The workspace, its work, and its host integrations.
 ### `homonto doctor [--json]`
 
 Check members, host integrations, active work, and whether a self-update
-was interrupted. Reports; never repairs. Exits `3` when something is wrong.
+was interrupted. It applies no diagnostic remedies — everything it finds is
+something you might have done deliberately — but it is not side-effect-free:
+it opens the workspace read-write, so a normal run still performs startup
+migration and crash recovery. Exits `3` when something is wrong.
 
 ### `homonto version`
 
@@ -133,7 +136,7 @@ refusal, having written the decision to stdout.
 |---|---|
 | `--tool` | `claude` or `opencode`. Default: the ones in use here |
 | `--adopt` | Replace generated files you edited |
-| `--commit` | Commit the generated files instead of ignoring them |
+| `--commit` | Leave the generated files unignored so they can be committed |
 | `--dry-run` | Show what would change and write nothing |
 | `--binary` | How the wrappers invoke Homonto |
 

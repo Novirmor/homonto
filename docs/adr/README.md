@@ -25,7 +25,10 @@ referenced secrets — describe reasoning that outlived the product it was
 written for.
 
 Records about how this repository is DEVELOPED (0007, 0008, 0012, 0017) are
-not superseded: they are still how the work is done.
+not superseded: their principles are still how the work is done. 0007 and
+0008 specify mechanisms the rewrite removed — onto's full/light modes and
+the onto dispatcher's preflight — so each carries a note saying exactly
+which part survives.
 
 ## Current
 
@@ -38,6 +41,7 @@ not superseded: they are still how the work is done.
 | [0027](0027-portable-handoff-commit-leak.md) | Document the portable-handoff commit leak and force-takeover semantics |
 | [0028](0028-one-anchored-work-per-workspace.md) | One anchored work per workspace, resumed at the phase start |
 | [0029](0029-repair-supersedes-the-attempt.md) | A repair round supersedes the attempt it repairs |
+| [0030](0030-wire-what-shipped-delete-what-never-did.md) | Wire what shipped, delete what never did |
 
 ## Process
 

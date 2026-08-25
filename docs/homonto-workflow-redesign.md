@@ -3,6 +3,14 @@
 - **Status:** Approved design
 - **Date:** 2026-08-24
 
+> **Historical design document.** This is the implementation design the
+> rewrite was built from, not a description of the shipped product. The
+> shipped surface is [`guides/`](guides/) plus the command list pinned
+> by `internal/cli/surface_test.go`. Known deviations: the `rescan`,
+> workflow-switching, `attach --take-ownership`, `doctor --recover-lease`,
+> and `handoff --portable` commands described here were not shipped, and
+> `status` opens the workspace read-write rather than read-only.
+
 ## Purpose
 
 Homonto will become an agent-first, human-governed coding workflow product.

@@ -41,51 +41,28 @@ decisions — requirements and change name, design approach, plan-ready workflow
 configuration, verify failures, branch handling, archive confirmation. Do not
 infer these from defaults or from what was chosen last time.
 
-## The CLI on PATH is not the whole CLI
+## The CLI moves; check it before improvising
 
-The installed `comet` binary (0.4.0-beta.3) exposes only `init`, `status`,
-`dashboard`, `doctor`, `update`, `uninstall`, `eval`, `skill`, `publish`,
-`creator`, and `bundle`. It has **no `workflow`, `state`, `guard`, or
-`archive`** subcommand, so every skill instruction written as `comet state …`
-or `comet guard …` fails with `unknown command`.
-
-Use the bundled scripts instead — this is the documented compatibility path in
-the skill's own `reference/scripts.md`, not a workaround:
-
-```bash
-DIR="$(node .claude/skills/comet/scripts/comet-env.mjs)"
-node "$DIR/comet-state.mjs"  <change> <get|set|select|check|transition|next>
-node "$DIR/comet-guard.mjs"  <change> <phase> [--apply]
-node "$DIR/comet-archive.mjs" <change>
-```
-
-`/comet`'s own `comet workflow resolve` also fails; resolve the entry with
-`node .claude/skills/comet/scripts/comet-entry-runtime.mjs . --json`, which
-returns `classic` for this repo.
-
-`.claude/` is gitignored and per-developer, so these paths exist only if you
-installed the skills yourself.
+Comet is an external tool that evolves independently of this repository,
+and skill text shipped with it can lag the installed binary (or lead it).
+When a skill instruction names a subcommand that fails, read
+`comet --help` for the installed surface before working around it — the
+binary's own help is the only authoritative, version-matched reference.
+`.claude/` is gitignored and per-developer, so the skills exist only if
+you installed them yourself.
 
 ## Traps
 
-**`COMET_SKIP_BUILD=1` is needed for both the build and the verify guard.**
-Comet's build probe recognizes npm/Maven/Cargo, not Go, so both guards fail on
-"Build/Verification passes" even when the tree is green. Verify independently
-(`go build ./...`, `go vet ./...`, tests), then run the guard with the variable
-set.
-
-**The archive guard fails on a dangling `handoff_context`.** `comet-archive`
-moves the change directory but never rewrites `handoff_context` in the archived
-`.comet.yaml`, so the guard reports the design-context path "does not exist on
-disk". Every archived change reproduces this — it is a tool quirk, not a defect
-in your change. Repoint the field at the archive path and re-run the guard.
-State `set`/`guard` resolve an archived change by its **original** name.
+**Comet's guards know npm/Maven/Cargo, not Go.** A build or verify guard
+can be wrong about this repository's toolchain. Verify independently —
+`go build ./...`, `go vet ./...`, the tests — and never let a guard's
+build probe stand in for actually running them.
 
 **Phase guards are order-sensitive.** Tick every `tasks.md` item before the
-build guard; do not set verify-phase fields while still in an earlier phase.
-The `build → verify` transition resets `verification_report` and
-`branch_status`, so set those after the build guard, immediately before the
-verify guard.
+build guard; do not set verify-phase fields while still in an earlier
+phase. The `build → verify` transition resets `verification_report` and
+`branch_status`, so set those after the build guard, immediately before
+the verify guard.
 
 **`.comet/current-change.json` is transient state that gets committed by
 accident.** It is the selection record and easily lands in a feature commit

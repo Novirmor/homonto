@@ -38,6 +38,12 @@ That marks the active work's checkpoint transferable, commits it to the
 control repository, and releases this machine's leases. Nothing local is
 destroyed — the work simply stops being anchored here.
 
+Handoff is **one hop**. It requires a checkpoint this machine actually
+holds, and attach consumes the checkpoint — so a work that was attached
+here cannot be handed off again; moving it once more is a forced takeover
+below, not a handoff. A human-confirmed re-handoff is future work
+([ADR 0027](../adr/0027-portable-handoff-commit-leak.md)).
+
 Push the control repository. Elsewhere:
 
 ```bash

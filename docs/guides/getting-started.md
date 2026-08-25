@@ -6,9 +6,16 @@ assumes Git and either Claude Code or OpenCode.
 ## Install
 
 ```bash
-go install github.com/noviopenworks/homonto@latest
-homonto version
+git clone https://github.com/noviopenworks/homonto
+cd homonto
+go build -o homonto .
+./homonto version
 ```
+
+There is no installable workflow release yet: every published tag, through
+`v0.11.0`, is the legacy configuration projector the rewrite replaced, so
+`go install github.com/noviopenworks/homonto@latest` builds the old
+product — not this one.
 
 A binary you build yourself carries no signing root, so `homonto update`
 is unavailable in it. That is deliberate: a build that could replace
@@ -78,12 +85,19 @@ describe what ran.
 ## Install the host integration
 
 ```bash
-homonto host install
+homonto host install --tool claude
 ```
 
+Without `--tool`, Homonto installs for the tools it finds in use — the
+ones whose project-local directory (`.claude/`, `.opencode/`) already
+exists. In a directory your host tool has not opened yet that is none, and
+the bare command refuses rather than guessing; either open the project in
+the host tool once first, or name the tool as above.
+
 This installs one command, one skill, a read-only resume probe, and one
-write hook for each host tool it finds in use. The generated files are
-project-local and gitignored; `--commit` opts into committing them.
+write hook for each host tool it installs for. The generated files are
+project-local and gitignored; `--commit` leaves them unignored so they can
+be committed.
 
 ## Run a task
 

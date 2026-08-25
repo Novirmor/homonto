@@ -115,7 +115,7 @@ Reads a `ReportSubmission` on stdin:
   "action_id": "…",
   "freshness_token": "…",
   "role": "implementer",
-  "session": { "host_id": "…", "hostname": "…", "pid": 0, "executable": "…", "started_at": "…" },
+  "session": { "host_id": "…", "hostname": "…", "pid": 8412, "executable": "…", "started_at": "…" },
   "report": { … }
 }
 ```

@@ -53,12 +53,14 @@
 // # Stale-clone refusal, honestly scoped
 //
 // Homonto enforces process ownership, not a distributed lock: it cannot
-// prevent an offline stale clone from being modified. What it does enforce
-// is refusal at the next observation — the stale runtime's lease set is gone
-// (PreparePortable released it), so lease.ValidateAll fails with
-// ErrLeaseMissing/ErrLeaseDrift, and CheckpointGeneration reports a
-// generation the stale runtime does not hold. Engines consult both before
-// mutating.
+// prevent an offline stale clone from being modified. What the mechanisms
+// here provide is the material for refusal at the next observation — the
+// stale runtime's lease set is gone (PreparePortable released it), so
+// lease.ValidateAll fails with ErrLeaseMissing/ErrLeaseDrift, and
+// CheckpointGeneration reports a generation the stale runtime does not
+// hold. Consulting those before mutating is the stale-clone ownership
+// gate, and its wiring into the engine paths is pending (ADR 0030): the
+// checks exist and are tested; no shipped command runs them yet.
 //
 // # Crash model
 //
@@ -130,10 +132,10 @@ func RuntimeDBPath(controlRoot string) string {
 
 // CheckpointGeneration reads and strictly decodes the checkpoint under
 // controlRoot and returns its handoff generation — the generation that may
-// currently attach. Engines consult this before mutating shared state so a
-// stale clone whose leases and generation no longer match refuses work; it
-// is a process-ownership check, not a distributed lock (see the package
-// doc's stale-clone section).
+// currently attach. It exists for the stale-clone ownership gate: a clone
+// whose leases and generation no longer match must refuse work. Wiring it
+// into the mutation paths is pending; until then this is a check a caller
+// may run, not one the product enforces (see ADR 0030).
 func CheckpointGeneration(controlRoot string) (uint64, error) {
 	cp, _, err := checkpoint.Load(CheckpointPath(controlRoot))
 	if err != nil {

@@ -11,7 +11,7 @@ empty directory to an archived record.
 | [Configuration](configuration.md) | The workspace manifest and what each field decides |
 | [Task workflow](task-workflow.md) | `plan → do → done` |
 | [Change workflow](change-workflow.md) | Full, Fix, Tweak, and preset upgrades |
-| [CLI reference](cli-reference.md) | Every command, every flag, every exit code |
+| [CLI reference](cli-reference.md) | Every command (the list is test-pinned); flags where they matter, not exhaustively |
 | [Troubleshooting](troubleshooting.md) | What a refusal means and what to do about it |
 
 ## Understanding it

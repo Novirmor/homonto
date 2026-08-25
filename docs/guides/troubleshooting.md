@@ -91,12 +91,14 @@ than ten minutes usually has a reason worth knowing.
 Reconciliation. Something the step rested on moved:
 
 ```bash
-homonto task status
+homonto task status fix-login
 ```
 
-prints the causes on stderr. The tables in the workflow guides say what
-each one returns to. This is not a bug; it is the recorded step being
-checked against the world rather than trusted.
+prints the causes on stderr. Name the work: the bare `homonto task status`
+reconciles every task and prints only where each one stands — the causes
+go to the named form. The tables in the workflow guides say what each one
+returns to. This is not a bug; it is the recorded step being checked
+against the world rather than trusted.
 
 If it keeps happening, something is editing a document behind the workflow
 — a formatter, a hook, another agent.

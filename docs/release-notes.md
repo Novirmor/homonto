@@ -15,8 +15,8 @@ what each assignment may write, runs your checks, and leaves a record that
 someone who was not there can pick up.
 
 One binary, `homonto`, for Linux and macOS on amd64 and arm64. It has no
-daemon, no services, and — apart from `homonto update`, which runs only
-when you type it — no network access at all.
+daemon, no services, and no network access — no command in the current
+binary touches the network at all.
 
 Requires [Claude Code](https://claude.com/claude-code) or
 [OpenCode](https://opencode.ai). `homonto host install` writes thin
@@ -43,6 +43,11 @@ binary.
   shell is a check whose evidence does not describe what ran.
 - **A locally built binary cannot update itself.** It carries no signing
   root, so it verifies nothing and refuses. `homonto update trust` says so.
+- **The self-update command is not wired yet.** The fetch, verify, stage,
+  and activate mechanism is implemented in the binary and tested, but no
+  command exposes it, and no published build carries a signing root. Until
+  one does, upgrading means building from source; recovery of an
+  interrupted activation is the one half that is wired into startup.
 - **The write boundary is not a sandbox.** It stops an assignment from
   writing outside its scope through both a cooperating host gate and an
   independent final diff. It does not contain a process that is actively
@@ -50,7 +55,8 @@ binary.
 
 ## Upgrading
 
-`homonto update` verifies the signed manifest against the roots your binary
-carries, checks the candidate's own reported version, protocol, and schema
-by running it, and rolls the whole activation back if anything does not
-validate. An interrupted update is recovered at the next start.
+Build from the tag you want. The signed self-update flow — manifest
+verified against compiled-in roots, candidate interrogated by running it,
+activation journaled and rolled back exactly on failure — is implemented in
+the binary but not yet exposed as a command, so these guarantees describe
+the mechanism, not something you can run today.

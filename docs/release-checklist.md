@@ -55,9 +55,21 @@ something goes wrong, and all of which are therefore the ones that get
 waved through:
 
 1. **The live host matrix.** Every workflow scenario run against real
-   Claude Code and real OpenCode, on Linux and on macOS. Four cells.
+   Claude Code and real OpenCode, on Linux and on macOS. Four cells. CI is
+   no substitute and does not try to be: it exercises Linux and macOS
+   natively on its runners (linux/amd64, darwin/arm64), while the arm64
+   Linux and amd64 macOS archives are cross-compiled and never executed —
+   and `host-cells.tsv` records the OS, not the architecture, so an
+   untested architecture reads exactly like a tested one.
 2. **The migration rehearsal.** The previous release's store, migrated to
-   this release's schema, and checked.
+   this release's schema, and checked. For the first workflow-only release
+   there is no previous store to migrate: the rewrite is a documented clean
+   break with no old-state compatibility
+   ([ADR 0023](adr/0023-rebuild-homonto-as-workflow-orchestrator.md)), so
+   **recording that non-applicability in `migration-rehearsal.txt` — with
+   the ADR named — is the rehearsal**. An empty file still refuses, as it
+   should: the guard cannot tell an inapplicable rehearsal from a skipped
+   one unless the file says which it is.
 3. **The rollback rehearsal.** A deliberately failed activation, and the
    exact rollback that followed.
 4. **A signing key** and the root id it signs as.
@@ -100,16 +112,20 @@ obstacle; the unrun cell is.
 ## Tag and publish
 
 ```sh
-git tag -a v0.9.0 -m "v0.9.0"
-git push origin v0.9.0
+git tag -a <new-version> -m "<new-version>"
+git push origin <new-version>
 ```
+
+`<new-version>` must sort above `v0.11.0`: every existing tag is the
+legacy projector product, and a workflow release that sorted at or below
+the legacy tags would look like it superseded one.
 
 `release.yml` then runs the gate, unpacks `.release-evidence/`, runs the
 guard, builds and packages, signs the manifest with the release key, and
 publishes. Every one of those steps can stop the release, and each stops it
 before anything is public.
 
-A tag containing `-` (`v0.9.0-rc.1`) publishes as a pre-release and never
+A tag containing `-` (`v1.0.0-rc.1`) publishes as a pre-release and never
 shows as latest.
 
 ## Signing keys

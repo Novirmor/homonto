@@ -1,8 +1,14 @@
 # Verify with adversarial fresh-context skeptic agents
 
-- **Status:** Accepted
+- **Status:** Accepted; mechanism superseded by 0023
 - **Date:** 2026-07-04
 - **Change:** polish-onto-framework
+
+> The mechanism this record specified — onto's full and light verification
+> modes — was removed by
+> [0023](0023-rebuild-homonto-as-workflow-orchestrator.md). The principle
+> survives unchanged and is still how this repository is developed:
+> adversarial, fresh-context skeptic verification.
 
 ## Context
 

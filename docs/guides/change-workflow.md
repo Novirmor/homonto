@@ -65,7 +65,7 @@ required** before implementation:
 ```markdown
 ## Fix
 
-reproduce: go test ./internal/catalog -run TestStaleRows
+reproduce: go test ./internal/store -run TestStaleRows
 
 Expected: fresh rows. Actual: stale rows. Root cause: the cache key.
 ```

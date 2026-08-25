@@ -28,7 +28,7 @@ here, and does not refuse to install into one you have not opened yet.
 |---|---|
 | `skill/homonto-<workflow>/SKILL.md` | The protocol loop |
 | `command/homonto-<workflow>.md` | A command that invokes the skill |
-| `plugin/homonto.js` | Event normalization: probe, guard, assignment tool |
+| `plugin/homonto.js` | Event normalization: the resume probe and the write guard |
 
 Only the **configured** workflow's entry point is installed. A Task
 workspace never grows a `/homonto-change` command: offering both would let
@@ -92,8 +92,10 @@ whatever was in there.
 ## Committing them
 
 Generated files are project-local and gitignored by default. `--commit`
-opts into committing them instead — useful when a team wants everyone on
-the same integration, and a decision rather than a side effect.
+does not run git: it leaves the generated files **unignored**, so they sit
+in the working tree ready for you to commit — useful when a team wants
+everyone on the same integration, and a decision rather than a side
+effect.
 
 ## Drift
 
@@ -114,12 +116,3 @@ It never chooses between two, and it tells the host so in as many words.
 
 An idle workspace adds no session context at all: a session with no work in
 progress should not begin with a paragraph about there being none.
-
-## The assignment tool
-
-OpenCode's plugin exposes `homonto_assignment`, which launches one
-assignment as a child session. Its model, prompt, working directory, and
-write scope all come from the **action**. Routing is configured per role
-and per host in the manifest, resolved by the binary, and handed to the
-host as data — a plugin that chose a model would be a plugin with opinions
-about the workflow.

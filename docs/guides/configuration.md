@@ -1,8 +1,11 @@
 # Configuration
 
-One file: `.homonto/config.toml` in the control repository. It is committed
-— it is part of the portable record, so a machine that clones the control
-repository gets the same workspace.
+One file: `.homonto/config.toml` in the control repository. It is part of
+the portable record: a handoff (or an attach) commits it past the default
+ignore, alongside the checkpoint, so a machine that clones the control
+repository gets the same workspace. Ordinary completion does not commit —
+the manifest sits in the working tree, commit-ready, until a handoff or you
+commit it.
 
 ```toml
 schema_version = 1
@@ -141,6 +144,10 @@ model = "…"
 Homonto resolves the route and hands it to the host in the action. The
 host launches the subagent; Homonto never calls a model provider.
 
+Declared, validated, fingerprinted — and not yet consumed: no runtime
+behavior reads `[routes]` today, so a route changes the manifest's
+fingerprint and nothing else yet.
+
 ## `[update]`
 
 ```toml
@@ -148,9 +155,25 @@ host launches the subagent; Homonto never calls a model provider.
 channel = "stable"
 ```
 
-`stable` or `beta`. The channel is inside the signed release manifest, so
+`stable` or `prerelease`. The channel is inside the signed release manifest, so
 asking for one and being served the other is refused even when the
 signature is valid.
+
+Also declared-but-not-yet-consumed: no runtime behavior reads the channel
+yet, for the same reason the fetch itself is not exposed — see
+[updates](updates.md).
+
+## `[integrations]`
+
+```toml
+[integrations]
+commit_generated = true
+```
+
+The intended default for generated host files: leave them unignored so a
+team can commit them. Not yet consumed either — today the choice is the
+`--commit` flag on `homonto host install`, per run, and this key only
+participates in validation and the fingerprint.
 
 ## What is not in here
 

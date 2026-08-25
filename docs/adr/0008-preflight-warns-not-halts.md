@@ -1,8 +1,14 @@
 # Make the tooling preflight warn and proceed, never halt
 
-- **Status:** Accepted
+- **Status:** Accepted; mechanism superseded by 0023
 - **Date:** 2026-07-04
 - **Change:** address-deep-review
+
+> The mechanism this record governed — the onto dispatcher's rtk and
+> Graphify preflight, and its notes.md grounding record — was removed by
+> [0023](0023-rebuild-homonto-as-workflow-orchestrator.md). The principle
+> survives unchanged and is still how this repository is developed:
+> preflight warns and proceeds; no missing tool halts the workflow.
 
 ## Context
 

@@ -48,9 +48,7 @@ was interrupted. Reports; never repairs. Exits `3` when something is wrong.
 ### `homonto handoff [name-or-id]`
 
 Make the work portable: mark its checkpoint transferable, commit it,
-release this machine's leases. Only the workspace's anchored work — the
-one holding the members' leases — can be handed over. See
-[recovery](recovery.md).
+release this machine's leases. See [recovery](recovery.md).
 
 ### `homonto attach`
 

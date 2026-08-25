@@ -207,6 +207,9 @@ func toPathClassOp(k guard.ChangeKind) pathclass.Op {
 
 // StartChangePreflight opens a local classification candidate.
 func (a *App) StartChangePreflight(ctx context.Context, in change.PreflightInput) (change.PreflightState, protocol.NextResponse, error) {
+	if err := a.requireNoActiveWork(ctx); err != nil {
+		return change.PreflightState{}, protocol.NextResponse{}, err
+	}
 	return a.changes.StartPreflight(ctx, in)
 }
 

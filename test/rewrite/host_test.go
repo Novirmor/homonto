@@ -1,6 +1,7 @@
 package rewrite
 
 import (
+	"context"
 	"encoding/json"
 	"os"
 	"os/exec"
@@ -8,9 +9,11 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/noviopenworks/homonto/internal/app"
 	"github.com/noviopenworks/homonto/internal/host"
 	"github.com/noviopenworks/homonto/internal/host/claude"
 	"github.com/noviopenworks/homonto/internal/protocol"
+	"github.com/noviopenworks/homonto/internal/task"
 )
 
 // TestHostInstallProducesADrivableIntegration installs both hosts through
@@ -75,7 +78,7 @@ func TestProbeIsReadOnly(t *testing.T) {
 	}
 }
 
-// TestProbeReportsOneResumableWork and refuses to choose between two.
+// TestProbeReportsOneResumableWork.
 func TestProbeReportsOneResumableWork(t *testing.T) {
 	w := newWorkspace(t)
 	if out, err := w.run(t, "task", "start", "fix-login"); err != nil {
@@ -98,15 +101,36 @@ func TestProbeReportsOneResumableWork(t *testing.T) {
 	if !strings.Contains(resp.Message, "unrelated") {
 		t.Fatalf("the message does not tell the host to leave unrelated work alone: %q", resp.Message)
 	}
+}
 
-	if out, err := w.run(t, "task", "start", "fix-cache"); err != nil {
+// TestProbeRefusesToChooseBetweenTwoWorks.
+//
+// Starting a second work is refused, so this state cannot be reached
+// through the commands — which is exactly why the probe must still handle
+// it. A workspace can arrive here from a version that allowed it, or from
+// state repaired by hand, and the answer must be "you choose", never a
+// guess. The second work is therefore created through the engine
+// directly, bypassing the guard the command applies.
+func TestProbeRefusesToChooseBetweenTwoWorks(t *testing.T) {
+	w := newWorkspace(t)
+	if out, err := w.run(t, "task", "start", "fix-login"); err != nil {
 		t.Fatalf("task start: %v\n%s", err, out)
 	}
-	out, err = w.run(t, "host", "probe", "--host", "opencode")
+	a, err := app.Open(context.Background(), app.Options{Root: w.root})
+	if err != nil {
+		t.Fatalf("open the workspace: %v", err)
+	}
+	if _, err := a.Engine().Start(context.Background(), task.StartInput{Name: "fix-cache"}); err != nil {
+		a.Close()
+		t.Fatalf("plant a second task: %v", err)
+	}
+	a.Close()
+
+	out, err := w.run(t, "host", "probe", "--host", "opencode")
 	if err != nil {
 		t.Fatalf("host probe: %v\n%s", err, out)
 	}
-	resp, err = protocol.DecodeProbeResponse(strings.NewReader(out))
+	resp, err := protocol.DecodeProbeResponse(strings.NewReader(out))
 	if err != nil {
 		t.Fatalf("decode probe: %v\n%s", err, out)
 	}

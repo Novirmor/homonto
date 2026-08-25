@@ -1,4 +1,4 @@
-# One anchored work per workspace, resumed at the phase start
+# One active work per workspace, resumed at the phase start
 
 - **Status:** Accepted
 - **Date:** 2026-08-25
@@ -12,10 +12,12 @@ failed with "no such file or directory" on every real workspace and
 `homonto attach` had nothing to consume. Wiring it raised two questions
 the machinery does not answer on its own.
 
-**Several works, one set of members.** The Task engine supports more than
-one active work in a workspace: `next` refuses to guess between them
-rather than forbidding them. But a lease is exclusive per member per work,
-so the second work cannot lease what the first holds.
+**Several works, one set of members.** The engines let more than one work
+exist at once — `next` refuses to guess between them rather than
+forbidding them — while the specification says exactly one top-level Task
+or Change may be active in a workspace, with parallelism happening inside
+that work. A lease is exclusive per member per work, so the second work
+could not lease what the first holds anyway.
 
 **What travels.** The checkpoint is content-free by design: it carries the
 phase a work reached and nothing about what happened inside it. The
@@ -24,12 +26,11 @@ lives in the runtime database, which is explicitly not portable.
 
 ## Decision
 
-**Only the workspace's first active work is anchored.** Starting a work
-leases every member and writes the checkpoint only when no other work
-already holds them. A second concurrent work runs normally, sharing the
-same members, but is not anchored; `homonto handoff` then refuses it
-because it is not the workspace's single active work. Archiving or
-abandoning releases the hold, and the next work anchors.
+**Starting a second work is refused.** `homonto task start` and
+`homonto change start` check for an active work first and name the one in
+the way. Starting the one work leases every member, writes the sentinel,
+and commits the first checkpoint; archiving or abandoning releases the
+hold, and the next work anchors.
 
 **An attached work resumes at the FIRST step of the recorded phase.** A
 Task maps phase to step directly. A Change first recovers its path from
@@ -39,10 +40,11 @@ is idempotent: a work that already has local state is left alone.
 
 ## Consequences
 
-Handing over one of two concurrent works is impossible, and says so. That
-is the honest position: the members the second work needs are held by the
-first, and a checkpoint promising otherwise would fail on the receiving
-machine rather than here.
+Two top-level works can no longer be started, so the ambiguity `next` and
+the resume probe describe is reachable only from state that predates this
+rule or was repaired by hand. Both keep handling it — refusing to choose
+is still the right answer — and the tests construct that state through the
+engines rather than through the commands.
 
 Resuming re-enters a phase rather than continuing mid-phase. Work already
 done inside that phase is re-derived from the documents and the members —

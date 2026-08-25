@@ -642,16 +642,37 @@ func TestNoActiveTaskIsRefusedNotGuessed(t *testing.T) {
 	if !strings.Contains(err.Error(), "no active work") {
 		t.Fatalf("error = %v, want a refusal naming the absence of active work", err)
 	}
-	for _, name := range []string{"fix-login", "fix-cache"} {
-		if out, err := w.run(t, "task", "start", name); err != nil {
-			t.Fatalf("task start %s: %v\n%s", name, err, out)
-		}
+}
+
+// TestASecondWorkIsRefused: exactly one top-level Task or Change may be
+// active in a workspace. Parallelism happens INSIDE that work, through
+// subagents and isolated worktrees.
+//
+// Two top-level works would share every member, so their isolation areas,
+// their integration branches, and their checks would each be measuring a
+// tree the other is also changing — and only one of them could hold the
+// leases that make the work portable. The refusal names the work in the
+// way, because "already active" without saying which is useless.
+func TestASecondWorkIsRefused(t *testing.T) {
+	w := newWorkspace(t)
+	if out, err := w.run(t, "task", "start", "fix-login"); err != nil {
+		t.Fatalf("task start: %v\n%s", err, out)
 	}
-	out, err = w.run(t, "next", "--json")
+	out, err := w.run(t, "task", "start", "fix-cache")
 	if err == nil {
-		t.Fatalf("next with two active tasks succeeded: %s", out)
+		t.Fatalf("a second task was started:\n%s", out)
 	}
-	if !strings.Contains(err.Error(), "2 active works") {
-		t.Fatalf("error = %v, want a refusal naming the ambiguity", err)
+	if !strings.Contains(err.Error(), "fix-login") {
+		t.Errorf("the refusal does not name the work in the way: %v", err)
+	}
+
+	// And the workspace is usable again once the first one is out of the
+	// way — the refusal must be about activity, not about the name having
+	// ever been used.
+	if out, err := w.run(t, "task", "abandon", "fix-login"); err != nil {
+		t.Fatalf("task abandon: %v\n%s", err, out)
+	}
+	if out, err := w.run(t, "task", "start", "fix-cache"); err != nil {
+		t.Fatalf("task start after abandoning: %v\n%s", err, out)
 	}
 }

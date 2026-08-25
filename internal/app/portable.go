@@ -37,22 +37,6 @@ import (
 // exclusive, so a second machine that raced this one loses at the lease
 // and never writes a checkpoint over the winner's.
 func (a *App) activate(ctx context.Context, workID identity.WorkID, kind WorkKind, name, docPath, phase string) error {
-	// A workspace's members are leased by ONE work at a time. That is not
-	// a limitation to work around — it is what the lease means. A second
-	// concurrent work runs perfectly well on this machine, sharing the
-	// same members; what it cannot be is portable, because handing it over
-	// would hand over members the first work is still using.
-	//
-	// So the second work is simply not anchored. `homonto handoff` then
-	// refuses it for the accurate reason: it is not the workspace's single
-	// active work.
-	anchored, err := a.anchoredWork()
-	if err != nil {
-		return err
-	}
-	if anchored != "" && anchored != workID {
-		return nil
-	}
 	targets, err := a.leaseTargets(ctx)
 	if err != nil {
 		return err
@@ -170,6 +154,35 @@ func (a *App) deactivate(ctx context.Context, workID identity.WorkID) error {
 		return err
 	}
 	return a.writeCheckpoint(next)
+}
+
+// ErrWorkAlreadyActive: a workspace already has an active work.
+var ErrWorkAlreadyActive = errors.New("app: a work is already active in this workspace")
+
+// requireNoActiveWork refuses to start a second work.
+//
+// Exactly one top-level Task or Change may be active in a workspace;
+// parallelism happens INSIDE that work, through subagents and isolated
+// worktrees. Two top-level works would share every member, so their
+// isolation areas, their integration branches, and their checks would all
+// be measuring a tree the other one is also changing — and only one of
+// them could hold the leases that make the work portable.
+//
+// Finish or abandon the first one.
+func (a *App) requireNoActiveWork(ctx context.Context) error {
+	active, err := a.activeWorks(ctx)
+	if err != nil {
+		return err
+	}
+	if len(active) == 0 {
+		return nil
+	}
+	names := make([]string, 0, len(active))
+	for _, w := range active {
+		names = append(names, w.Name)
+	}
+	return fmt.Errorf("app: %s is already active; finish or abandon it first: %w",
+		strings.Join(names, ", "), ErrWorkAlreadyActive)
 }
 
 // anchoredWork returns the work this machine currently holds the

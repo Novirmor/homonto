@@ -268,6 +268,9 @@ func (a *App) Engine() *task.Engine { return a.engine }
 // leased and the first checkpoint is written, so a second machine cannot
 // start work over it and any machine can later pick it up.
 func (a *App) StartTask(ctx context.Context, in task.StartInput) (task.State, error) {
+	if err := a.requireNoActiveWork(ctx); err != nil {
+		return task.State{}, err
+	}
 	st, err := a.engine.Start(ctx, in)
 	if err != nil {
 		return st, err

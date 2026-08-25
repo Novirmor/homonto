@@ -23,15 +23,12 @@ workflow guides for the per-cause tables.
 
 ## Handoff
 
-Work is anchored to the machine holding its leases. **One work at a time.**
-A workspace's members are leased by a single work, which is what a lease
-means; a second concurrent work runs perfectly well here, sharing the same
-members, but it is not anchored and cannot be handed over. `homonto
-handoff` says so rather than producing a checkpoint the receiving machine
-could not honour. Finish or abandon the first work to hand over the
-second.
+Work is anchored to the machine holding its leases — and a workspace has
+exactly one active work, so there is never a question of which. Starting a
+second one is refused, naming the work in the way; parallelism happens
+inside a work, through subagents and isolated worktrees.
 
-To move the anchored work:
+To move the active work:
 
 ```bash
 homonto handoff

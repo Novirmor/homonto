@@ -289,27 +289,19 @@ func mustJSON(t *testing.T, v any) []byte {
 	return body
 }
 
-// TestOnlyOneWorkIsAnchoredToThisMachine states the rule that falls out of
-// the lease model, because it is surprising until you see why.
+// TestStartingAWorkAnchorsItToThisMachine.
 //
-// A workspace's members are leased by ONE work at a time. That is what a
-// lease means. A second concurrent work runs perfectly well here, sharing
-// the same members — what it cannot be is portable, because handing it
-// over would hand over members the first work is still using.
-//
-// So the second work is simply not anchored, and `homonto handoff` refuses
-// it for the accurate reason rather than producing a checkpoint that
-// promises something the receiving machine cannot honour.
-func TestOnlyOneWorkIsAnchoredToThisMachine(t *testing.T) {
+// Exactly one top-level Task or Change is active in a workspace, so
+// starting one is also when it becomes THIS machine's: the members are
+// leased, the sentinel is written, and the checkpoint names the work. Skip
+// any of that and `homonto handoff` has nothing to hand over — which is
+// how the whole portable path came to be unreachable.
+func TestStartingAWorkAnchorsItToThisMachine(t *testing.T) {
 	w := newWorkspace(t)
-	if out, err := w.run(t, "task", "start", "first"); err != nil {
-		t.Fatalf("task start first: %v\n%s", err, out)
-	}
-	if out, err := w.run(t, "task", "start", "second"); err != nil {
-		t.Fatalf("task start second: %v\n%s", err, out)
+	if out, err := w.run(t, "task", "start", "fix-login"); err != nil {
+		t.Fatalf("task start: %v\n%s", err, out)
 	}
 
-	// Exactly one lease sentinel: the first work holds the members.
 	entries, err := os.ReadDir(filepath.Join(w.root, ".homonto", "leases"))
 	if err != nil {
 		t.Fatalf("read the lease directory: %v", err)
@@ -321,18 +313,19 @@ func TestOnlyOneWorkIsAnchoredToThisMachine(t *testing.T) {
 		}
 	}
 	if active != 1 {
-		t.Errorf("%d works hold the workspace's leases, want exactly 1", active)
+		t.Errorf("%d lease sentinels, want exactly 1", active)
 	}
 
-	// The checkpoint names the anchored work, not the newest one.
 	cp := readCheckpoint(t, w.root)
-	if cp.Work == nil || cp.Work.Name != "first" {
-		t.Errorf("the checkpoint names %v, want the first work", cp.Work)
+	if cp.Work == nil || cp.Work.Name != "fix-login" {
+		t.Fatalf("the checkpoint names %v, want the started work", cp.Work)
 	}
-
-	// And handing off the unanchored one is refused rather than faked.
-	if out, err := w.run(t, "handoff", "second"); err == nil {
-		t.Errorf("handing off an unanchored work was allowed:\n%s", out)
+	// Every member is anchored, the control repository included: attach
+	// has to know where each one was, and the control is the one that
+	// carries the documents.
+	if len(cp.Members) != len(w.cfg.Members)+1 {
+		t.Errorf("the checkpoint anchors %d members, want %d plus the control",
+			len(cp.Members), len(w.cfg.Members))
 	}
 }
 

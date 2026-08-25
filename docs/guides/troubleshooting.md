@@ -140,11 +140,15 @@ You edited a generated file. Homonto will not overwrite an edit. Either
 keep it — nothing will touch it — or discard it with
 `homonto host install --adopt`.
 
-## "handoff" refuses a work
+## "a work is already active in this workspace"
 
-Only the workspace's single anchored work can be handed over. If two works
-are active, the first holds the members' leases and the second is not
-anchored — see [recovery](recovery.md). Finish or abandon the other one.
+A workspace has exactly one active Task or Change. The refusal names the
+one in the way; finish it or `homonto task abandon <name>` it.
+
+This is not a capacity limit. Parallelism happens *inside* a work — a
+round issues one assignment per unit, each in its own isolation area. Two
+top-level works would share every member, so each one's checks would be
+measuring a tree the other is also changing.
 
 ## "worktree is dirty" from an integration area
 

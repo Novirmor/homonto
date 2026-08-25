@@ -84,10 +84,14 @@ func (r *Root) WriteAtomic(rel string, data []byte, mode fs.FileMode) error {
 // open uses O_CREAT|O_EXCL|O_NOFOLLOW, so the call fails if anything —
 // including a symlink — already exists at rel, and never resolves one. The
 // exact perm is set with fchmod regardless of umask. The file and its
-// parent directory are fsynced before the call returns. A failure before
-// the content is durable removes the partial file; a failure afterwards
-// (close or directory fsync) returns the error but keeps the completed
-// object.
+// parent directory are fsynced before the call returns.
+//
+// Creation is atomic in CONTENT as well as in existence: the destination
+// never exists in a partially written state, so a concurrent reader sees
+// either nothing or the whole file. A failure at any point before the link
+// leaves no trace; a failure after it keeps the completed object, because
+// unlinking a file-fsynced object over a directory-durability error would
+// discard confirmed-durable bytes.
 func (r *Root) CreateExclusive(rel string, data []byte, mode fs.FileMode) error {
 	dirfd, base, borrowed, err := r.openParent(rel)
 	if err != nil {
@@ -97,26 +101,27 @@ func (r *Root) CreateExclusive(rel string, data []byte, mode fs.FileMode) error 
 		defer unix.Close(dirfd)
 	}
 
-	fd, err := unix.Openat(dirfd, base, unix.O_WRONLY|unix.O_CREAT|unix.O_EXCL|unix.O_NOFOLLOW|unix.O_CLOEXEC, uint32(mode.Perm()))
+	// The content is written to a temporary file FIRST and linked into
+	// place afterwards. Creating the destination with O_EXCL and then
+	// writing it would be exclusive but not atomic: a concurrent reader
+	// that opens the winner's file between the create and the write sees
+	// an EMPTY file, and a reader that concludes "not registered" from
+	// that is a reader about to claim something already taken.
+	//
+	// linkat provides the exclusivity the create used to: it fails with
+	// EEXIST when the destination is taken, and the file it links is
+	// already complete and fsynced.
+	name, fd, err := createTemp(dirfd, mode)
 	if err != nil {
-		return pathErr("openat", rel, err)
+		return err
 	}
-	// fdOpen tracks whether the deferred cleanup still owns the fd: it
-	// must be cleared after every close attempt, because close() releases
-	// the fd even when it reports an error, and a second close could hit a
-	// reused fd number. keepObject separates the failure regimes: before
-	// the content fsync completes, a failure leaves a partial file that
-	// the cleanup unlinks; after it, the object is complete and durable,
-	// so failures return the error but never destroy the file — unlinking
-	// a file-fsynced object over a directory-durability error would
-	// discard confirmed-durable bytes.
-	fdOpen, keepObject := true, false
+	fdOpen, linked := true, false
 	defer func() {
 		if fdOpen {
 			unix.Close(fd)
 		}
-		if !keepObject {
-			if rmErr := unix.Unlinkat(dirfd, base, 0); rmErr == nil {
+		if !linked {
+			if rmErr := unix.Unlinkat(dirfd, name, 0); rmErr == nil {
 				_ = unix.Fsync(dirfd)
 			}
 		}
@@ -131,11 +136,20 @@ func (r *Root) CreateExclusive(rel string, data []byte, mode fs.FileMode) error 
 	if err := unix.Fsync(fd); err != nil {
 		return pathErr("fsync", rel, err)
 	}
-	keepObject = true
-	err = unix.Close(fd)
-	fdOpen = false
-	if err != nil {
+	if err := unix.Close(fd); err != nil {
+		fdOpen = false
 		return pathErr("close", rel, err)
+	}
+	fdOpen = false
+
+	if err := unix.Linkat(dirfd, name, dirfd, base, 0); err != nil {
+		return pathErr("linkat", rel, err)
+	}
+	linked = true
+	// The temporary name is now a second link to the same complete
+	// object; unlinking it leaves the destination intact.
+	if rmErr := unix.Unlinkat(dirfd, name, 0); rmErr != nil {
+		return pathErr("unlink", name, rmErr)
 	}
 	if err := unix.Fsync(dirfd); err != nil {
 		return pathErr("fsync", rel, err)

@@ -519,3 +519,110 @@ func TestCloseIsIdempotentAndShutsOperationsDown(t *testing.T) {
 		t.Error("WriteAtomic after Close: want error, got nil")
 	}
 }
+
+// TestCreateExclusiveIsAtomicInContent proves a concurrent reader never
+// sees a half-written file.
+//
+// The bug this guards against was real and subtle: creating the
+// destination with O_EXCL and then writing it is exclusive but not
+// atomic, so a reader that opened the winner's file between the two saw
+// an EMPTY one — and a reader concluding "not registered" from that is a
+// reader about to claim something already taken.
+func TestCreateExclusiveIsAtomicInContent(t *testing.T) {
+	content := bytes.Repeat([]byte("homonto"), 4096)
+	for attempt := 0; attempt < 32; attempt++ {
+		dir := t.TempDir()
+		root, err := OpenRoot(dir)
+		if err != nil {
+			t.Fatalf("OpenRoot: %v", err)
+		}
+
+		var (
+			wg      sync.WaitGroup
+			mu      sync.Mutex
+			partial []byte
+		)
+		start := make(chan struct{})
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			<-start
+			// Spin reading the destination. Every observation must be
+			// either absent or complete.
+			for i := 0; i < 20000; i++ {
+				body, err := os.ReadFile(filepath.Join(dir, "registration.json"))
+				if err != nil {
+					continue
+				}
+				if !bytes.Equal(body, content) {
+					mu.Lock()
+					partial = append([]byte(nil), body...)
+					mu.Unlock()
+					return
+				}
+				return
+			}
+		}()
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			<-start
+			if err := root.CreateExclusive("registration.json", content, 0o600); err != nil {
+				t.Errorf("CreateExclusive: %v", err)
+			}
+		}()
+		close(start)
+		wg.Wait()
+		_ = root.Close()
+
+		mu.Lock()
+		got := partial
+		mu.Unlock()
+		if got != nil {
+			t.Fatalf("a reader observed %d bytes of a %d byte file", len(got), len(content))
+		}
+	}
+}
+
+// TestCreateExclusiveLeavesNoTemporaryFile proves the two-step creation
+// does not litter.
+func TestCreateExclusiveLeavesNoTemporaryFile(t *testing.T) {
+	dir := t.TempDir()
+	root, err := OpenRoot(dir)
+	if err != nil {
+		t.Fatalf("OpenRoot: %v", err)
+	}
+	defer root.Close()
+	if err := root.CreateExclusive("a.txt", []byte("hello\n"), 0o600); err != nil {
+		t.Fatalf("CreateExclusive: %v", err)
+	}
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		t.Fatalf("ReadDir: %v", err)
+	}
+	if len(entries) != 1 || entries[0].Name() != "a.txt" {
+		var names []string
+		for _, e := range entries {
+			names = append(names, e.Name())
+		}
+		t.Fatalf("directory holds %v, want only a.txt", names)
+	}
+	// A refused second creation also leaves nothing behind.
+	if err := root.CreateExclusive("a.txt", []byte("again\n"), 0o600); err == nil {
+		t.Fatal("a second exclusive creation succeeded")
+	}
+	entries, err = os.ReadDir(dir)
+	if err != nil {
+		t.Fatalf("ReadDir: %v", err)
+	}
+	if len(entries) != 1 {
+		t.Fatalf("a refused creation left %d entries behind", len(entries))
+	}
+	body, err := os.ReadFile(filepath.Join(dir, "a.txt"))
+	if err != nil {
+		t.Fatalf("read: %v", err)
+	}
+	if string(body) != "hello\n" {
+		t.Fatalf("the refused creation changed the file: %q", body)
+	}
+}

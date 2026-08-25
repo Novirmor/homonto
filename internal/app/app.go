@@ -133,9 +133,11 @@ func build(ctx context.Context, root string, cfg workspacecfg.Config, db *store.
 		return nil, fmt.Errorf("app: recover pending operations: %w", err)
 	}
 
+	// The archive service never creates a directory itself, so the
+	// document tree is scaffolded here, once, when the workspace opens.
 	controlRoot := filepath.Join(root, filepath.FromSlash(normalizePath(cfg.Control.Path)))
-	for _, sub := range []string{artifact.ActiveDir, archive.Dir} {
-		if err := os.MkdirAll(filepath.Join(controlRoot, sub), 0o700); err != nil {
+	for _, sub := range archive.Dirs() {
+		if err := os.MkdirAll(filepath.Join(controlRoot, filepath.FromSlash(sub)), 0o755); err != nil {
 			return nil, fmt.Errorf("app: create %s: %w", sub, err)
 		}
 	}

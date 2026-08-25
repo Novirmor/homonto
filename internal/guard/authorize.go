@@ -205,10 +205,17 @@ func checkArtifact(act assignment.Action, rel string) (protocol.GuardDecision, b
 }
 
 // documentKind maps a control-root-relative path to the workflow document
-// kind it is, when it is one. Only paths under the active work directory
-// count: a file called proposal.md in the source tree is source.
+// kind it is, when it is one. Only paths under Homonto's own document tree
+// count: a file called proposal.md in the source tree is source, and
+// refusing it would make the guard an obstacle rather than a boundary.
 func documentKind(rel string) (artifact.Kind, bool) {
-	if !within(artifact.ActiveDir, rel) {
+	if !within(artifact.DocsDir, rel) {
+		return "", false
+	}
+	if within(artifact.TasksDir, rel) && strings.HasSuffix(rel, ".md") {
+		return artifact.KindTaskDocument, true
+	}
+	if !within(artifact.ChangesDir, rel) {
 		return "", false
 	}
 	base := path.Base(rel)

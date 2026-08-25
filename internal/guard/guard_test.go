@@ -259,20 +259,20 @@ func TestAuthorizeRefusesControlStateEdits(t *testing.T) {
 
 func TestAuthorizeRefusesWorkflowDocumentsFromAssignments(t *testing.T) {
 	e := newEnv(t)
-	act := e.issue(t, e.template(protocol.RoleImplementer, ".", []string{"active", "src"}, "build"))
+	act := e.issue(t, e.template(protocol.RoleImplementer, ".", []string{"docs", "src"}, "build"))
 	tests := []struct {
 		path string
 		code string
 	}{
 		// Binary-owned in Build: Homonto updates the checkboxes.
-		{"active/rework/tasks.md", CodeBinaryOwned},
+		{"docs/homonto/changes/rework/tasks.md", CodeBinaryOwned},
 		// Host-owned in Build: written through an edit grant, not here.
-		{"active/rework/plan.md", CodeWrongPhase},
+		{"docs/homonto/changes/rework/plan.md", CodeWrongPhase},
 		// Nobody writes a proposal in Build.
-		{"active/rework/proposal.md", CodeWrongPhase},
+		{"docs/homonto/changes/rework/proposal.md", CodeWrongPhase},
 		// Generated documents belong to other phases entirely.
-		{"active/rework/verification.md", CodeWrongPhase},
-		{"active/rework/record.md", CodeWrongPhase},
+		{"docs/homonto/changes/rework/verification.md", CodeWrongPhase},
+		{"docs/homonto/changes/rework/record.md", CodeWrongPhase},
 	}
 	for _, tt := range tests {
 		d := decide(t, e.guard, e.request(t, act, ".", tt.path))

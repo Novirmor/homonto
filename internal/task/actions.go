@@ -210,14 +210,15 @@ func (e *Engine) decisionSpec(st State, step Step, control Member, schema decisi
 	}, nil
 }
 
-// documentPath is the task document's control-root-relative path.
+// documentPath is the task document's control-root-relative path. Names
+// are validated at Start, so the only way this fails is a state that was
+// written by something other than this engine — and a path that cannot be
+// built would produce an action that cannot validate anyway, which is the
+// louder failure.
 func (s State) documentPath() string {
-	path, err := artifact.Path(s.Name, artifact.KindTaskDocument)
+	path, err := artifact.TaskPath(s.Name)
 	if err != nil {
-		// Names are validated at Start; a state that reaches here with an
-		// invalid one is a programming error, and a path that cannot be
-		// built would produce an action that cannot validate anyway.
-		return artifact.ActiveDir + "/" + s.Name + "/tasks.md"
+		return artifact.TasksDir + "/" + s.Name + ".md"
 	}
 	return path
 }

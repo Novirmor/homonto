@@ -20,8 +20,8 @@ var day = time.Date(2026, 8, 25, 12, 0, 0, 0, time.UTC)
 func newService(t *testing.T) (*Service, string) {
 	t.Helper()
 	dir := t.TempDir()
-	for _, sub := range []string{ActiveDir, Dir} {
-		if err := os.MkdirAll(filepath.Join(dir, sub), 0o700); err != nil {
+	for _, sub := range Dirs() {
+		if err := os.MkdirAll(filepath.Join(dir, filepath.FromSlash(sub)), 0o755); err != nil {
 			t.Fatalf("mkdir %s: %v", sub, err)
 		}
 	}
@@ -54,7 +54,7 @@ func writeTaskDoc(t *testing.T, root string, workID identity.WorkID, dirName, na
 		{Region: artifact.RegionTaskChecklist, Content: []byte("- [ ] item\n")},
 		{Region: artifact.RegionTaskEvidence, Content: nil},
 	}
-	writeDoc(t, root, ActiveDir+"/"+dirName+"/tasks.md", doc)
+	writeDoc(t, root, TasksDir+"/"+dirName+".md", doc)
 }
 
 // writeProposal creates a change proposal at active/<dirName>/proposal.md.
@@ -66,7 +66,7 @@ func writeProposal(t *testing.T, root string, workID identity.WorkID, dirName, n
 	doc.Regions = []artifact.RegionContent{
 		{Region: artifact.RegionWholeDocument, Content: []byte("## Proposal\nscope\n")},
 	}
-	writeDoc(t, root, ActiveDir+"/"+dirName+"/proposal.md", doc)
+	writeDoc(t, root, ChangesDir+"/"+dirName+"/proposal.md", doc)
 }
 
 // writeDoc renders doc and writes it at the control-root-relative rel,
@@ -112,11 +112,11 @@ func TestArchiveTaskMovesFileIntoArchive(t *testing.T) {
 	workID := mustWorkID(t)
 	writeTaskDoc(t, root, workID, "fix-login", "fix-login")
 
-	entry, err := svc.ArchiveTask(t.Context(), "active/fix-login/tasks.md", day)
+	entry, err := svc.ArchiveTask(t.Context(), TasksDir+"/fix-login.md", day)
 	if err != nil {
 		t.Fatalf("ArchiveTask: %v", err)
 	}
-	if entry.Path != "archive/2026-08-25-fix-login.md" {
+	if entry.Path != TasksArchiveDir+"/2026-08-25-fix-login.md" {
 		t.Fatalf("entry.Path = %q, want archive/2026-08-25-fix-login.md", entry.Path)
 	}
 	if entry.IsDir {
@@ -128,10 +128,10 @@ func TestArchiveTaskMovesFileIntoArchive(t *testing.T) {
 	if entry.Date != "2026-08-25" {
 		t.Fatalf("entry.Date = %q, want 2026-08-25", entry.Date)
 	}
-	if exists(t, root, "active/fix-login/tasks.md") {
+	if exists(t, root, TasksDir+"/fix-login.md") {
 		t.Fatal("source file still present after archive")
 	}
-	if !exists(t, root, "archive/2026-08-25-fix-login.md") {
+	if !exists(t, root, TasksArchiveDir+"/2026-08-25-fix-login.md") {
 		t.Fatal("archived file missing")
 	}
 }
@@ -142,11 +142,11 @@ func TestArchiveTaskNamesFromMetadataNotPath(t *testing.T) {
 	svc, root := newService(t)
 	writeTaskDoc(t, root, mustWorkID(t), "some-scratch-dir", "fix-login")
 
-	entry, err := svc.ArchiveTask(t.Context(), "active/some-scratch-dir/tasks.md", day)
+	entry, err := svc.ArchiveTask(t.Context(), TasksDir+"/some-scratch-dir.md", day)
 	if err != nil {
 		t.Fatalf("ArchiveTask: %v", err)
 	}
-	if entry.Path != "archive/2026-08-25-fix-login.md" {
+	if entry.Path != TasksArchiveDir+"/2026-08-25-fix-login.md" {
 		t.Fatalf("entry.Path = %q, want the metadata name, not the directory name", entry.Path)
 	}
 }
@@ -155,7 +155,7 @@ func TestArchiveTaskRefusesNonTaskDocument(t *testing.T) {
 	svc, root := newService(t)
 	writeProposal(t, root, mustWorkID(t), "rework-catalog", "rework-catalog")
 
-	if _, err := svc.ArchiveTask(t.Context(), "active/rework-catalog/proposal.md", day); err == nil {
+	if _, err := svc.ArchiveTask(t.Context(), ChangesDir+"/rework-catalog/proposal.md", day); err == nil {
 		t.Fatal("ArchiveTask of a proposal = nil error, want refusal")
 	}
 }
@@ -164,24 +164,24 @@ func TestArchiveTaskSameDayCollisionGetsSuffix(t *testing.T) {
 	svc, root := newService(t)
 	writeTaskDoc(t, root, mustWorkID(t), "first", "fix-login")
 
-	e1, err := svc.ArchiveTask(t.Context(), "active/first/tasks.md", day)
+	e1, err := svc.ArchiveTask(t.Context(), TasksDir+"/first.md", day)
 	if err != nil {
 		t.Fatalf("first ArchiveTask: %v", err)
 	}
-	if e1.Path != "archive/2026-08-25-fix-login.md" {
+	if e1.Path != TasksArchiveDir+"/2026-08-25-fix-login.md" {
 		t.Fatalf("first entry path = %q", e1.Path)
 	}
 	// A second, different work with the same name archived the same day
 	// must land on -2 rather than overwrite the first.
 	writeTaskDoc(t, root, mustWorkID(t), "second", "fix-login")
-	e2, err := svc.ArchiveTask(t.Context(), "active/second/tasks.md", day)
+	e2, err := svc.ArchiveTask(t.Context(), TasksDir+"/second.md", day)
 	if err != nil {
 		t.Fatalf("second ArchiveTask: %v", err)
 	}
-	if e2.Path != "archive/2026-08-25-fix-login-2.md" {
+	if e2.Path != TasksArchiveDir+"/2026-08-25-fix-login-2.md" {
 		t.Fatalf("second entry path = %q, want -2 suffix", e2.Path)
 	}
-	if !exists(t, root, "archive/2026-08-25-fix-login.md") {
+	if !exists(t, root, TasksArchiveDir+"/2026-08-25-fix-login.md") {
 		t.Fatal("first archive entry was overwritten")
 	}
 }
@@ -192,13 +192,13 @@ func TestArchiveChangeMovesDirectory(t *testing.T) {
 	writeProposal(t, root, workID, "rework-catalog", "rework-catalog")
 	// A change directory carries more than the proposal; archive must move
 	// the whole directory.
-	writeFile(t, root, "active/rework-catalog/design.md", []byte("## Design\n"))
+	writeFile(t, root, ChangesDir+"/rework-catalog/design.md", []byte("## Design\n"))
 
 	entry, err := svc.ArchiveChange(t.Context(), workID, day)
 	if err != nil {
 		t.Fatalf("ArchiveChange: %v", err)
 	}
-	if entry.Path != "archive/2026-08-25-rework-catalog" {
+	if entry.Path != ChangesArchiveDir+"/2026-08-25-rework-catalog" {
 		t.Fatalf("entry.Path = %q", entry.Path)
 	}
 	if !entry.IsDir {
@@ -208,14 +208,14 @@ func TestArchiveChangeMovesDirectory(t *testing.T) {
 		t.Fatalf("entry metadata mismatch: %+v", entry)
 	}
 	for _, rel := range []string{
-		"archive/2026-08-25-rework-catalog/design.md",
-		"archive/2026-08-25-rework-catalog/proposal.md",
+		ChangesArchiveDir + "/2026-08-25-rework-catalog/design.md",
+		ChangesArchiveDir + "/2026-08-25-rework-catalog/proposal.md",
 	} {
 		if !exists(t, root, rel) {
 			t.Fatalf("%s not archived", rel)
 		}
 	}
-	if exists(t, root, "active/rework-catalog") {
+	if exists(t, root, ChangesDir+"/rework-catalog") {
 		t.Fatal("source dir still present after archive")
 	}
 }
@@ -238,7 +238,7 @@ func TestLookupByIDReadsMetadataNotSuffix(t *testing.T) {
 		Schema: artifact.MetadataSchema, WorkID: mustWorkID(t),
 		Name: "rework-catalog", Kind: artifact.KindProposal,
 	})
-	writeDoc(t, root, "archive/2026-08-24-rework-catalog/proposal.md", decoy)
+	writeDoc(t, root, ChangesArchiveDir+"/2026-08-24-rework-catalog/proposal.md", decoy)
 	if _, err := svc.ArchiveChange(t.Context(), workID, day); err != nil {
 		t.Fatalf("ArchiveChange: %v", err)
 	}
@@ -247,7 +247,7 @@ func TestLookupByIDReadsMetadataNotSuffix(t *testing.T) {
 	if err != nil {
 		t.Fatalf("LookupByID: %v", err)
 	}
-	if entry.Path != "archive/2026-08-25-rework-catalog" {
+	if entry.Path != ChangesArchiveDir+"/2026-08-25-rework-catalog" {
 		t.Fatalf("LookupByID returned %q, want the real entry, not a name match", entry.Path)
 	}
 }
@@ -261,12 +261,12 @@ func TestLookupByIDPrefersRecordOverProposal(t *testing.T) {
 		Schema: artifact.MetadataSchema, WorkID: workID,
 		Name: "rework-catalog", Kind: artifact.KindRecord,
 	})
-	writeDoc(t, root, "archive/2026-08-25-rework-catalog/record.md", rec)
+	writeDoc(t, root, ChangesArchiveDir+"/2026-08-25-rework-catalog/record.md", rec)
 	prop := artifact.NewDocument(artifact.Metadata{
 		Schema: artifact.MetadataSchema, WorkID: workID,
 		Name: "rework-catalog", Kind: artifact.KindProposal,
 	})
-	writeDoc(t, root, "archive/2026-08-25-rework-catalog/proposal.md", prop)
+	writeDoc(t, root, ChangesArchiveDir+"/2026-08-25-rework-catalog/proposal.md", prop)
 
 	entry, err := svc.LookupByID(t.Context(), workID)
 	if err != nil {
@@ -292,14 +292,14 @@ func TestLookupByIDSuffixedChange(t *testing.T) {
 	if err != nil {
 		t.Fatalf("second ArchiveChange: %v", err)
 	}
-	if e2.Path != "archive/2026-08-25-rework-catalog-2" {
+	if e2.Path != ChangesArchiveDir+"/2026-08-25-rework-catalog-2" {
 		t.Fatalf("second entry path = %q, want -2 suffix", e2.Path)
 	}
 	entry, err := svc.LookupByID(t.Context(), workID2)
 	if err != nil {
 		t.Fatalf("LookupByID(suffixed): %v", err)
 	}
-	if entry.Path != "archive/2026-08-25-rework-catalog-2" {
+	if entry.Path != ChangesArchiveDir+"/2026-08-25-rework-catalog-2" {
 		t.Fatalf("LookupByID = %q, want suffixed path", entry.Path)
 	}
 }
@@ -311,7 +311,7 @@ func TestLookupByIDTaskAndChange(t *testing.T) {
 	writeTaskDoc(t, root, taskWork, "fix-login", "fix-login")
 	writeProposal(t, root, changeWork, "rework-catalog", "rework-catalog")
 
-	if _, err := svc.ArchiveTask(t.Context(), "active/fix-login/tasks.md", day); err != nil {
+	if _, err := svc.ArchiveTask(t.Context(), TasksDir+"/fix-login.md", day); err != nil {
 		t.Fatalf("ArchiveTask: %v", err)
 	}
 	if _, err := svc.ArchiveChange(t.Context(), changeWork, day); err != nil {
@@ -322,7 +322,7 @@ func TestLookupByIDTaskAndChange(t *testing.T) {
 	if err != nil {
 		t.Fatalf("LookupByID(task): %v", err)
 	}
-	if taskEntry.IsDir || taskEntry.Path != "archive/2026-08-25-fix-login.md" {
+	if taskEntry.IsDir || taskEntry.Path != TasksArchiveDir+"/2026-08-25-fix-login.md" {
 		t.Fatalf("task entry = %+v", taskEntry)
 	}
 
@@ -330,7 +330,7 @@ func TestLookupByIDTaskAndChange(t *testing.T) {
 	if err != nil {
 		t.Fatalf("LookupByID(change): %v", err)
 	}
-	if !changeEntry.IsDir || changeEntry.Path != "archive/2026-08-25-rework-catalog" {
+	if !changeEntry.IsDir || changeEntry.Path != ChangesArchiveDir+"/2026-08-25-rework-catalog" {
 		t.Fatalf("change entry = %+v", changeEntry)
 	}
 }
@@ -349,19 +349,19 @@ func TestLookupByIDIgnoresNonArtifactEntries(t *testing.T) {
 	// Plant junk that must not crash or match: a non-markdown file, a
 	// markdown file with no metadata block, and a directory with no
 	// artifact in it.
-	writeFile(t, root, "archive/README.txt", []byte("hi"))
-	writeFile(t, root, "archive/2026-08-01-notes.md", []byte("# not an artifact\n"))
-	if err := os.MkdirAll(filepath.Join(root, "archive", "empty-dir"), 0o700); err != nil {
+	writeFile(t, root, TasksArchiveDir+"/README.txt", []byte("hi"))
+	writeFile(t, root, TasksArchiveDir+"/2026-08-01-notes.md", []byte("# not an artifact\n"))
+	if err := os.MkdirAll(filepath.Join(root, filepath.FromSlash(ChangesArchiveDir), "empty-dir"), 0o700); err != nil {
 		t.Fatalf("mkdir empty-dir: %v", err)
 	}
-	if _, err := svc.ArchiveTask(t.Context(), "active/fix-login/tasks.md", day); err != nil {
+	if _, err := svc.ArchiveTask(t.Context(), TasksDir+"/fix-login.md", day); err != nil {
 		t.Fatalf("ArchiveTask: %v", err)
 	}
 	entry, err := svc.LookupByID(t.Context(), workID)
 	if err != nil {
 		t.Fatalf("LookupByID: %v", err)
 	}
-	if entry.Path != "archive/2026-08-25-fix-login.md" {
+	if entry.Path != TasksArchiveDir+"/2026-08-25-fix-login.md" {
 		t.Fatalf("entry = %+v", entry)
 	}
 }
@@ -421,14 +421,14 @@ func TestArchiveRefusesSymlinkedSource(t *testing.T) {
 	if err := os.WriteFile(outside, []byte("stolen\n"), 0o600); err != nil {
 		t.Fatalf("write outside: %v", err)
 	}
-	linkDir := filepath.Join(root, ActiveDir, "linked")
+	linkDir := filepath.Join(root, filepath.FromSlash(TasksDir))
 	if err := os.MkdirAll(linkDir, 0o700); err != nil {
 		t.Fatalf("mkdir linked: %v", err)
 	}
 	if err := os.Symlink(outside, filepath.Join(linkDir, "tasks.md")); err != nil {
 		t.Skipf("symlinks unavailable: %v", err)
 	}
-	if _, err := svc.ArchiveTask(t.Context(), "active/linked/tasks.md", day); err == nil {
+	if _, err := svc.ArchiveTask(t.Context(), TasksDir+"/linked.md", day); err == nil {
 		t.Fatal("ArchiveTask through a symlink = nil error, want refusal")
 	}
 }

@@ -464,14 +464,14 @@ func TestTaskLifecycleReachesTheArchive(t *testing.T) {
 	if !strings.Contains(status, "archived") {
 		t.Fatalf("task status = %q, want an archived task", status)
 	}
-	entries, err := os.ReadDir(filepath.Join(w.root, "archive"))
+	entries, err := os.ReadDir(filepath.Join(w.root, filepath.FromSlash(artifact.TasksArchiveDir)))
 	if err != nil {
 		t.Fatalf("read archive: %v", err)
 	}
 	if len(entries) != 1 {
 		t.Fatalf("archive holds %d entries, want 1", len(entries))
 	}
-	body, err := os.ReadFile(filepath.Join(w.root, "archive", entries[0].Name()))
+	body, err := os.ReadFile(filepath.Join(w.root, filepath.FromSlash(artifact.TasksArchiveDir), entries[0].Name()))
 	if err != nil {
 		t.Fatalf("read archived record: %v", err)
 	}
@@ -606,7 +606,7 @@ func TestAbandonLeavesTheWorkInPlace(t *testing.T) {
 	if !strings.Contains(out, "left in place") {
 		t.Fatalf("abandon printed %q", out)
 	}
-	if _, err := os.Stat(filepath.Join(w.root, "active", "fix-login", "tasks.md")); err != nil {
+	if _, err := os.Stat(filepath.Join(w.root, filepath.FromSlash(artifact.TasksDir), "fix-login.md")); err != nil {
 		t.Fatalf("the abandoned task's document was removed: %v", err)
 	}
 	status, err := w.run(t, "task", "status")

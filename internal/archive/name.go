@@ -1,16 +1,14 @@
 // Package archive owns the durable record of finished work: the
 // collision-safe naming of archived entries and the move/lookup service
-// over the control repository's archive directory.
+// over the control repository's archive directories.
 //
 // # Layout
 //
-// Active work lives under <control-root>/active/<name>/ (task documents as
-// tasks.md, change documents as proposal.md, design.md, tasks.md, plan.md,
-// verification.md, record.md, ...). Archiving moves it under
-// <control-root>/archive/:
+// Active work lives under docs/homonto/ — a task as one file, a change as
+// a directory — and archiving moves it into that tree's archive:
 //
-//	task:   archive/<YYYY-MM-DD>-<name>[-N].md    one file
-//	change: archive/<YYYY-MM-DD>-<name>[-N]/      whole directory
+//	task:   docs/homonto/tasks/archive/<YYYY-MM-DD>-<name>[-N].md
+//	change: docs/homonto/changes/archive/<YYYY-MM-DD>-<name>[-N]/
 //
 // The name suffix (-2, -3, ...) resolves same-day name collisions; it
 // starts at -2 so an unsuffixed name is always the first archive of that
@@ -28,9 +26,7 @@
 // securefs deliberately exposes no listing primitive. Those os-level
 // probes are advisory only — they choose a free name and enumerate
 // candidates; every access that follows goes back through securefs and
-// fails closed if any component is a symlink. The service never creates
-// directories: the caller (workspace scaffolding, the artifact service)
-// owns mkdir.
+// fails closed if any component is a symlink.
 package archive
 
 import (
@@ -39,9 +35,6 @@ import (
 
 	"github.com/noviopenworks/homonto/internal/workname"
 )
-
-// Dir is the archive directory name inside the control repository root.
-const Dir = "archive"
 
 // dateFormat is the canonical YYYY-MM-DD archive-date spelling.
 const dateFormat = "2006-01-02"

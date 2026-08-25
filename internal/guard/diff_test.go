@@ -99,10 +99,10 @@ func TestValidateAssignmentResultRefusesCheckpointEdits(t *testing.T) {
 
 func TestValidateAssignmentResultRefusesDocumentEdits(t *testing.T) {
 	e := newEnv(t)
-	act := e.issue(t, e.template(protocol.RoleImplementer, ".", []string{"active", "src"}, "build"))
+	act := e.issue(t, e.template(protocol.RoleImplementer, ".", []string{"docs", "src"}, "build"))
 	err := e.guard.ValidateAssignmentResult(t.Context(), act, ResultDiff{
 		Root:    ".",
-		Changes: changed("active/rework/tasks.md"),
+		Changes: changed("docs/homonto/changes/rework/tasks.md"),
 	})
 	if !errors.Is(err, ErrDocumentChanged) {
 		t.Fatalf("error = %v, want ErrDocumentChanged", err)
@@ -120,10 +120,10 @@ func TestValidateAssignmentResultAcceptsGeneratedChanges(t *testing.T) {
 		Root: ".",
 		Changes: []Change{
 			{Path: "src/login.go", Kind: ChangeModified},
-			{Path: "active/rework/tasks.md", Kind: ChangeModified},
+			{Path: "docs/homonto/changes/rework/tasks.md", Kind: ChangeModified},
 			{Path: ".homonto/checkpoint.json", Kind: ChangeModified},
 		},
-		Generated: []string{"active/rework/tasks.md", ".homonto/checkpoint.json"},
+		Generated: []string{"docs/homonto/changes/rework/tasks.md", ".homonto/checkpoint.json"},
 	})
 	if err != nil {
 		t.Fatalf("ValidateAssignmentResult: %v", err)
@@ -134,7 +134,7 @@ func TestValidateAssignmentResultAcceptsGeneratedChanges(t *testing.T) {
 		Root: ".",
 		Changes: []Change{
 			{Path: "src/login.go", Kind: ChangeModified},
-			{Path: "active/rework/tasks.md", Kind: ChangeModified},
+			{Path: "docs/homonto/changes/rework/tasks.md", Kind: ChangeModified},
 		},
 	})
 	if !errors.Is(err, ErrDocumentChanged) {
@@ -221,7 +221,7 @@ func TestGrantWritesAreAuthorized(t *testing.T) {
 
 	t.Run("a different document is refused", func(t *testing.T) {
 		other := req
-		other.Wire.WritePaths = []string{"active/fix-login/plan.md"}
+		other.Wire.WritePaths = []string{"docs/homonto/changes/fix-login/plan.md"}
 		d := decide(t, e.guard, other)
 		if d.Allow || d.Code != CodeWrongDocument {
 			t.Fatalf("decision = %+v, want a %q refusal", d, CodeWrongDocument)

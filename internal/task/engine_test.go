@@ -147,8 +147,8 @@ type harness struct {
 func newHarness(t *testing.T, checks ...verify.Set) *harness {
 	t.Helper()
 	root := t.TempDir()
-	for _, sub := range []string{artifact.ActiveDir, archive.Dir} {
-		if err := os.MkdirAll(filepath.Join(root, sub), 0o700); err != nil {
+	for _, sub := range archive.Dirs() {
+		if err := os.MkdirAll(filepath.Join(root, filepath.FromSlash(sub)), 0o755); err != nil {
 			t.Fatalf("mkdir %s: %v", sub, err)
 		}
 	}
@@ -442,17 +442,17 @@ func TestHappyPathReachesTheArchive(t *testing.T) {
 
 	// The document left the active tree for the archive, checked off, with
 	// its evidence appended.
-	if _, err := os.Stat(filepath.Join(h.root, "active", "fix-login", "tasks.md")); err == nil {
+	if _, err := os.Stat(filepath.Join(h.root, filepath.FromSlash(artifact.TasksDir), "fix-login.md")); err == nil {
 		t.Fatal("the task document is still in the active tree")
 	}
-	entries, err := os.ReadDir(filepath.Join(h.root, archive.Dir))
+	entries, err := os.ReadDir(filepath.Join(h.root, filepath.FromSlash(archive.TasksArchiveDir)))
 	if err != nil {
 		t.Fatalf("read archive: %v", err)
 	}
 	if len(entries) != 1 {
 		t.Fatalf("archive holds %d entries, want 1", len(entries))
 	}
-	raw, err := os.ReadFile(filepath.Join(h.root, archive.Dir, entries[0].Name()))
+	raw, err := os.ReadFile(filepath.Join(h.root, filepath.FromSlash(archive.TasksArchiveDir), entries[0].Name()))
 	if err != nil {
 		t.Fatalf("read archived document: %v", err)
 	}
@@ -834,7 +834,7 @@ func TestReconcileReturnsToTheEarliestAffectedStep(t *testing.T) {
 	}
 
 	// Someone edits the goal behind the workflow's back.
-	abs := filepath.Join(h.root, "active", "fix-login", "tasks.md")
+	abs := filepath.Join(h.root, filepath.FromSlash(artifact.TasksDir), "fix-login.md")
 	raw, err := os.ReadFile(abs)
 	if err != nil {
 		t.Fatalf("read document: %v", err)

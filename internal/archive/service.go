@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
@@ -14,9 +15,24 @@ import (
 	"github.com/noviopenworks/homonto/internal/securefs"
 )
 
-// ActiveDir is the directory active work lives in before it is archived;
-// it is package artifact's spelling, shared so the two never drift.
-const ActiveDir = artifact.ActiveDir
+// The directories this service moves work between. They are package
+// artifact's spellings, shared so the two can never drift.
+const (
+	// TasksDir holds active task documents.
+	TasksDir = artifact.TasksDir
+	// TasksArchiveDir holds archived task documents.
+	TasksArchiveDir = artifact.TasksArchiveDir
+	// ChangesDir holds active change directories.
+	ChangesDir = artifact.ChangesDir
+	// ChangesArchiveDir holds archived change directories.
+	ChangesArchiveDir = artifact.ChangesArchiveDir
+)
+
+// Dirs returns every directory the service reads or writes. Callers
+// scaffold them; the archive service never creates a directory itself.
+func Dirs() []string {
+	return []string{TasksDir, TasksArchiveDir, ChangesDir, ChangesArchiveDir}
+}
 
 // ErrNotFound reports a lookup that found no archived work with the given
 // id.
@@ -70,9 +86,8 @@ func (s *Service) open() (*securefs.Root, error) {
 }
 
 // ArchiveTask moves the task document at srcRel (control-root-relative,
-// typically active/<name>/tasks.md) to archive/<name(date)>.md. The work's
-// name and identity come from the document's metadata block, never the
-// path.
+// docs/homonto/tasks/<name>.md) into the task archive. The work's name and
+// identity come from the document's metadata block, never the path.
 func (s *Service) ArchiveTask(ctx context.Context, srcRel string, date time.Time) (Entry, error) {
 	root, err := s.open()
 	if err != nil {
@@ -92,12 +107,12 @@ func (s *Service) archiveTask(ctx context.Context, root *securefs.Root, srcRel s
 		return Entry{}, fmt.Errorf("archive: %s is a %s document, not a task", srcRel, meta.Kind)
 	}
 	base, err := Name(date, meta.Name, func(c string) bool {
-		return s.exists(Dir + "/" + c + ".md")
+		return s.exists(TasksArchiveDir + "/" + c + ".md")
 	})
 	if err != nil {
 		return Entry{}, err
 	}
-	dest := Dir + "/" + base + ".md"
+	dest := TasksArchiveDir + "/" + base + ".md"
 	if err := root.Rename(srcRel, dest); err != nil {
 		return Entry{}, fmt.Errorf("archive: move %s to %s: %w", srcRel, dest, err)
 	}
@@ -110,9 +125,9 @@ func (s *Service) archiveTask(ctx context.Context, root *securefs.Root, srcRel s
 	}, nil
 }
 
-// ArchiveChange moves the active change whose proposal metadata carries
-// workID to archive/<name(date)>/. The active directory is found by
-// scanning active/ and reading each proposal's metadata — identity comes
+// ArchiveChange moves the active change whose metadata carries workID into
+// the change archive. The active directory is found by scanning the
+// changes directory and reading each identity document — identity comes
 // from the document, never the directory name.
 func (s *Service) ArchiveChange(ctx context.Context, workID identity.WorkID, date time.Time) (Entry, error) {
 	root, err := s.open()
@@ -130,12 +145,12 @@ func (s *Service) archiveChange(ctx context.Context, root *securefs.Root, workID
 		return Entry{}, err
 	}
 	base, err := Name(date, meta.Name, func(c string) bool {
-		return s.exists(Dir + "/" + c)
+		return s.exists(ChangesArchiveDir + "/" + c)
 	})
 	if err != nil {
 		return Entry{}, err
 	}
-	dest := Dir + "/" + base
+	dest := ChangesArchiveDir + "/" + base
 	if err := root.Rename(dir, dest); err != nil {
 		return Entry{}, fmt.Errorf("archive: move %s to %s: %w", dir, dest, err)
 	}
@@ -164,86 +179,142 @@ func (s *Service) ArchiveWork(ctx context.Context, workID identity.WorkID, date 
 		return Entry{}, err
 	}
 	if meta.Kind == artifact.KindTaskDocument {
-		return s.archiveTask(ctx, root, dir+"/tasks.md", date)
+		return s.archiveTask(ctx, root, dir, date)
 	}
 	return s.archiveChange(ctx, root, workID, date)
 }
 
-// LookupByID resolves the archived entry whose metadata carries workID.
-// Every candidate is read for its metadata — the name suffix and the
-// directory name are never trusted — and non-artifact entries (loose
-// files, empty directories) are skipped. The first match wins; a missing,
-// unreadable, or corrupt candidate is skipped, so a torn archive never
-// blocks lookups of the rest.
+// LookupByID resolves the archived entry whose metadata carries workID,
+// searching both archives — a task file and a change directory are
+// different shapes, and the caller should not have to know which it is
+// asking about. Every candidate is read for its metadata: the name suffix
+// and the directory name are never trusted, and non-artifact entries
+// (loose files, empty directories) are skipped. A missing, unreadable, or
+// corrupt candidate is skipped too, so a torn archive never blocks lookups
+// of the rest.
 func (s *Service) LookupByID(ctx context.Context, workID identity.WorkID) (Entry, error) {
 	root, err := s.open()
 	if err != nil {
 		return Entry{}, fmt.Errorf("archive: open %s: %w", s.root, err)
 	}
 	defer root.Close()
-	entries, err := os.ReadDir(s.absPath(Dir))
-	if err != nil {
-		return Entry{}, fmt.Errorf("archive: list %s: %w", Dir, err)
+
+	if entry, found, err := s.lookupTask(root, workID); err != nil {
+		return Entry{}, err
+	} else if found {
+		return entry, nil
 	}
-	for _, e := range entries {
-		rel := Dir + "/" + e.Name()
-		if !e.IsDir() {
-			if !strings.HasSuffix(e.Name(), ".md") {
-				continue
-			}
-			meta, err := readMetadata(root, rel)
-			if err != nil || meta.WorkID != workID {
-				continue
-			}
-			return Entry{
-				WorkID: meta.WorkID,
-				Name:   meta.Name,
-				Date:   dateOf(e.Name()),
-				Kind:   meta.Kind,
-				Path:   rel,
-			}, nil
-		}
-		// A change directory: its identity is carried by the record if
-		// present, the proposal otherwise.
-		for _, doc := range []string{"record.md", "proposal.md"} {
-			meta, err := readMetadata(root, rel+"/"+doc)
-			if err != nil || meta.WorkID != workID {
-				continue
-			}
-			return Entry{
-				WorkID: meta.WorkID,
-				Name:   meta.Name,
-				Date:   dateOf(e.Name()),
-				Kind:   meta.Kind,
-				Path:   rel,
-				IsDir:  true,
-			}, nil
-		}
+	if entry, found, err := s.lookupChange(root, workID); err != nil {
+		return Entry{}, err
+	} else if found {
+		return entry, nil
 	}
 	return Entry{}, fmt.Errorf("archive: work %s: %w", workID, ErrNotFound)
 }
 
-// findActive locates the active work directory whose metadata matches
-// workID: a change exposes proposal.md, a task exposes tasks.md. The
-// directory name is ignored for identity.
-func (s *Service) findActive(root *securefs.Root, workID identity.WorkID) (string, artifact.Metadata, error) {
-	entries, err := os.ReadDir(s.absPath(ActiveDir))
+// lookupTask searches the archived task documents.
+func (s *Service) lookupTask(root *securefs.Root, workID identity.WorkID) (Entry, bool, error) {
+	entries, err := s.readDir(TasksArchiveDir)
 	if err != nil {
-		return "", artifact.Metadata{}, fmt.Errorf("archive: list %s: %w", ActiveDir, err)
+		return Entry{}, false, err
+	}
+	for _, e := range entries {
+		if e.IsDir() || !strings.HasSuffix(e.Name(), ".md") {
+			continue
+		}
+		rel := TasksArchiveDir + "/" + e.Name()
+		meta, err := readMetadata(root, rel)
+		if err != nil || meta.WorkID != workID {
+			continue
+		}
+		return Entry{
+			WorkID: meta.WorkID, Name: meta.Name, Date: dateOf(e.Name()),
+			Kind: meta.Kind, Path: rel,
+		}, true, nil
+	}
+	return Entry{}, false, nil
+}
+
+// lookupChange searches the archived change directories. A closed change
+// is identified by its record when it has one and by its proposal
+// otherwise, because an upgraded preset has both and the record is the
+// later, more authoritative document.
+func (s *Service) lookupChange(root *securefs.Root, workID identity.WorkID) (Entry, bool, error) {
+	entries, err := s.readDir(ChangesArchiveDir)
+	if err != nil {
+		return Entry{}, false, err
 	}
 	for _, e := range entries {
 		if !e.IsDir() {
 			continue
 		}
-		dir := ActiveDir + "/" + e.Name()
-		for _, doc := range []string{"proposal.md", "tasks.md"} {
-			meta, err := readMetadata(root, dir+"/"+doc)
-			if err != nil {
+		rel := ChangesArchiveDir + "/" + e.Name()
+		for _, doc := range changeIdentityDocs {
+			meta, err := readMetadata(root, rel+"/"+doc)
+			if err != nil || meta.WorkID != workID {
 				continue
 			}
-			if meta.WorkID == workID {
-				return dir, meta, nil
+			return Entry{
+				WorkID: meta.WorkID, Name: meta.Name, Date: dateOf(e.Name()),
+				Kind: meta.Kind, Path: rel, IsDir: true,
+			}, true, nil
+		}
+	}
+	return Entry{}, false, nil
+}
+
+// changeIdentityDocs are the documents a change's identity is read from,
+// in order of authority.
+var changeIdentityDocs = []string{"record.md", "proposal.md", "fix.md", "tweak.md"}
+
+// readDir lists a directory under the control root, treating a missing
+// directory as empty: a workspace that has archived no change yet has no
+// change archive, and that is not a failure.
+func (s *Service) readDir(rel string) ([]os.DirEntry, error) {
+	entries, err := os.ReadDir(s.absPath(rel))
+	if errors.Is(err, fs.ErrNotExist) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("archive: list %s: %w", rel, err)
+	}
+	return entries, nil
+}
+
+// findActive locates the active work whose metadata matches workID: a task
+// is one file under the tasks directory, a change is a directory under the
+// changes directory. Names are ignored for identity.
+func (s *Service) findActive(root *securefs.Root, workID identity.WorkID) (string, artifact.Metadata, error) {
+	files, err := s.readDir(TasksDir)
+	if err != nil {
+		return "", artifact.Metadata{}, err
+	}
+	for _, e := range files {
+		if e.IsDir() || !strings.HasSuffix(e.Name(), ".md") {
+			continue
+		}
+		rel := TasksDir + "/" + e.Name()
+		meta, err := readMetadata(root, rel)
+		if err != nil || meta.WorkID != workID {
+			continue
+		}
+		return rel, meta, nil
+	}
+	dirs, err := s.readDir(ChangesDir)
+	if err != nil {
+		return "", artifact.Metadata{}, err
+	}
+	for _, e := range dirs {
+		if !e.IsDir() || e.Name() == artifact.ArchiveName {
+			continue
+		}
+		dir := ChangesDir + "/" + e.Name()
+		for _, doc := range changeIdentityDocs {
+			meta, err := readMetadata(root, dir+"/"+doc)
+			if err != nil || meta.WorkID != workID {
+				continue
 			}
+			return dir, meta, nil
 		}
 	}
 	return "", artifact.Metadata{}, fmt.Errorf("archive: work %s: %w", workID, ErrNotActive)

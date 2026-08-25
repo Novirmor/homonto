@@ -83,6 +83,13 @@ repair round produces new material in fresh isolation areas, so it returns
 to **integration**, not straight to the checks: material that has not been
 integrated is material the checks would never see.
 
+A repair **replaces** the attempt it repairs rather than stacking on it.
+The integration area restarts from the base and takes only the newest
+material for each unit, so the integration branch holds the repair and not
+the failed attempt — which is what the archived record claims. An
+integration area holding uncommitted changes is refused instead of reset:
+those are someone's unfinished conflict resolution.
+
 Entering repair again means the previous round failed. After **three**
 failed rounds Homonto stops and asks you:
 

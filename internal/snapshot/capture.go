@@ -87,6 +87,19 @@ func Capture(ctx context.Context, source, store string, opts CaptureOptions) (Ma
 	return capture(ctx, source, opts.Limits.withDefaults(), patterns, BlobDir(store))
 }
 
+// captureWalk carries one walk's state: the manifest under construction,
+// the running tree-byte total, and the fixed parameters every entry is
+// filtered and bounded against. It exists so the per-entry helpers take
+// the walk instead of five loose arguments each.
+type captureWalk struct {
+	source    string
+	limits    Limits
+	patterns  []string
+	blobDir   string
+	manifest  Manifest
+	treeBytes int64
+}
+
 // capture is the shared engine: blobDir == "" performs a digest-only walk
 // (Verify) that writes nothing. The source root must be a real directory —
 // lstat'd, never followed — so a symlink or file source is a typed
@@ -99,87 +112,133 @@ func capture(ctx context.Context, source string, limits Limits, patterns []strin
 	if !info.IsDir() {
 		return Manifest{}, &SourceNotDirectoryError{Path: source, Got: fileKind(info)}
 	}
-	m := Manifest{SchemaVersion: SchemaVersion, Entries: []Entry{}}
-	var treeBytes int64
+	w := &captureWalk{
+		source:   source,
+		limits:   limits,
+		patterns: patterns,
+		blobDir:  blobDir,
+		manifest: Manifest{SchemaVersion: SchemaVersion, Entries: []Entry{}},
+	}
+	if err := filepath.WalkDir(source, w.visit(ctx)); err != nil {
+		return Manifest{}, err
+	}
+	return w.finish()
+}
 
-	err = filepath.WalkDir(source, func(p string, d fs.DirEntry, err error) error {
+// visit is the walk callback: it wraps walk errors, checks cancellation,
+// skips the implied root, and hands every other entry to admitEntry.
+func (w *captureWalk) visit(ctx context.Context) fs.WalkDirFunc {
+	return func(p string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return fmt.Errorf("snapshot: walk %s: %w", p, err)
 		}
 		if err := ctx.Err(); err != nil {
 			return err
 		}
-		if p == source {
+		if p == w.source {
 			return nil // the root itself is implied
 		}
-		rel, err := filepath.Rel(source, p)
+		rel, err := filepath.Rel(w.source, p)
 		if err != nil {
 			return fmt.Errorf("snapshot: relativize %s: %w", p, err)
 		}
-		rel = filepath.ToSlash(rel)
-		if excluded(rel, patterns) {
-			if d.IsDir() {
-				return filepath.SkipDir
-			}
-			return nil
-		}
-		info, err := d.Info()
-		if err != nil {
-			return fmt.Errorf("snapshot: lstat %s: %w", p, err)
-		}
-		if int64(len(m.Entries))+1 > limits.MaxEntries {
-			return &LimitError{What: "entries", Path: rel, Limit: limits.MaxEntries, Actual: int64(len(m.Entries)) + 1}
-		}
+		return w.admitEntry(p, filepath.ToSlash(rel), d)
+	}
+}
 
-		switch {
-		case info.Mode().IsRegular():
-			if info.Size() > limits.MaxFileBytes {
-				return &LimitError{What: "file bytes", Path: rel, Limit: limits.MaxFileBytes, Actual: info.Size()}
-			}
-			if treeBytes+info.Size() > limits.MaxTreeBytes {
-				return &LimitError{What: "tree bytes", Path: rel, Limit: limits.MaxTreeBytes, Actual: treeBytes + info.Size()}
-			}
-			digest, size, err := captureFile(p, rel, info.Size(), limits.MaxFileBytes, blobDir)
-			if err != nil {
-				return err
-			}
-			treeBytes += size
-			m.Entries = append(m.Entries, Entry{
-				Path: rel, Kind: KindFile, Mode: uint32(info.Mode().Perm()), Size: size, Digest: digest,
-			})
-		case info.Mode()&fs.ModeSymlink != 0:
-			target, err := os.Readlink(p)
-			if err != nil {
-				return fmt.Errorf("snapshot: readlink %s: %w", p, err)
-			}
-			digest, err := captureSymlink(rel, target, blobDir)
-			if err != nil {
-				return err
-			}
-			m.Entries = append(m.Entries, Entry{
-				Path: rel, Kind: KindSymlink, Mode: uint32(info.Mode().Perm()),
-				Size: int64(len(target)), Digest: digest, LinkTarget: target,
-			})
-		case d.IsDir():
-			m.Entries = append(m.Entries, Entry{Path: rel, Kind: KindDir, Mode: uint32(info.Mode().Perm())})
-		default:
-			kind := "special file"
-			switch {
-			case info.Mode()&fs.ModeNamedPipe != 0:
-				kind = "fifo"
-			case info.Mode()&fs.ModeSocket != 0:
-				kind = "socket"
-			case info.Mode()&fs.ModeDevice != 0:
-				kind = "device"
-			}
-			return &SpecialFileError{Path: rel, Kind: kind}
+// admitEntry decides whether one walked path becomes a manifest entry:
+// excluded paths are dropped (an excluded directory prunes its whole
+// subtree) and the entry count is bounded; what survives is recorded.
+func (w *captureWalk) admitEntry(p, rel string, d fs.DirEntry) error {
+	if excluded(rel, w.patterns) {
+		if d.IsDir() {
+			return filepath.SkipDir
 		}
 		return nil
-	})
-	if err != nil {
-		return Manifest{}, err
 	}
+	info, err := d.Info()
+	if err != nil {
+		return fmt.Errorf("snapshot: lstat %s: %w", p, err)
+	}
+	if int64(len(w.manifest.Entries))+1 > w.limits.MaxEntries {
+		return &LimitError{What: "entries", Path: rel, Limit: w.limits.MaxEntries, Actual: int64(len(w.manifest.Entries)) + 1}
+	}
+	return w.recordEntry(p, rel, d, info)
+}
 
+// recordEntry appends the entry for one admitted path, dispatching on its
+// kind; whatever cannot be recorded fails with a typed error.
+func (w *captureWalk) recordEntry(p, rel string, d fs.DirEntry, info fs.FileInfo) error {
+	switch {
+	case info.Mode().IsRegular():
+		return w.recordFile(p, rel, info)
+	case info.Mode()&fs.ModeSymlink != 0:
+		return w.recordSymlink(p, rel, info)
+	case d.IsDir():
+		w.manifest.Entries = append(w.manifest.Entries, Entry{Path: rel, Kind: KindDir, Mode: uint32(info.Mode().Perm())})
+		return nil
+	default:
+		return &SpecialFileError{Path: rel, Kind: specialKind(info)}
+	}
+}
+
+// recordFile bounds one regular file by the per-file and tree byte caps
+// and stores its blob. The lstat size gates the caps up front; the
+// streamed count is what settles the entry and the total, so a file
+// growing mid-capture still fails closed.
+func (w *captureWalk) recordFile(p, rel string, info fs.FileInfo) error {
+	if info.Size() > w.limits.MaxFileBytes {
+		return &LimitError{What: "file bytes", Path: rel, Limit: w.limits.MaxFileBytes, Actual: info.Size()}
+	}
+	if w.treeBytes+info.Size() > w.limits.MaxTreeBytes {
+		return &LimitError{What: "tree bytes", Path: rel, Limit: w.limits.MaxTreeBytes, Actual: w.treeBytes + info.Size()}
+	}
+	digest, size, err := captureFile(p, rel, info.Size(), w.limits.MaxFileBytes, w.blobDir)
+	if err != nil {
+		return err
+	}
+	w.treeBytes += size
+	w.manifest.Entries = append(w.manifest.Entries, Entry{
+		Path: rel, Kind: KindFile, Mode: uint32(info.Mode().Perm()), Size: size, Digest: digest,
+	})
+	return nil
+}
+
+// recordSymlink reads the target and stores it as the symlink's content
+// blob, never following it.
+func (w *captureWalk) recordSymlink(p, rel string, info fs.FileInfo) error {
+	target, err := os.Readlink(p)
+	if err != nil {
+		return fmt.Errorf("snapshot: readlink %s: %w", p, err)
+	}
+	digest, err := captureSymlink(rel, target, w.blobDir)
+	if err != nil {
+		return err
+	}
+	w.manifest.Entries = append(w.manifest.Entries, Entry{
+		Path: rel, Kind: KindSymlink, Mode: uint32(info.Mode().Perm()),
+		Size: int64(len(target)), Digest: digest, LinkTarget: target,
+	})
+	return nil
+}
+
+// specialKind names the kind of unrecordable file the walk must refuse.
+func specialKind(info fs.FileInfo) string {
+	switch {
+	case info.Mode()&fs.ModeNamedPipe != 0:
+		return "fifo"
+	case info.Mode()&fs.ModeSocket != 0:
+		return "socket"
+	case info.Mode()&fs.ModeDevice != 0:
+		return "device"
+	}
+	return "special file"
+}
+
+// finish sorts the entries, refuses duplicate paths, and seals the root
+// digest; sorted order is what makes the manifest comparable.
+func (w *captureWalk) finish() (Manifest, error) {
+	m := w.manifest
 	sort.Slice(m.Entries, func(i, j int) bool { return m.Entries[i].Path < m.Entries[j].Path })
 	for i := 1; i < len(m.Entries); i++ {
 		if m.Entries[i-1].Path == m.Entries[i].Path {

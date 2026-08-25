@@ -96,26 +96,57 @@ func (r *Runner) runOne(ctx context.Context, spec Spec) (Result, error) {
 	}
 	result := Result{Spec: spec, SpecPin: pin, StartedAt: r.now().UTC()}
 
-	dir, err := r.workingDir(spec)
+	prep, err := r.prepareCheck(spec)
 	if err != nil {
 		return Result{}, err
+	}
+	return r.executeCheck(ctx, result, prep), nil
+}
+
+// preparedCheck is a spec resolved into its execution envelope: where the
+// command runs, the environment built for it (with the values that must be
+// redacted back out of its output), the resolved argv[0], and the timeout
+// bounding it.
+type preparedCheck struct {
+	argv0   string
+	dir     string
+	env     []string
+	secrets []string
+	timeout time.Duration
+}
+
+// prepareCheck assembles the check's runtime envelope: working directory,
+// allowlisted environment, argv[0] resolved under that environment alone,
+// and the effective timeout. Failures here are the un-runnable-spec
+// errors that abort the whole run; past this point everything is an
+// Outcome.
+func (r *Runner) prepareCheck(spec Spec) (preparedCheck, error) {
+	dir, err := r.workingDir(spec)
+	if err != nil {
+		return preparedCheck{}, err
 	}
 	env, secrets := r.environment(spec)
 	argv0, err := resolveCommand(spec.Command[0], env)
 	if err != nil {
-		return Result{}, fmt.Errorf("verify: check %q: %w", spec.Name, err)
+		return preparedCheck{}, fmt.Errorf("verify: check %q: %w", spec.Name, err)
 	}
-
 	timeout := spec.Timeout
 	if timeout <= 0 {
 		timeout = DefaultTimeout
 	}
-	runCtx, cancel := context.WithTimeout(ctx, timeout)
+	return preparedCheck{argv0: argv0, dir: dir, env: env, secrets: secrets, timeout: timeout}, nil
+}
+
+// executeCheck runs the prepared command under its timeout and stamps the
+// duration. A command that never starts is an Error outcome — not a
+// failed run — because everything past preparation is evidence.
+func (r *Runner) executeCheck(ctx context.Context, result Result, prep preparedCheck) Result {
+	runCtx, cancel := context.WithTimeout(ctx, prep.timeout)
 	defer cancel()
 
-	cmd := exec.Command(argv0, spec.Command[1:]...)
-	cmd.Dir = dir
-	cmd.Env = env
+	cmd := exec.Command(prep.argv0, result.Spec.Command[1:]...)
+	cmd.Dir = prep.dir
+	cmd.Env = prep.env
 	cmd.Stdin = nil
 	stdout := &boundedBuffer{limit: MaxStreamBytes}
 	stderr := &boundedBuffer{limit: MaxStreamBytes}
@@ -130,57 +161,79 @@ func (r *Runner) runOne(ctx context.Context, spec Spec) (Result, error) {
 		result.Error = fmt.Sprintf("start: %v", err)
 		result.Duration = r.now().Sub(start)
 		result.Summary = summarize(nil, nil, false)
-		return result, nil
+		return result
 	}
+	fin := awaitCommand(cmd, runCtx, stdout, stderr)
+	result.Duration = r.now().Sub(start)
+	return interpretCommand(result, fin, prep.secrets, prep.timeout)
+}
 
-	// Kill the whole process group the moment the bound expires, so a
-	// command that ignores its context — or a child that outlives it —
-	// cannot keep the pass waiting.
+// finishedCommand is one ended execution: what Wait reported, whether the
+// deadline fired (and the context error that tells timeout from
+// cancellation), and the captured streams.
+type finishedCommand struct {
+	err    error
+	killed bool
+	ctxErr error
+	stdout *boundedBuffer
+	stderr *boundedBuffer
+}
+
+// awaitCommand waits for the command, killing its whole process group the
+// moment the bound expires — so a command that ignores its context, or a
+// child that outlives it, cannot keep the pass waiting.
+func awaitCommand(cmd *exec.Cmd, runCtx context.Context, stdout, stderr *boundedBuffer) finishedCommand {
 	done := make(chan error, 1)
 	go func() { done <- cmd.Wait() }()
-	var killed bool
+	fin := finishedCommand{stdout: stdout, stderr: stderr}
 	select {
-	case err = <-done:
+	case fin.err = <-done:
 	case <-runCtx.Done():
-		killed = true
+		fin.killed = true
 		_ = killGroup(cmd)
-		err = <-done
+		fin.err = <-done
 	}
-	result.Duration = r.now().Sub(start)
+	fin.ctxErr = runCtx.Err()
+	return fin
+}
 
-	out, oTrunc := stdout.bytes()
-	errOut, eTrunc := stderr.bytes()
+// interpretCommand folds a finished execution into the result: the raw
+// streams are redacted and summarized, then the outcome switch turns the
+// kill reason and exit status into Passed, Failed, Timeout, or Error.
+func interpretCommand(result Result, fin finishedCommand, secrets []string, timeout time.Duration) Result {
+	out, oTrunc := fin.stdout.bytes()
+	errOut, eTrunc := fin.stderr.bytes()
 	result.Stdout = clean(out, secrets)
 	result.Stderr = clean(errOut, secrets)
 	result.Summary = summarize(result.Stdout, result.Stderr, oTrunc || eTrunc)
 
 	switch {
-	case killed && errors.Is(runCtx.Err(), context.DeadlineExceeded):
+	case fin.killed && errors.Is(fin.ctxErr, context.DeadlineExceeded):
 		result.Outcome = OutcomeTimeout
 		result.ExitCode = -1
 		result.Error = fmt.Sprintf("timed out after %s", timeout)
 		if !processGroupSupported {
 			result.Error += "; process groups are unavailable on this platform, so children may survive"
 		}
-	case killed:
+	case fin.killed:
 		result.Outcome = OutcomeError
 		result.ExitCode = -1
-		result.Error = fmt.Sprintf("cancelled: %v", runCtx.Err())
-	case err == nil:
+		result.Error = fmt.Sprintf("cancelled: %v", fin.ctxErr)
+	case fin.err == nil:
 		result.Outcome = OutcomePassed
 		result.ExitCode = 0
 	default:
 		var exitErr *exec.ExitError
-		if errors.As(err, &exitErr) {
+		if errors.As(fin.err, &exitErr) {
 			result.Outcome = OutcomeFailed
 			result.ExitCode = exitErr.ExitCode()
 		} else {
 			result.Outcome = OutcomeError
 			result.ExitCode = -1
-			result.Error = err.Error()
+			result.Error = fin.err.Error()
 		}
 	}
-	return result, nil
+	return result
 }
 
 // workingDir resolves a spec's member-relative directory and refuses one

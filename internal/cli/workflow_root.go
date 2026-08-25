@@ -39,6 +39,7 @@ func NewWorkflowRootCmd(opener Opener) *cobra.Command {
 		acceptEditCmd(opener),
 		guardCmd(opener),
 		hostCmd(opener),
+		workflowUpdateCmd(),
 	)
 	return root
 }

@@ -233,65 +233,18 @@ func PreparePortable(ctx context.Context, req PortableRequest) error {
 		return err
 	}
 
-	sentinel, err := lease.ReadSentinel(lease.SentinelPath(root, req.WorkID))
+	sentinel, err := readReleaseSentinel(root, req.WorkspaceID, req.WorkID, cp.Handoff.Generation)
 	if err != nil {
-		if errors.Is(err, fs.ErrNotExist) {
-			return fmt.Errorf("handoff: prepare %s: %w", req.WorkID, ErrNoActiveWork)
-		}
-		return fmt.Errorf("handoff: prepare: read lease sentinel: %w", err)
+		return err
 	}
-	if sentinel.WorkspaceID != req.WorkspaceID || sentinel.WorkID != req.WorkID {
-		return fmt.Errorf("handoff: prepare: sentinel names workspace %s work %s: %w",
-			sentinel.WorkspaceID, sentinel.WorkID, ErrNoActiveWork)
+	next, err := markTransferable(cp, cfg, req.TransferID)
+	if err != nil {
+		return err
 	}
-	if sentinel.Generation != cp.Handoff.Generation {
-		return fmt.Errorf("handoff: prepare: sentinel generation %d, checkpoint generation %d: %w",
-			sentinel.Generation, cp.Handoff.Generation, ErrGenerationMismatch)
+	effects, err := buildPortableEffects(root, req.WorkID, cp, next, sentinel)
+	if err != nil {
+		return err
 	}
-
-	next := cp
-	transferID := req.TransferID
-	if transferID == "" {
-		transferID = mustNewToken()
-	}
-	if err := identity.ValidateToken(string(transferID)); err != nil {
-		return fmt.Errorf("handoff: prepare: transfer id: %w", err)
-	}
-	next.Handoff = checkpoint.Handoff{
-		State:      checkpoint.HandoffTransferable,
-		Generation: cp.Handoff.Generation + 1,
-		TransferID: transferID,
-	}
-	if err := checkpoint.ValidateTransition(cp, next); err != nil {
-		return fmt.Errorf("handoff: prepare: %w", err)
-	}
-	if err := checkpoint.Validate(next, cfg); err != nil {
-		return fmt.Errorf("handoff: prepare: transferable checkpoint: %w", err)
-	}
-
-	// Release exactly the leases the sentinel lists, reading each token-
-	// matching content from disk before anything is journaled.
-	ordered := append([]lease.SentinelLease(nil), sentinel.Leases...)
-	sortByRepoID(ordered)
-	var effects []operation.Effect
-	effects = append(effects, &checkpointWriteEffect{payload: checkpointWritePayload{
-		Path: CheckpointPath(root), Next: next, Prev: cp,
-	}})
-	for _, l := range ordered {
-		content, err := lease.ReadLease(l.Path)
-		if err != nil {
-			return fmt.Errorf("handoff: prepare: read lease of %s: %w", l.RepositoryID, err)
-		}
-		effects = append(effects, lease.NewRemoveLeaseEffect(l.Path, content))
-	}
-	effects = append(effects, &sentinelRemoveEffect{payload: sentinelPayload{
-		Path: lease.SentinelPath(root, req.WorkID), Content: sentinel,
-	}})
-	effects = append(effects, &commitEffect{payload: commitPayload{
-		Root:     root,
-		Message:  fmt.Sprintf("homonto: portable handoff %s", req.WorkID),
-		Required: true,
-	}})
 
 	opID, err := identity.NewOperationID()
 	if err != nil {
@@ -310,6 +263,83 @@ func PreparePortable(ctx context.Context, req PortableRequest) error {
 		return fmt.Errorf("handoff: prepare %s: %w", opID, err)
 	}
 	return nil
+}
+
+// readReleaseSentinel loads the lease sentinel whose lease set prepare
+// releases, and refuses a sentinel that names other work or sits at a
+// generation the checkpoint does not share.
+func readReleaseSentinel(root string, wsID identity.WorkspaceID, workID identity.WorkID, gen uint64) (lease.SentinelContent, error) {
+	sentinel, err := lease.ReadSentinel(lease.SentinelPath(root, workID))
+	if err != nil {
+		if errors.Is(err, fs.ErrNotExist) {
+			return lease.SentinelContent{}, fmt.Errorf("handoff: prepare %s: %w", workID, ErrNoActiveWork)
+		}
+		return lease.SentinelContent{}, fmt.Errorf("handoff: prepare: read lease sentinel: %w", err)
+	}
+	if sentinel.WorkspaceID != wsID || sentinel.WorkID != workID {
+		return lease.SentinelContent{}, fmt.Errorf("handoff: prepare: sentinel names workspace %s work %s: %w",
+			sentinel.WorkspaceID, sentinel.WorkID, ErrNoActiveWork)
+	}
+	if sentinel.Generation != gen {
+		return lease.SentinelContent{}, fmt.Errorf("handoff: prepare: sentinel generation %d, checkpoint generation %d: %w",
+			sentinel.Generation, gen, ErrGenerationMismatch)
+	}
+	return sentinel, nil
+}
+
+// markTransferable assembles the transferable successor checkpoint: the
+// request's explicit transfer id or a fresh one, handoff state transferable
+// at generation+1, with the transition and the full checkpoint validated.
+func markTransferable(cp checkpoint.Checkpoint, cfg workspacecfg.Config, transferID identity.Token) (checkpoint.Checkpoint, error) {
+	if transferID == "" {
+		transferID = mustNewToken()
+	}
+	if err := identity.ValidateToken(string(transferID)); err != nil {
+		return checkpoint.Checkpoint{}, fmt.Errorf("handoff: prepare: transfer id: %w", err)
+	}
+	next := cp
+	next.Handoff = checkpoint.Handoff{
+		State:      checkpoint.HandoffTransferable,
+		Generation: cp.Handoff.Generation + 1,
+		TransferID: transferID,
+	}
+	if err := checkpoint.ValidateTransition(cp, next); err != nil {
+		return checkpoint.Checkpoint{}, fmt.Errorf("handoff: prepare: %w", err)
+	}
+	if err := checkpoint.Validate(next, cfg); err != nil {
+		return checkpoint.Checkpoint{}, fmt.Errorf("handoff: prepare: transferable checkpoint: %w", err)
+	}
+	return next, nil
+}
+
+// buildPortableEffects assembles the journaled effect list in replay order:
+// the transferable checkpoint write, the token-matching lease removals, the
+// sentinel removal, and the required control commit carrying the portable
+// artifacts.
+func buildPortableEffects(root string, workID identity.WorkID, cp, next checkpoint.Checkpoint, sentinel lease.SentinelContent) ([]operation.Effect, error) {
+	// Release exactly the leases the sentinel lists, reading each token-
+	// matching content from disk before anything is journaled.
+	ordered := append([]lease.SentinelLease(nil), sentinel.Leases...)
+	sortByRepoID(ordered)
+	effects := []operation.Effect{&checkpointWriteEffect{payload: checkpointWritePayload{
+		Path: CheckpointPath(root), Next: next, Prev: cp,
+	}}}
+	for _, l := range ordered {
+		content, err := lease.ReadLease(l.Path)
+		if err != nil {
+			return nil, fmt.Errorf("handoff: prepare: read lease of %s: %w", l.RepositoryID, err)
+		}
+		effects = append(effects, lease.NewRemoveLeaseEffect(l.Path, content))
+	}
+	effects = append(effects, &sentinelRemoveEffect{payload: sentinelPayload{
+		Path: lease.SentinelPath(root, workID), Content: sentinel,
+	}})
+	effects = append(effects, &commitEffect{payload: commitPayload{
+		Root:     root,
+		Message:  fmt.Sprintf("homonto: portable handoff %s", workID),
+		Required: true,
+	}})
+	return effects, nil
 }
 
 // checkHandoffWork verifies the checkpoint describes the requested

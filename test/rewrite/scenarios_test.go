@@ -379,3 +379,59 @@ func readCheckpoint(t *testing.T, root string) checkpoint.Checkpoint {
 	}
 	return cp
 }
+
+// TestWorkRefusesToStartOverUncommittedChanges.
+//
+// An assignment cannot be cut from a dirty member — dirty trees are
+// rejected, never tidied — and that refusal used to arrive several steps
+// in: after the work existed, the document was written, and the explorer
+// and skeptic had been answered. The tree was dirty the whole time.
+//
+// The refusal names the member and the files, because "something is
+// dirty" sends someone hunting through every repository they own.
+func TestWorkRefusesToStartOverUncommittedChanges(t *testing.T) {
+	w := newWorkspace(t)
+	writeFile(t, filepath.Join(w.root, "services", "api", "src", "scratch.go"),
+		"package src\n\n// left behind\n")
+
+	out, err := w.run(t, "task", "start", "fix-login")
+	if err == nil {
+		t.Fatalf("work started over uncommitted changes:\n%s", out)
+	}
+	for _, want := range []string{"services/api", "src/scratch.go"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("the refusal does not name %q: %v", want, err)
+		}
+	}
+
+	// Nothing was created: a refused start must not leave a half-made work.
+	entries, err := os.ReadDir(filepath.Join(w.root, filepath.FromSlash(artifact.TasksDir)))
+	if err != nil {
+		t.Fatalf("read the task directory: %v", err)
+	}
+	for _, entry := range entries {
+		if !entry.IsDir() {
+			t.Errorf("a refused start left %s behind", entry.Name())
+		}
+	}
+
+	// Committing it makes the workspace startable.
+	api := filepath.Join(w.root, "services", "api")
+	git(t, api, "add", "-A")
+	git(t, api, "-c", "user.email=t@example.com", "-c", "user.name=T", "commit", "-m", "scratch")
+	if out, err := w.run(t, "task", "start", "fix-login"); err != nil {
+		t.Fatalf("task start after committing: %v\n%s", err, out)
+	}
+}
+
+// TestTheControlRepositoryMayBeDirtyAtStart. The control holds the
+// workflow documents Homonto itself writes, so it is dirty as a matter of
+// course. Refusing on it would make the workspace unusable after the first
+// task.
+func TestTheControlRepositoryMayBeDirtyAtStart(t *testing.T) {
+	w := newWorkspace(t)
+	writeFile(t, filepath.Join(w.root, "notes.md"), "# scratch\n")
+	if out, err := w.run(t, "task", "start", "fix-login"); err != nil {
+		t.Fatalf("a dirty control repository blocked the start: %v\n%s", err, out)
+	}
+}

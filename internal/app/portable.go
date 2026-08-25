@@ -185,6 +185,37 @@ func (a *App) requireNoActiveWork(ctx context.Context) error {
 		strings.Join(names, ", "), ErrWorkAlreadyActive)
 }
 
+// requireCleanMembers refuses to start work over uncommitted changes.
+//
+// An assignment cannot be cut from a dirty member — ADR 0024: dirty trees
+// are rejected, never tidied — and that refusal used to arrive several
+// steps in, after the work existed, the document was written, and the
+// explorer and skeptic had been answered. The tree was dirty the whole
+// time. Checking here costs one `git status` per member and turns a
+// wasted round into a sentence.
+//
+// The CONTROL repository is exempt. It holds the workflow documents
+// Homonto itself writes, so it is dirty as a matter of course; whether a
+// member is clean is a question about the member.
+func (a *App) requireCleanMembers(ctx context.Context) error {
+	for _, m := range a.cfg.Members {
+		if m.Kind != workspacecfg.KindGit || m.ID == a.cfg.Control.ID {
+			continue
+		}
+		dir := filepath.Join(a.root, filepath.FromSlash(normalizePath(m.Path)))
+		files, err := gitx.DirtyPaths(ctx, a.env.runner, dir)
+		if err != nil {
+			return fmt.Errorf("app: check %s: %w", m.Path, err)
+		}
+		if len(files) > 0 {
+			return fmt.Errorf(
+				"app: %s has uncommitted changes (%s); commit, stash, or discard them first: %w",
+				m.Path, strings.Join(files, ", "), gitx.ErrDirtyWorktree)
+		}
+	}
+	return nil
+}
+
 // anchoredWork returns the work this machine currently holds the
 // workspace's leases for, or empty when none does.
 func (a *App) anchoredWork() (identity.WorkID, error) {

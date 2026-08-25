@@ -156,12 +156,17 @@ A new integration round starts from the base, and it will not reset an
 area holding uncommitted changes: those are someone's unfinished conflict
 resolution. Commit the resolution or discard it yourself, then re-run.
 
-## gitx: worktree is dirty
+## "has uncommitted changes; commit, stash, or discard them first"
 
-An implementer assignment cannot be cut from a member with uncommitted
-changes. Commit or stash them. Homonto refuses dirty trees rather than
-tidying them, because deciding what to do with someone's uncommitted work
-is not its call.
+Work does not start over a dirty member. Homonto refuses rather than
+tidying: deciding what to do with someone's uncommitted work is not its
+call. The refusal names the member and the files.
+
+The **control** repository is exempt — it holds the workflow documents
+Homonto writes, so it is dirty as a matter of course.
+
+The same refusal appears later if a member becomes dirty mid-work, since
+an assignment cannot be cut from one.
 
 ## Nothing is happening
 

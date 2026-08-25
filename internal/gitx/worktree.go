@@ -613,6 +613,13 @@ func currentBranch(ctx context.Context, r Runner, dir string) (string, error) {
 	return "", fmt.Errorf("gitx: symbolic-ref in %s: %w", dir, err)
 }
 
+// DirtyPaths returns the repo-root-relative paths with uncommitted
+// changes, so a caller can refuse before it starts rather than partway
+// through.
+func DirtyPaths(ctx context.Context, r Runner, dir string) ([]string, error) {
+	return dirtyPaths(ctx, r, dir)
+}
+
 // dirtyPaths returns the repo-root-relative paths with uncommitted changes
 // — modified, staged, renamed, or untracked-but-not-ignored — from
 // git status --porcelain=v1 -z.

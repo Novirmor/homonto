@@ -210,6 +210,9 @@ func (a *App) StartChangePreflight(ctx context.Context, in change.PreflightInput
 	if err := a.requireNoActiveWork(ctx); err != nil {
 		return change.PreflightState{}, protocol.NextResponse{}, err
 	}
+	if err := a.requireCleanMembers(ctx); err != nil {
+		return change.PreflightState{}, protocol.NextResponse{}, err
+	}
 	return a.changes.StartPreflight(ctx, in)
 }
 

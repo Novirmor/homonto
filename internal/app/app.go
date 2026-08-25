@@ -271,6 +271,9 @@ func (a *App) StartTask(ctx context.Context, in task.StartInput) (task.State, er
 	if err := a.requireNoActiveWork(ctx); err != nil {
 		return task.State{}, err
 	}
+	if err := a.requireCleanMembers(ctx); err != nil {
+		return task.State{}, err
+	}
 	st, err := a.engine.Start(ctx, in)
 	if err != nil {
 		return st, err

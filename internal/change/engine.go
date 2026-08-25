@@ -7,13 +7,11 @@ import (
 	"errors"
 	"fmt"
 	"sort"
-	"strings"
 	"time"
 
 	"github.com/noviopenworks/homonto/internal/archive"
 	"github.com/noviopenworks/homonto/internal/artifact"
 	"github.com/noviopenworks/homonto/internal/assignment"
-	"github.com/noviopenworks/homonto/internal/decision"
 	"github.com/noviopenworks/homonto/internal/finding"
 	"github.com/noviopenworks/homonto/internal/fingerprint"
 	"github.com/noviopenworks/homonto/internal/guard"
@@ -296,43 +294,6 @@ func (e *Engine) requireNameFree(ctx context.Context, name string) error {
 	return nil
 }
 
-// createDocuments creates the change's directory and the documents its
-// path starts with, seeded with the confirmed request.
-func (e *Engine) createDocuments(ctx context.Context, st State, request string) error {
-	inputKind, err := st.Path.InputKind()
-	if err != nil {
-		return err
-	}
-	inputPath, err := st.DocumentPath(inputKind)
-	if err != nil {
-		return err
-	}
-	meta := artifact.Metadata{
-		Schema: artifact.MetadataSchema, WorkID: st.WorkID, Name: st.Name, Kind: inputKind,
-	}
-	if _, err := e.artifacts.Create(ctx, inputPath, meta); err != nil {
-		return err
-	}
-	if err := e.seedDocument(ctx, artifact.Ref{
-		WorkID: st.WorkID, Kind: inputKind, Path: inputPath,
-	}, request); err != nil {
-		return err
-	}
-	// Presets author tasks.md in Open alongside their input document;
-	// Full's tasks.md is a Design output and is created there.
-	if !st.Path.Preset() {
-		return nil
-	}
-	tasksPath, err := st.DocumentPath(artifact.KindTasks)
-	if err != nil {
-		return err
-	}
-	_, err = e.artifacts.Create(ctx, tasksPath, artifact.Metadata{
-		Schema: artifact.MetadataSchema, WorkID: st.WorkID, Name: st.Name, Kind: artifact.KindTasks,
-	})
-	return err
-}
-
 // Resume adopts a Change that exists in the workspace but has no local
 // state — the case after `homonto attach`, where the documents and the
 // members came over in the control repository and the runtime did not.
@@ -375,28 +336,6 @@ func (e *Engine) Resume(ctx context.Context, workID identity.WorkID, name, phase
 	return st, nil
 }
 
-// discoverPath reads the confirmed path back off the documents, since each
-// path writes a different input document and only one of them exists.
-func (e *Engine) discoverPath(ctx context.Context, workID identity.WorkID, name string) (Path, error) {
-	for _, candidate := range []Path{PathFull, PathFix, PathTweak} {
-		probe := State{WorkID: workID, Name: name, Path: candidate}
-		kind, err := candidate.InputKind()
-		if err != nil {
-			return "", err
-		}
-		docPath, err := probe.DocumentPath(kind)
-		if err != nil {
-			return "", err
-		}
-		if _, err := e.artifacts.Read(ctx, artifact.Ref{
-			WorkID: workID, Kind: kind, Path: docPath,
-		}); err == nil {
-			return candidate, nil
-		}
-	}
-	return "", fmt.Errorf("change: %s carries no input document, so its path cannot be recovered", name)
-}
-
 // firstStepOfPhase returns the step a phase is entered at on a path.
 func firstStepOfPhase(p Path, phase artifact.Phase) (Step, error) {
 	for _, step := range Steps(p) {
@@ -409,37 +348,6 @@ func firstStepOfPhase(p Path, phase artifact.Phase) (Step, error) {
 		}
 	}
 	return "", fmt.Errorf("change: the %s path has no step in phase %q", p, phase)
-}
-
-// seedDocument writes the confirmed request into a freshly created
-// document. It goes through a grant the engine issues and immediately
-// accepts — the same path a host takes, with no shortcut around the
-// ownership table.
-func (e *Engine) seedDocument(ctx context.Context, ref artifact.Ref, request string) error {
-	if strings.TrimSpace(request) == "" {
-		return nil
-	}
-	grant, err := e.artifacts.GrantEdit(ctx, artifact.GrantRequest{
-		Ref: ref, Phase: artifact.PhaseOpen, Regions: []artifact.Region{artifact.RegionWholeDocument},
-	})
-	if err != nil {
-		return err
-	}
-	doc, err := e.artifacts.Read(ctx, ref)
-	if err != nil {
-		return err
-	}
-	body := "## Request\n\n" + strings.TrimSpace(request) + "\n"
-	for i := range doc.Regions {
-		if doc.Regions[i].Region == artifact.RegionWholeDocument {
-			doc.Regions[i].Content = []byte(body)
-		}
-	}
-	if err := artifact.WriteRaw(e.artifacts, ref, doc); err != nil {
-		return err
-	}
-	_, err = e.artifacts.AcceptEdit(ctx, grant)
-	return err
 }
 
 // captureBaseline records the fingerprints a new change rests on,
@@ -461,44 +369,6 @@ func (e *Engine) captureBaseline(ctx context.Context, st State) (Baseline, error
 	}
 	baseline.Work = sortedDigests(work)
 	return baseline, nil
-}
-
-// hostDocumentKinds are the documents whose content the invalidation graph
-// tracks, in canonical order.
-var hostDocumentKinds = []artifact.Kind{
-	artifact.KindProposal, artifact.KindDesign, artifact.KindTasks,
-	artifact.KindPresetTasks, artifact.KindPlan, artifact.KindFix, artifact.KindTweak,
-}
-
-// documentDigests digests each of the change's host-authored documents.
-// Absent documents get no entry, so one coming into existence moves the
-// baseline.
-//
-// A tasks document's checkbox state is normalized away before digesting:
-// a checked box is Homonto recording progress against the plan, not a
-// change to it, and digesting it raw would make Homonto's own checkoffs
-// invalidate the documents that produced them.
-func (e *Engine) documentDigests(ctx context.Context, st State) (map[artifact.Kind]fingerprint.Digest, error) {
-	out := map[artifact.Kind]fingerprint.Digest{}
-	for _, kind := range hostDocumentKinds {
-		path, err := st.DocumentPath(kind)
-		if err != nil {
-			return nil, err
-		}
-		doc, err := e.artifacts.Read(ctx, artifact.Ref{WorkID: st.WorkID, Kind: kind, Path: path})
-		if errors.Is(err, artifact.ErrArtifactMissing) {
-			continue
-		}
-		if err != nil {
-			return nil, err
-		}
-		content := doc.Region(artifact.RegionWholeDocument)
-		if kind == artifact.KindTasks || kind == artifact.KindPresetTasks {
-			content = artifact.SemanticChecklist(content)
-		}
-		out[kind] = fingerprint.Bytes("change-document-"+string(kind), content)
-	}
-	return out, nil
 }
 
 // PresetScope counts the change's diff against its immutable work baseline
@@ -538,152 +408,6 @@ func (e *Engine) Abandon(ctx context.Context, id identity.WorkID) (State, error)
 		return State{}, err
 	}
 	return e.moveTo(ctx, st, next)
-}
-
-// SubmitReport records a host's answer to an assignment. The result diff
-// is validated FIRST for a writable assignment: a report backed by changes
-// the assignment was not issued to make is refused rather than recorded,
-// so nothing downstream ever reads it.
-func (e *Engine) SubmitReport(ctx context.Context, in protocol.ReportSubmission) (State, error) {
-	act, err := e.assignments.Action(ctx, in.ActionID)
-	if err != nil {
-		return State{}, err
-	}
-	st, err := e.State(ctx, act.WorkID)
-	if err != nil {
-		return State{}, err
-	}
-	if terminalStep(st.Path, st.Step) {
-		return State{}, fmt.Errorf("change: %s is %s: %w", st.WorkID, st.Step, ErrTerminal)
-	}
-	if act.Generation != st.Generation {
-		return State{}, fmt.Errorf("change: action %s belongs to generation %d, the change is at %d: %w",
-			act.ID, act.Generation, st.Generation, ErrStaleAction)
-	}
-	wire := act.Spec
-	wire.FreshnessToken = e.assignments.Token(act.ID)
-	if !wire.WriteScope.ReadOnly {
-		unit, _, err := e.unitOf(ctx, act.ID)
-		if err != nil {
-			return State{}, err
-		}
-		diff, err := e.env.ResultDiff(ctx, wire, unit)
-		if err != nil {
-			return State{}, err
-		}
-		if err := e.guard.ValidateAssignmentResult(ctx, wire, diff); err != nil {
-			return State{}, fmt.Errorf("%w: %w", ErrResultRejected, err)
-		}
-	}
-	if _, err := e.assignments.Submit(ctx, in); err != nil {
-		return State{}, err
-	}
-	if err := e.recordFindings(ctx, st, act, in); err != nil {
-		return State{}, err
-	}
-	// Only Homonto checks items off, and only for assignments it accepted
-	// — which is exactly here, after the final diff gate has passed.
-	if act.Role == protocol.RoleImplementer &&
-		(act.Step == string(StepBuildImplement) || act.Step == string(StepPresetImplement)) {
-		if err := e.checkOffUnit(ctx, st, act.ID); err != nil {
-			return State{}, err
-		}
-	}
-	return st, nil
-}
-
-// recordFindings persists the findings of a reviewer or skeptic report.
-func (e *Engine) recordFindings(ctx context.Context, st State, act assignment.Action, in protocol.ReportSubmission) error {
-	switch act.Role {
-	case protocol.RoleReviewer, protocol.RoleSkeptic:
-	default:
-		return nil
-	}
-	// Findings raised during Open and Design are preset scope SIGNALS, not
-	// defects in a result that does not exist yet. Recording them as
-	// blocking findings would gate a change on an observation about its
-	// own scope.
-	if act.Step != string(StepVerifyReview) && act.Step != string(StepPresetReview) {
-		return nil
-	}
-	wire := act.Spec
-	wire.FreshnessToken = e.assignments.Token(act.ID)
-	report, err := protocol.DecodeReport(wire, in.Report)
-	if err != nil {
-		return err
-	}
-	findings := findingsOf(report)
-	if len(findings) == 0 {
-		return nil
-	}
-	return e.findings.RecordReport(ctx, st.WorkID, act.ID, act.Role, findings)
-}
-
-// Decide records a human's answer to a decision gate. Acting on the answer
-// is the next step's job, not this one's: recording and acting are
-// separate so a crash between them replays cleanly.
-func (e *Engine) Decide(ctx context.Context, in decision.Submission) (State, error) {
-	act, err := e.assignments.Action(ctx, in.ActionID)
-	if err != nil {
-		return State{}, err
-	}
-	// A classification confirmation answers a candidate, not a change.
-	if act.Step == string(PreflightConfirm) {
-		if _, err := e.assignments.Decide(ctx, in); err != nil {
-			return State{}, err
-		}
-		pre, err := e.Preflight(ctx, act.WorkID)
-		if err != nil {
-			return State{}, err
-		}
-		return e.ConfirmPreflight(ctx, ConfirmInput{
-			WorkID: pre.WorkID, Path: Path(in.Choice),
-			Rationale: in.Rationale, DecisionID: act.ID,
-		})
-	}
-	st, err := e.State(ctx, act.WorkID)
-	if err != nil {
-		return State{}, err
-	}
-	if terminalStep(st.Path, st.Step) {
-		return State{}, fmt.Errorf("change: %s is %s: %w", st.WorkID, st.Step, ErrTerminal)
-	}
-	if _, err := e.assignments.Decide(ctx, in); err != nil {
-		return State{}, err
-	}
-	return st, nil
-}
-
-// AcceptEdit accepts the host's document edit and marks the edit action
-// answered. The host presents only the grant token it was issued: Homonto
-// looks up what that grant actually opened rather than believing a
-// structure the host hands back.
-func (e *Engine) AcceptEdit(ctx context.Context, actionID identity.ActionID, grantToken identity.Token) (State, error) {
-	act, err := e.assignments.Action(ctx, actionID)
-	if err != nil {
-		return State{}, err
-	}
-	st, err := e.State(ctx, act.WorkID)
-	if err != nil {
-		return State{}, err
-	}
-	if terminalStep(st.Path, st.Step) {
-		return State{}, fmt.Errorf("change: %s is %s: %w", st.WorkID, st.Step, ErrTerminal)
-	}
-	if act.Spec.Edit == nil {
-		return State{}, fmt.Errorf("change: action %s is not an edit action", actionID)
-	}
-	grant, err := e.artifacts.Grant(ctx, act.Spec.Edit.GrantID, grantToken)
-	if err != nil {
-		return State{}, err
-	}
-	if _, err := e.artifacts.AcceptEdit(ctx, grant); err != nil {
-		return State{}, err
-	}
-	if _, err := e.assignments.CompleteEdit(ctx, actionID, e.assignments.Token(actionID)); err != nil {
-		return State{}, err
-	}
-	return st, nil
 }
 
 // Terminal reports whether a change has finished.

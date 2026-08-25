@@ -1,47 +1,73 @@
 name: release
 
-# Build cross-platform binaries, checksum them, and attach them to a GitHub
-# release whenever a v* tag is pushed. Go cross-compiles from a single runner,
-# so one job produces every target; the version string is stamped from the tag.
+# Package and publish the homonto binary when a v* tag is pushed.
+#
+# A tag does not authorize a release on its own. The full gate runs first,
+# and release-guard.sh then refuses to continue unless the evidence a
+# release rests on is actually present — including the live host matrix
+# that no CI runner can produce.
 on:
   push:
     tags:
       - "v*"
 
-# Least-privilege: only the release job needs to write releases; everything
-# else is read-only.
 permissions:
   contents: read
 
 jobs:
   release:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     permissions:
       contents: write # create the GitHub release and upload assets
     steps:
-      - uses: actions/checkout@v4
-
-      - uses: actions/setup-go@v5
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
-          # Match go.mod's pinned toolchain (go1.26.5); see the note in ci.yml —
-          # an older Go lets govulncheck downgrade to go1.25 and fail the gate.
-          go-version: "1.26.5"
+          go-version: "1.26.6"
+          check-latest: true
 
-      # Guard: never ship a tag that does not pass the COMPLETE gate. This is the
-      # same scripts/gate.sh that CI and local rehearsal run — race, mod-tidy,
-      # vet, build, test, version stamps, cli smoke, govulncheck, and the
-      # triple-binary Docker E2E (incl. release-packaging smoke) — so a tag can
-      # never publish on a weaker gate than a pull request.
+      # Never ship a tag that does not pass the COMPLETE gate — the same
+      # scripts/gate.sh a pull request had to pass.
       - name: gate
         run: ./scripts/gate.sh
 
-      # Build, package, and checksum all three binaries (homonto + onto + to)
-      # for every target. The packaging logic lives in scripts/build-release.sh
-      # so it is testable off CI and shared by the local and release code paths.
+      # The evidence a human produced for this release. The host matrix
+      # cannot be generated on a runner; it is committed as release
+      # evidence and checked here.
+      - name: unpack release evidence
+        run: |
+          set -eu
+          mkdir -p dist/evidence
+          if [ -d .release-evidence ]; then cp -R .release-evidence/. dist/evidence/; fi
+
+      - name: release guard
+        env:
+          GH_TOKEN: ${{ github.token }}
+          HOMONTO_RELEASE_ROOT_ID: ${{ vars.HOMONTO_RELEASE_ROOT_ID }}
+          HOMONTO_RELEASE_SIGNING_KEY: ${{ runner.temp }}/release.key
+        run: |
+          set -eu
+          umask 077
+          printf '%s\n' "${{ secrets.HOMONTO_RELEASE_SIGNING_KEY }}" > "$HOMONTO_RELEASE_SIGNING_KEY"
+          ./scripts/release-guard.sh --evidence dist/evidence
+
       - name: build release artifacts
         env:
           VERSION: ${{ github.ref_name }}
-        run: scripts/build-release.sh "${VERSION}"
+        run: scripts/build-release.sh "$VERSION"
+
+      - name: sign the release manifest
+        env:
+          HOMONTO_RELEASE_ROOT_ID: ${{ vars.HOMONTO_RELEASE_ROOT_ID }}
+          HOMONTO_RELEASE_SIGNING_KEY: ${{ runner.temp }}/release.key
+        run: |
+          set -eu
+          go run ./tools/release-sign sign \
+            --key "$HOMONTO_RELEASE_SIGNING_KEY" \
+            --id "$HOMONTO_RELEASE_ROOT_ID" \
+            --manifest dist/release-manifest.json \
+            --sig dist/release-manifest.sig
+          rm -f "$HOMONTO_RELEASE_SIGNING_KEY"
 
       - name: publish release
         env:
@@ -49,17 +75,19 @@ jobs:
           VERSION: ${{ github.ref_name }}
         run: |
           set -eu
-          # Pre-releases (rc/beta/alpha) are marked as such so they never show as
-          # "latest"; a bare vX.Y.Z is a full release.
+          # Pre-releases (rc/beta/alpha) never show as "latest".
           prerelease=""
           case "$VERSION" in
             *-*) prerelease="--prerelease" ;;
           esac
-          # docs/release-notes.md (accepted limitations) is prepended to the
-          # auto-generated changelog, so every release states its limitations.
+          # docs/release-notes.md states the accepted limitations, so every
+          # release publishes them alongside the generated changelog.
           gh release create "$VERSION" \
             --title "$VERSION" \
             --notes-file docs/release-notes.md \
             --generate-notes \
             $prerelease \
-            dist/*.tar.gz dist/*.zip dist/SHA256SUMS
+            dist/homonto_*.tar.gz \
+            dist/SHA256SUMS \
+            dist/release-manifest.json \
+            dist/release-manifest.sig

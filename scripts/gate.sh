@@ -1,15 +1,28 @@
 #!/usr/bin/env bash
-# The single, shared release/CI gate. Runs every check that must pass before a
-# tag can publish, in one command, so local rehearsal, CI, and release
-# publication all run the SAME gate — no path is weaker than another (closing the
-# release-workflow-weaker-than-CI defect). Requires a Go toolchain and a Docker
-# daemon (the triple-binary E2E suites build an image).
+# The single, shared gate. CI, local rehearsal, and the release workflow
+# all run THIS script, so no path can publish on a weaker check set than a
+# pull request had to pass.
 #
-# Usage: scripts/gate.sh
+# It needs a Go toolchain and nothing else. The product it gates is one
+# static binary with no daemon and no services, so a gate that needed
+# Docker would be testing the harness rather than the program.
+#
+# What it does NOT cover, deliberately: the live host matrix — real Claude
+# Code and OpenCode sessions on Linux and macOS. Those cannot run
+# unattended and cannot be faked convincingly, so they are evidence a human
+# produces and scripts/release-guard.sh refuses to release without.
+#
+# Usage: scripts/gate.sh [--quick]
+#   --quick  skip fuzzing and govulncheck (for a fast local loop, never CI)
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
-step() { printf '\n============================================================\n=== gate: %s\n============================================================\n' "$1"; }
+QUICK=""
+[ "${1:-}" = "--quick" ] && QUICK=1
+
+step() {
+  printf '\n============================================================\n=== gate: %s\n============================================================\n' "$1"
+}
 
 step "gofmt -l"
 unformatted="$(gofmt -l .)"
@@ -26,37 +39,58 @@ go vet ./...
 step "go build ./..."
 go build ./...
 
+step "shell syntax"
+for script in scripts/*.sh; do
+  bash -n "$script"
+done
+echo "every script parses"
+
 step "go test ./..."
 go test ./... -count=1
 
 step "go test -race ./..."
 go test -race ./... -count=1
 
-step "version stamp smoke (homonto + onto + to)"
-go build -ldflags "-X github.com/noviopenworks/homonto/internal/cli.Version=gate-smoke" -o /tmp/gate-homonto .
-/tmp/gate-homonto version 2>&1 | grep -q "gate-smoke" || { echo "homonto version not stamped"; exit 1; }
-go build -ldflags "-X github.com/noviopenworks/homonto/internal/ontocli.Version=gate-smoke" -o /tmp/gate-onto ./cmd/onto
-/tmp/gate-onto version 2>&1 | grep -q "gate-smoke" || { echo "onto version not stamped"; exit 1; }
-go build -ldflags "-X github.com/noviopenworks/homonto/internal/tocli.Version=gate-smoke" -o /tmp/gate-to ./cmd/to
-/tmp/gate-to version 2>&1 | grep -q "gate-smoke" || { echo "to version not stamped"; exit 1; }
+step "version stamp smoke"
+stamped="$(mktemp -d)/homonto"
+go build -ldflags "-X github.com/noviopenworks/homonto/internal/cli.Version=gate-smoke" -o "$stamped" .
+"$stamped" version 2>&1 | grep -q "gate-smoke" || { echo "version is not stamped"; exit 1; }
 
-step "cli smoke (plan on a current-format config)"
-printf '[mcps.demo]\ncommand = ["true"]\n' > /tmp/gate-homonto.toml
-/tmp/gate-homonto --config /tmp/gate-homonto.toml plan >/dev/null
+step "read-only smoke (a plain directory must stay plain)"
+# The probe a host runs before every session must not create a workspace.
+# It is the one command that runs constantly, in directories that have
+# nothing to do with Homonto.
+plain="$(mktemp -d)"
+before="$(ls -A "$plain" | wc -l)"
+"$stamped" host probe --workspace "$plain" >/dev/null 2>&1 || true
+"$stamped" version >/dev/null
+after="$(ls -A "$plain" | wc -l)"
+if [ "$before" != "$after" ]; then
+  echo "a read-only command wrote into a plain directory:"; ls -A "$plain"; exit 1
+fi
+echo "a plain directory is still plain"
 
-step "agent docs reference only things that exist"
-./scripts/agents-doc-check.sh
+step "release packaging (one native target, signed and verified)"
+go test ./test/release/ -count=1
 
-step "workflow skills shell out (no direct state writes)"
-./scripts/onto-skills-shell-out-check.sh
+step "documentation describes this product"
+go test ./test/docs/ -count=1
+
+step "whole-program security boundaries"
+go test ./test/security/ -count=1
+
+if [ -n "$QUICK" ]; then
+  printf '\n=== gate: --quick skipped fuzzing and govulncheck. This is NOT a release gate.\n'
+  exit 0
+fi
+
+step "fuzz every target for 30s"
+./scripts/fuzz.sh 30
 
 step "govulncheck ./..."
-# Pin the toolchain for the tool build too: with GOTOOLCHAIN=auto, x/vuln's own
-# go.mod can select a toolchain older than this module's pin, and a govulncheck
-# built that way cannot parse the pinned toolchain's stdlib sources.
-GOTOOLCHAIN=go1.26.5 go run golang.org/x/vuln/cmd/govulncheck@latest ./...
-
-step "triple-binary Docker E2E (five suites incl. release-packaging smoke)"
-./scripts/docker-test.sh
+# Pin the toolchain for the tool build too: with GOTOOLCHAIN=auto, x/vuln's
+# own go.mod can select a toolchain older than this module's pin, and a
+# govulncheck built that way cannot parse the pinned toolchain's stdlib.
+GOTOOLCHAIN=go1.26.6 go run golang.org/x/vuln/cmd/govulncheck@latest ./...
 
 printf '\n============================================================\nALL GATE CHECKS PASSED\n============================================================\n'

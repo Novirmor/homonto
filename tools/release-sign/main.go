@@ -47,7 +47,7 @@ func main() {
 
 func usage() {
 	fmt.Fprint(os.Stderr, `release-sign keygen --id <root-id> --out <private-key-file>
-release-sign sign --key <private-key-file> --id <root-id> --manifest <file>
+release-sign sign --key <private-key-file> --id <root-id> --manifest <file> [--sig <file>]
 `)
 }
 
@@ -87,6 +87,7 @@ func sign(args []string) error {
 	keyPath := fs.String("key", "", "the private key file")
 	id := fs.String("id", "", "the root id to sign as")
 	manifestPath := fs.String("manifest", "", "the manifest to sign in place")
+	sigPath := fs.String("sig", "", "also write the detached signature here")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
@@ -137,6 +138,15 @@ func sign(args []string) error {
 	}
 	if err := os.WriteFile(*manifestPath, encoded, 0o644); err != nil {
 		return fmt.Errorf("write %s: %w", *manifestPath, err)
+	}
+	// The detached signature is written from `republished` — the canonical
+	// bytes of the document that was just written — so it cannot cover a
+	// serialization other than the published one.
+	if strings.TrimSpace(*sigPath) != "" {
+		detached := base64.StdEncoding.EncodeToString(ed25519.Sign(private, republished))
+		if err := os.WriteFile(*sigPath, []byte(detached+"\n"), 0o644); err != nil {
+			return fmt.Errorf("write %s: %w", *sigPath, err)
+		}
 	}
 	fmt.Printf("signed %s as %s\n", *manifestPath, *id)
 	return nil

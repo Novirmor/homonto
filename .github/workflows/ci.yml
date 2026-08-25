@@ -10,20 +10,31 @@ permissions:
 
 jobs:
   # One shared gate drives CI, local rehearsal, and release publication
-  # (scripts/gate.sh), so no path runs a weaker check set than another. It covers
-  # gofmt, mod-tidy, vet, build, test, race, version-stamp + cli smoke,
-  # govulncheck, and the triple-binary Docker E2E (five suites incl. release
-  # packaging). ubuntu-latest ships a Docker daemon, which the E2E suites need.
+  # (scripts/gate.sh), so no path runs a weaker check set than another. It
+  # covers gofmt, mod-tidy, vet, build, shell syntax, test, race, version
+  # stamp, the read-only smoke, release packaging, the documentation and
+  # whole-program security suites, 30s of fuzzing per target, and
+  # govulncheck.
+  #
+  # Both platforms, every push: Homonto's filesystem layer is written
+  # against fd-anchored syscalls that differ between Linux and macOS, and
+  # a divergence there is not something to discover at release time.
   gate:
-    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, macos-14]
+    runs-on: ${{ matrix.os }}
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
+      # Pinned by commit rather than tag: a tag is mutable, and an action
+      # that can change under us runs with access to this repository.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
-          # Match go.mod's pinned toolchain (go1.26.5). Provisioning an older Go
-          # let `go run govulncheck@latest` downgrade to go1.25 (x/vuln needs
-          # >=1.25), which then cannot parse the go1.26-gated stdlib files the
-          # pinned toolchain pulls in — failing the gate before it starts.
-          go-version: "1.26.5"
+          # Match go.mod's pinned toolchain. Provisioning an older Go lets
+          # `go run govulncheck@latest` downgrade to a toolchain that
+          # cannot parse the stdlib sources the pinned one pulls in.
+          go-version: "1.26.6"
+          check-latest: true
       - name: gate
         run: ./scripts/gate.sh

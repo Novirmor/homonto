@@ -216,23 +216,6 @@ func (a *App) StartChangePreflight(ctx context.Context, in change.PreflightInput
 	return a.changes.StartPreflight(ctx, in)
 }
 
-// ConfirmChangePath records the human's confirmed path and creates the
-// change.
-//
-// Confirmation, not preflight, is where the work becomes this machine's:
-// a candidate that is still being classified has nothing to hand over.
-func (a *App) ConfirmChangePath(ctx context.Context, in change.ConfirmInput) (change.State, error) {
-	st, err := a.changes.ConfirmPreflight(ctx, in)
-	if err != nil {
-		return st, err
-	}
-	if err := a.activate(ctx, st.WorkID, WorkChange, st.Name,
-		artifact.ChangesDir+"/"+st.Name+".md", st.Step); err != nil {
-		return st, err
-	}
-	return st, nil
-}
-
 // AbandonChangePreflight drops a classification candidate.
 func (a *App) AbandonChangePreflight(ctx context.Context, id identity.WorkID) (change.PreflightState, error) {
 	return a.changes.AbandonPreflight(ctx, id)

@@ -10,6 +10,7 @@ import (
 	"github.com/noviopenworks/homonto/internal/app"
 	"github.com/noviopenworks/homonto/internal/artifact"
 	"github.com/noviopenworks/homonto/internal/decision"
+	"github.com/noviopenworks/homonto/internal/handoff"
 	"github.com/noviopenworks/homonto/internal/protocol"
 	"github.com/noviopenworks/homonto/internal/workspacecfg"
 )
@@ -220,6 +221,9 @@ func TestChangePreflightCreatesNothingUntilConfirmed(t *testing.T) {
 			t.Fatalf("preflight created %q before anything was confirmed", e.Name())
 		}
 	}
+	// Nothing of this machine's either: no lease, no checkpoint.
+	assertNotAnchored(t, w)
+
 	// Abandoning the candidate removes nothing, and frees the name.
 	out, err = w.run(t, "change", "abandon")
 	if err != nil {
@@ -231,6 +235,84 @@ func TestChangePreflightCreatesNothingUntilConfirmed(t *testing.T) {
 	if out, err := w.run(t, "change", "start", "fix-login",
 		"--request", "Try again."); err != nil {
 		t.Fatalf("the name was not released: %v\n%s", err, out)
+	}
+}
+
+// TestChangeConfirmationAnchorsTheWorkspace proves the other half of the
+// classification gate: the confirmation itself — not some later step — is
+// where the Change becomes this machine's. The members are leased and the
+// first checkpoint written, exactly as a started Task does. A confirmed
+// Change that skipped anchoring would run its whole workflow with no
+// machine holding it and nothing to hand over.
+func TestChangeConfirmationAnchorsTheWorkspace(t *testing.T) {
+	w := changeWorkspace(t)
+	if out, err := w.run(t, "change", "start", "fix-login",
+		"--request", "Make login return true."); err != nil {
+		t.Fatalf("change start: %v\n%s", err, out)
+	}
+
+	// Drive the preflight assessments until the classification gate
+	// appears, then confirm the tweak path.
+	choices := map[protocol.DecisionKind]string{
+		protocol.DecisionKind(decision.KindConfirmClassification): "tweak",
+	}
+	confirmed := false
+	for i := 0; i < 20 && !confirmed; i++ {
+		resp := w.next(t)
+		if resp.State == protocol.NextComplete {
+			t.Fatal("the workflow completed before the classification was confirmed")
+		}
+		for _, act := range resp.Actions {
+			if act.Kind == protocol.KindDecision &&
+				act.Decision.Kind == protocol.DecisionKind(decision.KindConfirmClassification) {
+				w.answerChange(t, act, choices)
+				confirmed = true
+				break
+			}
+			w.answerChange(t, act, choices)
+		}
+	}
+	if !confirmed {
+		t.Fatal("the classification gate never appeared")
+	}
+
+	// One active lease sentinel names the work...
+	active := 0
+	entries, err := os.ReadDir(filepath.Join(w.root, app.ControlDir, "leases"))
+	if err != nil {
+		t.Fatalf("read the lease directory after confirmation: %v", err)
+	}
+	for _, e := range entries {
+		if strings.HasSuffix(e.Name(), ".active") {
+			active++
+		}
+	}
+	if active != 1 {
+		t.Fatalf("active lease sentinels = %d, want exactly the confirmed change", active)
+	}
+	// ...and the first checkpoint exists and names this workspace.
+	raw, err := os.ReadFile(handoff.CheckpointPath(w.root))
+	if err != nil {
+		t.Fatalf("the confirmation wrote no checkpoint: %v", err)
+	}
+	if !strings.Contains(string(raw), string(w.cfg.Workspace.ID)) {
+		t.Fatalf("the checkpoint does not describe this workspace:\n%s", raw)
+	}
+}
+
+// assertNotAnchored fails when the workspace already holds a lease
+// sentinel or a checkpoint.
+func assertNotAnchored(t *testing.T, w *workspace) {
+	t.Helper()
+	if entries, err := os.ReadDir(filepath.Join(w.root, app.ControlDir, "leases")); err == nil {
+		for _, e := range entries {
+			if strings.HasSuffix(e.Name(), ".active") {
+				t.Fatalf("an unconfirmed candidate holds the lease sentinel %s", e.Name())
+			}
+		}
+	}
+	if _, err := os.Stat(handoff.CheckpointPath(w.root)); err == nil {
+		t.Fatal("an unconfirmed candidate wrote a checkpoint")
 	}
 }
 

@@ -16,6 +16,7 @@ import (
 	"github.com/noviopenworks/homonto/internal/finding"
 	"github.com/noviopenworks/homonto/internal/gitx"
 	"github.com/noviopenworks/homonto/internal/guard"
+	"github.com/noviopenworks/homonto/internal/handoff"
 	"github.com/noviopenworks/homonto/internal/identity"
 	"github.com/noviopenworks/homonto/internal/lease"
 	"github.com/noviopenworks/homonto/internal/operation"
@@ -134,6 +135,15 @@ func build(ctx context.Context, root string, cfg workspacecfg.Config, db *store.
 	if err != nil {
 		return nil, err
 	}
+	// Every effect kind that can leave a journaled operation in this
+	// database must be registered before the recovery pass runs: the
+	// manager dispatches recovery by effect kind and fails loudly on an
+	// unregistered one, so a missing registration here would turn a
+	// crashed lease acquisition or handoff into a workspace no command
+	// can open. The lease manager registers its kinds on construction;
+	// the handoff kinds are installed explicitly.
+	leases := lease.NewManager(db, ops)
+	handoff.RegisterEffects(ops, db)
 	controlRoot := filepath.Join(root, filepath.FromSlash(normalizePath(cfg.Control.Path)))
 	if !readOnly {
 		// An interrupted self-update must be finished or undone before
@@ -205,7 +215,7 @@ func build(ctx context.Context, root string, cfg workspacecfg.Config, db *store.
 	}
 	return &App{
 		root: root, cfg: cfg, db: db, engine: engine, changes: changes, env: env,
-		leases: lease.NewManager(db, ops), assignments: assignments, artifacts: artifacts, findings: findings,
+		leases: leases, assignments: assignments, artifacts: artifacts, findings: findings,
 		evidence: evidence, archive: arch, guard: g, now: now,
 	}, nil
 }
@@ -444,6 +454,11 @@ func (a *App) SubmitReport(ctx context.Context, in protocol.ReportSubmission) (S
 }
 
 // Decide records a human's answer to a decision gate.
+//
+// A classification confirmation is the one decision that creates work
+// rather than advancing it, so it is also the one place activation
+// belongs: confirming the path is the moment the Change becomes this
+// machine's — leased and checkpointed, exactly as a started Task is.
 func (a *App) Decide(ctx context.Context, in decision.Submission) (Status, error) {
 	kind, _, err := a.workOfAction(ctx, in.ActionID)
 	if err != nil {
@@ -452,6 +467,17 @@ func (a *App) Decide(ctx context.Context, in decision.Submission) (Status, error
 	if kind == WorkTask {
 		st, err := a.engine.Decide(ctx, in)
 		return taskStatus(st), err
+	}
+	if kind == WorkPreflight {
+		st, err := a.changes.Decide(ctx, in)
+		if err != nil {
+			return changeStatus(st), err
+		}
+		if err := a.activate(ctx, st.WorkID, WorkChange, st.Name,
+			artifact.ChangesDir+"/"+st.Name+".md", st.Step); err != nil {
+			return changeStatus(st), err
+		}
+		return changeStatus(st), nil
 	}
 	st, err := a.changes.Decide(ctx, in)
 	return changeStatus(st), err

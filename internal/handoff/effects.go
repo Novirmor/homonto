@@ -41,6 +41,13 @@ func registerEffects(ops *operation.Manager, db *store.DB) {
 	ops.RegisterEffect(&rebuildEffect{db: db})
 }
 
+// RegisterEffects installs the handoff effect kinds on a shared operation
+// manager, for the generic recovery pass a workspace open runs. A crashed
+// handoff or attach leaves its journaled operations in the same runtime
+// database every command opens; without these kinds registered, that
+// recovery refuses the operation — and with it, the whole workspace.
+func RegisterEffects(ops *operation.Manager, db *store.DB) { registerEffects(ops, db) }
+
 // sortByRepoID sorts lease-list entries by repository id.
 func sortByRepoID(ls []lease.SentinelLease) {
 	sort.Slice(ls, func(i, j int) bool { return ls[i].RepositoryID < ls[j].RepositoryID })

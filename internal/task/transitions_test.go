@@ -23,7 +23,7 @@ func TestAdvanceCoversEveryValidTransition(t *testing.T) {
 		{StepDoneChecks, EventChecksFailed, StepDoRepair},
 		{StepDoneReview, EventReviewClean, StepDoneFinalize},
 		{StepDoneReview, EventReviewBlocked, StepDoRepair},
-		{StepDoRepair, EventRepairDone, StepDoneChecks},
+		{StepDoRepair, EventRepairDone, StepDoIntegrate},
 		{StepDoRepair, EventRepairContinued, StepDoRepair},
 		{StepDoRepair, EventRepairLimitReached, StepDoRepair},
 		{StepDoneFinalize, EventFinalized, StepArchived},

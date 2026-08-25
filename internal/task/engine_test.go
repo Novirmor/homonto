@@ -58,7 +58,6 @@ func (s *scriptedEnv) Partition(_ context.Context, workID identity.WorkID, items
 			Label:  label,
 			Member: s.control,
 			Items:  []int{it.Index},
-			Root:   filepath.ToSlash(filepath.Join("work", label)),
 			Scope:  []string{"src"},
 			Prompt: "Implement: " + it.Text,
 		})
@@ -66,16 +65,27 @@ func (s *scriptedEnv) Partition(_ context.Context, workID identity.WorkID, items
 	return out, nil
 }
 
-func (s *scriptedEnv) Integrations(_ context.Context, _ identity.WorkID, done []Partition) ([]Partition, error) {
-	if len(done) == 0 {
+func (s *scriptedEnv) Isolate(_ context.Context, _ identity.WorkID, actionID identity.ActionID, unit Partition) (Partition, error) {
+	unit.Root = "work/" + string(actionID)
+	return unit, nil
+}
+
+func (s *scriptedEnv) Integrations(_ context.Context, _ identity.WorkID, results []Result) ([]Partition, error) {
+	if len(results) == 0 {
 		return nil, nil
 	}
+	for _, r := range results {
+		if r.Material.Kind == "" {
+			return nil, errors.New("an implementation result carried no material")
+		}
+	}
 	return []Partition{{
-		Label:  "integration",
-		Member: s.control,
-		Root:   "work/integration",
-		Scope:  []string{"src"},
-		Prompt: "Combine the parallel output into one branch.",
+		Label:       "integration",
+		Member:      s.control,
+		Integration: true,
+		Root:        "work/integration",
+		Scope:       []string{"src"},
+		Prompt:      "Combine the parallel output into one branch.",
 	}}, nil
 }
 
@@ -92,7 +102,7 @@ func (s *scriptedEnv) RunChecks(context.Context, identity.WorkID) (verify.Set, e
 	return set, nil
 }
 
-func (s *scriptedEnv) ResultDiff(_ context.Context, action protocol.Action) (guard.ResultDiff, error) {
+func (s *scriptedEnv) ResultDiff(_ context.Context, action protocol.Action, _ Partition) (guard.ResultDiff, error) {
 	if d, ok := s.diffs[action.WorkingDirectory]; ok {
 		return d, nil
 	}

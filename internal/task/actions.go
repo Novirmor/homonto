@@ -29,9 +29,20 @@ type Partition struct {
 	Member Member
 	// Items are the 1-based checklist indexes this partition addresses.
 	Items []int
+	// Integration marks the unit that COMBINES the parallel results for a
+	// member rather than producing one of them. It changes what the
+	// isolation area is and what its result is compared against, and only
+	// the environment can tell the difference.
+	Integration bool
 	// Root is the isolation area, workspace-relative — a Git worktree or
-	// a non-Git snapshot directory.
+	// a non-Git snapshot directory. Partition leaves it empty; the engine
+	// fills it in through Environment.Isolate once the action id exists.
 	Root string
+	// Base identifies what the isolation area started from — a commit for
+	// a Git member, a snapshot digest for a non-Git one. Integration needs
+	// it: combining results means replaying each one against the state it
+	// was actually written on top of.
+	Base string
 	// Scope is the paths the implementer may write, isolation-relative.
 	// It must be non-empty: an assignment with an unrestricted scope is an
 	// assignment with no boundary at all.

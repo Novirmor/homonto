@@ -55,21 +55,39 @@ type Environment interface {
 	// Fingerprints returns the current membership, path-class, and
 	// check-configuration digests.
 	Fingerprints(ctx context.Context) (Baseline, error)
-	// Partition turns the unchecked checklist items into parallel
-	// implementation units, each with its own isolation area and scope.
+	// Partition turns checklist items into parallel implementation units.
+	// The units carry no isolation area: an isolation worktree is named
+	// after the action it serves, so it can only be created once the
+	// action's identity exists. See Isolate.
 	Partition(ctx context.Context, workID identity.WorkID, items []artifact.Item) ([]Partition, error)
+	// Isolate creates the isolation area for one action and returns the
+	// unit with its Root filled in. It runs after the action id is minted
+	// and before the assignment is persisted, so an assignment never
+	// exists without the area it was issued for.
+	Isolate(ctx context.Context, workID identity.WorkID, actionID identity.ActionID, unit Partition) (Partition, error)
 	// Integrations returns the integration units — one per affected member
-	// — that combine the parallel output.
-	Integrations(ctx context.Context, workID identity.WorkID, done []Partition) ([]Partition, error)
+	// — that combine the parallel output, isolation areas included.
+	Integrations(ctx context.Context, workID identity.WorkID, results []Result) ([]Partition, error)
 	// SourceFingerprints returns the integrated source fingerprints the
 	// checks and the final reviews are taken against.
 	SourceFingerprints(ctx context.Context, workID identity.WorkID) ([]fingerprint.Digest, error)
 	// RunChecks executes the configured verification commands against the
 	// integrated result.
 	RunChecks(ctx context.Context, workID identity.WorkID) (verify.Set, error)
-	// ResultDiff observes what an assignment actually changed. It is
-	// observed by Homonto, never reported by the host.
-	ResultDiff(ctx context.Context, action protocol.Action) (guard.ResultDiff, error)
+	// ResultDiff observes what an assignment actually changed, given the
+	// unit it was issued for. It is observed by Homonto, never reported by
+	// the host — which is exactly why the final-diff gate catches what the
+	// write hook missed.
+	ResultDiff(ctx context.Context, action protocol.Action, unit Partition) (guard.ResultDiff, error)
+}
+
+// Result is one finished implementation unit: which action produced it,
+// what it was issued to do, and the material it returned — a Git commit or
+// a snapshot patch manifest. It is what the integration units combine.
+type Result struct {
+	ActionID  identity.ActionID
+	Partition Partition
+	Material  protocol.Material
 }
 
 // Clock is the engine's time source; tests inject a fixed one.
@@ -447,8 +465,8 @@ func (e *Engine) decisionChoice(ctx context.Context, id identity.ActionID) (deci
 // validateResult runs the independent final-diff gate over an assignment's
 // observed changes. It is deliberately not optional and deliberately not
 // the host's word: the process gate can be bypassed, this cannot.
-func (e *Engine) validateResult(ctx context.Context, action protocol.Action) error {
-	diff, err := e.env.ResultDiff(ctx, action)
+func (e *Engine) validateResult(ctx context.Context, action protocol.Action, unit Partition) error {
+	diff, err := e.env.ResultDiff(ctx, action, unit)
 	if err != nil {
 		return err
 	}

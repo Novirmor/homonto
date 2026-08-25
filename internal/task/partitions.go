@@ -6,6 +6,7 @@ import (
 	"fmt"
 
 	"github.com/noviopenworks/homonto/internal/artifact"
+	"github.com/noviopenworks/homonto/internal/assignment"
 	"github.com/noviopenworks/homonto/internal/identity"
 	"github.com/noviopenworks/homonto/internal/protocol"
 	"github.com/noviopenworks/homonto/internal/store"
@@ -85,14 +86,27 @@ func (e *Engine) partitionsForStep(ctx context.Context, st State, step Step) ([]
 	return out, nil
 }
 
-// issuePartitions creates one implementer assignment per partition and
-// records the split.
-func (e *Engine) issuePartitions(ctx context.Context, st State, step Step, partitions []Partition, reason func(Partition) string) error {
-	for _, p := range partitions {
+// issuePartitions creates one implementer assignment per unit. The action
+// id is minted first, the isolation area is created against it, and only
+// then is the assignment persisted — so an assignment never exists without
+// the area it was issued for, and a crash leaves at most an unused area.
+func (e *Engine) issuePartitions(ctx context.Context, st State, step Step, units []Partition, reason func(Partition) string) error {
+	for _, unit := range units {
+		actionID, err := identity.NewActionID()
+		if err != nil {
+			return err
+		}
+		p := unit
+		if p.Root == "" {
+			if p, err = e.env.Isolate(ctx, st.WorkID, actionID, unit); err != nil {
+				return err
+			}
+		}
 		spec, err := e.implementer(st, step, p, reason(p))
 		if err != nil {
 			return err
 		}
+		spec.ActionID = actionID
 		act, err := e.assignments.Create(ctx, spec)
 		if err != nil {
 			return err
@@ -134,8 +148,74 @@ func (e *Engine) checkOffPartition(ctx context.Context, st State, actionID ident
 	return err
 }
 
-// completedPartitions returns the partitions of the implementation round
-// that has just finished — the material the integration units combine.
-func (e *Engine) completedPartitions(ctx context.Context, st State) ([]Partition, error) {
-	return e.partitionsForStep(ctx, st, StepDoImplement)
+// completedResults returns the finished units of the MOST RECENT
+// implementation round — the first one, or the newest repair — because
+// that is the material integration must combine. It deliberately ignores
+// the current generation: a repair round closes its own generation when it
+// finishes, so the material to integrate always sits one behind.
+func (e *Engine) completedResults(ctx context.Context, st State) ([]Result, error) {
+	actions, err := e.assignments.Actions(ctx, st.WorkID)
+	if err != nil {
+		return nil, err
+	}
+	newest := int64(-1)
+	for _, act := range actions {
+		if act.Kind != protocol.KindAssignment || act.Role != protocol.RoleImplementer {
+			continue
+		}
+		if act.Step != string(StepDoImplement) && act.Step != string(StepDoRepair) {
+			continue
+		}
+		if act.State != assignment.StateSubmitted {
+			continue
+		}
+		if act.Generation > newest {
+			newest = act.Generation
+		}
+	}
+	if newest < 0 {
+		return nil, nil
+	}
+	var out []Result
+	for _, act := range actions {
+		if act.Generation != newest || act.Role != protocol.RoleImplementer ||
+			act.State != assignment.StateSubmitted {
+			continue
+		}
+		if act.Step != string(StepDoImplement) && act.Step != string(StepDoRepair) {
+			continue
+		}
+		result, ok, err := e.resultOf(ctx, act)
+		if err != nil {
+			return nil, err
+		}
+		if ok {
+			out = append(out, result)
+		}
+	}
+	return out, nil
+}
+
+// resultOf builds one finished unit's Result from its recorded partition
+// and its report.
+func (e *Engine) resultOf(ctx context.Context, act assignment.Action) (Result, bool, error) {
+	p, found, err := e.partitionOf(ctx, act.ID)
+	if err != nil || !found {
+		return Result{}, false, err
+	}
+	sub, found, err := e.assignments.Report(ctx, act.ID)
+	if err != nil || !found {
+		return Result{}, false, err
+	}
+	wire := act.Spec
+	wire.FreshnessToken = e.assignments.Token(act.ID)
+	report, err := protocol.DecodeReport(wire, sub.Report)
+	if err != nil {
+		return Result{}, false, err
+	}
+	impl, ok := report.(*protocol.ImplementerReport)
+	if !ok {
+		return Result{}, false, nil
+	}
+	return Result{ActionID: act.ID, Partition: p, Material: impl.Material}, true, nil
 }

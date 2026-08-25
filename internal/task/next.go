@@ -375,7 +375,7 @@ func (e *Engine) stepDoIntegrate(ctx context.Context, st State) (State, bool, er
 		return st, false, err
 	}
 	if len(issued) == 0 {
-		done, err := e.completedPartitions(ctx, st)
+		done, err := e.completedResults(ctx, st)
 		if err != nil {
 			return st, false, err
 		}
@@ -832,7 +832,11 @@ func (e *Engine) SubmitReport(ctx context.Context, in protocol.ReportSubmission)
 	wire := act.Spec
 	wire.FreshnessToken = e.assignments.Token(act.ID)
 	if !wire.WriteScope.ReadOnly {
-		if err := e.validateResult(ctx, wire); err != nil {
+		unit, _, err := e.partitionOf(ctx, act.ID)
+		if err != nil {
+			return State{}, err
+		}
+		if err := e.validateResult(ctx, wire, unit); err != nil {
 			return State{}, err
 		}
 	}

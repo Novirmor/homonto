@@ -117,6 +117,11 @@ type Action struct {
 // Dependencies are assigned by the store and must be left zero.
 type Spec struct {
 	WorkID identity.WorkID
+	// ActionID optionally fixes the action's identity. The engine sets it
+	// when something outside the store had to be created against the id
+	// first — an isolation worktree is named after its action, so the id
+	// must exist before the assignment does. Empty means "mint one".
+	ActionID identity.ActionID
 	// Step is the engine step the action was issued for. The engine uses
 	// it to ask "is this step's work answered" without re-deriving the
 	// answer from roles and timestamps.
@@ -169,9 +174,14 @@ func (s *Store) Create(ctx context.Context, spec Spec) (Action, error) {
 		spec.Template.ParallelGroupID != "" || len(spec.Template.Dependencies) != 0 {
 		return Action{}, fmt.Errorf("assignment: template must leave id, token, group, and dependencies unset")
 	}
-	id, err := identity.NewActionID()
-	if err != nil {
-		return Action{}, err
+	id := spec.ActionID
+	if id == "" {
+		var err error
+		if id, err = identity.NewActionID(); err != nil {
+			return Action{}, err
+		}
+	} else if err := identity.ValidateUUID(string(id)); err != nil {
+		return Action{}, fmt.Errorf("assignment: action_id: %w", err)
 	}
 	wire := spec.Template
 	wire.ID = id

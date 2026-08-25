@@ -109,10 +109,12 @@ func Advance(from Step, event Event) (Step, error) {
 	case StepDoRepair:
 		switch event {
 		case EventRepairDone:
-			// A repair always returns to the checks: the whole point of
-			// repairing is that the evidence must be taken again, against
-			// the new fingerprints.
-			return StepDoneChecks, nil
+			// A repair returns to INTEGRATION, not straight to the checks.
+			// A repair round produces new material in fresh isolation
+			// areas, and material that has not been integrated is material
+			// the checks would never see; re-running them against the old
+			// integrated result would grade the previous attempt again.
+			return StepDoIntegrate, nil
 		case EventRepairContinued:
 			// The human chose to keep going. The workflow stays in repair
 			// and issues a fresh round rather than re-running checks it

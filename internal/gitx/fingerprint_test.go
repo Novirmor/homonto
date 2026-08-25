@@ -262,3 +262,46 @@ func TestSourceFingerprintSubmoduleIsGitlink(t *testing.T) {
 		t.Error("fingerprint unchanged after gitlink move, want change")
 	}
 }
+
+// TestTreeFingerprintIgnoresTheWorktreeState is the distinction between
+// the two fingerprints, stated directly.
+//
+// SourceFingerprint answers "what is this checkout's baseline" and refuses
+// a dirty tree, because a dirty checkout does not have one. TreeFingerprint
+// answers "what is this commit", which a dirty worktree cannot affect. The
+// portable checkpoint needs the second: it anchors to commits, and the
+// control repository is dirty almost by definition — Homonto has just
+// written a workflow document into it.
+func TestTreeFingerprintIgnoresTheWorktreeState(t *testing.T) {
+	e := newEnv(t)
+	commit := e.base(t)
+
+	clean, err := e.svc.TreeFingerprint(context.Background(), e.member, commit)
+	if err != nil {
+		t.Fatalf("TreeFingerprint on a clean tree: %v", err)
+	}
+
+	writeFileAt(t, filepath.Join(e.member, "uncommitted.txt"), "not committed\n")
+
+	if _, err := e.svc.SourceFingerprint(context.Background(), e.member, commit); err == nil {
+		t.Error("SourceFingerprint accepted a dirty worktree")
+	}
+	dirty, err := e.svc.TreeFingerprint(context.Background(), e.member, commit)
+	if err != nil {
+		t.Fatalf("TreeFingerprint on a dirty tree: %v", err)
+	}
+	if dirty != clean {
+		t.Errorf("the commit's digest changed because the worktree did: %s then %s", clean, dirty)
+	}
+}
+
+// writeFileAt writes a file, creating parents.
+func writeFileAt(t *testing.T, path, body string) {
+	t.Helper()
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
+		t.Fatal(err)
+	}
+}

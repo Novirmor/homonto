@@ -106,13 +106,21 @@ type harness struct {
 
 func newHarness(t *testing.T) *harness {
 	t.Helper()
-	root := t.TempDir()
+	return newHarnessAt(t, t.TempDir())
+}
+
+// newHarnessAt builds an engine over a given control root with a FRESH
+// database. Pointing it at an existing harness's root is how a second
+// machine is modelled: the documents are there, the runtime is not.
+func newHarnessAt(t *testing.T, root string) *harness {
+	t.Helper()
 	for _, sub := range archive.Dirs() {
 		if err := os.MkdirAll(filepath.Join(root, filepath.FromSlash(sub)), 0o755); err != nil {
 			t.Fatalf("mkdir %s: %v", sub, err)
 		}
 	}
-	db, err := store.Open(context.Background(), filepath.Join(root, "homonto.db"), store.OpenOptions{})
+	db, err := store.Open(context.Background(),
+		filepath.Join(t.TempDir(), "homonto.db"), store.OpenOptions{})
 	if err != nil {
 		t.Fatalf("store.Open: %v", err)
 	}

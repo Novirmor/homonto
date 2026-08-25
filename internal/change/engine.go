@@ -333,6 +333,84 @@ func (e *Engine) createDocuments(ctx context.Context, st State, request string) 
 	return err
 }
 
+// Resume adopts a Change that exists in the workspace but has no local
+// state — the case after `homonto attach`, where the documents and the
+// members came over in the control repository and the runtime did not.
+//
+// Two things have to be recovered. The PATH comes from the documents
+// themselves: each path writes a different input document, so which one is
+// on disk says which path was confirmed, and no guess is involved. The
+// STEP is re-entered at the start of the phase the checkpoint recorded,
+// not at the exact step the other machine was on — the checkpoint is
+// content-free by design, so nothing done inside that phase travelled, and
+// claiming a later step would claim evidence that did not arrive.
+//
+// A change that already has local state is left exactly as it is.
+func (e *Engine) Resume(ctx context.Context, workID identity.WorkID, name, phase string) (State, error) {
+	if st, err := e.State(ctx, workID); err == nil {
+		return st, nil
+	} else if !errors.Is(err, ErrUnknownChange) {
+		return State{}, err
+	}
+	path, err := e.discoverPath(ctx, workID, name)
+	if err != nil {
+		return State{}, err
+	}
+	step, err := firstStepOfPhase(path, artifact.Phase(phase))
+	if err != nil {
+		return State{}, err
+	}
+	st := State{
+		WorkID: workID, Name: name, Path: path, Step: string(step),
+		Generation: 1, UpdatedAt: e.now().UTC(),
+	}
+	baseline, err := e.captureBaseline(ctx, st)
+	if err != nil {
+		return State{}, err
+	}
+	st.Baseline = baseline
+	if err := e.insertState(ctx, st); err != nil {
+		return State{}, err
+	}
+	return st, nil
+}
+
+// discoverPath reads the confirmed path back off the documents, since each
+// path writes a different input document and only one of them exists.
+func (e *Engine) discoverPath(ctx context.Context, workID identity.WorkID, name string) (Path, error) {
+	for _, candidate := range []Path{PathFull, PathFix, PathTweak} {
+		probe := State{WorkID: workID, Name: name, Path: candidate}
+		kind, err := candidate.InputKind()
+		if err != nil {
+			return "", err
+		}
+		docPath, err := probe.DocumentPath(kind)
+		if err != nil {
+			return "", err
+		}
+		if _, err := e.artifacts.Read(ctx, artifact.Ref{
+			WorkID: workID, Kind: kind, Path: docPath,
+		}); err == nil {
+			return candidate, nil
+		}
+	}
+	return "", fmt.Errorf("change: %s carries no input document, so its path cannot be recovered", name)
+}
+
+// firstStepOfPhase returns the step a phase is entered at on a path.
+func firstStepOfPhase(p Path, phase artifact.Phase) (Step, error) {
+	for _, step := range Steps(p) {
+		got, err := Phase(p, step)
+		if err != nil {
+			continue
+		}
+		if got == phase {
+			return step, nil
+		}
+	}
+	return "", fmt.Errorf("change: the %s path has no step in phase %q", p, phase)
+}
+
 // seedDocument writes the confirmed request into a freshly created
 // document. It goes through a grant the engine issues and immediately
 // accepts — the same path a host takes, with no shortcut around the

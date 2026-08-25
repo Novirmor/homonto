@@ -163,9 +163,17 @@ func Validate(cp Checkpoint, cfg workspacecfg.Config) error {
 		}
 	}
 
-	byID := make(map[identity.RepositoryID]workspacecfg.Member, len(cfg.Members))
+	byID := make(map[identity.RepositoryID]workspacecfg.Member, len(cfg.Members)+1)
 	for _, m := range cfg.Members {
 		byID[m.ID] = m
+	}
+	// The control repository is configured in its own field rather than in
+	// Members, but it is a repository a checkpoint may anchor like any
+	// other — Attach reads a control entry when one is present. Leaving it
+	// out here would make a checkpoint that carries the control
+	// unvalidatable, which is not the same as saying it may not.
+	byID[cfg.Control.ID] = workspacecfg.Member{
+		ID: cfg.Control.ID, Path: cfg.Control.Path, Kind: workspacecfg.KindGit,
 	}
 	seen := make(map[identity.RepositoryID]bool, len(cp.Members))
 	for i := range cp.Members {

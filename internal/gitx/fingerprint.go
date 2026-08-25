@@ -34,6 +34,20 @@ func (s *Service) SourceFingerprint(ctx context.Context, dir, commit string) (fi
 	if len(files) > 0 {
 		return "", &DirtyWorktreeError{Files: files}
 	}
+	return s.TreeFingerprint(ctx, dir, commit)
+}
+
+// TreeFingerprint digests a COMMIT's tree, whatever state the worktree is
+// in.
+//
+// SourceFingerprint refuses a dirty worktree because it answers "what is
+// this checkout's baseline", and a dirty checkout does not have one. This
+// answers a different question — "what is this commit" — which a dirty
+// worktree cannot affect. The portable checkpoint needs that one: it
+// anchors to commits, and Homonto's own control repository is dirty
+// almost by definition, since Homonto has just written a workflow
+// document into it.
+func (s *Service) TreeFingerprint(ctx context.Context, dir, commit string) (fingerprint.Digest, error) {
 	tree, err := revParse(ctx, s.runner, dir, commit, "^{tree}")
 	if err != nil {
 		return "", err

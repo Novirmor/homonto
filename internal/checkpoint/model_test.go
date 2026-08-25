@@ -460,3 +460,61 @@ func collectJSONNames(ty reflect.Type, seen map[reflect.Type]bool, names *[]stri
 		}
 	}
 }
+
+// TestValidateAcceptsTheControlRepositoryAsAMember.
+//
+// The control repository is configured in its own field rather than in
+// Members, but it is a repository a checkpoint may anchor like any other —
+// Attach reads a control entry when one is present. Refusing it here made
+// a checkpoint that carried the control unvalidatable, which is a
+// different statement from "it may not carry one", and it left the whole
+// portable-handoff path unreachable for a workspace whose control
+// repository is not also listed as a member.
+func TestValidateAcceptsTheControlRepositoryAsAMember(t *testing.T) {
+	cfg := validCfg()
+	// The control is NOT among Members here — the shape a real workspace has.
+	cfg.Members = cfg.Members[1:]
+
+	fp, err := workspacecfg.Fingerprint(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cp := validCheckpoint()
+	cp.ConfigFingerprint = fp
+	cp.Members = append(cp.Members, Member{
+		ID:                testControlID,
+		Kind:              workspacecfg.KindGit,
+		BaseBranch:        "main",
+		BaseCommit:        strings.Repeat("a", 40),
+		IntegrationBranch: "main",
+		IntegrationCommit: strings.Repeat("a", 40),
+		SourceFingerprint: testDigest,
+	})
+	if err := Validate(cp, cfg); err != nil {
+		t.Fatalf("a checkpoint anchoring the control repository was refused: %v", err)
+	}
+}
+
+// TestValidateStillRejectsAnUnconfiguredMember proves the allowance above
+// is exactly the control repository and not a hole.
+func TestValidateStillRejectsAnUnconfiguredMember(t *testing.T) {
+	cfg := validCfg()
+	cfg.Members = cfg.Members[1:]
+
+	fp, err := workspacecfg.Fingerprint(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	stranger, err := identity.NewRepositoryID()
+	if err != nil {
+		t.Fatal(err)
+	}
+	cp := validCheckpoint()
+	cp.ConfigFingerprint = fp
+	cp.Members = append(cp.Members, Member{
+		ID: stranger, Kind: workspacecfg.KindNonGit, SourceFingerprint: testDigest,
+	})
+	if err := Validate(cp, cfg); err == nil {
+		t.Fatal("a checkpoint anchoring an unconfigured repository was accepted")
+	}
+}

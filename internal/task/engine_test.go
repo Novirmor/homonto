@@ -146,13 +146,21 @@ type harness struct {
 
 func newHarness(t *testing.T, checks ...verify.Set) *harness {
 	t.Helper()
-	root := t.TempDir()
+	return newHarnessAt(t, t.TempDir(), checks...)
+}
+
+// newHarnessAt builds an engine over a given control root with a FRESH
+// database. Pointing it at an existing harness's root is how a second
+// machine is modelled: the documents are there, the runtime is not.
+func newHarnessAt(t *testing.T, root string, checks ...verify.Set) *harness {
+	t.Helper()
 	for _, sub := range archive.Dirs() {
 		if err := os.MkdirAll(filepath.Join(root, filepath.FromSlash(sub)), 0o755); err != nil {
 			t.Fatalf("mkdir %s: %v", sub, err)
 		}
 	}
-	db, err := store.Open(context.Background(), filepath.Join(root, "homonto.db"), store.OpenOptions{})
+	db, err := store.Open(context.Background(),
+		filepath.Join(t.TempDir(), "homonto.db"), store.OpenOptions{})
 	if err != nil {
 		t.Fatalf("store.Open: %v", err)
 	}
@@ -1002,5 +1010,78 @@ func TestUnknownWorkIsReported(t *testing.T) {
 	}
 	if _, _, err := h.engine.Reconcile(t.Context(), id); !errors.Is(err, ErrUnknownWork) {
 		t.Fatalf("Reconcile error = %v, want ErrUnknownWork", err)
+	}
+}
+
+// TestResumeRestoresAnAttachedTaskAtThePhaseStart is what makes a handed-
+// off Task workable on the machine that picked it up.
+//
+// Attach rebuilds the portable facts; the workflow's own state machine is
+// not portable and does not travel. Without Resume the work exists in the
+// runtime and no command can advance it — `homonto next` reports no active
+// work on a machine that just attached one.
+//
+// It restores the FIRST step of the recorded phase rather than the exact
+// step the other machine was on. The checkpoint is content-free by design:
+// it says which phase was reached and nothing about what happened inside
+// it, so re-entering the phase re-derives that. A later step would claim
+// evidence that never arrived.
+func TestResumeRestoresAnAttachedTaskAtThePhaseStart(t *testing.T) {
+	for _, tc := range []struct {
+		phase artifact.Phase
+		want  Step
+	}{
+		{artifact.PhasePlan, StepPlanExplore},
+		{artifact.PhaseDo, StepDoImplement},
+		{artifact.PhaseDone, StepDoneChecks},
+	} {
+		t.Run(string(tc.phase), func(t *testing.T) {
+			h := newHarness(t)
+			started, err := h.engine.Start(context.Background(), StartInput{Name: "resume-me"})
+			if err != nil {
+				t.Fatalf("Start: %v", err)
+			}
+			// A fresh machine: the documents are there, the state is not.
+			fresh := newHarnessAt(t, h.root)
+			st, err := fresh.engine.Resume(context.Background(), started.WorkID, started.Name, tc.phase)
+			if err != nil {
+				t.Fatalf("Resume: %v", err)
+			}
+			if st.Step != tc.want {
+				t.Errorf("resumed at %s, want %s", st.Step, tc.want)
+			}
+			if st.WorkID != started.WorkID || st.Name != started.Name {
+				t.Errorf("resumed a different work: %s %q", st.WorkID, st.Name)
+			}
+		})
+	}
+}
+
+// TestResumeLeavesAnAlreadyKnownTaskAlone: resuming must be safe to run
+// again. Attach is journaled and can replay, and a second Resume that
+// rewound a live task to the start of its phase would throw away
+// everything the machine has done since.
+func TestResumeLeavesAnAlreadyKnownTaskAlone(t *testing.T) {
+	h := newHarness(t)
+	started, err := h.engine.Start(context.Background(), StartInput{Name: "already-here"})
+	if err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+	advanced, err := h.engine.Next(context.Background(), started.WorkID)
+	if err != nil {
+		t.Fatalf("Next: %v", err)
+	}
+	_ = advanced
+	before, err := h.engine.State(context.Background(), started.WorkID)
+	if err != nil {
+		t.Fatalf("State: %v", err)
+	}
+	after, err := h.engine.Resume(context.Background(), started.WorkID, started.Name, artifact.PhaseDone)
+	if err != nil {
+		t.Fatalf("Resume: %v", err)
+	}
+	if after.Step != before.Step || after.Generation != before.Generation {
+		t.Errorf("Resume moved a known task from %s/%d to %s/%d",
+			before.Step, before.Generation, after.Step, after.Generation)
 	}
 }

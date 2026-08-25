@@ -553,3 +553,57 @@ func (h *harness) readDocument(t *testing.T, st State, kind artifact.Kind) strin
 	}
 	return string(doc.Region(artifact.RegionWholeDocument))
 }
+
+// TestResumeRecoversThePathFromTheDocuments is what makes a handed-off
+// Change workable on the machine that picked it up.
+//
+// Two things have to come back and neither is in the checkpoint. The path
+// is recovered from the documents themselves — each path writes a
+// different input document, so which one is on disk says which path was
+// confirmed, and nothing is guessed. The step is re-entered at the start
+// of the recorded phase, because the checkpoint is content-free: it says
+// which phase was reached and nothing about what happened inside it.
+func TestResumeRecoversThePathFromTheDocuments(t *testing.T) {
+	for _, tc := range []struct {
+		path  Path
+		phase artifact.Phase
+		want  Step
+	}{
+		{PathFull, artifact.PhaseOpen, StepOpenExplore},
+		{PathFull, artifact.PhaseBuild, StepBuildPlan},
+		{PathFix, artifact.PhaseOpen, StepPresetExplore},
+		{PathTweak, artifact.PhaseVerify, StepPresetChecks},
+	} {
+		t.Run(string(tc.path)+"/"+string(tc.phase), func(t *testing.T) {
+			h := newHarness(t)
+			started := h.confirm(t, "resume-me", "make it work", tc.path)
+
+			fresh := newHarnessAt(t, h.root)
+			st, err := fresh.engine.Resume(t.Context(), started.WorkID, started.Name, string(tc.phase))
+			if err != nil {
+				t.Fatalf("Resume: %v", err)
+			}
+			if st.Path != tc.path {
+				t.Errorf("recovered path %s, want %s", st.Path, tc.path)
+			}
+			if Step(st.Step) != tc.want {
+				t.Errorf("resumed at %s, want %s", st.Step, tc.want)
+			}
+		})
+	}
+}
+
+// TestResumeLeavesAnAlreadyKnownChangeAlone: attach is journaled and can
+// replay, and a second Resume that rewound a live change to the start of
+// its phase would throw away everything since.
+func TestResumeLeavesAnAlreadyKnownChangeAlone(t *testing.T) {
+	h := newHarness(t)
+	started := h.confirm(t, "already-here", "make it work", PathFull)
+	after, err := h.engine.Resume(t.Context(), started.WorkID, started.Name, string(artifact.PhaseClose))
+	if err != nil {
+		t.Fatalf("Resume: %v", err)
+	}
+	if after.Step != started.Step {
+		t.Errorf("Resume moved a known change from %s to %s", started.Step, after.Step)
+	}
+}

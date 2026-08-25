@@ -212,8 +212,19 @@ func (a *App) StartChangePreflight(ctx context.Context, in change.PreflightInput
 
 // ConfirmChangePath records the human's confirmed path and creates the
 // change.
+//
+// Confirmation, not preflight, is where the work becomes this machine's:
+// a candidate that is still being classified has nothing to hand over.
 func (a *App) ConfirmChangePath(ctx context.Context, in change.ConfirmInput) (change.State, error) {
-	return a.changes.ConfirmPreflight(ctx, in)
+	st, err := a.changes.ConfirmPreflight(ctx, in)
+	if err != nil {
+		return st, err
+	}
+	if err := a.activate(ctx, st.WorkID, WorkChange, st.Name,
+		artifact.ChangesDir+"/"+st.Name+".md", st.Step); err != nil {
+		return st, err
+	}
+	return st, nil
 }
 
 // AbandonChangePreflight drops a classification candidate.
@@ -234,7 +245,11 @@ func (a *App) Changes(ctx context.Context) ([]change.State, error) {
 // AbandonChange stops a change, leaving its isolation areas and evidence
 // for external handling.
 func (a *App) AbandonChange(ctx context.Context, id identity.WorkID) (change.State, error) {
-	return a.changes.Abandon(ctx, id)
+	st, err := a.changes.Abandon(ctx, id)
+	if err != nil {
+		return st, err
+	}
+	return st, a.deactivate(ctx, id)
 }
 
 // ReconcileChange checks a change's recorded step against the world.

@@ -404,6 +404,21 @@ func (e *Environment) stageBaselinePath(repo identity.RepositoryID) string {
 	return filepath.Join(e.snapshotStore, "stage-baselines", string(repo)+".json")
 }
 
+// SourceDigest digests a non-Git member's current content.
+//
+// A non-Git member has no commit to anchor to, so its content IS its
+// anchor: the checkpoint records what the directory digested to, and
+// another machine compares that against what it finds. Capture is
+// content-addressed, so digesting a directory twice writes nothing the
+// second time.
+func (e *Environment) SourceDigest(ctx context.Context, dir string) (fingerprint.Digest, error) {
+	manifest, err := snapshot.Capture(ctx, dir, e.snapshotStore, snapshot.CaptureOptions{})
+	if err != nil {
+		return "", fmt.Errorf("app: digest %s: %w", dir, err)
+	}
+	return snapshot.DigestManifest(manifest), nil
+}
+
 // SourceFingerprints returns the integrated source fingerprint of every
 // member that has an integration area. It is what the checks and the final
 // reviews are pinned to, and what a later rebase or amend moves.

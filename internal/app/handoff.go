@@ -5,11 +5,13 @@ import (
 	"fmt"
 	"path/filepath"
 
+	"github.com/noviopenworks/homonto/internal/artifact"
 	"github.com/noviopenworks/homonto/internal/checkpoint"
 	"github.com/noviopenworks/homonto/internal/handoff"
 	"github.com/noviopenworks/homonto/internal/identity"
 	"github.com/noviopenworks/homonto/internal/registration"
 	"github.com/noviopenworks/homonto/internal/workspace"
+	"github.com/noviopenworks/homonto/internal/workspacecfg"
 )
 
 // AttachMapping confirms where one member lives on this machine.
@@ -90,12 +92,38 @@ func (a *App) Attach(ctx context.Context, mappings []AttachMapping, force bool) 
 	if err != nil {
 		return err
 	}
-	return handoff.Attach(ctx, handoff.AttachRequest{
+	if err := handoff.Attach(ctx, handoff.AttachRequest{
 		ControlRoot: a.controlRoot(),
 		Mappings:    confirmed,
 		Force:       force,
 		StateRoot:   stateRoot,
-	})
+	}); err != nil {
+		return err
+	}
+	return a.resumeAttached(ctx)
+}
+
+// resumeAttached gives the attached work a local workflow state.
+//
+// Attach rebuilds the portable facts — which work, which members, which
+// phase — but the workflow's own state machine is not portable and does
+// not travel. Without this the work exists in the runtime and no command
+// can advance it: `homonto next` reports no active work, on a machine that
+// just attached one.
+func (a *App) resumeAttached(ctx context.Context) error {
+	cp, err := a.checkpoint()
+	if err != nil {
+		return err
+	}
+	if cp.Work == nil {
+		return nil
+	}
+	if cp.Work.Workflow == workspacecfg.WorkflowChange {
+		_, err := a.changes.Resume(ctx, cp.Work.ID, cp.Work.Name, cp.Work.Phase)
+		return err
+	}
+	_, err = a.engine.Resume(ctx, cp.Work.ID, cp.Work.Name, artifact.Phase(cp.Work.Phase))
+	return err
 }
 
 // checkpoint reads this workspace's committed checkpoint.

@@ -17,6 +17,7 @@ import (
 	"github.com/noviopenworks/homonto/internal/gitx"
 	"github.com/noviopenworks/homonto/internal/guard"
 	"github.com/noviopenworks/homonto/internal/identity"
+	"github.com/noviopenworks/homonto/internal/lease"
 	"github.com/noviopenworks/homonto/internal/operation"
 	"github.com/noviopenworks/homonto/internal/protocol"
 	"github.com/noviopenworks/homonto/internal/snapshot"
@@ -51,6 +52,7 @@ type App struct {
 	changes *change.Engine
 	env     *Environment
 
+	leases      *lease.Manager
 	assignments *assignment.Store
 	artifacts   *artifact.Service
 	findings    *finding.Service
@@ -203,7 +205,7 @@ func build(ctx context.Context, root string, cfg workspacecfg.Config, db *store.
 	}
 	return &App{
 		root: root, cfg: cfg, db: db, engine: engine, changes: changes, env: env,
-		assignments: assignments, artifacts: artifacts, findings: findings,
+		leases: lease.NewManager(db, ops), assignments: assignments, artifacts: artifacts, findings: findings,
 		evidence: evidence, archive: arch, guard: g, now: now,
 	}, nil
 }
@@ -261,8 +263,24 @@ func (a *App) Config() workspacecfg.Config { return a.cfg }
 func (a *App) Engine() *task.Engine { return a.engine }
 
 // StartTask creates a new Task and returns its state.
+//
+// Starting is also when the work becomes THIS machine's: the members are
+// leased and the first checkpoint is written, so a second machine cannot
+// start work over it and any machine can later pick it up.
 func (a *App) StartTask(ctx context.Context, in task.StartInput) (task.State, error) {
-	return a.engine.Start(ctx, in)
+	st, err := a.engine.Start(ctx, in)
+	if err != nil {
+		return st, err
+	}
+	phase, err := st.Step.Phase()
+	if err != nil {
+		return st, err
+	}
+	if err := a.activate(ctx, st.WorkID, WorkTask, st.Name,
+		artifact.TasksDir+"/"+st.Name+".md", string(phase)); err != nil {
+		return st, err
+	}
+	return st, nil
 }
 
 // TaskState returns one Task's state.
@@ -273,7 +291,11 @@ func (a *App) TaskState(ctx context.Context, id identity.WorkID) (task.State, er
 // AbandonTask stops a Task, leaving its isolation areas and evidence for
 // external handling.
 func (a *App) AbandonTask(ctx context.Context, id identity.WorkID) (task.State, error) {
-	return a.engine.Abandon(ctx, id)
+	st, err := a.engine.Abandon(ctx, id)
+	if err != nil {
+		return st, err
+	}
+	return st, a.deactivate(ctx, id)
 }
 
 // WorkKind names which engine owns a work id.
@@ -326,11 +348,68 @@ func (a *App) NextFor(ctx context.Context, id identity.WorkID) (protocol.NextRes
 	}
 	switch kind {
 	case WorkTask:
-		return a.engine.Next(ctx, id)
+		resp, err := a.engine.Next(ctx, id)
+		if err != nil {
+			return resp, err
+		}
+		return resp, a.recordProgress(ctx, id)
 	case WorkChange:
-		return a.changes.Next(ctx, id)
+		resp, err := a.changes.Next(ctx, id)
+		if err != nil {
+			return resp, err
+		}
+		return resp, a.recordProgress(ctx, id)
 	}
+	// A preflight candidate is not yet a work, so it has nothing
+	// portable to record.
 	return a.changes.NextPreflight(ctx, id)
+}
+
+// recordProgress keeps the portable record in step with the workflow, and
+// releases the work's hold once it is over.
+//
+// It runs on Next rather than on every mutation because Next is where the
+// workflow actually moves: a report that does not complete a group leaves
+// the work exactly where it was.
+func (a *App) recordProgress(ctx context.Context, id identity.WorkID) error {
+	kind, err := a.WorkKindOf(ctx, id)
+	if err != nil {
+		return err
+	}
+	phase, terminal, err := a.phaseOf(ctx, kind, id)
+	if err != nil {
+		return err
+	}
+	if terminal {
+		return a.deactivate(ctx, id)
+	}
+	return a.refreshCheckpoint(ctx, id, phase)
+}
+
+// phaseOf reports a work's current phase and whether it is over.
+func (a *App) phaseOf(ctx context.Context, kind WorkKind, id identity.WorkID) (string, bool, error) {
+	if kind == WorkTask {
+		st, err := a.engine.State(ctx, id)
+		if err != nil {
+			return "", false, err
+		}
+		if st.Step.Terminal() {
+			return "", true, nil
+		}
+		phase, err := st.Step.Phase()
+		if err != nil {
+			return "", false, err
+		}
+		return string(phase), false, nil
+	}
+	st, err := a.changes.State(ctx, id)
+	if err != nil {
+		return "", false, err
+	}
+	// A Change's steps are spelled in its own path's vocabulary, and the
+	// step name IS the phase a reader wants to see.
+	terminal := st.Step == string(change.StepArchived) || st.Step == string(change.StepAbandoned)
+	return st.Step, terminal, nil
 }
 
 // SubmitReport records a host's answer to an assignment, routed to the

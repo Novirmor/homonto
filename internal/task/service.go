@@ -207,6 +207,62 @@ func (e *Engine) Start(ctx context.Context, in StartInput) (State, error) {
 	return st, nil
 }
 
+// Resume adopts a Task that already exists in the workspace but has no
+// local state — the case after `homonto attach`, where the document and
+// the members came over in the control repository and the runtime did not.
+//
+// It restores the work at the FIRST step of the phase the checkpoint
+// recorded, not at the exact step the other machine was on. The checkpoint
+// is content-free by design: it says which phase the work had reached and
+// nothing about what was done inside it. Re-entering the phase at its
+// start re-derives that from the document and the members, which is the
+// same thing reconciliation does when a recorded step turns out to rest on
+// something that moved. Claiming a later step would claim work whose
+// evidence did not travel.
+//
+// A work that already has local state is left exactly as it is.
+func (e *Engine) Resume(ctx context.Context, workID identity.WorkID, name string, phase artifact.Phase) (State, error) {
+	if st, err := e.State(ctx, workID); err == nil {
+		return st, nil
+	} else if !errors.Is(err, ErrUnknownWork) {
+		return State{}, err
+	}
+	step, err := firstStepOf(phase)
+	if err != nil {
+		return State{}, err
+	}
+	path, err := artifact.Path(name, artifact.KindTaskDocument)
+	if err != nil {
+		return State{}, err
+	}
+	ref := artifact.Ref{WorkID: workID, Kind: artifact.KindTaskDocument, Path: path}
+	baseline, err := e.currentBaseline(ctx, workID, ref, nil)
+	if err != nil {
+		return State{}, err
+	}
+	st := State{
+		WorkID: workID, Name: name, Step: step,
+		Generation: 1, Baseline: baseline, UpdatedAt: e.now().UTC(),
+	}
+	if err := e.insertState(ctx, st); err != nil {
+		return State{}, err
+	}
+	return st, nil
+}
+
+// firstStepOf returns the step a phase is entered at.
+func firstStepOf(phase artifact.Phase) (Step, error) {
+	switch phase {
+	case artifact.PhasePlan:
+		return StepPlanExplore, nil
+	case artifact.PhaseDo:
+		return StepDoImplement, nil
+	case artifact.PhaseDone:
+		return StepDoneChecks, nil
+	}
+	return "", fmt.Errorf("task: %q is not a phase a task can resume in", phase)
+}
+
 // seedGoal writes the caller's initial outcome statement into the goal
 // region. It is a binary write in a phase the binary does not own, so it
 // goes through a grant the engine issues and immediately accepts — the

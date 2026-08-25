@@ -168,33 +168,63 @@ func Match(pattern, name string) bool {
 	return matchSegments(strings.Split(pattern, "/"), strings.Split(name, "/"), true)
 }
 
-// matchSegments matches pattern segments against name segments. last
-// reports whether a trailing "**" is the whole pattern, which is the only
-// case where it may match nothing.
+// matchSegments matches pattern segments against name segments. whole
+// reports whether nothing has been consumed yet, which is the only case
+// where a lone trailing "**" may match nothing.
+//
+// Matching is memoized on (pattern index, name index). Without that, each
+// "**" tries every suffix and recurses, so k of them cost O(n^k): the
+// pattern "**/**/**/" against a path of 1500 separators took 3.4 seconds,
+// and the fuzzer found it by killing a worker. Path classes come from the
+// workspace manifest and paths come from a diff, so a deep tree and an
+// unremarkable-looking class were enough to stall a preset scope count.
+// The state a call can be in is exactly its two indices, so remembering
+// which ones already failed makes it O(pattern x name).
 func matchSegments(pattern, name []string, whole bool) bool {
-	for len(pattern) > 0 {
-		if pattern[0] == "**" {
-			if len(pattern) == 1 {
-				// A trailing "**" consumes the rest of the path, and needs
-				// something to consume unless it IS the whole pattern.
-				return len(name) > 0 || whole
-			}
-			for i := 0; i <= len(name); i++ {
-				if matchSegments(pattern[1:], name[i:], false) {
-					return true
+	// failed[pi*(len(name)+1)+ni] marks a state already known to fail.
+	failed := make([]bool, (len(pattern)+1)*(len(name)+1))
+	var match func(pi, ni int, whole bool) bool
+	match = func(pi, ni int, whole bool) bool {
+		key := pi*(len(name)+1) + ni
+		if failed[key] {
+			return false
+		}
+		for pi < len(pattern) {
+			if pattern[pi] == "**" {
+				if pi == len(pattern)-1 {
+					// A trailing "**" consumes the rest of the path, and
+					// needs something to consume unless it IS the whole
+					// pattern.
+					if ni < len(name) || whole {
+						return true
+					}
+					failed[key] = true
+					return false
 				}
+				for i := ni; i <= len(name); i++ {
+					if match(pi+1, i, false) {
+						return true
+					}
+				}
+				failed[key] = true
+				return false
 			}
-			return false
+			if ni == len(name) {
+				failed[key] = true
+				return false
+			}
+			ok, err := path.Match(pattern[pi], name[ni])
+			if err != nil || !ok {
+				failed[key] = true
+				return false
+			}
+			pi, ni, whole = pi+1, ni+1, false
 		}
-		if len(name) == 0 {
-			return false
+		if ni == len(name) {
+			return true
 		}
-		ok, err := path.Match(pattern[0], name[0])
-		if err != nil || !ok {
-			return false
-		}
-		pattern, name = pattern[1:], name[1:]
-		whole = false
+		failed[key] = true
+		return false
 	}
-	return len(name) == 0
+	return match(0, 0, whole)
 }

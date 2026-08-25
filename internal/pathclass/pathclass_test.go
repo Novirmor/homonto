@@ -4,6 +4,7 @@ import (
 	"errors"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/noviopenworks/homonto/internal/workspacecfg"
 )
@@ -390,4 +391,51 @@ func FuzzCountPresetChanges(f *testing.F) {
 			t.Fatalf("Total %d does not match Counted %v", count.Total, count.Counted)
 		}
 	})
+}
+
+// TestMatchDoesNotBacktrackExponentially is the regression test for a
+// denial-of-service surface the fuzzer found by killing a worker.
+//
+// Each "**" used to try every suffix and recurse, so k of them cost
+// O(n^k): "**/**/**/" against a path of 1500 separators took three and a
+// half seconds, and it gets worse from there. Path classes come from the
+// workspace manifest and paths come from a diff, so a deep tree and an
+// unremarkable-looking class were enough to stall a preset scope count.
+//
+// The bound is generous — the memoized matcher does this in single-digit
+// milliseconds — because a test that fails on a loaded machine gets
+// deleted. What it catches is the return of a superlinear blowup, which
+// misses this bound by three orders of magnitude.
+func TestMatchDoesNotBacktrackExponentially(t *testing.T) {
+	name := strings.Repeat("/", 1500) + "0"
+	done := make(chan bool, 1)
+	go func() { done <- Match("**/**/**/", name) }()
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		t.Fatal("Match took over two seconds on 1500 separators; the matcher is backtracking again")
+	}
+}
+
+// TestMatchStaysCorrectWithRepeatedDoublestars: memoizing failures must
+// not turn a match into a miss.
+func TestMatchStaysCorrectWithRepeatedDoublestars(t *testing.T) {
+	for _, tc := range []struct {
+		pattern, name string
+		want          bool
+	}{
+		{"**/**/*.go", "a/b/c/d.go", true},
+		{"**/**/*.go", "d.go", true},
+		{"**/**/*.go", "a/b/c/d.rs", false},
+		{"**/x/**/y", "a/x/b/c/y", true},
+		{"**/x/**/y", "a/z/b/c/y", false},
+		{"**/**", "a/b", true},
+		{"a/**/**/b", "a/b", true},
+		{"a/**/**/b", "a/x/y/b", true},
+		{"a/**/**/b", "a/x/y/c", false},
+	} {
+		if got := Match(tc.pattern, tc.name); got != tc.want {
+			t.Errorf("Match(%q, %q) = %v, want %v", tc.pattern, tc.name, got, tc.want)
+		}
+	}
 }

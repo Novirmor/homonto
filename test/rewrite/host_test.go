@@ -3,6 +3,7 @@ package rewrite
 import (
 	"encoding/json"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -338,4 +339,64 @@ func treeDiff(before, after map[string]string) string {
 		}
 	}
 	return ""
+}
+
+// TestGeneratedHostAssetsAreLoadableByTheirHost checks the generated files
+// against the tools that have to read them.
+//
+// Every other host test asserts what Homonto wrote. None of them asserts
+// that the host can load it — and a settings file with one stray comma, or
+// a plugin with a syntax error, fails silently inside the host: the hooks
+// simply never fire, and the write boundary is gone with no error anywhere.
+//
+// The JavaScript half needs node, which is what OpenCode runs the plugin
+// with. Where node is absent the check is skipped rather than faked.
+func TestGeneratedHostAssetsAreLoadableByTheirHost(t *testing.T) {
+	w := newWorkspace(t)
+	for _, dir := range []string{".claude", ".opencode"} {
+		if err := os.MkdirAll(filepath.Join(w.root, dir), 0o755); err != nil {
+			t.Fatalf("mkdir %s: %v", dir, err)
+		}
+	}
+	for _, tool := range []string{"claude", "opencode"} {
+		if out, err := w.run(t, "host", "install", "--tool", tool); err != nil {
+			t.Fatalf("host install %s: %v\n%s", tool, err, out)
+		}
+	}
+
+	// Claude Code reads settings.json. Invalid JSON there is not a partial
+	// failure: the whole file is ignored, hooks included.
+	settings := filepath.Join(w.root, ".claude", "settings.json")
+	body, err := os.ReadFile(settings)
+	if err != nil {
+		t.Fatalf("read settings.json: %v", err)
+	}
+	var parsed map[string]any
+	if err := json.Unmarshal(body, &parsed); err != nil {
+		t.Fatalf("the generated settings.json is not valid JSON: %v", err)
+	}
+	if _, ok := parsed["hooks"]; !ok {
+		t.Error("the generated settings.json declares no hooks")
+	}
+
+	// OpenCode loads the plugin as an ES module.
+	node, err := exec.LookPath("node")
+	if err != nil {
+		t.Skip("node is not installed; skipping the plugin load check")
+	}
+	plugin := filepath.Join(w.root, ".opencode", "plugin", "homonto.js")
+	cmd := exec.Command(node, "--input-type=module", "-e",
+		"await import("+strconvQuote("file://"+plugin)+")")
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("node could not load the generated plugin: %v\n%s", err, out)
+	}
+}
+
+// strconvQuote renders a JavaScript string literal.
+func strconvQuote(s string) string {
+	quoted, err := json.Marshal(s)
+	if err != nil {
+		return `""`
+	}
+	return string(quoted)
 }

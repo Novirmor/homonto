@@ -280,6 +280,10 @@ func AdvancePreset(path Path, from Step, event Event) (Step, error) {
 		}
 	case StepPresetRecord:
 		if event == EventVerificationRecorded {
+			return StepPresetADR, nil
+		}
+	case StepPresetADR:
+		if event == EventADRsWritten {
 			return StepPresetFinalize, nil
 		}
 	case StepPresetFinalize:

@@ -134,6 +134,8 @@ func (e *Engine) runStep(ctx context.Context, st State) (State, bool, error) {
 		return e.stepReview(ctx, st, step)
 	case StepPresetRecord:
 		return e.stepVerificationRecord(ctx, st, step)
+	case StepPresetADR:
+		return e.stepCloseADR(ctx, st, step)
 	case StepPresetRepair:
 		return e.stepRepair(ctx, st, step)
 	case StepPresetFinalize:

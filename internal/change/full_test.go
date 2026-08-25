@@ -495,6 +495,16 @@ func TestAbandonStopsTheChangeAndClosesOpenActions(t *testing.T) {
 	}
 }
 
+// mustJSON marshals a value or fails the test.
+func mustJSON(t *testing.T, v any) []byte {
+	t.Helper()
+	raw, err := json.Marshal(v)
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	return raw
+}
+
 // writeDocument replaces one document's body on disk, the way a host
 // would.
 func (h *harness) writeDocument(t *testing.T, st State, kind artifact.Kind, body string) {

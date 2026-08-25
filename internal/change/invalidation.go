@@ -85,7 +85,7 @@ var presetReturns = map[Cause]struct {
 	CausePathClass:    {StepPresetScope, []string{"preset scope", "scopes", "assignments", "checks", "reports", "completion"}},
 	CauseCheckConfig:  {StepPresetChecks, []string{"checks", "final reports", "verification", "completion"}},
 	CauseSource:       {StepPresetChecks, []string{"checks", "reviewer report", "skeptic report", "verification", "completion"}},
-	CauseVerification: {StepPresetRecord, []string{"close"}},
+	CauseVerification: {StepPresetADR, []string{"close"}},
 }
 
 // returnTo resolves a cause against a path's graph.

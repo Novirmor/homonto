@@ -86,6 +86,11 @@ const (
 	// StepPresetRecord: Homonto generates verification.md from the
 	// evidence. A preset's documents are lightweight, not absent.
 	StepPresetRecord Step = "preset_record"
+	// StepPresetADR: required decision records are written. A preset a
+	// human chose to continue past its scope tripwire still owes an ADR
+	// for the decision that continued it: choosing less ceremony for the
+	// work does not choose less record for the decision.
+	StepPresetADR Step = "preset_adr"
 	// StepPresetFinalize: record.md is written and the change is
 	// archived.
 	StepPresetFinalize Step = "preset_finalize"
@@ -115,7 +120,7 @@ var presetSteps = []Step{
 	StepPresetExplore, StepPresetOpenDraft, StepPresetReproduce, StepPresetScope,
 	StepPresetImplement, StepPresetIntegrate,
 	StepPresetChecks, StepPresetReview, StepPresetRepair, StepPresetRecord,
-	StepPresetFinalize, StepArchived, StepAbandoned,
+	StepPresetADR, StepPresetFinalize, StepArchived, StepAbandoned,
 }
 
 // Steps returns a path's vocabulary in canonical order.
@@ -171,7 +176,7 @@ func Phase(p Path, s Step) (artifact.Phase, error) {
 	case StepVerifyChecks, StepVerifyReview, StepVerifyRecord,
 		StepPresetChecks, StepPresetReview, StepPresetRecord:
 		return artifact.PhaseVerify, nil
-	case StepCloseADR, StepCloseFinalize, StepPresetFinalize:
+	case StepCloseADR, StepCloseFinalize, StepPresetADR, StepPresetFinalize:
 		return artifact.PhaseClose, nil
 	case StepArchived, StepAbandoned:
 		return "", fmt.Errorf("change: step %s is terminal and has no phase", s)

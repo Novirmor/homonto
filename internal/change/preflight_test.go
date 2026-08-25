@@ -38,6 +38,9 @@ type scriptedEnv struct {
 	classes   *workspacecfg.PathClasses
 	checks    []verify.Set
 	partition func(items []artifact.Item) []Unit
+	// tripwireCandidate is unused by the environment itself; the ADR test
+	// sets it to assert the gate names the candidate it settles.
+	tripwireCandidate string
 }
 
 func (s *scriptedEnv) Control(context.Context) (Member, error)   { return s.control, nil }

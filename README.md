@@ -5,7 +5,21 @@
 Homonto runs a development workflow that an agent cannot skip steps in. It
 issues typed assignments to subagents, executes the verification commands
 itself rather than believing a claim that they passed, gates advancement on
-what actually changed on disk, and leaves one committed record of the work.
+what actually changed on disk, and leaves one commit-ready record of the
+work — ordinary completion archives it; a handoff commits it.
+
+## Install
+
+```bash
+git clone https://github.com/noviopenworks/homonto
+cd homonto
+go build -o homonto .
+```
+
+Every published tag, through `v0.11.0`, is the legacy configuration
+projector the rewrite replaced — `go install
+github.com/noviopenworks/homonto@latest` builds that old product, not this
+one. Build from source until the first workflow release is tagged.
 
 ```
 homonto init --workflow task
@@ -37,7 +51,9 @@ and for work whose record has to survive the session it was done in.
   and design approval, accepting a blocking finding, what to do after three
   failed repairs. Homonto pauses and explains; it never picks.
 - **Work is portable.** `homonto handoff` commits a transferable checkpoint;
-  `homonto attach` picks it up on another machine.
+  `homonto attach` picks it up on another machine. One hop only: an attached
+  work is consumed and cannot be handed off again — moving it once more is a
+  forced takeover, not a handoff.
 
 ## The two workflows
 
@@ -71,8 +87,9 @@ them is an explicit opt-in.
 
 ## What it does not do
 
-- **No network.** Ordinary Homonto processes make no network access at all.
-  Only `homonto update` does, only when you run it, and it never checks on
+- **No network.** No command in the current binary touches the network: the
+  signed-manifest fetch the update design calls for is implemented in the
+  binary but not yet exposed as a command, and nothing checks for updates on
   its own. Homonto never calls a model provider; your host tool does that.
 - **No sandbox.** The write hook is a process gate for a cooperating host.
   Homonto does not claim to prevent an out-of-scope write; it refuses to

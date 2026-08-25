@@ -36,6 +36,8 @@ not superseded: they are still how the work is done.
 | [0025](0025-journal-crash-model.md) | Close journal crash windows with idempotent effects |
 | [0026](0026-lease-recovery-commit-marker.md) | Journal lease recovery around an on-disk commit marker |
 | [0027](0027-portable-handoff-commit-leak.md) | Document the portable-handoff commit leak and force-takeover semantics |
+| [0028](0028-one-anchored-work-per-workspace.md) | One anchored work per workspace, resumed at the phase start |
+| [0029](0029-repair-supersedes-the-attempt.md) | A repair round supersedes the attempt it repairs |
 
 ## Process
 

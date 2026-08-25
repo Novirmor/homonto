@@ -140,6 +140,18 @@ You edited a generated file. Homonto will not overwrite an edit. Either
 keep it — nothing will touch it — or discard it with
 `homonto host install --adopt`.
 
+## "handoff" refuses a work
+
+Only the workspace's single anchored work can be handed over. If two works
+are active, the first holds the members' leases and the second is not
+anchored — see [recovery](recovery.md). Finish or abandon the other one.
+
+## "worktree is dirty" from an integration area
+
+A new integration round starts from the base, and it will not reset an
+area holding uncommitted changes: those are someone's unfinished conflict
+resolution. Commit the resolution or discard it yourself, then re-run.
+
 ## gitx: worktree is dirty
 
 An implementer assignment cannot be cut from a member with uncommitted

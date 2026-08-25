@@ -23,7 +23,15 @@ workflow guides for the per-cause tables.
 
 ## Handoff
 
-Work is anchored to the machine holding its leases. To move it:
+Work is anchored to the machine holding its leases. **One work at a time.**
+A workspace's members are leased by a single work, which is what a lease
+means; a second concurrent work runs perfectly well here, sharing the same
+members, but it is not anchored and cannot be handed over. `homonto
+handoff` says so rather than producing a checkpoint the receiving machine
+could not honour. Finish or abandon the first work to hand over the
+second.
+
+To move the anchored work:
 
 ```bash
 homonto handoff
@@ -63,6 +71,14 @@ after that is issued against the wrong tree.
 Attach claims each member's registration, takes the full lease set,
 rebuilds the local runtime from the portable record, marks the checkpoint
 consumed, and commits. It is all-or-none.
+
+The work then resumes at the **start of the phase** it had reached, not at
+the exact step the other machine was on. The checkpoint says which phase
+was reached and nothing about what happened inside it, so re-entering the
+phase re-derives that from the documents and the members — the same thing
+reconciliation does when a recorded step turns out to rest on something
+that moved. Expect to re-answer the assignments of the phase in progress;
+everything the earlier phases produced is in the documents and stands.
 
 ## What travels
 

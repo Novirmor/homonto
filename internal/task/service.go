@@ -160,7 +160,7 @@ func NewEngine(deps Dependencies) (*Engine, error) {
 // StartInput names a new Task.
 type StartInput struct {
 	// Name is the normalized work name; the task document is created at
-	// active/<name>/tasks.md.
+	// docs/homonto/tasks/<name>.md.
 	Name string
 	// Goal is the initial outcome statement. It may be empty: the host
 	// fills it in during the draft step.

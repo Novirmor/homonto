@@ -27,8 +27,8 @@ func taskStartCmd(opener Opener) *cobra.Command {
 		Use:   "start <name>",
 		Short: "Start a task",
 		Long: "Start a task called <name>. The task's document is created at " +
-			"active/<name>/tasks.md in the control repository; run `homonto next` " +
-			"to get the first assignments.",
+			"docs/homonto/tasks/<name>.md in the control repository; run " +
+			"`homonto next` to get the first assignments.",
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			a, err := open(cmd, opener)

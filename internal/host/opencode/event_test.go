@@ -113,29 +113,3 @@ func TestUnknownFieldsAreTolerated(t *testing.T) {
 		t.Fatalf("write paths = %v", req.WritePaths)
 	}
 }
-
-// TestAssignmentToolTakesItsParametersFromTheAction pins the routing
-// contract: the model, the prompt, and the scope come from the action, not
-// from the plugin.
-func TestAssignmentToolTakesItsParametersFromTheAction(t *testing.T) {
-	tool := Assignment()
-	if tool.Name != "homonto_assignment" {
-		t.Fatalf("tool name = %q", tool.Name)
-	}
-	for _, want := range []string{"prompt", "working_directory", "write_scope"} {
-		found := false
-		for _, f := range tool.Fields {
-			if f == want {
-				found = true
-			}
-		}
-		if !found {
-			t.Errorf("the assignment tool does not take %q from the action", want)
-		}
-	}
-	for _, want := range []string{"do not substitute a model", "rewrite the prompt", "widen the write scope"} {
-		if !strings.Contains(tool.Description, want) {
-			t.Errorf("the tool description does not forbid %q", want)
-		}
-	}
-}

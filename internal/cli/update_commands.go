@@ -9,9 +9,7 @@ import (
 	"github.com/spf13/cobra"
 )
 
-// workflowUpdateCmd groups the rewritten self-update commands. It is
-// named apart from the legacy projector's updateCmd, which the cutover
-// deletes.
+// workflowUpdateCmd groups the self-update commands.
 func workflowUpdateCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "update",

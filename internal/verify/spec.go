@@ -22,8 +22,11 @@
 // output — so a checkpoint can prove which output was seen without
 // carrying a word of it.
 //
-// Freshness is a comparison, not a timestamp: a result set is fresh only
-// while every input it was taken against still matches (see Fresh).
+// Freshness is a comparison, not a timestamp: the workflow engines
+// reconcile recorded result sets against the world's current inputs
+// (internal/task/reconcile.go, internal/change/reconcile.go), so a set
+// is evidence only while every input it was taken against still
+// matches.
 package verify
 
 import (
@@ -155,15 +158,6 @@ type Inputs struct {
 	Sources []fingerprint.Digest `json:"sources"`
 	// Artifacts are the document digests the checks assert about.
 	Artifacts []fingerprint.Digest `json:"artifacts"`
-}
-
-// InputsFor builds the configuration half of Inputs from a manifest.
-func InputsFor(cfg workspacecfg.Config, repo identity.RepositoryID) (Inputs, error) {
-	digest, err := workspacecfg.VerificationFingerprint(cfg, repo)
-	if err != nil {
-		return Inputs{}, err
-	}
-	return Inputs{Repository: repo, Config: digest}, nil
 }
 
 // Digest fingerprints the whole input set.

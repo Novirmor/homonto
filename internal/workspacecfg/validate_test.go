@@ -19,7 +19,7 @@ func validCfg() Config {
 				ID: testControlID, Path: ".", Kind: KindGit,
 				Remotes: []string{"git@example.com:acme/control.git"},
 				Verification: []Check{
-					{Name: "lint", Command: []string{"golangci-lint", "run"}, WorkingDir: "cmd/onto", Environment: []string{"CI", "GOFLAGS"}, Timeout: "10m"},
+					{Name: "lint", Command: []string{"golangci-lint", "run"}, WorkingDir: "internal/store", Environment: []string{"CI", "GOFLAGS"}, Timeout: "10m"},
 					{Name: "unit", Command: []string{"go", "test", "./..."}, WorkingDir: ".", Timeout: "5m"},
 				},
 				Paths: &PathClasses{

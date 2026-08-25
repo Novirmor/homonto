@@ -23,7 +23,7 @@ timeout = "5m"
 [[members.verification]]
 name = "lint"
 command = ["golangci-lint", "run"]
-working_dir = "cmd/onto"
+working_dir = "internal/store"
 environment = ["CI", "GOFLAGS"]
 
 [members.paths]

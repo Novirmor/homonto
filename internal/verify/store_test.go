@@ -89,10 +89,6 @@ func TestStoreRoundTripsEvidence(t *testing.T) {
 	if got.Results[0].SpecPin != set.Results[0].SpecPin {
 		t.Fatal("the spec pin did not round trip")
 	}
-	// Freshness still works over the stored set.
-	if fresh, reasons := Fresh(got, set.Inputs); !fresh {
-		t.Fatalf("a freshly stored set is stale: %+v", reasons)
-	}
 }
 
 // TestStoreRecordsOnlyEnvironmentNames proves values never reach the
@@ -217,5 +213,34 @@ func TestRecordRejectsBadWorkAndInputs(t *testing.T) {
 	bad.Inputs.Config = "not-a-digest"
 	if err := s.Record(t.Context(), mustWorkID(t), bad); err == nil {
 		t.Fatal("Record with malformed inputs = nil error, want rejection")
+	}
+}
+
+// TestInputsRoundTripCanonically pins the storage encoding of inputs:
+// canonical form regardless of the order the caller collected them in.
+func TestInputsRoundTripCanonically(t *testing.T) {
+	in := testInputs(t)
+	in.Sources = append(in.Sources, in.Sources[0]) // duplicate
+	b, err := MarshalInputs(in)
+	if err != nil {
+		t.Fatalf("MarshalInputs: %v", err)
+	}
+	back, err := UnmarshalInputs(b)
+	if err != nil {
+		t.Fatalf("UnmarshalInputs: %v", err)
+	}
+	if len(back.Sources) != 1 {
+		t.Fatalf("stored inputs kept the duplicate: %+v", back.Sources)
+	}
+	d1, err := in.Digest()
+	if err != nil {
+		t.Fatalf("Digest: %v", err)
+	}
+	d2, err := back.Digest()
+	if err != nil {
+		t.Fatalf("Digest(back): %v", err)
+	}
+	if d1 != d2 {
+		t.Fatal("canonicalization is not stable across a round trip")
 	}
 }

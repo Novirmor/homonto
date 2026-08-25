@@ -1,7 +1,7 @@
 // Package schema carries cross-package sentinels for persisted-document
-// schema checks. State, config, onto-state, and the catalog each enforce a
-// schema version cap; converging on a shared sentinel lets callers branch
-// (e.g. a future `homonto update` can detect "binary too old" without
+// schema checks. The state database and the workspace config manifest
+// each enforce a schema version cap; converging on a shared sentinel
+// lets callers branch (e.g. detecting "binary too old" without
 // substring-matching an error message).
 package schema
 

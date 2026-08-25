@@ -1,5 +1,5 @@
 // Package opencode normalizes OpenCode's plugin events into Homonto's
-// protocol, and describes the assignment tool the plugin exposes.
+// protocol.
 //
 // Everything here is translation, for the same reason as the Claude
 // package: no decision is made here, so a second host tool costs a file
@@ -135,30 +135,4 @@ func relativeTo(root, path string) string {
 		return filepath.ToSlash(path)
 	}
 	return filepath.ToSlash(rel)
-}
-
-// AssignmentTool is the tool description the plugin registers so a host
-// agent can launch a Homonto assignment as a child session.
-//
-// The model, the prompt, and the working directory all come from the
-// ACTION, not from the plugin. That is the whole point: routing policy is
-// configured per role and per host in the workspace manifest, resolved by
-// the binary, and handed to the host as data. A plugin that chose a model
-// would be a plugin that had opinions about the workflow.
-type AssignmentTool struct {
-	Name        string `json:"name"`
-	Description string `json:"description"`
-	// Fields names the action fields the child session must take verbatim.
-	Fields []string `json:"fields"`
-}
-
-// Assignment returns the tool description.
-func Assignment() AssignmentTool {
-	return AssignmentTool{
-		Name: "homonto_assignment",
-		Description: "Run one Homonto assignment as a child session. Every parameter comes " +
-			"from the action `homonto next` returned: do not substitute a model, " +
-			"rewrite the prompt, or widen the write scope.",
-		Fields: []string{"id", "role", "prompt", "working_directory", "write_scope", "expected_report"},
-	}
 }

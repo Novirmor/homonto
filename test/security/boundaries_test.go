@@ -112,7 +112,9 @@ func TestNoShippedPackageImportsATestHelper(t *testing.T) {
 // TestTheShippedBinaryCarriesOnlyTheExpectedModules. Every third-party
 // module in the binary is code that runs with the user's file permissions
 // on the user's source tree. Adding one should be a decision, not a
-// side effect of reaching for a convenience.
+// side effect of reaching for a convenience. The set is exact in both
+// directions: a module nobody decided on fails, and so does a stale
+// entry for a module the binary no longer carries.
 func TestTheShippedBinaryCarriesOnlyTheExpectedModules(t *testing.T) {
 	expected := map[string]bool{
 		"github.com/spf13/cobra":           true,
@@ -125,11 +127,9 @@ func TestTheShippedBinaryCarriesOnlyTheExpectedModules(t *testing.T) {
 		"modernc.org/memory":               true,
 		"github.com/dustin/go-humanize":    true,
 		"github.com/google/uuid":           true,
-		"github.com/ncruces/go-strftime":   true,
 		"github.com/remyoudompheng/bigfft": true,
-		"golang.org/x/exp":                 true,
 	}
-	var unexpected []string
+	var unexpected, missing []string
 	seen := map[string]bool{}
 	for _, p := range listPackages(t) {
 		if p.Module == nil || p.Module.Path == module || seen[p.Module.Path] {
@@ -140,10 +140,21 @@ func TestTheShippedBinaryCarriesOnlyTheExpectedModules(t *testing.T) {
 			unexpected = append(unexpected, p.Module.Path)
 		}
 	}
+	for path := range expected {
+		if !seen[path] {
+			missing = append(missing, path)
+		}
+	}
 	sort.Strings(unexpected)
+	sort.Strings(missing)
 	if len(unexpected) > 0 {
-		t.Fatalf("the shipped binary carries modules nobody decided on:\n  %s\n"+
+		t.Errorf("the shipped binary carries modules nobody decided on:\n  %s\n"+
 			"If one of these is intended, add it here deliberately.",
 			strings.Join(unexpected, "\n  "))
+	}
+	if len(missing) > 0 {
+		t.Errorf("stale entries: the binary no longer carries these modules:\n  %s\n"+
+			"If a dependency was dropped, remove it here.",
+			strings.Join(missing, "\n  "))
 	}
 }

@@ -54,7 +54,6 @@ if [ -n "$LIST_ONLY" ]; then
   done
   echo "SHA256SUMS"
   echo "release-manifest.json"
-  echo "release-manifest.sig"
   exit 0
 fi
 
@@ -84,4 +83,10 @@ go run ./tools/release-manifest \
   --version "$VERSION" --dist "$DIST" --base-url "$BASE_URL/$VERSION" \
   --out "$DIST/release-manifest.json"
 
-( cd "$DIST" && sha256sum ./homonto_*.tar.gz > SHA256SUMS && cat SHA256SUMS )
+# sha256sum is a GNU coreutils tool the macOS runners do not carry; shasum
+# prints the same "digest  path" lines. Output format must stay identical
+# either way — downloaders check SHA256SUMS against what the other tool
+# wrote.
+sums="sha256sum"
+command -v sha256sum >/dev/null 2>&1 || sums="shasum -a 256"
+( cd "$DIST" && $sums ./homonto_*.tar.gz > SHA256SUMS && cat SHA256SUMS )

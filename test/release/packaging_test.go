@@ -57,9 +57,11 @@ func command(dir, name string, args ...string) *exec.Cmd {
 	return cmd
 }
 
-// requiredAssets is the exact published asset set. A release publishes
-// these and nothing else: an extra archive is a platform nobody verified,
-// and a missing one is a platform someone will report as broken.
+// requiredAssets is the exact set the BUILD produces: --list is the
+// script's own account of what it writes, and the signature is not the
+// build's to produce — the release workflow signs afterwards and composes
+// the published set. An extra archive is a platform nobody verified, and a
+// missing one is a platform someone will report as broken.
 var requiredAssets = []string{
 	"SHA256SUMS",
 	"homonto_v9.9.9_darwin_amd64.tar.gz",
@@ -67,7 +69,6 @@ var requiredAssets = []string{
 	"homonto_v9.9.9_linux_amd64.tar.gz",
 	"homonto_v9.9.9_linux_arm64.tar.gz",
 	"release-manifest.json",
-	"release-manifest.sig",
 }
 
 // TestReleaseListsExactlyTheRequiredAssets pins the asset set without

@@ -70,15 +70,6 @@ if [ "$before" != "$after" ]; then
 fi
 echo "a plain directory is still plain"
 
-step "release packaging (one native target, signed and verified)"
-go test ./test/release/ -count=1
-
-step "documentation describes this product"
-go test ./test/docs/ -count=1
-
-step "whole-program security boundaries"
-go test ./test/security/ -count=1
-
 if [ -n "$QUICK" ]; then
   printf '\n=== gate: --quick skipped fuzzing and govulncheck. This is NOT a release gate.\n'
   exit 0

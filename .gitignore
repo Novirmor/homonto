@@ -2,8 +2,7 @@
 .env
 # Release build output from scripts/build-release.sh.
 /dist/
-# Locally-built binaries (e.g. `go build ./cmd/onto`, `go build .`).
-/onto
+# Locally-built binaries (e.g. `go build .`).
 /homonto
 graphify-out/
 __pycache__/
@@ -14,9 +13,6 @@ __pycache__/
 /.opencode/
 /opencode.json
 
-# E2E matrix run logs (scratch)
-test/e2e/.out/
-
 # Workflow scaffolding. Comet drives big development, but its artifacts are
 # working-tree scratch, not repository content: proposals, delta specs, tasks,
 # plans, and verification reports describe how a change was produced, not what
@@ -25,6 +21,10 @@ test/e2e/.out/
 /.superpowers/
 /openspec/
 /docs/superpowers/
+# The Comet selection record is transient state that gets committed by
+# accident with a stale branch name (docs/agents/comet.md). The rest of
+# /.comet/ — notably config.yaml — stays tracked.
+/.comet/current-change.json
 
 # OKF grounding bundle — generated from the code, regenerated on demand.
 /okf_bundle/

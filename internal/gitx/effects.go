@@ -61,6 +61,14 @@ type worktreeCreatePayload struct {
 	Path    string `json:"path"`
 	Branch  string `json:"branch"`
 	Commit  string `json:"commit"`
+	// Preexisting records that the worktree was ALREADY there when this
+	// operation started, so rolling back must not remove it.
+	//
+	// An integration area is re-entered by every round after the first.
+	// Without this, a failed second round tears down the area the first
+	// round built — and then reports the teardown's failure instead of
+	// the reason it rolled back.
+	Preexisting bool `json:"preexisting,omitempty"`
 }
 
 // worktreeCreateEffect creates a linked worktree. Apply is idempotent: a
@@ -75,7 +83,17 @@ type worktreeCreateEffect struct {
 
 func (e *worktreeCreateEffect) Kind() string { return kindWorktreeCreate }
 
-func (e *worktreeCreateEffect) Prepare(ctx context.Context) (any, error) { return e.payload, nil }
+func (e *worktreeCreateEffect) Prepare(ctx context.Context) (any, error) {
+	// Observed once, at Prepare, and journaled: replay must use what was
+	// true when the operation started, not what is true now.
+	_, registered, err := worktreeRegisteredWith(ctx, e.runner, e.payload.RepoDir, e.payload.Path)
+	if err != nil {
+		return nil, err
+	}
+	p := e.payload
+	p.Preexisting = registered
+	return p, nil
+}
 
 func (e *worktreeCreateEffect) Apply(ctx context.Context, rec operation.EffectRecord) error {
 	p, err := decodeWorktreeCreate(rec)
@@ -118,6 +136,9 @@ func (e *worktreeCreateEffect) Revert(ctx context.Context, rec operation.EffectR
 		return err
 	}
 	defer lockWorktree(ctx, e.runner, p.RepoDir)()
+	if p.Preexisting {
+		return nil // it was not ours to remove
+	}
 	_, registered, err := worktreeRegisteredWith(ctx, e.runner, p.RepoDir, p.Path)
 	if err != nil {
 		return err
@@ -326,6 +347,15 @@ func (e *cherryPickEffect) Apply(ctx context.Context, rec operation.EffectRecord
 			files, ferr := conflictedFiles(ctx, e.runner, p.Dir)
 			if ferr != nil {
 				return fmt.Errorf("gitx: cherry-pick %s in %s: %w", p.Commit, p.Dir, err)
+			}
+			// A stopped cherry-pick with no unmerged path is not a
+			// conflict a human can resolve — it is git refusing for some
+			// other reason (most often "the previous cherry-pick is now
+			// empty"). Reporting it as a conflict on no files tells the
+			// reader nothing, so git's own message is kept instead.
+			if len(files) == 0 {
+				return fmt.Errorf("gitx: cherry-pick %s in %s stopped without conflicted paths: %w",
+					p.Commit, p.Dir, err)
 			}
 			return &ConflictError{Files: files}
 		}
@@ -596,4 +626,83 @@ func worktreeRegisteredWith(ctx context.Context, r Runner, repoDir, path string)
 		}
 	}
 	return WorktreeEntry{}, false, nil
+}
+
+// integrationResetPayload is what the reset effect persists.
+type integrationResetPayload struct {
+	RepoDir string `json:"repo_dir"`
+	Path    string `json:"path"`
+	Base    string `json:"base"`
+}
+
+// integrationResetEffect returns an existing integration worktree to the
+// base its round starts from.
+//
+// An integration area is named for its work and member, so a second
+// integration round — the one that follows a repair — finds the first
+// round's area still holding the first round's materials. Cherry-picking
+// this round's materials on top of that integrates work that was already
+// superseded: git either stops with "the previous cherry-pick is now
+// empty" or, worse, succeeds and leaves the failed attempt on the branch
+// while the record says the checks passed.
+//
+// So a round starts from the base, always. A DIRTY area is refused rather
+// than reset: uncommitted changes there are someone's unfinished conflict
+// resolution, and discarding that silently is not a decision this code
+// gets to make.
+type integrationResetEffect struct {
+	runner  Runner
+	payload integrationResetPayload
+}
+
+func (e *integrationResetEffect) Kind() string { return kindIntegrationReset }
+
+func (e *integrationResetEffect) Prepare(ctx context.Context) (any, error) { return e.payload, nil }
+
+func (e *integrationResetEffect) Apply(ctx context.Context, rec operation.EffectRecord) error {
+	p, err := decodeIntegrationReset(rec)
+	if err != nil {
+		return err
+	}
+	_, registered, err := worktreeRegisteredWith(ctx, e.runner, p.RepoDir, p.Path)
+	if err != nil {
+		return err
+	}
+	if !registered {
+		return nil // the create effect made it, and a fresh worktree is at base
+	}
+	head, err := revParse(ctx, e.runner, p.Path, "HEAD", "")
+	if err != nil {
+		return err
+	}
+	if head == p.Base {
+		return nil // already applied
+	}
+	files, err := dirtyPaths(ctx, e.runner, p.Path)
+	if err != nil {
+		return err
+	}
+	if len(files) > 0 {
+		return &DirtyWorktreeError{Files: files}
+	}
+	if _, err := e.runner.Run(ctx, p.Path, "reset", "--hard", p.Base); err != nil {
+		return fmt.Errorf("gitx: reset integration %s to %s: %w", p.Path, p.Base, err)
+	}
+	return nil
+}
+
+// Revert does nothing: the previous round's commits are reachable from the
+// materials they were cherry-picked from, so there is nothing this effect
+// destroyed that rolling back could or should restore.
+func (e *integrationResetEffect) Revert(ctx context.Context, rec operation.EffectRecord) error {
+	return nil
+}
+
+// decodeIntegrationReset reads the reset payload back from the journal.
+func decodeIntegrationReset(rec operation.EffectRecord) (integrationResetPayload, error) {
+	var p integrationResetPayload
+	if err := json.Unmarshal(rec.Payload, &p); err != nil {
+		return integrationResetPayload{}, fmt.Errorf("gitx: decode integration reset payload: %w", err)
+	}
+	return p, nil
 }

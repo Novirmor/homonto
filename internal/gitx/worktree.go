@@ -37,6 +37,7 @@ const (
 	kindCherryPick         = "gitx.cherry-pick"
 	kindCherryPickContinue = "gitx.cherry-pick-continue"
 	kindCherryPickAbort    = "gitx.cherry-pick-abort"
+	kindIntegrationReset   = "gitx.integration-reset"
 )
 
 // Typed errors. Wrap with context via fmt.Errorf("%w", ...) so callers can
@@ -332,6 +333,7 @@ func (s *Service) registerEffects() {
 	s.ops.RegisterEffect(&cherryPickEffect{runner: s.runner})
 	s.ops.RegisterEffect(&cherryPickContinueEffect{runner: s.runner})
 	s.ops.RegisterEffect(&cherryPickAbortEffect{runner: s.runner})
+	s.ops.RegisterEffect(&integrationResetEffect{runner: s.runner})
 }
 
 // CreateAssignment creates an isolated implementer worktree for one action.

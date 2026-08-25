@@ -148,17 +148,33 @@ func (e *Engine) checkOffPartition(ctx context.Context, st State, actionID ident
 	return err
 }
 
-// completedResults returns the finished units of the MOST RECENT
-// implementation round — the first one, or the newest repair — because
-// that is the material integration must combine. It deliberately ignores
-// the current generation: a repair round closes its own generation when it
-// finishes, so the material to integrate always sits one behind.
+// completedResults returns the material integration must combine: for
+// each work unit, the newest finished implementer assignment.
+//
+// "Newest per unit" rather than "newest generation" is the whole point. A
+// repair round is issued for the same units as the round it repairs, and
+// it carries the SAME generation — the generation only closes once the
+// repair finishes. So selecting by generation returns the failed original
+// alongside its repair, and integration then tries to apply both: the
+// second cherry-pick lands on a tree that already has the first, and git
+// stops with "the previous cherry-pick is now empty". The failed attempt
+// was what reached the integration branch, and the record said the checks
+// passed.
+//
+// A repair therefore SUPERSEDES the attempt it repairs. Between two
+// assignments for one unit the later one wins, and a repair beats an
+// implement outright — a repair is by definition issued after the attempt
+// it replaces.
 func (e *Engine) completedResults(ctx context.Context, st State) ([]Result, error) {
 	actions, err := e.assignments.Actions(ctx, st.WorkID)
 	if err != nil {
 		return nil, err
 	}
-	newest := int64(-1)
+	// Insertion order is preserved so integration applies materials in the
+	// order they were produced rather than in map order.
+	var order []string
+	newest := map[string]assignment.Action{}
+	units := map[string]Partition{}
 	for _, act := range actions {
 		if act.Kind != protocol.KindAssignment || act.Role != protocol.RoleImplementer {
 			continue
@@ -169,23 +185,26 @@ func (e *Engine) completedResults(ctx context.Context, st State) ([]Result, erro
 		if act.State != assignment.StateSubmitted {
 			continue
 		}
-		if act.Generation > newest {
-			newest = act.Generation
+		p, found, err := e.partitionOf(ctx, act.ID)
+		if err != nil {
+			return nil, err
 		}
-	}
-	if newest < 0 {
-		return nil, nil
+		if !found {
+			continue
+		}
+		key := string(p.Member.ID) + "\x00" + p.Label
+		prior, seen := newest[key]
+		if !seen {
+			order = append(order, key)
+		}
+		if !seen || supersedes(act, prior) {
+			newest[key] = act
+			units[key] = p
+		}
 	}
 	var out []Result
-	for _, act := range actions {
-		if act.Generation != newest || act.Role != protocol.RoleImplementer ||
-			act.State != assignment.StateSubmitted {
-			continue
-		}
-		if act.Step != string(StepDoImplement) && act.Step != string(StepDoRepair) {
-			continue
-		}
-		result, ok, err := e.resultOf(ctx, act)
+	for _, key := range order {
+		result, ok, err := e.resultOf(ctx, newest[key])
 		if err != nil {
 			return nil, err
 		}
@@ -195,6 +214,21 @@ func (e *Engine) completedResults(ctx context.Context, st State) ([]Result, erro
 	}
 	return out, nil
 }
+
+// supersedes reports whether a replaces b as one unit's finished work.
+func supersedes(a, b assignment.Action) bool {
+	if a.Generation != b.Generation {
+		return a.Generation > b.Generation
+	}
+	if repairing(a) != repairing(b) {
+		return repairing(a)
+	}
+	return a.CreatedAt.After(b.CreatedAt)
+}
+
+// repairing reports whether an assignment is a repair rather than a first
+// attempt.
+func repairing(act assignment.Action) bool { return act.Step == string(StepDoRepair) }
 
 // resultOf builds one finished unit's Result from its recorded partition
 // and its report.

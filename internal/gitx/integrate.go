@@ -53,17 +53,29 @@ func (s *Service) CreateIntegration(ctx context.Context, req IntegrationRequest)
 			Path:         path,
 			Branch:       branch,
 		},
-		effects: []operation.Effect{&worktreeCreateEffect{
-			runner: s.runner,
-			payload: worktreeCreatePayload{
-				RepoDir: req.RepositoryDir, Path: path, Branch: branch, Commit: base,
+		effects: []operation.Effect{
+			&worktreeCreateEffect{
+				runner: s.runner,
+				payload: worktreeCreatePayload{
+					RepoDir: req.RepositoryDir, Path: path, Branch: branch, Commit: base,
+				},
 			},
-		}},
+			// A repair round integrates into the same area as the round it
+			// repairs. It must start from the base, not from what the
+			// superseded round left there.
+			&integrationResetEffect{
+				runner:  s.runner,
+				payload: integrationResetPayload{RepoDir: req.RepositoryDir, Path: path, Base: base},
+			},
+		},
 	}
 	if err := s.ops.Run(ctx, op); err != nil {
-		cleanupErr := s.finishOrRollBack(ctx, opID)
-		if cleanupErr != nil {
-			return IntegrationWorktree{}, fmt.Errorf("gitx: create integration %s: %v (cleanup: %v)", opID, err, cleanupErr)
+		// The cleanup's own failure is reported alongside, never instead
+		// of, the reason the operation rolled back: a caller branching on
+		// a typed refusal must still be able to see it.
+		if cleanupErr := s.finishOrRollBack(ctx, opID); cleanupErr != nil {
+			return IntegrationWorktree{}, fmt.Errorf("gitx: create integration %s (cleanup: %v): %w",
+				opID, cleanupErr, err)
 		}
 		return IntegrationWorktree{}, fmt.Errorf("gitx: create integration %s: %w", opID, err)
 	}

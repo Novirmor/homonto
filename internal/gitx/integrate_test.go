@@ -344,3 +344,107 @@ func TestApplyCommitRejectsForeignMaterial(t *testing.T) {
 		t.Fatal("ApplyCommit accepted a material with a foreign base")
 	}
 }
+
+// TestIntegrationRoundStartsFromTheBase is the regression test for a
+// repair round integrating on top of the round it repairs.
+//
+// An integration area is named for its work and member, so the second
+// round finds the first round's area still holding the first round's
+// materials. Cherry-picking this round's materials on top of that
+// integrates work that was already superseded: git either stops with "the
+// previous cherry-pick is now empty" — which surfaced as a workflow that
+// could not get past a failed check — or, worse, succeeds and leaves the
+// failed attempt on the branch while the record says the checks passed.
+func TestIntegrationRoundStartsFromTheBase(t *testing.T) {
+	e := newEnv(t)
+	base := e.base(t)
+
+	w1 := e.assign(t, newAction(t), []string{"src"})
+	implement(t, w1, "src/login.go", "package src\n\nfunc Login() bool { return false }\n", "attempt")
+	first := material(t, e, w1, []string{"src"})
+	iwt, err := e.svc.CreateIntegration(context.Background(), IntegrationRequest{
+		WorkID: e.workID, RepositoryID: e.repoID, RepositoryDir: e.member,
+		Commits: []CommitMaterial{first},
+	})
+	if err != nil {
+		t.Fatalf("CreateIntegration: %v", err)
+	}
+	if _, err := e.svc.ApplyCommit(context.Background(), iwt, first); err != nil {
+		t.Fatalf("ApplyCommit: %v", err)
+	}
+	head, err := e.svc.runner.Run(context.Background(), iwt.Path, "rev-parse", "HEAD")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.TrimSpace(head) == base {
+		t.Fatal("the first round applied nothing, so the second proves nothing")
+	}
+
+	// The repair round: same work, same member, superseding material.
+	w2 := e.assign(t, newAction(t), []string{"src"})
+	implement(t, w2, "src/login.go", "package src\n\nfunc Login() bool { return true }\n", "repair")
+	second := material(t, e, w2, []string{"src"})
+	iwt, err = e.svc.CreateIntegration(context.Background(), IntegrationRequest{
+		WorkID: e.workID, RepositoryID: e.repoID, RepositoryDir: e.member,
+		Commits: []CommitMaterial{second},
+	})
+	if err != nil {
+		t.Fatalf("CreateIntegration for the repair round: %v", err)
+	}
+	restarted, err := e.svc.runner.Run(context.Background(), iwt.Path, "rev-parse", "HEAD")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.TrimSpace(restarted) != base {
+		t.Fatalf("the repair round started at %s, not at the base %s",
+			strings.TrimSpace(restarted), base)
+	}
+	if _, err := e.svc.ApplyCommit(context.Background(), iwt, second); err != nil {
+		t.Fatalf("the repair could not be integrated: %v", err)
+	}
+	shown, err := e.svc.runner.Run(context.Background(), iwt.Path, "show", "HEAD:src/login.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(shown, "return true") {
+		t.Errorf("the integration holds the superseded attempt:\n%s", shown)
+	}
+}
+
+// TestIntegrationRoundRefusesToDiscardUncommittedWork: uncommitted changes
+// in an integration area are someone's unfinished conflict resolution, and
+// discarding that silently is not a decision this code gets to make.
+func TestIntegrationRoundRefusesToDiscardUncommittedWork(t *testing.T) {
+	e := newEnv(t)
+	w1 := e.assign(t, newAction(t), []string{"src"})
+	implement(t, w1, "src/login.go", "package src\n\nfunc Login() bool { return false }\n", "attempt")
+	first := material(t, e, w1, []string{"src"})
+	iwt, err := e.svc.CreateIntegration(context.Background(), IntegrationRequest{
+		WorkID: e.workID, RepositoryID: e.repoID, RepositoryDir: e.member,
+		Commits: []CommitMaterial{first},
+	})
+	if err != nil {
+		t.Fatalf("CreateIntegration: %v", err)
+	}
+	if _, err := e.svc.ApplyCommit(context.Background(), iwt, first); err != nil {
+		t.Fatalf("ApplyCommit: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(iwt.Path, "src", "login.go"),
+		[]byte("package src\n\n// half-resolved\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	w2 := e.assign(t, newAction(t), []string{"src"})
+	implement(t, w2, "src/login.go", "package src\n\nfunc Login() bool { return true }\n", "repair")
+	second := material(t, e, w2, []string{"src"})
+	_, err = e.svc.CreateIntegration(context.Background(), IntegrationRequest{
+		WorkID: e.workID, RepositoryID: e.repoID, RepositoryDir: e.member,
+		Commits: []CommitMaterial{second},
+	})
+	if err == nil {
+		t.Fatal("a round started over someone's uncommitted resolution")
+	}
+	if !errors.Is(err, ErrDirtyWorktree) {
+		t.Errorf("refused with %v, want a dirty-worktree refusal", err)
+	}
+}

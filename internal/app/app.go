@@ -22,6 +22,7 @@ import (
 	"github.com/noviopenworks/homonto/internal/snapshot"
 	"github.com/noviopenworks/homonto/internal/store"
 	"github.com/noviopenworks/homonto/internal/task"
+	"github.com/noviopenworks/homonto/internal/update"
 	"github.com/noviopenworks/homonto/internal/verify"
 	"github.com/noviopenworks/homonto/internal/workspacecfg"
 )
@@ -131,6 +132,13 @@ func build(ctx context.Context, root string, cfg workspacecfg.Config, db *store.
 	}
 	controlRoot := filepath.Join(root, filepath.FromSlash(normalizePath(cfg.Control.Path)))
 	if !readOnly {
+		// An interrupted self-update must be finished or undone before
+		// anything else runs. Running ordinary commands against a
+		// half-replaced installation is how a workspace ends up being
+		// driven by one binary and described by another.
+		if err := recoverUpdate(ctx, root); err != nil {
+			return nil, err
+		}
 		// Finish what a previous run started before starting anything new.
 		if err := ops.RecoverPending(ctx); err != nil {
 			return nil, fmt.Errorf("app: recover pending operations: %w", err)
@@ -196,6 +204,30 @@ func build(ctx context.Context, root string, cfg workspacecfg.Config, db *store.
 		assignments: assignments, artifacts: artifacts, findings: findings,
 		evidence: evidence, archive: arch, guard: g, now: now,
 	}, nil
+}
+
+// recoverUpdate finishes or undoes an interrupted self-update.
+//
+// Whichever binary is on disk after a crash can do this — the journal
+// format is deliberately readable by both the old binary and the
+// candidate — so recovery happens on the next invocation rather than
+// waiting for the one that was interrupted to come back.
+func recoverUpdate(ctx context.Context, root string) error {
+	pending, err := update.Pending(root)
+	if err != nil {
+		return fmt.Errorf("app: %w", err)
+	}
+	if !pending {
+		return nil
+	}
+	service, err := update.NewService(update.Options{ControlRoot: root})
+	if err != nil {
+		return err
+	}
+	if err := service.RecoverPending(ctx); err != nil {
+		return fmt.Errorf("app: recover the interrupted update: %w", err)
+	}
+	return nil
 }
 
 // resolveRoot turns a possibly-empty root into an absolute clean path.

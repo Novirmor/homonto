@@ -58,6 +58,11 @@ const (
 // Preset steps: open -> build -> verify -> close. A preset has no Design
 // and no separate plan; that is the whole saving.
 const (
+	// StepPresetExplore: parallel explorers survey the confirmed members.
+	// A preset skips deep design, not the explorers: every Change path
+	// uses all four roles, and the preflight's explorers assessed the
+	// CLASSIFICATION rather than the work.
+	StepPresetExplore Step = "preset_explore"
 	// StepPresetOpenDraft: the host writes fix.md or tweak.md and
 	// tasks.md.
 	StepPresetOpenDraft Step = "preset_open_draft"
@@ -78,6 +83,9 @@ const (
 	StepPresetReview Step = "preset_review"
 	// StepPresetRepair: a bounded repair round.
 	StepPresetRepair Step = "preset_repair"
+	// StepPresetRecord: Homonto generates verification.md from the
+	// evidence. A preset's documents are lightweight, not absent.
+	StepPresetRecord Step = "preset_record"
 	// StepPresetFinalize: record.md is written and the change is
 	// archived.
 	StepPresetFinalize Step = "preset_finalize"
@@ -104,9 +112,9 @@ var fullSteps = []Step{
 
 // presetSteps is the Fix and Tweak vocabulary in canonical order.
 var presetSteps = []Step{
-	StepPresetOpenDraft, StepPresetReproduce, StepPresetScope,
+	StepPresetExplore, StepPresetOpenDraft, StepPresetReproduce, StepPresetScope,
 	StepPresetImplement, StepPresetIntegrate,
-	StepPresetChecks, StepPresetReview, StepPresetRepair,
+	StepPresetChecks, StepPresetReview, StepPresetRepair, StepPresetRecord,
 	StepPresetFinalize, StepArchived, StepAbandoned,
 }
 
@@ -135,7 +143,7 @@ func firstStep(p Path) string {
 	if p == PathFull {
 		return string(StepOpenExplore)
 	}
-	return string(StepPresetOpenDraft)
+	return string(StepPresetExplore)
 }
 
 // terminalStep reports whether a change at this step has finished.
@@ -153,7 +161,7 @@ func KnownStep(p Path, step Step) bool { return index(p, step) >= 0 }
 func Phase(p Path, s Step) (artifact.Phase, error) {
 	switch s {
 	case StepOpenExplore, StepOpenChallenge, StepOpenDraft, StepOpenApprove,
-		StepPresetOpenDraft, StepPresetReproduce, StepPresetScope:
+		StepPresetExplore, StepPresetOpenDraft, StepPresetReproduce, StepPresetScope:
 		return artifact.PhaseOpen, nil
 	case StepDesignDraft, StepDesignChallenge, StepDesignApprove:
 		return artifact.PhaseDesign, nil
@@ -161,7 +169,7 @@ func Phase(p Path, s Step) (artifact.Phase, error) {
 		StepPresetImplement, StepPresetIntegrate, StepPresetRepair:
 		return artifact.PhaseBuild, nil
 	case StepVerifyChecks, StepVerifyReview, StepVerifyRecord,
-		StepPresetChecks, StepPresetReview:
+		StepPresetChecks, StepPresetReview, StepPresetRecord:
 		return artifact.PhaseVerify, nil
 	case StepCloseADR, StepCloseFinalize, StepPresetFinalize:
 		return artifact.PhaseClose, nil

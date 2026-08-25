@@ -494,3 +494,52 @@ func TestAbandonStopsTheChangeAndClosesOpenActions(t *testing.T) {
 		t.Fatalf("the abandoned change's proposal was removed: %v", err)
 	}
 }
+
+// writeDocument replaces one document's body on disk, the way a host
+// would.
+func (h *harness) writeDocument(t *testing.T, st State, kind artifact.Kind, body string) {
+	t.Helper()
+	path, err := st.DocumentPath(kind)
+	if err != nil {
+		t.Fatalf("DocumentPath(%s): %v", kind, err)
+	}
+	abs := filepath.Join(h.root, filepath.FromSlash(path))
+	raw, err := os.ReadFile(abs)
+	if err != nil {
+		t.Fatalf("read %s: %v", path, err)
+	}
+	doc, err := artifact.Parse(raw)
+	if err != nil {
+		t.Fatalf("parse %s: %v", path, err)
+	}
+	for i := range doc.Regions {
+		if doc.Regions[i].Region == artifact.RegionWholeDocument {
+			doc.Regions[i].Content = []byte(body)
+		}
+	}
+	rendered, err := artifact.Render(doc)
+	if err != nil {
+		t.Fatalf("render %s: %v", path, err)
+	}
+	if err := os.WriteFile(abs, rendered, 0o600); err != nil {
+		t.Fatalf("write %s: %v", path, err)
+	}
+}
+
+// readDocument returns one document's body, or "" when it does not exist.
+func (h *harness) readDocument(t *testing.T, st State, kind artifact.Kind) string {
+	t.Helper()
+	path, err := st.DocumentPath(kind)
+	if err != nil {
+		t.Fatalf("DocumentPath(%s): %v", kind, err)
+	}
+	raw, err := os.ReadFile(filepath.Join(h.root, filepath.FromSlash(path)))
+	if err != nil {
+		return ""
+	}
+	doc, err := artifact.Parse(raw)
+	if err != nil {
+		t.Fatalf("parse %s: %v", path, err)
+	}
+	return string(doc.Region(artifact.RegionWholeDocument))
+}

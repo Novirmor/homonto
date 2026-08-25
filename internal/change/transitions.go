@@ -223,6 +223,10 @@ func AdvancePreset(path Path, from Step, event Event) (Step, error) {
 	}
 
 	switch from {
+	case StepPresetExplore:
+		if event == EventExplorersDone {
+			return StepPresetOpenDraft, nil
+		}
 	case StepPresetOpenDraft:
 		if event != EventPresetDrafted {
 			break
@@ -263,7 +267,7 @@ func AdvancePreset(path Path, from Step, event Event) (Step, error) {
 	case StepPresetReview:
 		switch event {
 		case EventReviewClean:
-			return StepPresetFinalize, nil
+			return StepPresetRecord, nil
 		case EventReviewBlocked:
 			return StepPresetRepair, nil
 		}
@@ -273,6 +277,10 @@ func AdvancePreset(path Path, from Step, event Event) (Step, error) {
 			return StepPresetIntegrate, nil
 		case EventRepairLimitReached:
 			return StepPresetRepair, nil
+		}
+	case StepPresetRecord:
+		if event == EventVerificationRecorded {
+			return StepPresetFinalize, nil
 		}
 	case StepPresetFinalize:
 		if event == EventFinalized {

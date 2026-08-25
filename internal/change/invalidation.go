@@ -81,11 +81,11 @@ var presetReturns = map[Cause]struct {
 	evidence []string
 }{
 	CausePresetInput:  {StepPresetOpenDraft, []string{"path confirmation", "preset scope", "build", "verify", "close"}},
-	CauseMembership:   {StepPresetOpenDraft, []string{"assignments", "checks", "reports", "completion"}},
+	CauseMembership:   {StepPresetExplore, []string{"assignments", "checks", "reports", "completion"}},
 	CausePathClass:    {StepPresetScope, []string{"preset scope", "scopes", "assignments", "checks", "reports", "completion"}},
 	CauseCheckConfig:  {StepPresetChecks, []string{"checks", "final reports", "verification", "completion"}},
 	CauseSource:       {StepPresetChecks, []string{"checks", "reviewer report", "skeptic report", "verification", "completion"}},
-	CauseVerification: {StepPresetFinalize, []string{"close"}},
+	CauseVerification: {StepPresetRecord, []string{"close"}},
 }
 
 // returnTo resolves a cause against a path's graph.

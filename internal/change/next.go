@@ -114,6 +114,9 @@ func (e *Engine) runStep(ctx context.Context, st State) (State, bool, error) {
 		return e.stepFinalize(ctx, st, step)
 
 	// --- Presets ---
+	case StepPresetExplore:
+		return e.stepExplore(ctx, st, step, EventExplorersDone,
+			"establish the current behavior and the affected surfaces")
 	case StepPresetOpenDraft:
 		return e.stepPresetDraft(ctx, st, step)
 	case StepPresetReproduce:
@@ -129,6 +132,8 @@ func (e *Engine) runStep(ctx context.Context, st State) (State, bool, error) {
 		return e.stepChecks(ctx, st, step)
 	case StepPresetReview:
 		return e.stepReview(ctx, st, step)
+	case StepPresetRecord:
+		return e.stepVerificationRecord(ctx, st, step)
 	case StepPresetRepair:
 		return e.stepRepair(ctx, st, step)
 	case StepPresetFinalize:

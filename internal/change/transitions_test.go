@@ -56,6 +56,7 @@ func TestAdvancePresetCoversEveryValidTransition(t *testing.T) {
 		event Event
 		want  Step
 	}{
+		{PathFix, StepPresetExplore, EventExplorersDone, StepPresetOpenDraft},
 		// Fix proves the defect before implementing it.
 		{PathFix, StepPresetOpenDraft, EventPresetDrafted, StepPresetReproduce},
 		{PathFix, StepPresetReproduce, EventReproductionRecorded, StepPresetScope},
@@ -67,7 +68,8 @@ func TestAdvancePresetCoversEveryValidTransition(t *testing.T) {
 		{PathTweak, StepPresetIntegrate, EventPresetIntegrated, StepPresetChecks},
 		{PathTweak, StepPresetChecks, EventChecksPassed, StepPresetReview},
 		{PathTweak, StepPresetChecks, EventChecksFailed, StepPresetRepair},
-		{PathTweak, StepPresetReview, EventReviewClean, StepPresetFinalize},
+		{PathTweak, StepPresetReview, EventReviewClean, StepPresetRecord},
+		{PathTweak, StepPresetRecord, EventVerificationRecorded, StepPresetFinalize},
 		{PathTweak, StepPresetReview, EventReviewBlocked, StepPresetRepair},
 		{PathTweak, StepPresetRepair, EventRepairDone, StepPresetIntegrate},
 		{PathTweak, StepPresetRepair, EventRepairLimitReached, StepPresetRepair},
@@ -299,6 +301,7 @@ func TestGeneratedDocumentsAreBinaryOwnedInTheirPhase(t *testing.T) {
 		{StepCloseFinalize, artifact.KindRecord, artifact.OwnerBinary},
 		{StepCloseADR, artifact.KindADR, artifact.OwnerImplementer},
 		{StepPresetOpenDraft, artifact.KindFix, artifact.OwnerHost},
+		{StepPresetRecord, artifact.KindVerification, artifact.OwnerBinary},
 		{StepPresetOpenDraft, artifact.KindTweak, artifact.OwnerHost},
 		{StepPresetOpenDraft, artifact.KindTasks, artifact.OwnerHost},
 		{StepPresetImplement, artifact.KindTasks, artifact.OwnerBinary},

@@ -8,6 +8,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/noviopenworks/homonto/internal/identity"
 	"github.com/noviopenworks/homonto/internal/store"
@@ -546,5 +547,120 @@ func TestCreateAssignmentConcurrentDifferentActions(t *testing.T) {
 	}
 	if got := opCount(t, e.db, OpKindCreateWorktree); got != n {
 		t.Errorf("create ops = %d, want %d", got, n)
+	}
+}
+
+// slowAddRunner widens the window in which two `git worktree add`
+// invocations overlap, and records how many were ever in flight at once.
+//
+// Without the widening the race is real but rare — it needs two adds to
+// collide inside a few milliseconds of file creation, which happens under
+// a loaded machine and not on an idle one. A regression test that only
+// reproduces under load is a test that gets believed after the fix is
+// reverted, so this one does not rely on luck.
+type slowAddRunner struct {
+	Runner
+	delay time.Duration
+
+	mu       sync.Mutex
+	inFlight int
+	peak     int
+}
+
+func (r *slowAddRunner) Run(ctx context.Context, dir string, args ...string) (string, error) {
+	if len(args) >= 2 && args[0] == "worktree" && args[1] == "add" {
+		r.mu.Lock()
+		r.inFlight++
+		if r.inFlight > r.peak {
+			r.peak = r.inFlight
+		}
+		r.mu.Unlock()
+		defer func() {
+			r.mu.Lock()
+			r.inFlight--
+			r.mu.Unlock()
+		}()
+		time.Sleep(r.delay)
+	}
+	return r.Runner.Run(ctx, dir, args...)
+}
+
+// peakConcurrency reports the most simultaneous adds observed.
+func (r *slowAddRunner) peakConcurrency() int {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.peak
+}
+
+// TestConcurrentWorktreeAddsAreSerializedPerRepository is the regression
+// test for git's worktree bookkeeping not being concurrency safe.
+//
+// `git worktree add` builds `.git/worktrees/<name>/` a file at a time and
+// reads its sibling entries while doing so, so two adds against one
+// repository intermittently fail with
+//
+//	fatal: failed to read .git/worktrees/<other>/commondir: Success
+//
+// which reaches the user as an assignment refused for nothing they did.
+// Homonto cuts one worktree per implementer in a round, all from the same
+// member, so this is the ordinary case rather than an unusual one.
+//
+// The assertion is on overlap rather than on the corruption itself:
+// waiting for a rare interleaving to produce a specific git error is how a
+// flaky test gets written. If no two adds ever overlap, the corruption
+// cannot occur.
+func TestConcurrentWorktreeAddsAreSerializedPerRepository(t *testing.T) {
+	e := newEnv(t)
+	runner := &slowAddRunner{Runner: ExecRunner{}, delay: 150 * time.Millisecond}
+	svc, err := NewService(runner, e.db, e.ops, e.root)
+	if err != nil {
+		t.Fatalf("NewService: %v", err)
+	}
+
+	const n = 4
+	base := e.base(t)
+	var wg sync.WaitGroup
+	errs := make(chan error, n)
+	for i := 0; i < n; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			action, err := identity.NewActionID()
+			if err != nil {
+				errs <- err
+				return
+			}
+			if _, err := svc.CreateAssignment(context.Background(), CreateRequest{
+				WorkID:        e.workID,
+				ActionID:      action,
+				RepositoryID:  e.repoID,
+				RepositoryDir: e.member,
+				BaseCommit:    base,
+				Scope:         []string{"src"},
+			}); err != nil {
+				errs <- err
+			}
+		}()
+	}
+	wg.Wait()
+	close(errs)
+	for err := range errs {
+		t.Errorf("concurrent CreateAssignment: %v", err)
+	}
+
+	if peak := runner.peakConcurrency(); peak != 1 {
+		t.Errorf("%d `git worktree add` invocations ran at once against one repository; "+
+			"git's worktree bookkeeping is not safe to run concurrently", peak)
+	}
+
+	// Every worktree must be registered, not merely created: a corrupted
+	// add can leave a directory behind that git does not know about.
+	entries, err := svc.WorktreeInventory(context.Background(), e.member)
+	if err != nil {
+		t.Fatalf("WorktreeInventory: %v", err)
+	}
+	if len(entries) != n+1 {
+		t.Errorf("inventory entries = %d, want %d (the member plus %d assignments)",
+			len(entries), n+1, n)
 	}
 }

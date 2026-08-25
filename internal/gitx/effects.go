@@ -82,6 +82,7 @@ func (e *worktreeCreateEffect) Apply(ctx context.Context, rec operation.EffectRe
 	if err != nil {
 		return err
 	}
+	defer lockWorktree(ctx, e.runner, p.RepoDir)()
 	entry, registered, err := worktreeRegisteredWith(ctx, e.runner, p.RepoDir, p.Path)
 	if err != nil {
 		return err
@@ -116,6 +117,7 @@ func (e *worktreeCreateEffect) Revert(ctx context.Context, rec operation.EffectR
 	if err != nil {
 		return err
 	}
+	defer lockWorktree(ctx, e.runner, p.RepoDir)()
 	_, registered, err := worktreeRegisteredWith(ctx, e.runner, p.RepoDir, p.Path)
 	if err != nil {
 		return err
@@ -173,6 +175,7 @@ func (e *worktreeRemoveEffect) Apply(ctx context.Context, rec operation.EffectRe
 	if err != nil {
 		return err
 	}
+	defer lockWorktree(ctx, e.runner, p.RepoDir)()
 	_, registered, err := worktreeRegisteredWith(ctx, e.runner, p.RepoDir, p.Path)
 	if err != nil {
 		return err
@@ -211,6 +214,7 @@ func (e *worktreeRemoveEffect) Revert(ctx context.Context, rec operation.EffectR
 	if err != nil {
 		return err
 	}
+	defer lockWorktree(ctx, e.runner, p.RepoDir)()
 	if err := ensureParents(p.Path); err != nil {
 		return err
 	}

@@ -144,89 +144,26 @@ func Attach(ctx context.Context, req AttachRequest) error {
 		return err
 	}
 
-	effectiveGen := cp.Handoff.Generation
 	var effects []operation.Effect
-	forceTakeover := req.Force && cp.Handoff.State == checkpoint.HandoffConsumed
-	if forceTakeover {
-		// The only legal way out of consumed: re-mark transferable at
-		// generation+1 with a fresh transfer id (ValidateTransition
-		// demands the bump), then consume at that generation below. A
-		// transferable checkpoint needs no takeover: force is the remedy
-		// for consumption elsewhere, not a mode flag.
-		takeover := cp
-		takeover.Handoff = checkpoint.Handoff{
-			State:      checkpoint.HandoffTransferable,
-			Generation: effectiveGen + 1,
-			TransferID: mustNewToken(),
-		}
-		if err := checkpoint.ValidateTransition(cp, takeover); err != nil {
-			return fmt.Errorf("handoff: attach: force takeover: %w", err)
-		}
-		if err := checkpoint.Validate(takeover, cfg); err != nil {
-			return fmt.Errorf("handoff: attach: force takeover: %w", err)
-		}
-		effects = append(effects, &checkpointWriteEffect{payload: checkpointWritePayload{
-			Path: CheckpointPath(root), Next: takeover, Prev: cp,
-		}})
-		cp = takeover
-		effectiveGen = takeover.Handoff.Generation
+	cp, takeoverWrite, forceTakeover, err := takeoverCheckpoint(cp, cfg, root, req.Force)
+	if err != nil {
+		return err
 	}
+	if takeoverWrite != nil {
+		effects = append(effects, takeoverWrite)
+	}
+	// takeoverCheckpoint returns cp already bumped, so the handoff
+	// generation it carries is the effective one from here on.
+	effectiveGen := cp.Handoff.Generation
 
 	prov, err := lease.CurrentProcess()
 	if err != nil {
 		return err
 	}
-
-	members := sortedCheckpointMembers(cp)
-	ordered := make([]checkpoint.Member, 0, len(members))
-	for _, m := range members {
-		if m.ID == cfg.Control.ID {
-			continue
-		}
-		ordered = append(ordered, m)
-	}
-	claimTargets := append([]checkpoint.Member(nil), ordered...)
-	if control, ok := controlMember(cp, cfg); ok {
-		claimTargets = append(claimTargets, control)
-	}
-	sort.Slice(claimTargets, func(i, j int) bool { return claimTargets[i].ID < claimTargets[j].ID })
-
-	slots := make(map[identity.RepositoryID]memberSlot, len(members))
-	var claims, leases []operation.Effect
-	var leaseList []lease.SentinelLease
-	var targets []journaledLeaseTarget
-	for _, m := range claimTargets {
-		slot, err := deriveMemberSlot(ctx, runner, req.StateRoot, root, m, memberRoots[m.ID])
-		if err != nil {
-			return err
-		}
-		slots[m.ID] = slot
-		reg := registration.Registration{
-			SchemaVersion: 1,
-			WorkspaceID:   cp.WorkspaceID,
-			RepositoryID:  m.ID,
-			ControlRoot:   root,
-			MemberRoot:    slot.memberRoot,
-			Kind:          m.Kind,
-		}
-		claims = append(claims, &claimEffect{payload: claimPayload{Path: slot.registrationPath, Registration: reg}})
-
-		token := mustNewToken()
-		content := lease.LeaseContent{
-			SchemaVersion: 1,
-			WorkspaceID:   cp.WorkspaceID,
-			RepositoryID:  m.ID,
-			WorkID:        cp.Work.ID,
-			Generation:    effectiveGen,
-			Process:       prov,
-			RecoveryToken: token,
-		}
-		if err := content.Validate(); err != nil {
-			return fmt.Errorf("handoff: attach: lease for %s: %w", m.ID, err)
-		}
-		leases = append(leases, lease.NewCreateLeaseEffect(slot.leasePath, content))
-		leaseList = append(leaseList, lease.SentinelLease{RepositoryID: m.ID, Path: slot.leasePath})
-		targets = append(targets, journaledLeaseTarget{RepositoryID: m.ID, Path: slot.leasePath, Token: token})
+	site := attachSite{runner: runner, stateRoot: req.StateRoot, root: root, memberRoots: memberRoots}
+	claims, leases, leaseList, targets, err := planMemberClaims(ctx, cp, cfg, site, prov)
+	if err != nil {
+		return err
 	}
 
 	opID, err := identity.NewOperationID()
@@ -261,6 +198,9 @@ func Attach(ctx context.Context, req AttachRequest) error {
 		return fmt.Errorf("handoff: attach: consume: %w", err)
 	}
 
+	// Journal order is load-bearing: recovery replays effects by
+	// sequence, so the takeover write leads and the consume write lands
+	// only after everything it depends on.
 	effects = append(effects, claims...)
 	effects = append(effects, leases...)
 	effects = append(effects, &sentinelWriteEffect{payload: sentinelPayload{
@@ -290,6 +230,101 @@ func Attach(ctx context.Context, req AttachRequest) error {
 		return fmt.Errorf("handoff: attach %s: %w", opID, err)
 	}
 	return nil
+}
+
+// attachSite is the machine-local side of an attach: how git runs here,
+// where the control repository and each confirmed member live, and where
+// non-git state is slotted. It exists so planMemberClaims takes one site
+// instead of four loose inputs.
+type attachSite struct {
+	runner      gitx.Runner
+	stateRoot   string
+	root        string
+	memberRoots map[identity.RepositoryID]string
+}
+
+// takeoverCheckpoint force-reopens a consumed checkpoint. Consumed has no
+// legal forward transition, so the takeover re-marks it transferable at
+// generation+1 with a fresh transfer id (ValidateTransition demands the
+// bump); the attach above then consumes at that generation. A transferable
+// checkpoint needs no takeover: force is the remedy for consumption
+// elsewhere, not a mode flag — in that case cp comes back unchanged with a
+// nil effect.
+func takeoverCheckpoint(cp checkpoint.Checkpoint, cfg workspacecfg.Config, root string, force bool) (checkpoint.Checkpoint, operation.Effect, bool, error) {
+	if !(force && cp.Handoff.State == checkpoint.HandoffConsumed) {
+		return cp, nil, false, nil
+	}
+	takeover := cp
+	takeover.Handoff = checkpoint.Handoff{
+		State:      checkpoint.HandoffTransferable,
+		Generation: cp.Handoff.Generation + 1,
+		TransferID: mustNewToken(),
+	}
+	if err := checkpoint.ValidateTransition(cp, takeover); err != nil {
+		return checkpoint.Checkpoint{}, nil, false, fmt.Errorf("handoff: attach: force takeover: %w", err)
+	}
+	if err := checkpoint.Validate(takeover, cfg); err != nil {
+		return checkpoint.Checkpoint{}, nil, false, fmt.Errorf("handoff: attach: force takeover: %w", err)
+	}
+	return takeover, &checkpointWriteEffect{payload: checkpointWritePayload{
+		Path: CheckpointPath(root), Next: takeover, Prev: cp,
+	}}, true, nil
+}
+
+// planMemberClaims builds the per-member artifacts of an attach: the
+// registration claims, the lease-create effects, the sentinel's lease
+// list, and the journaled lease targets (the operation journal IS the
+// recorded token store). Claim order is id order over all members
+// including control, so journal replay is deterministic. cp must already
+// carry the effective generation (takeoverCheckpoint bumps it).
+func planMemberClaims(ctx context.Context, cp checkpoint.Checkpoint, cfg workspacecfg.Config, site attachSite, prov lease.Process) (claims, leaseEffects []operation.Effect, leaseList []lease.SentinelLease, targets []journaledLeaseTarget, err error) {
+	members := sortedCheckpointMembers(cp)
+	ordered := make([]checkpoint.Member, 0, len(members))
+	for _, m := range members {
+		if m.ID == cfg.Control.ID {
+			continue
+		}
+		ordered = append(ordered, m)
+	}
+	claimTargets := append([]checkpoint.Member(nil), ordered...)
+	if control, ok := controlMember(cp, cfg); ok {
+		claimTargets = append(claimTargets, control)
+	}
+	sort.Slice(claimTargets, func(i, j int) bool { return claimTargets[i].ID < claimTargets[j].ID })
+
+	for _, m := range claimTargets {
+		slot, err := deriveMemberSlot(ctx, site.runner, site.stateRoot, site.root, m, site.memberRoots[m.ID])
+		if err != nil {
+			return nil, nil, nil, nil, err
+		}
+		reg := registration.Registration{
+			SchemaVersion: 1,
+			WorkspaceID:   cp.WorkspaceID,
+			RepositoryID:  m.ID,
+			ControlRoot:   site.root,
+			MemberRoot:    slot.memberRoot,
+			Kind:          m.Kind,
+		}
+		claims = append(claims, &claimEffect{payload: claimPayload{Path: slot.registrationPath, Registration: reg}})
+
+		token := mustNewToken()
+		content := lease.LeaseContent{
+			SchemaVersion: 1,
+			WorkspaceID:   cp.WorkspaceID,
+			RepositoryID:  m.ID,
+			WorkID:        cp.Work.ID,
+			Generation:    cp.Handoff.Generation,
+			Process:       prov,
+			RecoveryToken: token,
+		}
+		if err := content.Validate(); err != nil {
+			return nil, nil, nil, nil, fmt.Errorf("handoff: attach: lease for %s: %w", m.ID, err)
+		}
+		leaseEffects = append(leaseEffects, lease.NewCreateLeaseEffect(slot.leasePath, content))
+		leaseList = append(leaseList, lease.SentinelLease{RepositoryID: m.ID, Path: slot.leasePath})
+		targets = append(targets, journaledLeaseTarget{RepositoryID: m.ID, Path: slot.leasePath, Token: token})
+	}
+	return claims, leaseEffects, leaseList, targets, nil
 }
 
 // checkAttachable enforces the checkpoint's handoff state for attach.

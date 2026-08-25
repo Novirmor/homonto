@@ -213,6 +213,32 @@ func (r NextResponse) Validate() error {
 // enums, path grammar, write-scope consistency, dependency hygiene, and
 // the assignment/decision field split.
 func (a Action) Validate() error {
+	if err := validateActionIdentity(a); err != nil {
+		return err
+	}
+	if err := validateActionBrief(a); err != nil {
+		return err
+	}
+	if err := validateActionTarget(a); err != nil {
+		return err
+	}
+	if err := validateActionRelations(a); err != nil {
+		return err
+	}
+	switch a.Kind {
+	case KindAssignment:
+		return validateAssignment(a)
+	case KindDecision:
+		return validateDecision(a)
+	case KindEdit:
+		return validateEdit(a)
+	}
+	return nil
+}
+
+// validateActionIdentity checks what the action is: id and freshness
+// token formats, a known kind, and a known workflow.
+func validateActionIdentity(a Action) error {
 	if err := identity.ValidateUUID(string(a.ID)); err != nil {
 		return fmt.Errorf("id: %w", err)
 	}
@@ -229,6 +255,12 @@ func (a Action) Validate() error {
 	default:
 		return fmt.Errorf("workflow %q must be %q or %q", a.Workflow, workspacecfg.WorkflowTask, workspacecfg.WorkflowChange)
 	}
+	return nil
+}
+
+// validateActionBrief checks the fields the host reads beyond identity:
+// where the action sits (path, phase) and why it runs (reason, prompt).
+func validateActionBrief(a Action) error {
 	if err := validateCleanRelPath(a.Path, "path"); err != nil {
 		return err
 	}
@@ -241,6 +273,12 @@ func (a Action) Validate() error {
 	if strings.TrimSpace(a.Prompt) == "" {
 		return fmt.Errorf("prompt must not be blank")
 	}
+	return nil
+}
+
+// validateActionTarget checks where the action runs and what it may touch
+// there: the repository ref, the working directory, and the write scope.
+func validateActionTarget(a Action) error {
 	if err := identity.ValidateUUID(string(a.Repository.ID)); err != nil {
 		return fmt.Errorf("repository.id: %w", err)
 	}
@@ -250,9 +288,13 @@ func (a Action) Validate() error {
 	if err := validateRootRelPath(a.WorkingDirectory, "working_directory"); err != nil {
 		return err
 	}
-	if err := validateWriteScope(a.WriteScope); err != nil {
-		return err
-	}
+	return validateWriteScope(a.WriteScope)
+}
+
+// validateActionRelations checks how the action stands among the rest of
+// the plan: a trimmed parallel group id, well-formed dependencies, and
+// unique valid input fingerprints.
+func validateActionRelations(a Action) error {
 	if strings.TrimSpace(a.ParallelGroupID) != a.ParallelGroupID {
 		return fmt.Errorf("parallel_group_id %q must not carry surrounding whitespace", a.ParallelGroupID)
 	}
@@ -269,65 +311,88 @@ func (a Action) Validate() error {
 		}
 		seenFP[fp] = true
 	}
+	return nil
+}
 
-	switch a.Kind {
-	case KindAssignment:
-		switch a.Role {
-		case RoleExplorer, RoleImplementer, RoleReviewer, RoleSkeptic:
-		default:
-			return fmt.Errorf("role %q must be one of explorer, implementer, reviewer, skeptic", a.Role)
-		}
-		if a.ExpectedReport == nil {
-			return fmt.Errorf("assignment must declare expected_report")
-		}
-		if a.ExpectedReport.Kind != a.Role {
-			return fmt.Errorf("expected_report.kind %q must match the assignment role %q", a.ExpectedReport.Kind, a.Role)
-		}
-		if a.ExpectedReport.SchemaVersion != CurrentVersion {
-			return fmt.Errorf("expected_report.schema_version %d, want exactly %d",
-				a.ExpectedReport.SchemaVersion, CurrentVersion)
-		}
-		if a.Decision != nil {
-			return fmt.Errorf("assignment must not carry a decision schema")
-		}
-		if a.Edit != nil {
-			return fmt.Errorf("assignment must not carry an edit permission")
-		}
-	case KindDecision:
-		if a.Role != "" {
-			return fmt.Errorf("decision must not carry a role")
-		}
-		if a.ExpectedReport != nil {
-			return fmt.Errorf("decision must not declare expected_report")
-		}
-		if a.Decision == nil {
-			return fmt.Errorf("decision must carry a decision schema")
-		}
-		if err := a.Decision.Validate(); err != nil {
-			return fmt.Errorf("decision: %w", err)
-		}
-		if a.Edit != nil {
-			return fmt.Errorf("decision must not carry an edit permission")
-		}
-	case KindEdit:
-		if a.Role != "" {
-			return fmt.Errorf("edit must not carry a role; it is the host's own write, not subagent work")
-		}
-		if a.ExpectedReport != nil {
-			return fmt.Errorf("edit must not declare expected_report; it is answered by accepting the edit")
-		}
-		if a.Decision != nil {
-			return fmt.Errorf("edit must not carry a decision schema")
-		}
-		if a.Edit == nil {
-			return fmt.Errorf("edit must carry an edit permission")
-		}
-		if err := a.Edit.Validate(); err != nil {
-			return fmt.Errorf("edit: %w", err)
-		}
-		if a.WriteScope.ReadOnly {
-			return fmt.Errorf("edit must be writable; it exists to write one document")
-		}
+// validateAssignment enforces the assignment field split: a known role, a
+// matching expected report, and neither a decision schema nor an edit
+// permission.
+func validateAssignment(a Action) error {
+	switch a.Role {
+	case RoleExplorer, RoleImplementer, RoleReviewer, RoleSkeptic:
+	default:
+		return fmt.Errorf("role %q must be one of explorer, implementer, reviewer, skeptic", a.Role)
+	}
+	if err := validateExpectedReport(a.ExpectedReport, a.Role); err != nil {
+		return err
+	}
+	if a.Decision != nil {
+		return fmt.Errorf("assignment must not carry a decision schema")
+	}
+	if a.Edit != nil {
+		return fmt.Errorf("assignment must not carry an edit permission")
+	}
+	return nil
+}
+
+// validateDecision enforces the decision field split: no role and no
+// expected report, exactly one decision schema, and no edit permission.
+func validateDecision(a Action) error {
+	if a.Role != "" {
+		return fmt.Errorf("decision must not carry a role")
+	}
+	if a.ExpectedReport != nil {
+		return fmt.Errorf("decision must not declare expected_report")
+	}
+	if a.Decision == nil {
+		return fmt.Errorf("decision must carry a decision schema")
+	}
+	if err := a.Decision.Validate(); err != nil {
+		return fmt.Errorf("decision: %w", err)
+	}
+	if a.Edit != nil {
+		return fmt.Errorf("decision must not carry an edit permission")
+	}
+	return nil
+}
+
+// validateEdit enforces the edit field split: the host's own write carries
+// no role, report, or decision schema, only the edit permission itself,
+// over a writable scope.
+func validateEdit(a Action) error {
+	if a.Role != "" {
+		return fmt.Errorf("edit must not carry a role; it is the host's own write, not subagent work")
+	}
+	if a.ExpectedReport != nil {
+		return fmt.Errorf("edit must not declare expected_report; it is answered by accepting the edit")
+	}
+	if a.Decision != nil {
+		return fmt.Errorf("edit must not carry a decision schema")
+	}
+	if a.Edit == nil {
+		return fmt.Errorf("edit must carry an edit permission")
+	}
+	if err := a.Edit.Validate(); err != nil {
+		return fmt.Errorf("edit: %w", err)
+	}
+	if a.WriteScope.ReadOnly {
+		return fmt.Errorf("edit must be writable; it exists to write one document")
+	}
+	return nil
+}
+
+// validateExpectedReport checks the report an assignment must declare:
+// present, matching the assignment's role, at the current schema version.
+func validateExpectedReport(er *ExpectedReport, role Role) error {
+	if er == nil {
+		return fmt.Errorf("assignment must declare expected_report")
+	}
+	if er.Kind != role {
+		return fmt.Errorf("expected_report.kind %q must match the assignment role %q", er.Kind, role)
+	}
+	if er.SchemaVersion != CurrentVersion {
+		return fmt.Errorf("expected_report.schema_version %d, want exactly %d",
+			er.SchemaVersion, CurrentVersion)
 	}
 	return nil
 }

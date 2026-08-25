@@ -48,11 +48,14 @@ was interrupted. Reports; never repairs. Exits `3` when something is wrong.
 ### `homonto handoff [name-or-id]`
 
 Make the work portable: mark its checkpoint transferable, commit it,
-release this machine's leases. See [recovery](recovery.md).
+release this machine's leases. Only the workspace's anchored work — the
+one holding the members' leases — can be handed over. See
+[recovery](recovery.md).
 
 ### `homonto attach`
 
-Pick up work handed off from another machine.
+Pick up work handed off from another machine. The work resumes at the
+start of the phase it had reached.
 
 | Flag | Meaning |
 |---|---|
@@ -163,3 +166,17 @@ none cannot update itself.
 What this binary is: version, protocol, store schema, trust roots. It
 exists for one binary to interrogate another and answers with no network
 access and no workspace.
+
+## Environment
+
+| Variable | Meaning |
+|---|---|
+| `HOMONTO_ACTION_ID` / `HOMONTO_ACTION_TOKEN` | An assignment's credentials, read by `host guard` |
+| `HOMONTO_GRANT_ID` / `HOMONTO_GRANT_TOKEN` | An edit grant's credentials, read by `host guard` |
+| `HOMONTO_STATE_ROOT` | Where non-Git members' registration and lease slots live. Absolute paths only |
+
+`HOMONTO_STATE_ROOT` exists because a non-Git member has nowhere beside
+itself to keep a slot — a plain directory has no `.git` to hide one in — so
+the slot goes in the machine's state directory, under your home by default.
+Redirect it when Homonto runs somewhere that home directory is not really
+yours: a container, a CI runner, a test harness.

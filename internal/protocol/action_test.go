@@ -320,3 +320,87 @@ func TestNextResponseValidate(t *testing.T) {
 		})
 	}
 }
+
+// TestEditActionValidation pins the third action kind: the host's own
+// document write, authorized by a single-use artifact edit grant rather
+// than by a role assignment.
+func TestEditActionValidation(t *testing.T) {
+	base := func() Action {
+		return Action{
+			ID:               testAction1,
+			Kind:             KindEdit,
+			FreshnessToken:   testToken,
+			Workflow:         workspacecfg.WorkflowTask,
+			Path:             "active/fix-login/tasks.md",
+			Phase:            "plan",
+			Reason:           "incorporate the explorer reports",
+			Prompt:           "edit the goal and checklist",
+			Repository:       RepositoryRef{ID: testControlID, Path: "."},
+			WorkingDirectory: ".",
+			WriteScope:       WriteScope{Paths: []string{"active/fix-login/tasks.md"}},
+			InputFingerprints: []fingerprint.Digest{
+				fingerprint.Digest(testDigestHex),
+			},
+			Edit: &EditPermission{
+				GrantID:    testAction2,
+				GrantToken: testToken2,
+				Document:   "active/fix-login/tasks.md",
+				Kind:       "task",
+				Regions:    []string{"task-goal", "task-checklist"},
+			},
+		}
+	}
+	if err := base().Validate(); err != nil {
+		t.Fatalf("a well-formed edit action was refused: %v", err)
+	}
+
+	tests := []struct {
+		name   string
+		mutate func(*Action)
+	}{
+		{"carries a role", func(a *Action) { a.Role = RoleImplementer }},
+		{"declares an expected report", func(a *Action) {
+			a.ExpectedReport = &ExpectedReport{Kind: RoleImplementer, SchemaVersion: CurrentVersion}
+		}},
+		{"carries a decision schema", func(a *Action) {
+			a.Decision = &DecisionSchema{Kind: "approve_scope", Prompt: "ok?",
+				Choices: []Choice{{Value: "yes", Label: "Yes"}}}
+		}},
+		{"carries no edit permission", func(a *Action) { a.Edit = nil }},
+		{"is read-only", func(a *Action) { a.WriteScope = WriteScope{ReadOnly: true} }},
+		{"opens no regions", func(a *Action) { a.Edit.Regions = nil }},
+		{"opens a duplicate region", func(a *Action) { a.Edit.Regions = []string{"task-goal", "task-goal"} }},
+		{"names no document kind", func(a *Action) { a.Edit.Kind = " " }},
+		{"names an absolute document", func(a *Action) { a.Edit.Document = "/etc/passwd" }},
+		{"names an escaping document", func(a *Action) { a.Edit.Document = "../outside.md" }},
+		{"carries a malformed grant id", func(a *Action) { a.Edit.GrantID = "not-a-uuid" }},
+		{"carries a malformed grant token", func(a *Action) { a.Edit.GrantToken = "short" }},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			a := base()
+			tt.mutate(&a)
+			if err := a.Validate(); err == nil {
+				t.Fatal("Validate = nil error, want rejection")
+			}
+		})
+	}
+
+	// The other two kinds must not carry an edit permission.
+	for _, kind := range []ActionKind{KindAssignment, KindDecision} {
+		a := base()
+		a.Kind = kind
+		switch kind {
+		case KindAssignment:
+			a.Role = RoleImplementer
+			a.ExpectedReport = &ExpectedReport{Kind: RoleImplementer, SchemaVersion: CurrentVersion}
+		case KindDecision:
+			a.WriteScope = WriteScope{ReadOnly: true}
+			a.Decision = &DecisionSchema{Kind: "approve_scope", Prompt: "ok?",
+				Choices: []Choice{{Value: "yes", Label: "Yes"}}}
+		}
+		if err := a.Validate(); err == nil {
+			t.Errorf("a %s carrying an edit permission was accepted", kind)
+		}
+	}
+}

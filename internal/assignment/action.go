@@ -102,6 +102,7 @@ type Action struct {
 	Role         protocol.Role
 	State        State
 	GroupID      identity.ParallelGroupID
+	Step         string
 	Generation   int64
 	Dependencies []identity.ActionID
 	Spec         protocol.Action
@@ -115,7 +116,11 @@ type Action struct {
 // and the wire action itself. Template's ID, FreshnessToken, GroupID, and
 // Dependencies are assigned by the store and must be left zero.
 type Spec struct {
-	WorkID       identity.WorkID
+	WorkID identity.WorkID
+	// Step is the engine step the action was issued for. The engine uses
+	// it to ask "is this step's work answered" without re-deriving the
+	// answer from roles and timestamps.
+	Step         string
 	Generation   int64
 	Dependencies []identity.ActionID
 	Template     protocol.Action
@@ -189,10 +194,10 @@ func (s *Store) Create(ctx context.Context, spec Spec) (Action, error) {
 	}
 	err = s.db.Update(ctx, func(tx *store.Tx) error {
 		if _, err := tx.ExecContext(ctx, `
-			INSERT INTO actions (id, work_id, kind, role, state, generation, payload, created_at, updated_at)
-			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			INSERT INTO actions (id, work_id, kind, role, state, step, generation, payload, created_at, updated_at)
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 			string(id), string(spec.WorkID), string(wire.Kind), role, string(StatePending),
-			spec.Generation, string(payload), formatTime(now), formatTime(now)); err != nil {
+			spec.Step, spec.Generation, string(payload), formatTime(now), formatTime(now)); err != nil {
 			return fmt.Errorf("assignment: insert action %s: %w", id, err)
 		}
 		for _, dep := range spec.Dependencies {
@@ -213,6 +218,7 @@ func (s *Store) Create(ctx context.Context, spec Spec) (Action, error) {
 		Kind:         wire.Kind,
 		Role:         wire.Role,
 		State:        StatePending,
+		Step:         spec.Step,
 		Generation:   spec.Generation,
 		Dependencies: wire.Dependencies,
 		Spec:         wire,
@@ -279,7 +285,7 @@ func (s *Store) Invalidate(ctx context.Context, ids ...identity.ActionID) error 
 // loadAction reads one action row and its dependencies.
 func loadAction(ctx context.Context, tx *store.Tx, id identity.ActionID) (Action, error) {
 	row := tx.QueryRowContext(ctx, `
-		SELECT id, work_id, kind, role, state, group_id, generation, payload,
+		SELECT id, work_id, kind, role, state, group_id, step, generation, payload,
 		       created_at, updated_at, submitted_at
 		  FROM actions WHERE id = ?`, string(id))
 	act, err := scanAction(row.Scan)
@@ -300,7 +306,7 @@ func loadAction(ctx context.Context, tx *store.Tx, id identity.ActionID) (Action
 // loadActions reads every action of a work with its dependencies.
 func loadActions(ctx context.Context, tx *store.Tx, workID identity.WorkID) ([]Action, error) {
 	rows, err := tx.QueryContext(ctx, `
-		SELECT id, work_id, kind, role, state, group_id, generation, payload,
+		SELECT id, work_id, kind, role, state, group_id, step, generation, payload,
 		       created_at, updated_at, submitted_at
 		  FROM actions WHERE work_id = ? ORDER BY created_at, id`, string(workID))
 	if err != nil {
@@ -335,12 +341,13 @@ func scanAction(scan func(...any) error) (Action, error) {
 		act         Action
 		role        sql.NullString
 		groupID     sql.NullString
+		step        sql.NullString
 		payload     sql.NullString
 		createdAt   string
 		updatedAt   string
 		submittedAt sql.NullString
 	)
-	if err := scan(&act.ID, &act.WorkID, &act.Kind, &role, &act.State, &groupID,
+	if err := scan(&act.ID, &act.WorkID, &act.Kind, &role, &act.State, &groupID, &step,
 		&act.Generation, &payload, &createdAt, &updatedAt, &submittedAt); err != nil {
 		return Action{}, err
 	}
@@ -349,6 +356,7 @@ func scanAction(scan func(...any) error) (Action, error) {
 	}
 	act.Role = protocol.Role(role.String)
 	act.GroupID = identity.ParallelGroupID(groupID.String)
+	act.Step = step.String
 	if payload.Valid {
 		if err := json.Unmarshal([]byte(payload.String), &act.Spec); err != nil {
 			return Action{}, fmt.Errorf("decode action %s spec: %w", act.ID, err)

@@ -75,10 +75,11 @@ func (s *Store) ReadyGroup(ctx context.Context, workID identity.WorkID) (Group, 
 			}
 			return nil
 		}
-		// A decision blocks; it goes out alone even when assignments are
-		// also ready, so a human is never asked to race an agent.
-		if d, ok := firstDecision(ready); ok {
-			ready = []Action{d}
+		// A decision or a host edit goes out ALONE even when assignments
+		// are also ready: both are the human's own turn, and neither
+		// should be raced against agent work happening underneath it.
+		if solo, ok := firstSolo(ready); ok {
+			ready = []Action{solo}
 		}
 		groupID, err := identity.NewParallelGroupID()
 		if err != nil {
@@ -167,11 +168,13 @@ func readyActions(actions []Action) (ready []Action, pending int) {
 	return ready, pending
 }
 
-// firstDecision returns the oldest ready decision, if any. Actions arrive
-// in creation order, so the first decision found is the oldest.
-func firstDecision(ready []Action) (Action, bool) {
+// firstSolo returns the oldest ready action that must be released alone —
+// a human decision or a host edit. Actions arrive in creation order, so
+// the first one found is the oldest.
+func firstSolo(ready []Action) (Action, bool) {
 	for _, act := range ready {
-		if act.Kind == protocol.KindDecision {
+		switch act.Kind {
+		case protocol.KindDecision, protocol.KindEdit:
 			return act, true
 		}
 	}

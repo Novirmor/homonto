@@ -183,3 +183,23 @@ func NewTaskDocument(workID identity.WorkID, name string) Document {
 		Kind:   KindTaskDocument,
 	})
 }
+
+// SemanticChecklist returns the checklist with every checkbox reset to
+// unchecked. It is for FINGERPRINTING, never for writing: the semantics of
+// a checklist are its items and their order, and whether Homonto has
+// checked one off is progress rather than a change of plan. Digesting the
+// raw region instead would make Homonto's own checkoffs invalidate the
+// plan that produced them.
+func SemanticChecklist(content []byte) []byte {
+	if len(content) == 0 {
+		return nil
+	}
+	lines := strings.Split(string(content), "\n")
+	for i, line := range lines {
+		if _, _, ok := parseItem(line); !ok {
+			continue
+		}
+		lines[i] = strings.Replace(line, "[x] ", "[ ] ", 1)
+	}
+	return []byte(strings.Join(lines, "\n"))
+}

@@ -369,3 +369,62 @@ func (s *Service) Digest(ctx context.Context, ref Ref) (Snapshot, error) {
 func (s *Service) snapshot(ref Ref, rendered []byte) Snapshot {
 	return Snapshot{Ref: ref, Digest: DocumentDigest(rendered), At: s.now().UTC()}
 }
+
+// WriteRaw writes a document through the service's confined root without
+// consulting the ownership table. It exists for the engine's own
+// bookkeeping writes that happen INSIDE a grant it issued and immediately
+// accepts — seeding a task's initial goal, for instance — where the
+// ownership check has already been made by GrantEdit and repeating it
+// would only require a second, fake owner.
+//
+// It is deliberately awkward to reach and deliberately narrow: it does not
+// bypass AcceptEdit, so the write is still validated against the grant's
+// digests before it counts as accepted.
+func WriteRaw(s *Service, ref Ref, doc Document) error {
+	rendered, err := Render(doc)
+	if err != nil {
+		return err
+	}
+	root, err := s.open()
+	if err != nil {
+		return err
+	}
+	defer root.Close()
+	if err := root.WriteAtomic(ref.Path, rendered, docMode); err != nil {
+		return fmt.Errorf("artifact: write %s: %w", ref.Path, err)
+	}
+	return nil
+}
+
+// Grant rebuilds the presentable form of an issued grant, authenticated by
+// the token the holder presents. The freshness token is never stored, so
+// the caller must supply it; everything else comes from the journal, which
+// is the copy AcceptEdit trusts.
+//
+// It exists because the party that ACCEPTS an edit is Homonto, not the
+// host: the host is told a grant id and a token and says "I am done", and
+// Homonto looks up what that grant actually opened rather than believing a
+// structure the host handed back.
+func (s *Service) Grant(ctx context.Context, id identity.ActionID, token identity.Token) (EditGrant, error) {
+	rec, found, err := s.journal.Lookup(ctx, id)
+	if err != nil {
+		return EditGrant{}, err
+	}
+	if !found {
+		return EditGrant{}, fmt.Errorf("artifact: grant %s: %w", id, ErrUnknownGrant)
+	}
+	if !tokenMatches(token, rec.TokenHash) {
+		return EditGrant{}, fmt.Errorf("artifact: grant %s freshness token: %w", id, ErrGrantMismatch)
+	}
+	return EditGrant{
+		ID:             rec.ID,
+		ActionID:       rec.ActionID,
+		Ref:            rec.Ref,
+		Owner:          rec.Owner,
+		Phase:          rec.Phase,
+		Regions:        append([]Region(nil), rec.Regions...),
+		MetaDigest:     rec.MetaDigest,
+		Before:         rec.Before,
+		FreshnessToken: token,
+	}, nil
+}

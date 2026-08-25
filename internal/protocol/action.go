@@ -59,6 +59,13 @@ const (
 	KindAssignment ActionKind = "assignment"
 	// KindDecision: a human decision gate.
 	KindDecision ActionKind = "decision"
+	// KindEdit: a document the HOST itself writes, under a single-use
+	// artifact edit grant. It is not subagent work and carries no role:
+	// the phases where the host authors a workflow document — drafting a
+	// task's goal and checklist, writing a proposal or a design — are the
+	// host's own, and this is how it is told which document is open, which
+	// regions of it, and with what permission.
+	KindEdit ActionKind = "edit"
 )
 
 // Role is the agent role an assignment addresses. Explorer, implementer,
@@ -101,6 +108,50 @@ type Action struct {
 	InputFingerprints []fingerprint.Digest  `json:"input_fingerprints"`
 	ExpectedReport    *ExpectedReport       `json:"expected_report,omitempty"`
 	Decision          *DecisionSchema       `json:"decision,omitempty"`
+	Edit              *EditPermission       `json:"edit,omitempty"`
+}
+
+// EditPermission is the single-use grant an edit action carries: which
+// document is open, which of its regions, and the grant id and token the
+// host presents to the write guard and back to Homonto when it is done.
+// The grant, not the write scope, is what actually authorizes the write.
+type EditPermission struct {
+	GrantID    identity.ActionID `json:"grant_id"`
+	GrantToken identity.Token    `json:"grant_token"`
+	Document   string            `json:"document"`
+	Kind       string            `json:"document_kind"`
+	Regions    []string          `json:"regions"`
+}
+
+// Validate checks the edit permission: well-formed grant, a clean document
+// path, a named kind, and at least one region.
+func (e EditPermission) Validate() error {
+	if err := identity.ValidateUUID(string(e.GrantID)); err != nil {
+		return fmt.Errorf("grant_id: %w", err)
+	}
+	if err := identity.ValidateToken(string(e.GrantToken)); err != nil {
+		return fmt.Errorf("grant_token: %w", err)
+	}
+	if err := validateCleanRelPath(e.Document, "document"); err != nil {
+		return err
+	}
+	if strings.TrimSpace(e.Kind) == "" {
+		return fmt.Errorf("document_kind must not be blank")
+	}
+	if len(e.Regions) == 0 {
+		return fmt.Errorf("an edit permission must open at least one region")
+	}
+	seen := make(map[string]bool, len(e.Regions))
+	for i, r := range e.Regions {
+		if strings.TrimSpace(r) == "" {
+			return fmt.Errorf("regions[%d] must not be blank", i)
+		}
+		if seen[r] {
+			return fmt.Errorf("regions[%d] %q is a duplicate", i, r)
+		}
+		seen[r] = true
+	}
+	return nil
 }
 
 // RepositoryRef names the repository an action targets by its logical ID
@@ -166,9 +217,9 @@ func (a Action) Validate() error {
 		return fmt.Errorf("id: %w", err)
 	}
 	switch a.Kind {
-	case KindAssignment, KindDecision:
+	case KindAssignment, KindDecision, KindEdit:
 	default:
-		return fmt.Errorf("kind %q must be %q or %q", a.Kind, KindAssignment, KindDecision)
+		return fmt.Errorf("kind %q must be %q, %q, or %q", a.Kind, KindAssignment, KindDecision, KindEdit)
 	}
 	if err := identity.ValidateToken(string(a.FreshnessToken)); err != nil {
 		return fmt.Errorf("freshness_token: %w", err)
@@ -239,6 +290,9 @@ func (a Action) Validate() error {
 		if a.Decision != nil {
 			return fmt.Errorf("assignment must not carry a decision schema")
 		}
+		if a.Edit != nil {
+			return fmt.Errorf("assignment must not carry an edit permission")
+		}
 	case KindDecision:
 		if a.Role != "" {
 			return fmt.Errorf("decision must not carry a role")
@@ -251,6 +305,28 @@ func (a Action) Validate() error {
 		}
 		if err := a.Decision.Validate(); err != nil {
 			return fmt.Errorf("decision: %w", err)
+		}
+		if a.Edit != nil {
+			return fmt.Errorf("decision must not carry an edit permission")
+		}
+	case KindEdit:
+		if a.Role != "" {
+			return fmt.Errorf("edit must not carry a role; it is the host's own write, not subagent work")
+		}
+		if a.ExpectedReport != nil {
+			return fmt.Errorf("edit must not declare expected_report; it is answered by accepting the edit")
+		}
+		if a.Decision != nil {
+			return fmt.Errorf("edit must not carry a decision schema")
+		}
+		if a.Edit == nil {
+			return fmt.Errorf("edit must carry an edit permission")
+		}
+		if err := a.Edit.Validate(); err != nil {
+			return fmt.Errorf("edit: %w", err)
+		}
+		if a.WriteScope.ReadOnly {
+			return fmt.Errorf("edit must be writable; it exists to write one document")
 		}
 	}
 	return nil

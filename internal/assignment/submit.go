@@ -2,7 +2,9 @@ package assignment
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 
@@ -224,4 +226,105 @@ func toDecisionSchema(in protocol.DecisionSchema) (decision.Schema, error) {
 // markSubmitted refuses the duplicate regardless.
 func isUniqueViolation(err error) bool {
 	return err != nil && strings.Contains(err.Error(), "UNIQUE constraint failed")
+}
+
+// CompleteEdit answers a host edit action. An edit is not reported and not
+// decided: it is finished by the artifact service accepting the edit under
+// the grant the action carried, and this records that the action is done.
+// The caller must have accepted the edit first — this records the fact,
+// it does not verify it, because only the artifact service can.
+func (s *Store) CompleteEdit(ctx context.Context, id identity.ActionID, token identity.Token) (Receipt, error) {
+	var receipt Receipt
+	err := s.db.Update(ctx, func(tx *store.Tx) error {
+		act, err := loadAction(ctx, tx, id)
+		if err != nil {
+			return err
+		}
+		if act.Kind != protocol.KindEdit {
+			return fmt.Errorf("assignment: action %s is a %s: %w", act.ID, act.Kind, ErrKindMismatch)
+		}
+		if err := s.checkLive(act); err != nil {
+			return err
+		}
+		if !handoff.VerifyFreshnessToken(s.key, act.ID, token) {
+			return fmt.Errorf("assignment: action %s: %w", act.ID, ErrStaleToken)
+		}
+		now := formatTime(s.now().UTC())
+		if err := markSubmitted(ctx, tx, act.ID, now); err != nil {
+			return err
+		}
+		receipt = Receipt{
+			ActionID: act.ID, WorkID: act.WorkID, Kind: act.Kind,
+			Generation: act.Generation, At: now,
+		}
+		return nil
+	})
+	if err != nil {
+		return Receipt{}, err
+	}
+	return receipt, nil
+}
+
+// Report returns the submission that answered one assignment.
+func (s *Store) Report(ctx context.Context, id identity.ActionID) (protocol.ReportSubmission, bool, error) {
+	var (
+		payload string
+		found   bool
+	)
+	err := s.db.View(ctx, func(tx *store.Tx) error {
+		err := tx.QueryRowContext(ctx,
+			`SELECT payload FROM reports WHERE action_id = ?`, string(id)).Scan(&payload)
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil
+		}
+		if err != nil {
+			return err
+		}
+		found = true
+		return nil
+	})
+	if err != nil {
+		return protocol.ReportSubmission{}, false, fmt.Errorf("assignment: read report of %s: %w", id, err)
+	}
+	if !found {
+		return protocol.ReportSubmission{}, false, nil
+	}
+	var sub protocol.ReportSubmission
+	if err := json.Unmarshal([]byte(payload), &sub); err != nil {
+		return protocol.ReportSubmission{}, false, fmt.Errorf("assignment: decode report of %s: %w", id, err)
+	}
+	return sub, true, nil
+}
+
+// Decision returns the recorded answer to one decision action.
+func (s *Store) Decision(ctx context.Context, id identity.ActionID) (decision.Submission, bool, error) {
+	var (
+		sub       decision.Submission
+		rationale sql.NullString
+		answer    sql.NullString
+		found     bool
+	)
+	err := s.db.View(ctx, func(tx *store.Tx) error {
+		err := tx.QueryRowContext(ctx,
+			`SELECT choice, rationale, answer FROM decisions WHERE action_id = ?`,
+			string(id)).Scan(&sub.Choice, &rationale, &answer)
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil
+		}
+		if err != nil {
+			return err
+		}
+		found = true
+		return nil
+	})
+	if err != nil {
+		return decision.Submission{}, false, fmt.Errorf("assignment: read decision of %s: %w", id, err)
+	}
+	if !found {
+		return decision.Submission{}, false, nil
+	}
+	sub.ActionID = id
+	sub.Rationale = rationale.String
+	sub.Answer = answer.String
+	return sub, true, nil
 }

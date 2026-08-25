@@ -185,13 +185,13 @@ func TestAThresholdCannotBeMetByRepetition(t *testing.T) {
 }
 
 // TestChannelSubstitutionIsRefused proves the channel is inside what is
-// signed, so serving a beta manifest at the stable address does not work
+// signed, so serving a prerelease manifest at the stable address does not work
 // even though its signature is perfectly valid.
 func TestChannelSubstitutionIsRefused(t *testing.T) {
 	s := newSigner(t, "root-a")
 	store := trust.Store{Roots: []trust.Root{s.root()}}
 	beta := manifest()
-	beta.Channel = ChannelBeta
+	beta.Channel = ChannelPrerelease
 	body := encode(t, s.sign(t, beta))
 
 	if _, err := VerifyManifest(store, body, ChannelStable); !errors.Is(err, ErrChannelMismatch) {
@@ -199,8 +199,8 @@ func TestChannelSubstitutionIsRefused(t *testing.T) {
 	}
 	// And it verifies fine when asked for as itself, which is what makes
 	// the point: the signature was never the problem.
-	if _, err := VerifyManifest(store, body, ChannelBeta); err != nil {
-		t.Fatalf("the beta manifest does not verify as beta: %v", err)
+	if _, err := VerifyManifest(store, body, ChannelPrerelease); err != nil {
+		t.Fatalf("the prerelease manifest does not verify as beta: %v", err)
 	}
 }
 

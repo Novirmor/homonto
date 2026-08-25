@@ -45,16 +45,19 @@ var (
 	ErrNoArtifact = errors.New("update: manifest carries no artifact for this platform")
 )
 
-// Channel is a release channel.
+// Channel is a release channel. The names match workspacecfg's
+// UpdateChannel spelling (stable/prerelease) so a channel configured in
+// the manifest and a channel published in a release manifest are the
+// same vocabulary, not two words for one idea.
 type Channel string
 
 const (
-	ChannelStable Channel = "stable"
-	ChannelBeta   Channel = "beta"
+	ChannelStable     Channel = "stable"
+	ChannelPrerelease Channel = "prerelease"
 )
 
 // Known reports whether c is a release channel.
-func (c Channel) Known() bool { return c == ChannelStable || c == ChannelBeta }
+func (c Channel) Known() bool { return c == ChannelStable || c == ChannelPrerelease }
 
 // Artifact is one platform's binary.
 type Artifact struct {
@@ -230,7 +233,8 @@ func (m Manifest) LocalArtifact() (Artifact, error) {
 // the one asked for.
 //
 // The channel is inside the SIGNED document, so substituting one is not a
-// matter of swapping a URL: a beta manifest served at the stable address
+// matter of swapping a URL: a prerelease manifest served at the stable
+// address
 // is caught here even though its signature is perfectly valid, because
 // the signature attests to what it says rather than to where it was
 // found.

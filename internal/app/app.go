@@ -115,7 +115,8 @@ func Open(ctx context.Context, opts Options) (*App, error) {
 	return app, nil
 }
 
-// build wires every service over an already-open database.
+// build wires every service over an already-open database. Its body is
+// the wiring order; what each step involves lives in the helper it names.
 func build(ctx context.Context, root string, cfg workspacecfg.Config, db *store.DB, runner gitx.Runner, now func() time.Time, readOnly bool) (*App, error) {
 	ops := operation.NewManager(db)
 	if runner == nil {
@@ -125,72 +126,17 @@ func build(ctx context.Context, root string, cfg workspacecfg.Config, db *store.
 	if err != nil {
 		return nil, err
 	}
-	snapshotStore := filepath.Join(root, ControlDir, "snapshots")
-	if !readOnly {
-		if err := os.MkdirAll(snapshotStore, 0o700); err != nil {
-			return nil, fmt.Errorf("app: create the snapshot store: %w", err)
-		}
-	}
-	snap, err := snapshot.NewService(db, ops, snapshotStore)
+	snap, snapshotStore, err := openSnapshots(root, db, ops, readOnly)
 	if err != nil {
 		return nil, err
 	}
-	// Every effect kind that can leave a journaled operation in this
-	// database must be registered before the recovery pass runs: the
-	// manager dispatches recovery by effect kind and fails loudly on an
-	// unregistered one, so a missing registration here would turn a
-	// crashed lease acquisition or handoff into a workspace no command
-	// can open. The lease manager registers its kinds on construction;
-	// the handoff kinds are installed explicitly.
-	leases := lease.NewManager(db, ops)
-	handoff.RegisterEffects(ops, db)
+	// Registered before the recovery pass below dispatches by effect kind.
+	leases := registerShippedEffects(db, ops)
 	controlRoot := filepath.Join(root, filepath.FromSlash(normalizePath(cfg.Control.Path)))
-	if !readOnly {
-		// An interrupted self-update must be finished or undone before
-		// anything else runs. Running ordinary commands against a
-		// half-replaced installation is how a workspace ends up being
-		// driven by one binary and described by another.
-		if err := recoverUpdate(ctx, root); err != nil {
-			return nil, err
-		}
-		// Finish what a previous run started before starting anything new.
-		if err := ops.RecoverPending(ctx); err != nil {
-			return nil, fmt.Errorf("app: recover pending operations: %w", err)
-		}
-		// The archive service never creates a directory itself, so the
-		// document tree is scaffolded here, once, when the workspace
-		// opens for work.
-		for _, sub := range archive.Dirs() {
-			if err := os.MkdirAll(filepath.Join(controlRoot, filepath.FromSlash(sub)), 0o755); err != nil {
-				return nil, fmt.Errorf("app: create %s: %w", sub, err)
-			}
-		}
-	}
-	journal, err := artifact.NewStoreJournal(db)
-	if err != nil {
+	if err := recoverWorkspace(ctx, root, controlRoot, ops, readOnly); err != nil {
 		return nil, err
 	}
-	artifacts, err := artifact.NewService(controlRoot, journal, now)
-	if err != nil {
-		return nil, err
-	}
-	assignments, err := assignment.NewStore(ctx, db, now)
-	if err != nil {
-		return nil, err
-	}
-	findings, err := finding.NewService(db, now)
-	if err != nil {
-		return nil, err
-	}
-	evidence, err := verify.NewStore(db, now)
-	if err != nil {
-		return nil, err
-	}
-	arch, err := archive.NewService(controlRoot)
-	if err != nil {
-		return nil, err
-	}
-	g, err := guard.New(assignments, journal)
+	services, err := buildStoreServices(ctx, db, controlRoot, now)
 	if err != nil {
 		return nil, err
 	}
@@ -198,26 +144,148 @@ func build(ctx context.Context, root string, cfg workspacecfg.Config, db *store.
 	if err != nil {
 		return nil, err
 	}
-	engine, err := task.NewEngine(task.Dependencies{
-		DB: db, Assignments: assignments, Artifacts: artifacts, Findings: findings,
-		Evidence: evidence, Archive: arch, Guard: g, Environment: env, Now: now,
-	})
-	if err != nil {
-		return nil, err
-	}
-	changes, err := change.NewEngine(change.Dependencies{
-		DB: db, Assignments: assignments, Artifacts: artifacts, Findings: findings,
-		Evidence: evidence, Archive: arch, Guard: g,
-		Environment: changeEnvironment{env: env}, Now: now,
-	})
+	engine, changes, err := buildEngines(db, services, env, now)
 	if err != nil {
 		return nil, err
 	}
 	return &App{
 		root: root, cfg: cfg, db: db, engine: engine, changes: changes, env: env,
-		leases: leases, assignments: assignments, artifacts: artifacts, findings: findings,
-		evidence: evidence, archive: arch, guard: g, now: now,
+		leases: leases, assignments: services.assignments, artifacts: services.artifacts,
+		findings: services.findings, evidence: services.evidence, archive: services.archive,
+		guard: services.guard, now: now,
 	}, nil
+}
+
+// openSnapshots creates the snapshot store (a read-only open changes
+// nothing) and the service over it. The store path is returned because
+// the environment later exposes it to hosts.
+func openSnapshots(root string, db *store.DB, ops *operation.Manager, readOnly bool) (*snapshot.Service, string, error) {
+	snapshotStore := filepath.Join(root, ControlDir, "snapshots")
+	if !readOnly {
+		if err := os.MkdirAll(snapshotStore, 0o700); err != nil {
+			return nil, "", fmt.Errorf("app: create the snapshot store: %w", err)
+		}
+	}
+	snap, err := snapshot.NewService(db, ops, snapshotStore)
+	if err != nil {
+		return nil, "", err
+	}
+	return snap, snapshotStore, nil
+}
+
+// registerShippedEffects installs every effect kind this binary can
+// leave journaled in the database: the lease manager registers its kinds
+// on construction, and the handoff kinds are installed explicitly. All
+// of them must be registered before the recovery pass runs, because the
+// manager dispatches recovery by effect kind and fails loudly on an
+// unregistered one — a missing registration here would turn a crashed
+// lease acquisition or handoff into a workspace no command can open.
+func registerShippedEffects(db *store.DB, ops *operation.Manager) *lease.Manager {
+	leases := lease.NewManager(db, ops)
+	handoff.RegisterEffects(ops, db)
+	return leases
+}
+
+// recoverWorkspace finishes what a previous run started before anything
+// new is started, then scaffolds the document tree. A read-only open
+// changes nothing.
+func recoverWorkspace(ctx context.Context, root, controlRoot string, ops *operation.Manager, readOnly bool) error {
+	if readOnly {
+		return nil
+	}
+	// An interrupted self-update must be finished or undone before
+	// anything else runs. Running ordinary commands against a
+	// half-replaced installation is how a workspace ends up being
+	// driven by one binary and described by another.
+	if err := recoverUpdate(ctx, root); err != nil {
+		return err
+	}
+	// Finish what a previous run started before starting anything new.
+	if err := ops.RecoverPending(ctx); err != nil {
+		return fmt.Errorf("app: recover pending operations: %w", err)
+	}
+	// The archive service never creates a directory itself, so the
+	// document tree is scaffolded here, once, when the workspace opens
+	// for work.
+	for _, sub := range archive.Dirs() {
+		if err := os.MkdirAll(filepath.Join(controlRoot, filepath.FromSlash(sub)), 0o755); err != nil {
+			return fmt.Errorf("app: create %s: %w", sub, err)
+		}
+	}
+	return nil
+}
+
+// storeServices is the shared persistence layer both engines run on:
+// the stores over the runtime database, the archive over the document
+// tree, and the guard that joins assignments to the artifact journal.
+type storeServices struct {
+	assignments *assignment.Store
+	artifacts   *artifact.Service
+	findings    *finding.Service
+	evidence    *verify.Store
+	archive     *archive.Service
+	guard       *guard.Guard
+}
+
+// buildStoreServices constructs the store-backed services over one
+// control root and clock. They are built together because they are
+// wired together: every one of them lands in both engines'
+// dependencies.
+func buildStoreServices(ctx context.Context, db *store.DB, controlRoot string, now func() time.Time) (storeServices, error) {
+	journal, err := artifact.NewStoreJournal(db)
+	if err != nil {
+		return storeServices{}, err
+	}
+	artifacts, err := artifact.NewService(controlRoot, journal, now)
+	if err != nil {
+		return storeServices{}, err
+	}
+	assignments, err := assignment.NewStore(ctx, db, now)
+	if err != nil {
+		return storeServices{}, err
+	}
+	findings, err := finding.NewService(db, now)
+	if err != nil {
+		return storeServices{}, err
+	}
+	evidence, err := verify.NewStore(db, now)
+	if err != nil {
+		return storeServices{}, err
+	}
+	arch, err := archive.NewService(controlRoot)
+	if err != nil {
+		return storeServices{}, err
+	}
+	g, err := guard.New(assignments, journal)
+	if err != nil {
+		return storeServices{}, err
+	}
+	return storeServices{
+		assignments: assignments, artifacts: artifacts, findings: findings,
+		evidence: evidence, archive: arch, guard: g,
+	}, nil
+}
+
+// buildEngines assembles the Task and Change engines over the shared
+// store services. Both see the same stores through the same guard; they
+// differ only in the environment face each workflow speaks.
+func buildEngines(db *store.DB, services storeServices, env *Environment, now func() time.Time) (*task.Engine, *change.Engine, error) {
+	engine, err := task.NewEngine(task.Dependencies{
+		DB: db, Assignments: services.assignments, Artifacts: services.artifacts, Findings: services.findings,
+		Evidence: services.evidence, Archive: services.archive, Guard: services.guard, Environment: env, Now: now,
+	})
+	if err != nil {
+		return nil, nil, err
+	}
+	changes, err := change.NewEngine(change.Dependencies{
+		DB: db, Assignments: services.assignments, Artifacts: services.artifacts, Findings: services.findings,
+		Evidence: services.evidence, Archive: services.archive, Guard: services.guard,
+		Environment: changeEnvironment{env: env}, Now: now,
+	})
+	if err != nil {
+		return nil, nil, err
+	}
+	return engine, changes, nil
 }
 
 // recoverUpdate finishes or undoes an interrupted self-update.

@@ -4,10 +4,13 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/noviopenworks/homonto/internal/schema"
 )
@@ -389,4 +392,123 @@ func TestOpenReadOnlyReadsRowsAndRejectsWrites(t *testing.T) {
 	if err == nil {
 		t.Error("store: write through a read-only open succeeded, want error")
 	}
+}
+
+// TestMigratingAPopulatedOlderDatabaseKeepsItsRows is the migration
+// rehearsal in test form.
+//
+// Every other migration test starts from an empty file, which proves the
+// SQL parses and nothing more. What an update actually does is run these
+// migrations over a database with a user's work in it, and the failure
+// that matters is a migration that succeeds while losing rows — an update
+// that installs cleanly and silently discards the workflow it was meant
+// to carry forward.
+//
+// The test plants a database at the schema BEFORE the current one, with a
+// row in each table the newest migration touches, then opens it normally
+// and looks for the rows.
+func TestMigratingAPopulatedOlderDatabaseKeepsItsRows(t *testing.T) {
+	ctx := context.Background()
+	path := filepath.Join(t.TempDir(), "runtime.db")
+
+	previous := SchemaVersion() - 1
+	if previous < 1 {
+		t.Skip("there is no earlier schema to migrate from")
+	}
+	if err := migrateTo(ctx, path, previous); err != nil {
+		t.Fatalf("plant a database at schema %d: %v", previous, err)
+	}
+
+	// One work and one unit record, written through the OLD schema's
+	// table name. The newest migration renames it.
+	const (
+		workID   = "11111111-1111-4111-8111-111111111111"
+		actionID = "22222222-2222-4222-8222-222222222222"
+	)
+	if err := execOn(ctx, path, func(db *sql.DB) error {
+		if _, err := db.ExecContext(ctx, `
+			INSERT INTO works (id, kind, title, state, created_at, updated_at)
+			VALUES (?, 'task', 'carry me forward', 'active', ?, ?)`,
+			workID, formatTime(time.Now()), formatTime(time.Now())); err != nil {
+			return err
+		}
+		_, err := db.ExecContext(ctx, `
+			INSERT INTO task_partitions (action_id, work_id, step, partition)
+			VALUES (?, ?, 'do_implement', '{"Label":"item-1"}')`, actionID, workID)
+		return err
+	}); err != nil {
+		t.Fatalf("populate the old database: %v", err)
+	}
+
+	// The update: open it with this binary, which migrates it forward.
+	db, err := Open(ctx, path, OpenOptions{})
+	if err != nil {
+		t.Fatalf("migrate the populated database: %v", err)
+	}
+	defer db.Close()
+
+	var (
+		title string
+		label string
+	)
+	if err := db.View(ctx, func(tx *Tx) error {
+		if err := tx.QueryRowContext(ctx,
+			`SELECT title FROM works WHERE id = ?`, workID).Scan(&title); err != nil {
+			return err
+		}
+		return tx.QueryRowContext(ctx,
+			`SELECT partition FROM work_units WHERE action_id = ?`, actionID).Scan(&label)
+	}); err != nil {
+		t.Fatalf("the migration lost rows: %v", err)
+	}
+	if title != "carry me forward" {
+		t.Errorf("work title = %q after migrating", title)
+	}
+	if !strings.Contains(label, "item-1") {
+		t.Errorf("unit record = %q after the rename", label)
+	}
+}
+
+// migrateTo plants a database at an exact schema version by applying the
+// embedded migrations up to it and recording them in the ledger — the same
+// way migrate does, stopping early.
+func migrateTo(ctx context.Context, path string, version int64) error {
+	ms, err := embeddedMigrations()
+	if err != nil {
+		return err
+	}
+	return execOn(ctx, path, func(db *sql.DB) error {
+		if _, err := db.ExecContext(ctx, `CREATE TABLE IF NOT EXISTS migrations (
+			version    INTEGER PRIMARY KEY,
+			name       TEXT NOT NULL,
+			applied_at TEXT NOT NULL
+		)`); err != nil {
+			return err
+		}
+		for _, m := range ms {
+			if m.version > version {
+				break
+			}
+			if _, err := db.ExecContext(ctx, m.sql); err != nil {
+				return fmt.Errorf("apply %s: %w", m.name, err)
+			}
+			if _, err := db.ExecContext(ctx,
+				`INSERT INTO migrations (version, name, applied_at) VALUES (?, ?, ?)`,
+				m.version, m.name, formatTime(time.Now())); err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+}
+
+// execOn opens the database file directly, outside Open, so the test can
+// write to a schema this binary would otherwise migrate on sight.
+func execOn(ctx context.Context, path string, fn func(*sql.DB) error) error {
+	db, err := sql.Open("sqlite", path)
+	if err != nil {
+		return err
+	}
+	defer db.Close()
+	return fn(db)
 }

@@ -13,6 +13,7 @@ import (
 	"github.com/noviopenworks/homonto/internal/archive"
 	"github.com/noviopenworks/homonto/internal/artifact"
 	"github.com/noviopenworks/homonto/internal/assignment"
+	"github.com/noviopenworks/homonto/internal/decision"
 	"github.com/noviopenworks/homonto/internal/finding"
 	"github.com/noviopenworks/homonto/internal/fingerprint"
 	"github.com/noviopenworks/homonto/internal/guard"
@@ -371,7 +372,7 @@ func (e *Engine) captureBaseline(ctx context.Context, st State) (Baseline, error
 	if err != nil {
 		return Baseline{}, err
 	}
-	docs, err := e.documentsDigest(ctx, st)
+	docs, err := e.documentDigests(ctx, st)
 	if err != nil {
 		return Baseline{}, err
 	}
@@ -384,42 +385,42 @@ func (e *Engine) captureBaseline(ctx context.Context, st State) (Baseline, error
 	return baseline, nil
 }
 
-// documentsDigest digests the change's host-authored documents in
-// canonical kind order. Missing documents contribute their absence, so
-// creating one moves the digest — which is correct: a design that did not
-// exist and now does is a change to what everything downstream rests on.
-func (e *Engine) documentsDigest(ctx context.Context, st State) (fingerprint.Digest, error) {
-	kinds := []artifact.Kind{
-		artifact.KindProposal, artifact.KindDesign, artifact.KindTasks,
-		artifact.KindPresetTasks, artifact.KindPlan, artifact.KindFix, artifact.KindTweak,
-	}
-	var buf []byte
-	for _, kind := range kinds {
+// hostDocumentKinds are the documents whose content the invalidation graph
+// tracks, in canonical order.
+var hostDocumentKinds = []artifact.Kind{
+	artifact.KindProposal, artifact.KindDesign, artifact.KindTasks,
+	artifact.KindPresetTasks, artifact.KindPlan, artifact.KindFix, artifact.KindTweak,
+}
+
+// documentDigests digests each of the change's host-authored documents.
+// Absent documents get no entry, so one coming into existence moves the
+// baseline.
+//
+// A tasks document's checkbox state is normalized away before digesting:
+// a checked box is Homonto recording progress against the plan, not a
+// change to it, and digesting it raw would make Homonto's own checkoffs
+// invalidate the documents that produced them.
+func (e *Engine) documentDigests(ctx context.Context, st State) (map[artifact.Kind]fingerprint.Digest, error) {
+	out := map[artifact.Kind]fingerprint.Digest{}
+	for _, kind := range hostDocumentKinds {
 		path, err := st.DocumentPath(kind)
 		if err != nil {
-			return "", err
+			return nil, err
 		}
-		buf = append(buf, kind...)
-		buf = append(buf, '\n')
 		doc, err := e.artifacts.Read(ctx, artifact.Ref{WorkID: st.WorkID, Kind: kind, Path: path})
 		if errors.Is(err, artifact.ErrArtifactMissing) {
-			buf = append(buf, "(absent)\n"...)
 			continue
 		}
 		if err != nil {
-			return "", err
+			return nil, err
 		}
 		content := doc.Region(artifact.RegionWholeDocument)
 		if kind == artifact.KindTasks || kind == artifact.KindPresetTasks {
-			// Checkbox state is progress, not a change of plan; digesting
-			// it raw would make Homonto's own checkoffs invalidate the
-			// documents that produced them.
 			content = artifact.SemanticChecklist(content)
 		}
-		buf = append(buf, content...)
-		buf = append(buf, '\n')
+		out[kind] = fingerprint.Bytes("change-document-"+string(kind), content)
 	}
-	return fingerprint.Bytes("change-documents", buf), nil
+	return out, nil
 }
 
 // PresetScope counts the change's diff against its immutable work baseline
@@ -441,4 +442,168 @@ func sortedDigests(in []fingerprint.Digest) []fingerprint.Digest {
 	out := append([]fingerprint.Digest(nil), in...)
 	sort.Slice(out, func(i, j int) bool { return out[i] < out[j] })
 	return out
+}
+
+// Abandon stops a Change. Its isolation areas, branches, and evidence are
+// left exactly where they are: abandoning is a decision to stop working,
+// not an instruction to destroy the work.
+func (e *Engine) Abandon(ctx context.Context, id identity.WorkID) (State, error) {
+	st, err := e.State(ctx, id)
+	if err != nil {
+		return State{}, err
+	}
+	next, err := Advance(st.Path, Step(st.Step), EventAbandon)
+	if err != nil {
+		return State{}, err
+	}
+	if err := e.invalidateOpenActions(ctx, st); err != nil {
+		return State{}, err
+	}
+	return e.moveTo(ctx, st, next)
+}
+
+// SubmitReport records a host's answer to an assignment. The result diff
+// is validated FIRST for a writable assignment: a report backed by changes
+// the assignment was not issued to make is refused rather than recorded,
+// so nothing downstream ever reads it.
+func (e *Engine) SubmitReport(ctx context.Context, in protocol.ReportSubmission) (State, error) {
+	act, err := e.assignments.Action(ctx, in.ActionID)
+	if err != nil {
+		return State{}, err
+	}
+	st, err := e.State(ctx, act.WorkID)
+	if err != nil {
+		return State{}, err
+	}
+	if terminalStep(st.Path, st.Step) {
+		return State{}, fmt.Errorf("change: %s is %s: %w", st.WorkID, st.Step, ErrTerminal)
+	}
+	if act.Generation != st.Generation {
+		return State{}, fmt.Errorf("change: action %s belongs to generation %d, the change is at %d: %w",
+			act.ID, act.Generation, st.Generation, ErrStaleAction)
+	}
+	wire := act.Spec
+	wire.FreshnessToken = e.assignments.Token(act.ID)
+	if !wire.WriteScope.ReadOnly {
+		unit, _, err := e.unitOf(ctx, act.ID)
+		if err != nil {
+			return State{}, err
+		}
+		diff, err := e.env.ResultDiff(ctx, wire, unit)
+		if err != nil {
+			return State{}, err
+		}
+		if err := e.guard.ValidateAssignmentResult(ctx, wire, diff); err != nil {
+			return State{}, fmt.Errorf("%w: %w", ErrResultRejected, err)
+		}
+	}
+	if _, err := e.assignments.Submit(ctx, in); err != nil {
+		return State{}, err
+	}
+	if err := e.recordFindings(ctx, st, act, in); err != nil {
+		return State{}, err
+	}
+	// Only Homonto checks items off, and only for assignments it accepted
+	// — which is exactly here, after the final diff gate has passed.
+	if act.Role == protocol.RoleImplementer &&
+		(act.Step == string(StepBuildImplement) || act.Step == string(StepPresetImplement)) {
+		if err := e.checkOffUnit(ctx, st, act.ID); err != nil {
+			return State{}, err
+		}
+	}
+	return st, nil
+}
+
+// recordFindings persists the findings of a reviewer or skeptic report.
+func (e *Engine) recordFindings(ctx context.Context, st State, act assignment.Action, in protocol.ReportSubmission) error {
+	switch act.Role {
+	case protocol.RoleReviewer, protocol.RoleSkeptic:
+	default:
+		return nil
+	}
+	// Findings raised during Open and Design are preset scope SIGNALS, not
+	// defects in a result that does not exist yet. Recording them as
+	// blocking findings would gate a change on an observation about its
+	// own scope.
+	if act.Step != string(StepVerifyReview) && act.Step != string(StepPresetReview) {
+		return nil
+	}
+	wire := act.Spec
+	wire.FreshnessToken = e.assignments.Token(act.ID)
+	report, err := protocol.DecodeReport(wire, in.Report)
+	if err != nil {
+		return err
+	}
+	findings := findingsOf(report)
+	if len(findings) == 0 {
+		return nil
+	}
+	return e.findings.RecordReport(ctx, st.WorkID, act.ID, act.Role, findings)
+}
+
+// Decide records a human's answer to a decision gate. Acting on the answer
+// is the next step's job, not this one's: recording and acting are
+// separate so a crash between them replays cleanly.
+func (e *Engine) Decide(ctx context.Context, in decision.Submission) (State, error) {
+	act, err := e.assignments.Action(ctx, in.ActionID)
+	if err != nil {
+		return State{}, err
+	}
+	// A classification confirmation answers a candidate, not a change.
+	if act.Step == string(PreflightConfirm) {
+		if _, err := e.assignments.Decide(ctx, in); err != nil {
+			return State{}, err
+		}
+		pre, err := e.Preflight(ctx, act.WorkID)
+		if err != nil {
+			return State{}, err
+		}
+		return e.ConfirmPreflight(ctx, ConfirmInput{
+			WorkID: pre.WorkID, Path: Path(in.Choice),
+			Rationale: in.Rationale, DecisionID: act.ID,
+		})
+	}
+	st, err := e.State(ctx, act.WorkID)
+	if err != nil {
+		return State{}, err
+	}
+	if terminalStep(st.Path, st.Step) {
+		return State{}, fmt.Errorf("change: %s is %s: %w", st.WorkID, st.Step, ErrTerminal)
+	}
+	if _, err := e.assignments.Decide(ctx, in); err != nil {
+		return State{}, err
+	}
+	return st, nil
+}
+
+// AcceptEdit accepts the host's document edit and marks the edit action
+// answered. The host presents only the grant token it was issued: Homonto
+// looks up what that grant actually opened rather than believing a
+// structure the host hands back.
+func (e *Engine) AcceptEdit(ctx context.Context, actionID identity.ActionID, grantToken identity.Token) (State, error) {
+	act, err := e.assignments.Action(ctx, actionID)
+	if err != nil {
+		return State{}, err
+	}
+	st, err := e.State(ctx, act.WorkID)
+	if err != nil {
+		return State{}, err
+	}
+	if terminalStep(st.Path, st.Step) {
+		return State{}, fmt.Errorf("change: %s is %s: %w", st.WorkID, st.Step, ErrTerminal)
+	}
+	if act.Spec.Edit == nil {
+		return State{}, fmt.Errorf("change: action %s is not an edit action", actionID)
+	}
+	grant, err := e.artifacts.Grant(ctx, act.Spec.Edit.GrantID, grantToken)
+	if err != nil {
+		return State{}, err
+	}
+	if _, err := e.artifacts.AcceptEdit(ctx, grant); err != nil {
+		return State{}, err
+	}
+	if _, err := e.assignments.CompleteEdit(ctx, actionID, e.assignments.Token(actionID)); err != nil {
+		return State{}, err
+	}
+	return st, nil
 }

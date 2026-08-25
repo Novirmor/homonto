@@ -22,7 +22,7 @@ func (e *Engine) savePartition(ctx context.Context, workID identity.WorkID, step
 	}
 	return e.db.Update(ctx, func(tx *store.Tx) error {
 		if _, err := tx.ExecContext(ctx, `
-			INSERT INTO task_partitions (action_id, work_id, step, partition)
+			INSERT INTO work_units (action_id, work_id, step, partition)
 			VALUES (?, ?, ?, ?)`,
 			string(actionID), string(workID), string(step), string(encoded)); err != nil {
 			return fmt.Errorf("task: record partition %q: %w", p.Label, err)
@@ -37,7 +37,7 @@ func (e *Engine) partitionOf(ctx context.Context, actionID identity.ActionID) (P
 	found := false
 	err := e.db.View(ctx, func(tx *store.Tx) error {
 		rows, err := tx.QueryContext(ctx,
-			`SELECT partition FROM task_partitions WHERE action_id = ?`, string(actionID))
+			`SELECT partition FROM work_units WHERE action_id = ?`, string(actionID))
 		if err != nil {
 			return err
 		}

@@ -147,13 +147,23 @@ func (s PreflightState) Validate() error {
 	return nil
 }
 
-// Baseline is the fingerprint set a Change's step rests on. It is the
-// Task engine's baseline plus the change-specific documents, because a
-// Change has more documents that downstream evidence depends on.
+// Baseline is the fingerprint set a Change's step rests on.
+//
+// The documents are digested PER KIND rather than folded together,
+// because the spec's invalidation graph is per document: editing
+// proposal.md sends the change back further than editing plan.md does, and
+// a combined digest could only ever say "something moved".
 type Baseline struct {
-	// Documents is the digest of the change's host-authored documents, in
-	// canonical kind order.
-	Documents fingerprint.Digest `json:"documents"`
+	// Documents maps each host-authored document kind to its digest. An
+	// absent document has no entry, and a document coming into existence
+	// therefore moves the baseline — which is correct: a design that did
+	// not exist and now does is a change to what everything after it
+	// rests on.
+	Documents map[artifact.Kind]fingerprint.Digest `json:"documents,omitempty"`
+	// Verification is the digest of the recorded evidence set. It is
+	// separate because verification and finding-resolution changes
+	// invalidate Close and nothing before it.
+	Verification fingerprint.Digest `json:"verification,omitempty"`
 	// Membership, PathClass, and CheckConfig mirror the Task baseline.
 	Membership  fingerprint.Digest `json:"membership"`
 	PathClass   fingerprint.Digest `json:"path_class"`
@@ -217,3 +227,6 @@ func (s State) Dir() (string, error) { return artifact.ChangeDir(s.Name) }
 func (s State) DocumentPath(k artifact.Kind) (string, error) {
 	return artifact.Path(s.Name, k)
 }
+
+// Document returns the recorded digest of one document kind.
+func (b Baseline) Document(k artifact.Kind) fingerprint.Digest { return b.Documents[k] }

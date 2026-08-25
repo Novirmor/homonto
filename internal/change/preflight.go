@@ -230,46 +230,6 @@ func suggestPath(a pathclass.Assessment) Path {
 	return PathTweak
 }
 
-// observedSignals reads the preset scope signals out of the answered
-// preflight reports. A report's findings and questions are prose; the
-// signals are carried as finding ids matching the signal vocabulary, so a
-// host reports them explicitly rather than having Homonto guess from text.
-func (e *Engine) observedSignals(ctx context.Context, workID identity.WorkID) ([]pathclass.Signal, error) {
-	actions, err := e.assignments.Actions(ctx, workID)
-	if err != nil {
-		return nil, err
-	}
-	seen := map[pathclass.Signal]bool{}
-	var out []pathclass.Signal
-	for _, act := range actions {
-		if act.Kind != protocol.KindAssignment || act.State != assignment.StateSubmitted {
-			continue
-		}
-		sub, found, err := e.assignments.Report(ctx, act.ID)
-		if err != nil || !found {
-			if err != nil {
-				return nil, err
-			}
-			continue
-		}
-		wire := act.Spec
-		wire.FreshnessToken = e.assignments.Token(act.ID)
-		report, err := protocol.DecodeReport(wire, sub.Report)
-		if err != nil {
-			return nil, err
-		}
-		for _, f := range findingsOf(report) {
-			signal := pathclass.Signal(f.ID)
-			if !signal.Semantic() || seen[signal] {
-				continue
-			}
-			seen[signal] = true
-			out = append(out, signal)
-		}
-	}
-	return pathclass.SortSignals(out), nil
-}
-
 // findingsOf extracts the findings of any role report.
 func findingsOf(report protocol.Report) []protocol.Finding {
 	switch r := report.(type) {
@@ -362,7 +322,36 @@ func (e *Engine) ConfirmPreflight(ctx context.Context, in ConfirmInput) (State, 
 	if err := e.savePreflight(ctx, pre); err != nil {
 		return State{}, err
 	}
+	// Close whatever the candidate still had open. The confirmation may
+	// have come through the decision gate — in which case that action is
+	// already answered and untouched — or directly from a caller who
+	// decided out of band; either way a preflight action must not survive
+	// into the change, where it would be offered as work on a candidate
+	// that no longer exists.
+	if err := e.invalidatePreflightActions(ctx, pre.WorkID); err != nil {
+		return State{}, err
+	}
 	return st, nil
+}
+
+// invalidatePreflightActions marks every unanswered candidate action
+// invalid.
+func (e *Engine) invalidatePreflightActions(ctx context.Context, id identity.WorkID) error {
+	actions, err := e.assignments.Actions(ctx, id)
+	if err != nil {
+		return err
+	}
+	var ids []identity.ActionID
+	for _, act := range actions {
+		if act.State != assignment.StatePending && act.State != assignment.StateIssued {
+			continue
+		}
+		if act.Step != string(PreflightAssess) && act.Step != string(PreflightConfirm) {
+			continue
+		}
+		ids = append(ids, act.ID)
+	}
+	return e.assignments.Invalidate(ctx, ids...)
 }
 
 // AbandonPreflight drops a classification candidate. Nothing portable was

@@ -30,13 +30,14 @@ var testNow = time.Date(2026, 8, 25, 9, 30, 0, 0, time.UTC)
 // scriptedEnv answers the engine's workspace questions from fields the
 // test sets, so preflight can be exercised without a repository on disk.
 type scriptedEnv struct {
-	control Member
-	members []Member
-	base    Baseline
-	sources []fingerprint.Digest
-	diff    []pathclass.DiffEntry
-	classes *workspacecfg.PathClasses
-	checks  []verify.Set
+	control   Member
+	members   []Member
+	base      Baseline
+	sources   []fingerprint.Digest
+	diff      []pathclass.DiffEntry
+	classes   *workspacecfg.PathClasses
+	checks    []verify.Set
+	partition func(items []artifact.Item) []Unit
 }
 
 func (s *scriptedEnv) Control(context.Context) (Member, error)   { return s.control, nil }
@@ -45,8 +46,11 @@ func (s *scriptedEnv) Fingerprints(context.Context) (Baseline, error) {
 	return s.base, nil
 }
 
-func (s *scriptedEnv) Partition(context.Context, identity.WorkID, []artifact.Item) ([]Unit, error) {
-	return nil, nil
+func (s *scriptedEnv) Partition(_ context.Context, _ identity.WorkID, items []artifact.Item) ([]Unit, error) {
+	if s.partition == nil {
+		return nil, nil
+	}
+	return s.partition(items), nil
 }
 
 func (s *scriptedEnv) Isolate(_ context.Context, _ identity.WorkID, actionID identity.ActionID, unit Unit) (Unit, error) {
@@ -54,8 +58,15 @@ func (s *scriptedEnv) Isolate(_ context.Context, _ identity.WorkID, actionID ide
 	return unit, nil
 }
 
-func (s *scriptedEnv) Integrations(context.Context, identity.WorkID, []Result) ([]Unit, error) {
-	return nil, nil
+func (s *scriptedEnv) Integrations(_ context.Context, _ identity.WorkID, results []Result) ([]Unit, error) {
+	if len(results) == 0 {
+		return nil, nil
+	}
+	return []Unit{{
+		Label: "integration", Member: s.control, Integration: true,
+		Root: "work/integration", Scope: []string{"src"},
+		Prompt: "Combine the parallel output.",
+	}}, nil
 }
 
 func (s *scriptedEnv) SourceFingerprints(context.Context, identity.WorkID) ([]fingerprint.Digest, error) {

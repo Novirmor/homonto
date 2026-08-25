@@ -9,14 +9,23 @@ import (
 	"github.com/spf13/cobra"
 )
 
-// NewWorkflowRootCmd builds the rewritten workflow's command tree.
+// Version is the build version. It is initialized to buildinfo.DevVersion
+// (the single source of the dev literal shared by every homonto binary)
+// and is a constant-initialized string so the linker's -X stamp takes
+// effect; when unstamped — `go install ...@tag` applies no ldflags —
+// buildinfo.Resolve recovers the module version.
+var Version = buildinfo.DevVersion
+
+// NewRootCmd builds Homonto's command tree.
 //
-// It is deliberately NOT registered on NewRootCmd yet: the legacy
-// projector still ships from this binary and must keep working until the
-// cutover, and a half-wired second root would let a user reach the new
-// workflow through a binary whose other half assumes the old one. The
-// cutover workstream swaps the roots; until then this tree is reachable
-// only from tests and from an explicit opt-in.
+// The surface is deliberately small and splits three ways: workspace
+// lifecycle (init, status, doctor, update), workflow (task or change), and
+// the protocol a host speaks (next, report, decide, accept-edit, guard,
+// host). A command in one group never reaches into another's decisions.
+func NewRootCmd() *cobra.Command { return NewWorkflowRootCmd(nil) }
+
+// NewWorkflowRootCmd builds the command tree with an injectable workspace
+// opener. A nil opener uses the real workspace; tests supply their own.
 func NewWorkflowRootCmd(opener Opener) *cobra.Command {
 	if opener == nil {
 		opener = defaultOpener
@@ -31,6 +40,12 @@ func NewWorkflowRootCmd(opener Opener) *cobra.Command {
 	}
 	root.PersistentFlags().String("workspace", "", "workspace root (default: the working directory)")
 	root.AddCommand(
+		versionCmd(version),
+		initCmd(),
+		statusCmd(opener),
+		doctorCmd(opener),
+		handoffCmd(opener),
+		attachCmd(opener),
 		taskCmd(opener),
 		changeCmd(opener),
 		nextCmd(opener),
@@ -42,6 +57,19 @@ func NewWorkflowRootCmd(opener Opener) *cobra.Command {
 		workflowUpdateCmd(),
 	)
 	return root
+}
+
+// versionCmd prints the build version.
+func versionCmd(version string) *cobra.Command {
+	return &cobra.Command{
+		Use:   "version",
+		Short: "Print the homonto version",
+		Args:  cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			cmd.Printf("homonto %s\n", version)
+			return nil
+		},
+	}
 }
 
 // Opener opens the workspace a command operates on. Tests substitute one

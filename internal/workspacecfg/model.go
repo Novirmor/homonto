@@ -169,7 +169,7 @@ type Update struct {
 	Channel UpdateChannel `toml:"channel,omitempty"`
 }
 
-// Config is the workspace manifest (workspace.toml).
+// Config is the workspace manifest (.homonto/config.toml).
 type Config struct {
 	SchemaVersion int          `toml:"schema_version"`
 	Workspace     Workspace    `toml:"workspace"`

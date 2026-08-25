@@ -1,49 +1,51 @@
+// Package cli is Homonto's command surface. It parses flags, renders
+// output, and calls into internal/app; every decision behind a command
+// lives in an engine, so a command can be read as "what does the user
+// type" without also being "what does the workflow do".
 package cli
 
 import (
+	"errors"
 	"fmt"
 	"os"
 )
 
-// exitCode is the taxonomy exit code a command set via --exit-code; Execute
-// returns it. It is reset at the start of every Execute. Single-run CLI, so a
-// package-level sink is safe.
+// Exit codes. They are a small, stable taxonomy so a script can branch
+// without parsing prose.
+const (
+	// ExitOK: the command did what it was asked.
+	ExitOK = 0
+	// ExitError: the command failed.
+	ExitError = 1
+	// ExitRefused: a guard refused a presented operation. It is distinct
+	// from a failure because a refusal is the guard working, and a host
+	// hook needs to tell the two apart.
+	ExitRefused = 2
+	// ExitUnhealthy: doctor found something that needs attention.
+	ExitUnhealthy = 3
+)
+
+// exitCode is the taxonomy code a command set. Homonto runs one command
+// per process, so a package-level sink is safe.
 var exitCode int
 
 func setExitCode(c int) { exitCode = c }
 
-// Execute runs the root command with the given args and returns the process
-// exit code: 1 on error, otherwise the taxonomy code a command set under
-// --exit-code (0 by default). main() passes the result to os.Exit.
+// Execute runs the root command and returns the process exit code.
 func Execute(args []string) int {
-	exitCode = 0
+	exitCode = ExitOK
 	root := NewRootCmd()
 	root.SetArgs(args)
 	if err := root.Execute(); err != nil {
+		var refused errRefused
+		if errors.As(err, &refused) {
+			// The decision itself has already been written to stdout for
+			// the hook to read; stderr carries the human-readable half.
+			fmt.Fprintln(os.Stderr, "refused:", err)
+			return ExitRefused
+		}
 		fmt.Fprintln(os.Stderr, "error:", err)
-		return 1
+		return ExitError
 	}
 	return exitCode
-}
-
-// planExitCode maps plan state to the opt-in taxonomy: 2 when there are pending
-// changes or remote repins, else 0.
-func planExitCode(hasChanges bool, repins int, catalogStale bool) int {
-	if hasChanges || repins > 0 || catalogStale {
-		return 2
-	}
-	return 0
-}
-
-// statusExitCode maps status state to the opt-in taxonomy: 3 when drift is
-// present, 2 when only pending config changes, else 0.
-func statusExitCode(hasDrift bool, pending int) int {
-	switch {
-	case hasDrift:
-		return 3
-	case pending > 0:
-		return 2
-	default:
-		return 0
-	}
 }

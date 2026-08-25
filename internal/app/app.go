@@ -31,8 +31,10 @@ import (
 const ControlDir = ".homonto"
 
 // ManifestName is the workspace manifest file inside the control
-// directory.
-const ManifestName = "workspace.toml"
+// directory. It is the name workspace.ConfigPath derives and the one the
+// handoff commits as part of the portable record; a second spelling would
+// mean a workspace that opens but does not travel.
+const ManifestName = "config.toml"
 
 // ErrNoActiveWork reports a command that needs one unambiguous active task
 // and found none, or found more than one.

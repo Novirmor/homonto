@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/noviopenworks/homonto/internal/adr"
+	"github.com/noviopenworks/homonto/internal/app"
 	"github.com/noviopenworks/homonto/internal/artifact"
 	"github.com/noviopenworks/homonto/internal/decision"
 	"github.com/noviopenworks/homonto/internal/protocol"
@@ -23,7 +24,7 @@ func changeWorkspace(t *testing.T) *workspace {
 	if err != nil {
 		t.Fatalf("marshal manifest: %v", err)
 	}
-	writeFile(t, filepath.Join(w.root, ".homonto", "workspace.toml"), string(manifest))
+	writeFile(t, filepath.Join(w.root, app.ControlDir, app.ManifestName), string(manifest))
 	return w
 }
 

@@ -1,49 +1,36 @@
 package cli
 
 import (
-	"os"
-	"path/filepath"
+	"strings"
 	"testing"
 )
 
-func TestPlanExitCode_Helper(t *testing.T) {
-	if got := planExitCode(true, 0, false); got != 2 {
-		t.Errorf("planExitCode(pending) = %d, want 2", got)
+// TestExecuteReportsTheTaxonomy pins the exit codes a script branches on.
+func TestExecuteReportsTheTaxonomy(t *testing.T) {
+	// A successful command exits zero.
+	if got := Execute([]string{"version"}); got != ExitOK {
+		t.Errorf("version exited %d, want %d", got, ExitOK)
 	}
-	if got := planExitCode(false, 0, false); got != 0 {
-		t.Errorf("planExitCode(clean) = %d, want 0", got)
+	// An unknown command is an error, not a refusal.
+	if got := Execute([]string{"nonsense-command"}); got != ExitError {
+		t.Errorf("an unknown command exited %d, want %d", got, ExitError)
 	}
-	if got := planExitCode(false, 1, false); got != 2 {
-		t.Errorf("planExitCode(repins) = %d, want 2", got)
-	}
-	if got := planExitCode(false, 0, true); got != 2 {
-		t.Errorf("planExitCode(stale catalog) = %d, want 2", got)
-	}
-}
-
-func TestStatusExitCode_Helper(t *testing.T) {
-	if got := statusExitCode(true, 0); got != 3 {
-		t.Errorf("statusExitCode(drift) = %d, want 3", got)
-	}
-	if got := statusExitCode(false, 2); got != 2 {
-		t.Errorf("statusExitCode(pending) = %d, want 2", got)
-	}
-	if got := statusExitCode(false, 0); got != 0 {
-		t.Errorf("statusExitCode(clean) = %d, want 0", got)
+	// The exit code is reset per run: a previous unhealthy result must not
+	// leak into the next command.
+	setExitCode(ExitUnhealthy)
+	if got := Execute([]string{"version"}); got != ExitOK {
+		t.Errorf("a stale exit code leaked into the next run: %d", got)
 	}
 }
 
-func TestExecute_PlanExitCodeFlag(t *testing.T) {
-	home := t.TempDir()
-	t.Setenv("HOME", home)
-	cfg := filepath.Join(t.TempDir(), "homonto.toml")
-	if err := os.WriteFile(cfg, []byte("[mcps.demo]\ncommand = [\"true\"]\n"), 0o644); err != nil {
-		t.Fatal(err)
+// TestRefusalIsDistinctFromFailure proves a host hook can tell the guard
+// working from the guard breaking.
+func TestRefusalIsDistinctFromFailure(t *testing.T) {
+	if ExitRefused == ExitError {
+		t.Fatal("a refusal and a failure share an exit code")
 	}
-	if code := Execute([]string{"plan", "--exit-code", "--config", cfg}); code != 2 {
-		t.Errorf("plan --exit-code (pending) = %d, want 2", code)
-	}
-	if code := Execute([]string{"plan", "--config", cfg}); code != 0 {
-		t.Errorf("plan without --exit-code = %d, want 0", code)
+	err := errRefused{}
+	if !strings.Contains(err.Error(), ":") {
+		t.Fatalf("a refusal does not explain itself: %q", err.Error())
 	}
 }

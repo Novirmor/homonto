@@ -24,6 +24,7 @@ import (
 	"github.com/noviopenworks/homonto/internal/gitx"
 	"github.com/noviopenworks/homonto/internal/identity"
 	"github.com/noviopenworks/homonto/internal/protocol"
+	"github.com/noviopenworks/homonto/internal/registration"
 	"github.com/noviopenworks/homonto/internal/workspacecfg"
 )
 
@@ -88,6 +89,11 @@ func newWorkspace(t *testing.T) *workspace {
 	if err != nil {
 		t.Fatalf("resolve temp dir: %v", err)
 	}
+
+	// Non-Git members keep their registration and lease slots in the
+	// machine's state directory. Without this the suite writes into the
+	// developer's home and leaves it there.
+	t.Setenv(registration.StateRootEnv, t.TempDir())
 
 	ws := &workspace{
 		root:      root,

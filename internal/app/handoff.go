@@ -138,7 +138,7 @@ func (a *App) checkpoint() (checkpoint.Checkpoint, error) {
 // stateRoot is this machine's platform state base, where non-Git member
 // registrations and leases are slotted.
 func stateRoot() (string, error) {
-	root, err := registration.DefaultStateRoot()
+	root, err := registration.StateRoot()
 	if err != nil {
 		return "", fmt.Errorf("app: resolve the platform state root: %w", err)
 	}

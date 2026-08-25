@@ -1,6 +1,6 @@
 # Ship only homonto-native frameworks (onto, and later `to`)
 
-- **Status:** Accepted
+- **Status:** Superseded by 0023
 - **Date:** 2026-07-15
 
 ## Context

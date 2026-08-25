@@ -1,6 +1,6 @@
 # Write files atomically and persist state after successful adapter writes
 
-- **Status:** Accepted
+- **Status:** Superseded by 0023
 - **Date:** 2026-07-03
 - **Change:** homonto-v1-core
 

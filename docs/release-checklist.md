@@ -1,193 +1,146 @@
 # Release checklist
 
-The repeatable steps for cutting a triple-binary `homonto` + `onto` + `to`
-release. This is the operational *how* of a release; the release gate below
-decides *whether*.
+Cutting a `homonto` release. The gate decides whether the code is
+shippable; the guard decides whether the *release* was actually prepared.
+Both have to pass, and neither can be argued with.
 
-Releases are driven by the `release` GitHub workflow
-(`.github/workflows/release.yml`), which triggers on any pushed `v*` tag. Do
-not push a tag until that workflow packages all three binaries. The workflow
-must re-run the CI gates, cross-compile every target, write checksums for
-the archives, and publish a GitHub release.
+## What gets published
 
-## Pre-tag verification
+```text
+homonto_<version>_linux_amd64.tar.gz
+homonto_<version>_linux_arm64.tar.gz
+homonto_<version>_darwin_amd64.tar.gz
+homonto_<version>_darwin_arm64.tar.gz
+SHA256SUMS
+release-manifest.json
+release-manifest.sig
+```
 
-**`./scripts/gate.sh` is the whole gate**: one command, run identically by
-`ci.yml`, by `release.yml` before it builds or publishes anything, and by
-you before tagging. That is what makes a tag unable to publish on a weaker
-gate than a pull request. It ends with `ALL GATE CHECKS PASSED`.
+Exactly that, pinned by `test/release/packaging_test.go`. An extra archive
+is a platform nobody verified; a missing one is a platform someone will
+report as broken.
+
+The manifest is what `homonto update` reads. It is generated from the
+archives on disk by `tools/release-manifest`, using the same Go types the
+shipped binary parses it with — no field of it is ever hand-written.
+
+## Pre-tag
+
+**`./scripts/gate.sh` is the whole gate.** One command, run identically by
+`ci.yml`, by `release.yml` before it builds anything, and by you before
+tagging — so a tag cannot publish on a weaker gate than a pull request had
+to pass. It ends with `ALL GATE CHECKS PASSED`.
 
 ```sh
 ./scripts/gate.sh
 ```
 
-It covers gofmt, `go mod tidy -diff`, vet, build, test, `-race`, version
-stamps, a CLI smoke, govulncheck, and the triple-binary Docker E2E. That E2E
-is where the old hand-written checks now live, done against a disposable
-`$HOME` so the host is never touched:
+It covers gofmt, `go mod tidy -diff`, vet, build, shell syntax, the full
+test suite, the race suite, the version stamp, the read-only smoke, release
+packaging end-to-end (built, signed, and verified), the documentation and
+whole-program security suites, 30 seconds of fuzzing per target, and
+`govulncheck`.
 
-- **`release-packaging`** — builds every target, verifies `SHA256SUMS` over
-  all archives, then extracts the **real** archives and smokes all three
-  binaries (`version` reports the stamped tag; `init`/`plan`/`apply`/`status`
-  run clean).
-- **`homonto-core` / `homonto-expanded`** — projection, per-tool agent
-  render, and prune behavior for the builtin catalog.
-- **`onto-lifecycle`** — drives a change through onto's gates.
-- **`to-lifecycle`** — drives a change through to's plan → do → done: gate
-  refusal, the `--verified` requirement, archive, doctor and convergence,
-  and the onto-xor-to exclusivity error.
+`./scripts/gate.sh --quick` skips fuzzing and govulncheck for a fast local
+loop. It prints that it is not a release gate, because it is not one.
 
-> **Dogfooding is deferred to v1.** This repository is developed with
-> **Comet** (see [`agents/comet.md`](agents/comet.md) and
-> [`personas.md`](personas.md)); onto is the workflow we *ship*, not the one
-> we use here yet. The repo therefore carries **no `homonto.toml` and no
-> projected `.claude/` / `.opencode/` content** of its own, there is
-> deliberately **no "does the repo dogfood cleanly" pre-tag step**, and a
-> stale `.homonto/` in a working copy is not a release blocker. The Docker E2E verifies all three binaries in a clean
-> environment instead — stronger evidence than a developer machine whose
-> state has accumulated across versions.
+CI runs the gate on Linux **and** macOS on every push. The filesystem layer
+is written against fd-anchored syscalls that differ between the two, and a
+divergence there is not something to find at release time.
+
+## The evidence the gate cannot produce
+
+Five things a runner cannot generate, all of which only matter when
+something goes wrong, and all of which are therefore the ones that get
+waved through:
+
+1. **The live host matrix.** Every workflow scenario run against real
+   Claude Code and real OpenCode, on Linux and on macOS. Four cells.
+2. **The migration rehearsal.** The previous release's store, migrated to
+   this release's schema, and checked.
+3. **The rollback rehearsal.** A deliberately failed activation, and the
+   exact rollback that followed.
+4. **A signing key** and the root id it signs as.
+5. **Publish credentials.**
+
+Record them under `.release-evidence/`:
+
+```text
+.release-evidence/host-cells.tsv          host TAB platform TAB result
+.release-evidence/migration-rehearsal.txt what was migrated and how it was checked
+.release-evidence/rollback-rehearsal.txt  the failed activation and the rollback
+```
+
+`host-cells.tsv` needs all four cells reading exactly `pass`:
+
+```text
+claude	linux	pass
+claude	darwin	pass
+opencode	linux	pass
+opencode	darwin	pass
+```
+
+Then:
+
+```sh
+export HOMONTO_RELEASE_SIGNING_KEY=/path/to/root.key
+export HOMONTO_RELEASE_ROOT_ID=homonto-release-1
+export GH_TOKEN=...
+./scripts/release-guard.sh --evidence .release-evidence
+```
+
+The guard refuses and names every missing piece. **`skip`, `fail`, an
+absent line, and an empty rehearsal file all refuse.** That is the point:
+a host cell nobody could run — no macOS to hand, no OpenCode installed —
+reads exactly like a host cell that passed unless something refuses.
+
+Do not edit the evidence to get past the guard. The guard is not the
+obstacle; the unrun cell is.
 
 ## Tag and publish
 
-1. Pick the version. Pre-releases use a suffix (`v0.1.0-rc.1`); a bare
-   `vMAJOR.MINOR.PATCH` is a full release. The workflow marks any tag
-   containing `-` as a GitHub pre-release automatically.
-2. Tag an annotated tag on the commit that passed verification, and push
-   it:
-
-   ```sh
-   git tag -a v0.1.0-rc.1 -m "v0.1.0-rc.1"
-   git push origin v0.1.0-rc.1
-   ```
-
-3. The `release` workflow then:
-    - re-runs the full gate as a guard,
-    - builds `homonto`, `onto`, and `to` for `linux`, `darwin`, and
-      `windows` on `amd64` and `arm64`, stamping the tag into every version
-      command via `-ldflags`,
-    - archives each target (`.tar.gz`, or `.zip` for Windows) with `LICENSE`
-      and `README.md`,
-    - writes a single `SHA256SUMS` over every archive,
-    - creates the GitHub release with generated notes and all assets
-      attached.
-
-## Post-tag smoke install
-
-From **outside** the repo, in a clean environment, verify the command
-packages install at the tag. Keep the concrete import paths matched to the
-release commit layout, and do not tag while this smoke covers only some of
-the binaries:
-
 ```sh
-GOBIN=$(mktemp -d)
-export GOBIN
-go install github.com/noviopenworks/homonto@v0.1.0-rc.1
-go install github.com/noviopenworks/homonto/cmd/onto@v0.1.0-rc.1  # update if final path differs
-go install github.com/noviopenworks/homonto/cmd/to@v0.1.0-rc.1
-export PATH="$GOBIN:$PATH"
-"$GOBIN"/homonto version    # expect the tagged version string
-"$GOBIN"/onto version       # expect the tagged version string
-"$GOBIN"/to version         # expect the tagged version string
+git tag -a v0.9.0 -m "v0.9.0"
+git push origin v0.9.0
 ```
 
-Then exercise the binaries against a disposable home:
+`release.yml` then runs the gate, unpacks `.release-evidence/`, runs the
+guard, builds and packages, signs the manifest with the release key, and
+publishes. Every one of those steps can stop the release, and each stops it
+before anything is public.
+
+A tag containing `-` (`v0.9.0-rc.1`) publishes as a pre-release and never
+shows as latest.
+
+## Signing keys
+
+Generate one with the release tool, which never uploads anything:
 
 ```sh
-HOME=$(mktemp -d) # (or run in a container)
-export HOME
-homonto init
-# edit the generated homonto.toml minimally
-homonto plan
-homonto apply --yes
-homonto status              # expect: No drift
-homonto doctor              # warnings only (see below)
-onto status                 # expect: no active changes
-to status                   # expect: no active changes
+go run ./tools/release-sign keygen --id homonto-release-1 --out root.key
 ```
 
-Two results here look like failures and are not:
+The public key goes into `internal/update/trust` as a compiled root of the
+*next* build. A build carries the roots it will accept a release from, and
+carries them at compile time — which is why rotating a key needs a manifest
+signed by the roots already trusted **and** a candidate that actually
+carries the new ones.
 
-- **`homonto doctor` warns.** In a disposable `$HOME` with no editor installed
-  it reports `pass` missing from `PATH` and both tool config locations absent,
-  and — because a freshly generated `homonto.toml` declares nothing to apply —
-  `catalog upgrade pending: recorded (none)`. All four are environment facts,
-  not release defects. Read them; do not expect silence.
-- **`onto doctor` exits non-zero on an unscaffolded workspace.** A missing
-  `docs/{changes,specs,adr,guides}` layout is a documented finding, so the bare
-  command reports four problems — `onto status` and `onto doctor` are
-  config-independent and run anywhere, which is exactly why they do not imply a
-  scaffolded repo.
+A locally built binary carries no root at all, so `homonto update` is
+unavailable in it. That is the safe default, not a defect;
+`homonto update trust` says so plainly.
 
-To smoke `onto` properly you must install its framework first, because
-`onto init` is itself gated on it. That is what the "edit the generated
-`homonto.toml` minimally" step above means concretely — declare the framework
-**and** a `[subagents.<name>.<tool>]` model block for each of its five agents
-(`onto`, `onto-explorer`, `onto-reviewer`, `onto-implementer`, `onto-skeptic`),
-since a missing block fails at load:
+## After publishing
+
+Verify the published release the way a user's binary will:
 
 ```sh
-cat >> homonto.toml <<'TOML'
-[frameworks.onto]
-source = "builtin:onto"
-scope  = "project"
-
-[subagents.onto.claude]
-model = "opus"
-# … one [subagents.<name>.<tool>] block per agent, per targeted tool
-TOML
-
-homonto apply --yes
-onto init
-onto doctor                 # expect: healthy
+curl -fsSLO <release-url>/release-manifest.json
+curl -fsSLO <release-url>/SHA256SUMS
+curl -fsSLO <release-url>/homonto_<version>_linux_amd64.tar.gz
+sha256sum -c --ignore-missing SHA256SUMS
 ```
 
-Swap `[frameworks.to]` and the four `to-*` agents to smoke `to` instead — the
-two frameworks are mutually exclusive, so a single config cannot cover both.
-
-Verify a downloaded archive's checksum matches `SHA256SUMS`:
-
-```sh
-sha256sum -c SHA256SUMS --ignore-missing
-```
-
-## Rollback
-
-A release is only ever additive to git history, so rollback is deletion
-plus a follow-up, never a force-push:
-
-1. Mark the bad GitHub release as a draft (or delete it) so it stops being
-   offered:
-
-   ```sh
-   gh release delete v0.1.0-rc.1 --yes
-   ```
-
-2. Delete the tag locally and on the remote:
-
-   ```sh
-   git tag -d v0.1.0-rc.1
-   git push origin :refs/tags/v0.1.0-rc.1
-   ```
-
-3. `go install ...@v0.1.0-rc.1` keeps working for anyone who already
-   resolved it (the module proxy caches tags), so a broken release is
-   corrected by shipping a higher patch/rc tag, not by expecting the old
-   one to vanish. Never re-point an existing tag at a different commit.
-
-## Security scanning decision (CodeQL / dependency-review)
-
-For the v0.1.0 line, CodeQL and dependency-review are **deferred**, and
-this is intentional rather than an oversight:
-
-- `govulncheck` already runs in CI and scans both dependencies and the
-  standard library for *called* known vulnerabilities — the highest-signal
-  check for a small Go CLI with a tiny dependency set (`cobra`, `go-toml`,
-  `sjson`/`gjson`).
-- CodeQL's value grows with codebase size and untrusted input surfaces;
-  homonto reads a local TOML the user owns and writes local files, so the
-  marginal find rate over `go vet` + `govulncheck` is low for now.
-- dependency-review gates *new* dependencies in PRs; with a near-static
-  dependency list its overhead outweighs its signal today.
-
-Revisit both when the dependency surface grows or the tool starts handling
-more untrusted remote input.
+and then, on a machine running the previous release, an actual
+`homonto update`. The rehearsal proves the path works; this proves the
+published bytes are the ones that were rehearsed.

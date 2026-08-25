@@ -1,6 +1,6 @@
 # Compute drift from disk-vs-state, not from the desired plan
 
-- **Status:** Accepted
+- **Status:** Superseded by 0023
 - **Date:** 2026-07-05
 - **Change:** state-source-of-truth
 

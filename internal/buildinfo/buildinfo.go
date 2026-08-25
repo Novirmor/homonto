@@ -10,8 +10,7 @@ import "runtime/debug"
 // DevVersion is the unstamped default version every homonto-built binary is
 // initialized with. Release builds override each CLI package's Version var via
 // -ldflags "-X <pkg>.Version=..."; when unstamped (e.g. `go install ...@tag`,
-// which applies no ldflags) Resolve recovers the module version. The literal
-// lives here so the three CLIs (homonto, onto, to) cannot drift on the dev tag.
+// which applies no ldflags) Resolve recovers the module version.
 const DevVersion = "0.1.0-dev"
 
 // Resolve returns current unless it still equals dev — meaning release ldflags

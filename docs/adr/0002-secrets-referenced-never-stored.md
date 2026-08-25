@@ -1,6 +1,6 @@
 # Reference secrets by token; never store or print plaintext
 
-- **Status:** Accepted
+- **Status:** Superseded by 0023
 - **Date:** 2026-07-03
 - **Change:** homonto-v1-core
 

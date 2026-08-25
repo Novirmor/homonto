@@ -1,156 +1,165 @@
-# homonto CLI reference
+# CLI reference
 
-Every command, flag, and exit-code contract of the `homonto` binary. For the
-workflow binaries see the [onto reference](onto-reference.md) and the
-[to reference](to-reference.md).
+Every command Homonto has. The surface is pinned by a test, so this list is
+complete rather than representative.
 
-Global behavior:
+`--workspace <path>` is a persistent flag on every command; without it,
+Homonto uses the working directory.
 
-- `--config <path>` (persistent flag, default `homonto.toml`) selects the
-  config file for `plan`, `apply`, `status`, `doctor`, and `import`. `init`
-  instead takes an optional target directory argument.
-- All output goes to **stderr** (cobra's default). Redirect with `2>&1` when
-  capturing output in scripts.
-- Unless `--exit-code` is noted below, commands exit `0` on success and
-  non-zero on error.
+## Exit codes
 
-## `homonto init [dir]`
-
-Scaffold a starter repo: `homonto.toml`, `.gitignore` (excluding `.homonto/`),
-`.env.example`, and `homonto/skills/`. Writes into `dir` (default: the current
-directory) and **never overwrites** an existing file.
-
-```console
-$ homonto init
-$ homonto init ~/dotfiles/ai     # scaffold somewhere else
-```
-
-## `homonto plan`
-
-Print the diff between the desired state (`homonto.toml`) and what is on
-disk. `plan` writes nothing and **never resolves or prints a secret**;
-references stay `${…}` tokens.
-
-| Flag | Effect |
+| Code | Meaning |
 |---|---|
-| `--output text\|json` | output format (default `text`) |
-| `--exit-code` | opt-in exit taxonomy: exit `2` when changes are pending |
+| `0` | The command did what it was asked |
+| `1` | The command failed |
+| `2` | A guard **refused** a presented operation |
+| `3` | `doctor` found something that needs attention |
 
-The diff is Terraform-style: `+` create, `~` update, `-` delete. Unchanged
-keys stay silent.
+`2` is distinct from `1` on purpose: a host hook needs to tell the guard
+working from the guard breaking.
 
-```console
-$ homonto plan
-claude:
-  ~ setting.model: "opus" -> "sonnet"
+## Workspace
 
-$ homonto plan --output json | jq .        # machine-readable
-$ homonto plan --exit-code && echo clean   # CI: fail when an apply is pending
-```
+### `homonto init`
 
-## `homonto apply`
+Create a workspace here.
 
-Project the config into the tools: print the plan, confirm (`[y/N]`), then
-write.
-
-| Flag | Effect |
+| Flag | Meaning |
 |---|---|
-| `--yes` | skip the confirmation prompt |
+| `--workflow` | `task` (default) or `change` |
+| `--member <path>` | A repository to include. Repeatable |
+| `--discover` | Propose members and write nothing |
 
-Guarantees (details in [projection & state](projection-and-state.md) and
-[secrets](secrets.md)):
+Refuses a directory that is already a workspace. "Initialize again" is not
+something a workspace survives: the runtime database, the checkpoint, and
+the manifest describe each other.
 
-- **Two-phase.** Every secret resolves up front, before any file is written.
-  One failed resolution aborts the whole apply untouched.
-- **Atomic writes.** Each file is written via temp + rename, so an
-  interrupted run never leaves a half-written file.
-- **Surgical.** Only managed keys are written; unmanaged keys survive. An
-  unparseable tool file makes that adapter abort and report rather than
-  overwrite.
-- **State per adapter.** State is saved after each successful adapter, so a
-  failure in the second tool never loses the first tool's records.
-- **Adoption.** A declared resource that already exists on disk exactly as
-  homonto would write it is recorded into state with no file write.
+### `homonto status [--json]`
 
-## `homonto status`
+The workspace, its work, and its host integrations.
 
-Compare managed values on disk against the last-applied snapshot and report
-two independent things:
+### `homonto doctor [--json]`
 
-- **Drift** — a managed value changed on disk *outside homonto*, or was
-  deleted: `claude setting.model drifted (will reset on apply)`.
-- **Pending** — unapplied `homonto.toml` edits, reported as a count:
-  `1 config change(s) awaiting apply (run `homonto apply`)`.
+Check members, host integrations, active work, and whether a self-update
+was interrupted. Reports; never repairs. Exits `3` when something is wrong.
 
-When neither is present it prints `No drift.`
+### `homonto version`
 
-| Flag | Effect |
+### `homonto handoff [name-or-id]`
+
+Make the work portable: mark its checkpoint transferable, commit it,
+release this machine's leases. See [recovery](recovery.md).
+
+### `homonto attach`
+
+Pick up work handed off from another machine.
+
+| Flag | Meaning |
 |---|---|
-| `--output text\|json` | output format (default `text`) |
-| `--exit-code` | opt-in taxonomy: exit `2` on pending, `3` on drift |
+| `--propose` | Show the proposed member locations and stop |
+| `--member <id>=<path>` | Confirm one member's location. Repeatable |
+| `--force` | Take over a checkpoint another machine already consumed |
 
-## `homonto doctor`
+## Task
 
-Environment health check: is `pass` on `PATH`, do the tool config locations
-exist, and does each owned skill have intact content plus both tool links?
+Available when the workspace's workflow is `task`.
 
-| Flag | Effect |
+### `homonto task start <name> [--goal <text>]`
+### `homonto task status [name-or-id] [--json]`
+
+Reconciles before reporting, so what you see is where the task actually is.
+
+### `homonto task abandon [name-or-id]`
+
+Stops the task. Isolation areas, branches, and evidence are left in place.
+
+## Change
+
+Available when the workspace's workflow is `change`.
+
+### `homonto change start <name> --request <text>`
+
+Opens a **classification candidate**, not a change. Nothing is written
+under `docs/homonto/changes/` until you confirm the path.
+
+### `homonto change status [name-or-id] [--json]`
+### `homonto change abandon [name-or-id]`
+
+Abandoning an unconfirmed candidate removes nothing, because nothing was
+created.
+
+## Protocol
+
+What a host tool speaks. See [protocol](protocol.md).
+
+### `homonto next [name-or-id] [--json]`
+
+What to do now. Safe to repeat: an outstanding group comes back unchanged.
+
+### `homonto report [--file <path>]`
+
+A role report, as protocol JSON on stdin or from a file. For a writable
+assignment, what actually changed on disk is validated **before** anything
+is recorded.
+
+### `homonto decide`
+
+| Flag | Meaning |
 |---|---|
-| `--output text\|json` | output format (default `text`) |
+| `--action`, `--token` | Which decision |
+| `--choice` | The chosen value |
+| `--rationale` | Required when the choice says so |
+| `--answer` | For question gates only |
+| `--file` | Read the submission as JSON instead |
 
-## `homonto update`
+An empty choice is refused: silence is not approval.
 
-Re-materialize this binary's embedded catalog (frameworks, skills, commands,
-subagents) and re-project it, bringing installed content up to the running
-version. Prints the version transition (binary, catalog, per-framework) and
-shares apply's plan → confirm → apply flow.
+### `homonto accept-edit --action <id> --token <grant-token>`
 
-| Flag | Effect |
+Finish a document edit. Homonto looks up what the grant opened rather than
+believing a structure you hand back.
+
+### `homonto guard [--file <path>] [--action …] [--grant …]`
+
+Decide a presented write, reading a `GuardRequest` on stdin. Exits `2` on a
+refusal, having written the decision to stdout.
+
+## Host
+
+### `homonto host install`
+
+| Flag | Meaning |
 |---|---|
-| `--yes` | skip the confirmation prompt |
+| `--tool` | `claude` or `opencode`. Default: the ones in use here |
+| `--adopt` | Replace generated files you edited |
+| `--commit` | Commit the generated files instead of ignoring them |
+| `--dry-run` | Show what would change and write nothing |
+| `--binary` | How the wrappers invoke Homonto |
 
-`update` does **not** download or replace the binaries themselves. Install
-those the usual way (`go install …@latest` or the release archives), then run
-`homonto update`. State records the versions behind each apply, and
-`onto doctor` / `to doctor` warn when a workflow binary and the homonto that
-installed its framework have drifted apart.
+### `homonto host probe --host <claude\|opencode>`
 
-## `homonto import`
+The read-only resume probe. Writes nothing, migrates nothing, and reaches
+no network. A directory that is not a workspace is **answered**, not
+refused — a host runs this everywhere.
 
-Experimental adoption helper: bootstrap a starter `homonto.toml` from your
-current setup. It is narrow on purpose and reads **Claude's global MCP
-servers only** (`~/.claude.json` `mcpServers`):
+### `homonto host guard --host <claude\|opencode>`
 
-- refuses to overwrite an existing config unless you pass `--force`;
-- redacts env values that *look* like secrets into `${pass:…}` references
-  (best-effort, not exhaustive — review before sharing);
-- copies `command`/`args` verbatim;
-- skips non-stdio (url/http) servers with a warning;
-- imports no skills, plugins, settings, or OpenCode config.
+The write hook. Reads that host's own event shape on stdin and answers in
+its own response shape.
 
-Treat its output as a starting point to review, not a complete migration.
+Assignment and grant credentials arrive through the environment:
+`HOMONTO_ACTION_ID`, `HOMONTO_ACTION_TOKEN`, `HOMONTO_GRANT_ID`,
+`HOMONTO_GRANT_TOKEN`.
 
-| Flag | Effect |
-|---|---|
-| `--force` | overwrite an existing config file |
+## Update
 
-## `homonto cache gc`
+### `homonto update trust`
 
-Reclaim entries in the content-addressed remote cache
-(`.homonto/cache/remote/`) that no `.homonto/remote.lock.json` entry
-references. Kept out of `apply` on purpose, so reverting a `digest` pin can
-still roll back from cache. See
-[remote source trust](remote-source-trust.md).
+Which signing roots this build accepts a release from. A build carrying
+none cannot update itself.
 
-## `homonto version`
+### `homonto update candidate-metadata` (hidden)
 
-Print the release-stamped build version (`homonto --version` works too).
-
-## `homonto completion <shell>`
-
-Generate a shell autocompletion script (bash, zsh, fish, powershell), a
-standard cobra facility:
-
-```console
-$ homonto completion zsh > "${fpath[1]}/_homonto"
-```
+What this binary is: version, protocol, store schema, trust roots. It
+exists for one binary to interrogate another and answers with no network
+access and no workspace.

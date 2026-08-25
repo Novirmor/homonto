@@ -1,6 +1,6 @@
 # Apply write-scope parallelism across onto's phases; support parallel implementers
 
-- **Status:** Accepted
+- **Status:** Superseded by 0023
 - **Date:** 2026-07-27
 
 *(Corrected 2026-07-27: this originally named the state field `execution`. The

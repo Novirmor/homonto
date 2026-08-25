@@ -1,6 +1,6 @@
 # onto's axis is handoff and audit, not "enterprise"
 
-- **Status:** Accepted
+- **Status:** Superseded by 0023
 - **Date:** 2026-07-27
 
 ## Context

@@ -1,6 +1,6 @@
 # Make tasks.md onto's single checkoff; plan.md carries detail only
 
-- **Status:** Accepted
+- **Status:** Superseded by 0023
 - **Date:** 2026-07-26
 
 ## Context

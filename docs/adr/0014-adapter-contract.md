@@ -1,6 +1,6 @@
 # Adopt a format-agnostic adapter contract for tool projection
 
-- **Status:** Accepted
+- **Status:** Superseded by 0023
 - **Date:** 2026-07-12
 - **Change:** adapter-contract-codex-pilot
 

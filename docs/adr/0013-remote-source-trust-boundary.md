@@ -1,6 +1,6 @@
 # Establish a pinned, fail-closed remote-source trust boundary
 
-- **Status:** Accepted
+- **Status:** Superseded by 0023
 - **Date:** 2026-07-12
 - **Change:** remote-source-trust
 

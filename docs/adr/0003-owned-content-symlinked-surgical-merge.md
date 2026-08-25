@@ -1,6 +1,6 @@
 # Symlink owned content; merge unowned keys surgically; never clobber
 
-- **Status:** Accepted
+- **Status:** Superseded by 0023
 - **Date:** 2026-07-03
 - **Change:** homonto-v1-core
 

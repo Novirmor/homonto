@@ -1,6 +1,6 @@
 # Adopt pre-existing matching resources into state via a silent apply-time action
 
-- **Status:** Accepted
+- **Status:** Superseded by 0023
 - **Date:** 2026-07-05
 - **Change:** state-source-of-truth
 

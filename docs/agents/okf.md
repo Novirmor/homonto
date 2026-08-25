@@ -4,10 +4,6 @@ OKF (Open Knowledge Format) bundles are this repository's default way to ground
 claims about its own code. The point is to answer "what does this do and who
 calls it" from an index rather than from memory or a guess.
 
-homonto also declares OKF as a tooling provider it can require of *user*
-repositories ([`catalog/tooling/okf.md`](../../catalog/tooling/okf.md)). Using
-it here keeps our own practice and what we ship consistent.
-
 ## Using it
 
 The bundle lives at `okf_bundle/` in the repo root and is **gitignored** — it is

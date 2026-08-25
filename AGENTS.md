@@ -7,6 +7,17 @@ Durable rationale — why a thing is the way it is — lives in [`docs/adr/`](do
 When a document and the code disagree, the code wins and the document is wrong;
 fix it.
 
+## What this is
+
+Homonto is a workflow orchestrator: it runs governed Task and Change
+workflows over AI coding agents, holds the state, enforces the write
+boundary, and produces the record. It is not a configuration projector and
+has not been one since [ADR 0023](docs/adr/0023-rebuild-homonto-as-workflow-orchestrator.md).
+
+One binary ships from here: `homonto`. Its command surface is pinned by
+`internal/cli/surface_test.go` — adding or renaming a command is a
+deliberate change to that golden list, never a side effect.
+
 ## Two lanes
 
 **Big development** — a new capability, a public API or schema change, or work
@@ -51,9 +62,9 @@ Add or update focused tests for any behavior change. Run the narrowest command
 that actually proves the change, and report its real result — including
 failures, skips, and what you did not run.
 
-`./scripts/gate.sh` is the full pre-tag gate; it needs Docker and takes a while,
-so it is not the default for routine work. Details and the traps that waste the
-most time: [`docs/agents/verification.md`](docs/agents/verification.md).
+`./scripts/gate.sh` is the full pre-tag gate; it takes a while, so it is not
+the default for routine work. Details and the traps that waste the most time:
+[`docs/agents/verification.md`](docs/agents/verification.md).
 
 Never claim a command passed without having run it.
 
@@ -61,9 +72,11 @@ Never claim a command passed without having run it.
 
 - Read the relevant ADRs and the surrounding code before changing behavior.
 - Keep changes focused. Do not revert or restructure unrelated work.
-- This repo does **not** dogfood homonto. There is no root `homonto.toml`, no
-  `.homonto/`, and no projected `.claude/` or `.opencode/` content. Do not
-  create them; `.claude/` and `.opencode/` hold each developer's own setup and
-  are gitignored.
-- Three binaries ship from here: `homonto` (root), `onto` (`cmd/onto`), and
-  `to` (`cmd/to`). A change to shared internals affects all three.
+- This repo does **not** run Homonto on itself. There is no `.homonto/` and
+  no generated `.claude/` or `.opencode/` content; `.claude/` and
+  `.opencode/` hold each developer's own setup and are gitignored. Do not
+  create a workspace here — the tests create their own in temporary
+  directories, which is where a workspace under test belongs.
+- Refusals are the product. When a change makes something that used to be
+  refused succeed, that is a behavior change needing a test and probably an
+  ADR, not a fixed bug.

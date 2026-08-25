@@ -1,6 +1,6 @@
 # Adopt onto: a self-contained markdown development workflow
 
-- **Status:** Superseded by 0012 — Homonto development returned to the
+- **Status:** Superseded by 0023
   Comet + OpenSpec + Superpowers workflow on 2026-07-09 (ratified in
   `docs/adr/0012-readopt-comet-openspec-workflow.md`). onto remains a shipped
   product framework; this ADR's decision applied only to this repo's own

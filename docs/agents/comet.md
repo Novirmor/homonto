@@ -8,10 +8,9 @@ OpenSpec owns WHAT (proposals, requirements, delta specs, archive semantics).
 Superpowers owns HOW (technical design, plans, execution, verification). Comet
 state binds the two.
 
-Comet, OpenSpec, and Superpowers are **external** tools the maintainers use;
-homonto does not bundle them ([ADR 0015](../adr/0015-ship-only-onto-frameworks.md)).
-[`../personas.md`](../personas.md) explains why this repo builds with Comet but
-ships onto.
+Comet, OpenSpec, and Superpowers are **external** tools the maintainers use.
+Homonto neither bundles nor requires them: what this repository is built with
+and what it ships are separate questions, and they have never matched.
 
 ## Artifacts are scratch, not content
 

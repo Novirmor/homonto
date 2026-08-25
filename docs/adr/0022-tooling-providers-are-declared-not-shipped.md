@@ -1,6 +1,6 @@
 # Tooling providers are declared in config, not named in shipped prose
 
-- **Status:** Accepted
+- **Status:** Superseded by 0023
 - **Date:** 2026-07-26
 
 *(Written 2026-07-27, after the fact. The decision shipped in the

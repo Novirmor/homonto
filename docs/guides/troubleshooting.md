@@ -1,173 +1,159 @@
-# Troubleshooting & caveats
+# Troubleshooting
 
-Known limitations of the beta line, common gotchas, and their workarounds.
+Most of what Homonto tells you is a refusal, and most refusals are the
+design working. This is how to read them.
 
-## Building & installing
+## "no active work" / "N active works"
 
-**`go build .` fails with `build output "homonto" already exists and is a
-directory`.** The output name collides with the `homonto/` content directory
-next to `main.go`, and `go build -o homonto .` silently deposits the binary
-*inside* that directory. Use `go install .`, `go run .`, or build to an
-explicit path outside the content dir:
+`homonto next` needs one unambiguous work. Name it:
 
 ```bash
-go build -o ./bin/homonto .
+homonto next fix-login
 ```
 
-**Version prints empty or wrong after `go install`.** Release builds stamp
-the version at link time:
+Homonto does not pick between two, because resuming the wrong work is worse
+than asking. Finish or abandon the others if you want the short form back.
+
+## A report was refused
+
+```
+task: assignment result rejected by the write boundary: guard: "internal/secret/keys.go"
+was modified but assignment … was issued only src
+```
+
+Something changed a file outside the assignment's scope — usually a shell
+command that walked past the write hook. **The report is refused, not
+retried.** Fix the change (revert it, or re-issue with a scope that covers
+it), then report again. The action stays answerable.
+
+This is the half of the write boundary that does not depend on the host
+cooperating, and it is doing its job.
+
+## "no_permission"
+
+The guard saw a write from a session claiming neither an assignment nor an
+edit grant. Either the host did not pass the credentials back — check
+`HOMONTO_ACTION_ID` and `HOMONTO_ACTION_TOKEN` in the subagent's
+environment — or the write genuinely has no business happening.
+
+## "protected_path"
+
+Something tried to write `.homonto/`. That is Homonto's own state, refused
+to every assignment regardless of scope. If an agent is trying to edit the
+runtime database, the answer is not a wider scope.
+
+## "wrong_phase" / "binary_owned"
+
+A workflow document was written outside the phase that owns it, or in a
+region only Homonto writes. Check the ownership table in
+[security](security.md). Host edits go through an `edit` action's grant,
+not through direct writes.
+
+## An edit was refused
+
+```
+artifact: a region outside the grant changed
+```
+
+The grant opened specific regions. Something changed another region, the
+metadata block, or the region markers. The grant is still open: put the
+other regions back and accept again.
+
+`artifact: document region structure is malformed` means the `<!-- homonto:begin … -->`
+markers were damaged. Restore them; the layout is byte-precise on purpose,
+so a grant's digests can partition the file exactly.
+
+## A check will not run
+
+```
+verify: "go" is a bare command name but PATH is not allowlisted
+```
+
+The environment is an allowlist and nothing ambient gets through. Add what
+the command needs:
+
+```toml
+environment = ["PATH", "HOME"]
+```
+
+This is stricter than most tools and it is deliberate: a check that
+silently depends on your shell is a check whose evidence does not describe
+what ran.
+
+## A check times out
+
+Its whole process group is killed, so a backgrounded child cannot outlive
+it. Raise `timeout`, or find out why it hangs — a check that needs more
+than ten minutes usually has a reason worth knowing.
+
+## The workflow went backwards
+
+Reconciliation. Something the step rested on moved:
 
 ```bash
-go install -ldflags "-X github.com/noviopenworks/homonto/internal/cli.Version=1.2.3" .
+homonto task status
 ```
 
-**Installed a newer binary but tools still have old content.** Installing a
-binary does not touch projected content. Run `homonto update`; it
-re-materializes the embedded catalog at the running version and re-projects
-it. `onto doctor` and `to doctor` report a **version skew** finding when a
-workflow binary and the homonto that installed its framework have drifted
-apart.
+prints the causes on stderr. The tables in the workflow guides say what
+each one returns to. This is not a bug; it is the recorded step being
+checked against the world rather than trusted.
 
-**I changed a model but my agents still show the old one.** Fixed in
-v0.2.0. A subagent's `model:` is stamped from its configured model block
-(today `[subagents.<name>.<tool>]`; tier routes before v0.8.0) at
-materialization, and materialization used to be gated on the catalog version
-alone — so a route change left the rendered agents frozen while the tool's
-own `setting.model` moved, giving two different answers from one config.
-Upgrade and run `homonto apply`. On an older binary, force a
-re-materialization:
+If it keeps happening, something is editing a document behind the workflow
+— a formatter, a hook, another agent.
+
+## A preset keeps pausing
+
+The scope assessment fired. The prompt lists exactly what fired and why.
+The file count is a **warning**, not a verdict: it is asking, not refusing.
+
+If it fires on files that should not count, your `[members.paths]` classes
+are wrong — generated output and vendored code belong in them.
+
+## Three failed repairs
+
+Homonto stopped and asked. All three answers need a rationale. Accepting
+the findings does **not** make a failing check pass; the checks run again
+and if they still fail you will be asked again.
+
+## "an interrupted self-update must be recovered first"
+
+Run any command. Recovery happens at startup and either finishes or undoes
+the activation.
+
+If `homonto doctor` says the journal is unreadable, the update area is
+damaged. Restore `.homonto/update/` from a backup, or remove the journal
+to accept the installation as it stands — and check `homonto version`
+afterwards to see which one you have.
+
+## `homonto update` says it is unavailable
+
+Your binary carries no signing root. That is expected for one you built
+yourself. `homonto update trust` confirms it.
+
+## A host file was refused
+
+```
+host: … exists and does not carry a matching homonto-managed marker
+```
+
+You edited a generated file. Homonto will not overwrite an edit. Either
+keep it — nothing will touch it — or discard it with
+`homonto host install --adopt`.
+
+## gitx: worktree is dirty
+
+An implementer assignment cannot be cut from a member with uncommitted
+changes. Commit or stash them. Homonto refuses dirty trees rather than
+tidying them, because deciding what to do with someone's uncommitted work
+is not its call.
+
+## Nothing is happening
 
 ```bash
-rm -rf .homonto/catalog && homonto apply --yes
+homonto doctor
+homonto status
+homonto next --json
 ```
 
-## Scripting
-
-**"My script captures nothing."** homonto, onto, and to print through
-cobra, which writes to **stderr**. Redirect with `2>&1`.
-
-**Exit codes.** By default commands exit `0`/non-zero. The richer taxonomy
-is opt-in: `plan --exit-code` exits `2` on pending changes; `status
---exit-code` exits `2` on pending and `3` on drift. `--output json` on
-`plan`, `status`, and `doctor` gives machine-readable output; on the onto
-side, `state --json`, `gate --json`, `scale --json`, and `graph --json` do,
-and to's workflow commands take `--json`.
-
-## Projection
-
-**OpenCode comments disappeared.** Claude's files are plain JSON, but
-OpenCode's `opencode.jsonc` supports comments — and any apply that *writes*
-that file rewrites it as normalized JSON, removing all comments. A
-skills-only or otherwise no-op apply does not write the file, so comments
-survive those. Accepted for beta.
-
-**"Conflict" reported on a skill or subagent link.** homonto never clobbers
-a file that is not its own symlink. A real file, or a link pointing
-elsewhere at the target path, is reported instead of overwritten. Move the
-conflicting file out of the way and re-apply.
-
-**I moved/renamed my homonto repo and now everything conflicts.** Skill
-symlinks store an **absolute** target, so after a move the existing links
-point at the old path, and `apply`/`status` report conflicts rather than
-silently repointing — homonto never changes a symlink it cannot prove it
-owns. Delete the stale links and re-run `apply` to relink at the new
-location.
-
-**A tool file was reported unparseable.** That adapter aborts and reports;
-homonto never overwrites a file it cannot parse. Fix the JSON by hand (or
-restore it) and re-apply. The other tool's apply is unaffected.
-
-**Something I configured by hand got pruned.** Only resources homonto
-recorded in state are ever pruned — but note that a declared resource
-matching disk is *adopted* into state (see
-[projection & state](projection-and-state.md)), after which removing it
-from `homonto.toml` removes it from the tool too. That is the contract: the
-TOML is the source of truth for everything it declares.
-
-## Secrets
-
-**`apply` aborts with a resolution error.** `${pass:…}` needs
-[`pass`](https://www.passwordstore.org/) on `PATH` (and the entry present);
-`${ENV_VAR}` needs the variable set at apply time. Nothing was written —
-apply resolves all secrets before touching any file. `homonto doctor` flags
-a missing `pass`.
-
-## Scope of the adapters
-
-- **Claude Code and OpenCode** are the full adapters.
-- **Codex** (OpenAI Codex CLI) is a pilot: it projects **MCP servers only**,
-  into `~/.codex/config.toml` `[mcp_servers.<name>]`, and is **opt-in** — a
-  resource must list `codex` in its `targets`. Listing `codex` on a
-  subagent has no effect.
-- **Frameworks** resolve from the builtin catalog (`onto` or `to`, mutually
-  exclusive), a `local:` root, or a digest-pinned `remote:` source.
-- **Remote sources** (subagents and frameworks) require a
-  `digest = "sha256:…"` pin (see
-  [remote source trust](remote-source-trust.md)). homonto never re-resolves
-  a pin to newer content; updating is a config edit you make.
-
-## `import` is narrow
-
-`homonto import` reads **Claude's global MCP servers only** (`~/.claude.json`
-`mcpServers`). It skips non-stdio (url/http) servers with a warning, redacts
-env values that *look* like secrets into `${pass:…}` references
-(best-effort), copies `command`/`args` verbatim, and imports no skills,
-plugins, settings, or OpenCode config. Review its output before applying or
-committing. It refuses to overwrite an existing config without `--force`.
-
-## onto
-
-**`onto new`/`advance`/`close` refuse to run.** The mutating commands
-require the onto framework to be installed *by homonto*
-(`[frameworks.onto]` + `homonto apply`). The read-only commands (`status`,
-`state`, `gate`, `scale`, `graph`, `handoff`, `dirt`, `doctor`, `version`)
-always work.
-
-**`advance` fails.** The error names the gate: a missing artifact for the
-current phase, an unset evidence token (`isolation` before build), an
-unchecked `tasks.md` item leaving build, or a dirty worktree entering
-close. Run `onto gate <change>` to see the pending decision(s) and the
-exact `onto set` that records each one.
-
-**`close` fails.** Check, in order: the change is at phase `close`;
-`verify.result == pass`; `close.merged == true` (run `onto merge-deltas`);
-guides resolved (full workflow); every `deps` entry archived; worktree
-clean; archive target not already present.
-
-**"dirty worktree blocks close."** The error lists the first few offending
-paths; `onto dirt <change>` shows all of them, classified. Paths under
-*another* change's `docs/changes/<other>/` never block (they are that
-change's obligation). What blocks is this change's own uncommitted
-artifacts and any uncommitted source path. Commit what belongs to the
-change, stash or attribute what doesn't, and retry.
-
-**Repeated verify failures.** `onto set verify-result fail` increments a
-counter; at ≥3 rounds `onto doctor` reports it. The workflow expects a
-human decision at that point (accept the deviation or keep fixing), not an
-endless loop.
-
-**Recovering after context compaction.** `onto handoff <change>` emits a
-compact recovery pack (`--write` persists it) so a fresh agent session can
-resume without re-deriving state.
-
-## to
-
-**`to init`/`new`/`phase`/`done`/`abandon` refuse to run.** Same rule as
-onto: the mutating commands require the to framework installed *by homonto*
-(`[frameworks.to]` + `homonto apply`). The read-only commands (`status`,
-`handoff`, `doctor`, `version`) always work.
-
-**"[frameworks.onto] and [frameworks.to] are mutually exclusive."** By
-design: one workflow framework per repository. Remove one declaration and
-re-apply; the removed framework's projected content is pruned.
-
-**A change shows a terminal phase but still sits in `docs/tasks/`.** An
-interrupted finish (a crash between the state write and the archive move).
-`to doctor` reports it; re-run the same finishing command
-(`to done <name> --verified` or `to abandon <name>`) to complete the
-archive.
-
-**"another to command is in progress (lock held at …)".** A concurrent
-session holds `docs/tasks/.to.lock`, or a killed process left it behind.
-The file records the holder's pid; if nothing is running, remove it by
-hand.
+in that order. `doctor` finds the structural problems, `status` shows where
+everything is, and `next` says what it is waiting for.

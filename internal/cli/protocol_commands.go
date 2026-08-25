@@ -121,8 +121,8 @@ func reportCmd(opener Opener) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			cmd.Printf("recorded the %s report for %s; task %s is at %s\n",
-				sub.Role, sub.ActionID, st.Name, st.Step)
+			cmd.Printf("recorded the %s report for %s; %s %s is at %s\n",
+				sub.Role, sub.ActionID, st.Kind, st.Name, st.Step)
 			return nil
 		},
 	}
@@ -183,7 +183,8 @@ func decideCmd(opener Opener) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			cmd.Printf("recorded %q for %s; task %s is at %s\n", sub.Choice, sub.ActionID, st.Name, st.Step)
+			cmd.Printf("recorded %q for %s; %s %s is at %s\n",
+				sub.Choice, sub.ActionID, st.Kind, st.Name, st.Step)
 			return nil
 		},
 	}
@@ -219,7 +220,8 @@ func acceptEditCmd(opener Opener) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			cmd.Printf("accepted the edit for %s; task %s is at %s\n", actionID, st.Name, st.Step)
+			cmd.Printf("accepted the edit for %s; %s %s is at %s\n",
+				actionID, st.Kind, st.Name, st.Step)
 			return nil
 		},
 	}

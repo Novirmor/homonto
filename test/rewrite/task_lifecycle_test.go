@@ -626,8 +626,8 @@ func TestNoActiveTaskIsRefusedNotGuessed(t *testing.T) {
 	if err == nil {
 		t.Fatalf("next with no task succeeded: %s", out)
 	}
-	if !strings.Contains(err.Error(), "no active task") {
-		t.Fatalf("error = %v, want a refusal naming the absence of an active task", err)
+	if !strings.Contains(err.Error(), "no active work") {
+		t.Fatalf("error = %v, want a refusal naming the absence of active work", err)
 	}
 	for _, name := range []string{"fix-login", "fix-cache"} {
 		if out, err := w.run(t, "task", "start", name); err != nil {
@@ -638,7 +638,7 @@ func TestNoActiveTaskIsRefusedNotGuessed(t *testing.T) {
 	if err == nil {
 		t.Fatalf("next with two active tasks succeeded: %s", out)
 	}
-	if !strings.Contains(err.Error(), "2 active tasks") {
+	if !strings.Contains(err.Error(), "2 active works") {
 		t.Fatalf("error = %v, want a refusal naming the ambiguity", err)
 	}
 }

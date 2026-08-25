@@ -32,6 +32,7 @@ func NewWorkflowRootCmd(opener Opener) *cobra.Command {
 	root.PersistentFlags().String("workspace", "", "workspace root (default: the working directory)")
 	root.AddCommand(
 		taskCmd(opener),
+		changeCmd(opener),
 		nextCmd(opener),
 		reportCmd(opener),
 		decideCmd(opener),

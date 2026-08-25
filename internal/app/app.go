@@ -11,6 +11,7 @@ import (
 	"github.com/noviopenworks/homonto/internal/archive"
 	"github.com/noviopenworks/homonto/internal/artifact"
 	"github.com/noviopenworks/homonto/internal/assignment"
+	"github.com/noviopenworks/homonto/internal/change"
 	"github.com/noviopenworks/homonto/internal/decision"
 	"github.com/noviopenworks/homonto/internal/finding"
 	"github.com/noviopenworks/homonto/internal/gitx"
@@ -34,17 +35,18 @@ const ManifestName = "workspace.toml"
 
 // ErrNoActiveWork reports a command that needs one unambiguous active task
 // and found none, or found more than one.
-var ErrNoActiveWork = errors.New("app: no single active task; name one explicitly")
+var ErrNoActiveWork = errors.New("app: no single active work; name one explicitly")
 
 // App is one opened workspace with every service wired. It is the object a
 // CLI command holds: commands parse flags and render output, and every
 // decision behind them lives in the engines.
 type App struct {
-	root   string
-	cfg    workspacecfg.Config
-	db     *store.DB
-	engine *task.Engine
-	env    *Environment
+	root    string
+	cfg     workspacecfg.Config
+	db      *store.DB
+	engine  *task.Engine
+	changes *change.Engine
+	env     *Environment
 
 	assignments *assignment.Store
 	artifacts   *artifact.Service
@@ -180,8 +182,16 @@ func build(ctx context.Context, root string, cfg workspacecfg.Config, db *store.
 	if err != nil {
 		return nil, err
 	}
+	changes, err := change.NewEngine(change.Dependencies{
+		DB: db, Assignments: assignments, Artifacts: artifacts, Findings: findings,
+		Evidence: evidence, Archive: arch, Guard: g,
+		Environment: changeEnvironment{env: env}, Now: now,
+	})
+	if err != nil {
+		return nil, err
+	}
 	return &App{
-		root: root, cfg: cfg, db: db, engine: engine, env: env,
+		root: root, cfg: cfg, db: db, engine: engine, changes: changes, env: env,
 		assignments: assignments, artifacts: artifacts, findings: findings,
 		evidence: evidence, archive: arch, guard: g, now: now,
 	}, nil
@@ -215,44 +225,156 @@ func (a *App) AbandonTask(ctx context.Context, id identity.WorkID) (task.State, 
 	return a.engine.Abandon(ctx, id)
 }
 
-// Next returns the actions a host may execute now for the one active Task.
+// WorkKind names which engine owns a work id.
+type WorkKind string
+
+const (
+	// WorkTask: a Task.
+	WorkTask WorkKind = "task"
+	// WorkChange: a confirmed Change.
+	WorkChange WorkKind = "change"
+	// WorkPreflight: a local Change classification candidate, which is
+	// not yet a Change.
+	WorkPreflight WorkKind = "preflight"
+)
+
+// WorkKindOf reports which engine owns a work id.
+func (a *App) WorkKindOf(ctx context.Context, id identity.WorkID) (WorkKind, error) {
+	if _, err := a.engine.State(ctx, id); err == nil {
+		return WorkTask, nil
+	} else if !errors.Is(err, task.ErrUnknownWork) {
+		return "", err
+	}
+	if _, err := a.changes.State(ctx, id); err == nil {
+		return WorkChange, nil
+	} else if !errors.Is(err, change.ErrUnknownChange) {
+		return "", err
+	}
+	if _, err := a.changes.Preflight(ctx, id); err == nil {
+		return WorkPreflight, nil
+	} else if !errors.Is(err, change.ErrUnknownPreflight) {
+		return "", err
+	}
+	return "", fmt.Errorf("app: %s: %w", id, task.ErrUnknownWork)
+}
+
+// Next returns the actions a host may execute now for the one active work.
 func (a *App) Next(ctx context.Context) (protocol.NextResponse, error) {
 	id, err := a.ActiveWork(ctx)
 	if err != nil {
 		return protocol.NextResponse{}, err
 	}
-	return a.engine.Next(ctx, id)
+	return a.NextFor(ctx, id)
 }
 
-// NextFor returns the actions for a named Task.
+// NextFor returns the actions for a named work, whichever engine owns it.
 func (a *App) NextFor(ctx context.Context, id identity.WorkID) (protocol.NextResponse, error) {
-	return a.engine.Next(ctx, id)
+	kind, err := a.WorkKindOf(ctx, id)
+	if err != nil {
+		return protocol.NextResponse{}, err
+	}
+	switch kind {
+	case WorkTask:
+		return a.engine.Next(ctx, id)
+	case WorkChange:
+		return a.changes.Next(ctx, id)
+	}
+	return a.changes.NextPreflight(ctx, id)
 }
 
-// SubmitReport records a host's answer to an assignment.
-func (a *App) SubmitReport(ctx context.Context, in protocol.ReportSubmission) (task.State, error) {
-	return a.engine.SubmitReport(ctx, in)
+// SubmitReport records a host's answer to an assignment, routed to the
+// engine that issued it.
+func (a *App) SubmitReport(ctx context.Context, in protocol.ReportSubmission) (Status, error) {
+	kind, id, err := a.workOfAction(ctx, in.ActionID)
+	if err != nil {
+		return Status{}, err
+	}
+	if kind == WorkTask {
+		st, err := a.engine.SubmitReport(ctx, in)
+		return taskStatus(st), err
+	}
+	// A preflight assignment is answered through the assignment store
+	// directly: a candidate has no workflow to advance, only an
+	// assessment to complete.
+	if kind == WorkPreflight {
+		if _, err := a.assignments.Submit(ctx, in); err != nil {
+			return Status{}, err
+		}
+		pre, err := a.changes.Preflight(ctx, id)
+		return preflightStatus(pre), err
+	}
+	st, err := a.changes.SubmitReport(ctx, in)
+	return changeStatus(st), err
 }
 
 // Decide records a human's answer to a decision gate.
-func (a *App) Decide(ctx context.Context, in decision.Submission) (task.State, error) {
-	return a.engine.Decide(ctx, in)
+func (a *App) Decide(ctx context.Context, in decision.Submission) (Status, error) {
+	kind, _, err := a.workOfAction(ctx, in.ActionID)
+	if err != nil {
+		return Status{}, err
+	}
+	if kind == WorkTask {
+		st, err := a.engine.Decide(ctx, in)
+		return taskStatus(st), err
+	}
+	st, err := a.changes.Decide(ctx, in)
+	return changeStatus(st), err
 }
 
 // AcceptEdit accepts the host's document edit under the grant it was
 // issued.
-func (a *App) AcceptEdit(ctx context.Context, actionID identity.ActionID, grantToken identity.Token) (task.State, error) {
-	return a.engine.AcceptEdit(ctx, actionID, grantToken)
+func (a *App) AcceptEdit(ctx context.Context, actionID identity.ActionID, grantToken identity.Token) (Status, error) {
+	kind, _, err := a.workOfAction(ctx, actionID)
+	if err != nil {
+		return Status{}, err
+	}
+	if kind == WorkTask {
+		st, err := a.engine.AcceptEdit(ctx, actionID, grantToken)
+		return taskStatus(st), err
+	}
+	st, err := a.changes.AcceptEdit(ctx, actionID, grantToken)
+	return changeStatus(st), err
+}
+
+// workOfAction resolves which engine owns the work an action belongs to.
+func (a *App) workOfAction(ctx context.Context, id identity.ActionID) (WorkKind, identity.WorkID, error) {
+	act, err := a.assignments.Action(ctx, id)
+	if err != nil {
+		return "", "", err
+	}
+	kind, err := a.WorkKindOf(ctx, act.WorkID)
+	return kind, act.WorkID, err
 }
 
 // Authorize answers one guard request from a cooperating host's write
-// hook.
+// hook. It is engine-neutral: the guard decides from the assignment or the
+// grant a session presents, and neither belongs to a workflow.
 func (a *App) Authorize(ctx context.Context, req guard.Request) (protocol.GuardDecision, error) {
 	return a.guard.Authorize(ctx, req)
 }
 
-// Reconcile checks the recorded step against the world and returns what
-// moved.
+// Status is the engine-neutral summary a command prints after recording
+// something: which work, what it is, and where it now stands.
+type Status struct {
+	WorkID identity.WorkID
+	Name   string
+	Kind   WorkKind
+	Step   string
+}
+
+func taskStatus(st task.State) Status {
+	return Status{WorkID: st.WorkID, Name: st.Name, Kind: WorkTask, Step: string(st.Step)}
+}
+
+func changeStatus(st change.State) Status {
+	return Status{WorkID: st.WorkID, Name: st.Name, Kind: WorkChange, Step: st.Step}
+}
+
+func preflightStatus(st change.PreflightState) Status {
+	return Status{WorkID: st.WorkID, Name: st.Name, Kind: WorkPreflight, Step: string(st.Step)}
+}
+
+// Reconcile checks a Task's recorded step against the world.
 func (a *App) Reconcile(ctx context.Context, id identity.WorkID) (task.State, []task.Invalidation, error) {
 	return a.engine.Reconcile(ctx, id)
 }
@@ -295,36 +417,102 @@ func (a *App) Tasks(ctx context.Context) ([]task.State, error) {
 	return out, nil
 }
 
-// ActiveWork resolves the one unambiguous active Task. A workspace with
-// none, or with more than one, refuses rather than guessing: resuming the
-// wrong work is worse than asking.
+// ActiveWork resolves the one unambiguous active work — a Task, a Change,
+// or a Change classification candidate. A workspace with none, or with
+// more than one, refuses rather than guessing: resuming the wrong work is
+// worse than asking.
 func (a *App) ActiveWork(ctx context.Context) (identity.WorkID, error) {
-	tasks, err := a.Tasks(ctx)
+	active, err := a.activeWorks(ctx)
 	if err != nil {
 		return "", err
-	}
-	var active []task.State
-	for _, st := range tasks {
-		if !st.Step.Terminal() {
-			active = append(active, st)
-		}
 	}
 	switch len(active) {
 	case 1:
 		return active[0].WorkID, nil
 	case 0:
-		return "", fmt.Errorf("app: no active task: %w", ErrNoActiveWork)
+		return "", fmt.Errorf("app: no active work: %w", ErrNoActiveWork)
 	default:
 		names := make([]string, 0, len(active))
-		for _, st := range active {
-			names = append(names, st.Name)
+		for _, w := range active {
+			names = append(names, w.Name)
 		}
-		return "", fmt.Errorf("app: %d active tasks (%v): %w", len(active), names, ErrNoActiveWork)
+		return "", fmt.Errorf("app: %d active works (%v): %w", len(active), names, ErrNoActiveWork)
 	}
 }
 
-// ResolveWork resolves a task by name or work id. An empty selector means
-// the one active task.
+// activeWorks lists every unfinished work across both engines.
+func (a *App) activeWorks(ctx context.Context) ([]Status, error) {
+	var out []Status
+	tasks, err := a.Tasks(ctx)
+	if err != nil {
+		return nil, err
+	}
+	for _, st := range tasks {
+		if !st.Step.Terminal() {
+			out = append(out, taskStatus(st))
+		}
+	}
+	changes, err := a.changes.States(ctx)
+	if err != nil {
+		return nil, err
+	}
+	confirmed := map[identity.WorkID]bool{}
+	for _, st := range changes {
+		confirmed[st.WorkID] = true
+		if !change.Terminal(st) {
+			out = append(out, changeStatus(st))
+		}
+	}
+	candidates, err := a.changes.Preflights(ctx)
+	if err != nil {
+		return nil, err
+	}
+	for _, pre := range candidates {
+		// A confirmed candidate IS its change; listing both would make one
+		// piece of work look like two and refuse every unqualified
+		// command.
+		if pre.Step.Terminal() || confirmed[pre.WorkID] {
+			continue
+		}
+		out = append(out, preflightStatus(pre))
+	}
+	return out, nil
+}
+
+// Works returns every recorded work across both engines, for status.
+func (a *App) Works(ctx context.Context) ([]Status, error) {
+	var out []Status
+	tasks, err := a.Tasks(ctx)
+	if err != nil {
+		return nil, err
+	}
+	for _, st := range tasks {
+		out = append(out, taskStatus(st))
+	}
+	changes, err := a.changes.States(ctx)
+	if err != nil {
+		return nil, err
+	}
+	confirmed := map[identity.WorkID]bool{}
+	for _, st := range changes {
+		confirmed[st.WorkID] = true
+		out = append(out, changeStatus(st))
+	}
+	candidates, err := a.changes.Preflights(ctx)
+	if err != nil {
+		return nil, err
+	}
+	for _, pre := range candidates {
+		if confirmed[pre.WorkID] {
+			continue
+		}
+		out = append(out, preflightStatus(pre))
+	}
+	return out, nil
+}
+
+// ResolveWork resolves a work by name or id. An empty selector means the
+// one active work.
 func (a *App) ResolveWork(ctx context.Context, selector string) (identity.WorkID, error) {
 	if selector == "" {
 		return a.ActiveWork(ctx)
@@ -332,23 +520,23 @@ func (a *App) ResolveWork(ctx context.Context, selector string) (identity.WorkID
 	if err := identity.ValidateUUID(selector); err == nil {
 		return identity.WorkID(selector), nil
 	}
-	tasks, err := a.Tasks(ctx)
+	works, err := a.Works(ctx)
 	if err != nil {
 		return "", err
 	}
-	var matches []task.State
-	for _, st := range tasks {
-		if st.Name == selector {
-			matches = append(matches, st)
+	var matches []Status
+	for _, w := range works {
+		if w.Name == selector {
+			matches = append(matches, w)
 		}
 	}
 	switch len(matches) {
 	case 1:
 		return matches[0].WorkID, nil
 	case 0:
-		return "", fmt.Errorf("app: no task named %q: %w", selector, task.ErrUnknownWork)
+		return "", fmt.Errorf("app: no work named %q: %w", selector, task.ErrUnknownWork)
 	default:
-		return "", fmt.Errorf("app: %d tasks named %q; name one by work id: %w",
+		return "", fmt.Errorf("app: %d works named %q; name one by work id: %w",
 			len(matches), selector, ErrNoActiveWork)
 	}
 }

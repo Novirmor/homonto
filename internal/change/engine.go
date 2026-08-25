@@ -607,3 +607,41 @@ func (e *Engine) AcceptEdit(ctx context.Context, actionID identity.ActionID, gra
 	}
 	return st, nil
 }
+
+// Terminal reports whether a change has finished.
+func Terminal(st State) bool { return terminalStep(st.Path, st.Step) }
+
+// Preflights returns every recorded classification candidate, oldest
+// first. The ids are read in one transaction and the states loaded after
+// it closes: the runtime database serializes through a single connection.
+func (e *Engine) Preflights(ctx context.Context) ([]PreflightState, error) {
+	var ids []identity.WorkID
+	err := e.db.View(ctx, func(tx *store.Tx) error {
+		rows, err := tx.QueryContext(ctx,
+			`SELECT work_id FROM change_preflights ORDER BY updated_at, work_id`)
+		if err != nil {
+			return err
+		}
+		defer rows.Close()
+		for rows.Next() {
+			var id identity.WorkID
+			if err := rows.Scan(&id); err != nil {
+				return err
+			}
+			ids = append(ids, id)
+		}
+		return rows.Err()
+	})
+	if err != nil {
+		return nil, fmt.Errorf("change: list candidates: %w", err)
+	}
+	out := make([]PreflightState, 0, len(ids))
+	for _, id := range ids {
+		pre, err := e.Preflight(ctx, id)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, pre)
+	}
+	return out, nil
+}

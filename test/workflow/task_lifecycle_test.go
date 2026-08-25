@@ -3,7 +3,7 @@
 // real Git repositories, real subprocess checks, real isolation areas —
 // because everything below them is already unit-tested and what is left to
 // prove is that the pieces meet.
-package rewrite
+package workflow
 
 import (
 	"bytes"

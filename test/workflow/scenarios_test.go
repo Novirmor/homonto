@@ -1,4 +1,4 @@
-package rewrite
+package workflow
 
 import (
 	"encoding/json"

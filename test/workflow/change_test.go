@@ -1,4 +1,4 @@
-package rewrite
+package workflow
 
 import (
 	"os"
@@ -220,7 +220,6 @@ func TestChangePreflightCreatesNothingUntilConfirmed(t *testing.T) {
 			t.Fatalf("preflight created %q before anything was confirmed", e.Name())
 		}
 	}
-
 	// Abandoning the candidate removes nothing, and frees the name.
 	out, err = w.run(t, "change", "abandon")
 	if err != nil {

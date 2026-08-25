@@ -25,6 +25,10 @@ type OperationID string
 // ActionID identifies one guarded action performed during an operation.
 type ActionID string
 
+// ParallelGroupID identifies one issued parallel action group: the maximal
+// set of actions released together by the assignment scheduler.
+type ParallelGroupID string
+
 // SessionID identifies one host-integration session.
 type SessionID string
 
@@ -46,6 +50,9 @@ func NewOperationID() (OperationID, error) { return newID[OperationID]() }
 
 // NewActionID returns a fresh ActionID.
 func NewActionID() (ActionID, error) { return newID[ActionID]() }
+
+// NewParallelGroupID returns a fresh ParallelGroupID.
+func NewParallelGroupID() (ParallelGroupID, error) { return newID[ParallelGroupID]() }
 
 // NewSessionID returns a fresh SessionID.
 func NewSessionID() (SessionID, error) { return newID[SessionID]() }

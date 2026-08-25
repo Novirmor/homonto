@@ -253,6 +253,13 @@ func tokenMatches(presented identity.Token, stored fingerprint.Digest) bool {
 	return subtle.ConstantTimeCompare([]byte(got), []byte(stored)) == 1
 }
 
+// GrantTokenMatches is tokenMatches for callers outside this package —
+// the write guard, which must decide whether a presented grant token
+// belongs to a journaled grant without being able to mint one.
+func GrantTokenMatches(presented identity.Token, stored fingerprint.Digest) bool {
+	return tokenMatches(presented, stored)
+}
+
 // sameRegions reports whether two region lists are equal in order.
 func sameRegions(a, b []Region) bool {
 	if len(a) != len(b) {

@@ -179,30 +179,6 @@ func TestClearRemovesEvidence(t *testing.T) {
 	}
 }
 
-func TestDigestsMatchTheRecordedSet(t *testing.T) {
-	s := newStore(t)
-	set, _ := runFixture(t)
-	workID := mustWorkID(t)
-	if err := s.Record(t.Context(), workID, set); err != nil {
-		t.Fatalf("Record: %v", err)
-	}
-	stored, err := s.Digests(t.Context(), workID)
-	if err != nil {
-		t.Fatalf("Digests: %v", err)
-	}
-	got, err := s.Latest(t.Context(), workID)
-	if err != nil {
-		t.Fatalf("Latest: %v", err)
-	}
-	want, err := got.Digest()
-	if err != nil {
-		t.Fatalf("Digest: %v", err)
-	}
-	if stored != want {
-		t.Fatalf("Digests = %s, want %s", stored, want)
-	}
-}
-
 func TestRecordRejectsBadWorkAndInputs(t *testing.T) {
 	s := newStore(t)
 	set, _ := runFixture(t)

@@ -82,54 +82,6 @@ func VerifyFreshnessToken(key identity.Token, actionID identity.ActionID, token 
 	return hmac.Equal([]byte(want), []byte(token))
 }
 
-// RebuildRuntime recreates the local runtime projection from portable
-// inputs only: the works row (state projected from the checkpoint's active
-// work), members rows for every checkpoint member, source-fingerprint
-// facts recorded as unverified (engines must re-verify — a fingerprint
-// carried across machines is evidence of the old machine's observation,
-// never of this one's), the phase fact, and a freshly minted runtime key.
-//
-// mappings must cover every checkpoint member including the control
-// repository (Attach constructs that entry from its ControlRoot; standalone
-// callers must pass it themselves). Action, report, and decision rows are
-// deliberately not recreated: after attach the runtime issues fresh action
-// identities and freshness tokens under the new key.
-//
-// The writes are idempotent upserts and inserts, so both the standalone
-// call and the journaled handoff.rebuild effect converge under re-apply.
-func RebuildRuntime(ctx context.Context, cfg workspacecfg.Config, cp checkpoint.Checkpoint, mappings []ConfirmedMapping) error {
-	return rebuildAt(ctx, nil, cfg, cp, mappings, false)
-}
-
-// rebuildAt executes the runtime rebuild against db (opened at the control
-// mapping's runtime database when db is nil). force adds the
-// forced-takeover record (a decisions row whose summary encodes kind and
-// rationale — the schema's decisions table carries no kind column — plus
-// the evidence_stale meta key). The runtime database lives under the
-// control repository, which the mappings locate (the control member's
-// confirmed path).
-func rebuildAt(ctx context.Context, db *store.DB, cfg workspacecfg.Config, cp checkpoint.Checkpoint, mappings []ConfirmedMapping, force bool) error {
-	effective := effectiveMappings(cp, cfg, mappings)
-	ownsDB := db == nil
-	if ownsDB {
-		controlRoot, ok := effective[cfg.Control.ID]
-		if !ok {
-			return fmt.Errorf("handoff: rebuild: no control mapping for %s: %w", cfg.Control.ID, ErrMappingIncomplete)
-		}
-		var err error
-		db, err = openRuntime(ctx, controlRoot)
-		if err != nil {
-			return err
-		}
-		defer func() { _ = db.Close() }()
-	}
-	payload, err := buildRebuildPayload(cfg, cp, effective, force)
-	if err != nil {
-		return err
-	}
-	return applyRebuildPayload(ctx, db, &payload)
-}
-
 // rebuildPayload is the journalled identity of the runtime rebuild: every
 // row it writes. Identities (ids, the runtime key) are minted once at
 // prepare so recovery replays the same values; timestamps are written by
@@ -328,18 +280,6 @@ func revertRebuildPayload(ctx context.Context, db *store.DB, p *rebuildPayload) 
 		}
 		return nil
 	})
-}
-
-// effectiveMappings indexes the confirmed mappings by repository id,
-// validating coverage of every checkpoint member (the control repository
-// maps to the attach's control root; Attach adds it internally and rejects
-// a human mapping that names a different path).
-func effectiveMappings(cp checkpoint.Checkpoint, cfg workspacecfg.Config, mappings []ConfirmedMapping) map[identity.RepositoryID]string {
-	out := make(map[identity.RepositoryID]string, len(mappings))
-	for _, m := range mappings {
-		out[m.RepositoryID] = m.Path
-	}
-	return out
 }
 
 // sortedCheckpointMembers returns the checkpoint's members sorted by id.

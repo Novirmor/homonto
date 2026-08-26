@@ -99,62 +99,6 @@ func TestStoreWriteDigestsCanonicalFormNotInputOrder(t *testing.T) {
 	}
 }
 
-func TestStoreRepairRewritesUnconditionally(t *testing.T) {
-	st, abs := newTestStore(t)
-	first := validCheckpoint()
-	if _, err := st.Write(first); err != nil {
-		t.Fatal(err)
-	}
-	// Corrupt the slot the way a torn write or careless edit would.
-	root, err := securefs.OpenRoot(filepath.Dir(abs))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := root.WriteAtomic("checkpoint.json", []byte("{\"schema_version\":1,"), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	root.Close()
-	if _, _, err := Load(abs); err == nil {
-		t.Fatal("corrupted checkpoint still loaded; test setup is wrong")
-	}
-
-	repaired := validCheckpoint()
-	repaired.Work.Phase = "done"
-	digest, err := st.Repair(repaired)
-	if err != nil {
-		t.Fatal(err)
-	}
-	got, gotDigest, err := Load(abs)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if got.Work.Phase != "done" {
-		t.Errorf("Repair did not restore the expected checkpoint; phase = %q", got.Work.Phase)
-	}
-	if digest != gotDigest {
-		t.Errorf("Repair digest = %s, want %s", digest, gotDigest)
-	}
-}
-
-func TestStoreRepairOverwritesDifferentValidCheckpoint(t *testing.T) {
-	st, abs := newTestStore(t)
-	if _, err := st.Write(validCheckpoint()); err != nil {
-		t.Fatal(err)
-	}
-	next := validCheckpoint()
-	next.Work = nil
-	if _, err := st.Repair(next); err != nil {
-		t.Fatal(err)
-	}
-	got, _, err := Load(abs)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if got.Work != nil {
-		t.Error("Repair did not overwrite the previous valid checkpoint")
-	}
-}
-
 func TestLoadRoundTrip(t *testing.T) {
 	st, abs := newTestStore(t)
 	cp := validCheckpoint()

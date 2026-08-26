@@ -130,20 +130,6 @@ func RuntimeDBPath(controlRoot string) string {
 	return filepath.Join(controlRoot, ".homonto", "runtime.db")
 }
 
-// CheckpointGeneration reads and strictly decodes the checkpoint under
-// controlRoot and returns its handoff generation — the generation that may
-// currently attach. It exists for the stale-clone ownership gate: a clone
-// whose leases and generation no longer match must refuse work. Wiring it
-// into the mutation paths is pending; until then this is a check a caller
-// may run, not one the product enforces (see ADR 0030).
-func CheckpointGeneration(controlRoot string) (uint64, error) {
-	cp, _, err := checkpoint.Load(CheckpointPath(controlRoot))
-	if err != nil {
-		return 0, fmt.Errorf("handoff: checkpoint generation of %s: %w", controlRoot, err)
-	}
-	return cp.Handoff.Generation, nil
-}
-
 // PortableRequest names the active work being prepared for portable
 // handoff on the machine that currently holds it.
 type PortableRequest struct {

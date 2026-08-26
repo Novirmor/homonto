@@ -108,34 +108,3 @@ func TestPathValidatesTheWorkName(t *testing.T) {
 		}
 	}
 }
-
-// TestHostKindsMatchTheOwnershipTable proves the scaffolding list and the
-// ownership table cannot drift: every kind a phase lists must actually be
-// host-writable in that phase.
-func TestHostKindsMatchTheOwnershipTable(t *testing.T) {
-	for _, phase := range []Phase{PhaseOpen, PhaseDesign, PhaseBuild, PhaseVerify, PhaseClose} {
-		for _, kind := range HostKinds(phase) {
-			owner, _, ok := Ownership(kind, phase)
-			if !ok || owner != OwnerHost {
-				t.Errorf("HostKinds(%s) lists %s, which the table gives to %q (found=%v)", phase, kind, owner, ok)
-			}
-		}
-	}
-	// And every host-owned pair in the table is listed.
-	for kind, byPhase := range ownershipTable {
-		for phase, row := range byPhase {
-			if row.Owner != OwnerHost {
-				continue
-			}
-			found := false
-			for _, k := range HostKinds(phase) {
-				if k == kind {
-					found = true
-				}
-			}
-			if !found {
-				t.Errorf("ownership table gives the host %s in %s, but HostKinds(%s) omits it", kind, phase, phase)
-			}
-		}
-	}
-}

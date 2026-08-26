@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/noviopenworks/homonto/internal/fingerprint"
 	"github.com/noviopenworks/homonto/internal/identity"
 	"github.com/noviopenworks/homonto/internal/store"
 )
@@ -158,16 +157,6 @@ func (s *Store) Latest(ctx context.Context, workID identity.WorkID) (Set, error)
 		return Set{}, err
 	}
 	return set, nil
-}
-
-// Digests returns the digest of the recorded pass without loading its raw
-// streams — the cheap identity check a checkpoint or a record needs.
-func (s *Store) Digests(ctx context.Context, workID identity.WorkID) (fingerprint.Digest, error) {
-	set, err := s.Latest(ctx, workID)
-	if err != nil {
-		return "", err
-	}
-	return set.Digest()
 }
 
 // Clear drops a work's recorded evidence. Repair invalidates checks, and

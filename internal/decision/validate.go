@@ -1,7 +1,6 @@
 package decision
 
 import (
-	"errors"
 	"fmt"
 	"strings"
 
@@ -98,14 +97,4 @@ func Validate(s Schema, sub Submission) error {
 		return fmt.Errorf("decision: %w", ErrUnwantedAnswer)
 	}
 	return nil
-}
-
-// IsTyped reports whether err is one of the package's typed validation
-// errors — the contract the fuzz test enforces on every rejection.
-func IsTyped(err error) bool {
-	return errors.Is(err, ErrEmptyChoice) ||
-		errors.Is(err, ErrUnknownChoice) ||
-		errors.Is(err, ErrMissingRationale) ||
-		errors.Is(err, ErrMissingAnswer) ||
-		errors.Is(err, ErrUnwantedAnswer)
 }

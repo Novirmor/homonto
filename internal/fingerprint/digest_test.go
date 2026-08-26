@@ -3,7 +3,6 @@ package fingerprint
 import (
 	"crypto/sha256"
 	"encoding/hex"
-	"errors"
 	"fmt"
 	"strings"
 	"testing"
@@ -57,31 +56,6 @@ func TestBytesIsDeterministic(t *testing.T) {
 		t.Fatal("same domain and data produced different digests")
 	}
 }
-
-func TestReaderMatchesBytes(t *testing.T) {
-	data := strings.NewReader("streamed payload")
-	d, err := Reader("config", data)
-	if err != nil {
-		t.Fatalf("Reader: %v", err)
-	}
-	if want := Bytes("config", []byte("streamed payload")); d != want {
-		t.Fatalf("Reader digest = %s, want Bytes digest %s", d, want)
-	}
-}
-
-// TestReaderPropagatesReadError: a failing reader must surface its error, not
-// return a digest of partial data.
-func TestReaderPropagatesReadError(t *testing.T) {
-	boom := errors.New("boom")
-	_, err := Reader("config", failingReader{boom})
-	if !errors.Is(err, boom) {
-		t.Fatalf("Reader error = %v, want wrapped %v", err, boom)
-	}
-}
-
-type failingReader struct{ err error }
-
-func (r failingReader) Read([]byte) (int, error) { return 0, r.err }
 
 // TestCanonicalJSONIsDeterministicAcrossMapOrder: Go's json.Marshal sorts map
 // keys, so equal values must fingerprint identically regardless of insertion

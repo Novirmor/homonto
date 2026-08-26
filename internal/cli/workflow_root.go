@@ -90,11 +90,6 @@ func open(cmd *cobra.Command, opener Opener) (*app.App, error) {
 	return openWith(cmd, opener, false)
 }
 
-// openReadOnly opens the workspace without changing anything.
-func openReadOnly(cmd *cobra.Command, opener Opener) (*app.App, error) {
-	return openWith(cmd, opener, true)
-}
-
 func openWith(cmd *cobra.Command, opener Opener, readOnly bool) (*app.App, error) {
 	root, err := cmd.Flags().GetString("workspace")
 	if err != nil {

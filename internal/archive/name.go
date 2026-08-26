@@ -60,12 +60,3 @@ func Name(date time.Time, name string, exists func(string) bool) (string, error)
 		}
 	}
 }
-
-// dateOf extracts the leading YYYY-MM-DD of an archive entry name; it is
-// informational only — identity never relies on it.
-func dateOf(name string) string {
-	if len(name) < len(dateFormat) {
-		return ""
-	}
-	return name[:len(dateFormat)]
-}

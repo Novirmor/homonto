@@ -11,7 +11,6 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
-	"io"
 )
 
 // Digest is a SHA-256 digest in canonical lowercase hex (64 characters).
@@ -28,16 +27,6 @@ func Bytes(domain string, data []byte) Digest {
 	fmt.Fprintf(h, prefixFormat, domain)
 	h.Write(data)
 	return Digest(hex.EncodeToString(h.Sum(nil)))
-}
-
-// Reader returns the domain-separated digest of everything read from r.
-func Reader(domain string, r io.Reader) (Digest, error) {
-	h := sha256.New()
-	fmt.Fprintf(h, prefixFormat, domain)
-	if _, err := io.Copy(h, r); err != nil {
-		return "", fmt.Errorf("fingerprint: read input: %w", err)
-	}
-	return Digest(hex.EncodeToString(h.Sum(nil))), nil
 }
 
 // CanonicalJSON marshals v with encoding/json — deterministic for a given

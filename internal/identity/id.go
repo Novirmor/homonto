@@ -55,9 +55,6 @@ func NewActionID() (ActionID, error) { return newID[ActionID]() }
 // NewParallelGroupID returns a fresh ParallelGroupID.
 func NewParallelGroupID() (ParallelGroupID, error) { return newID[ParallelGroupID]() }
 
-// NewSessionID returns a fresh SessionID.
-func NewSessionID() (SessionID, error) { return newID[SessionID]() }
-
 // newID is the shared generator wrapped by every typed constructor.
 func newID[T ~string]() (T, error) {
 	id, err := NewUUID()

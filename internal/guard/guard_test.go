@@ -70,11 +70,11 @@ func newEnv(t *testing.T) *env {
 
 func mustSessionID(t *testing.T) identity.SessionID {
 	t.Helper()
-	id, err := identity.NewSessionID()
+	id, err := identity.NewWorkID()
 	if err != nil {
 		t.Fatalf("NewSessionID: %v", err)
 	}
-	return id
+	return identity.SessionID(id)
 }
 
 // template builds an assignment spec for a role with an isolation root and

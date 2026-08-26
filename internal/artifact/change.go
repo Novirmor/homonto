@@ -100,18 +100,3 @@ func Path(name string, k Kind) (string, error) {
 	}
 	return dir + "/" + file, nil
 }
-
-// hostKinds are the document kinds a host authors, in the phase the
-// ownership table gives it. They are listed here so callers can scaffold
-// a work's documents without duplicating the table.
-var hostKinds = map[Phase][]Kind{
-	PhasePlan:   {KindTaskDocument},
-	PhaseOpen:   {KindProposal, KindFix, KindTweak, KindTasks},
-	PhaseDesign: {KindDesign, KindTasks},
-	PhaseBuild:  {KindPlan},
-}
-
-// HostKinds returns the document kinds a host authors in a phase.
-func HostKinds(p Phase) []Kind {
-	return append([]Kind(nil), hostKinds[p]...)
-}

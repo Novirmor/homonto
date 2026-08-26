@@ -157,9 +157,6 @@ func terminalStep(p Path, step string) bool {
 	return s == StepArchived || s == StepAbandoned
 }
 
-// KnownStep reports whether step belongs to the path's vocabulary.
-func KnownStep(p Path, step Step) bool { return index(p, step) >= 0 }
-
 // Phase returns the artifact-ownership phase a step belongs to. It is what
 // the ownership table is consulted with, so a step in the wrong phase
 // would hand a document to the wrong writer.

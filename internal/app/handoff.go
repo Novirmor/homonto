@@ -31,15 +31,6 @@ type AttachProposal struct {
 	Reasons      []string              `json:"reasons,omitempty"`
 }
 
-// Path returns the single candidate path when a proposal has exactly one,
-// and empty otherwise.
-func (p AttachProposal) Path() string {
-	if len(p.Candidates) == 1 {
-		return p.Candidates[0]
-	}
-	return ""
-}
-
 // PreparePortable makes one work's checkpoint transferable.
 func (a *App) PreparePortable(ctx context.Context, id identity.WorkID) error {
 	return handoff.PreparePortable(ctx, handoff.PortableRequest{

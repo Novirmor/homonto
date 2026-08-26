@@ -176,25 +176,6 @@ func (m *Manager) RequireCleanMembers(ctx context.Context) error {
 	return nil
 }
 
-// AnchoredWork returns the work this machine currently holds leases for.
-func (m *Manager) AnchoredWork() (identity.WorkID, error) {
-	dir := filepath.Join(m.controlRoot(), ".homonto", "leases")
-	entries, err := os.ReadDir(dir)
-	if err != nil {
-		if errors.Is(err, fs.ErrNotExist) {
-			return "", nil
-		}
-		return "", fmt.Errorf("app: read %s: %w", dir, err)
-	}
-	for _, entry := range entries {
-		name := entry.Name()
-		if strings.HasSuffix(name, ".active") {
-			return identity.WorkID(strings.TrimSuffix(name, ".active")), nil
-		}
-	}
-	return "", nil
-}
-
 // Checkpoint reads this workspace's committed checkpoint.
 func (m *Manager) Checkpoint() (checkpoint.Checkpoint, error) {
 	cp, _, err := checkpoint.Load(handoff.CheckpointPath(m.controlRoot()))

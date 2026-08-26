@@ -115,19 +115,6 @@ type RegionContent struct {
 	Content []byte
 }
 
-// equalContent reports whether two region contents are equal, treating nil
-// and empty as identical.
-func equalContent(a, b []byte) bool {
-	var aa, bb []byte
-	if len(a) > 0 {
-		aa = a
-	}
-	if len(b) > 0 {
-		bb = b
-	}
-	return bytes.Equal(aa, bb)
-}
-
 // Document is a parsed artifact document: its metadata and its regions in
 // canonical order.
 type Document struct {

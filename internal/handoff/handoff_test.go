@@ -318,60 +318,6 @@ func TestPreparePortableCrashMatrix(t *testing.T) {
 	}
 }
 
-func TestCheckpointGenerationHelper(t *testing.T) {
-	m := newMachine(t)
-	gen, err := CheckpointGeneration(m.root)
-	if err != nil {
-		t.Fatalf("handoff: checkpoint generation: %v", err)
-	}
-	if gen != 1 {
-		t.Fatalf("handoff: generation = %d, want 1", gen)
-	}
-	m.close(t)
-	if err := m.prepare(); err != nil {
-		t.Fatalf("handoff: prepare: %v", err)
-	}
-	gen, err = CheckpointGeneration(m.root)
-	if err != nil {
-		t.Fatalf("handoff: checkpoint generation: %v", err)
-	}
-	if gen != 2 {
-		t.Fatalf("handoff: generation = %d, want 2", gen)
-	}
-}
-
-func TestStaleCloneLeaseRefusal(t *testing.T) {
-	m := newMachine(t)
-	m.close(t)
-
-	// The old runtime holds its journal from the generation-1 acquisition.
-	held := m.journaledLeases(t)
-
-	if err := m.prepare(); err != nil {
-		t.Fatalf("handoff: prepare: %v", err)
-	}
-
-	// The stale runtime's next observation: its leases are gone (the
-	// handoff released them) and ValidateAll refuses further mutation.
-	db := openDB(t, m.root)
-	defer func() { _ = db.Close() }()
-	ops := operation.NewManager(db)
-	lmg := lease.NewManager(db, ops)
-	err := lmg.ValidateAll(context.Background(), held)
-	if !errors.Is(err, lease.ErrLeaseMissing) && !errors.Is(err, lease.ErrLeaseDrift) {
-		t.Fatalf("handoff: stale validate err = %v, want ErrLeaseMissing", err)
-	}
-
-	// The checkpoint generation moved past the stale runtime's world.
-	gen, genErr := CheckpointGeneration(m.root)
-	if genErr != nil {
-		t.Fatalf("handoff: generation: %v", genErr)
-	}
-	if gen == 1 {
-		t.Fatal("handoff: checkpoint generation did not advance past the stale clone")
-	}
-}
-
 // journaledLeases reconstructs the lease set the acquisition journal
 // recorded, linking each lease to the operation whose payload carries its
 // recovery token.

@@ -183,13 +183,3 @@ func FromReport(workID identity.WorkID, actionID identity.ActionID, role protoco
 	}
 	return out, nil
 }
-
-// AnyBlocking reports whether any finding in the set gates.
-func AnyBlocking(findings []Finding) bool {
-	for _, f := range findings {
-		if f.Blocking() {
-			return true
-		}
-	}
-	return false
-}

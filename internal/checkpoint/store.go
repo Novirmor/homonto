@@ -43,17 +43,7 @@ func (s Store) Write(cp Checkpoint) (fingerprint.Digest, error) {
 	return s.persist(cp)
 }
 
-// Repair rewrites the slot with expected unconditionally — the recovery
-// path for a torn, corrupted, or hand-edited checkpoint. It exists apart
-// from Write so recovery call-sites read explicitly and so future
-// safety checks added to the normal write path (for example refusing to
-// clobber a different workspace's checkpoint) never silently change
-// repair semantics.
-func (s Store) Repair(expected Checkpoint) (fingerprint.Digest, error) {
-	return s.persist(expected)
-}
-
-// persist is the shared write path of Write and Repair.
+// persist is the write path.
 func (s Store) persist(cp Checkpoint) (fingerprint.Digest, error) {
 	b, err := Encode(cp)
 	if err != nil {

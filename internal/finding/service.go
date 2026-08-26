@@ -134,29 +134,6 @@ func (s *Service) Resolve(ctx context.Context, resolution Resolution) error {
 	})
 }
 
-// Reopen puts a fixed finding back on the gate. A repair that did not
-// hold, or evidence re-taken against new fingerprints that shows the same
-// problem, reopens it — but an ACCEPTED finding stays accepted: a human
-// decided, and only a human undoes that.
-func (s *Service) Reopen(ctx context.Context, workID identity.WorkID, externalIDs ...string) error {
-	if len(externalIDs) == 0 {
-		return nil
-	}
-	now := formatTime(s.now().UTC())
-	return s.db.Update(ctx, func(tx *store.Tx) error {
-		for _, id := range externalIDs {
-			if _, err := tx.ExecContext(ctx, `
-				UPDATE findings SET state = ?, resolved_at = NULL, updated_at = ?
-				 WHERE work_id = ? AND external_id = ? AND state IN (?, ?)`,
-				string(StateOpen), now, string(workID), id,
-				string(StateFixed), string(StateWithdrawn)); err != nil {
-				return fmt.Errorf("finding: reopen %q: %w", id, err)
-			}
-		}
-		return nil
-	})
-}
-
 // All returns every finding of a work, oldest first.
 func (s *Service) All(ctx context.Context, workID identity.WorkID) ([]Finding, error) {
 	var out []Finding
@@ -166,21 +143,6 @@ func (s *Service) All(ctx context.Context, workID identity.WorkID) ([]Finding, e
 		return err
 	})
 	return out, err
-}
-
-// Open returns the unresolved findings of a work.
-func (s *Service) Open(ctx context.Context, workID identity.WorkID) ([]Finding, error) {
-	all, err := s.All(ctx, workID)
-	if err != nil {
-		return nil, err
-	}
-	var out []Finding
-	for _, f := range all {
-		if !f.State.Resolved() {
-			out = append(out, f)
-		}
-	}
-	return out, nil
 }
 
 // Blockers returns the findings that currently gate the workflow.

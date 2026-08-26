@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/noviopenworks/homonto/internal/checkpoint"
+	"github.com/noviopenworks/homonto/internal/fingerprint"
 	"github.com/noviopenworks/homonto/internal/gitx"
 	"github.com/noviopenworks/homonto/internal/identity"
 	"github.com/noviopenworks/homonto/internal/workspace"
@@ -19,6 +20,29 @@ type mappingFixture struct {
 	memberA   identity.RepositoryID
 	memberB   identity.RepositoryID
 	controlID identity.RepositoryID
+}
+
+func mustFingerprint(t *testing.T, cfg workspacecfg.Config) fingerprint.Digest {
+	t.Helper()
+	d, err := workspacecfg.Fingerprint(cfg)
+	if err != nil {
+		t.Fatalf("handoff: fingerprint: %v", err)
+	}
+	return d
+}
+
+func mustHex(t *testing.T, seed byte) string {
+	t.Helper()
+	out := make([]byte, 40)
+	for i := range out {
+		out[i] = "0123456789abcdef"[int(seed)%16]
+	}
+	return string(out)
+}
+
+func mustDigest(t *testing.T) fingerprint.Digest {
+	t.Helper()
+	return fingerprintOf(t.Name())
 }
 
 func newMappingFixture(t *testing.T) mappingFixture {

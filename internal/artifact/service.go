@@ -345,25 +345,6 @@ func (s *Service) WriteGenerated(ctx context.Context, ref Ref, phase Phase, regi
 	return s.snapshot(ref, rendered), nil
 }
 
-// Digest returns the current document's canonical digest, the value
-// downstream evidence pins an artifact by.
-func (s *Service) Digest(ctx context.Context, ref Ref) (Snapshot, error) {
-	root, err := s.open()
-	if err != nil {
-		return Snapshot{}, err
-	}
-	defer root.Close()
-	doc, err := s.read(root, ref)
-	if err != nil {
-		return Snapshot{}, err
-	}
-	rendered, err := Render(doc)
-	if err != nil {
-		return Snapshot{}, err
-	}
-	return s.snapshot(ref, rendered), nil
-}
-
 // snapshot stamps a rendered document with its digest and the service
 // clock.
 func (s *Service) snapshot(ref Ref, rendered []byte) Snapshot {

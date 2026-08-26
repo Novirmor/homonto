@@ -6,8 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"strings"
-
-	"github.com/noviopenworks/homonto/internal/identity"
 )
 
 // ErrNoChecklist reports a kind whose documents carry no checkbox region.
@@ -169,18 +167,6 @@ func (s *Service) AppendEvidence(ctx context.Context, ref Ref, phase Phase, bloc
 	buf.Write(block)
 	return s.WriteGenerated(ctx, ref, phase, []RegionContent{
 		{Region: RegionTaskEvidence, Content: buf.Bytes()},
-	})
-}
-
-// NewTaskDocument returns an empty task document for a work: the three
-// canonical regions, all empty. The host fills goal and checklist through
-// a Plan edit grant.
-func NewTaskDocument(workID identity.WorkID, name string) Document {
-	return NewDocument(Metadata{
-		Schema: MetadataSchema,
-		WorkID: workID,
-		Name:   name,
-		Kind:   KindTaskDocument,
 	})
 }
 

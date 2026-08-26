@@ -49,14 +49,11 @@ var ErrNoActiveWork = errors.New("app: no single active work; name one explicitl
 // CLI command holds: commands parse flags and render output, and every
 // decision behind them lives in the engines.
 type App struct {
-	root    string
-	cfg     workspacecfg.Config
-	db      *store.DB
-	engine  *task.Engine
-	changes *change.Engine
-	env     *workspaceenv.Environment
-
-	leases      *lease.Manager
+	root        string
+	cfg         workspacecfg.Config
+	db          *store.DB
+	engine      *task.Engine
+	changes     *change.Engine
 	portable    *portable.Manager
 	assignments *assignment.Store
 	artifacts   *artifact.Service
@@ -154,8 +151,8 @@ func build(ctx context.Context, root string, cfg workspacecfg.Config, db *store.
 	}
 	portableManager := portable.NewManager(root, cfg, runner, snapshotStore, leases)
 	return &App{
-		root: root, cfg: cfg, db: db, engine: engine, changes: changes, env: env,
-		leases: leases, portable: portableManager, assignments: services.assignments, artifacts: services.artifacts,
+		root: root, cfg: cfg, db: db, engine: engine, changes: changes,
+		portable: portableManager, assignments: services.assignments, artifacts: services.artifacts,
 		findings: services.findings, evidence: services.evidence, archive: services.archive,
 		guard: services.guard, now: now,
 	}, nil
@@ -398,11 +395,6 @@ func (a *App) StartTask(ctx context.Context, in task.StartInput) (task.State, er
 	return st, nil
 }
 
-// TaskState returns one Task's state.
-func (a *App) TaskState(ctx context.Context, id identity.WorkID) (task.State, error) {
-	return a.engine.State(ctx, id)
-}
-
 // AbandonTask stops a Task, leaving its isolation areas and evidence for
 // external handling.
 func (a *App) AbandonTask(ctx context.Context, id identity.WorkID) (task.State, error) {
@@ -444,15 +436,6 @@ func (a *App) WorkKindOf(ctx context.Context, id identity.WorkID) (WorkKind, err
 		return "", err
 	}
 	return "", fmt.Errorf("app: %s: %w", id, task.ErrUnknownWork)
-}
-
-// Next returns the actions a host may execute now for the one active work.
-func (a *App) Next(ctx context.Context) (protocol.NextResponse, error) {
-	id, err := a.ActiveWork(ctx)
-	if err != nil {
-		return protocol.NextResponse{}, err
-	}
-	return a.NextFor(ctx, id)
 }
 
 // NextFor returns the actions for a named work, whichever engine owns it.

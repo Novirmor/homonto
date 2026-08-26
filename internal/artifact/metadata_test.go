@@ -96,7 +96,7 @@ func TestRenderParseRoundTripsTaskDocument(t *testing.T) {
 		t.Fatalf("Render(Parse(x)) =\n%s\nwant\n%s", again, rendered)
 	}
 	for _, r := range []Region{RegionTaskGoal, RegionTaskChecklist, RegionTaskEvidence} {
-		if !equalContent(back.Region(r), doc.Region(r)) {
+		if string(back.Region(r)) != string(doc.Region(r)) {
 			t.Fatalf("region %q = %q, want %q", r, back.Region(r), doc.Region(r))
 		}
 	}

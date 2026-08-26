@@ -234,12 +234,12 @@ func (w *workspace) next(t *testing.T) protocol.NextResponse {
 
 func session(t *testing.T) protocol.Session {
 	t.Helper()
-	id, err := identity.NewSessionID()
+	id, err := identity.NewWorkID()
 	if err != nil {
 		t.Fatalf("NewSessionID: %v", err)
 	}
 	return protocol.Session{
-		HostID: id, Hostname: "fixture", PID: os.Getpid(),
+		HostID: identity.SessionID(id), Hostname: "fixture", PID: os.Getpid(),
 		Executable: "/usr/bin/claude", StartedAt: time.Now().UTC(),
 	}
 }

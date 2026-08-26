@@ -63,29 +63,6 @@ func (e *Engine) partitionOf(ctx context.Context, actionID identity.ActionID) (P
 	return p, true, nil
 }
 
-// partitionsForStep returns the partitions issued for one step at the
-// current generation, in issue order.
-func (e *Engine) partitionsForStep(ctx context.Context, st State, step Step) ([]Partition, error) {
-	actions, err := e.actionsForStep(ctx, st, step)
-	if err != nil {
-		return nil, err
-	}
-	var out []Partition
-	for _, act := range actions {
-		if act.Kind != protocol.KindAssignment {
-			continue
-		}
-		p, found, err := e.partitionOf(ctx, act.ID)
-		if err != nil {
-			return nil, err
-		}
-		if found {
-			out = append(out, p)
-		}
-	}
-	return out, nil
-}
-
 // issuePartitions creates one implementer assignment per unit. The action
 // id is minted first, the isolation area is created against it, and only
 // then is the assignment persisted — so an assignment never exists without

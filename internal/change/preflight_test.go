@@ -192,12 +192,12 @@ func mustRepoID(t *testing.T) identity.RepositoryID {
 
 func session(t *testing.T) protocol.Session {
 	t.Helper()
-	id, err := identity.NewSessionID()
+	id, err := identity.NewWorkID()
 	if err != nil {
 		t.Fatalf("NewSessionID: %v", err)
 	}
 	return protocol.Session{
-		HostID: id, Hostname: "test-host", PID: 99,
+		HostID: identity.SessionID(id), Hostname: "test-host", PID: 99,
 		Executable: "/usr/bin/claude", StartedAt: testNow,
 	}
 }

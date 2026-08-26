@@ -189,16 +189,6 @@ func nextNumber(dir string) (int, error) {
 	return highest + 1, nil
 }
 
-// Number extracts the four-digit number from an ADR path.
-func Number(p string) (int, bool) {
-	m := numberPattern.FindStringSubmatch(path.Base(p))
-	if m == nil {
-		return 0, false
-	}
-	n, err := strconv.Atoi(m[1])
-	return n, err == nil
-}
-
 // ValidateDocument checks that the ADR at path is a record of the
 // candidate it was allocated for.
 //

@@ -104,9 +104,6 @@ func TestRecordAndBlockers(t *testing.T) {
 	if len(blockers) != 2 {
 		t.Fatalf("Blockers = %d, want the critical and the high", len(blockers))
 	}
-	if !AnyBlocking(all) {
-		t.Fatal("AnyBlocking = false with an open critical finding")
-	}
 	// Evidence survives the round trip.
 	if len(all[0].Evidence) != 1 || all[0].Evidence[0] != "internal/x/y.go:42" {
 		t.Fatalf("evidence did not round trip: %+v", all[0].Evidence)
@@ -292,43 +289,6 @@ func TestResolveRejectsMalformedResolutions(t *testing.T) {
 	}
 	if err := s.Resolve(t.Context(), Resolution{WorkID: workID, ExternalID: "nope", Kind: KindFixed}); !errors.Is(err, ErrUnknownFinding) {
 		t.Fatalf("Resolve(unknown) error = %v, want ErrUnknownFinding", err)
-	}
-}
-
-func TestReopenRestoresFixedButNotAccepted(t *testing.T) {
-	s := newService(t)
-	workID := mustWorkID(t)
-	if err := s.Record(t.Context(), []Finding{
-		fnd(t, workID, "F-fixed", SeverityHigh),
-		fnd(t, workID, "F-accepted", SeverityHigh),
-	}); err != nil {
-		t.Fatalf("Record: %v", err)
-	}
-	if err := s.Resolve(t.Context(), Resolution{WorkID: workID, ExternalID: "F-fixed", Kind: KindFixed}); err != nil {
-		t.Fatalf("Resolve(fixed): %v", err)
-	}
-	if err := s.Resolve(t.Context(), Resolution{
-		WorkID: workID, ExternalID: "F-accepted", Kind: KindAccepted,
-		Rationale: "documented deviation", DecisionID: mustActionID(t),
-	}); err != nil {
-		t.Fatalf("Resolve(accepted): %v", err)
-	}
-	if err := s.Reopen(t.Context(), workID, "F-fixed", "F-accepted"); err != nil {
-		t.Fatalf("Reopen: %v", err)
-	}
-	all, err := s.All(t.Context(), workID)
-	if err != nil {
-		t.Fatalf("All: %v", err)
-	}
-	states := map[string]State{}
-	for _, f := range all {
-		states[f.ExternalID] = f.State
-	}
-	if states["F-fixed"] != StateOpen {
-		t.Fatalf("F-fixed = %q, want open after a repair that did not hold", states["F-fixed"])
-	}
-	if states["F-accepted"] != StateAccepted {
-		t.Fatalf("F-accepted = %q; only a human undoes a human acceptance", states["F-accepted"])
 	}
 }
 

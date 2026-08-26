@@ -74,27 +74,11 @@ func NewService(root string) (*Service, error) {
 	return &Service{root: root}, nil
 }
 
-// Root returns the absolute control repository root the service is bound
-// to (for callers that need os-level operations beside it, e.g. mkdir).
-func (s *Service) Root() string { return s.root }
-
 // open opens a fresh confined root on the control repository. Callers
 // close it; one root serves one public operation so no descriptor
 // outlives the call that needed it.
 func (s *Service) open() (*securefs.Root, error) {
 	return securefs.OpenRoot(s.root)
-}
-
-// ArchiveTask moves the task document at srcRel (control-root-relative,
-// docs/homonto/tasks/<name>.md) into the task archive. The work's name and
-// identity come from the document's metadata block, never the path.
-func (s *Service) ArchiveTask(ctx context.Context, srcRel string, date time.Time) (Entry, error) {
-	root, err := s.open()
-	if err != nil {
-		return Entry{}, fmt.Errorf("archive: open %s: %w", s.root, err)
-	}
-	defer root.Close()
-	return s.archiveTask(ctx, root, srcRel, date)
 }
 
 // archiveTask is ArchiveTask on an already-open root.
@@ -123,19 +107,6 @@ func (s *Service) archiveTask(ctx context.Context, root *securefs.Root, srcRel s
 		Kind:   meta.Kind,
 		Path:   dest,
 	}, nil
-}
-
-// ArchiveChange moves the active change whose metadata carries workID into
-// the change archive. The active directory is found by scanning the
-// changes directory and reading each identity document — identity comes
-// from the document, never the directory name.
-func (s *Service) ArchiveChange(ctx context.Context, workID identity.WorkID, date time.Time) (Entry, error) {
-	root, err := s.open()
-	if err != nil {
-		return Entry{}, fmt.Errorf("archive: open %s: %w", s.root, err)
-	}
-	defer root.Close()
-	return s.archiveChange(ctx, root, workID, date)
 }
 
 // archiveChange is ArchiveChange on an already-open root.
@@ -182,85 +153,6 @@ func (s *Service) ArchiveWork(ctx context.Context, workID identity.WorkID, date 
 		return s.archiveTask(ctx, root, dir, date)
 	}
 	return s.archiveChange(ctx, root, workID, date)
-}
-
-// LookupByID resolves the archived entry whose metadata carries workID,
-// searching both archives — a task file and a change directory are
-// different shapes, and the caller should not have to know which it is
-// asking about. Every candidate is read for its metadata: the name suffix
-// and the directory name are never trusted, and non-artifact entries
-// (loose files, empty directories) are skipped. A missing, unreadable, or
-// corrupt candidate is skipped too, so a torn archive never blocks lookups
-// of the rest.
-func (s *Service) LookupByID(ctx context.Context, workID identity.WorkID) (Entry, error) {
-	root, err := s.open()
-	if err != nil {
-		return Entry{}, fmt.Errorf("archive: open %s: %w", s.root, err)
-	}
-	defer root.Close()
-
-	if entry, found, err := s.lookupTask(root, workID); err != nil {
-		return Entry{}, err
-	} else if found {
-		return entry, nil
-	}
-	if entry, found, err := s.lookupChange(root, workID); err != nil {
-		return Entry{}, err
-	} else if found {
-		return entry, nil
-	}
-	return Entry{}, fmt.Errorf("archive: work %s: %w", workID, ErrNotFound)
-}
-
-// lookupTask searches the archived task documents.
-func (s *Service) lookupTask(root *securefs.Root, workID identity.WorkID) (Entry, bool, error) {
-	entries, err := s.readDir(TasksArchiveDir)
-	if err != nil {
-		return Entry{}, false, err
-	}
-	for _, e := range entries {
-		if e.IsDir() || !strings.HasSuffix(e.Name(), ".md") {
-			continue
-		}
-		rel := TasksArchiveDir + "/" + e.Name()
-		meta, err := readMetadata(root, rel)
-		if err != nil || meta.WorkID != workID {
-			continue
-		}
-		return Entry{
-			WorkID: meta.WorkID, Name: meta.Name, Date: dateOf(e.Name()),
-			Kind: meta.Kind, Path: rel,
-		}, true, nil
-	}
-	return Entry{}, false, nil
-}
-
-// lookupChange searches the archived change directories. A closed change
-// is identified by its record when it has one and by its proposal
-// otherwise, because an upgraded preset has both and the record is the
-// later, more authoritative document.
-func (s *Service) lookupChange(root *securefs.Root, workID identity.WorkID) (Entry, bool, error) {
-	entries, err := s.readDir(ChangesArchiveDir)
-	if err != nil {
-		return Entry{}, false, err
-	}
-	for _, e := range entries {
-		if !e.IsDir() {
-			continue
-		}
-		rel := ChangesArchiveDir + "/" + e.Name()
-		for _, doc := range changeIdentityDocs {
-			meta, err := readMetadata(root, rel+"/"+doc)
-			if err != nil || meta.WorkID != workID {
-				continue
-			}
-			return Entry{
-				WorkID: meta.WorkID, Name: meta.Name, Date: dateOf(e.Name()),
-				Kind: meta.Kind, Path: rel, IsDir: true,
-			}, true, nil
-		}
-	}
-	return Entry{}, false, nil
 }
 
 // changeIdentityDocs are the documents a change's identity is read from,

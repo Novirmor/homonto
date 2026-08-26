@@ -252,12 +252,12 @@ func (h *harness) next(t *testing.T, id identity.WorkID) protocol.NextResponse {
 
 func session(t *testing.T) protocol.Session {
 	t.Helper()
-	id, err := identity.NewSessionID()
+	id, err := identity.NewWorkID()
 	if err != nil {
 		t.Fatalf("NewSessionID: %v", err)
 	}
 	return protocol.Session{
-		HostID: id, Hostname: "test-host", PID: 1234,
+		HostID: identity.SessionID(id), Hostname: "test-host", PID: 1234,
 		Executable: "/usr/bin/claude", StartedAt: engineNow,
 	}
 }

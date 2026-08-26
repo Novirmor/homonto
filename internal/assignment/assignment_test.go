@@ -133,12 +133,12 @@ func reportPayload(t *testing.T, role protocol.Role) json.RawMessage {
 
 func session(t *testing.T) protocol.Session {
 	t.Helper()
-	id, err := identity.NewSessionID()
+	id, err := identity.NewWorkID()
 	if err != nil {
 		t.Fatalf("NewSessionID: %v", err)
 	}
 	return protocol.Session{
-		HostID:     id,
+		HostID:     identity.SessionID(id),
 		Hostname:   "test-host",
 		PID:        4242,
 		Executable: "/usr/bin/claude",

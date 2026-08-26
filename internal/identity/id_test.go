@@ -34,7 +34,6 @@ func TestNewTypedIDsProduceValidUUIDv4(t *testing.T) {
 		{"OperationID", func() (string, error) { id, err := NewOperationID(); return string(id), err }},
 		{"ActionID", func() (string, error) { id, err := NewActionID(); return string(id), err }},
 		{"ParallelGroupID", func() (string, error) { id, err := NewParallelGroupID(); return string(id), err }},
-		{"SessionID", func() (string, error) { id, err := NewSessionID(); return string(id), err }},
 	}
 	for _, p := range pairs {
 		t.Run(p.name, func(t *testing.T) {

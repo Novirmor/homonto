@@ -229,7 +229,7 @@ func TestAllocatePathNumbersFourDigitsAndNeverReuses(t *testing.T) {
 	if err != nil {
 		t.Fatalf("AllocatePath: %v", err)
 	}
-	if n, ok := Number(third); !ok || n != 3 {
+	if filepath.Base(third) != "0003-adopt-something-else.md" {
 		t.Fatalf("third = %q, want 0003: a deleted number is never reused", third)
 	}
 	// An existing repository's numbering is continued, not restarted.
@@ -241,7 +241,7 @@ func TestAllocatePathNumbersFourDigitsAndNeverReuses(t *testing.T) {
 	if err != nil {
 		t.Fatalf("AllocatePath: %v", err)
 	}
-	if n, _ := Number(next); n != 43 {
+	if filepath.Base(next) != "0043-after-the-gap.md" {
 		t.Fatalf("next = %q, want 0043", next)
 	}
 }
@@ -276,14 +276,11 @@ func TestAllocatePathIsAtomicUnderRace(t *testing.T) {
 	if len(errs) > 0 {
 		t.Fatalf("concurrent allocation failed: %v", errs[0])
 	}
-	seen := map[int]string{}
+	seen := map[string]string{}
 	for _, p := range paths {
-		num, ok := Number(p)
-		if !ok {
-			t.Fatalf("allocated path %q carries no number", p)
-		}
+		num := filepath.Base(p)[:4]
 		if other, dup := seen[num]; dup {
-			t.Fatalf("number %04d was allocated twice: %q and %q", num, other, p)
+			t.Fatalf("number %s was allocated twice: %q and %q", num, other, p)
 		}
 		seen[num] = p
 	}

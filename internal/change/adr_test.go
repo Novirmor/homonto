@@ -103,7 +103,7 @@ func TestContinuedPresetOwesAnADRForItsDecision(t *testing.T) {
 		t.Fatalf("the ADR assignment scope = %v, want one allocated path", write.WriteScope.Paths)
 	}
 	rel := write.WriteScope.Paths[0]
-	if n, ok := adr.Number(rel); !ok || n != 1 {
+	if !strings.HasPrefix(filepath.Base(rel), "0001-") {
 		t.Fatalf("the ADR path %q is not the first four-digit number", rel)
 	}
 	if !strings.Contains(write.Prompt, "## Consequences") {

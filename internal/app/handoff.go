@@ -2,14 +2,12 @@ package app
 
 import (
 	"context"
-	"fmt"
 	"path/filepath"
 
 	"github.com/noviopenworks/homonto/internal/artifact"
-	"github.com/noviopenworks/homonto/internal/checkpoint"
 	"github.com/noviopenworks/homonto/internal/handoff"
 	"github.com/noviopenworks/homonto/internal/identity"
-	"github.com/noviopenworks/homonto/internal/registration"
+	"github.com/noviopenworks/homonto/internal/portable"
 	"github.com/noviopenworks/homonto/internal/workspace"
 	"github.com/noviopenworks/homonto/internal/workspacecfg"
 )
@@ -57,7 +55,7 @@ func (a *App) PreparePortable(ctx context.Context, id identity.WorkID) error {
 // fail loudly — it attaches the work to the wrong repository and every
 // assignment after that is issued against the wrong tree.
 func (a *App) ProposeAttachMappings(ctx context.Context) ([]AttachProposal, error) {
-	cp, err := a.checkpoint()
+	cp, err := a.portable.Checkpoint()
 	if err != nil {
 		return nil, err
 	}
@@ -88,7 +86,7 @@ func (a *App) Attach(ctx context.Context, mappings []AttachMapping, force bool) 
 			RepositoryID: m.RepositoryID, Path: m.Path,
 		})
 	}
-	stateRoot, err := stateRoot()
+	stateRoot, err := portable.StateRoot()
 	if err != nil {
 		return err
 	}
@@ -111,7 +109,7 @@ func (a *App) Attach(ctx context.Context, mappings []AttachMapping, force bool) 
 // can advance it: `homonto next` reports no active work, on a machine that
 // just attached one.
 func (a *App) resumeAttached(ctx context.Context) error {
-	cp, err := a.checkpoint()
+	cp, err := a.portable.Checkpoint()
 	if err != nil {
 		return err
 	}
@@ -124,25 +122,6 @@ func (a *App) resumeAttached(ctx context.Context) error {
 	}
 	_, err = a.engine.Resume(ctx, cp.Work.ID, cp.Work.Name, artifact.Phase(cp.Work.Phase))
 	return err
-}
-
-// checkpoint reads this workspace's committed checkpoint.
-func (a *App) checkpoint() (checkpoint.Checkpoint, error) {
-	cp, _, err := checkpoint.Load(handoff.CheckpointPath(a.controlRoot()))
-	if err != nil {
-		return checkpoint.Checkpoint{}, fmt.Errorf("app: read the checkpoint: %w", err)
-	}
-	return cp, nil
-}
-
-// stateRoot is this machine's platform state base, where non-Git member
-// registrations and leases are slotted.
-func stateRoot() (string, error) {
-	root, err := registration.StateRoot()
-	if err != nil {
-		return "", fmt.Errorf("app: resolve the platform state root: %w", err)
-	}
-	return root, nil
 }
 
 // controlRoot is the control repository's absolute path.

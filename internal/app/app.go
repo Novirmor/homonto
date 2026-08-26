@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/noviopenworks/homonto/internal/archive"
@@ -20,6 +21,7 @@ import (
 	"github.com/noviopenworks/homonto/internal/identity"
 	"github.com/noviopenworks/homonto/internal/lease"
 	"github.com/noviopenworks/homonto/internal/operation"
+	"github.com/noviopenworks/homonto/internal/portable"
 	"github.com/noviopenworks/homonto/internal/protocol"
 	"github.com/noviopenworks/homonto/internal/snapshot"
 	"github.com/noviopenworks/homonto/internal/store"
@@ -54,6 +56,7 @@ type App struct {
 	env     *Environment
 
 	leases      *lease.Manager
+	portable    *portable.Manager
 	assignments *assignment.Store
 	artifacts   *artifact.Service
 	findings    *finding.Service
@@ -148,9 +151,10 @@ func build(ctx context.Context, root string, cfg workspacecfg.Config, db *store.
 	if err != nil {
 		return nil, err
 	}
+	portableManager := portable.NewManager(root, cfg, runner, snapshotStore, leases)
 	return &App{
 		root: root, cfg: cfg, db: db, engine: engine, changes: changes, env: env,
-		leases: leases, assignments: services.assignments, artifacts: services.artifacts,
+		leases: leases, portable: portableManager, assignments: services.assignments, artifacts: services.artifacts,
 		findings: services.findings, evidence: services.evidence, archive: services.archive,
 		guard: services.guard, now: now,
 	}, nil
@@ -339,6 +343,26 @@ func (a *App) Config() workspacecfg.Config { return a.cfg }
 // Engine exposes the Task engine for callers that drive it directly.
 func (a *App) Engine() *task.Engine { return a.engine }
 
+// Exactly one top-level Task or Change may be active in a workspace;
+// parallelism happens inside that work through subagents and worktrees.
+var ErrWorkAlreadyActive = errors.New("app: a work is already active in this workspace")
+
+func (a *App) requireNoActiveWork(ctx context.Context) error {
+	active, err := a.activeWorks(ctx)
+	if err != nil {
+		return err
+	}
+	if len(active) == 0 {
+		return nil
+	}
+	names := make([]string, 0, len(active))
+	for _, work := range active {
+		names = append(names, work.Name)
+	}
+	return fmt.Errorf("app: %s is already active; finish or abandon it first: %w",
+		strings.Join(names, ", "), ErrWorkAlreadyActive)
+}
+
 // StartTask creates a new Task and returns its state.
 //
 // Starting is also when the work becomes THIS machine's: the members are
@@ -348,7 +372,7 @@ func (a *App) StartTask(ctx context.Context, in task.StartInput) (task.State, er
 	if err := a.requireNoActiveWork(ctx); err != nil {
 		return task.State{}, err
 	}
-	if err := a.requireCleanMembers(ctx); err != nil {
+	if err := a.portable.RequireCleanMembers(ctx); err != nil {
 		return task.State{}, err
 	}
 	st, err := a.engine.Start(ctx, in)
@@ -359,7 +383,7 @@ func (a *App) StartTask(ctx context.Context, in task.StartInput) (task.State, er
 	if err != nil {
 		return st, err
 	}
-	if err := a.activate(ctx, st.WorkID, WorkTask, st.Name,
+	if err := a.portable.Activate(ctx, st.WorkID, string(WorkTask), st.Name,
 		artifact.TasksDir+"/"+st.Name+".md", string(phase)); err != nil {
 		return st, err
 	}
@@ -378,7 +402,7 @@ func (a *App) AbandonTask(ctx context.Context, id identity.WorkID) (task.State, 
 	if err != nil {
 		return st, err
 	}
-	return st, a.deactivate(ctx, id)
+	return st, a.portable.Deactivate(ctx, id)
 }
 
 // WorkKind names which engine owns a work id.
@@ -464,9 +488,9 @@ func (a *App) recordProgress(ctx context.Context, id identity.WorkID) error {
 		return err
 	}
 	if terminal {
-		return a.deactivate(ctx, id)
+		return a.portable.Deactivate(ctx, id)
 	}
-	return a.refreshCheckpoint(ctx, id, phase)
+	return a.portable.RefreshCheckpoint(ctx, id, phase)
 }
 
 // phaseOf reports a work's current phase and whether it is over.
@@ -540,7 +564,7 @@ func (a *App) Decide(ctx context.Context, in decision.Submission) (Status, error
 		if err != nil {
 			return changeStatus(st), err
 		}
-		if err := a.activate(ctx, st.WorkID, WorkChange, st.Name,
+		if err := a.portable.Activate(ctx, st.WorkID, string(WorkChange), st.Name,
 			artifact.ChangesDir+"/"+st.Name+".md", st.Step); err != nil {
 			return changeStatus(st), err
 		}

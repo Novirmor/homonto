@@ -83,7 +83,7 @@ func (a *App) StartChangePreflight(ctx context.Context, in change.PreflightInput
 	if err := a.requireNoActiveWork(ctx); err != nil {
 		return change.PreflightState{}, protocol.NextResponse{}, err
 	}
-	if err := a.requireCleanMembers(ctx); err != nil {
+	if err := a.portable.RequireCleanMembers(ctx); err != nil {
 		return change.PreflightState{}, protocol.NextResponse{}, err
 	}
 	return a.changes.StartPreflight(ctx, in)
@@ -111,7 +111,7 @@ func (a *App) AbandonChange(ctx context.Context, id identity.WorkID) (change.Sta
 	if err != nil {
 		return st, err
 	}
-	return st, a.deactivate(ctx, id)
+	return st, a.portable.Deactivate(ctx, id)
 }
 
 // ReconcileChange checks a change's recorded step against the world.

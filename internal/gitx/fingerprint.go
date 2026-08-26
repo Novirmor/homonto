@@ -48,11 +48,17 @@ func (s *Service) SourceFingerprint(ctx context.Context, dir, commit string) (fi
 // almost by definition, since Homonto has just written a workflow
 // document into it.
 func (s *Service) TreeFingerprint(ctx context.Context, dir, commit string) (fingerprint.Digest, error) {
-	tree, err := revParse(ctx, s.runner, dir, commit, "^{tree}")
+	return TreeFingerprint(ctx, s.runner, dir, commit)
+}
+
+// TreeFingerprint digests a commit tree through a runner. Portable
+// checkpoints use it without needing Git's journal-backed service.
+func TreeFingerprint(ctx context.Context, runner Runner, dir, commit string) (fingerprint.Digest, error) {
+	tree, err := revParse(ctx, runner, dir, commit, "^{tree}")
 	if err != nil {
 		return "", err
 	}
-	root, err := treeRecords(ctx, s.runner, dir, tree)
+	root, err := treeRecords(ctx, runner, dir, tree)
 	if err != nil {
 		return "", err
 	}

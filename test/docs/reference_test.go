@@ -53,7 +53,7 @@ func commandPaths() []string {
 // rather than representative. It is the one document that claims to list
 // everything, so it is the one that must.
 func TestCLIReferenceDocumentsEveryCommand(t *testing.T) {
-	reference := read(t, "docs/guides/cli-reference.md")
+	reference := read(t, "docs/reference/cli.md")
 	for _, path := range commandPaths() {
 		if !strings.Contains(reference, "homonto "+path) {
 			t.Errorf("the CLI reference does not document `homonto %s`", path)
@@ -90,14 +90,19 @@ func TestNoGuideMentionsARemovedCommand(t *testing.T) {
 
 // TestEveryDocumentedWorkflowExists guards the two workflow names.
 func TestEveryDocumentedWorkflowExists(t *testing.T) {
-	readme := read(t, "README.md")
+	readme := strings.Join(strings.Fields(read(t, "README.md")), " ")
 	for _, want := range []string{
-		"plan → do → done",
-		"open → design → build → verify → close",
-		"Claude Code", "OpenCode", "Linux and macOS",
+		"plan -> do -> done",
+		"open -> design -> build -> verify -> close",
 	} {
 		if !strings.Contains(readme, want) {
 			t.Errorf("the README does not describe %q", want)
+		}
+	}
+	hosts := read(t, "docs/reference/host-integration.md")
+	for _, want := range []string{"Claude Code", "OpenCode", "Linux and macOS"} {
+		if !strings.Contains(hosts, want) {
+			t.Errorf("the host integration reference does not describe %q", want)
 		}
 	}
 }
@@ -128,11 +133,11 @@ func TestEveryInternalLinkResolves(t *testing.T) {
 // this wrong in a guide sends someone looking in a directory that has not
 // existed since the layout was corrected.
 func TestArtifactPathsAreDocumentedCorrectly(t *testing.T) {
-	getting := read(t, "docs/guides/getting-started.md")
+	getting := read(t, "docs/tutorials/first-task.md")
 	if !strings.Contains(getting, "docs/homonto/tasks/archive/") {
 		t.Error("getting started does not say where an archived task lands")
 	}
-	config := read(t, "docs/guides/configuration.md")
+	config := read(t, "docs/reference/configuration.md")
 	if !strings.Contains(config, ".homonto/config.toml") {
 		t.Error("the configuration guide does not name the manifest")
 	}

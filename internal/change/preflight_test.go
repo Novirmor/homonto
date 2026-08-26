@@ -21,6 +21,7 @@ import (
 	"github.com/noviopenworks/homonto/internal/pathclass"
 	"github.com/noviopenworks/homonto/internal/protocol"
 	"github.com/noviopenworks/homonto/internal/store"
+	"github.com/noviopenworks/homonto/internal/task"
 	"github.com/noviopenworks/homonto/internal/verify"
 	"github.com/noviopenworks/homonto/internal/workspacecfg"
 )
@@ -32,7 +33,7 @@ var testNow = time.Date(2026, 8, 25, 9, 30, 0, 0, time.UTC)
 type scriptedEnv struct {
 	control   Member
 	members   []Member
-	base      Baseline
+	base      task.Baseline
 	sources   []fingerprint.Digest
 	diff      []pathclass.DiffEntry
 	classes   *workspacecfg.PathClasses
@@ -43,9 +44,12 @@ type scriptedEnv struct {
 	tripwireCandidate string
 }
 
+// Keep the Change tests on the shared workspace contract.
+var _ task.Environment = (*scriptedEnv)(nil)
+
 func (s *scriptedEnv) Control(context.Context) (Member, error)   { return s.control, nil }
 func (s *scriptedEnv) Members(context.Context) ([]Member, error) { return s.members, nil }
-func (s *scriptedEnv) Fingerprints(context.Context) (Baseline, error) {
+func (s *scriptedEnv) Fingerprints(context.Context) (task.Baseline, error) {
 	return s.base, nil
 }
 
@@ -160,7 +164,7 @@ func newHarnessAt(t *testing.T, root string) *harness {
 	env := &scriptedEnv{
 		control: control,
 		members: []Member{control},
-		base: Baseline{
+		base: task.Baseline{
 			Membership:  fingerprint.Bytes("members", []byte("v1")),
 			PathClass:   fingerprint.Bytes("paths", []byte("v1")),
 			CheckConfig: fingerprint.Bytes("checks", []byte("v1")),

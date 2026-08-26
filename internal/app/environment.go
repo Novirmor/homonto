@@ -47,6 +47,9 @@ type Environment struct {
 	lookup        func(string) (string, bool)
 }
 
+// Environment serves both workflow engines without an adapter.
+var _ task.Environment = (*Environment)(nil)
+
 // NewEnvironment binds an environment to a validated workspace.
 // snapshotStore is the non-Git snapshot store root the snapshot service
 // was opened on; the environment needs it to locate a captured base

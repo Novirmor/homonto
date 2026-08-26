@@ -17,8 +17,8 @@ import (
 	"github.com/noviopenworks/homonto/internal/guard"
 	"github.com/noviopenworks/homonto/internal/identity"
 	"github.com/noviopenworks/homonto/internal/pathclass"
-	"github.com/noviopenworks/homonto/internal/protocol"
 	"github.com/noviopenworks/homonto/internal/store"
+	"github.com/noviopenworks/homonto/internal/task"
 	"github.com/noviopenworks/homonto/internal/verify"
 )
 
@@ -36,54 +36,11 @@ var (
 	ErrResultRejected = errors.New("change: assignment result rejected by the write boundary")
 )
 
-// Member is one confirmed repository. It mirrors the Task engine's member
-// because both engines ask the workspace the same questions.
-type Member struct {
-	ID   identity.RepositoryID
-	Path string
-	Git  bool
-}
-
-// Unit is one parallel piece of a Change's implementation work, with the
-// same shape and the same rules as the Task engine's partition.
-type Unit struct {
-	Label       string
-	Member      Member
-	Items       []int
-	Integration bool
-	Base        string
-	Root        string
-	Scope       []string
-	Prompt      string
-}
-
-// Result is one finished implementation unit.
-type Result struct {
-	ActionID identity.ActionID
-	Unit     Unit
-	Material protocol.Material
-}
-
-// Environment is the workspace-shaped knowledge the Change engine needs.
-// It is the Task engine's environment plus the diff a preset's scope count
-// is measured from — the one question only a Change asks.
-type Environment interface {
-	Control(ctx context.Context) (Member, error)
-	Members(ctx context.Context) ([]Member, error)
-	Fingerprints(ctx context.Context) (Baseline, error)
-	Partition(ctx context.Context, workID identity.WorkID, items []artifact.Item) ([]Unit, error)
-	Isolate(ctx context.Context, workID identity.WorkID, actionID identity.ActionID, unit Unit) (Unit, error)
-	Integrations(ctx context.Context, workID identity.WorkID, results []Result) ([]Unit, error)
-	SourceFingerprints(ctx context.Context, workID identity.WorkID) ([]fingerprint.Digest, error)
-	RunChecks(ctx context.Context, workID identity.WorkID) (verify.Set, error)
-	ResultDiff(ctx context.Context, action protocol.Action, unit Unit) (guard.ResultDiff, error)
-	// WorkspaceDiff returns the integrated workspace diff against the
-	// change's immutable work baseline — the input to the preset scope
-	// count.
-	WorkspaceDiff(ctx context.Context, workID identity.WorkID, baseline []fingerprint.Digest) ([]pathclass.DiffEntry, error)
-	// Matchers resolves a member's path-class matcher by member path.
-	Matchers(member string) (*pathclass.Matcher, error)
-}
+// Member, Unit, and Result retain the Change vocabulary while sharing the
+// Task workspace values required by the unified environment contract.
+type Member = task.Member
+type Unit = task.Partition
+type Result = task.Result
 
 // Clock is the engine's time source; tests inject a fixed one.
 type Clock func() time.Time
@@ -97,7 +54,7 @@ type Engine struct {
 	evidence    *verify.Store
 	archive     *archive.Service
 	guard       *guard.Guard
-	env         Environment
+	env         task.Environment
 	now         Clock
 }
 
@@ -110,7 +67,7 @@ type Dependencies struct {
 	Evidence    *verify.Store
 	Archive     *archive.Service
 	Guard       *guard.Guard
-	Environment Environment
+	Environment task.Environment
 	Now         Clock
 }
 
@@ -354,9 +311,12 @@ func firstStepOfPhase(p Path, phase artifact.Phase) (Step, error) {
 // including the immutable work baseline the preset scope count measures
 // from.
 func (e *Engine) captureBaseline(ctx context.Context, st State) (Baseline, error) {
-	baseline, err := e.env.Fingerprints(ctx)
+	workspace, err := e.env.Fingerprints(ctx)
 	if err != nil {
 		return Baseline{}, err
+	}
+	baseline := Baseline{
+		Membership: workspace.Membership, PathClass: workspace.PathClass, CheckConfig: workspace.CheckConfig,
 	}
 	docs, err := e.documentDigests(ctx, st)
 	if err != nil {

@@ -12,11 +12,11 @@ import (
 	"github.com/noviopenworks/homonto/internal/workspacecfg"
 )
 
-// Validate checks a unit before an assignment is issued for it. An empty
+// validateUnit checks a unit before an assignment is issued for it. An empty
 // scope is refused here rather than silently issued, because the protocol
 // reads an empty scope as read-only and the guard would then accept
 // nothing — a failure that would surface much later and much less clearly.
-func (u Unit) Validate() error {
+func validateUnit(u Unit) error {
 	if u.Label == "" {
 		return fmt.Errorf("change: unit label must not be empty")
 	}
@@ -64,7 +64,7 @@ func (e *Engine) readOnly(st State, step Step, role protocol.Role, member Member
 
 // implementer builds a writable implementer assignment for one unit.
 func (e *Engine) implementer(st State, step Step, u Unit, reason string) (assignment.Spec, error) {
-	if err := u.Validate(); err != nil {
+	if err := validateUnit(u); err != nil {
 		return assignment.Spec{}, err
 	}
 	phase, err := Phase(st.Path, step)

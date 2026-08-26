@@ -85,9 +85,12 @@ func (e *Engine) Reconcile(ctx context.Context, id identity.WorkID) (State, []In
 // currentBaseline reads today's fingerprints for a change, keeping the
 // immutable work baseline it was confirmed with.
 func (e *Engine) currentBaseline(ctx context.Context, st State) (Baseline, error) {
-	baseline, err := e.env.Fingerprints(ctx)
+	workspace, err := e.env.Fingerprints(ctx)
 	if err != nil {
 		return Baseline{}, err
+	}
+	baseline := Baseline{
+		Membership: workspace.Membership, PathClass: workspace.PathClass, CheckConfig: workspace.CheckConfig,
 	}
 	docs, err := e.documentDigests(ctx, st)
 	if err != nil {

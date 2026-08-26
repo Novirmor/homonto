@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/noviopenworks/homonto/internal/artifact"
 	"github.com/noviopenworks/homonto/internal/change"
 	"github.com/noviopenworks/homonto/internal/fingerprint"
 	"github.com/noviopenworks/homonto/internal/gitx"
@@ -13,134 +12,8 @@ import (
 	"github.com/noviopenworks/homonto/internal/identity"
 	"github.com/noviopenworks/homonto/internal/pathclass"
 	"github.com/noviopenworks/homonto/internal/protocol"
-	"github.com/noviopenworks/homonto/internal/task"
-	"github.com/noviopenworks/homonto/internal/verify"
 	"github.com/noviopenworks/homonto/internal/workspacecfg"
 )
-
-// changeEnvironment adapts the workspace Environment to the Change
-// engine's contract.
-//
-// The two engines ask the same questions in their own vocabularies, and
-// the adapter is a translation rather than a second implementation: the
-// alternative — having one engine import the other's types — would couple
-// the Task workflow to the Change workflow for no reason beyond saving
-// this file.
-type changeEnvironment struct{ env *Environment }
-
-func (c changeEnvironment) Control(ctx context.Context) (change.Member, error) {
-	m, err := c.env.Control(ctx)
-	return toChangeMember(m), err
-}
-
-func (c changeEnvironment) Members(ctx context.Context) ([]change.Member, error) {
-	members, err := c.env.Members(ctx)
-	if err != nil {
-		return nil, err
-	}
-	out := make([]change.Member, len(members))
-	for i, m := range members {
-		out[i] = toChangeMember(m)
-	}
-	return out, nil
-}
-
-func (c changeEnvironment) Fingerprints(ctx context.Context) (change.Baseline, error) {
-	base, err := c.env.Fingerprints(ctx)
-	if err != nil {
-		return change.Baseline{}, err
-	}
-	return change.Baseline{
-		Membership:  base.Membership,
-		PathClass:   base.PathClass,
-		CheckConfig: base.CheckConfig,
-	}, nil
-}
-
-func (c changeEnvironment) Partition(ctx context.Context, workID identity.WorkID, items []artifact.Item) ([]change.Unit, error) {
-	units, err := c.env.Partition(ctx, workID, items)
-	if err != nil {
-		return nil, err
-	}
-	out := make([]change.Unit, len(units))
-	for i, u := range units {
-		out[i] = toChangeUnit(u)
-	}
-	return out, nil
-}
-
-func (c changeEnvironment) Isolate(ctx context.Context, workID identity.WorkID, actionID identity.ActionID, unit change.Unit) (change.Unit, error) {
-	isolated, err := c.env.Isolate(ctx, workID, actionID, toTaskPartition(unit))
-	if err != nil {
-		return change.Unit{}, err
-	}
-	return toChangeUnit(isolated), nil
-}
-
-func (c changeEnvironment) Integrations(ctx context.Context, workID identity.WorkID, results []change.Result) ([]change.Unit, error) {
-	converted := make([]task.Result, len(results))
-	for i, r := range results {
-		converted[i] = task.Result{
-			ActionID: r.ActionID, Partition: toTaskPartition(r.Unit), Material: r.Material,
-		}
-	}
-	units, err := c.env.Integrations(ctx, workID, converted)
-	if err != nil {
-		return nil, err
-	}
-	out := make([]change.Unit, len(units))
-	for i, u := range units {
-		out[i] = toChangeUnit(u)
-	}
-	return out, nil
-}
-
-func (c changeEnvironment) SourceFingerprints(ctx context.Context, workID identity.WorkID) ([]fingerprint.Digest, error) {
-	return c.env.SourceFingerprints(ctx, workID)
-}
-
-func (c changeEnvironment) RunChecks(ctx context.Context, workID identity.WorkID) (verify.Set, error) {
-	return c.env.RunChecks(ctx, workID)
-}
-
-func (c changeEnvironment) ResultDiff(ctx context.Context, action protocol.Action, unit change.Unit) (guard.ResultDiff, error) {
-	return c.env.ResultDiff(ctx, action, toTaskPartition(unit))
-}
-
-// WorkspaceDiff returns the integrated workspace diff against the change's
-// immutable work baseline — the input to the preset scope count.
-func (c changeEnvironment) WorkspaceDiff(ctx context.Context, workID identity.WorkID, baseline []fingerprint.Digest) ([]pathclass.DiffEntry, error) {
-	return c.env.WorkspaceDiff(ctx, workID, baseline)
-}
-
-// Matchers resolves a member's path-class matcher by member path.
-func (c changeEnvironment) Matchers(member string) (*pathclass.Matcher, error) {
-	return c.env.Matchers(member)
-}
-
-func toChangeMember(m task.Member) change.Member {
-	return change.Member{ID: m.ID, Path: m.Path, Git: m.Git}
-}
-
-func toTaskMember(m change.Member) task.Member {
-	return task.Member{ID: m.ID, Path: m.Path, Git: m.Git}
-}
-
-func toChangeUnit(p task.Partition) change.Unit {
-	return change.Unit{
-		Label: p.Label, Member: toChangeMember(p.Member), Items: p.Items,
-		Integration: p.Integration, Base: p.Base, Root: p.Root,
-		Scope: p.Scope, Prompt: p.Prompt,
-	}
-}
-
-func toTaskPartition(u change.Unit) task.Partition {
-	return task.Partition{
-		Label: u.Label, Member: toTaskMember(u.Member), Items: u.Items,
-		Integration: u.Integration, Base: u.Base, Root: u.Root,
-		Scope: u.Scope, Prompt: u.Prompt,
-	}
-}
 
 // WorkspaceDiff returns what changed across the workspace since a work
 // baseline, as path-class diff entries.

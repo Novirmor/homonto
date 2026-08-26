@@ -164,7 +164,7 @@ func (e *Engine) resultOf(ctx context.Context, act assignment.Action) (Result, b
 	if !ok {
 		return Result{}, false, nil
 	}
-	return Result{ActionID: act.ID, Unit: u, Material: impl.Material}, true, nil
+	return Result{ActionID: act.ID, Partition: u, Material: impl.Material}, true, nil
 }
 
 // openItems returns the change's checklist items that are not yet checked

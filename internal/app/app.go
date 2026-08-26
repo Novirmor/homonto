@@ -267,8 +267,7 @@ func buildStoreServices(ctx context.Context, db *store.DB, controlRoot string, n
 }
 
 // buildEngines assembles the Task and Change engines over the shared
-// store services. Both see the same stores through the same guard; they
-// differ only in the environment face each workflow speaks.
+// store services and workspace environment.
 func buildEngines(db *store.DB, services storeServices, env *Environment, now func() time.Time) (*task.Engine, *change.Engine, error) {
 	engine, err := task.NewEngine(task.Dependencies{
 		DB: db, Assignments: services.assignments, Artifacts: services.artifacts, Findings: services.findings,
@@ -280,7 +279,7 @@ func buildEngines(db *store.DB, services storeServices, env *Environment, now fu
 	changes, err := change.NewEngine(change.Dependencies{
 		DB: db, Assignments: services.assignments, Artifacts: services.artifacts, Findings: services.findings,
 		Evidence: services.evidence, Archive: services.archive, Guard: services.guard,
-		Environment: changeEnvironment{env: env}, Now: now,
+		Environment: env, Now: now,
 	})
 	if err != nil {
 		return nil, nil, err

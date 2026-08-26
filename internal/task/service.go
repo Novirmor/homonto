@@ -17,6 +17,7 @@ import (
 	"github.com/noviopenworks/homonto/internal/fingerprint"
 	"github.com/noviopenworks/homonto/internal/guard"
 	"github.com/noviopenworks/homonto/internal/identity"
+	"github.com/noviopenworks/homonto/internal/pathclass"
 	"github.com/noviopenworks/homonto/internal/protocol"
 	"github.com/noviopenworks/homonto/internal/store"
 	"github.com/noviopenworks/homonto/internal/verify"
@@ -79,6 +80,11 @@ type Environment interface {
 	// the host — which is exactly why the final-diff gate catches what the
 	// write hook missed.
 	ResultDiff(ctx context.Context, action protocol.Action, unit Partition) (guard.ResultDiff, error)
+	// WorkspaceDiff returns the integrated workspace diff against a work
+	// baseline for Change preset scope assessment.
+	WorkspaceDiff(ctx context.Context, workID identity.WorkID, baseline []fingerprint.Digest) ([]pathclass.DiffEntry, error)
+	// Matchers resolves a member's path-class matcher by member path.
+	Matchers(member string) (*pathclass.Matcher, error)
 }
 
 // Result is one finished implementation unit: which action produced it,

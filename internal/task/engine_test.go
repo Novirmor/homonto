@@ -18,6 +18,7 @@ import (
 	"github.com/noviopenworks/homonto/internal/fingerprint"
 	"github.com/noviopenworks/homonto/internal/guard"
 	"github.com/noviopenworks/homonto/internal/identity"
+	"github.com/noviopenworks/homonto/internal/pathclass"
 	"github.com/noviopenworks/homonto/internal/protocol"
 	"github.com/noviopenworks/homonto/internal/store"
 	"github.com/noviopenworks/homonto/internal/verify"
@@ -110,6 +111,14 @@ func (s *scriptedEnv) ResultDiff(_ context.Context, action protocol.Action, _ Pa
 		Root:    action.WorkingDirectory,
 		Changes: []guard.Change{{Path: "src/login.go", Kind: guard.ChangeModified}},
 	}, nil
+}
+
+func (s *scriptedEnv) WorkspaceDiff(context.Context, identity.WorkID, []fingerprint.Digest) ([]pathclass.DiffEntry, error) {
+	return nil, nil
+}
+
+func (s *scriptedEnv) Matchers(string) (*pathclass.Matcher, error) {
+	return pathclass.NewMatcher(nil)
 }
 
 // checkSet builds a verification set with a single check of the given

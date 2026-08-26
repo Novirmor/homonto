@@ -269,40 +269,16 @@ func TestValidatePatchParentChildOverlap(t *testing.T) {
 	}
 }
 
-func TestValidateScope(t *testing.T) {
-	patch := PatchManifest{SchemaVersion: 1, Operations: []PatchOp{
-		{Op: OpModify, Path: "src/a.go"},
-		{Op: OpRename, Path: "src/moved.go", OldPath: "src/old.go"},
-		{Op: OpAdd, Path: "docs/readme.md"},
-	}}
-	if err := ValidateScope(patch, nil); err != nil {
-		t.Fatalf("snapshot: empty scope must be unrestricted: %v", err)
+// TestScopeViolationError pins the error contract callers branch on with
+// errors.As: the message names every offending path and the error wraps
+// the ErrScopeViolation sentinel.
+func TestScopeViolationError(t *testing.T) {
+	sv := &ScopeViolationError{Paths: []string{"lib/a.go", "lib/b.go"}}
+	if !errors.Is(sv, ErrScopeViolation) {
+		t.Fatalf("snapshot: ScopeViolationError must wrap ErrScopeViolation: %v", sv)
 	}
-	if err := ValidateScope(patch, []string{"src", "docs"}); err != nil {
-		t.Fatalf("snapshot: multi-entry scope: %v", err)
-	}
-	if err := ValidateScope(patch, []string{"."}); err != nil {
-		t.Fatalf("snapshot: dot scope is the whole tree: %v", err)
-	}
-	err := ValidateScope(patch, []string{"lib"})
-	if !errors.Is(err, ErrScopeViolation) {
-		t.Fatalf("snapshot: want ErrScopeViolation, got %v", err)
-	}
-	var sv *ScopeViolationError
-	if !errors.As(err, &sv) || len(sv.Paths) != 4 {
-		t.Fatalf("snapshot: violation must list every offender (rename counts both paths): %v", err)
-	}
-	// A rename whose destination is in scope but whose source is not
-	// still violates.
-	err = ValidateScope(PatchManifest{SchemaVersion: 1, Operations: []PatchOp{
-		{Op: OpRename, Path: "in/x", OldPath: "out/x"},
-	}}, []string{"in"})
-	if !errors.Is(err, ErrScopeViolation) {
-		t.Fatalf("snapshot: rename source outside scope: %v", err)
-	}
-	for _, bad := range []string{"/abs", "../up"} {
-		if err := ValidateScope(patch, []string{bad}); !errors.Is(err, ErrInvalidPath) {
-			t.Fatalf("snapshot: scope %q: want ErrInvalidPath, got %v", bad, err)
-		}
+	want := "snapshot: changed paths outside declared scope: lib/a.go, lib/b.go"
+	if got := sv.Error(); got != want {
+		t.Fatalf("snapshot: Error() = %q, want %q", got, want)
 	}
 }

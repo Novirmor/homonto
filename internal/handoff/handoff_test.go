@@ -60,6 +60,32 @@ func assertConvergedHandoff(t *testing.T, m *machine) {
 	assertOpTerminal(t, db, "handoff.portable")
 }
 
+// TestCheckpointGenerationTracksStaleClone pins the stale-clone signal:
+// after PreparePortable hands the work over, a clone that last observed
+// generation 1 reads 2 — the advance the pending ownership gate will
+// consult (ADR 0030).
+func TestCheckpointGenerationTracksStaleClone(t *testing.T) {
+	m := newMachine(t)
+	gen, err := CheckpointGeneration(m.root)
+	if err != nil {
+		t.Fatalf("CheckpointGeneration: %v", err)
+	}
+	if gen != 1 {
+		t.Fatalf("generation = %d, want 1", gen)
+	}
+	m.close(t)
+	if err := m.prepare(); err != nil {
+		t.Fatalf("PreparePortable: %v", err)
+	}
+	gen, err = CheckpointGeneration(m.root)
+	if err != nil {
+		t.Fatalf("CheckpointGeneration after handoff: %v", err)
+	}
+	if gen != 2 {
+		t.Fatalf("generation = %d, want 2", gen)
+	}
+}
+
 func TestPreparePortableHappyPath(t *testing.T) {
 	m := newMachine(t)
 	m.close(t)

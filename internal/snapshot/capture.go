@@ -310,12 +310,6 @@ func digestBytes(data []byte) string {
 	return hex.EncodeToString(h.Sum(nil))
 }
 
-// DigestBlob returns the content digest of data under the blob domain —
-// the digest that names store blobs and manifest entry content. Use this
-// (not fingerprint.Bytes with the domain constant, which would
-// double-prefix) whenever content digests are composed by hand.
-func DigestBlob(data []byte) string { return digestBytes(data) }
-
 // streamToBlob digests r under the blob domain while copying it to a
 // store blob. When blobDir is "" nothing is written (digest-only walks).
 // The copy is capped at max bytes; a longer stream fails closed.

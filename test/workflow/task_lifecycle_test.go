@@ -222,8 +222,8 @@ func (w *workspace) next(t *testing.T) protocol.NextResponse {
 	if err != nil {
 		t.Fatalf("next: %v\n%s", err, out)
 	}
-	resp, err := protocol.DecodeNextResponse(strings.NewReader(out))
-	if err != nil {
+	var resp protocol.NextResponse
+	if err := json.Unmarshal([]byte(out), &resp); err != nil {
 		t.Fatalf("decode next response: %v\n%s", err, out)
 	}
 	if err := resp.Validate(); err != nil {

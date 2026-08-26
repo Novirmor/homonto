@@ -179,7 +179,7 @@ func TestWrappersContainOnlyTheProtocolLoop(t *testing.T) {
 					continue
 				}
 				body := read(t, root, f.Path)
-				total += len(Invocations(f.Path, body, req.binary()))
+				total += len(wrapperInvocations(f.Path, body, req.binary()))
 				if line, ok := containsOnlyWrapperVerbs(f.Path, body, req.binary()); !ok {
 					t.Errorf("%s invokes the binary outside the protocol loop: %q", f.Path, line)
 				}
@@ -231,7 +231,7 @@ func TestInstallIsIdempotent(t *testing.T) {
 	if err != nil {
 		t.Fatalf("PlanInstall: %v", err)
 	}
-	if plan.Changes() {
+	if planChanges(plan) {
 		for _, f := range plan.Files {
 			if f.Action.Writes() {
 				t.Errorf("re-installing would %s %s", f.Action, f.Path)
@@ -431,7 +431,7 @@ func TestObserveReportsWhatIsInstalled(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Observe: %v", err)
 	}
-	if !obs.Healthy() {
+	if !observationHealthy(obs) {
 		t.Fatalf("a fresh install is not healthy: %+v", obs)
 	}
 	if len(obs.Installed) != 2 {
@@ -451,7 +451,7 @@ func TestObserveReportsWhatIsInstalled(t *testing.T) {
 	if len(obs.Modified) != 1 || obs.Modified[0] != rel {
 		t.Fatalf("Modified = %v, want the edited command", obs.Modified)
 	}
-	if obs.Healthy() {
+	if observationHealthy(obs) {
 		t.Fatal("an integration with a modified file reported healthy")
 	}
 
@@ -478,6 +478,112 @@ func TestObserveReportsWhatIsInstalled(t *testing.T) {
 	if len(obs.Missing) != 1 || obs.Missing[0] != rel {
 		t.Fatalf("Missing = %v, want the removed command", obs.Missing)
 	}
+}
+
+// planChanges reports whether applying the plan would write anything.
+func planChanges(p Plan) bool {
+	for _, f := range p.Files {
+		if f.Action.Writes() {
+			return true
+		}
+	}
+	return len(p.Ignore) > 0
+}
+
+// observationHealthy reports whether the integration is installed and
+// untouched.
+func observationHealthy(o Observation) bool {
+	return len(o.Modified) == 0 && len(o.Missing) == 0 && len(o.Foreign) == 0
+}
+
+// wrapperVerbs are the only binary invocations a generated wrapper is
+// allowed to contain. The install tests assert this exactly: a wrapper
+// that learned a fifth verb has started to contain workflow policy, and
+// the whole point of a thin integration is that it cannot.
+func wrapperVerbs() []string {
+	return []string{"next", "report", "decide", "accept-edit", "host probe", "host guard"}
+}
+
+// jsArgsMarker opens the plugin's single invocation helper. Every call to
+// the binary goes through it, which is what makes the plugin's surface
+// checkable at all.
+const jsArgsMarker = "homonto($, ["
+
+// jsInvocations reads the argument arrays the plugin passes to the binary.
+func jsInvocations(body string) []string {
+	var out []string
+	rest := body
+	for {
+		idx := strings.Index(rest, jsArgsMarker)
+		if idx < 0 {
+			return out
+		}
+		rest = rest[idx+len(jsArgsMarker):]
+		end := strings.Index(rest, "]")
+		if end < 0 {
+			return out
+		}
+		var args []string
+		for _, field := range strings.Split(rest[:end], ",") {
+			field = strings.TrimSpace(field)
+			field = strings.Trim(field, `"'`)
+			if field != "" {
+				args = append(args, field)
+			}
+		}
+		out = append(out, strings.Join(args, " "))
+		rest = rest[end:]
+	}
+}
+
+// fencedInvocations reads the commands inside a markdown file's fenced
+// code blocks.
+func fencedInvocations(body, binary string) []string {
+	var out []string
+	inside := false
+	for _, line := range strings.Split(body, "\n") {
+		if strings.HasPrefix(strings.TrimSpace(line), "```") {
+			inside = !inside
+			continue
+		}
+		trimmed := strings.TrimSpace(line)
+		rest, ok := strings.CutPrefix(trimmed, binary+" ")
+		if !inside || !ok {
+			continue
+		}
+		out = append(out, strings.TrimSpace(rest))
+	}
+	return out
+}
+
+// wrapperInvocations returns every command a wrapper actually runs, as the
+// argument string following the binary. It reads INVOCATIONS rather than
+// mentions: a wrapper's prose names the binary constantly — in error
+// messages, in explanations — and a check that matched those would be
+// satisfied by rewording rather than by the wrapper staying thin.
+func wrapperInvocations(path, body, binary string) []string {
+	if strings.HasSuffix(path, ".js") || strings.HasSuffix(path, ".mjs") {
+		return jsInvocations(body)
+	}
+	return fencedInvocations(body, binary)
+}
+
+// containsOnlyWrapperVerbs reports whether every invocation in body runs
+// one of the allowed verbs.
+func containsOnlyWrapperVerbs(path, body, binary string) (string, bool) {
+	for _, invocation := range wrapperInvocations(path, body, binary) {
+		allowed := false
+		for _, verb := range wrapperVerbs() {
+			if invocation == verb || strings.HasPrefix(invocation, verb+" ") {
+				allowed = true
+				break
+			}
+		}
+		if !allowed {
+			return invocation, false
+		}
+	}
+	return "", true
 }
 
 func TestInstallRequestValidation(t *testing.T) {

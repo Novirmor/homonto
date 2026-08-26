@@ -345,9 +345,6 @@ func (a *App) Root() string { return a.root }
 // Config returns the workspace manifest.
 func (a *App) Config() workspacecfg.Config { return a.cfg }
 
-// Engine exposes the Task engine for callers that drive it directly.
-func (a *App) Engine() *task.Engine { return a.engine }
-
 // Exactly one top-level Task or Change may be active in a workspace;
 // parallelism happens inside that work through subagents and worktrees.
 var ErrWorkAlreadyActive = errors.New("app: a work is already active in this workspace")

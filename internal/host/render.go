@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io/fs"
-	"strings"
 	"text/template"
 
 	"github.com/noviopenworks/homonto/internal/workspacecfg"
@@ -162,103 +161,4 @@ func settingsPath(t Tool) (string, bool) {
 		return "", false
 	}
 	return ".claude/settings.json", true
-}
-
-// wrapperVerbs are the only binary invocations a generated wrapper is
-// allowed to contain. The install tests assert this exactly: a wrapper
-// that learned a fifth verb has started to contain workflow policy, and
-// the whole point of a thin integration is that it cannot.
-func wrapperVerbs() []string {
-	return []string{"next", "report", "decide", "accept-edit", "host probe", "host guard"}
-}
-
-// Invocations returns every command a wrapper actually runs, as the
-// argument string following the binary.
-//
-// It reads INVOCATIONS rather than mentions. A wrapper's prose names the
-// binary constantly — in error messages, in explanations — and a check
-// that matched those would be satisfied by rewording rather than by the
-// wrapper staying thin. Markdown wrappers invoke inside fenced code
-// blocks; the JavaScript plugin invokes through one helper that takes an
-// argument array.
-func Invocations(path, body, binary string) []string {
-	if strings.HasSuffix(path, ".js") || strings.HasSuffix(path, ".mjs") {
-		return jsInvocations(body)
-	}
-	return fencedInvocations(body, binary)
-}
-
-// fencedInvocations reads the commands inside a markdown file's fenced
-// code blocks.
-func fencedInvocations(body, binary string) []string {
-	var (
-		out    []string
-		inside bool
-	)
-	for _, line := range strings.Split(body, "\n") {
-		if strings.HasPrefix(strings.TrimSpace(line), "```") {
-			inside = !inside
-			continue
-		}
-		if !inside {
-			continue
-		}
-		trimmed := strings.TrimSpace(line)
-		rest, ok := strings.CutPrefix(trimmed, binary+" ")
-		if !ok {
-			continue
-		}
-		out = append(out, strings.TrimSpace(rest))
-	}
-	return out
-}
-
-// jsArgsMarker opens the plugin's single invocation helper. Every call to
-// the binary goes through it, which is what makes the plugin's surface
-// checkable at all.
-const jsArgsMarker = "homonto($, ["
-
-// jsInvocations reads the argument arrays the plugin passes to the binary.
-func jsInvocations(body string) []string {
-	var out []string
-	rest := body
-	for {
-		idx := strings.Index(rest, jsArgsMarker)
-		if idx < 0 {
-			return out
-		}
-		rest = rest[idx+len(jsArgsMarker):]
-		end := strings.Index(rest, "]")
-		if end < 0 {
-			return out
-		}
-		var args []string
-		for _, field := range strings.Split(rest[:end], ",") {
-			field = strings.TrimSpace(field)
-			field = strings.Trim(field, `"'`)
-			if field != "" {
-				args = append(args, field)
-			}
-		}
-		out = append(out, strings.Join(args, " "))
-		rest = rest[end:]
-	}
-}
-
-// containsOnlyWrapperVerbs reports whether every invocation in body runs
-// one of the allowed verbs.
-func containsOnlyWrapperVerbs(path, body, binary string) (string, bool) {
-	for _, invocation := range Invocations(path, body, binary) {
-		allowed := false
-		for _, verb := range wrapperVerbs() {
-			if invocation == verb || strings.HasPrefix(invocation, verb+" ") {
-				allowed = true
-				break
-			}
-		}
-		if !allowed {
-			return invocation, false
-		}
-	}
-	return "", true
 }

@@ -273,11 +273,6 @@ type Manifest struct {
 // store/blobs/sha256/<digest>.
 func BlobDir(store string) string { return path.Join(store, "blobs", "sha256") }
 
-// BlobPath returns the blob file path for digest under store.
-func BlobPath(store string, digest fingerprint.Digest) string {
-	return path.Join(BlobDir(store), string(digest))
-}
-
 // DigestManifest computes the root digest of a manifest's tree: a
 // domain-separated digest over schema version and entries sorted by path.
 // Repository metadata is deliberately not covered — equal trees digest

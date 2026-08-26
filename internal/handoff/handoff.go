@@ -54,13 +54,13 @@
 //
 // Homonto enforces process ownership, not a distributed lock: it cannot
 // prevent an offline stale clone from being modified. What the mechanisms
-// here provide is the material for refusal at the next observation — the
-// stale runtime's lease set is gone (PreparePortable released it), so
-// lease.ValidateAll fails with ErrLeaseMissing/ErrLeaseDrift, and
-// CheckpointGeneration reports a generation the stale runtime does not
-// hold. Consulting those before mutating is the stale-clone ownership
-// gate, and its wiring into the engine paths is pending (ADR 0030): the
-// checks exist and are tested; no shipped command runs them yet.
+// here provide is the material for refusal at the next observation:
+// PreparePortable released the stale runtime's lease set, and the
+// checkpoint generation that runtime observes has advanced.
+// CheckpointGeneration exposes the latter for the future ownership gate;
+// both facts are tested. Consulting the generation before mutating is
+// pending (ADR 0030): the check exists and is tested, but no shipped
+// command runs it yet.
 //
 // # Crash model
 //
@@ -128,6 +128,17 @@ func CheckpointPath(controlRoot string) string {
 // root. The database is never committed; it is rebuilt by attach.
 func RuntimeDBPath(controlRoot string) string {
 	return filepath.Join(controlRoot, ".homonto", "runtime.db")
+}
+
+// CheckpointGeneration reads the portable checkpoint generation. A future
+// stale-clone ownership gate will compare it with the generation it observed
+// before mutating.
+func CheckpointGeneration(controlRoot string) (uint64, error) {
+	cp, _, err := checkpoint.Load(CheckpointPath(controlRoot))
+	if err != nil {
+		return 0, fmt.Errorf("handoff: checkpoint generation of %s: %w", controlRoot, err)
+	}
+	return cp.Handoff.Generation, nil
 }
 
 // PortableRequest names the active work being prepared for portable

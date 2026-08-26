@@ -150,8 +150,8 @@ func TestSentinelNeverRolledBackAfterCommitMarker(t *testing.T) {
 		t.Errorf("lease: sentinel removed by recovery: %v", err)
 	}
 	// The foreign file is never overwritten or removed; lease rows were
-	// already applied, so recovery trusts the journal and ValidateAll is the
-	// layer that reports the divergence.
+	// already applied, so recovery trusts the journal and leaves the
+	// divergence on disk for the holder to observe.
 	foreign, err := ReadLease(e.target(3).Path)
 	if err != nil {
 		t.Fatalf("lease: read foreign lease: %v", err)

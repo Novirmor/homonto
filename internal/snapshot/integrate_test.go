@@ -10,7 +10,6 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/noviopenworks/homonto/internal/fingerprint"
 	"github.com/noviopenworks/homonto/internal/identity"
 	"github.com/noviopenworks/homonto/internal/operation"
 	"github.com/noviopenworks/homonto/internal/store"
@@ -156,7 +155,7 @@ func TestCreateAssignment(t *testing.T) {
 	// Blobs for every content entry are in the store.
 	for _, entry := range m.Entries {
 		if entry.Digest != "" {
-			if _, err := os.Stat(BlobPath(e.storePath, fingerprint.Digest(entry.Digest))); err != nil {
+			if _, err := os.Stat(filepath.Join(BlobDir(e.storePath), entry.Digest)); err != nil {
 				t.Fatalf("snapshot: blob of %s: %v", entry.Path, err)
 			}
 		}

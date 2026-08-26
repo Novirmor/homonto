@@ -31,9 +31,8 @@ then it is the commit point. The recovery policy per pending acquisition:
   removing exactly the leases whose content and tokens match the journal.
 - The expected tokens live in the operation payload and the per-effect
   payloads of the journal (the recorded token store), never in the
-  sentinel or any committed artifact; ValidateAll re-checks files against
-  them. PID liveness is diagnostic only — a reused pid can look alive, and
-  no timeout-based reclamation exists.
+  sentinel or any committed artifact. PID liveness is diagnostic only —
+  a reused pid can look alive, and no timeout-based reclamation exists.
 - A membership rescan during active work converges forward after a crash
   (the membership change completes) but rolls back on an in-process
   failure (the caller sees the partial change undone). The marker is

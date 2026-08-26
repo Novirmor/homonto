@@ -59,12 +59,11 @@ the redesign doc carries a historical-design banner.
 ## Consequences
 
 A stale clone can still mutate its local state after another machine
-takes over: `lease.ValidateAll` and `handoff.CheckpointGeneration` exist
-and are tested, but consulting them before mutations (the stale-clone
-ownership gate) is pending. That is a new refusal — product behavior
-needing its own tests and record — not a bug fix to slip in here. The
-handoff package doc now says exactly this instead of claiming the
-engines already consult them.
+takes over: `handoff.CheckpointGeneration` exists and is tested, but
+consulting it before mutations (the stale-clone ownership gate) is
+pending. That is a new refusal — product behavior needing its own tests
+and record — not a bug fix to slip in here. The handoff package doc now
+says exactly this instead of claiming the engines already consult it.
 
 The first workflow-only release cannot ship until the update path is
 either exposed with a compiled trust root or the release claims are

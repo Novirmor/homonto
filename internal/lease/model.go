@@ -66,13 +66,6 @@ var (
 	ErrInvalidRequest = errors.New("lease: invalid acquire request")
 	// ErrLeaseConflict: the lease slot is held by a different owner.
 	ErrLeaseConflict = errors.New("lease: conflicting lease held by another owner")
-	// ErrLeaseMissing: a lease file is gone.
-	ErrLeaseMissing = errors.New("lease: lease file missing")
-	// ErrLeaseDrift: the lease file differs from the journaled content.
-	ErrLeaseDrift = errors.New("lease: lease file differs from journaled content")
-	// ErrLeaseTokenMismatch: the journal records no matching token for the
-	// lease's path and operation.
-	ErrLeaseTokenMismatch = errors.New("lease: lease token does not match journal")
 )
 
 // Process is the provenance of the process that holds a lease: which host,
@@ -303,8 +296,7 @@ func (r AcquireRequest) Validate() error {
 }
 
 // Lease is one held lease as returned by AcquireAll. OpID and Seq link it to
-// the journal row whose payload carries the recovery token — the recorded
-// token store ValidateAll compares against.
+// the journal row whose payload carries the recovery token.
 type Lease struct {
 	Path    string
 	OpID    identity.OperationID

@@ -1,7 +1,6 @@
 package registration
 
 import (
-	"bytes"
 	"errors"
 	"fmt"
 	"io/fs"
@@ -30,8 +29,8 @@ const fileMode fs.FileMode = 0o644
 // slot is ErrInvalidRegistration, so a registration can never be written
 // where Locate would not find it. If any registration is already present
 // it is rejected — even when idle and even when it names the same
-// workspace; releasing or moving an existing claim is Detach's and
-// TakeOwnership's job, never a silent side effect of claiming.
+// workspace; releasing or moving an existing claim is Detach's job,
+// never a silent side effect of claiming.
 func Claim(path string, reg Registration) error {
 	if err := verifySlot(path, reg); err != nil {
 		return err
@@ -154,79 +153,6 @@ func Detach(path string, expected identity.WorkspaceID) error {
 		return fmt.Errorf("registration: remove %s: %w", path, err)
 	}
 	return nil
-}
-
-// TakeOwnership replaces the registration at path with next
-// (detach/attach --take-ownership semantics). It is refused outright
-// while a lease file exists next to the registration (the lease's
-// presence is statted here, never taken on the caller's word), and it is
-// refused when the existing registration names a different workspace:
-// only the owning workspace may retarget its own claim. The
-// read→check→write window is narrowed by re-reading the file immediately
-// before the write; if it changed in between, the takeover is retried
-// once and then fails with ErrRegistrationChanged.
-func TakeOwnership(path string, next Registration) error {
-	return takeOwnership(path, next, readRaw)
-}
-
-// takeOwnership is TakeOwnership with the raw-file read injected so the
-// change-between-reads path is deterministically testable.
-func takeOwnership(path string, next Registration, read func(string) ([]byte, error)) error {
-	data, err := next.Marshal()
-	if err != nil {
-		return err
-	}
-	var changed error
-	for attempt := 0; attempt < 2; attempt++ {
-		if err := leasePresent(path); err != nil {
-			return err
-		}
-		first, err := read(path)
-		if err != nil {
-			return err
-		}
-		existing, err := ReadBytes(first)
-		if err != nil {
-			return fmt.Errorf("%s: %w", path, err)
-		}
-		if existing.WorkspaceID != next.WorkspaceID {
-			return ownedByOther(path, existing)
-		}
-		second, err := read(path)
-		if err != nil {
-			return err
-		}
-		if !bytes.Equal(first, second) {
-			changed = fmt.Errorf("registration: %s: changed during takeover: %w", path, ErrRegistrationChanged)
-			continue
-		}
-		root, err := securefs.OpenRoot(filepath.Dir(path))
-		if err != nil {
-			return err
-		}
-		if err := root.WriteAtomic(filepath.Base(path), data, fileMode); err != nil {
-			root.Close()
-			return fmt.Errorf("registration: take ownership of %s: %w", path, err)
-		}
-		if err := root.Close(); err != nil {
-			return err
-		}
-		return nil
-	}
-	return changed
-}
-
-// leasePresent reports whether a lease file sits next to the registration
-// at path; its presence blocks takeover.
-func leasePresent(path string) error {
-	_, err := os.Stat(filepath.Join(filepath.Dir(path), leaseName))
-	if err == nil {
-		return fmt.Errorf("registration: %s: %s present: %w", path, leaseName, ErrLeaseActive)
-	}
-	if errors.Is(err, fs.ErrNotExist) {
-		return nil
-	}
-	return fmt.Errorf("registration: stat %s: %w", filepath.Join(filepath.Dir(path), leaseName), err)
 }
 
 // ownedByOther builds the rejection error naming the owning workspace.

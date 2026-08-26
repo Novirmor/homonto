@@ -102,9 +102,6 @@ type PlannedFile struct {
 	content []byte
 }
 
-// Content returns the bytes the file would be written with.
-func (f PlannedFile) Content() []byte { return append([]byte(nil), f.content...) }
-
 // Plan is everything installing one tool's integration would do.
 type Plan struct {
 	Target Target        `json:"target"`
@@ -126,16 +123,6 @@ func (p Plan) Conflicts() []PlannedFile {
 	return out
 }
 
-// Changes reports whether applying the plan would write anything.
-func (p Plan) Changes() bool {
-	for _, f := range p.Files {
-		if f.Action.Writes() {
-			return true
-		}
-	}
-	return len(p.Ignore) > 0
-}
-
 // Observation is what is actually installed for one tool.
 type Observation struct {
 	Target Target `json:"target"`
@@ -149,11 +136,6 @@ type Observation struct {
 	Missing []string `json:"missing,omitempty"`
 	// Foreign are files at managed paths that Homonto never wrote.
 	Foreign []string `json:"foreign,omitempty"`
-}
-
-// Healthy reports whether the integration is installed and untouched.
-func (o Observation) Healthy() bool {
-	return len(o.Modified) == 0 && len(o.Missing) == 0 && len(o.Foreign) == 0
 }
 
 // InstallRequest asks for one tool's integration.

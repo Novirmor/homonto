@@ -1,7 +1,7 @@
 // Package decision defines the persisted human-decision contract: the
 // schema of a decision gate an action presents, and the submission a human
-// answers it with. The wire form hosts see is protocol.DecisionSchema and
-// protocol.ValidateDecision; this package is the store-side twin the
+// answers it with. The wire form hosts see is protocol.DecisionSchema;
+// this package is the store-side twin the
 // assignment layer persists inside action specs and the engines validate
 // against. Conversion between the two spellings is engine work.
 //

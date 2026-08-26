@@ -51,20 +51,6 @@ func EncodeNextResponse(resp NextResponse) ([]byte, error) {
 	return append(b, '\n'), nil
 }
 
-// DecodeNextResponse strictly parses and validates a next response:
-// unknown fields and trailing JSON are rejected, and the envelope must
-// satisfy NextResponse.Validate (exact protocol version included).
-func DecodeNextResponse(r io.Reader) (NextResponse, error) {
-	var resp NextResponse
-	if err := decodeStrict(r, &resp); err != nil {
-		return NextResponse{}, err
-	}
-	if err := resp.Validate(); err != nil {
-		return NextResponse{}, err
-	}
-	return resp, nil
-}
-
 // DecodeSubmission strictly parses a report submission envelope. The
 // report payload stays raw; DecodeReport selects and validates the role
 // schema. Semantic checks against an action live in ValidateSubmission.
@@ -77,7 +63,8 @@ func DecodeSubmission(r io.Reader) (ReportSubmission, error) {
 }
 
 // DecodeDecisionSubmission strictly parses a decision submission
-// envelope. ValidateDecision checks it against the answered schema.
+// envelope. Checks against the answered schema are the engines' work
+// against the persisted decision contract.
 func DecodeDecisionSubmission(r io.Reader) (DecisionSubmission, error) {
 	var sub DecisionSubmission
 	if err := decodeStrict(r, &sub); err != nil {
@@ -158,16 +145,4 @@ func EncodeProbeResponse(resp ProbeResponse) ([]byte, error) {
 		return nil, fmt.Errorf("protocol: encode probe response: %w", err)
 	}
 	return encoded, nil
-}
-
-// DecodeProbeResponse strictly decodes a probe payload.
-func DecodeProbeResponse(r io.Reader) (ProbeResponse, error) {
-	var resp ProbeResponse
-	if err := decodeStrict(r, &resp); err != nil {
-		return ProbeResponse{}, err
-	}
-	if err := resp.Validate(); err != nil {
-		return ProbeResponse{}, err
-	}
-	return resp, nil
 }

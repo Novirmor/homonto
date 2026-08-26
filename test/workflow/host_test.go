@@ -8,11 +8,14 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/noviopenworks/homonto/internal/app"
 	"github.com/noviopenworks/homonto/internal/host"
 	"github.com/noviopenworks/homonto/internal/host/claude"
+	"github.com/noviopenworks/homonto/internal/identity"
 	"github.com/noviopenworks/homonto/internal/protocol"
+	"github.com/noviopenworks/homonto/internal/store"
 	"github.com/noviopenworks/homonto/internal/task"
 )
 
@@ -66,8 +69,8 @@ func TestProbeIsReadOnly(t *testing.T) {
 	if err != nil {
 		t.Fatalf("host probe: %v\n%s", err, out)
 	}
-	resp, err := protocol.DecodeProbeResponse(strings.NewReader(out))
-	if err != nil {
+	var resp protocol.ProbeResponse
+	if err := json.Unmarshal([]byte(out), &resp); err != nil {
 		t.Fatalf("decode probe: %v\n%s", err, out)
 	}
 	if resp.State != protocol.ProbeIdle {
@@ -88,8 +91,8 @@ func TestProbeReportsOneResumableWork(t *testing.T) {
 	if err != nil {
 		t.Fatalf("host probe: %v\n%s", err, out)
 	}
-	resp, err := protocol.DecodeProbeResponse(strings.NewReader(out))
-	if err != nil {
+	var resp protocol.ProbeResponse
+	if err := json.Unmarshal([]byte(out), &resp); err != nil {
 		t.Fatalf("decode probe: %v\n%s", err, out)
 	}
 	if resp.State != protocol.ProbeResumable || resp.Work == nil {
@@ -109,29 +112,41 @@ func TestProbeReportsOneResumableWork(t *testing.T) {
 // through the commands — which is exactly why the probe must still handle
 // it. A workspace can arrive here from a version that allowed it, or from
 // state repaired by hand, and the answer must be "you choose", never a
-// guess. The second work is therefore created through the engine
-// directly, bypassing the guard the command applies.
+// guess. The second work is therefore planted as a legacy task_states row
+// written straight into the runtime database, bypassing the guard the
+// command applies.
 func TestProbeRefusesToChooseBetweenTwoWorks(t *testing.T) {
 	w := newWorkspace(t)
 	if out, err := w.run(t, "task", "start", "fix-login"); err != nil {
 		t.Fatalf("task start: %v\n%s", err, out)
 	}
-	a, err := app.Open(context.Background(), app.Options{Root: w.root})
+	db, err := store.Open(context.Background(), filepath.Join(w.root, app.ControlDir, "runtime.db"), store.OpenOptions{})
 	if err != nil {
-		t.Fatalf("open the workspace: %v", err)
+		t.Fatalf("open runtime database: %v", err)
 	}
-	if _, err := a.Engine().Start(context.Background(), task.StartInput{Name: "fix-cache"}); err != nil {
-		a.Close()
-		t.Fatalf("plant a second task: %v", err)
+	second, err := identity.NewWorkID()
+	if err != nil {
+		db.Close()
+		t.Fatalf("NewWorkID: %v", err)
 	}
-	a.Close()
+	err = db.Update(context.Background(), func(tx *store.Tx) error {
+		_, err := tx.ExecContext(context.Background(), `
+			INSERT INTO task_states (work_id, name, step, generation, baseline, updated_at)
+			VALUES (?, ?, ?, ?, ?, ?)`,
+			second, "fix-cache", task.StepPlanExplore, 1, `{}`, time.Now().UTC().Format(time.RFC3339Nano))
+		return err
+	})
+	db.Close()
+	if err != nil {
+		t.Fatalf("plant legacy second task: %v", err)
+	}
 
 	out, err := w.run(t, "host", "probe", "--host", "opencode")
 	if err != nil {
 		t.Fatalf("host probe: %v\n%s", err, out)
 	}
-	resp, err := protocol.DecodeProbeResponse(strings.NewReader(out))
-	if err != nil {
+	var resp protocol.ProbeResponse
+	if err := json.Unmarshal([]byte(out), &resp); err != nil {
 		t.Fatalf("decode probe: %v\n%s", err, out)
 	}
 	if resp.State != protocol.ProbeAmbiguous || len(resp.Candidates) != 2 {
@@ -151,8 +166,8 @@ func TestProbeAnswersOutsideAWorkspace(t *testing.T) {
 	if err != nil {
 		t.Fatalf("host probe outside a workspace: %v\n%s", err, out)
 	}
-	resp, err := protocol.DecodeProbeResponse(strings.NewReader(out))
-	if err != nil {
+	var resp protocol.ProbeResponse
+	if err := json.Unmarshal([]byte(out), &resp); err != nil {
 		t.Fatalf("decode probe: %v\n%s", err, out)
 	}
 	if resp.State != protocol.ProbeUnavailable {

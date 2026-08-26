@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"sort"
-	"strings"
 )
 
 // Diff compares base against a fresh capture of resultDir and returns the
@@ -169,72 +168,6 @@ func pairRenames(deletes, adds []PatchOp) []PatchOp {
 		}
 	}
 	return ops
-}
-
-// ValidateScope checks that every path a patch touches falls inside the
-// declared scope (member-root-relative, mirroring gitx): an empty scope —
-// or a "" or "." entry — covers the whole tree; otherwise a path is
-// in scope when it equals an entry or lives under "entry/". Both the
-// operation path and a rename's source are checked. Violations return a
-// typed ScopeViolationError listing every offender.
-func ValidateScope(patch PatchManifest, scope []string) error {
-	normalized, err := normalizeScope(scope)
-	if err != nil {
-		return err
-	}
-	var offenders []string
-	for _, op := range patch.Operations {
-		if !inScope(op.Path, normalized) {
-			offenders = append(offenders, op.Path)
-		}
-		if op.OldPath != "" && !inScope(op.OldPath, normalized) {
-			offenders = append(offenders, op.OldPath)
-		}
-	}
-	if len(offenders) > 0 {
-		sort.Strings(offenders)
-		return &ScopeViolationError{Paths: offenders}
-	}
-	return nil
-}
-
-// normalizeScope cleans scope entries the way gitx does: backslashes fold
-// to slashes, "./" prefixes and trailing slashes drop, "" and "." mean
-// unrestricted, absolute paths and ".." components are rejected.
-func normalizeScope(scope []string) ([]string, error) {
-	out := make([]string, 0, len(scope))
-	for _, s := range scope {
-		s = strings.TrimSpace(s)
-		if s == "" || s == "." {
-			out = append(out, "")
-			continue
-		}
-		s = strings.ReplaceAll(s, "\\", "/")
-		s = strings.TrimPrefix(s, "./")
-		s = strings.TrimSuffix(s, "/")
-		if strings.HasPrefix(s, "/") {
-			return nil, &InvalidPathError{Path: s, Reason: "scope entries must be relative"}
-		}
-		for _, part := range strings.Split(s, "/") {
-			if part == ".." {
-				return nil, &InvalidPathError{Path: s, Reason: "scope entries must not escape the root"}
-			}
-		}
-		out = append(out, s)
-	}
-	return out, nil
-}
-
-func inScope(rel string, scope []string) bool {
-	if len(scope) == 0 {
-		return true
-	}
-	for _, s := range scope {
-		if s == "" || rel == s || strings.HasPrefix(rel, s+"/") {
-			return true
-		}
-	}
-	return false
 }
 
 // InvertPatch returns the patch that undoes p operation by operation:

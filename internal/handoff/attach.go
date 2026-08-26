@@ -51,8 +51,8 @@ type AttachRequest struct {
 // journaledLeaseTarget is one lease target in the attach payload. It
 // deliberately mirrors the lease package's acquisition payload shape
 // (repository_id/path/token JSON names): the operation journal IS the
-// recorded token store, and lease.ValidateAll reads tokens from whichever
-// operation the sentinel names — including this composed attach.
+// recorded token store for whichever operation the sentinel names —
+// including this composed attach.
 type journaledLeaseTarget struct {
 	RepositoryID identity.RepositoryID `json:"repository_id"`
 	Path         string                `json:"path"`

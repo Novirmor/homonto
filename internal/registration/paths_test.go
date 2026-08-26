@@ -17,23 +17,6 @@ func TestGitRegistrationPathLayout(t *testing.T) {
 	if want := filepath.Join("/ws/services/api/.git", "homonto", "lease.json"); got != want {
 		t.Errorf("GitLeasePath = %q, want %q", got, want)
 	}
-	if got := LeasePath(GitRegistrationPath("/ws/services/api/.git")); got != GitLeasePath("/ws/services/api/.git") {
-		t.Errorf("LeasePath(git registration) = %q, want %q", got, GitLeasePath("/ws/services/api/.git"))
-	}
-}
-
-func TestLeasePathIsSiblingOfRegistration(t *testing.T) {
-	cases := []string{
-		"/state/homonto/members/abc/registration.json",
-		"/ws/.git/homonto/registration.json",
-		"/deep/nested/path/registration.json",
-	}
-	for _, reg := range cases {
-		want := filepath.Join(filepath.Dir(reg), "lease.json")
-		if got := LeasePath(reg); got != want {
-			t.Errorf("LeasePath(%q) = %q, want %q", reg, got, want)
-		}
-	}
 }
 
 func TestNonGitRegistrationPathLayout(t *testing.T) {

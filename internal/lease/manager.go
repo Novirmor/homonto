@@ -33,8 +33,8 @@ func NewManager(db *store.DB, ops *operation.Manager) *Manager {
 
 // acquirePayload is the operation payload of an acquisition: the full
 // request echo plus one random recovery token per target. The journaled
-// payload IS the recorded token store — ValidateAll and recovery read the
-// expected tokens from here, and recovery replays the same tokens.
+// payload IS the recorded token store — recovery reads the expected
+// state from here and replays the same tokens through the effects.
 type acquirePayload struct {
 	WorkspaceID identity.WorkspaceID `json:"workspace_id"`
 	WorkID      identity.WorkID      `json:"work_id"`
@@ -165,67 +165,6 @@ func (m *Manager) AcquireAll(ctx context.Context, req AcquireRequest) ([]Lease, 
 		return nil, fmt.Errorf("lease: acquire %s: %w", opID, err)
 	}
 	return leases, nil
-}
-
-// ValidateAll re-reads every lease file and checks, cheaply and without any
-// network access, that each one still matches its holder identity and that
-// its recovery token matches the token the journal records for that path and
-// operation. The first failing lease stops the pass.
-func (m *Manager) ValidateAll(ctx context.Context, leases []Lease) error {
-	// Load each distinct operation's payload once; the payload is the
-	// recorded token store.
-	tokensByOp := map[identity.OperationID]map[string]identity.Token{}
-	for _, l := range leases {
-		if _, ok := tokensByOp[l.OpID]; ok {
-			continue
-		}
-		tokens, err := m.journaledTokens(ctx, l.OpID)
-		if err != nil {
-			return err
-		}
-		tokensByOp[l.OpID] = tokens
-	}
-	for _, l := range leases {
-		content, err := readLeaseFile(l.Path)
-		if err != nil {
-			if errors.Is(err, fs.ErrNotExist) {
-				return fmt.Errorf("lease: validate %s: %w", l.Path, ErrLeaseMissing)
-			}
-			return fmt.Errorf("lease: validate %s: %w", l.Path, err)
-		}
-		if content != l.Content {
-			return fmt.Errorf("lease: validate %s: content differs from journaled content (workspace %s vs %s, work %s vs %s, generation %d vs %d): %w",
-				l.Path, content.WorkspaceID, l.Content.WorkspaceID,
-				content.WorkID, l.Content.WorkID, content.Generation, l.Content.Generation, ErrLeaseDrift)
-		}
-		want, ok := tokensByOp[l.OpID][l.Path]
-		if !ok {
-			return fmt.Errorf("lease: validate %s: journal of %s records no token for this path: %w",
-				l.Path, l.OpID, ErrLeaseTokenMismatch)
-		}
-		if want != content.RecoveryToken {
-			return fmt.Errorf("lease: validate %s: token does not match journal: %w", l.Path, ErrLeaseTokenMismatch)
-		}
-	}
-	return nil
-}
-
-// journaledTokens decodes the acquisition payload of opID into a path→token
-// map.
-func (m *Manager) journaledTokens(ctx context.Context, opID identity.OperationID) (map[string]identity.Token, error) {
-	rec, err := m.db.Operation(ctx, opID)
-	if err != nil {
-		return nil, fmt.Errorf("lease: validate: load journal of %s: %w", opID, err)
-	}
-	var p acquirePayload
-	if err := json.Unmarshal(rec.Payload, &p); err != nil {
-		return nil, fmt.Errorf("lease: validate: decode journal of %s: %w", opID, err)
-	}
-	tokens := make(map[string]identity.Token, len(p.Targets))
-	for _, t := range p.Targets {
-		tokens[t.Path] = t.Token
-	}
-	return tokens, nil
 }
 
 // ReleaseAll releases every lease: each removal is a journaled effect (so an

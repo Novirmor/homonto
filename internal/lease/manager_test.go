@@ -206,69 +206,6 @@ func TestAcquireAllConcurrentSameTargetsOneWinner(t *testing.T) {
 	}
 }
 
-func TestValidateAllHappyPath(t *testing.T) {
-	e := newEnv(t)
-	leases := e.acquire(t, e.allTargets())
-	if err := e.mgr.ValidateAll(context.Background(), leases); err != nil {
-		t.Fatalf("lease: validate: %v", err)
-	}
-}
-
-func TestValidateAllDetectsFileDrift(t *testing.T) {
-	otherWS, err := identity.NewWorkspaceID()
-	if err != nil {
-		t.Fatalf("lease: workspace id: %v", err)
-	}
-	otherWork, err := identity.NewWorkID()
-	if err != nil {
-		t.Fatalf("lease: work id: %v", err)
-	}
-	otherToken, err := identity.NewToken()
-	if err != nil {
-		t.Fatalf("lease: token: %v", err)
-	}
-	cases := []struct {
-		name   string
-		mutate func(content LeaseContent) LeaseContent
-	}{
-		{"workspace drift", func(c LeaseContent) LeaseContent { c.WorkspaceID = otherWS; return c }},
-		{"work drift", func(c LeaseContent) LeaseContent { c.WorkID = otherWork; return c }},
-		{"generation drift", func(c LeaseContent) LeaseContent { c.Generation = 2; return c }},
-		{"token drift", func(c LeaseContent) LeaseContent { c.RecoveryToken = otherToken; return c }},
-	}
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			e2 := newEnv(t)
-			ls := e2.acquire(t, e2.allTargets())
-			writeLeaseContent(t, ls[0].Path, tc.mutate(ls[0].Content))
-			if err := e2.mgr.ValidateAll(context.Background(), ls); !errors.Is(err, ErrLeaseDrift) {
-				t.Errorf("lease: ValidateAll error = %v, want ErrLeaseDrift", err)
-			}
-		})
-	}
-	t.Run("missing file", func(t *testing.T) {
-		e2 := newEnv(t)
-		ls := e2.acquire(t, e2.allTargets())
-		os.Remove(ls[0].Path)
-		if err := e2.mgr.ValidateAll(context.Background(), ls); !errors.Is(err, ErrLeaseMissing) {
-			t.Errorf("lease: ValidateAll error = %v, want ErrLeaseMissing", err)
-		}
-	})
-}
-
-func TestValidateAllRejectsForeignJournalLinkage(t *testing.T) {
-	e := newEnv(t)
-	leases := e.acquire(t, e.allTargets())
-	other, err := identity.NewOperationID()
-	if err != nil {
-		t.Fatalf("lease: operation id: %v", err)
-	}
-	foreign := Lease{Path: leases[0].Path, OpID: other, Seq: 1, Content: leases[0].Content}
-	if err := e.mgr.ValidateAll(context.Background(), []Lease{foreign}); err == nil {
-		t.Error("lease: ValidateAll accepted a lease whose journal does not record it")
-	}
-}
-
 func TestReleaseAllRemovesLeasesAndIsIdempotent(t *testing.T) {
 	e := newEnv(t)
 	leases := e.acquire(t, e.allTargets())
@@ -330,17 +267,6 @@ func TestReleaseAllRefusesForeignLease(t *testing.T) {
 	}
 }
 
-func TestValidateAfterRollBackFails(t *testing.T) {
-	e := newEnv(t)
-	leases := e.acquire(t, e.allTargets())
-	if err := e.mgr.ReleaseAll(context.Background(), leases); err != nil {
-		t.Fatalf("lease: release: %v", err)
-	}
-	if err := e.mgr.ValidateAll(context.Background(), leases); !errors.Is(err, ErrLeaseMissing) {
-		t.Errorf("lease: ValidateAll after release = %v, want ErrLeaseMissing", err)
-	}
-}
-
 // TestDeadProcessIsDiagnosticOnly pins the liveness contract: a lease whose
 // holder process is dead is still valid (PID liveness is diagnostic, never a
 // validation or takeover criterion), and a dead-pid lease still blocks
@@ -364,10 +290,6 @@ func TestDeadProcessIsDiagnosticOnly(t *testing.T) {
 			t.Errorf("lease: %s process reported alive despite dead pid %d", l.Path, l.Content.Process.PID)
 		}
 	}
-	// Liveness is not a validation criterion: the dead-pid leases validate.
-	if err := e.mgr.ValidateAll(context.Background(), leases); err != nil {
-		t.Errorf("lease: ValidateAll rejected dead-pid lease: %v", err)
-	}
 
 	// Takeover is still refused even though the holder is dead: another
 	// workspace acquiring the same targets fails, and the dead-pid leases
@@ -385,9 +307,6 @@ func TestDeadProcessIsDiagnosticOnly(t *testing.T) {
 		if _, err := ReadLease(l.Path); err != nil {
 			t.Errorf("lease: dead-pid lease %s disturbed by refused takeover: %v", l.Path, err)
 		}
-	}
-	if err := e.mgr.ValidateAll(context.Background(), leases); err != nil {
-		t.Errorf("lease: ValidateAll after refused takeover: %v", err)
 	}
 }
 

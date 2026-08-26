@@ -226,8 +226,8 @@ func compareEntries(want, got []Entry) error {
 	return nil
 }
 
-// Apply transforms stageDir from the tree named by patch.BaseDigest into
-// the tree named by patch.ResultDigest. It is idempotent and
+// applyPatch transforms stageDir from the tree named by patch.BaseDigest
+// into the tree named by patch.ResultDigest. It is idempotent and
 // conflict-safe in three phases:
 //
 //  1. Verify every operation's preimage — a path the operation expects
@@ -250,16 +250,12 @@ func compareEntries(want, got []Entry) error {
 //     ResultDigest (ErrResultMismatch otherwise) — the backstop that
 //     catches a stage that never was at BaseDigest (for example a delete
 //     whose path was already missing because the stage never held it).
+//     The revert path skips this final verification (verify=false): it
+//     applies inverse patches whose "result" tree has no manifest to
+//     digest against.
 //
 // A crash mid-apply converges on re-apply: applied operations skip, the
 // rest run — the property the journal's roll-forward recovery leans on.
-func Apply(ctx context.Context, stageDir, blobDir string, patch PatchManifest) error {
-	return applyPatch(ctx, stageDir, blobDir, patch, true)
-}
-
-// applyPatch is Apply without the final result verification when verify
-// is false — the revert path applies inverse patches whose "result" tree
-// has no manifest to digest against.
 func applyPatch(ctx context.Context, stageDir, blobDir string, patch PatchManifest, verify bool) error {
 	if err := ValidatePatch(patch); err != nil {
 		return fmt.Errorf("snapshot: apply patch: %w", err)

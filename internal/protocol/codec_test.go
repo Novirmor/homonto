@@ -103,6 +103,20 @@ func readGolden(t *testing.T, name string) []byte {
 	return b
 }
 
+// decodeNextResponse strictly decodes next-response bytes: strict parse,
+// then envelope validation (exact protocol version included).
+func decodeNextResponse(t *testing.T, b []byte) NextResponse {
+	t.Helper()
+	var resp NextResponse
+	if err := decodeStrict(bytes.NewReader(b), &resp); err != nil {
+		t.Fatal(err)
+	}
+	if err := resp.Validate(); err != nil {
+		t.Fatal(err)
+	}
+	return resp
+}
+
 func TestGoldenEncodeMatchesBytes(t *testing.T) {
 	for _, tt := range []struct {
 		name string
@@ -135,10 +149,7 @@ func TestGoldenDecodeRoundTrips(t *testing.T) {
 		{"next-complete.golden.json", goldenComplete()},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
-			got, err := DecodeNextResponse(bytes.NewReader(readGolden(t, tt.name)))
-			if err != nil {
-				t.Fatal(err)
-			}
+			got := decodeNextResponse(t, readGolden(t, tt.name))
 			if !reflect.DeepEqual(got, tt.resp) {
 				t.Errorf("decoded golden does not match the fixture:\n got:  %+v\n want: %+v", got, tt.resp)
 			}
@@ -155,10 +166,7 @@ func TestGoldenReencodeIsIdempotent(t *testing.T) {
 		"next-complete.golden.json",
 	} {
 		t.Run(name, func(t *testing.T) {
-			decoded, err := DecodeNextResponse(bytes.NewReader(readGolden(t, name)))
-			if err != nil {
-				t.Fatal(err)
-			}
+			decoded := decodeNextResponse(t, readGolden(t, name))
 			reencoded, err := EncodeNextResponse(decoded)
 			if err != nil {
 				t.Fatal(err)
@@ -177,10 +185,7 @@ func TestCompleteResponseCarriesEmptyActionsArray(t *testing.T) {
 	if !bytes.Contains(golden, []byte("\"actions\": []")) {
 		t.Errorf("complete golden must contain \"actions\": [], got:\n%s", golden)
 	}
-	resp, err := DecodeNextResponse(bytes.NewReader(golden))
-	if err != nil {
-		t.Fatal(err)
-	}
+	resp := decodeNextResponse(t, golden)
 	if resp.Actions == nil || len(resp.Actions) != 0 {
 		t.Errorf("complete response decoded nil or non-empty actions: %+v", resp.Actions)
 	}
@@ -201,11 +206,13 @@ func TestEncodeNextResponseNormalizesNilActions(t *testing.T) {
 func TestDecodeNextResponseRejectsBadVersionAndTrailing(t *testing.T) {
 	golden := readGolden(t, "next-complete.golden.json")
 	bumped := bytes.Replace(golden, []byte(`"protocol_version": 1`), []byte(`"protocol_version": 2`), 1)
-	if _, err := DecodeNextResponse(bytes.NewReader(bumped)); err == nil {
-		t.Error("DecodeNextResponse accepted a future protocol version")
+	var bumpedResponse NextResponse
+	if err := decodeStrict(bytes.NewReader(bumped), &bumpedResponse); err == nil && bumpedResponse.Validate() == nil {
+		t.Error("future protocol version accepted")
 	}
 	trailing := append(append([]byte{}, golden...), []byte(" {}")...)
-	if _, err := DecodeNextResponse(bytes.NewReader(trailing)); err == nil {
-		t.Error("DecodeNextResponse accepted trailing JSON")
+	var trailingResponse NextResponse
+	if err := decodeStrict(bytes.NewReader(trailing), &trailingResponse); err == nil {
+		t.Error("trailing JSON accepted")
 	}
 }

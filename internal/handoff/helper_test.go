@@ -486,21 +486,6 @@ func assertConvergedAttach(t *testing.T, root, stateRoot string, wsID identity.W
 
 	assertOpTerminal(t, db, "handoff.attach")
 
-	// Held leases validate against the journal that acquired them.
-	ops := operation.NewManager(db)
-	lmg := lease.NewManager(db, ops)
-	var held []lease.Lease
-	for _, p := range leasePaths {
-		content, err := lease.ReadLease(p)
-		if err != nil {
-			t.Fatalf("handoff: lease %s: %v", p, err)
-		}
-		held = append(held, lease.Lease{Path: p, OpID: sentinel.OperationID, Content: content})
-	}
-	if err := lmg.ValidateAll(ctx, held); err != nil {
-		t.Errorf("handoff: validate held leases: %v", err)
-	}
-
 	// The consumed checkpoint was committed to the control repository.
 	want := headSubject(t, runner, root)
 	if want != fmt.Sprintf("homonto: attach %d", gen) {

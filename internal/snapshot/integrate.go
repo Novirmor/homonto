@@ -228,7 +228,7 @@ func (s *Service) CreateAssignment(ctx context.Context, req AssignmentRequest) (
 // it. This is not journaled: the diff is a pure function of the work
 // tree's current state plus idempotent, atomic file writes, so an
 // interrupted run simply recomputes. Scope enforcement of the produced
-// patch is the engine's call (ValidateScope).
+// patch is the engine's call (gitx scope validation).
 func (s *Service) DiffResult(ctx context.Context, a Assignment) (PatchManifest, error) {
 	base, err := readManifestFile(a.ManifestPath)
 	if err != nil {

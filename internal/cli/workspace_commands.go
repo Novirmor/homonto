@@ -3,7 +3,7 @@ package cli
 import (
 	"strings"
 
-	"github.com/noviopenworks/homonto/internal/app"
+	"github.com/noviopenworks/homonto/internal/initws"
 	"github.com/noviopenworks/homonto/internal/workspacecfg"
 	"github.com/spf13/cobra"
 )
@@ -29,7 +29,7 @@ func initCmd() *cobra.Command {
 				return err
 			}
 			if discover {
-				found, err := app.Discover(cmd.Context(), root, members, nil)
+				found, err := initws.Discover(cmd.Context(), root, members, nil)
 				if err != nil {
 					return err
 				}
@@ -47,7 +47,7 @@ func initCmd() *cobra.Command {
 				}
 				return nil
 			}
-			cfg, err := app.Init(cmd.Context(), app.InitInput{
+			cfg, err := initws.Init(cmd.Context(), initws.InitInput{
 				Root: root, Workflow: workspacecfg.Workflow(workflow), Members: members,
 			})
 			if err != nil {

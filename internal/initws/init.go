@@ -1,4 +1,5 @@
-package app
+// Package initws creates and discovers workspace roots before they can be opened.
+package initws
 
 import (
 	"context"
@@ -12,6 +13,11 @@ import (
 	"github.com/noviopenworks/homonto/internal/identity"
 	"github.com/noviopenworks/homonto/internal/workspace"
 	"github.com/noviopenworks/homonto/internal/workspacecfg"
+)
+
+const (
+	controlDir   = ".homonto"
+	manifestName = "config.toml"
 )
 
 // ErrAlreadyInitialized reports a root that is already a workspace.
@@ -89,7 +95,7 @@ func Init(ctx context.Context, in InitInput) (workspacecfg.Config, error) {
 		return workspacecfg.Config{}, fmt.Errorf("app: workflow %q must be %q or %q",
 			in.Workflow, workspacecfg.WorkflowTask, workspacecfg.WorkflowChange)
 	}
-	manifestPath := filepath.Join(root, ControlDir, ManifestName)
+	manifestPath := filepath.Join(root, controlDir, manifestName)
 	if _, err := os.Stat(manifestPath); err == nil {
 		return workspacecfg.Config{}, fmt.Errorf("app: %s exists: %w", manifestPath, ErrAlreadyInitialized)
 	} else if !errors.Is(err, fs.ErrNotExist) {
@@ -122,7 +128,7 @@ func Init(ctx context.Context, in InitInput) (workspacecfg.Config, error) {
 		return workspacecfg.Config{}, err
 	}
 	if err := os.MkdirAll(filepath.Dir(manifestPath), 0o755); err != nil {
-		return workspacecfg.Config{}, fmt.Errorf("app: create %s: %w", ControlDir, err)
+		return workspacecfg.Config{}, fmt.Errorf("app: create %s: %w", controlDir, err)
 	}
 	if err := os.WriteFile(manifestPath, encoded, 0o644); err != nil {
 		return workspacecfg.Config{}, fmt.Errorf("app: write %s: %w", manifestPath, err)
@@ -130,8 +136,7 @@ func Init(ctx context.Context, in InitInput) (workspacecfg.Config, error) {
 	return cfg, nil
 }
 
-// confirmMembers resolves the human-confirmed member paths into
-// candidates.
+// confirmMembers resolves the human-confirmed member paths into candidates.
 func confirmMembers(ctx context.Context, root string, paths []string, git gitx.Runner) ([]workspace.Candidate, error) {
 	if len(paths) == 0 {
 		return nil, nil
@@ -202,4 +207,20 @@ func buildConfig(root string, workflow workspacecfg.Workflow, members []workspac
 		})
 	}
 	return cfg, nil
+}
+
+// resolveRoot turns a possibly-empty root into an absolute clean path.
+func resolveRoot(root string) (string, error) {
+	if root == "" {
+		wd, err := os.Getwd()
+		if err != nil {
+			return "", fmt.Errorf("app: resolve working directory: %w", err)
+		}
+		root = wd
+	}
+	abs, err := filepath.Abs(root)
+	if err != nil {
+		return "", fmt.Errorf("app: resolve %s: %w", root, err)
+	}
+	return filepath.Clean(abs), nil
 }

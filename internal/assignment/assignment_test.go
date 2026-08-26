@@ -691,4 +691,19 @@ func TestSplitRepairActionsKeepsAssignmentsOrderedAndUsesLastDecision(t *testing
 	if rest[0].Step != "first" || rest[1].Step != "second" {
 		t.Fatalf("rest steps = %q, %q; want first, second", rest[0].Step, rest[1].Step)
 	}
+
+	noDecision := []Action{
+		{Kind: protocol.KindAssignment, Step: "third"},
+		{Kind: protocol.KindAssignment, Step: "fourth"},
+	}
+	gate, rest = SplitRepairActions(noDecision)
+	if gate != nil {
+		t.Fatalf("no-decision gate = %p, want nil", gate)
+	}
+	if len(rest) != 2 {
+		t.Fatalf("no-decision rest has %d actions, want 2", len(rest))
+	}
+	if rest[0].Step != "third" || rest[1].Step != "fourth" {
+		t.Fatalf("no-decision rest steps = %q, %q; want third, fourth", rest[0].Step, rest[1].Step)
+	}
 }

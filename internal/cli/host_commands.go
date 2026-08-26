@@ -207,7 +207,7 @@ func hostInstallCmd(opener Opener) *cobra.Command {
 				return err
 			}
 			defer a.Close()
-			plans, err := a.PlanHostInstall(cmd.Context(), app.HostInstallOptions{
+			plans, err := a.PlanHostInstall(cmd.Context(), host.InstallOptions{
 				Tools: tools, Adopt: adopt, Commit: commit, Binary: binary,
 			})
 			if err != nil {

@@ -83,6 +83,21 @@ func TestDetectReportsPresence(t *testing.T) {
 	}
 }
 
+func TestPlanInstallsUsesDetectedTools(t *testing.T) {
+	root := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(root, ".claude"), 0o755); err != nil {
+		t.Fatalf("create Claude directory: %v", err)
+	}
+
+	plans, err := PlanInstalls(t.Context(), root, workspacecfg.WorkflowTask, InstallOptions{})
+	if err != nil {
+		t.Fatalf("PlanInstalls: %v", err)
+	}
+	if len(plans) != 1 || plans[0].Target.Tool != ToolClaude {
+		t.Fatalf("planned tools = %+v, want Claude only", plans)
+	}
+}
+
 // TestClaudeGetsOneSkillEntry pins the shape: one skill, one command that
 // does nothing but invoke it, and the hooks. Two entry points carrying
 // rules would be two places for a rule to hide.

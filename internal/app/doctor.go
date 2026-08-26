@@ -78,7 +78,7 @@ func (a *App) Doctor(ctx context.Context) (Report, error) {
 	}
 
 	// Host integrations: installed, drifted, or missing.
-	observations, err := a.ObserveHosts(ctx, HostInstallOptions{})
+	observations, err := a.ObserveHosts(ctx, "")
 	if err != nil {
 		report.add(SeverityWarning, fmt.Sprintf("the host integrations could not be read: %v", err), "")
 	}
@@ -162,7 +162,7 @@ type HostSummary struct {
 
 // Hosts summarizes the installed host integrations.
 func (a *App) Hosts(ctx context.Context) ([]HostSummary, error) {
-	observations, err := a.ObserveHosts(ctx, HostInstallOptions{})
+	observations, err := a.ObserveHosts(ctx, "")
 	if err != nil {
 		return nil, err
 	}

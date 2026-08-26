@@ -175,6 +175,19 @@ type InstallRequest struct {
 	Commit bool
 }
 
+// InstallOptions configure installing host integrations for a workspace.
+type InstallOptions struct {
+	// Tools names which host tools to install for. Empty means the tools
+	// already detected in the control repository.
+	Tools []string
+	// Adopt replaces generated files that were edited by hand.
+	Adopt bool
+	// Commit opts into committing the generated files.
+	Commit bool
+	// Binary overrides how the wrappers invoke Homonto.
+	Binary string
+}
+
 // Validate checks an install request.
 func (r InstallRequest) Validate() error {
 	if !r.Tool.Known() {

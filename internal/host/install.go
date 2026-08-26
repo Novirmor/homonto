@@ -10,6 +10,8 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+
+	"github.com/noviopenworks/homonto/internal/workspacecfg"
 )
 
 // ErrConflict reports a plan that would overwrite a file Homonto does not
@@ -50,6 +52,100 @@ func Detect(root string) ([]Target, error) {
 		}
 		info, err := os.Stat(filepath.Join(root, dir))
 		out = append(out, Target{Tool: tool, Dir: dir, Present: err == nil && info.IsDir()})
+	}
+	return out, nil
+}
+
+// PlanInstalls works out what installing the requested host tools would do.
+func PlanInstalls(ctx context.Context, controlRoot string, workflow workspacecfg.Workflow, opts InstallOptions) ([]Plan, error) {
+	service, err := NewService(controlRoot)
+	if err != nil {
+		return nil, err
+	}
+	tools, err := installTools(controlRoot, opts.Tools)
+	if err != nil {
+		return nil, err
+	}
+	plans := make([]Plan, 0, len(tools))
+	for _, tool := range tools {
+		plan, err := service.PlanInstall(ctx, InstallRequest{
+			Tool: tool, Workflow: workflow, Binary: opts.Binary, Adopt: opts.Adopt, Commit: opts.Commit,
+		})
+		if err != nil {
+			return nil, err
+		}
+		plans = append(plans, plan)
+	}
+	return plans, nil
+}
+
+// ApplyInstalls writes the host-install plans into the control repository.
+func ApplyInstalls(ctx context.Context, controlRoot string, plans []Plan) error {
+	service, err := NewService(controlRoot)
+	if err != nil {
+		return err
+	}
+	for _, plan := range plans {
+		if err := service.ApplyInstall(ctx, plan); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// ObserveInstalls reports the integrations installed for every detected tool.
+func ObserveInstalls(ctx context.Context, controlRoot string, workflow workspacecfg.Workflow, binary string) ([]Observation, error) {
+	service, err := NewService(controlRoot)
+	if err != nil {
+		return nil, err
+	}
+	targets, err := Detect(controlRoot)
+	if err != nil {
+		return nil, err
+	}
+	var out []Observation
+	for _, target := range targets {
+		if !target.Present {
+			continue
+		}
+		obs, err := service.Observe(ctx, target, InstallRequest{
+			Tool: target.Tool, Workflow: workflow, Binary: binary,
+		})
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, obs)
+	}
+	return out, nil
+}
+
+// installTools resolves which tools an install should target.
+func installTools(controlRoot string, requested []string) ([]Tool, error) {
+	if len(requested) > 0 {
+		out := make([]Tool, 0, len(requested))
+		for _, name := range requested {
+			tool := Tool(name)
+			if !tool.Known() {
+				return nil, fmt.Errorf("app: %q is not a supported host tool", name)
+			}
+			out = append(out, tool)
+		}
+		return out, nil
+	}
+	targets, err := Detect(controlRoot)
+	if err != nil {
+		return nil, err
+	}
+	var out []Tool
+	for _, target := range targets {
+		if target.Present {
+			out = append(out, target.Tool)
+		}
+	}
+	if len(out) == 0 {
+		return nil, fmt.Errorf(
+			"app: no host tool is in use here; name one with --tool (%s or %s)",
+			ToolClaude, ToolOpenCode)
 	}
 	return out, nil
 }

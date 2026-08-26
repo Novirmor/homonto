@@ -23,23 +23,6 @@ func (e *Engine) rebaselineSources(ctx context.Context, st *State) error {
 	return nil
 }
 
-// splitRepairActions separates the repair-limit decision from the repair
-// assignments of the current generation.
-func splitRepairActions(actions []assignment.Action) (*assignment.Action, []assignment.Action) {
-	var (
-		gate    *assignment.Action
-		repairs []assignment.Action
-	)
-	for i := range actions {
-		if actions[i].Kind == protocol.KindDecision {
-			gate = &actions[i]
-			continue
-		}
-		repairs = append(repairs, actions[i])
-	}
-	return gate, repairs
-}
-
 // previousRepairRounds counts repair assignments issued for this task in
 // any generation, including superseded ones. A repair that was
 // invalidated still happened.

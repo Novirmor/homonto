@@ -93,7 +93,7 @@ func (e *Engine) stepDoRepair(ctx context.Context, st State) (State, bool, error
 	if err != nil {
 		return st, false, err
 	}
-	gate, repairs := splitRepairActions(issued)
+	gate, repairs := assignment.SplitRepairActions(issued)
 
 	// An answered limit decision is the human's instruction; act on it.
 	if gate != nil && gate.State == assignment.StateSubmitted {

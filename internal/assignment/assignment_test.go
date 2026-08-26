@@ -671,3 +671,24 @@ func TestInvalidateLeavesAnsweredActionsAlone(t *testing.T) {
 		t.Fatalf("Invalidate(none): %v", err)
 	}
 }
+
+func TestSplitRepairActionsKeepsAssignmentsOrderedAndUsesLastDecision(t *testing.T) {
+	actions := []Action{
+		{Kind: protocol.KindAssignment, Step: "first"},
+		{Kind: protocol.KindDecision, Step: "first-decision"},
+		{Kind: protocol.KindAssignment, Step: "second"},
+		{Kind: protocol.KindDecision, Step: "last-decision"},
+	}
+
+	gate, rest := SplitRepairActions(actions)
+
+	if gate != &actions[3] {
+		t.Fatalf("gate = %p, want the last decision %p", gate, &actions[3])
+	}
+	if len(rest) != 2 {
+		t.Fatalf("rest has %d actions, want 2", len(rest))
+	}
+	if rest[0].Step != "first" || rest[1].Step != "second" {
+		t.Fatalf("rest steps = %q, %q; want first, second", rest[0].Step, rest[1].Step)
+	}
+}

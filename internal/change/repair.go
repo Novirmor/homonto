@@ -41,7 +41,7 @@ func (e *Engine) stepRepair(ctx context.Context, st State, step Step) (State, bo
 	if err != nil {
 		return st, false, err
 	}
-	gate, repairs := splitRepairActions(issued)
+	gate, repairs := assignment.SplitRepairActions(issued)
 
 	if gate != nil && gate.State == assignment.StateSubmitted {
 		return e.applyRepairDecision(ctx, st, step, *gate)
@@ -79,23 +79,6 @@ func (e *Engine) stepRepair(ctx context.Context, st State, step Step) (State, bo
 		}
 	}
 	return e.issueRepairRound(ctx, st, step)
-}
-
-// splitRepairActions separates the repair-limit decision from the repair
-// assignments of the current generation.
-func splitRepairActions(actions []assignment.Action) (*assignment.Action, []assignment.Action) {
-	var (
-		gate    *assignment.Action
-		repairs []assignment.Action
-	)
-	for i := range actions {
-		if actions[i].Kind == protocol.KindDecision {
-			gate = &actions[i]
-			continue
-		}
-		repairs = append(repairs, actions[i])
-	}
-	return gate, repairs
 }
 
 // previousRepairRounds counts repair assignments issued for this change in

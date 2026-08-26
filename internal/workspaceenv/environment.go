@@ -1,13 +1,10 @@
-// Package app is the composition root of the rewritten workflow: it opens
-// a workspace, wires every service the engines need, and implements the
-// workspace-shaped facts the engines deliberately do not know how to
-// compute for themselves.
+// Package workspaceenv implements the filesystem facts workflow engines need.
 //
 // Nothing here decides workflow policy. The Task engine sequences and
 // gates; this package answers its questions about the repository on disk —
 // who the members are, what the current fingerprints are, where an
 // isolation area goes, what the checks actually printed.
-package app
+package workspaceenv
 
 import (
 	"context"

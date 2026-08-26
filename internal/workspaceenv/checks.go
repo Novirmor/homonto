@@ -1,5 +1,5 @@
 // Checks and observed evidence: source digests, check runs, and result diffs.
-package app
+package workspaceenv
 
 import (
 	"context"

@@ -1,5 +1,5 @@
 // Integration areas: combining parallel results into one per member.
-package app
+package workspaceenv
 
 import (
 	"context"

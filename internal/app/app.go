@@ -29,6 +29,7 @@ import (
 	"github.com/noviopenworks/homonto/internal/update"
 	"github.com/noviopenworks/homonto/internal/verify"
 	"github.com/noviopenworks/homonto/internal/workspacecfg"
+	"github.com/noviopenworks/homonto/internal/workspaceenv"
 )
 
 // ControlDir is the control-plane directory inside the workspace root.
@@ -53,7 +54,7 @@ type App struct {
 	db      *store.DB
 	engine  *task.Engine
 	changes *change.Engine
-	env     *Environment
+	env     *workspaceenv.Environment
 
 	leases      *lease.Manager
 	portable    *portable.Manager
@@ -143,7 +144,7 @@ func build(ctx context.Context, root string, cfg workspacecfg.Config, db *store.
 	if err != nil {
 		return nil, err
 	}
-	env, err := NewEnvironment(root, cfg, git, runner, snap, snapshotStore)
+	env, err := workspaceenv.NewEnvironment(root, cfg, git, runner, snap, snapshotStore)
 	if err != nil {
 		return nil, err
 	}
@@ -272,7 +273,7 @@ func buildStoreServices(ctx context.Context, db *store.DB, controlRoot string, n
 
 // buildEngines assembles the Task and Change engines over the shared
 // store services and workspace environment.
-func buildEngines(db *store.DB, services storeServices, env *Environment, now func() time.Time) (*task.Engine, *change.Engine, error) {
+func buildEngines(db *store.DB, services storeServices, env *workspaceenv.Environment, now func() time.Time) (*task.Engine, *change.Engine, error) {
 	engine, err := task.NewEngine(task.Dependencies{
 		DB: db, Assignments: services.assignments, Artifacts: services.artifacts, Findings: services.findings,
 		Evidence: services.evidence, Archive: services.archive, Guard: services.guard, Environment: env, Now: now,
@@ -329,6 +330,13 @@ func resolveRoot(root string) (string, error) {
 		return "", fmt.Errorf("app: resolve %s: %w", root, err)
 	}
 	return filepath.Clean(abs), nil
+}
+
+func normalizePath(path string) string {
+	if path == "" {
+		return "."
+	}
+	return filepath.ToSlash(filepath.Clean(path))
 }
 
 // Close releases the workspace.

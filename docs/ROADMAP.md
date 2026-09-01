@@ -100,8 +100,9 @@ catalog now ships only homonto-native content
   Code + OpenCode locally; wiring it into CI needs GitHub **secrets** for live
   models. The render invariants it asserts already run on every push through
   the Docker E2E (`homonto-expanded`).
-- **Dogfooding onto in this repository.** Deferred to v1 by decision; this repo
-  is developed with Comet (see [personas](personas.md)).
+- **Dogfooding onto in this repository.** Deferred to v1 by decision; this
+  repo is developed directly on branches, with no external workflow stack
+  (see [personas](personas.md)).
 
 
 

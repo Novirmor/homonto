@@ -7,20 +7,13 @@ Durable rationale — why a thing is the way it is — lives in [`docs/adr/`](do
 When a document and the code disagree, the code wins and the document is wrong;
 fix it.
 
-## Two lanes
+## How work is done
 
-**Big development** — a new capability, a public API or schema change, or work
-that spans modules — runs through Comet. Its artifacts (proposals, delta specs,
-tasks, plans, verification reports) are working-tree scratch and are **never
-committed**; `openspec/` and `docs/superpowers/` are gitignored. See
-[`docs/agents/comet.md`](docs/agents/comet.md).
-
-**Everything else** — bug fixes, mechanical edits, doc updates, repetitive
-sweeps — is done directly on a branch with no ceremony. No change directory, no
-phase guards. The verification bar below still applies.
-
-Work moves up a lane when it turns out to change public API, storage schema, or
-behavior across modules. Say so and switch; do not quietly widen a direct edit.
+Directly on a branch, with no external workflow stack
+([ADR 0023](docs/adr/0023-develop-directly-without-comet.md)): focused
+commits, focused tests, and an ADR when a decision is owed (see below).
+There is no change directory and no phase machinery. The verification bar
+below always applies.
 
 ## What a change leaves behind
 

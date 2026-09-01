@@ -61,16 +61,11 @@ real verification pass.
 Development instructions live in [`../../AGENTS.md`](../../AGENTS.md), with
 detail in [`../agents/`](../agents/):
 
-- [`../agents/comet.md`](../agents/comet.md) — the Comet workflow used for big
-  development, and why its artifacts are not committed
-  ([ADR 0017](../adr/0017-stop-committing-workflow-artifacts.md)). Comet,
-  OpenSpec, and Superpowers are external tools the maintainers use; homonto
-  does not bundle them ([ADR 0015](../adr/0015-ship-only-onto-frameworks.md)).
 - [`../agents/okf.md`](../agents/okf.md) — grounding claims in OKF bundles.
 - [`../agents/verification.md`](../agents/verification.md) — the gate and the
   traps worth knowing.
 - [`../agents/adr.md`](../agents/adr.md) — when a decision is owed an ADR.
 
-See also [`../personas.md`](../personas.md) for why we build with Comet but
-ship onto, [`../adr/`](../adr/) for durable architecture decisions, and
+See also [`../personas.md`](../personas.md) for why onto is shipped but not
+self-used, [`../adr/`](../adr/) for durable architecture decisions, and
 [`../release-checklist.md`](../release-checklist.md) for the release gate.

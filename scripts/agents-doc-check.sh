@@ -63,7 +63,7 @@ for p in openspec docs/superpowers okf_bundle .superpowers; do
 done
 
 # 4. The docs AGENTS.md points at must actually be there.
-for p in docs/agents/comet.md docs/agents/okf.md docs/agents/verification.md \
+for p in docs/agents/okf.md docs/agents/verification.md \
          docs/agents/adr.md docs/adr; do
   [ -e "$p" ] || { echo "missing required doc: $p"; fails=$((fails + 1)); }
 done

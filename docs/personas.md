@@ -30,9 +30,9 @@ They drive the same spec-driven shape (propose → design → build → verify �
 archive) through skills and prose, without a binary gate: more flexible and
 portable, but nothing mechanically prevents skipping a step. **homonto no
 longer ships them**: the catalog carries onto and to plus the loose
-framework-agnostic skills, nothing else. This repository still uses Comet
-for its own development, from the maintainers' own setup rather than the
-catalog.
+framework-agnostic skills, nothing else. This repository no longer uses them
+either: development is direct — branches, tests, and ADRs
+([ADR 0023](adr/0023-develop-directly-without-comet.md)).
 
 ## What onto enforces (and what it doesn't)
 
@@ -55,14 +55,16 @@ is hardened against a real adversary.
 | The lightest structured coding flow, no gates, one plan artifact | **to** (needs its binary; excludes onto) |
 | A flexible, portable, prose-driven workflow with no binary gate | **Comet** / OpenSpec / Superpowers (external — not shipped by homonto) |
 
-## Why we build with Comet but ship onto
+## Why onto is shipped but not self-used
 
-Honesty matters here: **this repository is developed with Comet, not
-onto.** onto is a shipped-but-not-self-used product. That is a deliberate
-trade-off. Comet's prose-driven flexibility fits how this repo's
-maintainers work day to day, while onto's mechanical enforcement is the
-product we believe teams who *want* a can't-skip-a-step guarantee should
-reach for.
+Honesty matters here: **this repository is developed with no workflow stack
+at all — not onto, not an external one.** onto is a
+shipped-but-not-self-used product. That is a deliberate trade-off. The
+maintainers work directly on branches — commits, tests, ADRs
+([ADR 0023](adr/0023-develop-directly-without-comet.md)) — while onto's
+mechanical enforcement is the product we believe teams who *want* a
+can't-skip-a-step guarantee should reach for. Dogfooding onto here is
+deferred to v1 ([ROADMAP](ROADMAP.md)).
 
 The cost of not eating our own dog food is that onto misses the feedback
 loop that hardened the projector. We offset it two ways, both intentional.

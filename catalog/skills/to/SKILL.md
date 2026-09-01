@@ -14,6 +14,21 @@ file. The binary enforces no evidence gates: `to done --verified` records a
 self-asserted checkbox, so the verification rigor in `to-done` is the only
 verification there is. Do not treat the checkbox as a guarantee.
 
+## The tooling around you: homonto
+
+**homonto** is the declarative config projector that installed this
+framework: `[frameworks.to]` in `homonto.toml`, applied with
+`homonto apply`, is why `to` commands gate on an installed framework — the
+skills you route to were materialized by homonto. Three things to remember
+and nothing more: never hand-edit `.homonto/`, `to-state.yaml` outside `to`
+commands, or the projected `.opencode/` links (when projection looks wrong,
+`homonto status` and `homonto doctor` diagnose, `homonto apply` fixes); a
+sibling repository declared under `[repos]` never moves this workflow's
+files — `docs/tasks/` and all state stay in the config repository; and onto
+is the heavier sibling framework (evidence-gated open → design → build →
+verify → close) — a repository declares exactly one of the two, and wanting
+more ceremony mid-change is a scoping question, not a framework switch.
+
 The dispatcher does three things, in order, and never performs phase work
 itself.
 

@@ -41,6 +41,9 @@ func validate(c *Config) error {
 	if err := validateRemovedTools(c); err != nil {
 		return err
 	}
+	if err := validateRepos(c); err != nil {
+		return err
+	}
 	if err := validateModels(c); err != nil {
 		return err
 	}
@@ -76,6 +79,37 @@ func validateFrameworks(c *Config) error {
 	return nil
 }
 
+// validateRepos checks the shape of every [repos] entry: a plain name usable
+// as an identifier (later stages key per-repo state and plan labels on it),
+// a non-empty path, and no two names sharing one raw path. Existence and
+// git-worktree checks need the filesystem and run in Load, where the config
+// file's directory (the base for relative paths) is known.
+func validateRepos(c *Config) error {
+	names := sortedStringKeys(c.Repos)
+	for _, name := range names {
+		if name == "" || name == "." || name == ".." || strings.ContainsAny(name, `/\`) || name != filepath.Base(name) {
+			return fmt.Errorf("parse config: repos entry %q is not a plain name", name)
+		}
+		if err := validateKey("repos", name); err != nil {
+			return err
+		}
+		p := strings.TrimSpace(c.Repos[name])
+		if p == "" {
+			return fmt.Errorf("parse config: repos.%s has an empty path", name)
+		}
+		c.Repos[name] = p
+	}
+	seen := map[string]string{} // raw path -> first name
+	for _, name := range names {
+		p := c.Repos[name]
+		if prev, dup := seen[p]; dup {
+			return fmt.Errorf("parse config: repos.%s and repos.%s share path %q; one entry per repository", name, prev, p)
+		}
+		seen[p] = name
+	}
+	return nil
+}
+
 // validateRemovedTools fails closed on every declaration naming a tool whose
 // adapter was removed in v0.13.0 (Claude Code and the codex MCP pilot), with
 // an error that names the offending key and says what to do — the same
@@ -105,6 +139,17 @@ func validateRemovedTools(c *Config) error {
 }
 
 func sortedKeys(m map[string]any) []string {
+	out := make([]string, 0, len(m))
+	for k := range m {
+		out = append(out, k)
+	}
+	sort.Strings(out)
+	return out
+}
+
+// sortedStringKeys returns the map's keys in deterministic order, so a config
+// that fails validation names the same offender every run.
+func sortedStringKeys(m map[string]string) []string {
 	out := make([]string, 0, len(m))
 	for k := range m {
 		out = append(out, k)

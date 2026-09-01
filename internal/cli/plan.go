@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"sort"
 
 	"github.com/noviopenworks/homonto/internal/adapter"
 	"github.com/noviopenworks/homonto/internal/engine"
@@ -51,10 +52,18 @@ func planCmd() *cobra.Command {
 				setExitCode(planExitCode(plan.HasChanges(sets), len(repins), catalogStale))
 			}
 			if output == "json" {
-				return planJSON(cmd, sets, repins, e.Warnings)
+				return planJSON(cmd, sets, repins, e.Warnings, e.Cfg.RepoDirs())
 			}
 			for _, w := range e.Warnings {
 				cmd.Println("warn:", w)
+			}
+			// Declared [repos] context (ADR 0024 stage 1): the plan names
+			// every repository the config spans, even while projection still
+			// targets the config repo only — so a multi-repo setup reads as
+			// one, and the later cross-repo stages change what these lines
+			// precede, not the disclosure.
+			for _, line := range renderRepos(e.Cfg.RepoDirs()) {
+				cmd.Println(line)
 			}
 			if !plan.HasChanges(sets) && len(repins) == 0 {
 				if err := coverageComplete(e.Warnings); err != nil {
@@ -81,8 +90,9 @@ func planCmd() *cobra.Command {
 
 // planJSON emits the plan as a conservative machine-readable object: per-tool
 // visible changes as {action, key} only (never Old/New, which can carry
-// unresolved secret tokens), pending remote repins by name, and warnings.
-func planJSON(cmd *cobra.Command, sets []adapter.ChangeSet, repins []engine.RemoteRepin, warnings []string) error {
+// unresolved secret tokens), pending remote repins by name, declared repos by
+// name and resolved path, and warnings.
+func planJSON(cmd *cobra.Command, sets []adapter.ChangeSet, repins []engine.RemoteRepin, warnings []string, repos map[string]string) error {
 	type changeJSON struct {
 		Action string `json:"action"`
 		Key    string `json:"key"`
@@ -112,6 +122,16 @@ func planJSON(cmd *cobra.Command, sets []adapter.ChangeSet, repins []engine.Remo
 			Name string `json:"name"`
 		}{Name: r.Name})
 	}
+	reposOut := []struct {
+		Name string `json:"name"`
+		Path string `json:"path"`
+	}{}
+	for _, name := range sortedRepoNames(repos) {
+		reposOut = append(reposOut, struct {
+			Name string `json:"name"`
+			Path string `json:"path"`
+		}{Name: name, Path: repos[name]})
+	}
 	if warnings == nil {
 		warnings = []string{}
 	}
@@ -120,11 +140,38 @@ func planJSON(cmd *cobra.Command, sets []adapter.ChangeSet, repins []engine.Remo
 		Repins  []struct {
 			Name string `json:"name"`
 		} `json:"repins"`
+		Repos []struct {
+			Name string `json:"name"`
+			Path string `json:"path"`
+		} `json:"repos"`
 		Warnings []string `json:"warnings"`
-	}{Changes: setsOut, Repins: repinsOut, Warnings: warnings}, "", "  ")
+	}{Changes: setsOut, Repins: repinsOut, Repos: reposOut, Warnings: warnings}, "", "  ")
 	if err != nil {
 		return err
 	}
 	cmd.Println(string(b))
 	return nil
+}
+
+// renderRepos prints the declared-repos context block (ADR 0024 stage 1):
+// every repository the config spans, by name and resolved path, with the
+// disclosure that projection still targets the config repo only.
+func renderRepos(repos map[string]string) []string {
+	if len(repos) == 0 {
+		return nil
+	}
+	out := []string{"repos (projection still targets this config repo only; cross-repo effect is a later stage):"}
+	for _, name := range sortedRepoNames(repos) {
+		out = append(out, fmt.Sprintf("  %s  %s", name, repos[name]))
+	}
+	return out
+}
+
+func sortedRepoNames(repos map[string]string) []string {
+	names := make([]string, 0, len(repos))
+	for name := range repos {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	return names
 }

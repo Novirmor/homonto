@@ -174,6 +174,28 @@ source = "builtin:onto"
 scope  = "project"
 ```
 
+## Repos — `[repos]`
+
+Declares the other repositories this config operates across
+([ADR 0024](../adr/0024-multi-repo-designated-state-cross-repo-effect.md)):
+`name = "<path>"`, paths relative to the config file (absolute honored). The
+config repository itself is implicit and never listed. Every entry must exist
+and be a git worktree; two names may not resolve to one repository — all
+checked at load, fail-closed.
+
+```toml
+[repos]
+service-a = "../service-a"
+service-b = "../libs/service-b"
+```
+
+Stage 1 (this release) is declarative context: all state — `.homonto/`,
+onto's `docs/changes/`, `to`'s `docs/tasks/` — stays in the **config repo**
+(the designated place), `homonto plan` names every declared repo, `homonto
+doctor` reports each one's health, and `onto init` / `to init` state the
+designated-home scope. Cross-repo projection and cross-repo workflow changes
+are staged after it; nothing writes outside the config repo yet.
+
 Framework-declared commands and subagents project exactly like top-level
 ones. Do **not** also declare a framework's subagent in a `[subagents.*]`
 table; the names collide. `homonto update` re-materializes installed

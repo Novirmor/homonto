@@ -54,7 +54,7 @@ step "govulncheck ./..."
 # Pin the toolchain for the tool build too: with GOTOOLCHAIN=auto, x/vuln's own
 # go.mod can select a toolchain older than this module's pin, and a govulncheck
 # built that way cannot parse the pinned toolchain's stdlib sources.
-GOTOOLCHAIN=go1.26.5 go run golang.org/x/vuln/cmd/govulncheck@latest ./...
+GOTOOLCHAIN=go1.26.6 go run golang.org/x/vuln/cmd/govulncheck@latest ./...
 
 step "triple-binary Docker E2E (five suites incl. release-packaging smoke)"
 ./scripts/docker-test.sh

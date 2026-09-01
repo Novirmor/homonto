@@ -23,9 +23,9 @@ jobs:
 
       - uses: actions/setup-go@v5
         with:
-          # Match go.mod's pinned toolchain (go1.26.5); see the note in ci.yml —
+          # Match go.mod's pinned toolchain (go1.26.6); see the note in ci.yml —
           # an older Go lets govulncheck downgrade to go1.25 and fail the gate.
-          go-version: "1.26.5"
+          go-version: "1.26.6"
 
       # Guard: never ship a tag that does not pass the COMPLETE gate. This is the
       # same scripts/gate.sh that CI and local rehearsal run — race, mod-tidy,

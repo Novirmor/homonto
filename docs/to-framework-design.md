@@ -95,12 +95,12 @@ checks, and `version` prints plain text):
 |---|---|
 | `to init` | Scaffold `docs/tasks/` in a repo. |
 | `to new <name> [--repo <declared-name>]` | Create a change: state YAML + empty `plan.md`. Selected repo names are recorded in the config repo; only an active change blocks a name. |
-| `to status` | All active changes and their phases. Read-only, config-independent. |
+| `to status` | All active changes and their phases; scoped changes include their selected aliases. Read-only. |
 | `to phase <name>` | Advance the change one phase forward. |
 | `to done <name> --verified [--evidence "<text>"]` | Mark done and archive to `docs/tasks/archive/<date>-<name>/`. A scoped change also requires clean, determinable Git state for the config repo and every selected declared repo. |
 | `to abandon <name>` | Terminal exit without done. |
 | `to handoff <name>` | Compact context-recovery pack (phase, plan head + complete unchecked task contracts, final check, bounded notes, safe next skill) for resuming after compaction. Read-only, config-independent. |
-| `to doctor [--quiet]` | Workspace health: invalid state, wedged terminal-but-active changes, missing plans, incomplete `Files:`/`Change:`/`Verify:` task contracts or `Final Verify:`, and version skew. Findings are diagnostic, not phase gates. `--quiet` is exit-code-only — the enforcement hook primitive. Read-only, config-independent. |
+| `to doctor [--quiet]` | Workspace health: invalid state, wedged terminal-but-active changes, missing plans, incomplete `Files:`/`Change:`/`Verify:` task contracts or `Final Verify:`, version skew, and unavailable selected repos for active scoped changes. Findings are diagnostic, not phase gates. `--quiet` is exit-code-only — the enforcement hook primitive. Read-only. |
 | `to version` | Print the release-stamped binary version as plain text. |
 
 Crash safety: `done`/`abandon` write terminal state then archive; re-running

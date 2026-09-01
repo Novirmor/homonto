@@ -13,7 +13,8 @@ real file state.
 
 Most commands take `--dir <root>` (default `.`) to select the workspace
 root. Mutating commands require the onto framework to be installed by
-homonto; read-only ones never read `homonto.toml` and never write.
+homonto. Read-only commands do not write; `onto dirt <change>` reads
+`homonto.toml` only when that change records selected declared repos.
 
 ## General flow
 
@@ -41,7 +42,7 @@ There is no `archive` phase.
 layout, idempotently. It reports created vs. skipped paths and never
 overwrites existing content.
 
-**`onto new <name> [--workflow full|fix|tweak]`** creates
+**`onto new <name> [--workflow full|fix|tweak] [--repo <declared-name>]`** creates
 `docs/changes/<name>/` with:
 
 - `onto-state.yaml` at **phase `open`**, `workflow: full` (the default);
@@ -50,6 +51,10 @@ overwrites existing content.
 
 It requires the framework installed, refuses to clobber an existing change,
 and validates that the name is kebab-case with no path traversal.
+
+`--repo` is repeatable and records selected names from `[repos]` in
+`onto-state.yaml`; the config repo is implicit. It never creates workflow
+files in sibling repos. Omit it for the existing single-repo behavior.
 
 ## Advancing — `onto advance <change> [--to build]`
 
@@ -100,12 +105,12 @@ below still applies to each step it walks.
    refuses its next `advance` until the missing token is recorded — that is
    the unanswered gate being re-asked, not a fault.
 7. **Worktree cleanliness:** entering `close` is **blocked** by uncommitted
-   paths — except paths under *another* change's `docs/changes/<other>/`,
-   which are that change's own close gate's obligation (parallel changes
-   must not deadlock each other) — *and* blocked if cleanliness cannot even
-   be determined (no git). The refusal lists the offending paths;
-   `onto dirt <change>` shows the full classified list. Every other
-   transition only **warns** on a dirty worktree and proceeds.
+   paths in the config repo and every repo selected with `onto new --repo`.
+   The config repo keeps the carve-out for another active change's
+   `docs/changes/<other>/`; every external-repo path blocks. A missing alias,
+   unavailable Git worktree, or undeterminable result also blocks. The refusal
+   labels the repository; `onto dirt <change>` shows the full classified list.
+   Every other transition only **warns** on config-repo dirt and proceeds.
 
 A failed gate exits non-zero and leaves the recorded phase unchanged.
 
@@ -139,7 +144,8 @@ Archives a change that has reached the `close` phase. Gates, in order:
      full.
 4. **Dependencies resolved** — every change in `deps` is already archived
    (a `docs/changes/archive/*-<dep>/` exists).
-5. **Clean, determinable worktree** (same rule as entering close).
+5. **Clean, determinable scope** (same config-repo plus selected-repo rule as
+   entering close).
 6. **No-clobber** — the dated archive target must not already exist.
 
 On success it sets `archived: true` and moves the workspace to
@@ -182,7 +188,7 @@ by hand:
 | `onto gate <change> [--json]` | the pending evidence gate(s), as a structured schema (question, header, options, the `onto set` that records the answer) a skill renders as a dialog |
 | `onto scale <change> [--json] [--set]` | the verification level derived from the measured `base_ref..HEAD` diff (non-test files, changed lines); `--set` records it via `verify-scale` |
 | `onto graph [--json] [--check]` | the change dependency graph (`{nodes, edges, cycles}`); `--check` exits non-zero on a cycle — the same cycles the build gate rejects |
-| `onto dirt [change] [--json]` | every uncommitted path in the worktree, classified against the change: `own` (the change's own `docs/changes/<name>/` artifacts), `change` (another change's docs — tolerated by the close gate), `source` (everything else — blocks close). The deterministic half of the dirty-workspace protocol: the binary owns what-is-dirty and what-blocks-close; attribution of `source` dirt stays with the agent |
+| `onto dirt [change] [--json]` | Every uncommitted path classified against the change. For a scoped change it audits the config repo plus its selected aliases and labels every repository; config-repo `own` and other-change `change` classifications retain their existing meanings, while external paths are `source` and block close. |
 | `onto handoff <change> [--write]` | a compact recovery context pack (identity, phase, pending gate, artifact excerpts + a content hash) for continuing after a context compaction; `--write` persists it under `docs/changes/<name>/.onto/handoff/` |
 | `onto doctor [--quiet]` | workspace health across layout, state, phase/artifact match, dependency resolution, and archive layout; non-zero on any finding. Also reports **`tasks.md` ↔ `plan.md` drift** — a task number in one file and not the other, or a checkbox in `plan.md`, which breaks resuming from the first unchecked item (a change with no `plan.md` is a preset, not drift). Also reports **version skew** between the `onto` binary and the homonto that installed the framework (fix with `homonto update`), and ≥3 failed verify rounds. `--quiet` prints nothing and signals via exit code only — the hook primitive (see [enforcement](enforcement.md)) |
 | `onto version` | the release-stamped version |

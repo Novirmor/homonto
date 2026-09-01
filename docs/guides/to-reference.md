@@ -16,8 +16,9 @@ until, in order:
    been applied).
 
 Each failure names the fix (`homonto init`, declare `[frameworks.to]`, run
-`homonto apply`). The read-only commands (`status`, `handoff`, `doctor`,
-`version`) never read `homonto.toml` and never write.
+`homonto apply`). Read-only commands never write. `status` and `doctor` load
+`homonto.toml` only for an active change that records selected declared repos,
+so they can report scoped-repository availability.
 
 Change names are lowercase-alphanumeric segments joined by single hyphens
 (`fix-login`, `update-deps`); `archive` is reserved.
@@ -32,13 +33,13 @@ not inspect a workspace.
 | Command | What it does |
 |---|---|
 | `to init` | Scaffold `docs/tasks/` + `docs/tasks/archive/` (gated; never overwrites). |
-| `to new <name>` | Create a change at phase `plan` with an empty `plan.md` (gated). Only an *active* change blocks a name — archives are date-prefixed, so a finished name is reusable. |
+| `to new <name> [--repo <declared-name>]` | Create a change at phase `plan` with an empty `plan.md` (gated). `--repo` is repeatable, records selected `[repos]` aliases, and creates no files outside the config repo. Only an *active* change blocks a name — archives are date-prefixed, so a finished name is reusable. |
 | `to phase <name>` | The one forward transition: `plan → do` (gated). Finishing is `to done`; there is no other advance. |
-| `to done <name> --verified [--evidence "<text>"]` | Mark done and archive (gated). `--verified` is **required but self-asserted** — the binary records a checkbox, it observes nothing. `--evidence` records what was asserted, verbatim and unchecked, so a real verification is distinguishable in the archive. Requires phase `do`. |
+| `to done <name> --verified [--evidence "<text>"]` | Mark done and archive (gated). `--verified` is **required but self-asserted** — the binary records a checkbox, it observes nothing. A scoped change additionally requires clean, determinable Git state for the config repo and every selected alias. `--evidence` records what was asserted, verbatim and unchecked. Requires phase `do`. |
 | `to abandon <name>` | Terminal exit without done; archives (gated). Works from any non-terminal phase. |
-| `to status` | Active changes and their phases (a corrupt state file is reported per-entry, not fatal). Read-only, config-independent. |
+| `to status` | Active changes and their phases (a corrupt state file is reported per-entry, not fatal). Scoped entries include their selected aliases. Read-only. |
 | `to handoff <name>` | Compact recovery pack: identity, phase, safe next skill, and a plan excerpt (head, complete unchecked task contracts, `Final Verify:`, and bounded notes/verification sections) for resuming after a context compaction. A missing `plan.md` is reported, not silently omitted. Read-only, config-independent. |
-| `to doctor [--quiet]` | Workspace health: invalid state files, wedged terminal-but-active changes (an interrupted archive — re-run the finishing command to converge), missing `plan.md`, `do`-phase tasks missing non-empty `Files:`, `Change:`, or `Verify:` fields, a missing or empty `Final Verify:`, non-terminal archive entries, and binary↔framework version skew. These are diagnostics, not transition gates. `--quiet` prints nothing and signals via exit code only — the hook primitive. Read-only, config-independent. |
+| `to doctor [--quiet]` | Workspace health: invalid state files, wedged terminal-but-active changes (an interrupted archive — re-run the finishing command to converge), missing `plan.md`, `do`-phase tasks missing non-empty `Files:`, `Change:`, or `Verify:` fields, a missing or empty `Final Verify:`, non-terminal archive entries, binary↔framework version skew, and unavailable selected repos for active scoped changes. These are diagnostics, not transition gates. `--quiet` prints nothing and signals via exit code only — the hook primitive. Read-only. |
 | `to version` | The release-stamped version. |
 
 ## Archive naming
@@ -66,9 +67,10 @@ session's lock is never stolen.
 
 No evidence gates (the `--verified` checkbox is an assertion, not a
 guarantee — the `to-done` skill is where verification rigor lives), no spec
-deltas, no dependency graph, no git awareness, no worktree-per-implementer
-orchestration, and no escalation path to onto. If a change needs those, the
-repo needs onto.
+deltas, no dependency graph, no Git history or branch policy, no
+worktree-per-implementer orchestration, and no escalation path to onto. A
+scoped change has only the terminal clean-worktree gate; unscoped changes stay
+Git-blind. If a change needs the heavier workflow, the repo needs onto.
 
 `to` does run subagents concurrently — the three read-only ones, per
 [ADR 0019](../adr/0019-parallelism-follows-write-scope.md). What it does not

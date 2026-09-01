@@ -123,15 +123,17 @@ exact `onto set` that records each one.
 
 **`close` fails.** Check, in order: the change is at phase `close`;
 `verify.result == pass`; `close.merged == true` (run `onto merge-deltas`);
-guides resolved (full workflow); every `deps` entry archived; worktree
-clean; archive target not already present.
+guides resolved (full workflow); every `deps` entry archived; config repo and
+every selected `--repo` worktree clean and Git-readable; archive target not
+already present.
 
 **"dirty worktree blocks close."** The error lists the first few offending
 paths; `onto dirt <change>` shows all of them, classified. Paths under
 *another* change's `docs/changes/<other>/` never block (they are that
 change's obligation). What blocks is this change's own uncommitted
-artifacts and any uncommitted source path. Commit what belongs to the
-change, stash or attribute what doesn't, and retry.
+artifacts and any uncommitted source path. For a scoped change, every dirty
+selected sibling path blocks too and the error labels its repo. Commit what
+belongs to the change, stash or attribute what doesn't, and retry.
 
 **Repeated verify failures.** `onto set verify-result fail` increments a
 counter; at ≥3 rounds `onto doctor` reports it. The workflow expects a
@@ -152,6 +154,11 @@ onto: the mutating commands require the to framework installed *by homonto*
 **"[frameworks.onto] and [frameworks.to] are mutually exclusive."** By
 design: one workflow framework per repository. Remove one declaration and
 re-apply; the removed framework's projected content is pruned.
+
+**`to done` refuses a scoped change.** A change created with `to new --repo
+<declared-name>` cannot finish until the config repo and every selected repo
+are clean and Git-readable. Commit or stash the listed repo, restore a removed
+`[repos]` alias, then run `to done` again. `to abandon` remains available.
 
 **A change shows a terminal phase but still sits in `docs/tasks/`.** An
 interrupted finish (a crash between the state write and the archive move).

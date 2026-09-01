@@ -123,10 +123,15 @@ Slash commands, materialized as single files under
 [commands.grill]
 source = "builtin:grill"     # builtin:<name> | local:<name>
 scope  = "project"           # user | project
+repo   = "service-a"         # optional declared [repos] name
 ```
 
 Frameworks declare their own commands too (onto ships `/onto`, `/onto-open`,
 …); those project the same way without being declared here.
+
+`repo` has the same rule as skills: it is optional, requires
+`scope = "project"`, and links the command only into the named declared
+repository's `.opencode/command/` directory.
 
 ## Subagents — `[subagents.<name>]`
 
@@ -141,6 +146,7 @@ source = "builtin:onto-reviewer"   # builtin:<name> | local:<name> | remote:<url
 scope  = "project"                 # user | project (default: project)
 mode   = "copy"                    # link (symlink, default) | copy (managed file)
 targets = ["opencode"]             # optional; default: every tool
+repo = "service-a"                 # optional declared [repos] name
 
 [subagents.reviewer]               # a remote, pinned agent
 source = "remote:https://example.com/reviewer.tar.gz"
@@ -153,6 +159,7 @@ digest = "sha256:<64 hex>"         # REQUIRED for remote:; verified before any w
 | `scope` | string | no | `user` \| `project` (default `project`) |
 | `mode` | string | no | `link` (default) or `copy` — see [subagents](subagents.md) |
 | `targets` | array | no | default: every tool |
+| `repo` | string | no | a declared `[repos]` name; requires `scope = "project"` and writes only that repo's agent directory |
 | `digest` | string | remote only | `sha256:<64 hex>` content pin, required for `remote:` |
 | `version` | string | no | informational until pinning is wired |
 

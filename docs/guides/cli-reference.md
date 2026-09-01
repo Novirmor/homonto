@@ -39,6 +39,11 @@ references stay `${…}` tokens.
 The diff is Terraform-style: `+` create, `~` update, `-` delete. Unchanged
 keys stay silent.
 
+With `[repos]`, plan first lists every declared repository. Untagged
+project-scoped resources remain in the config repo; `repo = "<name>"`
+resources render in a separate `opencode@<name>` changeset. This is the full
+write scope for a later apply.
+
 ```console
 $ homonto plan
 opencode:
@@ -69,6 +74,9 @@ Guarantees (details in [projection & state](projection-and-state.md) and
   overwrite.
 - **State per adapter.** State is saved after each successful adapter, so a
   failure partway through never loses an already-applied adapter's records.
+- **Declared-repo isolation.** One config-repo apply lock covers the entire
+  plan. Each declared repo records its resources in
+  `.homonto/state.<name>.json`; no undeclared repo is read or written.
 - **Adoption.** A declared resource that already exists on disk exactly as
   homonto would write it is recorded into state with no file write.
 
@@ -84,6 +92,9 @@ two independent things:
 
 When neither is present it prints `No drift.`
 
+Drift from a declared repo is labelled `opencode@<name>`, so a reset is
+attributed to the repository containing the changed file.
+
 | Flag | Effect |
 |---|---|
 | `--output text\|json` | output format (default `text`) |
@@ -93,6 +104,7 @@ When neither is present it prints `No drift.`
 
 Environment health check: is `pass` on `PATH`, do the tool config locations
 exist, and does each owned skill have intact content plus both tool links?
+Declared repos are rechecked for existence and Git-worktree status.
 
 | Flag | Effect |
 |---|---|

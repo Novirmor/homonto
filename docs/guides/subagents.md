@@ -12,6 +12,7 @@ source = "builtin:onto-reviewer"   # builtin | local | remote
 scope  = "project"                 # user | project (default: project)
 mode   = "link"                    # link (default) | copy
 targets = ["opencode"]             # optional; default: every tool
+repo = "service-a"                 # optional declared [repos] name; project scope only
 ```
 
 ## Sources
@@ -50,6 +51,10 @@ load naming the key:
 | Tool | `scope = "user"` | `scope = "project"` |
 |---|---|---|
 | OpenCode | `~/.config/opencode/agent/<name>.md` | `<repo>/.opencode/agent/<name>.md` |
+
+With `repo = "<declared-name>"`, a project-scoped subagent goes only into
+that declared repo's project directory. Untagged project-scoped subagents
+stay in the config repo; user-scoped subagents cannot name `repo`.
 
 ## Every agent declares its model
 

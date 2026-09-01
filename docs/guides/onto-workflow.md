@@ -195,7 +195,10 @@ every edit and commit.
 Uncommitted work is normal: an interrupted task, a parallel change, your own
 edits. onto classifies it rather than treating "dirty" as one condition.
 `onto dirt [change] [--json]` reports every uncommitted path in three
-classes:
+classes. A change created with `onto new --repo <declared-name>` additionally
+audits those selected sibling repos and labels their entries; all external
+entries are `source` and block close. An unselected declared repo is not part
+of the change and does not block it:
 
 | Class | What it is | Blocks this change's close? |
 |---|---|---|

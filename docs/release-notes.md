@@ -460,10 +460,11 @@ homonto is a young, deliberately narrow tool. For the current 0.x line:
   best-effort secret redaction, no skills/plugins/settings/OpenCode import.
 - **The bundled catalog ships only homonto-native content**: the `onto` and
   `to` frameworks (mutually exclusive) plus the loose framework-agnostic
-  skills/commands. Frameworks resolve from the bundled catalog or a `local:`
-  path only — there are no remote *framework* sources. Remote sources exist for
-  **subagents** only, and require a `digest = "sha256:…"` pin; homonto never
-  re-resolves a pin to newer content on its own.
+  skills/commands. Third-party frameworks are not bundled; vendor them via a
+  `local:` path or a digest-pinned `remote:` archive (the same fail-closed
+  verification `remote:` subagents use). Every `remote:` source requires a
+  `digest = "sha256:…"` pin, and homonto never re-resolves a pin to newer
+  content on its own.
 - **Two full adapters:** Claude Code and OpenCode. **Codex** is an opt-in pilot
   that projects **MCP servers only**.
 - **Secrets require `pass` or an env var** at apply time (`${pass:...}` /

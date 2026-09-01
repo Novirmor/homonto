@@ -1,7 +1,9 @@
 package tocli
 
 import (
+	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -242,5 +244,111 @@ func TestPrintJSON_ErrorOnUnmarshallable(t *testing.T) {
 	if err := printJSON(cmd, make(chan int)); err == nil ||
 		!strings.Contains(err.Error(), "encoding json") {
 		t.Errorf("printJSON(chan) = %v, want an encoding-json error", err)
+	}
+}
+
+// deadPid returns the pid of a child process that has already exited and been
+// reaped, so the number provably names no running process (CI is linux-only;
+// "true" exists everywhere we run).
+func deadPid(t *testing.T) int {
+	t.Helper()
+	cmd := exec.Command("true")
+	if err := cmd.Run(); err != nil {
+		t.Fatalf("spawning throwaway process: %v", err)
+	}
+	return cmd.Process.Pid
+}
+
+// TestPidAlive_SelfAndDead verifies both directions of the liveness probe the
+// stale-lock reclaim trusts: the test's own pid reads alive, a reaped child's
+// pid reads dead.
+func TestPidAlive_SelfAndDead(t *testing.T) {
+	if !pidAlive(os.Getpid()) {
+		t.Errorf("pidAlive(self) = false, want true")
+	}
+	if pidAlive(deadPid(t)) {
+		t.Errorf("pidAlive(reaped child) = true, want false")
+	}
+}
+
+// TestLock_ExcludesConcurrentAndReleases verifies the mutual-exclusion
+// contract: a second acquire while held fails naming the lock, and succeeds
+// again after release.
+func TestLock_ExcludesConcurrentAndReleases(t *testing.T) {
+	dir := t.TempDir()
+	unlock, err := lock(dir)
+	if err != nil {
+		t.Fatalf("first lock: %v", err)
+	}
+	if _, err := lock(dir); err == nil || !strings.Contains(err.Error(), "in progress") {
+		t.Errorf("second lock while held = %v, want an in-progress error", err)
+	}
+	unlock()
+	if _, err := lock(dir); err != nil {
+		t.Errorf("lock after release: %v", err)
+	}
+}
+
+// TestLock_StaleDeadHolderIsReclaimed verifies the auto-reclaim: a lockfile
+// naming a pid that provably no longer runs is taken over by the next
+// mutating command instead of wedging the workspace until hand cleanup.
+func TestLock_StaleDeadHolderIsReclaimed(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.MkdirAll(tasksDir(dir), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	stale := filepath.Join(tasksDir(dir), ".to.lock")
+	if err := os.WriteFile(stale, []byte(fmt.Sprintf("pid=%d\n", deadPid(t))), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	unlock, err := lock(dir)
+	if err != nil {
+		t.Fatalf("lock over stale lockfile: %v", err)
+	}
+	unlock()
+}
+
+// TestLock_LiveHolderIsNeverStolen verifies the safety side of the reclaim: a
+// lockfile naming a running pid (the test process itself) fails the acquire
+// and the file is left byte-for-byte intact.
+func TestLock_LiveHolderIsNeverStolen(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.MkdirAll(tasksDir(dir), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	stale := filepath.Join(tasksDir(dir), ".to.lock")
+	held := fmt.Sprintf("pid=%d\n", os.Getpid())
+	if err := os.WriteFile(stale, []byte(held), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := lock(dir); err == nil || !strings.Contains(err.Error(), "in progress") {
+		t.Errorf("lock over live holder = %v, want an in-progress error", err)
+	}
+	got, err := os.ReadFile(stale)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(got) != held {
+		t.Errorf("live holder's lockfile was modified: %q, want %q", got, held)
+	}
+}
+
+// TestLock_UnreadablePidLeftForHandCleanup verifies the conservative branch:
+// a lockfile with no parseable pid (a crash in the create-to-write window may
+// still have a live owner) is never auto-removed.
+func TestLock_UnreadablePidLeftForHandCleanup(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.MkdirAll(tasksDir(dir), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	stale := filepath.Join(tasksDir(dir), ".to.lock")
+	if err := os.WriteFile(stale, nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := lock(dir); err == nil || !strings.Contains(err.Error(), "in progress") {
+		t.Errorf("lock over unreadable lockfile = %v, want an in-progress error", err)
+	}
+	if _, err := os.Stat(stale); err != nil {
+		t.Errorf("unreadable lockfile was removed: %v", err)
 	}
 }

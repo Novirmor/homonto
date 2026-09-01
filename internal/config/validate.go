@@ -225,6 +225,25 @@ func validateSettingsAndTUI(c *Config) error {
 			return fmt.Errorf("parse config: settings.opencode key %q is reserved (homonto manages %s there); rename it", k, k)
 		}
 	}
+	// `model_variant` selects the model's variant tier (medium, high, xhigh,
+	// …) the same way `model` selects the model: declared as a companion
+	// key, combined into the `provider/model#variant` id at projection. It
+	// needs its model, must be a plain token, and cannot double up on an id
+	// that already carries a suffix.
+	if mv, ok := c.Settings.OpenCode["model_variant"]; ok {
+		variant, isStr := mv.(string)
+		model, modelOK := c.Settings.OpenCode["model"].(string)
+		switch {
+		case !isStr || strings.TrimSpace(variant) == "":
+			return fmt.Errorf("parse config: settings.opencode model_variant must be a non-empty string (e.g. \"high\", \"xhigh\")")
+		case !modelOK || strings.TrimSpace(model) == "":
+			return fmt.Errorf("parse config: settings.opencode model_variant is set but model is not — a variant needs its model; declare model too")
+		case strings.ContainsAny(variant, " \t") || strings.ContainsAny(variant, "#"):
+			return fmt.Errorf("parse config: settings.opencode model_variant %q is invalid; a variant is a plain token appended to the model id (e.g. \"high\")", variant)
+		case strings.Contains(model, "#"):
+			return fmt.Errorf("parse config: settings.opencode model %q already carries a #variant suffix; drop model_variant", model)
+		}
+	}
 	// [tui.opencode] keys project into a second managed file (tui.json). Reject
 	// index-like/empty names for the same JSON-array-corruption reason as
 	// [settings.opencode].
@@ -477,6 +496,16 @@ func validateSource(label, source, digest string, allowRemote bool) error {
 	return nil
 }
 
+// variantToken rejects a variant that could not render as a model-id suffix
+// (`provider/model#variant`): empty after trim, whitespace, or an embedded `#`
+// (which would stack a second suffix or corrupt the id).
+func variantToken(label, variant string) error {
+	if strings.ContainsAny(variant, " \t") || strings.Contains(variant, "#") {
+		return fmt.Errorf("parse config: %s variant %q is invalid; a variant is a plain token appended as #%s to the model id (e.g. \"high\", \"xhigh\")", label, variant, variant)
+	}
+	return nil
+}
+
 // validateModelSpec checks one model/variant/effort triple against what `tool`
 // can actually express, naming label as the offender. `model` is required when
 // requireModel is set (the per-subagent must-declare check passes true; the
@@ -484,6 +513,7 @@ func validateSource(label, source, digest string, allowRemote bool) error {
 // demanding a model field that an effort-only override wouldn't have).
 func validateModelSpec(tool, label string, r ModelRoute, requireModel bool) error {
 	model := strings.TrimSpace(r.Model)
+	variant := strings.TrimSpace(r.Variant)
 	effort := strings.TrimSpace(r.Effort)
 	if requireModel && model == "" {
 		return fmt.Errorf("parse config: %s model is required", label)
@@ -491,7 +521,13 @@ func validateModelSpec(tool, label string, r ModelRoute, requireModel bool) erro
 	switch tool {
 	case "opencode":
 		if effort != "" {
-			return fmt.Errorf("parse config: %s sets effort %q, but OpenCode has no effort setting — use variant, or drop it", label, effort)
+			return fmt.Errorf("parse config: %s sets effort %q, but OpenCode has no effort setting — variants (medium, high, xhigh, …) are selected with variant, which renders as #%s on the model id", label, effort, "variant")
+		}
+		if variant != "" {
+			return variantToken(label, variant)
+		}
+		if strings.Contains(model, "#") && variant != "" {
+			return fmt.Errorf("parse config: %s model %q already carries a #variant suffix; drop the separate variant field", label, model)
 		}
 	}
 	return nil

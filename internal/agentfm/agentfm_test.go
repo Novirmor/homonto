@@ -120,16 +120,23 @@ func TestRender_UnknownTool(t *testing.T) {
 
 // OpenCode spells a model variant as its own frontmatter field: a configured
 // variant must render verbatim, never be silently dropped from the output.
-func TestRenderOpenCode_VariantIsItsOwnField(t *testing.T) {
+// TestRenderOpenCode_VariantSuffixesTheModelId verifies a variant renders as
+// the documented `provider/model#variant` selection syntax — the same
+// spelling OpenCode uses everywhere a model id appears — and never as a
+// separate frontmatter field an unknown-option pass-through could drop.
+func TestRenderOpenCode_VariantSuffixesTheModelId(t *testing.T) {
 	ctx := &RenderContext{Overrides: map[string]ModelSpec{
-		"onto-reviewer": {Model: "opus", Variant: "fast"},
+		"onto-reviewer": {Model: "openai/gpt-5", Variant: "high"},
 	}}
 	out, err := Render("onto-reviewer", []byte(readOnlyReviewer), "opencode", ctx)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(string(out), "variant: fast") {
-		t.Errorf("opencode must carry the variant as its own field:\n%s", out)
+	if !strings.Contains(string(out), "model: openai/gpt-5#high") {
+		t.Errorf("opencode must carry the variant as the model-id suffix:\n%s", out)
+	}
+	if strings.Contains(string(out), "variant:") {
+		t.Errorf("variant must not render as its own frontmatter field:\n%s", out)
 	}
 }
 

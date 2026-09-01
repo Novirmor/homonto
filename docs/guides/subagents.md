@@ -67,9 +67,11 @@ variant = "thinking"
 
 No `source` is needed (or allowed) when the agent comes from a framework: a
 block with no source *tunes* the agent rather than declaring it. `model`
-and `variant` render into OpenCode's frontmatter — `variant` is its own
-field there. OpenCode has no effort setting at all; declaring one is a
-config error.
+and `variant` render into OpenCode's frontmatter — the variant as the
+`provider/model#variant` suffix on the model id, the spelling OpenCode uses
+everywhere a model id appears (`medium`, `high`, `xhigh`, `max`, or any
+variant the provider defines). OpenCode has no effort setting at all;
+declaring one is a config error.
 
 ## The agent file
 
@@ -127,8 +129,9 @@ Rendering:
 The rendered variant re-emits `mode: subagent`/`mode: primary` from the
 `primary` flag.
 
-The `model:` (and optional `variant:`) lines come from the config's
-`[subagents.<name>.opencode]` block. The block is required — a production
+The `model:` line comes from the config's `[subagents.<name>.opencode]`
+block, with an optional `variant` suffixed as `provider/model#variant`. The
+block is required — a production
 render with no model fails naming the agent rather than silently emitting an
 agent with no model line.
 The prompt body is single-source, never duplicated; the neutral block and its

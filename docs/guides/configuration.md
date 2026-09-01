@@ -325,6 +325,22 @@ Arbitrary keys merged surgically into OpenCode's settings file
 model = "anthropic/claude-opus-4-8"
 ```
 
+`model_variant` is homonto's companion to `model`: it selects the model's
+variant tier — `medium`, `high`, `xhigh`, `max`, or any variant your
+providers define — the same way `model` selects the model. The two are
+combined at projection into the `provider/model#variant` id OpenCode reads:
+
+```toml
+[settings.opencode]
+model = "openai/gpt-5"
+model_variant = "high"     # projects as model = "openai/gpt-5#high"
+```
+
+Writing the suffix directly (`model = "openai/gpt-5#high"`) works too; then
+`model_variant` must be absent. `model_variant` without `model`, a
+`model_variant` on an id that already carries `#`, or either naming
+whitespace or a second `#` fails at load.
+
 Keys that collide with structures homonto manages fail at load:
 `settings.opencode.mcp`, `settings.opencode.plugin`. `[settings.claude]` was
 removed with the Claude Code adapter in v0.13.0; a config naming it fails at

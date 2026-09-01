@@ -78,8 +78,8 @@ RVAR="$W/.homonto/catalog/subagents/onto-reviewer.opencode.md"
 in_file "$RVAR" '  edit: deny'
 in_file "$RVAR" '  task: deny'
 if grep -q 'bash: deny' "$RVAR"; then fail "reviewer keeps bash; only the block's denials may render"; fi
-in_file "$RVAR" 'model: anthropic/claude-opus-4-8'
-in_file "$RVAR" 'variant: 1m'
+in_file "$RVAR" 'model: anthropic/claude-opus-4-8#1m'
+if grep -q 'variant:' "$RVAR"; then fail "variant must render as the model-id suffix, not its own field"; fi
 # The implementer edits (coding model) but still spawns nothing: the only task
 # denial is spawning — edit stays available (absent from the permission map).
 IVAR="$W/.homonto/catalog/subagents/onto-implementer.opencode.md"

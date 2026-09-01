@@ -152,14 +152,18 @@ func Render(name string, content []byte, tool string, ctx *RenderContext) ([]byt
 			mode = "primary"
 		}
 		extra = append(extra, "mode: "+mode)
-		// OpenCode is the mirror image: `variant` is its own field, and there is
-		// no effort concept at all — dropping it here is why the config layer
-		// reports the drop once at plan time rather than failing.
+		// A variant is selected by suffixing the model id
+		// (`provider/model#variant`) — the same spelling OpenCode uses
+		// everywhere a model id appears — with the tier names the provider
+		// defines (medium, high, xhigh, …; custom variants are legal too).
+		// There is no separate effort concept: an `effort:` value is rejected
+		// at load, not silently dropped here.
 		if spec.Model != "" {
-			extra = append(extra, "model: "+spec.Model)
-		}
-		if spec.Variant != "" {
-			extra = append(extra, "variant: "+spec.Variant)
+			m := spec.Model
+			if spec.Variant != "" {
+				m += "#" + spec.Variant
+			}
+			extra = append(extra, "model: "+m)
 		}
 		if h.Steps > 0 {
 			extra = append(extra, fmt.Sprintf("steps: %d", h.Steps))

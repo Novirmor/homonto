@@ -37,8 +37,9 @@ is where the old hand-written checks now live, done against a disposable
   refusal, the `--verified` requirement, archive, doctor and convergence,
   and the onto-xor-to exclusivity error.
 
-> **Dogfooding is deferred to v1.** This repository is developed with
-> **Comet** (see [`agents/comet.md`](agents/comet.md) and
+> **Dogfooding is deferred to v1.** This repository is developed directly
+> on branches, with no external workflow stack
+> ([ADR 0023](adr/0023-develop-directly-without-comet.md);
 > [`personas.md`](personas.md)); onto is the workflow we *ship*, not the one
 > we use here yet. The repo therefore carries **no `homonto.toml` and no
 > projected `.claude/` / `.opencode/` content** of its own, there is

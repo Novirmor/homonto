@@ -272,7 +272,6 @@ and [KISS](kiss.md). The lightweight sibling workflow is
 [to](to-workflow.md); the two frameworks are an exclusive choice per
 repository.
 
-> homonto's own repository is developed with **Comet**, not onto — see
-> [`docs/agents/comet.md`](../agents/comet.md) and
+> homonto's own repository is not developed with onto — see
 > [`docs/personas.md`](../personas.md). onto is a shipped product framework;
 > this guide documents it for projects that adopt it.

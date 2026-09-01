@@ -1,6 +1,6 @@
 # Re-adopt Comet + OpenSpec + Superpowers as the development workflow
 
-- **Status:** Accepted
+- **Status:** Superseded by 0023
 - **Date:** 2026-07-10
 - **Change:** comet-workflow-migration
 

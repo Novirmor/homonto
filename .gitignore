@@ -17,11 +17,11 @@ __pycache__/
 # E2E matrix run logs (scratch)
 test/e2e/.out/
 
-# Workflow scaffolding. Comet drives big development, but its artifacts are
-# working-tree scratch, not repository content: proposals, delta specs, tasks,
-# plans, and verification reports describe how a change was produced, not what
-# the code does. The durable record of a decision is an ADR in docs/adr/.
-# See docs/agents/comet.md.
+# External workflow-stack scaffolding (Comet + OpenSpec + Superpowers),
+# retired for this repo by ADR 0023. Kept ignored so stale local scaffolding
+# from before the retirement can never be committed. The durable record of a
+# decision is an ADR in docs/adr/.
+/.comet/
 /.superpowers/
 /openspec/
 /docs/superpowers/

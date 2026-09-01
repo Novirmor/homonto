@@ -1,6 +1,6 @@
 # ADR 0024: Multi-repo support — designated state, cross-repo effect
 
-- **Status:** Proposed
+- **Status:** Accepted (stage 1 implemented; stages 2+ remain design)
 - **Date:** 2026-09-01
 
 ## Context

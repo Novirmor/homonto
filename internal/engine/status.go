@@ -106,6 +106,21 @@ func (e *Engine) Doctor() []string {
 			out = append(out, fmt.Sprintf("ok: %s config location present", loc.label))
 		}
 	}
+	// Declared [repos] are load-validated; doctor re-reports the current
+	// filesystem facts (a repo deleted or de-git'd after load is a finding,
+	// not a silent pass) — ADR 0024 stage 1.
+	for _, name := range sortedRepos(e.Cfg.RepoDirs()) {
+		dir := e.Cfg.RepoDirs()[name]
+		if info, err := os.Stat(dir); err != nil || !info.IsDir() {
+			out = append(out, fmt.Sprintf("warn: declared repo %s: %s is missing (was present at load)", name, dir))
+			continue
+		}
+		if _, err := os.Stat(filepath.Join(dir, ".git")); err != nil {
+			out = append(out, fmt.Sprintf("warn: declared repo %s: %s is no longer a git worktree", name, dir))
+			continue
+		}
+		out = append(out, fmt.Sprintf("ok: declared repo %s at %s", name, dir))
+	}
 	opencodeSkills, oerr := e.Cfg.ExpandedSkillEntriesForTool("opencode")
 	if oerr != nil {
 		out = append(out, fmt.Sprintf("warn: cannot expand opencode skills: %v", oerr))
@@ -303,4 +318,15 @@ func (e *Engine) doctorSubagents(tool string, entries []config.NamedResource) []
 			return filepath.Join(resourcepath.Dir(resourcepath.Subagent, tool, entry.Resource.Scope, e.Home, e.ProjectRoot), entry.Name+".md")
 		},
 	})
+}
+
+// sortedRepos returns the declared repo names in deterministic order, so
+// doctor findings list repos the same way every run.
+func sortedRepos(repos map[string]string) []string {
+	names := make([]string, 0, len(repos))
+	for name := range repos {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	return names
 }

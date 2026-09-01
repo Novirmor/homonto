@@ -73,5 +73,13 @@ func runInit(cmd *cobra.Command, root string) error {
 		}
 	}
 
+	// Multi-repo context (ADR 0024 stage 1): the designated workflow tree —
+	// these docs/ directories — lives in the config repo; declared repos are
+	// reported so a multi-repo setup reads as one, with the scope stated
+	// plainly until cross-repo changes ship.
+	for _, line := range workcli.RepoContextLines(root) {
+		cmd.Println(line)
+	}
+
 	return nil
 }

@@ -273,6 +273,12 @@ type Config struct {
 	Skills        map[string]Resource `toml:"skills"`
 	Commands      map[string]Resource `toml:"commands"`
 	Subagents     map[string]Subagent `toml:"subagents"`
+	// Repos declares the other repositories this config operates across
+	// (ADR 0024): name -> path, resolved relative to this config file. The
+	// config repo itself is implicit and never listed. Stage 1 (this field)
+	// is declarative context only — projection and workflow changes stay in
+	// the config repo until the staged cross-repo work ships.
+	Repos map[string]string `toml:"repos"`
 	// Models captures any legacy [models.<tool>.<tier>] block so Load can
 	// detect and reject it. The field must be exported for pelletier/go-toml/v2
 	// to populate it; the private type is not an access restriction, since
@@ -303,6 +309,20 @@ type Config struct {
 	// remote framework root exactly like a local:<path> one. Nil for a config with
 	// no remote frameworks (or before resolution): the builtin path is unchanged.
 	remoteFrameworkDirs map[string]string
+
+	// repoDirs holds each [repos] entry resolved to its absolute directory,
+	// populated by Load's filesystem validation. Nil for a config with no
+	// repos (or one not built via Load): RepoDirs then reports none.
+	repoDirs map[string]string
+}
+
+// RepoDirs returns each declared [repos] entry resolved to its absolute
+// directory, keyed by repo name. Empty for a config with no repos.
+func (c *Config) RepoDirs() map[string]string {
+	if c.repoDirs == nil {
+		return map[string]string{}
+	}
+	return c.repoDirs
 }
 
 // SetRemoteFrameworkDirs injects the verified cache dirs the engine resolved for

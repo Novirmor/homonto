@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 
 	"github.com/noviopenworks/homonto/internal/schema"
@@ -105,5 +106,56 @@ func Load(path string) (*Config, error) {
 	} else {
 		c.baseDir = filepath.Dir(path)
 	}
+	if err := resolveRepos(c); err != nil {
+		return nil, err
+	}
 	return c, nil
+}
+
+// resolveRepos turns each [repos] path into the filesystem fact the later
+// cross-repo stages will build on, failing closed at load (ADR 0024): the
+// directory must exist, it must be a git worktree (a `.git` entry — a
+// directory for a normal clone, a file for a linked worktree), two names
+// must not resolve to one repository, and the config repo itself is never
+// listed — it is implicit and already holds the designated state.
+func resolveRepos(c *Config) error {
+	if len(c.Repos) == 0 {
+		return nil
+	}
+	names := make([]string, 0, len(c.Repos))
+	for name := range c.Repos {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	resolved := make(map[string]string, len(names))
+	byDir := map[string]string{} // abs dir -> first name
+	for _, name := range names {
+		p := c.Repos[name]
+		// Absolute paths are honored as-is; relative paths resolve against
+		// the config file's directory — the same anchoring local: framework
+		// roots use.
+		dir := p
+		if !filepath.IsAbs(dir) {
+			dir = filepath.Join(c.baseDir, dir)
+		}
+		dir = filepath.Clean(dir)
+		if info, err := os.Stat(dir); err != nil {
+			return fmt.Errorf("parse config: repos.%s: %s does not exist (paths resolve relative to the config file)", name, dir)
+		} else if !info.IsDir() {
+			return fmt.Errorf("parse config: repos.%s: %s is not a directory", name, dir)
+		}
+		if _, err := os.Stat(filepath.Join(dir, ".git")); err != nil {
+			return fmt.Errorf("parse config: repos.%s: %s is not a git worktree (no .git)", name, dir)
+		}
+		if prev, dup := byDir[dir]; dup {
+			return fmt.Errorf("parse config: repos.%s and repos.%s resolve to the same repository (%s)", name, prev, dir)
+		}
+		byDir[dir] = name
+		resolved[name] = dir
+	}
+	if prev, isSelf := byDir[c.baseDir]; isSelf {
+		return fmt.Errorf("parse config: repos.%s resolves to the config repository itself; the config repo is implicit — declare only the OTHER repositories", prev)
+	}
+	c.repoDirs = resolved
+	return nil
 }

@@ -76,3 +76,37 @@ func TestPlanReportsMissingConfig(t *testing.T) {
 		t.Fatalf("plan accepted a missing config; want error\n%s", out)
 	}
 }
+
+// TestPlanNamesDeclaredRepos verifies the plan context block (ADR 0024 stage
+// 1): a config with [repos] lists every declared repo by name and resolved
+// path, with the disclosure that projection still targets the config repo —
+// and the JSON output carries the same facts.
+func TestPlanNamesDeclaredRepos(t *testing.T) {
+	home := t.TempDir()
+	repo := t.TempDir()
+	svc := filepath.Join(repo, "service-a")
+	if err := os.MkdirAll(filepath.Join(svc, ".git"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	cfgPath := filepath.Join(repo, "homonto.toml")
+	if err := os.WriteFile(cfgPath, []byte("[repos]\nservice-a = \"service-a\"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	t.Setenv("HOME", home)
+	var out strings.Builder
+	cmd := NewRootCmd()
+	cmd.SetOut(&out)
+	cmd.SetErr(&out)
+	cmd.SetArgs([]string{"plan", "--config", cfgPath})
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("plan: %v", err)
+	}
+	got := out.String()
+	if !strings.Contains(got, "repos (") || !strings.Contains(got, "service-a") || !strings.Contains(got, svc) {
+		t.Errorf("plan should name the declared repo and its path:\n%s", got)
+	}
+	if !strings.Contains(got, "cross-repo effect is a later stage") {
+		t.Errorf("plan must disclose that projection still targets the config repo only:\n%s", got)
+	}
+}

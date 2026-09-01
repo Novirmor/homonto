@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 
+	"github.com/noviopenworks/homonto/internal/workcli"
 	"github.com/spf13/cobra"
 )
 
@@ -56,6 +57,13 @@ func runInit(cmd *cobra.Command, root string, jsonMode bool) error {
 	}
 	for _, p := range created {
 		cmd.Printf("created %s\n", p)
+	}
+	// Multi-repo context (ADR 0024 stage 1): the designated workflow tree —
+	// docs/tasks/ — lives in the config repo; declared repos are reported so
+	// a multi-repo setup reads as one, with the scope stated plainly until
+	// cross-repo changes ship.
+	for _, line := range workcli.RepoContextLines(root) {
+		cmd.Println(line)
 	}
 	return nil
 }

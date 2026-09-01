@@ -393,3 +393,40 @@ func TestStatusCleanAfterApply(t *testing.T) {
 		t.Fatalf("clean apply must yield no drift and no pending, got drift=%v pending=%d", drift, pending)
 	}
 }
+
+// TestDoctorReportsDeclaredRepos verifies the [repos] doctor lines (ADR 0024
+// stage 1): a present git worktree reports ok, and a repo deleted after load
+// fails the NEXT load closed naming the repo — every CLI run rebuilds the
+// engine, so the load error is the contract users hit, not a doctor warning.
+func TestDoctorReportsDeclaredRepos(t *testing.T) {
+	home := t.TempDir()
+	repo := t.TempDir()
+	svc := filepath.Join(repo, "service-a")
+	if err := os.MkdirAll(filepath.Join(svc, ".git"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	cfgPath := filepath.Join(repo, "homonto.toml")
+	if err := os.WriteFile(cfgPath, []byte("[repos]\nservice-a = \"service-a\"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	build := func() *Engine {
+		e, err := Build(context.Background(), cfgPath, home, filepath.Join(repo, "content"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		return e
+	}
+
+	if lines := strings.Join(build().Doctor(), "\n"); !strings.Contains(lines, "ok: declared repo service-a") {
+		t.Fatalf("doctor should report the declared repo healthy:\n%s", lines)
+	}
+
+	if err := os.RemoveAll(svc); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Build(context.Background(), cfgPath, home, filepath.Join(repo, "content")); err == nil ||
+		!strings.Contains(err.Error(), "repos.service-a") {
+		t.Fatalf("rebuild after repo deletion should fail closed naming the repo, got %v", err)
+	}
+}

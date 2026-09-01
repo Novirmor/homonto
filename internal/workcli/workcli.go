@@ -14,6 +14,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"sort"
 	"strings"
 
 	"github.com/pelletier/go-toml/v2"
@@ -55,11 +56,52 @@ type Framework struct {
 }
 
 // HomontoConfig is the minimal shape of homonto.toml the gate needs: just
-// enough to detect whether a [frameworks.<name>] table is declared. It is
-// intentionally a standalone struct, not homonto's own config type, so each
-// workflow CLI stays isolated from homonto's projection pipeline.
+// enough to detect whether a [frameworks.<name>] table is declared, plus the
+// [repos] declarations for the multi-repo context lines (ADR 0024 stage 1).
+// It is intentionally a standalone struct, not homonto's own config type, so
+// each workflow CLI stays isolated from homonto's projection pipeline.
 type HomontoConfig struct {
-	Frameworks map[string]any `toml:"frameworks"`
+	Frameworks map[string]any    `toml:"frameworks"`
+	Repos      map[string]string `toml:"repos"`
+}
+
+// DeclaredRepos reads the [repos] table from <root>/homonto.toml (nil when the
+// file or table is absent). The workflow CLIs surface it as context only: the
+// designated workflow tree stays in the config repo until the staged
+// cross-repo work ships.
+func DeclaredRepos(root string) map[string]string {
+	data, err := os.ReadFile(filepath.Join(root, "homonto.toml"))
+	if err != nil {
+		return nil
+	}
+	var c HomontoConfig
+	if toml.Unmarshal(data, &c) != nil {
+		return nil
+	}
+	return c.Repos
+}
+
+// RepoContextLines renders the declared-repos context block shared by onto
+// init and to init: one header stating where the designated workflow tree
+// lives and what the repos are, then one line per repo in name order. Empty
+// (no lines) for a config with no [repos] table.
+func RepoContextLines(root string) []string {
+	repos := DeclaredRepos(root)
+	if len(repos) == 0 {
+		return nil
+	}
+	names := make([]string, 0, len(repos))
+	for name := range repos {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	out := []string{
+		"repos declared in homonto.toml — this workflow tree is the designated home; changes reach these repositories in a later stage:",
+	}
+	for _, name := range names {
+		out = append(out, fmt.Sprintf("  %s  %s", name, repos[name]))
+	}
+	return out
 }
 
 // Gate enforces the framework-install precondition every mutating command in

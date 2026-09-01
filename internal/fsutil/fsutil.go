@@ -13,7 +13,7 @@ import (
 // never loosened); new files default to 0600 because managed configs may
 // receive resolved secrets.
 func WriteAtomic(path string, data []byte) error {
-	// A symlinked target (e.g. ~/.claude.json -> dotfiles/claude.json) must be
+	// A symlinked target (e.g. a dotfiles-managed config) must be
 	// written through, not replaced: renaming over the link path would swap it
 	// for a regular file that silently diverges from the dotfiles copy. Write
 	// at the resolved location instead; a missing file resolves to path as-is.

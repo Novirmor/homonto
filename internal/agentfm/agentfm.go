@@ -1,9 +1,8 @@
-// Package agentfm renders per-tool subagent frontmatter from one neutral source.
+// Package agentfm renders OpenCode subagent frontmatter from one neutral source.
 //
-// Claude Code and OpenCode express an agent's capabilities differently, and the
-// two dialects cannot coexist in one file. So an agent declares its intent
-// once, tool-neutrally, in a `homonto:` frontmatter block, and Render() emits
-// each tool's native dialect:
+// An agent declares its intent once, tool-neutrally, in a `homonto:` frontmatter
+// block, and Render() emits the tool's native dialect (OpenCode is the only
+// adapter since v0.13.0):
 //
 //	---
 //	name: onto-reviewer
@@ -14,29 +13,22 @@
 //	  bash: false           # optional; false denies bash (default: allowed)
 //	  dialogs: true         # allow the interactive question/dialog tool
 //	  spawn: []             # delegation topology: agents this one may dispatch
-//	  primary: true         # OpenCode primary agent; SKIPPED for Claude
-//	  steps: 60             # iteration budget (OpenCode steps / Claude maxTurns)
+//	  primary: true         # OpenCode primary agent
+//	  steps: 60             # iteration budget (OpenCode steps)
 //	---
 //	<prompt body>
 //
 // The model an agent renders as comes from the config's explicit
-// [subagents.<name>.<tool>] block — there are no roles or tiers, and an agent
+// [subagents.<name>.opencode] block — there are no roles or tiers, and an agent
 // with no such block (and thus no model) is a load-time error, not a silent
 // default.
 //
-// Both tools deny by exception, so the same denials carry to both without
-// information loss: Claude renders a `disallowedTools:` denylist and OpenCode a
-// `permission:` map, and every capability the intent does not deny stays at the
-// tool's default. read_only/bash/spawn:[] render fully in both tools; `dialogs`
-// is enforced in OpenCode (`question: allow|deny`) and is Claude-advisory only
-// (AskUserQuestion is never available to Claude subagents, so the body's
-// return-a-Questions-section protocol is the cross-tool contract); a named
-// spawn list is enforced in OpenCode (task globs) and advisory in Claude;
-// `steps` renders as OpenCode `steps:` and Claude `maxTurns:`; `primary` is
-// OpenCode-only (Render returns nil for the Claude variant of a primary agent —
-// its entry point is the /onto command). Every non-homonto frontmatter line
-// except `mode:` is preserved verbatim (`mode:` is re-emitted for OpenCode
-// only; Claude has no such field).
+// OpenCode denies by exception: a `permission:` map carries the denials, and
+// every capability the intent does not deny stays at the tool's default.
+// read_only/bash/spawn:[] render fully; `dialogs` renders as
+// `question: allow|deny`; a named spawn list renders as task globs; `steps`
+// renders as `steps:`. Every non-homonto frontmatter line except `mode:` is
+// preserved verbatim (`mode:` is re-emitted from `primary`).
 package agentfm
 
 import (
@@ -56,7 +48,7 @@ type Homonto struct {
 	Bash     *bool     `yaml:"bash"`      // nil = default (allowed); false = deny
 	Dialogs  bool      `yaml:"dialogs"`   // allow the question/dialog tool
 	Spawn    *[]string `yaml:"spawn"`     // nil = unrestricted; [] = none; [a,b] = only these
-	Primary  bool      `yaml:"primary"`   // OpenCode primary agent (Claude: skip)
+	Primary  bool      `yaml:"primary"`   // OpenCode primary agent
 	Steps    int       `yaml:"steps"`     // OpenCode iteration budget
 }
 
@@ -70,47 +62,15 @@ type ModelSpec struct {
 }
 
 // RenderContext carries the per-subagent model overrides the render needs for
-// the tool being rendered (the caller passes the Claude overrides for the
-// claude render, the OpenCode overrides for the opencode render). Overrides is
-// keyed by subagent name. A non-nil context is a production render and requires
-// a non-empty model for every rendered agent; a nil context is reserved for
-// catalog projection tests that intentionally omit model routing.
+// the tool being rendered (OpenCode, the only adapter since v0.13.0). Overrides
+// is keyed by subagent name. A non-nil context is a production render and
+// requires a non-empty model for every rendered agent; a nil context is
+// reserved for catalog projection tests that intentionally omit model routing.
 type RenderContext struct {
 	Overrides map[string]ModelSpec
 	// Targets names actually projected to this tool. It lets materialization skip
 	// an unselected tool variant without weakening validation for selected agents.
 	Targets map[string]bool
-}
-
-// ClaudeAliases are the model aliases Claude Code accepts. The bracketed
-// variant syntax (`opus[1m]`) is documented for aliases ONLY — a full model id
-// such as claude-opus-4-8 takes no variant. This is the single source of truth;
-// config validation references it rather than keeping a copy that could drift.
-var ClaudeAliases = map[string]bool{
-	"opus": true, "sonnet": true, "haiku": true, "fable": true, "opusplan": true,
-}
-
-// ClaudeEffortLevels are the values Claude Code's agent `effort:` field
-// accepts. Single source of truth, same as ClaudeAliases.
-var ClaudeEffortLevels = map[string]bool{
-	"low": true, "medium": true, "high": true, "xhigh": true, "max": true,
-}
-
-// claudeModel renders the Claude `model:` value. Claude has no separate variant
-// field: a variant is expressed by bracketing the alias. A variant on a
-// non-alias model has no Claude spelling at all — that is an ERROR here, never
-// a silent drop: load-time validation judges the override's own model, but a
-// future caller that bypasses Load could supply an unrenderable spec, and
-// silently dropping the variant would ship an agent quietly weaker than
-// declared.
-func claudeModel(s ModelSpec) (string, error) {
-	if s.Model == "" || s.Variant == "" {
-		return s.Model, nil
-	}
-	if !ClaudeAliases[s.Model] {
-		return "", fmt.Errorf("variant %q needs a model alias (opus, sonnet, haiku, fable, opusplan) — Claude takes no variant on the full model id %q", s.Variant, s.Model)
-	}
-	return s.Model + "[" + s.Variant + "]", nil
 }
 
 // NeedsTransform reports whether content carries a `homonto:` frontmatter block
@@ -128,11 +88,12 @@ func NeedsTransform(content []byte) bool {
 	return has
 }
 
-// ProjectsFor reports whether content is projected for tool at all. It is false
-// only where Render deliberately emits nothing — the Claude variant of an
-// OpenCode-primary agent. Callers use it to tell "deliberately not projected
-// here" apart from "should be here and is missing", so a by-design absence is
-// never reported as a fixable finding.
+// ProjectsFor reports whether content is projected for tool at all. It is
+// false only where Render deliberately emits nothing — and since v0.13.0
+// (OpenCode the only adapter) no such case remains: every agent, primary
+// included, renders. Callers use it to tell "deliberately not projected here"
+// apart from "should be here and is missing", so a by-design absence is never
+// reported as a fixable finding.
 func ProjectsFor(content []byte, tool string) (bool, error) {
 	// Projection is decided by the neutral block alone (primary vs not), never by
 	// the model spec, so an empty context is the right question to ask here.
@@ -143,10 +104,9 @@ func ProjectsFor(content []byte, tool string) (bool, error) {
 	return rendered != nil, nil
 }
 
-// Render returns content rewritten for tool ("claude" or "opencode"), or nil
-// bytes when the agent must NOT be projected for that tool (a primary agent has
-// no Claude variant). Content with no frontmatter or no `homonto:` block is
-// returned unchanged.
+// Render returns content rewritten for tool ("opencode"), or nil bytes when
+// the agent must NOT be projected for that tool. Content with no frontmatter
+// or no `homonto:` block is returned unchanged.
 func Render(name string, content []byte, tool string, ctx *RenderContext) ([]byte, error) {
 	fm, body, ok := split(content)
 	if !ok {
@@ -186,47 +146,24 @@ func Render(name string, content []byte, tool string, ctx *RenderContext) ([]byt
 
 	var extra []string
 	switch tool {
-	case "claude":
-		if h.Primary {
-			return nil, nil // Claude has no primary-agent concept; entry is /onto
-		}
-		// Claude has no `mode:` field — emitting one would be unrecognized
-		// noise — and models capability as a denylist (`disallowedTools`), the
-		// mirror of OpenCode's permission denials: everything the intent does
-		// not deny stays available, so no default capability is silently lost.
-		if deny := claudeDisallowed(h); deny != "" {
-			extra = append(extra, "disallowedTools: "+deny)
-		}
-		// Claude carries the variant inside the model string (`opus[1m]`) and
-		// effort as its own frontmatter field.
-		m, merr := claudeModel(spec)
-		if merr != nil {
-			return nil, fmt.Errorf("agentfm: agent %q: %w", name, merr)
-		}
-		if m != "" {
-			extra = append(extra, "model: "+m)
-		}
-		if spec.Effort != "" {
-			extra = append(extra, "effort: "+spec.Effort)
-		}
-		// The shared iteration budget: OpenCode spells it steps, Claude maxTurns.
-		if h.Steps > 0 {
-			extra = append(extra, fmt.Sprintf("maxTurns: %d", h.Steps))
-		}
 	case "opencode":
 		mode := "subagent"
 		if h.Primary {
 			mode = "primary"
 		}
 		extra = append(extra, "mode: "+mode)
-		// OpenCode is the mirror image: `variant` is its own field, and there is
-		// no effort concept at all — dropping it here is why the config layer
-		// reports the drop once at plan time rather than failing.
+		// A variant is selected by suffixing the model id
+		// (`provider/model#variant`) — the same spelling OpenCode uses
+		// everywhere a model id appears — with the tier names the provider
+		// defines (medium, high, xhigh, …; custom variants are legal too).
+		// There is no separate effort concept: an `effort:` value is rejected
+		// at load, not silently dropped here.
 		if spec.Model != "" {
-			extra = append(extra, "model: "+spec.Model)
-		}
-		if spec.Variant != "" {
-			extra = append(extra, "variant: "+spec.Variant)
+			m := spec.Model
+			if spec.Variant != "" {
+				m += "#" + spec.Variant
+			}
+			extra = append(extra, "model: "+m)
 		}
 		if h.Steps > 0 {
 			extra = append(extra, fmt.Sprintf("steps: %d", h.Steps))
@@ -251,30 +188,6 @@ func Render(name string, content []byte, tool string, ctx *RenderContext) ([]byt
 	b.WriteString("---\n")
 	b.Write(body)
 	return b.Bytes(), nil
-}
-
-// claudeDisallowed renders the Claude `disallowedTools:` denylist — the mirror
-// of opencodePermission's denials, so the same neutral intent removes the same
-// capabilities in both tools and everything else keeps the tool's defaults. (A
-// `tools:` allowlist would instead silently strip every unlisted default —
-// WebFetch, WebSearch, Skill, … — that the OpenCode variant retains.)
-// read_only denies the file-mutating tools; bash: false denies Bash; spawn: []
-// denies spawning (both the current Agent name and its former name Task; an
-// unknown name in the denylist is inert). A named spawn list is advisory in
-// Claude — spawning stays available, scoped by the body — and enforced in
-// OpenCode. Returns "" when nothing is denied.
-func claudeDisallowed(h Homonto) string {
-	var deny []string
-	if h.ReadOnly {
-		deny = append(deny, "Edit", "Write", "NotebookEdit")
-	}
-	if h.Bash != nil && !*h.Bash {
-		deny = append(deny, "Bash")
-	}
-	if h.Spawn != nil && len(*h.Spawn) == 0 {
-		deny = append(deny, "Agent", "Task")
-	}
-	return strings.Join(deny, ", ")
 }
 
 // opencodePermission renders the OpenCode `permission:` block body (indented

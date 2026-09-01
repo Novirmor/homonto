@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
 # Suite: analyze — not a pass/fail test but a structured dump of the container's
-# internal state after a representative homonto apply (both tools + the onto
-# framework). The orchestrator captures this to a file so you can inspect exactly
-# what homonto wrote inside the image. Contains no secrets (state stores hashes).
+# internal state after a representative homonto apply (OpenCode — the only
+# adapter since v0.13.0 — plus the onto framework). The orchestrator captures
+# this to a file so you can inspect exactly what homonto wrote inside the
+# image. Contains no secrets (state stores hashes).
 set -uo pipefail
 source /opt/e2e-suites/lib.sh
 
@@ -14,19 +15,18 @@ cat > homonto.toml <<'EOF'
 [frameworks.onto]
 source = "builtin:onto"
 scope = "project"
-targets = ["claude"]
 
 # Per-agent models for the framework's expanded subagents (no tiers).
-[subagents.onto.claude]
-model = "opus"
-[subagents.onto-explorer.claude]
-model = "haiku"
-[subagents.onto-reviewer.claude]
-model = "opus"
-[subagents.onto-implementer.claude]
-model = "sonnet"
-[subagents.onto-skeptic.claude]
-model = "opus"
+[subagents.onto.opencode]
+model = "anthropic/claude-opus-4-8"
+[subagents.onto-explorer.opencode]
+model = "openai/gpt-5-mini"
+[subagents.onto-reviewer.opencode]
+model = "anthropic/claude-opus-4-8"
+[subagents.onto-implementer.opencode]
+model = "anthropic/claude-sonnet-4"
+[subagents.onto-skeptic.opencode]
+model = "anthropic/claude-opus-4-8"
 
 [mcps.e2e-probe]
 command = ["codegraph", "serve", "--mcp"]
@@ -34,9 +34,6 @@ command = ["codegraph", "serve", "--mcp"]
 [skills.e2e-demo]
 source = "local:e2e-demo"
 scope = "user"
-
-[settings.claude]
-model = "opus"
 
 [settings.opencode]
 theme = "opencode-dark"
@@ -49,18 +46,16 @@ echo "## 1. installed binaries"
 # homonto/onto route cobra output to stderr, so capture 2>&1.
 printf '   homonto   %s\n' "$(homonto version 2>&1)"
 printf '   onto      %s\n' "$(onto version 2>&1)"
-printf '   claude    %s\n' "$(claude --version 2>/dev/null)"
 printf '   opencode  %s\n' "$(opencode --version 2>/dev/null)"
 
 echo
 echo "## 2. homonto-managed tool config files (what apply wrote)"
-for f in "$HOME/.claude.json" "$HOME/.claude/settings.json" "$HOME/.config/opencode/opencode.jsonc"; do
-  if [ -f "$f" ]; then echo "   --- $f ---"; sed -e 's/^/       /' "$f" | head -30; fi
-done
+f="$HOME/.config/opencode/opencode.jsonc"
+if [ -f "$f" ]; then echo "   --- $f ---"; sed -e 's/^/       /' "$f" | head -30; fi
 
 echo
 echo "## 3. projected skill symlinks (owned content, linked not copied)"
-find "$HOME/.claude/skills" "$HOME/.config/opencode/skills" -maxdepth 1 -type l \
+find "$HOME/.config/opencode/skills" -maxdepth 1 -type l \
   -printf '   %p -> %l\n' 2>/dev/null || true
 
 echo
@@ -72,9 +67,7 @@ echo "## 5. homonto state (unresolved refs + hashes, never plaintext secrets)"
 sed -e 's/^/   /' "$WORK/.homonto/state.json" 2>/dev/null | head -40
 
 echo
-echo "## 6. the real tools see homonto's projection"
-echo "   -- claude mcp list --"
-claude mcp list 2>&1 | sed -e 's/^/   /' | head -6
+echo "## 6. the real tool sees homonto's projection"
 echo "   -- opencode mcp list --"
 opencode mcp list 2>&1 | sed -e 's/^/   /' | head -10
 

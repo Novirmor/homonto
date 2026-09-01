@@ -47,7 +47,7 @@ func TestDoctorReportsSkillLinkState(t *testing.T) {
 	}
 
 	// correct symlink -> linked
-	dst := filepath.Join(home, ".claude", "skills", "graphify")
+	dst := filepath.Join(home, ".config", "opencode", "skills", "graphify")
 	os.MkdirAll(filepath.Dir(dst), 0o755)
 	if err := os.Symlink(filepath.Join(content, "skills", "graphify"), dst); err != nil {
 		t.Fatal(err)
@@ -59,7 +59,7 @@ func TestDoctorReportsSkillLinkState(t *testing.T) {
 }
 
 // TestDoctorProjectScopeChecksProjectLocation: with scope=project, doctor must
-// verify both tool links at the project root, not the home locations.
+// verify the tool link at the project root, not the home location.
 func TestDoctorProjectScopeChecksProjectLocation(t *testing.T) {
 	home := t.TempDir()
 	repo := t.TempDir()
@@ -75,91 +75,52 @@ func TestDoctorProjectScopeChecksProjectLocation(t *testing.T) {
 		return e
 	}
 
-	// No links yet -> both tools reported unlinked.
+	// No link yet -> reported unlinked at the project location.
 	lines := strings.Join(build().Doctor(), "\n")
-	if !strings.Contains(lines, `skill "graphify" content present, not linked for claude`) ||
-		!strings.Contains(lines, `skill "graphify" content present, not linked for opencode`) {
-		t.Fatalf("project-scope doctor should report both links missing:\n%s", lines)
+	if !strings.Contains(lines, `skill "graphify" content present, not linked for opencode`) {
+		t.Fatalf("project-scope doctor should report the project link missing:\n%s", lines)
 	}
 
-	// Create project-location links for both tools.
-	for _, d := range []string{
-		filepath.Join(repo, ".claude", "skills", "graphify"),
-		filepath.Join(repo, ".opencode", "skills", "graphify"),
-	} {
-		os.MkdirAll(filepath.Dir(d), 0o755)
-		if err := os.Symlink(src, d); err != nil {
-			t.Fatal(err)
-		}
+	// Create the project-location link.
+	d := filepath.Join(repo, ".opencode", "skills", "graphify")
+	os.MkdirAll(filepath.Dir(d), 0o755)
+	if err := os.Symlink(src, d); err != nil {
+		t.Fatal(err)
 	}
 	lines = strings.Join(build().Doctor(), "\n")
-	if !strings.Contains(lines, `ok: skill "graphify" linked (claude)`) ||
-		!strings.Contains(lines, `ok: skill "graphify" linked (opencode)`) {
-		t.Fatalf("project-scope doctor should verify links at the project location:\n%s", lines)
+	if !strings.Contains(lines, `ok: skill "graphify" linked (opencode)`) {
+		t.Fatalf("project-scope doctor should verify the link at the project location:\n%s", lines)
 	}
 }
 
-// TestDoctorChecksOpenCodeSkillLink reproduces NEXT_AGENT gap #6: doctor
-// verified only the Claude skill link, so a missing OpenCode link went
-// unreported. Both tools' links must be checked, reported per tool.
-func TestDoctorChecksOpenCodeSkillLink(t *testing.T) {
+// TestDoctorChecksToolConfigLocations: doctor verifies the tool's config
+// location exists — absent is a warning naming the path, present is ok.
+func TestDoctorChecksToolConfigLocations(t *testing.T) {
 	home := t.TempDir()
 	repo := t.TempDir()
-	os.WriteFile(filepath.Join(repo, "homonto.toml"), []byte("[skills.graphify]\nsource=\"local:graphify\"\nscope=\"user\"\n"), 0o644)
-	content := filepath.Join(repo, "content")
-	os.MkdirAll(filepath.Join(content, "skills", "graphify"), 0o755)
-	src := filepath.Join(content, "skills", "graphify")
+	os.WriteFile(filepath.Join(repo, "homonto.toml"), []byte(""), 0o644)
 	build := func() *Engine {
-		e, err := Build(context.Background(), filepath.Join(repo, "homonto.toml"), home, content)
+		e, err := Build(context.Background(), filepath.Join(repo, "homonto.toml"), home, filepath.Join(repo, "content"))
 		if err != nil {
 			t.Fatal(err)
 		}
 		return e
 	}
 
-	// Only the Claude link exists; the OpenCode link is missing.
-	cl := filepath.Join(home, ".claude", "skills", "graphify")
-	os.MkdirAll(filepath.Dir(cl), 0o755)
-	if err := os.Symlink(src, cl); err != nil {
-		t.Fatal(err)
-	}
+	// No config dir yet -> a warning naming the location.
+	loc := filepath.Join(home, ".config", "opencode")
 	lines := strings.Join(build().Doctor(), "\n")
-	if !strings.Contains(lines, `ok: skill "graphify" linked (claude)`) {
-		t.Fatalf("claude link should be reported ok per tool:\n%s", lines)
-	}
-	if !strings.Contains(lines, `skill "graphify" content present, not linked for opencode`) {
-		t.Fatalf("doctor should warn about the missing opencode link:\n%s", lines)
+	if !strings.Contains(lines, loc) || !strings.Contains(lines, "not found") {
+		t.Fatalf("doctor should warn about the missing opencode config location:\n%s", lines)
 	}
 
-	// Add the OpenCode link too -> both report ok.
-	ol := filepath.Join(home, ".config", "opencode", "skills", "graphify")
-	os.MkdirAll(filepath.Dir(ol), 0o755)
-	if err := os.Symlink(src, ol); err != nil {
+	// Present -> ok.
+	if err := os.MkdirAll(loc, 0o755); err != nil {
 		t.Fatal(err)
 	}
 	lines = strings.Join(build().Doctor(), "\n")
-	if !strings.Contains(lines, `ok: skill "graphify" linked (opencode)`) {
-		t.Fatalf("opencode link should be reported ok after linking:\n%s", lines)
-	}
-}
-
-func TestDoctorChecksToolConfigLocations(t *testing.T) {
-	home := t.TempDir()
-	repo := t.TempDir()
-	os.WriteFile(filepath.Join(repo, "homonto.toml"), []byte(""), 0o644)
-	// Claude dir present, OpenCode dir absent
-	os.MkdirAll(filepath.Join(home, ".claude"), 0o755)
-
-	e, err := Build(context.Background(), filepath.Join(repo, "homonto.toml"), home, filepath.Join(repo, "content"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	lines := strings.Join(e.Doctor(), "\n")
-	if !strings.Contains(lines, ".claude") {
-		t.Fatalf("doctor should mention the claude config location:\n%s", lines)
-	}
-	if !strings.Contains(lines, "opencode") {
-		t.Fatalf("doctor should mention the opencode config location:\n%s", lines)
+	if !strings.Contains(lines, "ok: .config/opencode (OpenCode) config location present") {
+		t.Fatalf("doctor should report the opencode config location present:\n%s", lines)
 	}
 }
 
@@ -178,7 +139,7 @@ func buildStatusEngine(t *testing.T, repo, home string) *Engine {
 func TestStatusDetectsDriftAfterOutOfBandChange(t *testing.T) {
 	home := t.TempDir()
 	repo := t.TempDir()
-	os.WriteFile(filepath.Join(repo, "homonto.toml"), []byte("[settings.claude]\nmodel=\"opus\"\n"), 0o644)
+	os.WriteFile(filepath.Join(repo, "homonto.toml"), []byte("[settings.opencode]\nmodel=\"opus\"\n"), 0o644)
 
 	e := buildStatusEngine(t, repo, home)
 	sets, _ := e.Plan()
@@ -192,7 +153,7 @@ func TestStatusDetectsDriftAfterOutOfBandChange(t *testing.T) {
 	}
 
 	// change the managed key ON DISK, out of band
-	sj := filepath.Join(home, ".claude", "settings.json")
+	sj := filepath.Join(home, ".config", "opencode", "opencode.jsonc")
 	os.WriteFile(sj, []byte(`{"model":"sonnet"}`), 0o644)
 
 	drift, pending, err := buildStatusEngine(t, repo, home).Status()
@@ -216,7 +177,7 @@ func TestStatusDetectsDriftAfterOutOfBandChange(t *testing.T) {
 func TestStatusConfigEditIsPendingNotDrift(t *testing.T) {
 	home := t.TempDir()
 	repo := t.TempDir()
-	os.WriteFile(filepath.Join(repo, "homonto.toml"), []byte("[settings.claude]\nmodel=\"opus\"\n"), 0o644)
+	os.WriteFile(filepath.Join(repo, "homonto.toml"), []byte("[settings.opencode]\nmodel=\"opus\"\n"), 0o644)
 
 	e := buildStatusEngine(t, repo, home)
 	sets, _ := e.Plan()
@@ -225,7 +186,7 @@ func TestStatusConfigEditIsPendingNotDrift(t *testing.T) {
 	}
 
 	// Edit ONLY the config (desired), leaving the on-disk value untouched.
-	os.WriteFile(filepath.Join(repo, "homonto.toml"), []byte("[settings.claude]\nmodel=\"sonnet\"\n"), 0o644)
+	os.WriteFile(filepath.Join(repo, "homonto.toml"), []byte("[settings.opencode]\nmodel=\"sonnet\"\n"), 0o644)
 
 	drift, pending, err := buildStatusEngine(t, repo, home).Status()
 	if err != nil {
@@ -244,7 +205,7 @@ func TestStatusConfigEditIsPendingNotDrift(t *testing.T) {
 func TestStatusReportsMissingManagedKey(t *testing.T) {
 	home := t.TempDir()
 	repo := t.TempDir()
-	os.WriteFile(filepath.Join(repo, "homonto.toml"), []byte("[settings.claude]\nmodel=\"opus\"\n"), 0o644)
+	os.WriteFile(filepath.Join(repo, "homonto.toml"), []byte("[settings.opencode]\nmodel=\"opus\"\n"), 0o644)
 
 	e := buildStatusEngine(t, repo, home)
 	sets, _ := e.Plan()
@@ -253,7 +214,7 @@ func TestStatusReportsMissingManagedKey(t *testing.T) {
 	}
 
 	// remove the managed key from disk out of band
-	sj := filepath.Join(home, ".claude", "settings.json")
+	sj := filepath.Join(home, ".config", "opencode", "opencode.jsonc")
 	os.WriteFile(sj, []byte(`{}`), 0o644)
 
 	drift, pending, err := buildStatusEngine(t, repo, home).Status()
@@ -278,7 +239,7 @@ func TestStatusDriftedKeyExcludedFromPendingWhileOthersCount(t *testing.T) {
 	home := t.TempDir()
 	repo := t.TempDir()
 	os.WriteFile(filepath.Join(repo, "homonto.toml"),
-		[]byte("[settings.claude]\nmodel=\"opus\"\ntheme=\"dark\"\n"), 0o644)
+		[]byte("[settings.opencode]\nmodel=\"opus\"\ntheme=\"dark\"\n"), 0o644)
 
 	e := buildStatusEngine(t, repo, home)
 	sets, _ := e.Plan()
@@ -290,10 +251,10 @@ func TestStatusDriftedKeyExcludedFromPendingWhileOthersCount(t *testing.T) {
 	// DIFFERENT "haiku" — so desired != disk != Applied, both disk-drifted AND a
 	// config edit. theme: leave disk at "dark" (== Applied) but edit desired to
 	// "light" — a pure config edit that must count as pending.
-	sj := filepath.Join(home, ".claude", "settings.json")
+	sj := filepath.Join(home, ".config", "opencode", "opencode.jsonc")
 	os.WriteFile(sj, []byte(`{"model":"sonnet","theme":"dark"}`), 0o644)
 	os.WriteFile(filepath.Join(repo, "homonto.toml"),
-		[]byte("[settings.claude]\nmodel=\"haiku\"\ntheme=\"light\"\n"), 0o644)
+		[]byte("[settings.opencode]\nmodel=\"haiku\"\ntheme=\"light\"\n"), 0o644)
 
 	drift, pending, err := buildStatusEngine(t, repo, home).Status()
 	if err != nil {
@@ -313,11 +274,12 @@ func TestStatusDriftedKeyExcludedFromPendingWhileOthersCount(t *testing.T) {
 	}
 }
 
-// TestStatusSkipsErroredAdapterButReportsOther proves a per-adapter drift-scan
-// failure is isolated: a malformed ~/.claude.json makes the Claude adapter's
-// Plan and ObserveHashes both fail, so it is skipped with a warning, while a
-// genuine OpenCode drift is still reported — no false "No drift".
-func TestStatusSkipsErroredAdapterButReportsOther(t *testing.T) {
+// TestStatusSkipsErroredAdapterButContinues proves a per-adapter drift-scan
+// failure is isolated: a malformed opencode.jsonc makes the adapter's Plan and
+// ObserveHashes both fail, so it is skipped with a warning — Status itself
+// must not error, and the warning (which the CLI turns into a non-zero exit)
+// says the drift scan was skipped rather than silently reporting a clean bill.
+func TestStatusSkipsErroredAdapterButContinues(t *testing.T) {
 	home := t.TempDir()
 	repo := t.TempDir()
 	os.WriteFile(filepath.Join(repo, "homonto.toml"),
@@ -329,26 +291,19 @@ func TestStatusSkipsErroredAdapterButReportsOther(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// Drift the OpenCode setting on disk out of band.
+	// Corrupt opencode.jsonc so the adapter cannot parse it: both its Plan and
+	// ObserveHashes fail, exercising the skip-with-warning path.
 	oc := filepath.Join(home, ".config", "opencode", "opencode.jsonc")
-	os.WriteFile(oc, []byte(`{"theme":"light"}`), 0o644)
-	// Corrupt ~/.claude.json so the Claude adapter cannot parse it: both its Plan
-	// and ObserveHashes fail, exercising the skip-with-warning path.
-	os.WriteFile(filepath.Join(home, ".claude.json"), []byte(`{ not json`), 0o644)
+	os.WriteFile(oc, []byte(`{ not json`), 0o644)
 
 	e2 := buildStatusEngine(t, repo, home)
-	drift, _, err := e2.Status()
+	_, _, err := e2.Status()
 	if err != nil {
 		t.Fatal(err)
 	}
-	// The broken Claude adapter is reported as a warning, not a hard failure.
-	if len(e2.Warnings) == 0 || !strings.Contains(strings.Join(e2.Warnings, "\n"), "claude") {
-		t.Fatalf("expected a warning naming the skipped claude adapter, got %v", e2.Warnings)
-	}
-	// The healthy OpenCode adapter still reports its drift.
-	joined := strings.Join(drift, "\n")
-	if !strings.Contains(joined, "opencode") || !strings.Contains(joined, "theme") {
-		t.Fatalf("opencode drift must still be reported despite the claude skip, got %v", drift)
+	// The broken adapter is reported as a warning, not a hard failure.
+	if len(e2.Warnings) == 0 || !strings.Contains(strings.Join(e2.Warnings, "\n"), "opencode") {
+		t.Fatalf("expected a warning naming the skipped opencode adapter, got %v", e2.Warnings)
 	}
 }
 
@@ -365,7 +320,7 @@ func TestDoctorReportsBuiltinSkillLinked(t *testing.T) {
 
 	out := e.Doctor()
 	joined := strings.Join(out, "\n")
-	if !strings.Contains(joined, `skill "onto-open" linked (claude)`) {
+	if !strings.Contains(joined, `skill "onto-open" linked (opencode)`) {
 		t.Fatalf("doctor did not report the builtin skill as linked:\n%s", joined)
 	}
 }
@@ -383,7 +338,7 @@ func TestDoctorReportsLinkedCommand(t *testing.T) {
 
 	var found bool
 	for _, line := range e.Doctor() {
-		if strings.Contains(line, "ok: command \"example-command\" linked (claude)") {
+		if strings.Contains(line, "ok: command \"example-command\" linked (opencode)") {
 			found = true
 		}
 	}
@@ -392,14 +347,12 @@ func TestDoctorReportsLinkedCommand(t *testing.T) {
 	}
 }
 
-const subagentBothToolsTOML = `
+const subagentOpenCodeTOML = `
 [subagents.onto-reviewer]
 source = "builtin:onto-reviewer"
 scope = "project"
-targets = ["claude", "opencode"]
+targets = ["opencode"]
 
-[subagents.onto-reviewer.claude]
-model = "opus"
 [subagents.onto-reviewer.opencode]
 model = "anthropic/claude-opus-4-8"
 `
@@ -407,7 +360,7 @@ model = "anthropic/claude-opus-4-8"
 func TestDoctorReportsLinkedSubagent(t *testing.T) {
 	home := t.TempDir()
 	repo := t.TempDir()
-	os.WriteFile(filepath.Join(repo, "homonto.toml"), []byte(subagentBothToolsTOML), 0o644)
+	os.WriteFile(filepath.Join(repo, "homonto.toml"), []byte(subagentOpenCodeTOML), 0o644)
 
 	e := buildEngine(t, home, repo)
 	sets, _ := e.Plan()
@@ -416,9 +369,6 @@ func TestDoctorReportsLinkedSubagent(t *testing.T) {
 	}
 
 	joined := strings.Join(e.Doctor(), "\n")
-	if !strings.Contains(joined, `ok: subagent "onto-reviewer" linked (claude)`) {
-		t.Fatalf("doctor did not report onto-reviewer linked for claude; got %s", joined)
-	}
 	if !strings.Contains(joined, `ok: subagent "onto-reviewer" linked (opencode)`) {
 		t.Fatalf("doctor did not report onto-reviewer linked for opencode; got %s", joined)
 	}
@@ -427,7 +377,7 @@ func TestDoctorReportsLinkedSubagent(t *testing.T) {
 func TestStatusCleanAfterApply(t *testing.T) {
 	home := t.TempDir()
 	repo := t.TempDir()
-	os.WriteFile(filepath.Join(repo, "homonto.toml"), []byte("[settings.claude]\nmodel=\"opus\"\n"), 0o644)
+	os.WriteFile(filepath.Join(repo, "homonto.toml"), []byte("[settings.opencode]\nmodel=\"opus\"\n"), 0o644)
 
 	e := buildStatusEngine(t, repo, home)
 	sets, _ := e.Plan()

@@ -55,11 +55,10 @@ and to's workflow commands take `--json`.
 
 ## Projection
 
-**OpenCode comments disappeared.** Claude's files are plain JSON, but
-OpenCode's `opencode.jsonc` supports comments — and any apply that *writes*
-that file rewrites it as normalized JSON, removing all comments. A
-skills-only or otherwise no-op apply does not write the file, so comments
-survive those. Accepted for beta.
+**OpenCode comments disappeared.** OpenCode's `opencode.jsonc` supports
+comments — and any apply that *writes* that file rewrites it as normalized
+JSON, removing all comments. A skills-only or otherwise no-op apply does not
+write the file, so comments survive those. Accepted for beta.
 
 **"Conflict" reported on a skill or subagent link.** homonto never clobbers
 a file that is not its own symlink. A real file, or a link pointing
@@ -92,28 +91,21 @@ TOML is the source of truth for everything it declares.
 apply resolves all secrets before touching any file. `homonto doctor` flags
 a missing `pass`.
 
-## Scope of the adapters
+## Scope of the adapter
 
-- **Claude Code and OpenCode** are the full adapters.
-- **Codex** (OpenAI Codex CLI) is a pilot: it projects **MCP servers only**,
-  into `~/.codex/config.toml` `[mcp_servers.<name>]`, and is **opt-in** — a
-  resource must list `codex` in its `targets`. Listing `codex` on a
-  subagent has no effect.
+**OpenCode is the only adapter.** Claude Code and codex support was removed
+in v0.13.0: a config naming them — `targets = ["claude"]` or
+`targets = ["codex"]`, `[settings.claude]`, `[plugins.claude.*]`,
+`[marketplaces.claude.*]`, or a `[subagents.<name>.claude]` block — fails
+at load, naming the key. The `homonto import` command (a Claude MCP
+bootstrap) went with them.
+
 - **Frameworks** resolve from the builtin catalog (`onto` or `to`, mutually
   exclusive), a `local:` root, or a digest-pinned `remote:` source.
 - **Remote sources** (subagents and frameworks) require a
   `digest = "sha256:…"` pin (see
   [remote source trust](remote-source-trust.md)). homonto never re-resolves
   a pin to newer content; updating is a config edit you make.
-
-## `import` is narrow
-
-`homonto import` reads **Claude's global MCP servers only** (`~/.claude.json`
-`mcpServers`). It skips non-stdio (url/http) servers with a warning, redacts
-env values that *look* like secrets into `${pass:…}` references
-(best-effort), copies `command`/`args` verbatim, and imports no skills,
-plugins, settings, or OpenCode config. Review its output before applying or
-committing. It refuses to overwrite an existing config without `--force`.
 
 ## onto
 

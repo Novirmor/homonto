@@ -140,12 +140,10 @@ onto ships **five** agent definitions: the `onto` orchestrator plus four
 specialists the skills delegate to.
 
 - **`onto`** — the orchestrator, and the one agent that is not a specialist.
-  It is declared `primary: true`, which renders **only for OpenCode**
-  (`mode: primary`), where the `/onto` command carries `agent: onto` and routes
-  into it. Claude has no primary-agent concept, so agentfm skips the Claude
-  variant entirely and `/onto` there loads the `onto` skill instead. Both paths
-  end at the same dispatcher doctrine — the agent prompt deliberately does not
-  restate the skill, so the two cannot drift.
+  It is declared `primary: true`, which renders as OpenCode's
+  `mode: primary`, where the `/onto` command carries `agent: onto` and routes
+  into it. The agent prompt deliberately does not restate the skill, so the
+  two cannot drift.
 
 - **`onto-explorer`** — read-only; reads across many files (and keeps bash
   for the code-intelligence CLIs and git history) to answer "how does X work
@@ -175,9 +173,9 @@ subagent cannot prompt. Who does the *editing* depends on the change's
 and commits its own task's files.
 
 All declare their capabilities once in a tool-neutral `homonto:` frontmatter
-block, rendered into Claude's `disallowedTools:` denylist and OpenCode's
-`permission:` map (see [subagents](subagents.md)). Parallelization works in
-both tools, and follows what an agent writes rather than which agent it is
+block, rendered into OpenCode's `permission:` map (see
+[subagents](subagents.md)). Parallelization follows what an agent writes
+rather than which agent it is
 ([ADR 0019](../adr/0019-parallelism-follows-write-scope.md)): the three
 read-only agents run concurrently wherever the work is independent — grounding
 in open and design, per-task and per-lens review in build, scenario evidence
@@ -186,12 +184,11 @@ time unless each has its own git worktree and a disjoint file set, which is
 what `isolation: worktree` is for. Dialogs belong to the orchestrator alone:
 a subagent that needs a decision returns a `Questions:` section and stops,
 and the orchestrator asks, then re-dispatches with the answer. That protocol
-is the real guarantee — the rendering only backs it in OpenCode, where
-`dialogs: false` becomes `question: deny`. Claude has no equivalent field, and
-none is needed: a Claude subagent never has AskUserQuestion in the first
-place. Gate decisions are asked through an interactive dialog (`onto gate
---json` supplies the structured decision; the skill renders it). The
-orchestrator — your main session — still owns every edit and commit.
+is the real guarantee — the rendering backs it in OpenCode, where
+`dialogs: false` becomes `question: deny`. Gate decisions are asked through
+an interactive dialog (`onto gate --json` supplies the structured decision;
+the skill renders it). The orchestrator — your main session — still owns
+every edit and commit.
 
 ## Working in a dirty tree
 

@@ -1,7 +1,0 @@
-# A user's real Codex config with content homonto does not manage.
-model = "o3"
-approval_policy = "on-request"
-
-[mcp_servers.user_owned]
-command = "user-server"
-args = ["--flag"]

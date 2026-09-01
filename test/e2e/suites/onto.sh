@@ -13,26 +13,25 @@ git config user.email "e2e@example.com"
 git config user.name "e2e"
 
 log "homonto apply installs the onto framework"
-# Every framework-expanded subagent must declare a per-tool model for each
-# targeted tool (there are no tiers). Target claude only to keep the fixture
-# minimal; materialization of .homonto/catalog/skills/onto is
+# Every framework-expanded subagent must declare a model in its
+# [subagents.<n>.opencode] block (there are no tiers — OpenCode is the only
+# adapter). Materialization of .homonto/catalog/skills/onto is
 # target-independent, so the onto gate is satisfied either way.
 cat > homonto.toml <<'EOF'
 [frameworks.onto]
 source = "builtin:onto"
 scope = "project"
-targets = ["claude"]
 
-[subagents.onto.claude]
-model = "opus"
-[subagents.onto-explorer.claude]
-model = "haiku"
-[subagents.onto-reviewer.claude]
-model = "opus"
-[subagents.onto-implementer.claude]
-model = "sonnet"
-[subagents.onto-skeptic.claude]
-model = "opus"
+[subagents.onto.opencode]
+model = "anthropic/claude-opus-4-8"
+[subagents.onto-explorer.opencode]
+model = "openai/gpt-5-mini"
+[subagents.onto-reviewer.opencode]
+model = "anthropic/claude-opus-4-8"
+[subagents.onto-implementer.opencode]
+model = "anthropic/claude-sonnet-4"
+[subagents.onto-skeptic.opencode]
+model = "anthropic/claude-opus-4-8"
 EOF
 homonto apply --yes
 [ -d "$WORK/.homonto/catalog/skills/onto" ] || fail "onto framework not materialized to .homonto/catalog/skills/onto"

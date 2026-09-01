@@ -6,13 +6,16 @@ import (
 	"github.com/noviopenworks/homonto/internal/adapter"
 )
 
-func TestBuiltins_BuildsThreeAdaptersInOrder(t *testing.T) {
+// TestBuiltins_BuildsTheOpenCodeAdapter verifies the built-in registry builds
+// exactly the registered built-ins in order — OpenCode alone since v0.13.0,
+// which is also the assertion that no removed adapter quietly re-registers.
+func TestBuiltins_BuildsTheOpenCodeAdapter(t *testing.T) {
 	adapters := Builtins().Build(Deps{Home: "/home/u", ContentDir: "/repo/content"})
 	got := make([]string, len(adapters))
 	for i, a := range adapters {
 		got[i] = a.Name()
 	}
-	want := []string{"claude", "opencode", "codex"}
+	want := []string{"opencode"}
 	if len(got) != len(want) {
 		t.Fatalf("built %d adapters %v, want %v", len(got), got, want)
 	}
@@ -30,6 +33,6 @@ func TestRegister_PanicsOnDuplicateID(t *testing.T) {
 		}
 	}()
 	r := New()
-	r.Register("claude", func(Deps) adapter.Adapter { return nil })
-	r.Register("claude", func(Deps) adapter.Adapter { return nil })
+	r.Register("opencode", func(Deps) adapter.Adapter { return nil })
+	r.Register("opencode", func(Deps) adapter.Adapter { return nil })
 }

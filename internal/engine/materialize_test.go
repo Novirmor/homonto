@@ -11,68 +11,42 @@ import (
 )
 
 // ontoFrameworkModels is the per-agent override blocks required by the onto
-// framework's expanded subagents (each tool they target). Tests that install
-// the onto framework must declare one of these per agent per tool now that
-// tiers are gone.
+// framework's expanded subagents. Tests that install the onto framework must
+// declare one of these per agent now that tiers are gone.
 const ontoFrameworkModels = `
-[subagents.onto.claude]
-model = "opus"
 [subagents.onto.opencode]
 model = "anthropic/claude-opus-4-8"
-[subagents.onto-explorer.claude]
-model = "haiku"
 [subagents.onto-explorer.opencode]
 model = "openai/gpt-5-mini"
-[subagents.onto-reviewer.claude]
-model = "opus"
 [subagents.onto-reviewer.opencode]
 model = "anthropic/claude-opus-4-8"
-[subagents.onto-implementer.claude]
-model = "sonnet"
 [subagents.onto-implementer.opencode]
 model = "anthropic/claude-sonnet-4"
-[subagents.onto-skeptic.claude]
-model = "opus"
 [subagents.onto-skeptic.opencode]
 model = "anthropic/claude-opus-4-8"
-`
-
-// ontoTOMLClaude is the subset of ontoFrameworkModels targeting claude only,
-// for tests that install onto with targets = ["claude"].
-const ontoTOMLClaude = `
-[subagents.onto.claude]
-model = "opus"
-[subagents.onto-explorer.claude]
-model = "haiku"
-[subagents.onto-reviewer.claude]
-model = "opus"
-[subagents.onto-implementer.claude]
-model = "sonnet"
-[subagents.onto-skeptic.claude]
-model = "opus"
 `
 
 const ontoTOML = `
 [frameworks.onto]
 source = "builtin:onto"
 scope = "user"
-targets = ["claude"]
-` + ontoTOMLClaude
+targets = ["opencode"]
+` + ontoFrameworkModels
 
 const commandTOML = `
 [commands.example-command]
 source = "builtin:example-command"
 scope = "user"
-targets = ["claude"]
+targets = ["opencode"]
 `
 
 const subagentTOML = `
 [subagents.onto-reviewer]
 source = "builtin:onto-reviewer"
 scope = "project"
-targets = ["claude"]
+targets = ["opencode"]
 
-[subagents.onto-reviewer.claude]
+[subagents.onto-reviewer.opencode]
 model = "opus"
 `
 
@@ -106,21 +80,21 @@ func mustPlan(t *testing.T, e *Engine) []adapter.ChangeSet {
 }
 
 // projectOntoTOML installs a builtin framework at PROJECT scope so its skill
-// links land under <projectRoot>/.claude/skills — the layout where a catalog
+// links land under <projectRoot>/.opencode/skills — the layout where a catalog
 // symlink target computed relative to the wrong base dangles.
 const projectOntoTOML = `
 [frameworks.onto]
 source = "builtin:onto"
 scope = "project"
-targets = ["claude"]
-` + ontoTOMLClaude
+targets = ["opencode"]
+` + ontoFrameworkModels
 
 // TestApplyRelativeConfigLinksResolve is the regression guard for the dangling
 // catalog-symlink bug: with the default relative --config ("homonto.toml" from
 // the repo cwd), filepath.Dir(configPath) is ".", so a stateDir built from it
 // was relative and every catalog-skill link target was stored as
 // ".homonto/catalog/skills/<name>" — which resolves against the *link's* dir
-// (.claude/skills/) and dangles, making the skill invisible to the tool. The
+// (.opencode/skills/) and dangles, making the skill invisible to the tool. The
 // link target must be absolute and the link must resolve to real content.
 func TestApplyRelativeConfigLinksResolve(t *testing.T) {
 	home := t.TempDir()
@@ -147,7 +121,7 @@ func TestApplyRelativeConfigLinksResolve(t *testing.T) {
 		t.Fatalf("apply: %v", err)
 	}
 
-	link := filepath.Join(repo, ".claude", "skills", "onto-open")
+	link := filepath.Join(repo, ".opencode", "skills", "onto-open")
 	target, err := os.Readlink(link)
 	if err != nil {
 		t.Fatalf("expected a symlink at %s: %v", link, err)

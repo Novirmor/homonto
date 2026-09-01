@@ -40,7 +40,7 @@ func TestHasRemoteResources(t *testing.T) {
 		},
 		{
 			name: "remote subagent present",
-			toml: base + "[subagents.r]\nsource = \"remote:https://example.com/r.tar.gz\"\ndigest = \"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\"\ntargets = [\"claude\"]\n",
+			toml: base + "[subagents.r]\nsource = \"remote:https://example.com/r.tar.gz\"\ndigest = \"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\"\ntargets = [\"opencode\"]\n",
 			want: true,
 		},
 	}
@@ -77,7 +77,7 @@ func TestPendingRemoteRepins(t *testing.T) {
 	// First config: declares pinA. There is no lockfile yet, so there is no
 	// repin to report (a fresh declaration surfaces in the projection plan as
 	// a create, not as a repin).
-	if err := os.WriteFile(cfgPath, []byte("[subagents.r]\nsource = \"remote:https://example.com/r.tar.gz\"\ndigest = \""+pinA+"\"\ntargets = [\"claude\"]\n"), 0o644); err != nil {
+	if err := os.WriteFile(cfgPath, []byte("[subagents.r]\nsource = \"remote:https://example.com/r.tar.gz\"\ndigest = \""+pinA+"\"\ntargets = [\"opencode\"]\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	e, err := Build(context.Background(), cfgPath, home, filepath.Join(repo, "content"))
@@ -105,7 +105,7 @@ func TestPendingRemoteRepins(t *testing.T) {
 	}
 
 	// Change the config to pinB → one repin, named, with the old+new pins.
-	if err := os.WriteFile(cfgPath, []byte("[subagents.r]\nsource = \"remote:https://example.com/r.tar.gz\"\ndigest = \""+pinB+"\"\ntargets = [\"claude\"]\n"), 0o644); err != nil {
+	if err := os.WriteFile(cfgPath, []byte("[subagents.r]\nsource = \"remote:https://example.com/r.tar.gz\"\ndigest = \""+pinB+"\"\ntargets = [\"opencode\"]\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	e2, err := Build(context.Background(), cfgPath, home, filepath.Join(repo, "content"))

@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strings"
 
 	"github.com/noviopenworks/homonto/internal/adapter"
 	"github.com/noviopenworks/homonto/internal/adapter/baseadapter"
@@ -156,10 +157,27 @@ func (a *Adapter) desiredProjectMCPs(c *config.Config) map[string]string {
 // longer derives a default main/small_model from any route — an operator who
 // wants a specific model declares it via [settings.opencode], and otherwise
 // OpenCode uses its own default.
+//
+// `model_variant` is homonto's companion to `model`: instead of (or in
+// addition to) writing the variant into the id yourself
+// (`model = "openai/gpt-5#high"`), declare it separately and the two are
+// combined at projection time — the same companion shape
+// [subagents.<name>.opencode] uses. It never reaches opencode.jsonc as its
+// own key.
 func (a *Adapter) desiredSettings(c *config.Config) map[string]string {
 	out := map[string]string{}
 	for k, v := range c.Settings.OpenCode {
 		out["setting."+k] = structproj.MustJSON(v)
+	}
+	if mv, ok := c.Settings.OpenCode["model_variant"]; ok {
+		model, _ := c.Settings.OpenCode["model"].(string)
+		variant, _ := mv.(string)
+		combined := model
+		if variant != "" && !strings.HasSuffix(model, "#"+variant) {
+			combined = model + "#" + variant
+		}
+		out["setting.model"] = structproj.MustJSON(combined)
+		delete(out, "setting.model_variant")
 	}
 	return out
 }

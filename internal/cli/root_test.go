@@ -21,15 +21,19 @@ func TestVersionCommand(t *testing.T) {
 	}
 }
 
-// TestApplyFailsWhenAdapterSkipped: apply proceeds past a skipped adapter
-// (the other tools still get their config), but automation must see a
-// non-zero exit — "Applied." with exit 0 would hide that one tool was never
-// written. Plan/status keep exit 0 with warnings.
+// TestApplyFailsWhenAdapterSkipped: when the (only) adapter's plan fails —
+// here a corrupt opencode.jsonc — apply must not hard-fail but must exit
+// non-zero with a skipped-adapters summary. "No changes" with exit 0 would
+// hide that nothing was written at all. Plan/status keep exit 0 with warnings.
 func TestApplyFailsWhenAdapterSkipped(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
-	// Corrupt .claude.json: the claude adapter's Plan fails and is skipped.
-	if err := os.WriteFile(filepath.Join(home, ".claude.json"), []byte(`[not json`), 0o600); err != nil {
+	cfgFile := filepath.Join(home, ".config", "opencode", "opencode.jsonc")
+	if err := os.MkdirAll(filepath.Dir(cfgFile), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	// Corrupt opencode.jsonc: the OpenCode adapter's Plan fails and is skipped.
+	if err := os.WriteFile(cfgFile, []byte(`[not json`), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	repo := t.TempDir()
@@ -50,8 +54,9 @@ func TestApplyFailsWhenAdapterSkipped(t *testing.T) {
 	if !strings.Contains(err.Error(), "completed with skipped adapters") {
 		t.Fatalf("error = %v; want a skipped-adapters summary", err)
 	}
-	// The healthy adapter must still have been applied.
-	if _, statErr := os.Stat(filepath.Join(home, ".config", "opencode", "opencode.jsonc")); statErr != nil {
-		t.Fatalf("opencode config not written despite proceed-past-skip: %v", statErr)
+	// A skipped adapter's file is never written: the corrupt bytes must still
+	// be on disk, not replaced by a homonto-authored document.
+	if b, rerr := os.ReadFile(cfgFile); rerr != nil || string(b) != `[not json` {
+		t.Fatalf("skipped adapter's file must be left untouched, got %q (%v)", string(b), rerr)
 	}
 }

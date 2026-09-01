@@ -17,10 +17,9 @@ type MCP struct {
 	Env     map[string]string `toml:"env"`
 	Targets []string          `toml:"targets"`
 	// Scope selects where the server projects: "user" (default) → the global
-	// tool config; "project" → the project-level config each tool merges over
-	// it (OpenCode <repo>/opencode.jsonc; Claude <repo>/.mcp.json), so a
-	// repository's servers don't run in every other session. Codex is
-	// user-scope only (the pilot has no project config).
+	// tool config; "project" → the project-level config the tool merges over
+	// it (OpenCode <repo>/opencode.jsonc), so a repository's servers don't
+	// run in every other session.
 	Scope string `toml:"scope"`
 }
 
@@ -33,10 +32,11 @@ func (m MCP) ScopeOrDefault() string {
 	return m.Scope
 }
 
-// TargetsOrAll returns the explicit targets, or all tools when none are set.
+// TargetsOrAll returns the explicit targets, or every tool when none are set
+// — OpenCode, the only adapter since v0.13.0.
 func (m MCP) TargetsOrAll() []string {
 	if len(m.Targets) == 0 {
-		return []string{"claude", "opencode"}
+		return []string{"opencode"}
 	}
 	return m.Targets
 }
@@ -54,10 +54,11 @@ type Resource struct {
 	Digest string `toml:"digest"`
 }
 
-// TargetsOrAll returns the explicit targets, or all tools when none are set.
+// TargetsOrAll returns the explicit targets, or every tool when none are set
+// — OpenCode, the only adapter since v0.13.0.
 func (r Resource) TargetsOrAll() []string {
 	if len(r.Targets) == 0 {
-		return []string{"claude", "opencode"}
+		return []string{"opencode"}
 	}
 	return r.Targets
 }
@@ -88,10 +89,13 @@ type Subagent struct {
 	// Digest is the sha256 content pin ("sha256:<hex>") required when Source is a
 	// remote: source and unused otherwise.
 	Digest string `toml:"digest"`
-	// Claude and OpenCode are per-tool model overrides for THIS subagent,
-	// declared as [subagents.<name>.<tool>]. A declared subagent must set a
-	// non-empty model for every tool it is enabled for; effort and variant
-	// are optional and merge field-by-field at render.
+	// Claude is the post-removal detector for [subagents.<name>.claude] blocks:
+	// Claude Code support was removed in v0.13.0, so any non-empty value is
+	// rejected at load naming the subagent. OpenCode is the live per-tool
+	// model override for THIS subagent, declared as
+	// [subagents.<name>.opencode]; a declared subagent must set a non-empty
+	// model for every tool it is enabled for, and effort and variant are
+	// optional and merge field-by-field at render.
 	Claude   ModelRoute `toml:"claude"`
 	OpenCode ModelRoute `toml:"opencode"`
 }
@@ -99,8 +103,6 @@ type Subagent struct {
 // ModelOverrideFor returns this subagent's override for tool.
 func (s Subagent) ModelOverrideFor(tool string) ModelRoute {
 	switch tool {
-	case "claude":
-		return s.Claude
 	case "opencode":
 		return s.OpenCode
 	}
@@ -115,7 +117,7 @@ func (s Subagent) ModelOverrideFor(tool string) ModelRoute {
 // retune the model of an agent you installed via [frameworks.*] — the main
 // reason to reach for an override. So
 //
-//	[subagents.onto-skeptic.claude]
+//	[subagents.onto-skeptic.opencode]
 //	effort = "max"
 //
 // with no source is read as "tune onto-skeptic", not "declare it": it projects
@@ -124,7 +126,7 @@ func (s Subagent) IsTuneOnly() bool {
 	if strings.TrimSpace(s.Source) != "" {
 		return false
 	}
-	return s.Claude != ModelRoute{} || s.OpenCode != ModelRoute{}
+	return s.OpenCode != ModelRoute{}
 }
 
 // SubagentCatalogName returns the builtin catalog name a source resolves to.
@@ -133,10 +135,11 @@ func SubagentCatalogName(source string) (string, bool) {
 	return strings.CutPrefix(source, "builtin:")
 }
 
-// TargetsOrAll returns the explicit targets, or all tools when none are set.
+// TargetsOrAll returns the explicit targets, or every tool when none are set
+// — OpenCode, the only adapter since v0.13.0.
 func (s Subagent) TargetsOrAll() []string {
 	if len(s.Targets) == 0 {
-		return []string{"claude", "opencode"}
+		return []string{"opencode"}
 	}
 	return s.Targets
 }
@@ -168,14 +171,15 @@ func (s Subagent) asResource() Resource {
 type Agent struct {
 	Source  string   `toml:"source"`  // builtin:<name> | local:<name>
 	Version string   `toml:"version"` // optional; empty = unpinned
-	Targets []string `toml:"targets"` // optional; empty = both tools
+	Targets []string `toml:"targets"` // optional; empty = every tool (OpenCode)
 	Mode    string   `toml:"mode"`    // optional; copy | link (empty = link)
 }
 
-// TargetsOrAll returns the explicit targets, or all tools when none are set.
+// TargetsOrAll returns the explicit targets, or every tool when none are set
+// — OpenCode, the only adapter since v0.13.0.
 func (a Agent) TargetsOrAll() []string {
 	if len(a.Targets) == 0 {
-		return []string{"claude", "opencode"}
+		return []string{"opencode"}
 	}
 	return a.Targets
 }
@@ -199,9 +203,8 @@ type ModelRoute struct {
 	Variant string `toml:"variant"`
 }
 
-// Plugin is one declared plugin. Source is the tool-native identifier: for
-// claude the "name@marketplace" key used in enabledPlugins; for opencode the
-// npm package / local plugin path placed in the `plugin` array.
+// Plugin is one declared plugin. Source is the tool-native identifier: the
+// npm package / local plugin path placed in the opencode `plugin` array.
 type Plugin struct {
 	Source  string         `toml:"source"`
 	Enabled *bool          `toml:"enabled"` // nil == true (default enabled)
@@ -211,31 +214,35 @@ type Plugin struct {
 // IsEnabled reports whether the plugin is enabled (default true when omitted).
 func (p Plugin) IsEnabled() bool { return p.Enabled == nil || *p.Enabled }
 
-// Plugins groups per-tool plugin declarations: [plugins.claude.<name>] and
-// [plugins.opencode.<name>]. Each adapter sees only its own map.
+// Plugins groups per-tool plugin declarations. Claude is the post-removal
+// detector for [plugins.claude.<name>]: Claude Code support was removed in
+// v0.13.0, so any non-empty map is rejected at load. OpenCode is the live
+// [plugins.opencode.<name>] surface.
 type Plugins struct {
 	Claude   map[string]Plugin `toml:"claude"`
 	OpenCode map[string]Plugin `toml:"opencode"`
 }
 
 // Settings groups per-tool arbitrary managed settings keys. Values are
-// projected through the structured-document contract into each tool's native
-// settings file.
+// projected through the structured-document contract into the tool's native
+// settings file. Claude is the post-removal detector for [settings.claude]:
+// Claude Code support was removed in v0.13.0, so any non-empty map is
+// rejected at load. OpenCode is the live [settings.opencode] surface.
 type Settings struct {
 	Claude   map[string]any `toml:"claude"`
 	OpenCode map[string]any `toml:"opencode"`
 }
 
 // TUI declares per-tool TUI settings projected to a tool-native TUI file. Only
-// OpenCode has a separate TUI file (~/.config/opencode/tui.json); Claude's TUI
-// settings are ordinary settings.json keys covered by [settings.claude].
+// OpenCode has a separate TUI file (~/.config/opencode/tui.json).
 type TUI struct {
 	OpenCode map[string]any `toml:"opencode"`
 }
 
-// Marketplace is one declared Claude plugin marketplace. Source selects which
-// locator fields are meaningful: github→Repo, url→URL, git-subdir→URL+Path,
-// directory→Path. AutoUpdate is optional (nil == omitted).
+// Marketplace is the post-removal detector shape for
+// [marketplaces.claude.<name>] declarations: Claude Code support was removed
+// in v0.13.0, so any non-empty value is rejected at load. The locator fields
+// survive only so the TOML decoder can populate the detector.
 type Marketplace struct {
 	Source     string `toml:"source"`      // github | url | git-subdir | directory
 	Repo       string `toml:"repo"`        // github
@@ -244,8 +251,8 @@ type Marketplace struct {
 	AutoUpdate *bool  `toml:"auto_update"` // optional
 }
 
-// Marketplaces groups Claude marketplace declarations by name. Claude is the
-// only adapter that projects marketplaces today.
+// Marketplaces detects [marketplaces.claude] declarations — a Claude-only
+// feature, removed with the adapter in v0.13.0.
 type Marketplaces struct {
 	Claude map[string]Marketplace `toml:"claude"`
 }

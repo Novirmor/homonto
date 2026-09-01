@@ -11,7 +11,7 @@ import (
 )
 
 const adoptTOML = `
-[settings.claude]
+[settings.opencode]
 model = "opus"
 `
 
@@ -36,8 +36,8 @@ func TestApplyAdoptRecordsStateThroughEngine(t *testing.T) {
 		return e
 	}
 
-	// Seed disk: a first apply projects model=opus into settings.json and records
-	// it in state.
+	// Seed disk: a first apply projects model=opus into opencode.jsonc and
+	// records it in state.
 	seed := build()
 	sets, err := seed.Plan()
 	if err != nil {
@@ -67,7 +67,7 @@ func TestApplyAdoptRecordsStateThroughEngine(t *testing.T) {
 	if err := e.Apply(context.Background(), sets); err != nil {
 		t.Fatalf("apply of adopt must not error: %v", err)
 	}
-	if _, ok := e.State.Get("claude", "setting.model"); !ok {
+	if _, ok := e.State.Get("opencode", "setting.model"); !ok {
 		t.Fatal("adopt did not record setting.model in engine state")
 	}
 	if _, err := os.Stat(filepath.Join(repo, ".homonto", "state.json")); err != nil {

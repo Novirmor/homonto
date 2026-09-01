@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
-# Suite: projection — homonto projects config into a tool, then the REAL tool CLI
-# is asked to read it back (`claude mcp list` / `opencode mcp list`). This proves
+# Suite: projection — homonto projects config into the tool, then the REAL
+# OpenCode CLI is asked to read it back (`opencode mcp list`). This proves
 # homonto's output is consumed by the actual tool, not just written to disk.
-# Parametrized by $E2E_TOOL (claude|opencode). No account/network needed.
+# Parametrized by $E2E_TOOL (opencode, the only adapter since v0.13.0). No
+# account/network needed.
 set -uo pipefail
 source /opt/e2e-suites/lib.sh
 TOOL="${E2E_TOOL:?E2E_TOOL required}"
@@ -13,32 +14,6 @@ printf -- '---\nname: e2e-demo\ndescription: e2e projection skill\n---\nbody\n' 
   > homonto/skills/e2e-demo/SKILL.md
 
 case "$TOOL" in
-  claude)
-    cat > homonto.toml <<'EOF'
-[mcps.e2e-probe]
-command = ["codegraph", "serve", "--mcp"]
-targets = ["claude"]
-
-[skills.e2e-demo]
-source = "local:e2e-demo"
-scope = "user"
-
-[settings.claude]
-model = "opus"
-EOF
-    log "homonto apply → claude"
-    homonto apply --yes
-    log "claude mcp list reads homonto's ~/.claude.json"
-    out="$(claude mcp list 2>&1 || true)"; printf '%s\n' "$out"
-    contains "$out" "e2e-probe" "claude mcp list did not show the homonto-projected server"
-    pass "claude read the projected MCP server from ~/.claude.json"
-    grep -q 'opus' "$HOME/.claude/settings.json" || fail "claude setting not projected into settings.json"
-    pass "claude setting projected"
-    link="$HOME/.claude/skills/e2e-demo"
-    [ -L "$link" ] || fail "claude skill symlink not created"
-    [ "$(readlink "$link")" = "$WORK/homonto/skills/e2e-demo" ] || fail "claude skill symlink target wrong"
-    pass "claude skill symlinked to the owned source"
-    ;;
   opencode)
     cat > homonto.toml <<'EOF'
 [mcps.e2e-probe]

@@ -24,14 +24,11 @@ import (
 	"testing"
 
 	"github.com/noviopenworks/homonto/internal/adapter"
-	"github.com/noviopenworks/homonto/internal/adapter/claude"
-	"github.com/noviopenworks/homonto/internal/adapter/codex"
 	"github.com/noviopenworks/homonto/internal/adapter/opencode"
 	"github.com/noviopenworks/homonto/internal/config"
 	"github.com/noviopenworks/homonto/internal/jsonutil"
 	"github.com/noviopenworks/homonto/internal/secret"
 	"github.com/noviopenworks/homonto/internal/state"
-	"github.com/noviopenworks/homonto/internal/tomlutil"
 )
 
 // adapterCase describes one adapter under test. Every field mirrors the exact
@@ -82,47 +79,9 @@ func noSecret() *secret.Resolver {
 }
 
 func cases() []adapterCase {
+	// OpenCode is the only adapter since v0.13.0; the table stays so a future
+	// second adapter re-enters through the same contract.
 	return []adapterCase{
-		{
-			name:       "claude",
-			newAdapter: func(home, content string) adapter.Adapter { return claude.New(home, content) },
-			newConfig: func() *config.Config {
-				return &config.Config{
-					MCPs: map[string]config.MCP{
-						"codegraph": {Command: []string{"codegraph", "serve"}, Targets: []string{"claude"}},
-					},
-					Settings: config.Settings{Claude: map[string]any{"model": "opus"}},
-				}
-			},
-			seed: func(t *testing.T, home string) {
-				t.Helper()
-				mustWrite(t, filepath.Join(home, ".claude.json"), "{}")
-				mustMkdir(t, filepath.Join(home, ".claude"))
-				mustWrite(t, filepath.Join(home, ".claude", "settings.json"), "{}")
-			},
-			managedDir: func(home string) string { return filepath.Join(home, ".claude") },
-			// setting.model lives on disk as the "model" key in ~/.claude/settings.json.
-			driftKey: "setting.model",
-			driftMutate: func(t *testing.T, home string) {
-				t.Helper()
-				// Hand-edit the managed setting to a different value out-of-band.
-				mustWrite(t, filepath.Join(home, ".claude", "settings.json"), `{"model":"sonnet"}`)
-			},
-			malformed: func(t *testing.T, home string) {
-				t.Helper()
-				// A pre-existing, unparseable ~/.claude.json (truncated object).
-				mustWrite(t, filepath.Join(home, ".claude.json"), `{"mcpServers": {`)
-			},
-			// A secret-backed MCP env var; claude projects it into ~/.claude.json.
-			secretConfig: func() *config.Config {
-				return &config.Config{
-					MCPs: map[string]config.MCP{
-						"brave": {Command: []string{"npx", "server-brave"}, Env: map[string]string{"K": "${pass:ai/brave}"}, Targets: []string{"claude"}},
-					},
-				}
-			},
-			secretKey: "mcp.brave",
-		},
 		{
 			name:       "opencode",
 			newAdapter: func(home, content string) adapter.Adapter { return opencode.New(home, content) },
@@ -167,64 +126,6 @@ func cases() []adapterCase {
 				return &config.Config{
 					MCPs: map[string]config.MCP{
 						"brave": {Command: []string{"npx", "server-brave"}, Env: map[string]string{"K": "${pass:ai/brave}"}, Targets: []string{"opencode"}},
-					},
-				}
-			},
-			secretKey: "mcp.brave",
-		},
-		{
-			// Codex is the MCP-only pilot adapter (ROADMAP E3 / F55): it projects
-			// declared MCP servers targeting "codex" into ~/.codex/config.toml as
-			// [mcp_servers.<name>] tables and nothing else — no settings surface.
-			// Its reduced surface still backs every conformance property, because
-			// the drift and foreign-content checks are generic over ANY file-backed
-			// managed key, and codex's MCP tables ARE file-backed: so codex uses its
-			// MCP key (mcp.codegraph) where claude/opencode happen to use a settings
-			// key. No conformance check is skipped for codex — none is inapplicable.
-			name:       "codex",
-			newAdapter: func(home, _ string) adapter.Adapter { return codex.New(home) },
-			newConfig: func() *config.Config {
-				// Codex projects only MCPs that explicitly target "codex"; it has no
-				// settings surface, so the managed resource is a codex-targeted MCP.
-				return &config.Config{
-					MCPs: map[string]config.MCP{
-						"codegraph": {Command: []string{"codegraph", "serve"}, Targets: []string{"codex"}},
-					},
-				}
-			},
-			seed:       nil, // codex.Apply creates ~/.codex/config.toml on a real create.
-			managedDir: func(home string) string { return filepath.Join(home, ".codex") },
-			// Codex projects no settings; its only file-backed managed key is the MCP
-			// table. mcp.codegraph lives on disk as [mcp_servers.codegraph] in
-			// config.toml, so the drift check mutates that table's command out-of-band.
-			driftKey: "mcp.codegraph",
-			driftMutate: func(t *testing.T, home string) {
-				t.Helper()
-				p := filepath.Join(home, ".codex", "config.toml")
-				raw, err := os.ReadFile(p)
-				if err != nil {
-					t.Fatalf("read codex config for drift mutation: %v", err)
-				}
-				// Hand-edit the managed server's command to a different value
-				// out-of-band, so the mcp_servers.codegraph table hashes differently.
-				out, err := tomlutil.Set(raw, "mcp_servers.codegraph.command", `"edited-out-of-band"`)
-				if err != nil {
-					t.Fatalf("set codex command out-of-band: %v", err)
-				}
-				mustWrite(t, p, string(out))
-			},
-			malformed: func(t *testing.T, home string) {
-				t.Helper()
-				dir := filepath.Join(home, ".codex")
-				mustMkdir(t, dir)
-				// A pre-existing, unparseable config.toml (a key with no value).
-				mustWrite(t, filepath.Join(dir, "config.toml"), "[mcp_servers.demo]\ncommand =\n")
-			},
-			// A secret-backed MCP env var; codex projects it into config.toml.
-			secretConfig: func() *config.Config {
-				return &config.Config{
-					MCPs: map[string]config.MCP{
-						"brave": {Command: []string{"npx", "server-brave"}, Env: map[string]string{"K": "${pass:ai/brave}"}, Targets: []string{"codex"}},
 					},
 				}
 			},

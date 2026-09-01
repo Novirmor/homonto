@@ -82,8 +82,11 @@ func TestRemoteRejectedForNonSubagentKinds(t *testing.T) {
 	}
 }
 
-// Codex is a known MCP target (opt-in); unknown tools are still rejected.
-func TestCodexTargetAccepted(t *testing.T) {
+// Claude Code and the codex pilot were removed in v0.13.0 — OpenCode is the
+// only adapter. A target naming a removed tool must fail closed with a removal
+// message naming the entry, for MCP entries and resources alike, while a
+// genuine unknown tool keeps its typo report.
+func TestRemovedToolTargetsRejected(t *testing.T) {
 	p := filepath.Join(t.TempDir(), "homonto.toml")
 	load := func(doc string) error {
 		if err := os.WriteFile(p, []byte(doc), 0o644); err != nil {
@@ -92,30 +95,23 @@ func TestCodexTargetAccepted(t *testing.T) {
 		_, err := Load(p)
 		return err
 	}
-	if err := load("[mcps.demo]\ncommand=[\"srv\"]\ntargets=[\"codex\"]\n"); err != nil {
-		t.Fatalf("codex MCP target must be accepted: %v", err)
+	for _, tc := range []struct{ label, doc, want string }{
+		{"mcp targets claude", "[mcps.demo]\ncommand=[\"srv\"]\ntargets=[\"claude\"]\n", `targets "claude"`},
+		{"mcp targets codex", "[mcps.demo]\ncommand=[\"srv\"]\ntargets=[\"codex\"]\n", `targets "codex"`},
+		{"subagent targets claude", "[subagents.foo]\nsource=\"builtin:architect\"\nscope=\"project\"\ntargets=[\"claude\"]\n", `targets "claude"`},
+		{"skill targets codex", "[skills.foo]\nsource=\"local:foo\"\nscope=\"project\"\ntargets=[\"codex\"]\n", `targets "codex"`},
+	} {
+		err := load(tc.doc)
+		if err == nil {
+			t.Fatalf("%s: accepted; want the removal error", tc.label)
+		}
+		for _, want := range []string{tc.want, "removed in v0.13.0"} {
+			if !strings.Contains(err.Error(), want) {
+				t.Fatalf("%s: error %v does not mention %q", tc.label, err, want)
+			}
+		}
 	}
 	if err := load("[mcps.demo]\ncommand=[\"srv\"]\ntargets=[\"nope\"]\n"); err == nil {
 		t.Fatal("an unknown MCP target must still be rejected")
-	}
-}
-
-// Codex projects MCP servers only; targeting it from a subagent/skill/command
-// must be rejected (the must-declare check would otherwise demand an
-// unsatisfiable model block for a tool that can't render agents).
-func TestCodexRejectedForNonMCPKinds(t *testing.T) {
-	p := filepath.Join(t.TempDir(), "homonto.toml")
-	load := func(doc string) error {
-		if err := os.WriteFile(p, []byte(doc), 0o644); err != nil {
-			t.Fatal(err)
-		}
-		_, err := Load(p)
-		return err
-	}
-	if err := load("[subagents.foo]\nsource=\"builtin:architect\"\nscope=\"project\"\ntargets=[\"codex\"]\n"); err == nil {
-		t.Fatal("a subagent targeting codex must be rejected (codex is MCP-only)")
-	}
-	if err := load("[skills.foo]\nsource=\"local:foo\"\nscope=\"project\"\ntargets=[\"codex\"]\n"); err == nil {
-		t.Fatal("a skill targeting codex must be rejected (codex is MCP-only)")
 	}
 }

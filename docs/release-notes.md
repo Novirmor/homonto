@@ -499,8 +499,8 @@ homonto is a young, deliberately narrow tool. For the current 0.x line:
   verification `remote:` subagents use). Every `remote:` source requires a
   `digest = "sha256:…"` pin, and homonto never re-resolves a pin to newer
   content on its own.
-- **Two full adapters:** Claude Code and OpenCode. **Codex** is an opt-in pilot
-  that projects **MCP servers only**.
+- **OpenCode is the only adapter.** Claude Code and codex support was removed
+  in v0.13.0; a config naming them fails at load naming the key.
 - **Secrets require `pass` or an env var** at apply time (`${pass:...}` /
   `${ENV_VAR}`).
 - **Moving or renaming the repo** breaks skill symlinks (absolute targets):

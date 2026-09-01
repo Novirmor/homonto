@@ -52,6 +52,12 @@ lock scope, drift semantics), so an ADR and design doc precede any code;
 if the design lands mid-release the implementation ships when the design
 says it ships, not with the tag.
 
+**Status 2026-09-01:** the design is recorded as
+[ADR 0024](adr/0024-multi-repo-designated-state-cross-repo-effect.md) —
+a `[repos]` declaration table ships as the v0.13.0 beachhead, cross-repo
+projection and cross-repo onto/to changes are staged after it, and the
+single-repo flow stays default and first-class.
+
 ## Deliberate non-goals (v0.13.0)
 
 - No new adapters to replace the removed ones — OpenCode only, by decision.

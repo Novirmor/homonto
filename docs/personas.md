@@ -50,7 +50,7 @@ is hardened against a real adversary.
 
 | You want… | Use |
 |---|---|
-| To project one config into Claude Code / OpenCode / Codex | **homonto** (the projector — always) |
+| To project one config into OpenCode | **homonto** (the projector — always) |
 | A spec-driven change lifecycle with mechanical gates you can't skip | **onto** (needs the binary) |
 | The lightest structured coding flow, no gates, one plan artifact | **to** (needs its binary; excludes onto) |
 | A flexible, portable, prose-driven workflow with no binary gate | **Comet** / OpenSpec / Superpowers (external — not shipped by homonto) |

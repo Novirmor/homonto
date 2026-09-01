@@ -45,7 +45,7 @@ real verification pass.
   concurrent, the single implementer serial).
 - [`enforcement.md`](enforcement.md) — making the workflow non-skippable at
   the tool boundary with hooks (`onto doctor --quiet` / `to doctor --quiet`
-  plus Claude `settings.json` hooks or an OpenCode plugin).
+  plus an OpenCode plugin).
 - [`yagni.md`](yagni.md) — you aren't gonna need it: where each framework
   enforces building only what the change needs now.
 - [`kiss.md`](kiss.md) — keep it simple: the simplicity mechanics both

@@ -30,3 +30,7 @@ format: [`../agents/adr.md`](../agents/adr.md).
 
 ADRs 0001–0016 also carry a `**Change:**` field naming the OpenSpec change that
 produced them. That field is retained as history and is not used for new ADRs.
+
+## Index
+
+- [0024 — Multi-repo support: designated state, cross-repo effect](0024-multi-repo-designated-state-cross-repo-effect.md) (Proposed)

@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"sync"
 
 	"github.com/noviopenworks/homonto/internal/config"
 	"github.com/noviopenworks/homonto/internal/fsutil"
@@ -147,21 +148,55 @@ func (e *Engine) materializeRemotes(ctx context.Context) error {
 		cacheDir string
 	}
 	stagedByName := make(map[string]staged, len(names))
-	for _, name := range names {
+	// Fetch and verify concurrently: the remotes are independent, the work is
+	// network-bound, and the cache is race-safe by design (content-addressed
+	// staging dirs + atomic rename, with the F26 re-hash of a race winner).
+	// Concurrency is bounded so a config declaring dozens of remotes does not
+	// open dozens of simultaneous connections.
+	const stageConcurrency = 4
+	type stageResult struct {
+		name     string
+		st       staged
+		parseErr error // parse failures stay per-name for the sorted walk below
+		resolve  error
+	}
+	results := make([]stageResult, len(names))
+	sem := make(chan struct{}, stageConcurrency)
+	var wg sync.WaitGroup
+	for i, name := range names {
 		res := declared[name]
-		src, err := remote.ParseRemoteSource(res.Source)
-		if err != nil {
-			return fmt.Errorf("remote subagent %q: %w", name, err)
+		results[i] = stageResult{name: name}
+		wg.Add(1)
+		go func(i int, name string, res config.Resource) {
+			defer wg.Done()
+			sem <- struct{}{}
+			defer func() { <-sem }()
+			src, err := remote.ParseRemoteSource(res.Source)
+			if err != nil {
+				results[i].parseErr = err
+				return
+			}
+			pin, err := remote.ParseDigest(res.Digest)
+			if err != nil {
+				results[i].parseErr = err
+				return
+			}
+			cacheDir, err := resolver.Resolve(ctx, src, pin)
+			results[i].st = staged{src: src, pin: pin, cacheDir: cacheDir}
+			results[i].resolve = err
+		}(i, name, res)
+	}
+	wg.Wait()
+	// Report and stage deterministically: the sorted-names walk picks the
+	// lexicographically first failure, exactly as the sequential loop did.
+	for _, r := range results {
+		if r.parseErr != nil {
+			return fmt.Errorf("remote subagent %q: %w", r.name, r.parseErr)
 		}
-		pin, err := remote.ParseDigest(res.Digest)
-		if err != nil {
-			return fmt.Errorf("remote subagent %q: %w", name, err)
+		if r.resolve != nil {
+			return fmt.Errorf("remote subagent %q: %w", r.name, r.resolve)
 		}
-		cacheDir, err := resolver.Resolve(ctx, src, pin)
-		if err != nil {
-			return fmt.Errorf("remote subagent %q: %w", name, err)
-		}
-		stagedByName[name] = staged{src: src, pin: pin, cacheDir: cacheDir}
+		stagedByName[r.name] = r.st
 	}
 
 	// Activate: every remote is staged and verified — now mutate active content
@@ -229,26 +264,57 @@ func (e *Engine) resolveRemoteFrameworks(ctx context.Context) (map[string]string
 	sort.Strings(names)
 
 	out := make(map[string]string, len(names))
-	for _, name := range names {
+	// Same bounded-parallel fetch as materializeRemotes: independent remotes,
+	// network-bound work, race-safe cache; the sorted walk below keeps the
+	// reported failure deterministic.
+	const stageConcurrency = 4
+	type fwResult struct {
+		name     string
+		cacheDir string
+		parseErr error
+		resolve  error
+	}
+	results := make([]fwResult, len(names))
+	sem := make(chan struct{}, stageConcurrency)
+	var wg sync.WaitGroup
+	for i, name := range names {
 		res := declared[name]
-		src, err := remote.ParseRemoteSource(res.Source)
-		if err != nil {
-			return nil, fmt.Errorf("remote framework %q: %w", name, err)
+		results[i] = fwResult{name: name}
+		wg.Add(1)
+		go func(i int, res config.Resource) {
+			defer wg.Done()
+			sem <- struct{}{}
+			defer func() { <-sem }()
+			src, err := remote.ParseRemoteSource(res.Source)
+			if err != nil {
+				results[i].parseErr = err
+				return
+			}
+			pin, err := remote.ParseDigest(res.Digest)
+			if err != nil {
+				results[i].parseErr = err
+				return
+			}
+			// Revoked content must never be served, even from a warm cache: fail
+			// closed before Resolve, mirroring materializeRemotes (F30).
+			if rev.Contains(pin) {
+				results[i].parseErr = fmt.Errorf("content is revoked")
+				return
+			}
+			cacheDir, err := resolver.Resolve(ctx, src, pin)
+			results[i].cacheDir = cacheDir
+			results[i].resolve = err
+		}(i, res)
+	}
+	wg.Wait()
+	for _, r := range results {
+		if r.parseErr != nil {
+			return nil, fmt.Errorf("remote framework %q: %w", r.name, r.parseErr)
 		}
-		pin, err := remote.ParseDigest(res.Digest)
-		if err != nil {
-			return nil, fmt.Errorf("remote framework %q: %w", name, err)
+		if r.resolve != nil {
+			return nil, fmt.Errorf("remote framework %q: %w", r.name, r.resolve)
 		}
-		// Revoked content must never be served, even from a warm cache: fail
-		// closed before Resolve, mirroring materializeRemotes (F30).
-		if rev.Contains(pin) {
-			return nil, fmt.Errorf("remote framework %q: content is revoked", name)
-		}
-		cacheDir, err := resolver.Resolve(ctx, src, pin)
-		if err != nil {
-			return nil, fmt.Errorf("remote framework %q: %w", name, err)
-		}
-		out[name] = cacheDir
+		out[r.name] = r.cacheDir
 	}
 	return out, nil
 }
@@ -266,11 +332,11 @@ func (e *Engine) GCRemoteCache(dryRun bool) ([]remote.Digest, error) {
 	return cache.GC(lock.Digests(), dryRun)
 }
 
-// declaredRemoteSubagents collects the remote subagents declared for either
-// tool, de-duplicated by name (a subagent targeting both tools appears once).
+// declaredRemoteSubagents collects the remote subagents declared for the tool,
+// de-duplicated by name.
 func (e *Engine) declaredRemoteSubagents() (map[string]config.Resource, error) {
 	out := map[string]config.Resource{}
-	for _, tool := range []string{"claude", "opencode"} {
+	for _, tool := range []string{"opencode"} {
 		entries, err := e.Cfg.ExpandedSubagentEntriesForTool(tool)
 		if err != nil {
 			return nil, err

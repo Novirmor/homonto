@@ -49,3 +49,16 @@ Rules:
 - **No symptom patches.** If a test or build fails for a reason the task did not
   anticipate, find the root cause before changing anything, and report it if it
   is outside the task.
+
+How you build (requirements, not suggestions):
+
+- **KISS.** Choose the simplest design the task allows — plain functions over
+  abstractions, the boring solution over the clever one. Complexity must be
+  paid for by a requirement in the task, never by taste.
+- **Unix philosophy; composition over inheritance.** Build small pieces that do
+  one thing well and compose through plain interfaces. Prefer composition to
+  inheritance; reach for inheritance only where the surrounding framework
+  already demands it.
+- **Where OOP is genuinely the right tool, follow SOLID.** One responsibility
+  per type; extend by composing new behavior instead of modifying proven
+  types; depend on the narrowest interface the task needs.

@@ -127,11 +127,10 @@ func TestMaterializeSubagentsWritesFileVerbatim(t *testing.T) {
 	}
 }
 
-// onto-reviewer ships a neutral homonto: access block, so materialize must also
-// emit per-tool frontmatter variants: Claude gets a tools: allowlist, OpenCode a
-// permission: map. The two cannot share one file (OpenCode rejects a string
-// tools:), so each adapter links its own variant.
-func TestMaterializeSubagentsWritesPerToolVariants(t *testing.T) {
+// onto-reviewer ships a neutral homonto: access block, so materialize must
+// also emit the rendered OpenCode variant: a permission: map spelling the
+// block's denials, which cannot share the anchor file with the neutral source.
+func TestMaterializeSubagentsWritesOpenCodeVariant(t *testing.T) {
 	c, err := New()
 	if err != nil {
 		t.Fatalf("New: %v", err)
@@ -140,13 +139,6 @@ func TestMaterializeSubagentsWritesPerToolVariants(t *testing.T) {
 	if err := c.MaterializeSubagents(dst, []string{"onto-reviewer"}, nil); err != nil {
 		t.Fatalf("materialize: %v", err)
 	}
-	claude, err := os.ReadFile(filepath.Join(dst, "onto-reviewer.claude.md"))
-	if err != nil {
-		t.Fatalf("claude variant not written: %v", err)
-	}
-	if !bytes.Contains(claude, []byte("disallowedTools: Edit, Write, NotebookEdit, Agent, Task")) || bytes.Contains(claude, []byte("permission:")) {
-		t.Errorf("claude variant should carry the denylist and no permission block:\n%s", claude)
-	}
 	oc, err := os.ReadFile(filepath.Join(dst, "onto-reviewer.opencode.md"))
 	if err != nil {
 		t.Fatalf("opencode variant not written: %v", err)
@@ -154,8 +146,8 @@ func TestMaterializeSubagentsWritesPerToolVariants(t *testing.T) {
 	if !bytes.Contains(oc, []byte("permission:")) || !bytes.Contains(oc, []byte("edit: deny")) || bytes.Contains(oc, []byte("tools:")) {
 		t.Errorf("opencode variant should carry an edit-deny permission block and no tools string:\n%s", oc)
 	}
-	// The neutral block must not leak into either rendered variant.
-	if bytes.Contains(claude, []byte("homonto:")) || bytes.Contains(oc, []byte("homonto:")) {
+	// The neutral block must not leak into the rendered variant.
+	if bytes.Contains(oc, []byte("homonto:")) {
 		t.Error("homonto: block leaked into a rendered variant")
 	}
 }
@@ -168,9 +160,9 @@ func TestMaterializeSubagentsUnknownErrors(t *testing.T) {
 }
 
 // A catalog upgrade can turn a rendered agent verbatim (homonto: block
-// removed). Materialize used to remove stale per-tool variants only in the
-// primary-agent (render-nil) branch — a verbatim transition left the old
-// <name>.<tool>.md behind, and the adapters PREFER the variant when it exists,
+// removed). Materialize used to remove a stale variant only in the render
+// path — a verbatim transition removed nothing and left the old
+// <name>.<tool>.md behind, and OpenCode PREFERS the variant when it exists,
 // so the stale render silently won forever, invisible to the gate and doctor.
 func TestMaterializeSubagentsRemovesStaleVariantsOnVerbatimTransition(t *testing.T) {
 	// Every shipped subagent carries a homonto: block, so the verbatim path is
@@ -189,18 +181,14 @@ nav = "subagents/nav.md"
 	dst := t.TempDir()
 	// Simulate the previous version's render output for an agent whose new
 	// content is verbatim (no homonto: block).
-	for _, stale := range []string{"nav.claude.md", "nav.opencode.md"} {
-		if err := os.WriteFile(filepath.Join(dst, stale), []byte("stale render"), 0o644); err != nil {
-			t.Fatal(err)
-		}
+	if err := os.WriteFile(filepath.Join(dst, "nav.opencode.md"), []byte("stale render"), 0o644); err != nil {
+		t.Fatal(err)
 	}
 	if err := c.MaterializeSubagents(dst, []string{"nav"}, nil); err != nil {
 		t.Fatalf("materialize: %v", err)
 	}
-	for _, stale := range []string{"nav.claude.md", "nav.opencode.md"} {
-		if _, err := os.Stat(filepath.Join(dst, stale)); !os.IsNotExist(err) {
-			t.Errorf("stale per-tool variant survived a verbatim transition: %s", stale)
-		}
+	if _, err := os.Stat(filepath.Join(dst, "nav.opencode.md")); !os.IsNotExist(err) {
+		t.Errorf("stale variant survived a verbatim transition: nav.opencode.md")
 	}
 	if _, err := os.Stat(filepath.Join(dst, "nav.md")); err != nil {
 		t.Errorf("the verbatim anchor must be written: %v", err)
@@ -238,29 +226,6 @@ func TestSubagentFilesMatchesWhatMaterializeWrites(t *testing.T) {
 		sort.Strings(sorted)
 		if !slices.Equal(got, sorted) {
 			t.Errorf("%s: SubagentFiles = %v, materialize actually wrote %v", name, sorted, got)
-		}
-	}
-}
-
-// TestSubagentFilesOmitsClaudeVariantForPrimaryAgent pins the by-design
-// asymmetry the engine gate and doctor both depend on: agentfm renders no Claude
-// variant for an OpenCode-primary agent, so `onto` must not claim one — else the
-// gate would demand a file materialize never writes and re-render on every apply.
-func TestSubagentFilesOmitsClaudeVariantForPrimaryAgent(t *testing.T) {
-	c, err := New()
-	if err != nil {
-		t.Fatalf("New: %v", err)
-	}
-	files, err := c.SubagentFiles("onto", nil)
-	if err != nil {
-		t.Fatalf("SubagentFiles: %v", err)
-	}
-	if slices.Contains(files, "onto.claude.md") {
-		t.Errorf("primary agent must have no Claude variant, got %v", files)
-	}
-	for _, want := range []string{"onto.md", "onto.opencode.md"} {
-		if !slices.Contains(files, want) {
-			t.Errorf("missing %q from %v", want, files)
 		}
 	}
 }

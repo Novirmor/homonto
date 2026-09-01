@@ -7,7 +7,6 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/noviopenworks/homonto/internal/agentfm"
 	"github.com/noviopenworks/homonto/internal/remote"
 )
 
@@ -39,6 +38,9 @@ func validate(c *Config) error {
 	if err := validateSubagents(c.Subagents); err != nil {
 		return err
 	}
+	if err := validateRemovedTools(c); err != nil {
+		return err
+	}
 	if err := validateModels(c); err != nil {
 		return err
 	}
@@ -46,9 +48,6 @@ func validate(c *Config) error {
 		return err
 	}
 	if err := validatePlugins(c); err != nil {
-		return err
-	}
-	if err := validateMarketplaces(c); err != nil {
 		return err
 	}
 	return validateSettingsAndTUI(c)
@@ -77,6 +76,61 @@ func validateFrameworks(c *Config) error {
 	return nil
 }
 
+// validateRemovedTools fails closed on every declaration naming a tool whose
+// adapter was removed in v0.13.0 (Claude Code and the codex MCP pilot), with
+// an error that names the offending key and says what to do — the same
+// fail-closed precedent as the v0.3.0 framework removal. The schema keeps
+// detector fields so the TOML decoder can capture these declarations; without
+// them a stale config would fail with an opaque decode error instead of a
+// migration message.
+func validateRemovedTools(c *Config) error {
+	if len(c.Settings.Claude) > 0 {
+		keys := sortedKeys(c.Settings.Claude)
+		return fmt.Errorf("parse config: settings.claude.%s — Claude Code support was removed in v0.13.0; OpenCode is the only adapter, move the key to [settings.opencode] or delete it", keys[0])
+	}
+	if len(c.Plugins.Claude) > 0 {
+		names := sortedPluginNames(c.Plugins.Claude)
+		return fmt.Errorf("parse config: plugins.claude.%s — Claude Code support was removed in v0.13.0; delete the block", names[0])
+	}
+	if len(c.Marketplaces.Claude) > 0 {
+		names := sortedMarketplaceNames(c.Marketplaces.Claude)
+		return fmt.Errorf("parse config: marketplaces.claude.%s — marketplaces were a Claude-only feature removed with the adapter in v0.13.0; delete the block", names[0])
+	}
+	for _, name := range sortedSubagentNames(c) {
+		if sa := c.Subagents[name]; sa.Claude != (ModelRoute{}) {
+			return fmt.Errorf("parse config: subagents.%s.claude — Claude Code support was removed in v0.13.0; move the model block to [subagents.%s.opencode] or delete it", name, name)
+		}
+	}
+	return nil
+}
+
+func sortedKeys(m map[string]any) []string {
+	out := make([]string, 0, len(m))
+	for k := range m {
+		out = append(out, k)
+	}
+	sort.Strings(out)
+	return out
+}
+
+func sortedPluginNames(m map[string]Plugin) []string {
+	out := make([]string, 0, len(m))
+	for k := range m {
+		out = append(out, k)
+	}
+	sort.Strings(out)
+	return out
+}
+
+func sortedMarketplaceNames(m map[string]Marketplace) []string {
+	out := make([]string, 0, len(m))
+	for k := range m {
+		out = append(out, k)
+	}
+	sort.Strings(out)
+	return out
+}
+
 // validateMCPs rejects MCP entries that could not project cleanly: names
 // unusable as JSON object keys, servers with no command, targets naming no
 // adapter (a silent typo), bad scopes, and the codex project-scope
@@ -95,11 +149,18 @@ func validateMCPs(c *Config) error {
 		if len(m.Command) == 0 {
 			return fmt.Errorf("parse config: mcps entry %q has no command; an MCP server needs a command to run", name)
 		}
-		// A target that names no known tool matches no adapter, so the MCP is
-		// projected nowhere — a silent typo. Only claude and opencode exist.
+		// A target that names no adapter means the MCP is projected nowhere —
+		// a silent typo. OpenCode is the only adapter since v0.13.0; a target
+		// naming a removed tool gets its own migration message.
 		for _, target := range m.Targets {
+			if target == "claude" {
+				return fmt.Errorf("parse config: mcps entry %q targets \"claude\", but Claude Code support was removed in v0.13.0; remove the target or delete the entry", name)
+			}
+			if target == "codex" {
+				return fmt.Errorf("parse config: mcps entry %q targets \"codex\", but the codex pilot was removed in v0.13.0; remove the target or delete the entry", name)
+			}
 			if !isMCPTarget(target) {
-				return fmt.Errorf("parse config: mcps entry %q targets unknown tool %q; valid targets are \"claude\", \"opencode\", and \"codex\"", name, target)
+				return fmt.Errorf("parse config: mcps entry %q targets unknown tool %q; the only valid target is \"opencode\"", name, target)
 			}
 		}
 		switch m.Scope {
@@ -107,12 +168,6 @@ func validateMCPs(c *Config) error {
 			// ok
 		default:
 			return fmt.Errorf("parse config: mcps entry %q scope %q is invalid; valid values are \"user\" and \"project\"", name, m.Scope)
-		}
-		// Codex has no project-level config in the MCP pilot, so a
-		// project-scoped server could only silently project globally there —
-		// reject the combination instead.
-		if m.ScopeOrDefault() == "project" && slices.Contains(m.Targets, "codex") {
-			return fmt.Errorf("parse config: mcps entry %q is project-scoped but targets codex, which supports only user scope (~/.codex/config.toml)", name)
 		}
 	}
 	return nil
@@ -125,7 +180,6 @@ func validatePlugins(c *Config) error {
 		name string
 		m    map[string]Plugin
 	}{
-		{"plugins.claude", c.Plugins.Claude},
 		{"plugins.opencode", c.Plugins.OpenCode},
 	} {
 		// Both adapters project keyed by source, so two decl names sharing a
@@ -158,67 +212,11 @@ func validatePlugins(c *Config) error {
 
 // validateMarketplaces checks that each marketplace declaration carries the
 // locator fields its source kind requires.
-//
-// Marketplace declarations project to extraKnownMarketplaces.<name>. Each
-// source kind requires its locator field(s); an unknown source or a missing
-// locator projects nothing meaningful, so fail fast naming the marketplace.
-func validateMarketplaces(c *Config) error {
-	for name, mk := range c.Marketplaces.Claude {
-		if err := validateKey("marketplaces.claude", name); err != nil {
-			return err
-		}
-		switch mk.Source {
-		case "github":
-			if mk.Repo == "" {
-				return fmt.Errorf("parse config: marketplaces.claude %q with source \"github\" is missing required \"repo\"", name)
-			}
-		case "url":
-			if mk.URL == "" {
-				return fmt.Errorf("parse config: marketplaces.claude %q with source \"url\" is missing required \"url\"", name)
-			}
-		case "git-subdir":
-			if mk.URL == "" || mk.Path == "" {
-				return fmt.Errorf("parse config: marketplaces.claude %q with source \"git-subdir\" is missing required \"url\" and/or \"path\"", name)
-			}
-		case "directory":
-			if mk.Path == "" {
-				return fmt.Errorf("parse config: marketplaces.claude %q with source \"directory\" is missing required \"path\"", name)
-			}
-		default:
-			return fmt.Errorf("parse config: marketplaces.claude %q has unknown source %q; valid sources are \"github\", \"url\", \"git-subdir\", \"directory\"", name, mk.Source)
-		}
-	}
-	return nil
-}
-
 // validateSettingsAndTUI rejects settings keys that homonto itself manages in
-// the same tool file — they would collide with its own writes: claude projects
-// plugins as `enabledPlugins` into settings.json; opencode projects MCPs and
-// plugins as the `mcp` and `plugin` structures in opencode.jsonc.
-//
-// `mcpServers` is reserved too: claude's current() deliberately skips that
-// settings.json key when reading managed values back (MCP servers are owned
-// via [mcps], projected into .claude.json). A settings.claude.mcpServers
-// value would be written on apply but never read back, so every plan would
-// re-propose it — a non-idempotent loop. Reject it up front instead.
+// the same tool file — they would collide with its own writes: opencode
+// projects MCPs and plugins as the `mcp` and `plugin` structures in
+// opencode.jsonc.
 func validateSettingsAndTUI(c *Config) error {
-	for k := range c.Settings.Claude {
-		if err := validateKey("settings.claude", k); err != nil {
-			return err
-		}
-		if k == "enabledPlugins" {
-			return fmt.Errorf("parse config: settings.claude key %q is reserved (homonto manages plugins there); rename it", k)
-		}
-		if k == "mcpServers" {
-			return fmt.Errorf("parse config: settings.claude key %q is reserved (homonto manages MCP servers via [mcps]); declare the server under [mcps] instead", k)
-		}
-		if k == "pluginConfigs" {
-			return fmt.Errorf("parse config: settings.claude key %q is reserved (homonto manages pluginConfigs via [plugins.claude.<name>.config]); declare per-plugin config there instead", k)
-		}
-		if k == "extraKnownMarketplaces" {
-			return fmt.Errorf("parse config: settings.claude key %q is reserved (homonto manages marketplaces via [marketplaces.claude.<name>]); declare the marketplace there instead", k)
-		}
-	}
 	for k := range c.Settings.OpenCode {
 		if err := validateKey("settings.opencode", k); err != nil {
 			return err
@@ -276,8 +274,8 @@ func validateResources(kind string, resources map[string]Resource) error {
 			return err
 		}
 		for _, target := range r.Targets {
-			if !isResourceTarget(target) {
-				return fmt.Errorf("parse config: %s targets unknown tool %q; valid targets are \"claude\" and \"opencode\"", label, target)
+			if err := validateTarget(label, target); err != nil {
+				return err
 			}
 		}
 	}
@@ -322,8 +320,8 @@ func validateFrameworkResources(resources map[string]Resource) error {
 				return fmt.Errorf("parse config: %s: %w", label, err)
 			}
 			for _, target := range r.Targets {
-				if !isResourceTarget(target) {
-					return fmt.Errorf("parse config: %s targets unknown tool %q; valid targets are \"claude\" and \"opencode\"", label, target)
+				if err := validateTarget(label, target); err != nil {
+					return err
 				}
 			}
 			continue
@@ -337,8 +335,8 @@ func validateFrameworkResources(resources map[string]Resource) error {
 			return fmt.Errorf("parse config: %s source %q must be a builtin:<name>, local:<path>, or remote:<url> source (another source would expand nothing)", label, r.Source)
 		}
 		for _, target := range r.Targets {
-			if !isResourceTarget(target) {
-				return fmt.Errorf("parse config: %s targets unknown tool %q; valid targets are \"claude\" and \"opencode\"", label, target)
+			if err := validateTarget(label, target); err != nil {
+				return err
 			}
 		}
 	}
@@ -393,8 +391,8 @@ func validateSubagents(subagents map[string]Subagent) error {
 			return err
 		}
 		for _, target := range s.Targets {
-			if !isResourceTarget(target) {
-				return fmt.Errorf("parse config: %s targets unknown tool %q; valid targets are \"claude\" and \"opencode\"", label, target)
+			if err := validateTarget(label, target); err != nil {
+				return err
 			}
 		}
 		switch s.Mode {
@@ -407,15 +405,32 @@ func validateSubagents(subagents map[string]Subagent) error {
 	return nil
 }
 
-// mcpTargetTools are valid MCP targets. codex is a pilot adapter that projects
-// MCP servers only, so it is a valid MCP target but NOT a valid target for
-// skills/commands/subagents/frameworks (which it cannot project, and which would
-// otherwise demand an unsatisfiable models.codex.* route via validateModels).
-var mcpTargetTools = []string{"claude", "opencode", "codex"}
-var resourceTargetTools = []string{"claude", "opencode"}
+// mcpTargetTools are valid MCP targets; resourceTargetTools are valid targets
+// for skills/commands/subagents/frameworks. OpenCode is the only adapter
+// since v0.13.0 — Claude Code and the codex pilot were removed, and their
+// target values are rejected by validateTarget with a migration message
+// rather than a bare "unknown tool".
+var mcpTargetTools = []string{"opencode"}
+var resourceTargetTools = []string{"opencode"}
 
 func isMCPTarget(t string) bool      { return slices.Contains(mcpTargetTools, t) }
 func isResourceTarget(t string) bool { return slices.Contains(resourceTargetTools, t) }
+
+// validateTarget rejects one target value for a managed resource, naming the
+// removed tools separately from an unknown one so a stale config gets a
+// migration message instead of a typo report.
+func validateTarget(label, target string) error {
+	switch target {
+	case "claude":
+		return fmt.Errorf("parse config: %s targets \"claude\", but Claude Code support was removed in v0.13.0; remove the target", label)
+	case "codex":
+		return fmt.Errorf("parse config: %s targets \"codex\", but the codex pilot was removed in v0.13.0; remove the target", label)
+	}
+	if !isResourceTarget(target) {
+		return fmt.Errorf("parse config: %s targets unknown tool %q; the only valid target is \"opencode\"", label, target)
+	}
+	return nil
+}
 
 func validateResourceName(kind, name string) error {
 	if name == "" || name == "." || name == ".." || strings.ContainsAny(name, `/\`) || name != filepath.Base(name) {
@@ -462,42 +477,18 @@ func validateSource(label, source, digest string, allowRemote bool) error {
 	return nil
 }
 
-// The Claude effort/alias sets live in agentfm (the render is what actually
-// speaks Claude's dialect); validation references the same maps so the two
-// can never drift apart.
-var (
-	claudeEffortLevels = agentfm.ClaudeEffortLevels
-	claudeModelAliases = agentfm.ClaudeAliases
-)
-
 // validateModelSpec checks one model/variant/effort triple against what `tool`
 // can actually express, naming label as the offender. `model` is required when
 // requireModel is set (the per-subagent must-declare check passes true; the
 // per-override walk passes false so it can flag malformed values without
 // demanding a model field that an effort-only override wouldn't have).
-//
-// The tools differ, so the rules do:
-//   - Claude renders a variant by bracketing an ALIAS (`opus[1m]`), and takes
-//     `effort:` from a fixed set.
-//   - OpenCode has a first-class `variant` field (any provider-defined string)
-//     and no effort concept at all.
 func validateModelSpec(tool, label string, r ModelRoute, requireModel bool) error {
 	model := strings.TrimSpace(r.Model)
-	variant := strings.TrimSpace(r.Variant)
 	effort := strings.TrimSpace(r.Effort)
 	if requireModel && model == "" {
 		return fmt.Errorf("parse config: %s model is required", label)
 	}
 	switch tool {
-	case "claude":
-		if effort != "" && !claudeEffortLevels[effort] {
-			return fmt.Errorf("parse config: %s effort %q is not a Claude effort level (low, medium, high, xhigh, max)", label, effort)
-		}
-		// Only meaningful against a model we can see; an override that sets a
-		// variant alone is checked at render, where the merged model is known.
-		if variant != "" && model != "" && !claudeModelAliases[model] {
-			return fmt.Errorf("parse config: %s variant %q needs a model alias (opus, sonnet, haiku, fable, opusplan) — Claude takes no variant on the full model id %q", label, variant, model)
-		}
 	case "opencode":
 		if effort != "" {
 			return fmt.Errorf("parse config: %s sets effort %q, but OpenCode has no effort setting — use variant, or drop it", label, effort)
@@ -695,7 +686,7 @@ func validateSubagentOverrides(c *Config) error {
 			return installed, nil
 		}
 		installed = map[string]bool{}
-		for _, tool := range []string{"claude", "opencode"} {
+		for _, tool := range []string{"opencode"} {
 			entries, err := c.ExpandedSubagentEntriesForTool(tool)
 			if err != nil {
 				return nil, err
@@ -715,7 +706,7 @@ func validateSubagentOverrides(c *Config) error {
 	}{} // catalog name -> tool -> first override seen
 	for _, name := range names {
 		sa := c.Subagents[name]
-		hasOverride := sa.Claude != (ModelRoute{}) || sa.OpenCode != (ModelRoute{})
+		hasOverride := sa.OpenCode != (ModelRoute{})
 		if !hasOverride {
 			continue
 		}
@@ -740,7 +731,7 @@ func validateSubagentOverrides(c *Config) error {
 			}
 		}
 
-		for _, tool := range []string{"claude", "opencode"} {
+		for _, tool := range []string{"opencode"} {
 			ov := sa.ModelOverrideFor(tool)
 			if ov == (ModelRoute{}) {
 				continue

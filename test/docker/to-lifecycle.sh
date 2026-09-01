@@ -15,18 +15,17 @@ cat > homonto.toml <<'EOF'
 [frameworks.to]
 source = "builtin:to"
 scope = "project"
-targets = ["claude"]
 
-# Every framework-expanded subagent needs an explicit per-tool model for each
-# targeted tool (there are no tiers).
-[subagents.to-explorer.claude]
-model = "haiku"
-[subagents.to-implementer.claude]
-model = "sonnet"
-[subagents.to-reviewer.claude]
-model = "opus"
-[subagents.to-skeptic.claude]
-model = "opus"
+# Every framework-expanded subagent needs an explicit model in its
+# [subagents.<n>.opencode] block (there are no tiers).
+[subagents.to-explorer.opencode]
+model = "openai/gpt-5-mini"
+[subagents.to-implementer.opencode]
+model = "anthropic/claude-sonnet-4"
+[subagents.to-reviewer.opencode]
+model = "anthropic/claude-opus-4-8"
+[subagents.to-skeptic.opencode]
+model = "anthropic/claude-opus-4-8"
 EOF
 if "$TO" init >/dev/null 2>&1; then fail "to init must refuse before the framework is applied"; fi
 absent "$W/docs"

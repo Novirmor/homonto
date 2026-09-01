@@ -4,8 +4,9 @@
 
 Describe your MCP servers, skills, commands, subagents, plugins, and settings
 once in `homonto.toml`. `homonto apply` projects that desired state into
-**Claude Code** and **OpenCode** (plus a Codex MCP pilot) through a
-Terraform-style **plan → confirm → apply** pipeline.
+**OpenCode** through a Terraform-style **plan → confirm → apply** pipeline.
+OpenCode is the only adapter; Claude Code and codex support was removed in
+v0.13.0 (configs naming them fail at load naming the key).
 
 - **Declarative and reversible.** Edit the TOML. `plan` shows the exact diff,
   `apply` writes it surgically, and removing a resource prunes it on the next
@@ -76,19 +77,16 @@ A small but realistic config:
 
 ```toml
 [mcps.codegraph]
-command = ["codegraph", "serve", "--mcp"]       # projected into both tools by default
+command = ["codegraph", "serve", "--mcp"]       # projected into OpenCode by default
 
 [mcps.brave]
 command = ["npx", "-y", "@modelcontextprotocol/server-brave-search"]
 env = { BRAVE_API_KEY = "${pass:ai/brave}" }    # a reference, never a literal secret
-targets = ["claude"]                            # restrict to Claude Code
+targets = ["opencode"]                          # the only valid target
 
 [skills.my-notes]
 source = "local:my-notes"                       # → homonto/skills/my-notes/
 scope = "project"                               # required: user | project
-
-[settings.claude]
-model = "opus"
 
 [settings.opencode]
 model = "anthropic/claude-opus-4-8"
@@ -113,7 +111,6 @@ walkthrough with real command output and a supported / not-supported matrix.
 | `homonto status` | Report drift (disk changed outside homonto) vs. pending (unapplied edits). |
 | `homonto doctor` | Health check: `pass` present, tool dirs, skill content and links. |
 | `homonto update` | Re-materialize the embedded catalog at this binary's version and re-project it. |
-| `homonto import` | Bootstrap `homonto.toml` from Claude's global MCP servers (narrow, experimental). |
 | `homonto cache gc` | Reclaim unreferenced remote-cache entries. |
 
 Full flags, exit codes, and examples:
@@ -145,12 +142,8 @@ Full flags, exit codes, and examples:
 homonto is a young, narrow tool. The most important limitations, each detailed
 in [troubleshooting](docs/guides/troubleshooting.md):
 
-- **Adapters:** Claude Code and OpenCode are the full adapters. **Codex** is
-  an opt-in pilot that projects MCP servers only.
 - **OpenCode JSONC comments** are dropped by any apply that writes
   `opencode.jsonc`. A no-op apply leaves the file untouched.
-- **`import`** reads Claude's global MCP servers only. Treat its output as a
-  reviewed starting point, not a migration.
 - **Secrets need a backend:** `${pass:…}` requires `pass` on `PATH`;
   `${ENV_VAR}` requires the variable set at apply time.
 - **Moving or renaming the repo** breaks skill symlinks (absolute targets).

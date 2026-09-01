@@ -14,8 +14,8 @@ const ontoProjectTOML = `
 [frameworks.onto]
 source = "builtin:onto"
 scope = "project"
-targets = ["claude"]
-` + ontoTOMLClaude
+targets = ["opencode"]
+` + ontoFrameworkModels
 
 func writeToolingConfig(t *testing.T, repo, tooling string) {
 	t.Helper()

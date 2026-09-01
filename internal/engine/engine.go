@@ -284,7 +284,6 @@ func (e *Engine) subagentRenderContextFor(targets map[string]map[string]bool) ma
 		return m
 	}
 	return map[string]agentfm.RenderContext{
-		"claude":   {Overrides: overrides(func(s config.Subagent) config.ModelRoute { return s.Claude }), Targets: targets["claude"]},
 		"opencode": {Overrides: overrides(func(s config.Subagent) config.ModelRoute { return s.OpenCode }), Targets: targets["opencode"]},
 	}
 }
@@ -368,7 +367,7 @@ func gcCatalogRoots(skillRoot, cmdRoot, subRoot string, p *catalogPlan) error {
 		for _, e := range entries {
 			// Owner name: strip .md, then an optional per-tool variant suffix.
 			name := strings.TrimSuffix(e.Name(), ".md")
-			name = strings.TrimSuffix(strings.TrimSuffix(name, ".claude"), ".opencode")
+			name = strings.TrimSuffix(name, ".opencode")
 			if !subs[name] {
 				if err := os.RemoveAll(filepath.Join(subRoot, e.Name())); err != nil {
 					return err
@@ -415,8 +414,8 @@ func (e *Engine) planCatalog() (*catalogPlan, error) {
 	skillSet := map[string]bool{}
 	cmdSet := map[string]bool{}
 	subSet := map[string]bool{}
-	targetedSubagents := map[string]map[string]bool{"claude": {}, "opencode": {}}
-	for _, tool := range []string{"claude", "opencode"} {
+	targetedSubagents := map[string]map[string]bool{"opencode": {}}
+	for _, tool := range []string{"opencode"} {
 		sEntries, err := e.Cfg.ExpandedSkillEntriesForTool(tool)
 		if err != nil {
 			return nil, err

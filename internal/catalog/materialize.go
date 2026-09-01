@@ -133,15 +133,13 @@ func (c *Catalog) MaterializeCommands(dstRoot string, names []string) error {
 // caller's job (engine) to gate this on the catalog version.
 //
 // When a subagent's frontmatter carries a neutral `homonto:` access block (see
-// internal/agentfm), it ALSO writes per-tool variants — <name>.claude.md and
-// <name>.opencode.md — rendered from that block into each tool's native fields
-// (Claude's `tools:` allowlist vs OpenCode's `permission:` map), which cannot
-// share one file. renderCtx supplies the config-derived model values the render
-// needs per tool. A render that returns no bytes (a primary
-// agent has no Claude variant) removes any stale variant instead of writing one,
-// so the adapter's "block present + variant absent → skip" rule holds. Each
-// adapter prefers its own variant; the shared <name>.md remains the version-gate
-// anchor and the fallback for verbatim subagents.
+// internal/agentfm), it ALSO writes the OpenCode variant <name>.opencode.md,
+// rendered from that block into the tool's native `permission:` map — OpenCode
+// is the only adapter since v0.13.0, so no other tool's variant exists.
+// renderCtx supplies the config-derived model values the render needs; an agent
+// the context does not target gets any stale variant removed instead of a
+// refresh. The shared <name>.md remains the version-gate anchor and the
+// fallback for verbatim subagents.
 // ContentFingerprint digests the SOURCE content of the named skills, commands,
 // and subagents — every byte a materialize would extract — deterministically
 // (sorted names, path+content per file, NUL-delimited).
@@ -211,12 +209,12 @@ func sortedCopy(names []string) []string {
 }
 
 // SubagentFiles returns the file names MaterializeSubagents writes for name
-// under dstRoot, given renderCtx: the shared <name>.md anchor, plus each
-// per-tool variant that renders to bytes. A primary agent yields no
-// <name>.claude.md (agentfm skips that render), and a verbatim subagent yields
-// the anchor alone. The engine's version gate uses this to check every file a
+// under dstRoot, given renderCtx: the shared <name>.md anchor, plus the
+// <name>.opencode.md variant when the source carries a homonto: block and the
+// render context targets the agent; a verbatim subagent yields the anchor
+// alone. The engine's version gate uses this to check every file a
 // materialize would produce — checking the anchor alone would let a deleted or
-// stale per-tool variant survive as a dangling link forever.
+// stale variant survive as a dangling link forever.
 func (c *Catalog) SubagentFiles(name string, renderCtx map[string]agentfm.RenderContext) ([]string, error) {
 	sp, ok := c.subagents[name]
 	if !ok {
@@ -230,27 +228,24 @@ func (c *Catalog) SubagentFiles(name string, renderCtx map[string]agentfm.Render
 	if !agentfm.NeedsTransform(data) {
 		return files, nil
 	}
-	for _, tool := range []string{"claude", "opencode"} {
+	for _, tool := range []string{"opencode"} {
 		ctx, targeted := renderContextForTool(renderCtx, tool, name)
 		if !targeted {
 			continue
 		}
-		rendered, rerr := agentfm.Render(name, data, tool, ctx)
-		if rerr != nil {
+		if _, rerr := agentfm.Render(name, data, tool, ctx); rerr != nil {
 			return nil, fmt.Errorf("catalog: render subagent %q for %s: %w", name, tool, rerr)
 		}
-		if rendered != nil {
-			files = append(files, name+"."+tool+".md")
-		}
+		files = append(files, name+"."+tool+".md")
 	}
 	return files, nil
 }
 
 // MaterializeSubagents writes the named subagents' content into dstRoot,
-// rendering per-tool variants via renderCtx when the source carries a
+// rendering the OpenCode variant via renderCtx when the source carries a
 // homonto: frontmatter block. Mirrors Materialize/MaterializeCommands: one
-// file per name, removing any stale per-tool variants a previous verbatim
-// projection left behind.
+// file per name, removing any stale variant a previous verbatim projection
+// left behind.
 func (c *Catalog) MaterializeSubagents(dstRoot string, names []string, renderCtx map[string]agentfm.RenderContext) error {
 	for _, name := range names {
 		sp, ok := c.subagents[name]
@@ -269,12 +264,12 @@ func (c *Catalog) MaterializeSubagents(dstRoot string, names []string, renderCtx
 		}
 		if !agentfm.NeedsTransform(data) {
 			// A catalog upgrade can turn a rendered agent verbatim (its homonto:
-			// block removed). Remove any stale per-tool variants: the adapters
-			// PREFER a <name>.<tool>.md when it exists, so a leftover render
-			// from the previous version would silently win over the new content
-			// forever — invisible to the gate (SubagentFiles no longer claims
-			// the variant) and to doctor (which mirrors the same preference).
-			for _, tool := range []string{"claude", "opencode"} {
+			// block removed). Remove any stale variant: OpenCode prefers a
+			// <name>.<tool>.md when it exists, so a leftover render from the
+			// previous version would silently win over the new content forever —
+			// invisible to the gate (SubagentFiles no longer claims the variant)
+			// and to doctor (which mirrors the same preference).
+			for _, tool := range []string{"opencode"} {
 				stale := filepath.Join(dstRoot, name+"."+tool+".md")
 				if err := os.Remove(stale); err != nil && !os.IsNotExist(err) {
 					return err
@@ -282,7 +277,7 @@ func (c *Catalog) MaterializeSubagents(dstRoot string, names []string, renderCtx
 			}
 			continue
 		}
-		for _, tool := range []string{"claude", "opencode"} {
+		for _, tool := range []string{"opencode"} {
 			ctx, targeted := renderContextForTool(renderCtx, tool, name)
 			if !targeted {
 				variant := filepath.Join(dstRoot, name+"."+tool+".md")
@@ -296,12 +291,6 @@ func (c *Catalog) MaterializeSubagents(dstRoot string, names []string, renderCtx
 				return fmt.Errorf("catalog: render subagent %q for %s: %w", name, tool, rerr)
 			}
 			variant := filepath.Join(dstRoot, name+"."+tool+".md")
-			if rendered == nil {
-				if err := os.Remove(variant); err != nil && !os.IsNotExist(err) {
-					return err
-				}
-				continue
-			}
 			if err := fsutil.WriteControlPlane(variant, rendered, 0o644); err != nil {
 				return err
 			}

@@ -2,11 +2,10 @@
 // owned skills, commands, and subagents are linked, as a function of the
 // resource kind, tool, and install scope. The adapters and the engine's doctor
 // all call Dir so the path convention lives in exactly one place — important
-// because the tools disagree on subpaths (OpenCode uses singular "command" and
-// "agent", Claude uses plural "commands" and "agents"; both use plural
-// "skills"), the two scopes do not share a common base directory, and the
-// scope-flip rule for inactive-scope pruning must be consistent across all
-// three resource kinds.
+// because the kind leaf names are not uniform (OpenCode uses plural "skills"
+// but singular "command" and "agent"), the two scopes do not share a common
+// base directory, and the scope-flip rule for inactive-scope pruning must be
+// consistent across all three resource kinds.
 //
 // This package unifies the former skillpath / commandpath / subagentpath
 // trio, whose three near-identical switch bodies had drifted in subtle ways.
@@ -28,16 +27,10 @@ const (
 
 // Dir returns the directory a tool's owned resources of kind are linked into.
 //
-//	claude   + user     + skill    -> <home>/.claude/skills
-//	claude   + project  + skill    -> <projectRoot>/.claude/skills
 //	opencode + user     + skill    -> <home>/.config/opencode/skills
 //	opencode + project  + skill    -> <projectRoot>/.opencode/skills
-//	claude   + user     + command  -> <home>/.claude/commands
-//	claude   + project  + command  -> <projectRoot>/.claude/commands
 //	opencode + user     + command  -> <home>/.config/opencode/command
 //	opencode + project  + command  -> <projectRoot>/.opencode/command
-//	claude   + user     + subagent -> <home>/.claude/agents
-//	claude   + project  + subagent -> <projectRoot>/.claude/agents
 //	opencode + user     + subagent -> <home>/.config/opencode/agent
 //	opencode + project  + subagent -> <projectRoot>/.opencode/agent
 //
@@ -51,11 +44,6 @@ func Dir(kind Kind, tool, scope, home, projectRoot string) string {
 	}
 	project := scope == "project"
 	switch tool {
-	case "claude":
-		if project {
-			return filepath.Join(projectRoot, ".claude", leaf)
-		}
-		return filepath.Join(home, ".claude", leaf)
 	case "opencode":
 		if project {
 			// OpenCode reads project skills/commands/subagents from
@@ -69,25 +57,18 @@ func Dir(kind Kind, tool, scope, home, projectRoot string) string {
 	return ""
 }
 
-// leafName is the per-kind, per-tool leaf directory name. skills is plural
-// "skills" in both tools; commands is plural in Claude and singular in
-// OpenCode; subagents is "agents" in Claude and "agent" in OpenCode.
+// leafName is the per-kind leaf directory name. skills is plural "skills";
+// commands is singular "command"; subagents is "agent".
 func leafName(kind Kind, tool string) (string, bool) {
 	switch kind {
 	case Skill:
 		return "skills", true
 	case Command:
-		switch tool {
-		case "claude":
-			return "commands", true
-		case "opencode":
+		if tool == "opencode" {
 			return "command", true
 		}
 	case Subagent:
-		switch tool {
-		case "claude":
-			return "agents", true
-		case "opencode":
+		if tool == "opencode" {
 			return "agent", true
 		}
 	}

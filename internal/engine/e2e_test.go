@@ -18,13 +18,13 @@ command = ["codegraph","serve","--mcp"]
 [mcps.brave]
 command = ["npx","server-brave"]
 env = { BRAVE_API_KEY = "${pass:ai/brave}" }
-targets = ["claude"]
+targets = ["opencode"]
 
 [skills.graphify]
 source = "local:graphify"
 scope = "user"
 
-[settings.claude]
+[settings.opencode]
 model = "opus"
 `
 
@@ -49,22 +49,19 @@ func TestEndToEndApplyIsIdempotent(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// codegraph projected into both tools
-	cj, _ := os.ReadFile(filepath.Join(home, ".claude.json"))
-	if gjson.GetBytes(cj, "mcpServers.codegraph.command").String() != "codegraph" ||
-		gjson.GetBytes(cj, "mcpServers.codegraph.args.0").String() != "serve" {
-		t.Fatal("claude mcp missing")
-	}
+	// codegraph projected into opencode.jsonc
 	oc, _ := os.ReadFile(filepath.Join(home, ".config", "opencode", "opencode.jsonc"))
-	if gjson.GetBytes(oc, "mcp.codegraph.type").String() != "local" {
-		t.Fatal("opencode mcp missing")
+	if gjson.GetBytes(oc, "mcp.codegraph.type").String() != "local" ||
+		gjson.GetBytes(oc, "mcp.codegraph.command.0").String() != "codegraph" ||
+		gjson.GetBytes(oc, "mcp.codegraph.command.1").String() != "serve" {
+		t.Fatalf("opencode mcp missing:\n%s", oc)
 	}
 	// secret resolved on disk, skill linked
-	if gjson.GetBytes(cj, "mcpServers.brave.env.BRAVE_API_KEY").String() != "brave-secret" {
-		t.Fatalf("secret not resolved on disk: %s", cj)
+	if gjson.GetBytes(oc, "mcp.brave.environment.BRAVE_API_KEY").String() != "brave-secret" {
+		t.Fatalf("secret not resolved on disk: %s", oc)
 	}
-	if _, err := os.Lstat(filepath.Join(home, ".claude", "skills", "graphify")); err != nil {
-		t.Fatal("claude skill link missing")
+	if _, err := os.Lstat(filepath.Join(home, ".config", "opencode", "skills", "graphify")); err != nil {
+		t.Fatal("opencode skill link missing")
 	}
 
 	// Second apply: no changes, including the secret-backed MCP.

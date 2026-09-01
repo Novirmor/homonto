@@ -16,7 +16,7 @@ command = ["codegraph", "serve", "--mcp"]
 [mcps.brave]
 command = ["npx", "-y", "server-brave"]
 env = { BRAVE_API_KEY = "${pass:ai/brave}" }
-targets = ["claude"]
+targets = ["opencode"]
 
 [frameworks.onto]
 source = "builtin:onto"
@@ -29,47 +29,28 @@ scope = "project"
 [skills.demo-skill]
 source = "builtin:onto"
 scope = "user"
-targets = ["claude"]
+targets = ["opencode"]
 
 [commands.review]
 source = "builtin:review"
 scope = "project"
 targets = ["opencode"]
 
-[plugins.claude.claude-hud]
-source = "claude-hud@official"
-enabled = true
-
 [plugins.opencode.quota]
 source = "@slkiser/opencode-quota"
-
-[settings.claude]
-model = "opus"
 
 [settings.opencode]
 model = "anthropic/claude-opus-4-8"
 
-[subagents.onto.claude]
-model = "opus"
 [subagents.onto.opencode]
 model = "anthropic/claude-opus-4-8"
-[subagents.onto-explorer.claude]
-model = "haiku"
-effort = "low"
 [subagents.onto-explorer.opencode]
 model = "openai/gpt-5-mini"
 variant = "cheap"
-[subagents.onto-reviewer.claude]
-model = "opus"
 [subagents.onto-reviewer.opencode]
 model = "anthropic/claude-opus-4-8"
-[subagents.onto-implementer.claude]
-model = "sonnet"
-effort = "medium"
 [subagents.onto-implementer.opencode]
 model = "anthropic/claude-sonnet-4"
-[subagents.onto-skeptic.claude]
-model = "opus"
 [subagents.onto-skeptic.opencode]
 model = "anthropic/claude-opus-4-8"
 `
@@ -90,14 +71,16 @@ func TestLoad(t *testing.T) {
 	if got := c.MCPs["brave"].Env["BRAVE_API_KEY"]; got != "${pass:ai/brave}" {
 		t.Fatalf("brave env = %q", got)
 	}
-	if got := c.MCPs["codegraph"].TargetsOrAll(); len(got) != 2 {
+	// OpenCode is the only adapter since v0.13.0, so an absent targets list
+	// defaults to exactly ["opencode"].
+	if got := c.MCPs["codegraph"].TargetsOrAll(); len(got) != 1 || got[0] != "opencode" {
 		t.Fatalf("default targets = %v", got)
 	}
-	if got := c.MCPs["brave"].TargetsOrAll(); len(got) != 1 || got[0] != "claude" {
+	if got := c.MCPs["brave"].TargetsOrAll(); len(got) != 1 || got[0] != "opencode" {
 		t.Fatalf("brave targets = %v", got)
 	}
-	if c.Settings.Claude["model"] != "opus" {
-		t.Fatalf("claude model = %v", c.Settings.Claude["model"])
+	if got := c.Settings.OpenCode["model"]; got != "anthropic/claude-opus-4-8" {
+		t.Fatalf("opencode model = %v", got)
 	}
 	if got := c.Frameworks["onto"].Scope; got != "project" {
 		t.Fatalf("framework onto scope = %q", got)
@@ -105,25 +88,18 @@ func TestLoad(t *testing.T) {
 	if got := c.Skills["graphify"].Source; got != "local:graphify" {
 		t.Fatalf("skill graphify source = %q", got)
 	}
-	claudeSkills := c.SkillEntriesForTool("claude")
-	if len(claudeSkills) != 2 || claudeSkills[0].Name != "demo-skill" || claudeSkills[1].Name != "graphify" {
-		t.Fatalf("claude skill entries = %#v", claudeSkills)
-	}
 	opencodeSkills := c.SkillEntriesForTool("opencode")
-	if len(opencodeSkills) != 1 || opencodeSkills[0].Name != "graphify" {
+	if len(opencodeSkills) != 2 || opencodeSkills[0].Name != "demo-skill" || opencodeSkills[1].Name != "graphify" {
 		t.Fatalf("opencode skill entries = %#v", opencodeSkills)
 	}
-	if got := c.Subagents["onto-reviewer"].Claude.Model; got != "opus" {
-		t.Fatalf("onto-reviewer claude override model = %q, want opus", got)
+	if got := c.Subagents["onto-reviewer"].OpenCode.Model; got != "anthropic/claude-opus-4-8" {
+		t.Fatalf("onto-reviewer opencode override model = %q", got)
 	}
 	if got := c.Subagents["onto-explorer"].OpenCode.Variant; got != "cheap" {
 		t.Fatalf("onto-explorer opencode variant = %q, want cheap", got)
 	}
 	// Plugin declaration tables parse into per-tool maps keyed by decl name,
 	// carrying source and (default-true) enabled.
-	if got := c.Plugins.Claude["claude-hud"]; got.Source != "claude-hud@official" || !got.IsEnabled() {
-		t.Fatalf("claude plugin claude-hud = %#v", got)
-	}
 	oc := c.Plugins.OpenCode["quota"]
 	if oc.Source != "@slkiser/opencode-quota" || !oc.IsEnabled() {
 		t.Fatalf("opencode plugin quota = %#v (enabled default should be true)", oc)
@@ -133,8 +109,8 @@ func TestLoad(t *testing.T) {
 // TestLoadPluginEnabledSemantics covers the enabled flag: omitted defaults to
 // true (enabled), false disables.
 func TestLoadPluginEnabledSemantics(t *testing.T) {
-	doc := "[plugins.claude.on]\nsource = \"on@m\"\n" +
-		"[plugins.claude.off]\nsource = \"off@m\"\nenabled = false\n"
+	doc := "[plugins.opencode.on]\nsource = \"on@m\"\n" +
+		"[plugins.opencode.off]\nsource = \"off@m\"\nenabled = false\n"
 	p := filepath.Join(t.TempDir(), "homonto.toml")
 	if err := os.WriteFile(p, []byte(doc), 0o644); err != nil {
 		t.Fatal(err)
@@ -143,33 +119,27 @@ func TestLoadPluginEnabledSemantics(t *testing.T) {
 	if err != nil {
 		t.Fatalf("load: %v", err)
 	}
-	if !c.Plugins.Claude["on"].IsEnabled() {
+	if !c.Plugins.OpenCode["on"].IsEnabled() {
 		t.Fatalf("plugin with omitted enabled should default enabled")
 	}
-	if c.Plugins.Claude["off"].IsEnabled() {
+	if c.Plugins.OpenCode["off"].IsEnabled() {
 		t.Fatalf("plugin with enabled=false should be disabled")
 	}
 }
 
-// TestLoadPluginConfig: a claude plugin may carry a [plugins.claude.<name>.config]
-// table of non-sensitive options, parsed into Plugin.Config.
-func TestLoadPluginConfig(t *testing.T) {
-	doc := "[plugins.claude.hud]\nsource = \"hud@official\"\n" +
-		"[plugins.claude.hud.config]\napi_endpoint = \"https://x\"\nmax_workers = 4\n"
-	p := filepath.Join(t.TempDir(), "homonto.toml")
-	if err := os.WriteFile(p, []byte(doc), 0o644); err != nil {
-		t.Fatal(err)
+// TestLoadRejectsRemovedClaudePlugins: Claude Code support was removed in
+// v0.13.0, so any [plugins.claude.<name>] declaration — whatever its fields —
+// is rejected at load naming the plugin, not decoded into a surface that no
+// longer projects.
+func TestLoadRejectsRemovedClaudePlugins(t *testing.T) {
+	err := loadDoc(t, "[plugins.claude.hud]\nsource = \"hud@official\"\nenabled = true\n")
+	if err == nil {
+		t.Fatal("a [plugins.claude] declaration must be rejected at load")
 	}
-	c, err := Load(p)
-	if err != nil {
-		t.Fatalf("load: %v", err)
-	}
-	cfg := c.Plugins.Claude["hud"].Config
-	if cfg["api_endpoint"] != "https://x" {
-		t.Fatalf("plugin config api_endpoint = %#v; want \"https://x\"", cfg["api_endpoint"])
-	}
-	if got, ok := cfg["max_workers"].(int64); !ok || got != 4 {
-		t.Fatalf("plugin config max_workers = %#v; want int64(4)", cfg["max_workers"])
+	for _, want := range []string{"plugins.claude.hud", "removed in v0.13.0"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Fatalf("error %v does not mention %q", err, want)
+		}
 	}
 }
 
@@ -192,8 +162,8 @@ func TestLoadRejectsOpenCodePluginConfig(t *testing.T) {
 // (or whitespace) cannot project anywhere, so Load must fail naming the plugin.
 func TestLoadRejectsEmptyPluginSource(t *testing.T) {
 	for _, tc := range []struct{ label, doc, name string }{
-		{"claude missing source", "[plugins.claude.hud]\n", "hud"},
-		{"claude empty source", "[plugins.claude.hud]\nsource = \"\"\n", "hud"},
+		{"opencode missing source", "[plugins.opencode.hud]\n", "hud"},
+		{"opencode empty source", "[plugins.opencode.hud]\nsource = \"\"\n", "hud"},
 		{"opencode whitespace source", "[plugins.opencode.q]\nsource = \"   \"\n", "q"},
 	} {
 		err := loadDoc(t, tc.doc)
@@ -210,13 +180,13 @@ func TestLoadRejectsEmptyPluginSource(t *testing.T) {
 // collide on the single projected key (keyed by source), giving a
 // last-writer-wins, iteration-order-dependent plan. Load must reject it.
 func TestLoadRejectsDuplicatePluginSource(t *testing.T) {
-	doc := "[plugins.claude.hud]\nsource = \"hud@official\"\n" +
-		"[plugins.claude.hud-off]\nsource = \"hud@official\"\nenabled = false\n"
+	doc := "[plugins.opencode.hud]\nsource = \"hud@npm\"\n" +
+		"[plugins.opencode.hud-off]\nsource = \"hud@npm\"\nenabled = false\n"
 	err := loadDoc(t, doc)
 	if err == nil {
 		t.Fatal("duplicate source accepted; want load error")
 	}
-	if !strings.Contains(err.Error(), "hud@official") {
+	if !strings.Contains(err.Error(), "hud@npm") {
 		t.Fatalf("error does not name the shared source: %v", err)
 	}
 }
@@ -237,9 +207,7 @@ func TestLoadRejectsIndexLikeNames(t *testing.T) {
 		{"mcp empty", "[mcps.\"\"]\ncommand = [\"x\"]\n", ""},
 		{"mcp zero", "[mcps.\"0\"]\ncommand = [\"x\"]\n", "0"},
 		{"mcp minus-one", "[mcps.\"-1\"]\ncommand = [\"x\"]\n", "-1"},
-		{"claude setting", "[settings.claude]\n\"0\" = \"x\"\n", "0"},
 		{"opencode setting", "[settings.opencode]\n\"-1\" = \"x\"\n", "-1"},
-		{"claude plugin", "[plugins.claude.\"7\"]\nsource = \"x\"\n", "7"},
 		{"opencode plugin", "[plugins.opencode.\"\"]\nsource = \"x\"\n", ""},
 	}
 	for _, tc := range bad {
@@ -362,7 +330,7 @@ func TestAgentSupersededIntoSubagent(t *testing.T) {
 	}
 
 	// A builtin agent supersedes to a COPY-mode subagent (builtin was copy-only).
-	c := load("[agents.rev]\nsource=\"builtin:code-reviewer\"\ntargets=[\"claude\"]\n" + modelsFor("rev"))
+	c := load("[agents.rev]\nsource=\"builtin:code-reviewer\"\ntargets=[\"opencode\"]\n" + modelsFor("rev"))
 	if len(c.Agents) != 0 {
 		t.Fatal("the [agents] table must be cleared after supersede")
 	}
@@ -381,8 +349,8 @@ func TestAgentSupersededIntoSubagent(t *testing.T) {
 	// After the fold dup's source is local:dup, which the must-declare check
 	// skips (only builtin: sources are rendered through agentfm), so no
 	// per-tool block is required.
-	c2 := load("[agents.dup]\nsource=\"local:dup\"\nmode=\"copy\"\ntargets=[\"claude\"]\n" +
-		"[subagents.dup]\nsource=\"builtin:architect\"\nscope=\"project\"\ntargets=[\"claude\"]\n")
+	c2 := load("[agents.dup]\nsource=\"local:dup\"\nmode=\"copy\"\ntargets=[\"opencode\"]\n" +
+		"[subagents.dup]\nsource=\"builtin:architect\"\nscope=\"project\"\ntargets=[\"opencode\"]\n")
 	if got := c2.Subagents["dup"].Source; got != "local:dup" {
 		t.Fatalf("the agent declaration must win the name; subagent source = %q", got)
 	}
@@ -423,13 +391,15 @@ func TestSubagentScopeDefaultsToProject(t *testing.T) {
 }
 
 // TestLoadRejectsUnknownTargets reproduces NEXT_AGENT gap #3: an MCP whose
-// targets name a tool that is not claude/opencode matches no adapter and is
-// silently projected nowhere. Load must fail naming the unknown target.
+// targets name a tool other than opencode (a silent typo) matches no adapter
+// and is silently projected nowhere. Load must fail naming the unknown target.
+// Targets naming a removed tool get their own removal message — see
+// TestRemovedToolTargetsRejected.
 func TestLoadRejectsUnknownTargets(t *testing.T) {
 	bad := []struct{ label, doc, offender string }{
 		{"typo", "[mcps.x]\ncommand=[\"c\"]\ntargets=[\"claud\"]\n", "claud"},
 		{"unknown tool", "[mcps.x]\ncommand=[\"c\"]\ntargets=[\"vscode\"]\n", "vscode"},
-		{"one good one bad", "[mcps.x]\ncommand=[\"c\"]\ntargets=[\"claude\",\"opencde\"]\n", "opencde"},
+		{"one good one bad", "[mcps.x]\ncommand=[\"c\"]\ntargets=[\"opencode\",\"opencde\"]\n", "opencde"},
 	}
 	for _, tc := range bad {
 		err := loadDoc(t, tc.doc)
@@ -440,10 +410,10 @@ func TestLoadRejectsUnknownTargets(t *testing.T) {
 			t.Fatalf("%s: error does not name the offender %q: %v", tc.label, tc.offender, err)
 		}
 	}
-	if err := loadDoc(t, "[mcps.x]\ncommand=[\"c\"]\ntargets=[\"claude\",\"opencode\"]\n"); err != nil {
+	if err := loadDoc(t, "[mcps.x]\ncommand=[\"c\"]\ntargets=[\"opencode\"]\n"); err != nil {
 		t.Fatalf("valid targets rejected: %v", err)
 	}
-	// No targets means all tools — still valid.
+	// No targets means the default (opencode) — still valid.
 	if err := loadDoc(t, "[mcps.x]\ncommand=[\"c\"]\n"); err != nil {
 		t.Fatalf("default targets rejected: %v", err)
 	}
@@ -454,7 +424,7 @@ func TestLoadRejectsUnknownTargets(t *testing.T) {
 // no-op. Load must fail naming the MCP that cannot project.
 func TestLoadRejectsEmptyCommand(t *testing.T) {
 	for _, tc := range []struct{ label, doc string }{
-		{"missing command", "[mcps.foo]\ntargets=[\"claude\"]\n"},
+		{"missing command", "[mcps.foo]\ntargets=[\"opencode\"]\n"},
 		{"empty command", "[mcps.foo]\ncommand=[]\n"},
 	} {
 		err := loadDoc(t, tc.doc)
@@ -467,15 +437,11 @@ func TestLoadRejectsEmptyCommand(t *testing.T) {
 	}
 }
 
-// TestLoadRejectsReservedSettingKeys reproduces gap #3: a settings key that
-// collides with a structure homonto itself manages in the same tool file
-// (claude enabledPlugins in settings.json; opencode mcp/plugin in
-// opencode.jsonc) must be a load error, not a silent fight at apply.
+// TestLoadRejectsReservedSettingKeys: a [settings.opencode] key that collides
+// with a structure homonto itself manages in opencode.jsonc (mcp/plugin) must
+// be a load error, not a silent fight at apply.
 func TestLoadRejectsReservedSettingKeys(t *testing.T) {
 	for _, tc := range []struct{ label, doc, key string }{
-		{"claude enabledPlugins", "[settings.claude]\nenabledPlugins={}\n", "enabledPlugins"},
-		{"claude mcpServers", "[settings.claude]\nmcpServers={}\n", "mcpServers"},
-		{"claude pluginConfigs", "[settings.claude]\npluginConfigs={}\n", "pluginConfigs"},
 		{"opencode mcp", "[settings.opencode]\nmcp={}\n", "mcp"},
 		{"opencode plugin", "[settings.opencode]\nplugin=[]\n", "plugin"},
 	} {
@@ -487,18 +453,34 @@ func TestLoadRejectsReservedSettingKeys(t *testing.T) {
 			t.Fatalf("%s: error does not name the key %q: %v", tc.label, tc.key, err)
 		}
 	}
-	// Exact collisions only: the same names are fine in the OTHER tool, and
-	// non-colliding keys load normally. (settings.claude.mcpServers is now
-	// rejected above — claude's current() skips reading it back from
-	// settings.json, so it would be non-idempotent at apply.)
+	// Exact collisions only: non-colliding keys load normally, including the
+	// names homonto once managed for Claude (they are plain keys here).
 	for _, ok := range []string{
-		"[settings.claude]\nmcp={}\n",              // read back by current(); idempotent
-		"[settings.opencode]\nenabledPlugins={}\n", // reserved for claude only, fine for opencode
-		"[settings.opencode]\nmcpServers={}\n",     // reserved for claude only, fine for opencode
-		"[settings.claude]\nmodel=\"opus\"\n",
+		"[settings.opencode]\nenabledPlugins={}\n",
+		"[settings.opencode]\nmcpServers={}\n",
+		"[settings.opencode]\nmodel=\"anthropic/claude-opus-4-8\"\n",
 	} {
 		if err := loadDoc(t, ok); err != nil {
 			t.Fatalf("non-reserved settings rejected: %v (doc %q)", err, ok)
+		}
+	}
+}
+
+// TestLoadRejectsRemovedClaudeSettings: Claude Code support was removed in
+// v0.13.0, so any [settings.claude] key — including the enabledPlugins /
+// mcpServers / pluginConfigs / extraKnownMarketplaces keys homonto itself once
+// managed there — is rejected at load naming the key, pointing at
+// [settings.opencode] or deletion.
+func TestLoadRejectsRemovedClaudeSettings(t *testing.T) {
+	for _, key := range []string{"enabledPlugins", "mcpServers", "pluginConfigs", "extraKnownMarketplaces", "model"} {
+		err := loadDoc(t, "[settings.claude]\n"+key+" = \"x\"\n")
+		if err == nil {
+			t.Fatalf("settings.claude.%s accepted; want the removal error", key)
+		}
+		for _, want := range []string{"settings.claude." + key, "removed in v0.13.0"} {
+			if !strings.Contains(err.Error(), want) {
+				t.Fatalf("error %v does not mention %q", err, want)
+			}
 		}
 	}
 }
@@ -570,25 +552,26 @@ func TestLoadRejectsUnknownResourceTargets(t *testing.T) {
 	}
 }
 
-func TestLoadRequiresPerToolModelForEnabledSubagents(t *testing.T) {
-	// A declared subagent must declare its model for every enabled tool. The
-	// must-declare check names the offender: <subagent>.<tool> model is required.
-	doc := `
+// TestLoadRejectsRemovedClaudeSubagentBlock: a [subagents.<name>.claude] model
+// block names a tool whose support was removed in v0.13.0. Load must reject it
+// naming the block and pointing the migration at [subagents.<name>.opencode] —
+// not silently drop a model declaration the user wrote.
+func TestLoadRejectsRemovedClaudeSubagentBlock(t *testing.T) {
+	err := loadDoc(t, `
 [subagents.onto-reviewer]
 source = "builtin:onto-reviewer"
 scope = "project"
-targets = ["claude", "opencode"]
+
+[subagents.onto-reviewer.claude]
+model = "opus"
 
 [subagents.onto-reviewer.opencode]
 model = "anthropic/claude-opus-4-8"
-
-[subagents.onto-reviewer.claude]
-`
-	err := loadDoc(t, doc)
+`)
 	if err == nil {
-		t.Fatal("missing [subagents.<name>.<tool>] model accepted; want load error")
+		t.Fatal("a [subagents.<name>.claude] block must be rejected at load")
 	}
-	for _, want := range []string{"subagents.onto-reviewer.claude", "model is required"} {
+	for _, want := range []string{"subagents.onto-reviewer.claude", "removed in v0.13.0"} {
 		if !strings.Contains(err.Error(), want) {
 			t.Fatalf("error %v does not mention %q", err, want)
 		}
@@ -613,21 +596,24 @@ scope = "project"
 		t.Fatal("framework expanding builtin subagents with no [subagents.<name>.<tool>] model accepted; want load error")
 	}
 	// The error names the first expanded builtin (alphabetically) and its
-	// first enabled tool (claude sorts before opencode). onto is the onto
-	// framework's primary dispatcher, expanded first in sorted order.
-	for _, want := range []string{"subagents.onto.claude", "model is required"} {
+	// enabled tool. onto is the onto framework's primary dispatcher, expanded
+	// first in sorted order; opencode is the only adapter since v0.13.0.
+	for _, want := range []string{"subagents.onto.opencode", "model is required"} {
 		if !strings.Contains(err.Error(), want) {
 			t.Fatalf("error %v does not mention %q", err, want)
 		}
 	}
 }
 
+// TestLoadRequiresModelForFrameworkAgentOutsideExplicitAliasTargets: an
+// explicit alias's override covers only the catalog agent it names — every
+// OTHER agent the framework expands still needs its own
+// [subagents.<name>.opencode] block, and omitting one must fail at load.
 func TestLoadRequiresModelForFrameworkAgentOutsideExplicitAliasTargets(t *testing.T) {
 	doc := `
 [frameworks.onto]
 source = "builtin:onto"
 scope = "project"
-targets = ["claude"]
 
 [subagents.alias]
 source = "builtin:onto-reviewer"
@@ -636,18 +622,16 @@ targets = ["opencode"]
 [subagents.alias.opencode]
 model = "anthropic/claude-opus-4-8"
 
-[subagents.onto.claude]
-model = "opus"
-[subagents.onto-explorer.claude]
-model = "haiku"
-[subagents.onto-implementer.claude]
-model = "sonnet"
-[subagents.onto-skeptic.claude]
-model = "opus"
+[subagents.onto.opencode]
+model = "anthropic/claude-opus-4-8"
+[subagents.onto-explorer.opencode]
+model = "anthropic/claude-haiku-4-5"
+[subagents.onto-implementer.opencode]
+model = "anthropic/claude-sonnet-4"
 `
 	err := loadDoc(t, doc)
-	if err == nil || !strings.Contains(err.Error(), "subagents.onto-reviewer.claude model is required") {
-		t.Fatalf("framework agent omitted by an explicit alias's target restriction must fail at load, got: %v", err)
+	if err == nil || !strings.Contains(err.Error(), "subagents.onto-skeptic.opencode model is required") {
+		t.Fatalf("a framework agent not covered by the explicit alias must fail at load, got: %v", err)
 	}
 }
 
@@ -661,8 +645,6 @@ func TestLoadAcceptsModelWithoutEffortOrVariant(t *testing.T) {
 source = "builtin:onto-reviewer"
 scope = "project"
 
-[subagents.onto-reviewer.claude]
-model = "opus"
 [subagents.onto-reviewer.opencode]
 model = "anthropic/claude-opus-4-8"
 `
@@ -671,21 +653,11 @@ model = "anthropic/claude-opus-4-8"
 	}
 }
 
-// Each tool is validated against what it can actually express, so a value the
-// tool would silently ignore is a load error naming the offender instead.
+// The model spec is validated against what OpenCode — the only adapter since
+// v0.13.0 — can actually express, so a value the tool would silently ignore is
+// a load error naming the offender instead.
 func TestLoadValidatesModelSpecPerTool(t *testing.T) {
-	claudeDoc := func(route string) string {
-		return `
-[subagents.onto-reviewer]
-source = "builtin:onto-reviewer"
-scope = "project"
-targets = ["claude"]
-
-[subagents.onto-reviewer.claude]
-` + route + `
-`
-	}
-	opencodeDoc := func(route string) string {
+	doc := func(route string) string {
 		return `
 [subagents.onto-reviewer]
 source = "builtin:onto-reviewer"
@@ -701,18 +673,8 @@ targets = ["opencode"]
 		name, doc, wantErr string
 	}{
 		{
-			name:    "claude rejects an effort outside its enum",
-			doc:     claudeDoc("model = \"opus\"\neffort = \"normal\"\n"),
-			wantErr: "not a Claude effort level",
-		},
-		{
-			name:    "claude rejects a variant on a full model id",
-			doc:     claudeDoc("model = \"claude-opus-4-8\"\nvariant = \"1m\"\n"),
-			wantErr: "needs a model alias",
-		},
-		{
 			name:    "opencode rejects effort, which it has no concept of",
-			doc:     opencodeDoc("model = \"anthropic/claude-opus-4-8\"\neffort = \"high\"\n"),
+			doc:     doc("model = \"anthropic/claude-opus-4-8\"\neffort = \"high\"\n"),
 			wantErr: "OpenCode has no effort setting",
 		},
 	} {
@@ -728,9 +690,7 @@ targets = ["opencode"]
 	}
 
 	for _, tc := range []struct{ name, doc string }{
-		{"claude accepts an enum effort", claudeDoc("model = \"opus\"\neffort = \"xhigh\"\n")},
-		{"claude accepts a variant on an alias", claudeDoc("model = \"opus\"\nvariant = \"1m\"\n")},
-		{"opencode accepts a provider-defined variant", opencodeDoc("model = \"anthropic/claude-opus-4-8\"\nvariant = \"thinking\"\n")},
+		{"opencode accepts a provider-defined variant", doc("model = \"anthropic/claude-opus-4-8\"\nvariant = \"thinking\"\n")},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			if err := loadDoc(t, tc.doc); err != nil {
@@ -740,94 +700,89 @@ targets = ["opencode"]
 	}
 }
 
-// A per-subagent [subagents.<name>.<tool>] block is validated against the same
-// per-tool rules as the must-declare check. The model is required of declared
-// builtin subagents; an override may set effort/variant alone but a tune-only
-// entry still must name an agent a framework or explicit declaration installs.
+// A per-subagent [subagents.<name>.opencode] block is validated against the
+// same rules as the must-declare check. The model is required of declared
+// builtin subagents; an override may set variant alone but a tune-only entry
+// still must name an agent a framework or explicit declaration installs.
 func TestLoadValidatesSubagentModelOverride(t *testing.T) {
 	// doc returns a config that declares onto-skeptic explicitly (so the
-	// must-declare check applies) plus the given per-tool block.
+	// must-declare check applies) plus the given override block.
 	doc := func(block string) string {
 		return `
 [subagents.onto-skeptic]
 source = "builtin:onto-skeptic"
 scope = "project"
-targets = ["claude"]
+targets = ["opencode"]
 
 ` + block + `
 `
 	}
 
-	t.Run("claude override with model + effort loads", func(t *testing.T) {
-		c, err := loadDocCfg(t, doc("[subagents.onto-skeptic.claude]\nmodel = \"opus\"\neffort = \"xhigh\"\n"))
+	t.Run("opencode override with model + variant loads", func(t *testing.T) {
+		c, err := loadDocCfg(t, doc("[subagents.onto-skeptic.opencode]\nmodel = \"anthropic/claude-opus-4-8\"\nvariant = \"thinking\"\n"))
 		if err != nil {
-			t.Fatalf("override with model + effort should load: %v", err)
+			t.Fatalf("override with model + variant should load: %v", err)
 		}
-		if got := c.Subagents["onto-skeptic"].ModelOverrideFor("claude"); got.Effort != "xhigh" || got.Model != "opus" {
-			t.Fatalf("override = %#v; want effort xhigh and model opus", got)
+		if got := c.Subagents["onto-skeptic"].ModelOverrideFor("opencode"); got.Model != "anthropic/claude-opus-4-8" || got.Variant != "thinking" {
+			t.Fatalf("override = %#v; want the declared model and variant", got)
+		}
+		// Claude Code support was removed in v0.13.0; the claude route is a
+		// removal detector and resolves to no override at all.
+		if got := c.Subagents["onto-skeptic"].ModelOverrideFor("claude"); got != (ModelRoute{}) {
+			t.Fatalf("ModelOverrideFor(\"claude\") = %#v; want the zero route", got)
 		}
 	})
 
-	// A tune-only entry projects nothing, so it enables no tool. Counting it
-	// would demand models for a tool nothing targets — tuning an agent's
-	// Claude side would start requiring [subagents.<name>.opencode].
-	t.Run("tuning one tool does not enable the other", func(t *testing.T) {
-		// Framework that targets claude only. onto-skeptic is expanded by the
-		// framework for claude, so it needs a claude block; it must NOT need an
-		// opencode block (nothing enables opencode here).
+	// A tune-only entry projects nothing and declares no agent — it only
+	// retunes what a framework already installed, so it must load without
+	// declaring anything itself.
+	t.Run("tune-only entries load over a framework", func(t *testing.T) {
 		if err := loadDoc(t, `
 [frameworks.onto]
 source = "builtin:onto"
 scope = "project"
-targets = ["claude"]
 
-[subagents.onto.claude]
-model = "opus"
-[subagents.onto-explorer.claude]
-model = "haiku"
-[subagents.onto-reviewer.claude]
-model = "opus"
-[subagents.onto-implementer.claude]
-model = "sonnet"
-[subagents.onto-skeptic.claude]
-model = "opus"
-effort = "max"
-`); err != nil {
-			t.Fatalf("tuning the claude side must not require opencode blocks: %v", err)
+`+ontoFrameworkModels()); err != nil {
+			t.Fatalf("tune-only blocks over a framework must load: %v", err)
 		}
 	})
 
 	t.Run("an override is validated too", func(t *testing.T) {
-		err := loadDoc(t, doc("[subagents.onto-skeptic.claude]\nmodel = \"opus\"\neffort = \"turbo\"\n"))
-		if err == nil || !strings.Contains(err.Error(), "not a Claude effort level") {
-			t.Fatalf("want the override's bad effort rejected, got: %v", err)
+		err := loadDoc(t, doc("[subagents.onto-skeptic.opencode]\nmodel = \"anthropic/claude-opus-4-8\"\neffort = \"turbo\"\n"))
+		if err == nil || !strings.Contains(err.Error(), "OpenCode has no effort setting") {
+			t.Fatalf("want the override's effort rejected, got: %v", err)
 		}
-		if !strings.Contains(err.Error(), "subagents.onto-skeptic.claude") {
+		if !strings.Contains(err.Error(), "subagents.onto-skeptic.opencode") {
 			t.Fatalf("error must name the offending override: %v", err)
 		}
 	})
 
-	// The engine applies overrides unconditionally when rendering both tools'
-	// variants, so validation must not be filtered by the entry's targets. This
-	// exact shape used to load clean and stamp `effort: banana` into the live
-	// Claude agent file.
-	t.Run("an untargeted tool's override is still validated", func(t *testing.T) {
+	// A tune-only entry declares no agent and no targets of its own, but its
+	// override is still stamped into a rendered file — it must be validated,
+	// not skipped because the entry itself projects nothing.
+	t.Run("a tune-only entry's override is still validated", func(t *testing.T) {
 		err := loadDoc(t, `
 [frameworks.onto]
 source = "builtin:onto"
 scope = "project"
 
-[subagents.onto-skeptic]
-targets = ["opencode"]
-[subagents.onto-skeptic.claude]
-model = "opus"
-effort = "banana"
+[subagents.onto.opencode]
+model = "anthropic/claude-opus-4-8"
+[subagents.onto-explorer.opencode]
+model = "anthropic/claude-opus-4-8"
+[subagents.onto-reviewer.opencode]
+model = "anthropic/claude-opus-4-8"
+[subagents.onto-implementer.opencode]
+model = "anthropic/claude-sonnet-4"
 [subagents.onto-skeptic.opencode]
 model = "anthropic/claude-opus-4-8"
-
-`+modelsFor("onto", "onto-explorer", "onto-reviewer", "onto-implementer"))
-		if err == nil || !strings.Contains(err.Error(), "not a Claude effort level") {
-			t.Fatalf("an override for a tool outside the entry's targets must still be validated, got: %v", err)
+effort = "turbo"
+`)
+		if err == nil || !strings.Contains(err.Error(), "OpenCode has no effort setting") {
+			t.Fatalf("a tune-only entry's bad effort must still be rejected, got: %v", err)
+		}
+		if !strings.Contains(err.Error(), "subagents.onto-skeptic.opencode") {
+			t.Fatalf("error must name the offending override: %v", err)
 		}
 	})
 
@@ -839,8 +794,8 @@ source = "builtin:onto"
 scope = "project"
 
 `+ontoFrameworkModels()+`
-[subagents.onto-skepic.claude]
-effort = "max"
+[subagents.onto-skepic.opencode]
+model = "anthropic/claude-opus-4-8"
 `)
 		if err == nil || !strings.Contains(err.Error(), "not installed") {
 			t.Fatalf("a tune-only entry for an unknown agent must fail naming the typo, got: %v", err)
@@ -854,9 +809,9 @@ effort = "max"
 		err := loadDoc(t, `[subagents.mine]
 source = "local:mine"
 scope = "project"
-targets = ["claude"]
-[subagents.mine.claude]
-effort = "max"
+targets = ["opencode"]
+[subagents.mine.opencode]
+model = "anthropic/claude-opus-4-8"
 `)
 		if err == nil || !strings.Contains(err.Error(), "never apply") {
 			t.Fatalf("an override on a local: source must be rejected, got: %v", err)
@@ -865,9 +820,9 @@ effort = "max"
 }
 
 // Two entries resolving to the same builtin with conflicting overrides used to
-// be caught only when their targets overlapped; with disjoint targets the
-// winner was Go map-iteration luck — a different render (and a different
-// materialize fingerprint) every run, so apply re-materialized forever.
+// make the winner Go map-iteration luck — a different render (and a different
+// materialize fingerprint) every run, so apply re-materialized forever. The
+// conflict is judged per catalog name regardless of the entries' own targets.
 func TestConflictingOverridesRejectedAcrossTargets(t *testing.T) {
 	doc := `
 [frameworks.onto]
@@ -878,21 +833,16 @@ scope = "project"
 source = "builtin:onto-skeptic"
 scope = "project"
 targets = ["opencode"]
-[subagents.a.claude]
-model = "opus"
-effort = "max"
 [subagents.a.opencode]
 model = "anthropic/claude-opus-4-8"
+variant = "thinking"
 
 [subagents.b]
 source = "builtin:onto-skeptic"
 scope = "project"
-targets = ["claude"]
-[subagents.b.claude]
-model = "opus"
-effort = "low"
 [subagents.b.opencode]
 model = "anthropic/claude-opus-4-8"
+variant = "fast"
 
 ` + modelsFor("onto", "onto-explorer", "onto-reviewer", "onto-implementer")
 	err := loadDoc(t, doc)
@@ -909,11 +859,9 @@ func TestLegacyAgentsFoldPreservesTuneBlocks(t *testing.T) {
 [agents.foo]
 source = "builtin:onto-skeptic"
 
-[subagents.foo.claude]
-model = "opus"
-effort = "max"
 [subagents.foo.opencode]
 model = "anthropic/claude-opus-4-8"
+variant = "thinking"
 
 [frameworks.onto]
 source = "builtin:onto"
@@ -923,30 +871,30 @@ scope = "project"
 	if err != nil {
 		t.Fatalf("load: %v", err)
 	}
-	if got := c.Subagents["foo"].Claude.Effort; got != "max" {
-		t.Fatalf("the tune block must survive the [agents.X] fold, got effort %q", got)
+	if got := c.Subagents["foo"].OpenCode.Variant; got != "thinking" {
+		t.Fatalf("the tune block must survive the [agents.X] fold, got variant %q", got)
 	}
 }
 
-// Validation used to trim whitespace while the render did not: `model = "opus "`
-// passed the alias check, then missed the alias map at render and silently
-// dropped its variant. Values are now trimmed once, at load.
+// Validation used to trim whitespace while the render did not: `model = "x "`
+// passed validation, then missed the model map at render and silently dropped
+// its variant. Values are now trimmed once, at load.
 func TestModelRouteValuesTrimmedAtLoad(t *testing.T) {
 	c, err := loadDocCfg(t, `
 [subagents.onto-reviewer]
 source = "builtin:onto-reviewer"
 scope = "project"
-targets = ["claude"]
+targets = ["opencode"]
 
-[subagents.onto-reviewer.claude]
-model = "opus "
-variant = " 1m"
+[subagents.onto-reviewer.opencode]
+model = "anthropic/claude-opus-4-8 "
+variant = " thinking"
 `)
 	if err != nil {
 		t.Fatalf("load: %v", err)
 	}
-	r := c.Subagents["onto-reviewer"].Claude
-	if r.Model != "opus" || r.Variant != "1m" {
+	r := c.Subagents["onto-reviewer"].OpenCode
+	if r.Model != "anthropic/claude-opus-4-8" || r.Variant != "thinking" {
 		t.Fatalf("route values must be trimmed at load, got model=%q variant=%q", r.Model, r.Variant)
 	}
 }
@@ -960,7 +908,8 @@ func TestLoadDoesNotRequireModelsForSkillsOnly(t *testing.T) {
 
 // TestEnabledModelTools locks the rule that model routing is derived only from
 // frameworks/commands/subagents — [skills.*] never counts, because skills-only
-// configs do not need models. Returns the sorted union of targeted tools.
+// configs do not need models. Returns the sorted union of targeted tools
+// (OpenCode is the only adapter since v0.13.0).
 func TestEnabledModelTools(t *testing.T) {
 	for _, tc := range []struct {
 		name string
@@ -977,16 +926,16 @@ func TestEnabledModelTools(t *testing.T) {
 		{
 			name: "single command with one target",
 			cfg: &Config{Commands: map[string]Resource{
-				"x": {Source: "builtin:x", Scope: "project", Targets: []string{"claude"}},
+				"x": {Source: "builtin:x", Scope: "project", Targets: []string{"opencode"}},
 			}},
-			want: []string{"claude"},
+			want: []string{"opencode"},
 		},
 		{
-			name: "framework with no targets defaults to both",
+			name: "framework with no targets defaults to opencode",
 			cfg: &Config{Frameworks: map[string]Resource{
 				"x": {Source: "builtin:x", Scope: "project"},
 			}},
-			want: []string{"claude", "opencode"},
+			want: []string{"opencode"},
 		},
 		{
 			name: "mixed frameworks+subagents+skills union (skills ignored)",
@@ -1001,7 +950,7 @@ func TestEnabledModelTools(t *testing.T) {
 					"c": {Source: "local:c", Scope: "user"},
 				},
 			},
-			want: []string{"claude", "opencode"},
+			want: []string{"opencode"},
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -1032,10 +981,10 @@ func TestExpandedSkillsIncludeFrameworkAndDeps(t *testing.T) {
 [frameworks.onto]
 source = "builtin:onto"
 scope = "user"
-targets = ["claude"]
+targets = ["opencode"]
 
 `+ontoFrameworkModels())
-	got, err := c.ExpandedSkillEntriesForTool("claude")
+	got, err := c.ExpandedSkillEntriesForTool("opencode")
 	if err != nil {
 		t.Fatalf("expand: %v", err)
 	}
@@ -1053,7 +1002,7 @@ targets = ["claude"]
 			t.Fatalf("%q source = %q", want, e.Resource.Source)
 		}
 		// Inherits the framework declaration's scope and targets (Spec Patch #1).
-		if e.Resource.Scope != "user" || len(e.Resource.Targets) != 1 || e.Resource.Targets[0] != "claude" {
+		if e.Resource.Scope != "user" || len(e.Resource.Targets) != 1 || e.Resource.Targets[0] != "opencode" {
 			t.Fatalf("%q did not inherit scope/targets: %+v", want, e.Resource)
 		}
 	}
@@ -1067,37 +1016,20 @@ func keysOf(m map[string]NamedResource) []string {
 	return ks
 }
 
-func TestExpandedSkillsTargetFiltering(t *testing.T) {
-	c := loadTOML(t, `
-[frameworks.onto]
-source = "builtin:onto"
-scope = "user"
-targets = ["claude"]
-
-`+ontoFrameworkModels())
-	got, err := c.ExpandedSkillEntriesForTool("opencode")
-	if err != nil {
-		t.Fatalf("expand: %v", err)
-	}
-	if len(got) != 0 {
-		t.Fatalf("onto targets claude only; opencode should get no skills, got %v", got)
-	}
-}
-
 func TestExpandedSkillsCollisionWithExplicit(t *testing.T) {
 	c := loadTOML(t, `
 [frameworks.onto]
 source = "builtin:onto"
 scope = "user"
-targets = ["claude"]
+targets = ["opencode"]
 
 [skills.onto-open]
 source = "builtin:onto-open"
 scope = "user"
-targets = ["claude"]
+targets = ["opencode"]
 
 `+ontoFrameworkModels())
-	_, err := c.ExpandedSkillEntriesForTool("claude")
+	_, err := c.ExpandedSkillEntriesForTool("opencode")
 	if err == nil || !strings.Contains(err.Error(), "onto-open") {
 		t.Fatalf("expected collision error naming onto-open, got %v", err)
 	}
@@ -1116,12 +1048,12 @@ func TestExpandedSkillsFrameworkVsFrameworkConflict(t *testing.T) {
 [frameworks.onto_a]
 source = "builtin:onto"
 scope = "user"
-targets = ["claude"]
+targets = ["opencode"]
 
 [frameworks.onto_b]
 source = "builtin:onto"
 scope = "project"
-targets = ["claude"]
+targets = ["opencode"]
 
 ` + ontoFrameworkModels()
 	dir := t.TempDir()
@@ -1131,7 +1063,7 @@ targets = ["claude"]
 	}
 	c, err := Load(p)
 	if err == nil {
-		_, err = c.ExpandedSkillEntriesForTool("claude")
+		_, err = c.ExpandedSkillEntriesForTool("opencode")
 	}
 	if err == nil {
 		t.Fatal("expected conflict error for two frameworks expanding the same catalog with different scope, got nil")
@@ -1154,15 +1086,15 @@ func TestExpandedSkillsSameFrameworkDeclDedup(t *testing.T) {
 [frameworks.onto_a]
 source = "builtin:onto"
 scope = "user"
-targets = ["claude"]
+targets = ["opencode"]
 
 [frameworks.onto_b]
 source = "builtin:onto"
 scope = "user"
-targets = ["claude"]
+targets = ["opencode"]
 
 `+ontoFrameworkModels())
-	got, err := c.ExpandedSkillEntriesForTool("claude")
+	got, err := c.ExpandedSkillEntriesForTool("opencode")
 	if err != nil {
 		t.Fatalf("expand: %v", err)
 	}
@@ -1177,20 +1109,13 @@ targets = ["claude"]
 	}
 }
 
-// validModelsBothTools is kept as a no-op alias for tests whose fixture fails
-// before reaching the must-declare check (so the appended tier blocks of old
-// did nothing either). Tests that load a config with declared subagents must
-// declare per-agent override blocks via modelsFor / ontoFrameworkModels below.
-func validModelsBothTools() string { return "" }
-
-// modelsFor produces [subagents.<name>.<tool>] override blocks (claude +
-// opencode) for each named subagent, each with a valid per-tool model spec.
-// Every declared builtin subagent must declare one of these per target tool
-// now that tiers are gone.
+// modelsFor produces the [subagents.<name>.opencode] override block for each
+// named subagent, with a valid model spec. Every declared or framework-expanded
+// builtin subagent needs one now that tiers — and every tool but OpenCode —
+// are gone.
 func modelsFor(names ...string) string {
 	var b strings.Builder
 	for _, name := range names {
-		b.WriteString("[subagents." + name + ".claude]\nmodel = \"opus\"\n")
 		b.WriteString("[subagents." + name + ".opencode]\nmodel = \"anthropic/claude-opus-4-8\"\n")
 	}
 	return b.String()
@@ -1202,31 +1127,25 @@ func ontoFrameworkModels() string {
 	return modelsFor("onto", "onto-explorer", "onto-reviewer", "onto-implementer", "onto-skeptic")
 }
 
-func TestExpandedCommandsExplicitAndTargetFilter(t *testing.T) {
+// TestExpandedCommandsExplicit: an explicit [commands.X] entry projects for its
+// targeted tool with source and scope preserved.
+func TestExpandedCommandsExplicit(t *testing.T) {
 	c := loadTOML(t, `
 [commands.example-command]
 source = "builtin:example-command"
 scope = "project"
-targets = ["claude"]
-`+validModelsBothTools())
+targets = ["opencode"]
+`)
 
-	claude, err := c.ExpandedCommandEntriesForTool("claude")
-	if err != nil {
-		t.Fatalf("expand claude: %v", err)
-	}
-	if len(claude) != 1 || claude[0].Name != "example-command" {
-		t.Fatalf("claude commands = %v", claude)
-	}
-	if claude[0].Resource.Source != "builtin:example-command" || claude[0].Resource.Scope != "project" {
-		t.Fatalf("example-command resource = %+v", claude[0].Resource)
-	}
-	// targets = ["claude"] only -> opencode gets nothing.
-	opencode, err := c.ExpandedCommandEntriesForTool("opencode")
+	got, err := c.ExpandedCommandEntriesForTool("opencode")
 	if err != nil {
 		t.Fatalf("expand opencode: %v", err)
 	}
-	if len(opencode) != 0 {
-		t.Fatalf("opencode commands = %v, want none", opencode)
+	if len(got) != 1 || got[0].Name != "example-command" {
+		t.Fatalf("opencode commands = %v", got)
+	}
+	if got[0].Resource.Source != "builtin:example-command" || got[0].Resource.Scope != "project" {
+		t.Fatalf("example-command resource = %+v", got[0].Resource)
 	}
 }
 
@@ -1236,19 +1155,19 @@ func TestSkillAndCommandMayShareName(t *testing.T) {
 [skills.shared]
 source = "builtin:shared"
 scope = "user"
-targets = ["claude"]
+targets = ["opencode"]
 
 [commands.shared]
 source = "builtin:shared"
 scope = "user"
-targets = ["claude"]
-`+validModelsBothTools())
+targets = ["opencode"]
+`)
 
-	skills, err := c.ExpandedSkillEntriesForTool("claude")
+	skills, err := c.ExpandedSkillEntriesForTool("opencode")
 	if err != nil {
 		t.Fatalf("skills: %v", err)
 	}
-	commands, err := c.ExpandedCommandEntriesForTool("claude")
+	commands, err := c.ExpandedCommandEntriesForTool("opencode")
 	if err != nil {
 		t.Fatalf("commands: %v", err)
 	}
@@ -1280,13 +1199,13 @@ func TestExpandedCommandsFrameworkWithoutCommandsNoOps(t *testing.T) {
 [frameworks.skillsonly]
 source = "local:skillsonly"
 scope = "user"
-targets = ["claude"]
+targets = ["opencode"]
 
 [commands.example-command]
 source = "builtin:example-command"
 scope = "user"
-targets = ["claude"]
-` + validModelsBothTools()
+targets = ["opencode"]
+`
 	if err := os.WriteFile(filepath.Join(dir, "homonto.toml"), []byte(body), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -1295,7 +1214,7 @@ targets = ["claude"]
 		t.Fatalf("load: %v", err)
 	}
 
-	got, err := c.ExpandedCommandEntriesForTool("claude")
+	got, err := c.ExpandedCommandEntriesForTool("opencode")
 	if err != nil {
 		t.Fatalf("expand: %v", err)
 	}
@@ -1304,27 +1223,22 @@ targets = ["claude"]
 	}
 }
 
-func TestExpandedSubagentsExplicitAndTargetFilter(t *testing.T) {
+// TestExpandedSubagentsExplicit: an explicit [subagents.X] entry projects for
+// its targeted tool.
+func TestExpandedSubagentsExplicit(t *testing.T) {
 	c := loadTOML(t, `
 [subagents.onto-reviewer]
 source = "builtin:onto-reviewer"
 scope = "project"
-targets = ["claude"]
+targets = ["opencode"]
 `+modelsFor("onto-reviewer"))
 
-	claude, err := c.ExpandedSubagentEntriesForTool("claude")
-	if err != nil {
-		t.Fatalf("claude: %v", err)
-	}
-	if len(claude) != 1 || claude[0].Name != "onto-reviewer" {
-		t.Fatalf("claude subagents = %+v, want [onto-reviewer]", claude)
-	}
-	oc, err := c.ExpandedSubagentEntriesForTool("opencode")
+	got, err := c.ExpandedSubagentEntriesForTool("opencode")
 	if err != nil {
 		t.Fatalf("opencode: %v", err)
 	}
-	if len(oc) != 0 {
-		t.Fatalf("opencode subagents = %+v, want none (target filter)", oc)
+	if len(got) != 1 || got[0].Name != "onto-reviewer" {
+		t.Fatalf("opencode subagents = %+v, want [onto-reviewer]", got)
 	}
 }
 
@@ -1333,10 +1247,10 @@ func TestExpandedSubagentsFrameworkInheritsScopeTargets(t *testing.T) {
 [frameworks.onto]
 source = "builtin:onto"
 scope = "project"
-targets = ["claude", "opencode"]
+targets = ["opencode"]
 `+ontoFrameworkModels())
 
-	got, err := c.ExpandedSubagentEntriesForTool("claude")
+	got, err := c.ExpandedSubagentEntriesForTool("opencode")
 	if err != nil {
 		t.Fatalf("expand: %v", err)
 	}
@@ -1347,7 +1261,7 @@ targets = ["claude", "opencode"]
 		}
 	}
 	if nav == nil {
-		t.Fatal("onto-explorer not expanded for claude")
+		t.Fatal("onto-explorer not expanded for opencode")
 	}
 	if nav.Resource.Scope != "project" || nav.Resource.Source != "builtin:onto-explorer" {
 		t.Fatalf("onto-explorer inherited wrong scope/source: %+v", nav.Resource)
@@ -1376,7 +1290,7 @@ scope = "user"
 	c, err := Load(p)
 	if err == nil {
 		// If load did not surface it, expand must.
-		if _, err := c.ExpandedSubagentEntriesForTool("claude"); err == nil {
+		if _, err := c.ExpandedSubagentEntriesForTool("opencode"); err == nil {
 			t.Fatal("expected collision error: onto-explorer declared explicitly and by framework")
 		}
 	}
@@ -1399,78 +1313,26 @@ targets = ["opencode"]
 	}
 }
 
-// TestLoadMarketplace: a [marketplaces.claude.<name>] github declaration parses
-// into Marketplaces.Claude with source, repo, and optional auto_update.
-func TestLoadMarketplace(t *testing.T) {
-	doc := "[marketplaces.claude.official]\nsource = \"github\"\nrepo = \"anthropics/claude-plugins\"\nauto_update = true\n"
-	p := filepath.Join(t.TempDir(), "homonto.toml")
-	if err := os.WriteFile(p, []byte(doc), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	c, err := Load(p)
-	if err != nil {
-		t.Fatalf("load: %v", err)
-	}
-	mk := c.Marketplaces.Claude["official"]
-	if mk.Source != "github" {
-		t.Fatalf("marketplace source = %q; want github", mk.Source)
-	}
-	if mk.Repo != "anthropics/claude-plugins" {
-		t.Fatalf("marketplace repo = %q; want anthropics/claude-plugins", mk.Repo)
-	}
-	if mk.AutoUpdate == nil || *mk.AutoUpdate != true {
-		t.Fatalf("marketplace auto_update = %#v; want *true", mk.AutoUpdate)
-	}
-}
-
-// TestLoadRejectsUnknownMarketplaceSource: a marketplace whose source is not one
-// of the four known kinds cannot project. Load must fail naming the marketplace
-// and the bad source.
-func TestLoadRejectsUnknownMarketplaceSource(t *testing.T) {
-	doc := "[marketplaces.claude.weird]\nsource = \"svn\"\nrepo = \"x/y\"\n"
-	err := loadDoc(t, doc)
-	if err == nil {
-		t.Fatal("unknown marketplace source accepted; want load error")
-	}
-	if !strings.Contains(err.Error(), strconv.Quote("weird")) {
-		t.Fatalf("error does not name the marketplace %q: %v", "weird", err)
-	}
-	if !strings.Contains(err.Error(), strconv.Quote("svn")) {
-		t.Fatalf("error does not name the source %q: %v", "svn", err)
-	}
-}
-
-// TestLoadRejectsMarketplaceMissingLocator: each source kind requires its
-// locator field(s); a github marketplace without repo, or a git-subdir without
-// url/path, must be a load error naming the marketplace.
-func TestLoadRejectsMarketplaceMissingLocator(t *testing.T) {
+// TestLoadRejectsRemovedMarketplaces: marketplaces were a Claude-only feature,
+// removed with the adapter in v0.13.0. Any [marketplaces.claude.<name>]
+// declaration must fail at load naming the marketplace — including one whose
+// locator fields would have been valid before. (The per-source locator
+// validation died with the feature; the whole table is rejected wholesale.)
+func TestLoadRejectsRemovedMarketplaces(t *testing.T) {
 	for _, tc := range []struct{ label, doc, name string }{
-		{"github no repo", "[marketplaces.claude.official]\nsource = \"github\"\n", "official"},
-		{"git-subdir no url", "[marketplaces.claude.sub]\nsource = \"git-subdir\"\npath = \"p\"\n", "sub"},
-		{"git-subdir no path", "[marketplaces.claude.sub]\nsource = \"git-subdir\"\nurl = \"https://x\"\n", "sub"},
-		{"url no url", "[marketplaces.claude.u]\nsource = \"url\"\n", "u"},
-		{"directory no path", "[marketplaces.claude.d]\nsource = \"directory\"\n", "d"},
+		{"github declaration", "[marketplaces.claude.official]\nsource = \"github\"\nrepo = \"anthropics/claude-plugins\"\nauto_update = true\n", "official"},
+		{"unknown source kind", "[marketplaces.claude.weird]\nsource = \"svn\"\nrepo = \"x/y\"\n", "weird"},
+		{"missing locator", "[marketplaces.claude.official]\nsource = \"github\"\n", "official"},
 	} {
 		err := loadDoc(t, tc.doc)
 		if err == nil {
-			t.Fatalf("%s: missing locator accepted; want load error", tc.label)
+			t.Fatalf("%s: accepted; want the removal error", tc.label)
 		}
-		if !strings.Contains(err.Error(), strconv.Quote(tc.name)) {
-			t.Fatalf("%s: error does not name the marketplace %q: %v", tc.label, tc.name, err)
+		for _, want := range []string{"marketplaces.claude." + tc.name, "v0.13.0"} {
+			if !strings.Contains(err.Error(), want) {
+				t.Fatalf("%s: error %v does not mention %q", tc.label, err, want)
+			}
 		}
-	}
-}
-
-// TestLoadRejectsReservedMarketplaceSetting: settings.claude.extraKnownMarketplaces
-// collides with homonto's own marketplace projection into settings.json, so it
-// must be a load error like the other reserved settings keys.
-func TestLoadRejectsReservedMarketplaceSetting(t *testing.T) {
-	err := loadDoc(t, "[settings.claude]\nextraKnownMarketplaces={}\n")
-	if err == nil {
-		t.Fatal("reserved key extraKnownMarketplaces accepted; want load error")
-	}
-	if !strings.Contains(err.Error(), strconv.Quote("extraKnownMarketplaces")) {
-		t.Fatalf("error does not name the key: %v", err)
 	}
 }
 
@@ -1544,8 +1406,8 @@ func TestResourcesRejectTraversalLocalSource(t *testing.T) {
 // commands (the non-traversal counterpart to the rejection above).
 func TestResourcesAcceptPlainLocalSource(t *testing.T) {
 	docs := []string{
-		"[skills.x]\nsource = \"local:x\"\nscope = \"user\"\n" + validModelsBothTools(),
-		"[commands.y]\nsource = \"local:y\"\nscope = \"user\"\n" + validModelsBothTools(),
+		"[skills.x]\nsource = \"local:x\"\nscope = \"user\"\n",
+		"[commands.y]\nsource = \"local:y\"\nscope = \"user\"\n",
 	}
 	for _, doc := range docs {
 		if err := loadDoc(t, doc); err != nil {
@@ -1566,8 +1428,8 @@ func TestAgentsRejectInvalidMode(t *testing.T) {
 	}
 }
 
-// TestAgentsRejectUnknownTarget: a target naming a tool other than
-// claude/opencode is rejected, naming the offending target.
+// TestAgentsRejectUnknownTarget: a target naming a tool other than opencode is
+// rejected, naming the offending target.
 func TestAgentsRejectUnknownTarget(t *testing.T) {
 	err := loadDoc(t, "[agents.review]\nsource = \"builtin:x\"\ntargets = [\"vscode\"]\n")
 	if err == nil {
@@ -1620,8 +1482,8 @@ func TestUnknownModelTierRejected(t *testing.T) {
 }
 
 // TestMCPScopeValidation: an MCP's scope is user|project (empty = user), and a
-// project-scoped server may not target codex — the pilot has no project config,
-// so the combination could only silently project globally.
+// codex target is rejected outright — the codex pilot was removed in v0.13.0,
+// so no scope combination can honor it.
 func TestMCPScopeValidation(t *testing.T) {
 	p := filepath.Join(t.TempDir(), "homonto.toml")
 	load := func(doc string) error {
@@ -1640,7 +1502,7 @@ func TestMCPScopeValidation(t *testing.T) {
 		t.Fatalf("an invalid MCP scope must be rejected naming the value, got: %v", err)
 	}
 	err = load("[mcps.cg]\ncommand=[\"cg\"]\nscope=\"project\"\ntargets=[\"codex\"]\n")
-	if err == nil || !strings.Contains(err.Error(), "codex") {
-		t.Fatalf("a project-scoped codex MCP must be rejected, got: %v", err)
+	if err == nil || !strings.Contains(err.Error(), "codex") || !strings.Contains(err.Error(), "removed in v0.13.0") {
+		t.Fatalf("a codex MCP target must be rejected with the removal message, got: %v", err)
 	}
 }

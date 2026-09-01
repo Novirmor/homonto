@@ -13,7 +13,7 @@ passes every safety check.
 source = "remote:https://example.com/reviewer.tar.gz"   # remote:<url>
 digest = "sha256:<64 hex>"                               # REQUIRED content pin
 scope  = "project"
-targets = ["claude", "opencode"]
+targets = ["opencode"]
 ```
 
 - The `digest` is **required**. A `remote:` source without a valid

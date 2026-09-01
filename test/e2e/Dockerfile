@@ -1,11 +1,11 @@
 # Real dual-binary E2E image. Builds homonto AND onto from source, then installs
-# the ACTUAL Claude Code and OpenCode CLIs via their official installers, so the
-# suites exercise homonto's projection and onto's workflow against the real
-# tools. Credentials are never baked in — they are mounted read-only at run time
+# the ACTUAL OpenCode CLI via its official installer, so the suites exercise
+# homonto's projection and onto's workflow against the real tool. Credentials
+# are never baked in — they are mounted read-only at run time
 # by scripts/e2e-matrix.sh. Built once, run per matrix cell via entrypoint.sh.
 FROM golang:1.23-bookworm
 
-# Runtime deps: curl for the installers, jq/python3 for the suite assertions,
+# Runtime deps: curl for the installer, jq/python3 for the suite assertions,
 # git for onto's dirty-worktree checks, unzip for the opencode installer.
 RUN apt-get update && apt-get install -y --no-install-recommends \
       curl ca-certificates git jq python3 unzip \
@@ -22,17 +22,15 @@ COPY . .
 RUN go build -o /usr/local/bin/homonto . \
     && go build -o /usr/local/bin/onto ./cmd/onto
 
-# --- install the real tools (native installers, no npm needed) ---------------
+# --- install the real tool (native installer, no npm needed) -----------------
 ENV HOME=/root
-# Claude Code native installer -> /root/.local/bin/claude
-RUN curl -fsSL https://claude.ai/install.sh | bash
 # OpenCode installer -> /root/.opencode/bin/opencode
 RUN curl -fsSL https://opencode.ai/install | bash
-ENV PATH="/root/.local/bin:/root/.opencode/bin:${PATH}"
+ENV PATH="/root/.opencode/bin:${PATH}"
 
-# Verify all four binaries resolve at build time (fail fast on a broken image).
+# Verify all three binaries resolve at build time (fail fast on a broken image).
 RUN homonto version && onto version \
-    && claude --version && opencode --version
+    && opencode --version
 
 COPY test/e2e/entrypoint.sh /usr/local/bin/e2e-entrypoint
 COPY test/e2e/suites /opt/e2e-suites

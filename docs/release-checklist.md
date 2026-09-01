@@ -42,7 +42,7 @@ is where the old hand-written checks now live, done against a disposable
 > ([ADR 0023](adr/0023-develop-directly-without-comet.md);
 > [`personas.md`](personas.md)); onto is the workflow we *ship*, not the one
 > we use here yet. The repo therefore carries **no `homonto.toml` and no
-> projected `.claude/` / `.opencode/` content** of its own, there is
+> projected `.opencode/` content** of its own, there is
 > deliberately **no "does the repo dogfood cleanly" pre-tag step**, and a
 > stale `.homonto/` in a working copy is not a release blocker. The Docker E2E verifies all three binaries in a clean
 > environment instead — stronger evidence than a developer machine whose
@@ -122,7 +122,7 @@ Two results here look like failures and are not:
 To smoke `onto` properly you must install its framework first, because
 `onto init` is itself gated on it. That is what the "edit the generated
 `homonto.toml` minimally" step above means concretely — declare the framework
-**and** a `[subagents.<name>.<tool>]` model block for each of its five agents
+**and** a `[subagents.<name>.opencode]` model block for each of its five agents
 (`onto`, `onto-explorer`, `onto-reviewer`, `onto-implementer`, `onto-skeptic`),
 since a missing block fails at load:
 
@@ -132,9 +132,9 @@ cat >> homonto.toml <<'TOML'
 source = "builtin:onto"
 scope  = "project"
 
-[subagents.onto.claude]
-model = "opus"
-# … one [subagents.<name>.<tool>] block per agent, per targeted tool
+[subagents.onto.opencode]
+model = "anthropic/claude-opus-4-8"
+# … one [subagents.<name>.opencode] block per agent
 TOML
 
 homonto apply --yes

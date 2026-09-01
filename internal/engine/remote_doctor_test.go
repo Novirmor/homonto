@@ -12,7 +12,7 @@ import (
 
 func applyReviewer(t *testing.T, home, repo, tarPath string, pin remote.Digest) *Engine {
 	t.Helper()
-	cfg := "[subagents.reviewer]\nsource=\"remote:file://" + tarPath + "\"\ndigest=\"" + pin.String() + "\"\nscope=\"project\"\ntargets=[\"claude\"]\n" + remoteModels
+	cfg := "[subagents.reviewer]\nsource=\"remote:file://" + tarPath + "\"\ndigest=\"" + pin.String() + "\"\nscope=\"project\"\ntargets=[\"opencode\"]\n" + remoteModels
 	cfgPath := filepath.Join(repo, "homonto.toml")
 	if err := os.WriteFile(cfgPath, []byte(cfg), 0o644); err != nil {
 		t.Fatal(err)

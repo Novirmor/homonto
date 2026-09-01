@@ -1,7 +1,7 @@
 #!/bin/sh
 # Suite: homonto-expanded — builtin framework materialization, skill/command/
-# subagent links into the tool dirs, plugin + marketplace projection into Claude
-# settings, and OpenCode TUI projection, all against a disposable $HOME.
+# subagent links into the tool dir, OpenCode subagent renders, plugin
+# projection, and OpenCode TUI projection, all against a disposable $HOME.
 set -eu
 SUITE=homonto-expanded
 . "$(dirname "$0")/lib.sh"
@@ -13,29 +13,26 @@ cat > homonto.toml <<'EOF'
 [frameworks.onto]
 source = "builtin:onto"
 scope = "project"
-targets = ["claude"]
 
 # Per-agent models (no tiers): every framework-expanded agent declares a model
-# for each targeted tool. A block with no source tunes the framework's agent
-# rather than re-declaring it. The dispatcher `onto` must declare one too, even
-# though its Claude render is skipped (primary: true → OpenCode-only).
-[subagents.onto.claude]
-model = "opus"
-[subagents.onto-explorer.claude]
-model = "haiku"
-effort = "low"
-[subagents.onto-reviewer.claude]
-model = "opus"
+# in its [subagents.<n>.opencode] block — a block with no source tunes the
+# framework's agent rather than re-declaring it. OpenCode spells a variant as
+# its own field and has no effort concept, so a block carries model/variant
+# only. The dispatcher `onto` declares one too; it renders for OpenCode like
+# every other agent (mode: primary).
+[subagents.onto.opencode]
+model = "anthropic/claude-opus-4-8"
+[subagents.onto-explorer.opencode]
+model = "openai/gpt-5-mini"
+[subagents.onto-reviewer.opencode]
+model = "anthropic/claude-opus-4-8"
 variant = "1m"
-effort = "high"
-[subagents.onto-implementer.claude]
-model = "sonnet"
-effort = "medium"
-# The skeptic runs the reviewer's model but thinks at max.
-[subagents.onto-skeptic.claude]
-model = "opus"
+[subagents.onto-implementer.opencode]
+model = "anthropic/claude-sonnet-4"
+# The skeptic runs the reviewer's model and variant.
+[subagents.onto-skeptic.opencode]
+model = "anthropic/claude-opus-4-8"
 variant = "1m"
-effort = "max"
 
 # onto ships all builtin subagents as framework subagents, so declaring one
 # explicitly would collide. Use a local: agent file (homonto/subagents/) as the
@@ -43,14 +40,10 @@ effort = "max"
 [subagents.nav-agent]
 source = "local:nav-agent"
 scope = "project"
-targets = ["claude"]
+targets = ["opencode"]
 
-[marketplaces.claude.official]
-source = "github"
-repo = "anthropics/claude-plugins"
-
-[plugins.claude.claude-hud]
-source = "claude-hud@official"
+[plugins.opencode.hud]
+source = "@e2e/hud"
 
 [tui.opencode]
 theme = "gruvbox"
@@ -76,33 +69,31 @@ is_file "$W/.homonto/catalog/subagents/onto-reviewer.md"
 is_file "$W/.homonto/catalog/subagents/onto-explorer.md"
 is_file "$W/.homonto/catalog/subagents/onto-implementer.md"
 is_file "$W/.homonto/catalog/subagents/onto-skeptic.md"
-# Homonto-block subagents materialize per-tool variants; the Claude variant of a
-# read-only spawn:[] agent denies exactly the removed capabilities (everything
-# else keeps Claude's defaults), and stamps the agent's declared model.
-in_file "$W/.homonto/catalog/subagents/onto-reviewer.claude.md" 'disallowedTools: Edit, Write, NotebookEdit, Agent, Task'
-if grep -qE '^tools:|^mode:' "$W/.homonto/catalog/subagents/onto-reviewer.claude.md"; then fail "claude render must not carry a tools: allowlist or mode: field"; fi
-# Claude has no variant field: a variant brackets the ALIAS into the model, and
-# effort is its own field. Both come from [subagents.onto-reviewer.claude].
-in_file "$W/.homonto/catalog/subagents/onto-reviewer.claude.md" 'model: opus\[1m\]'
-in_file "$W/.homonto/catalog/subagents/onto-reviewer.claude.md" 'effort: high'
-# The skeptic's own block: the reviewer's model at max effort.
-in_file "$W/.homonto/catalog/subagents/onto-skeptic.claude.md" 'effort: max'
-in_file "$W/.homonto/catalog/subagents/onto-skeptic.claude.md" 'model: opus\[1m\]'
-# The implementer edits (coding model) but still spawns nothing: the only
-# denial is spawning — Edit/Write stay available (absent from the denylist).
-in_file "$W/.homonto/catalog/subagents/onto-implementer.claude.md" 'model: sonnet'
-in_file "$W/.homonto/catalog/subagents/onto-implementer.claude.md" 'effort: medium'
-in_file "$W/.homonto/catalog/subagents/onto-implementer.claude.md" 'disallowedTools: Agent, Task'
-if grep -qE 'disallowedTools:.*Edit' "$W/.homonto/catalog/subagents/onto-implementer.claude.md"; then fail "edit-capable implementer must not deny Edit"; fi
-# Tool variants materialize only for targeted tools: opencode is untargeted in
-# this config, so no agent gets an .opencode.md variant. The onto primary agent
-# additionally skips its Claude render (primary: true → OpenCode-only), so the
-# shared file exists with no tool variant at all.
-is_file "$W/.homonto/catalog/subagents/onto.md"
-absent  "$W/.homonto/catalog/subagents/onto.opencode.md"
-absent  "$W/.homonto/catalog/subagents/onto.claude.md"
-absent  "$W/.homonto/catalog/subagents/onto-reviewer.opencode.md"
-ok "framework skills, commands, and subagents materialized (per-tool render invariants hold)"
+# Homonto-block subagents materialize an OpenCode variant: the render turns the
+# neutral block into OpenCode's native `permission:` map. A read-only spawn:[]
+# agent (the reviewer) denies exactly edit and task — question is denied too
+# because its block sets dialogs: false — while bash stays at the tool default,
+# and the declared model and variant stamp as their own frontmatter fields.
+RVAR="$W/.homonto/catalog/subagents/onto-reviewer.opencode.md"
+in_file "$RVAR" '  edit: deny'
+in_file "$RVAR" '  task: deny'
+if grep -q 'bash: deny' "$RVAR"; then fail "reviewer keeps bash; only the block's denials may render"; fi
+in_file "$RVAR" 'model: anthropic/claude-opus-4-8'
+in_file "$RVAR" 'variant: 1m'
+# The implementer edits (coding model) but still spawns nothing: the only task
+# denial is spawning — edit stays available (absent from the permission map).
+IVAR="$W/.homonto/catalog/subagents/onto-implementer.opencode.md"
+in_file "$IVAR" 'model: anthropic/claude-sonnet-4'
+in_file "$IVAR" '  task: deny'
+if grep -q 'edit: deny' "$IVAR"; then fail "edit-capable implementer must not deny edit"; fi
+# The onto primary agent renders for OpenCode like any other agent: mode is
+# re-emitted from primary, its iteration budget renders as steps:, and its
+# delegation topology renders as task allows over a deny-all default.
+PVAR="$W/.homonto/catalog/subagents/onto.opencode.md"
+in_file "$PVAR" 'mode: primary'
+in_file "$PVAR" 'steps: 120'
+in_file "$PVAR" '"onto-reviewer": allow'
+ok "framework skills, commands, and subagents materialized (opencode render invariants hold)"
 
 # Assert each tool entry is a symlink AND that it actually resolves to real
 # catalog content — a relative target computed against the wrong base dangles,
@@ -110,28 +101,27 @@ ok "framework skills, commands, and subagents materialized (per-tool render inva
 # skill discovery skips it). is_dir/is_file follow the link, so they fail on a
 # dangling target; link_to only string-matched and missed exactly that bug.
 log "tool links point at (and resolve to) the materialized catalog"
-is_link "$W/.claude/skills/onto";                 is_dir  "$W/.claude/skills/onto"
-is_link "$W/.claude/agents/onto-reviewer.md";     is_file "$W/.claude/agents/onto-reviewer.md"
-is_link "$W/.claude/agents/onto-explorer.md"; is_file "$W/.claude/agents/onto-explorer.md"
-is_link "$W/.claude/agents/onto-implementer.md";  is_file "$W/.claude/agents/onto-implementer.md"
-is_link "$W/.claude/agents/nav-agent.md";         is_file "$W/.claude/agents/nav-agent.md"
-# The onto primary agent has no Claude variant, so it is NOT projected for Claude
-# (its entry point is the /onto command → onto skill).
-absent "$W/.claude/agents/onto.md"
+is_link "$W/.opencode/skills/onto";                 is_dir  "$W/.opencode/skills/onto"
+is_link "$W/.opencode/agent/onto-reviewer.md";     is_file "$W/.opencode/agent/onto-reviewer.md"
+is_link "$W/.opencode/agent/onto-explorer.md"; is_file "$W/.opencode/agent/onto-explorer.md"
+is_link "$W/.opencode/agent/onto-implementer.md";  is_file "$W/.opencode/agent/onto-implementer.md"
+is_link "$W/.opencode/agent/nav-agent.md";         is_file "$W/.opencode/agent/nav-agent.md"
+# The onto primary agent projects for OpenCode like any other agent (its entry
+# point is still the /onto command → onto skill, but the agent renders too).
+is_link "$W/.opencode/agent/onto.md"; is_file "$W/.opencode/agent/onto.md"
 # The onto framework ships a command per phase/preset — the dispatcher plus every
 # onto-* skill — so each phase is directly invocable. Assert the whole set links
 # and resolves, not just the dispatcher.
 for c in onto onto-open onto-design onto-build onto-verify onto-close onto-fix onto-tweak onto-no-slop; do
-	is_link "$W/.claude/commands/$c.md"; is_file "$W/.claude/commands/$c.md"
+	is_link "$W/.opencode/command/$c.md"; is_file "$W/.opencode/command/$c.md"
 done
 ok "skill, full command set, and subagent links resolve to the catalog"
 
-log "plugin + marketplace projected into claude settings.json"
-CSET="$HOME/.claude/settings.json"
-is_file "$CSET"
-in_file "$CSET" '"official"'
-in_file "$CSET" 'claude-hud@official'
-ok "extraKnownMarketplaces + enabledPlugins present"
+log "plugin projected into opencode's plugin array"
+OJSONC="$HOME/.config/opencode/opencode.jsonc"
+in_file "$OJSONC" '"plugin"'
+in_file "$OJSONC" '@e2e/hud'
+ok "plugin array present with the declared plugin"
 
 log "opencode TUI projected into tui.json"
 in_file "$HOME/.config/opencode/tui.json" 'gruvbox'
@@ -143,14 +133,14 @@ printf '%s' "$out" | grep -q "No changes" || fail "second apply was not idempote
 ok "idempotent re-apply"
 
 log "prune on removal: drop the explicit subagent, re-apply removes its link"
-sed '/\[subagents.nav-agent\]/,/targets = \["claude"\]/d' homonto.toml > homonto.toml.new
+sed '/\[subagents.nav-agent\]/,/targets = \["opencode"\]/d' homonto.toml > homonto.toml.new
 mv homonto.toml.new homonto.toml
 "$HOMONTO" apply --yes >/dev/null 2>&1
-absent "$W/.claude/agents/nav-agent.md"
+absent "$W/.opencode/agent/nav-agent.md"
 # The framework-provided subagents are NOT de-declared, so they must survive.
-is_file "$W/.claude/agents/onto-reviewer.md"
-is_file "$W/.claude/agents/onto-explorer.md"
-is_file "$W/.claude/agents/onto-implementer.md"
+is_file "$W/.opencode/agent/onto-reviewer.md"
+is_file "$W/.opencode/agent/onto-explorer.md"
+is_file "$W/.opencode/agent/onto-implementer.md"
 ok "de-declared subagent link pruned; framework subagents retained"
 
 printf '\nSUITE PASS: %s\n' "$SUITE"

@@ -11,7 +11,7 @@ There is no separate imperative "agents" command group.
 source = "builtin:onto-reviewer"   # builtin | local | remote
 scope  = "project"                 # user | project (default: project)
 mode   = "link"                    # link (default) | copy
-targets = ["claude", "opencode"]   # optional; default: both
+targets = ["opencode"]             # optional; default: every tool
 ```
 
 ## Sources
@@ -43,37 +43,33 @@ The legacy `[agents.<name>]` table still parses but folds into a copy-mode
 ## Where they land — scope and targets
 
 `scope` selects the directory (default `project`); `targets` selects the
-tools (default both):
+tools (default: every tool). OpenCode is the only adapter — Claude Code and
+codex support was removed in v0.13.0, and a config naming either fails at
+load naming the key:
 
 | Tool | `scope = "user"` | `scope = "project"` |
 |---|---|---|
-| Claude Code | `~/.claude/agents/<name>.md` | `<repo>/.claude/agents/<name>.md` |
 | OpenCode | `~/.config/opencode/agent/<name>.md` | `<repo>/.opencode/agent/<name>.md` |
-
-Subagents project into **Claude Code and OpenCode only**. The Codex pilot
-adapter handles MCP servers only, so listing `codex` in a subagent's
-`targets` has no effect.
 
 ## Every agent declares its model
 
 Every declared subagent — explicit or framework-expanded — must have a
-`[subagents.<name>.<tool>]` block with a non-empty `model` for each tool it
-targets. There are no tiers, roles, or shared defaults; a missing block fails
-at load naming the agent and tool
-(`subagents.<name>.<tool> model is required`). See the
-[configuration reference](configuration.md#subagent-models--subagentsnametool).
+`[subagents.<name>.opencode]` block with a non-empty `model`. There are no
+tiers, roles, or shared defaults; a missing block fails at load naming the
+agent (`subagents.<name>.opencode model is required`). See the
+[configuration reference](configuration.md#subagent-models--subagentsnameopencode).
 
 ```toml
-[subagents.onto-skeptic.claude]
-model = "opus"
-effort = "max"
+[subagents.onto-skeptic.opencode]
+model = "anthropic/claude-opus-4-8"
+variant = "thinking"
 ```
 
 No `source` is needed (or allowed) when the agent comes from a framework: a
-block with no source *tunes* the agent rather than declaring it. `model`,
-`variant`, and `effort` render into each tool's own dialect — Claude
-brackets a variant into the model (`opus[1m]`) and takes `effort:`;
-OpenCode has a separate `variant:` field and no effort at all.
+block with no source *tunes* the agent rather than declaring it. `model`
+and `variant` render into OpenCode's frontmatter — `variant` is its own
+field there. OpenCode has no effort setting at all; declaring one is a
+config error.
 
 ## The agent file
 
@@ -91,16 +87,14 @@ mode: subagent
 # Instructions for the agent…
 ```
 
-## Per-tool frontmatter (the `homonto:` block)
+## Rendered frontmatter (the `homonto:` block)
 
-Claude Code and OpenCode express an agent's capabilities differently, and the
-two forms **cannot share one file**. So a builtin subagent declares its
-intent once, tool-neutrally, in a `homonto:` frontmatter block, and `apply`
-renders each tool's native dialect. Both dialects **deny by exception** —
-Claude a `disallowedTools:` denylist, OpenCode a `permission:` map — so the
-same neutral denial removes the same capability in both tools, and every
-capability the intent does not deny keeps the tool's default (nothing is
-silently stripped by an allowlist):
+A builtin subagent declares its intent once, tool-neutrally, in a `homonto:`
+frontmatter block, and `apply` renders OpenCode's native dialect from it.
+OpenCode **denies by exception** — a `permission:` map carries the denials —
+so a neutral denial removes the capability, and every capability the intent
+does not deny keeps the tool's default (nothing is silently stripped by an
+allowlist):
 
 ```markdown
 ---
@@ -112,36 +106,37 @@ homonto:
   bash: false         # optional; false denies bash (default: allowed)
   dialogs: false      # question tool denied — subagents return a Questions: section
   spawn: []           # delegation topology: agents this one may dispatch
-  primary: true       # OpenCode primary agent; the Claude variant is skipped
-  steps: 60           # iteration budget (OpenCode steps / Claude maxTurns)
+  primary: true       # OpenCode primary agent (renders mode: primary)
+  steps: 60           # iteration budget (OpenCode steps)
 ---
 <prompt body>
 ```
 
-Rendering, by explicit parity tier:
+Rendering:
 
-| Neutral intent | Claude (`disallowedTools:` denylist) | OpenCode (`permission:` / `mode`) |
-|---|---|---|
-| `read_only: true` | deny `Edit`, `Write`, `NotebookEdit` | `edit: deny` |
-| `bash: false` | deny `Bash` | `bash: deny` |
-| `dialogs: true` / `false` | *(advisory — AskUserQuestion is never available to Claude subagents; the body's `Questions:`-return protocol is the cross-tool contract)* | `question: allow` / `question: deny` |
-| `spawn: []` | deny `Agent` (and its former name `Task`) | `task: deny` |
-| `spawn: [a,b]` | spawning stays available (advisory) | `task:` globs allowing only `a`,`b` |
-| `steps` | `maxTurns:` | `steps:` |
-| `primary` | *(no concept — Claude variant skipped)* | `mode: primary` |
+| Neutral intent | OpenCode (`permission:` / `mode`) |
+|---|---|
+| `read_only: true` | `edit: deny` |
+| `bash: false` | `bash: deny` |
+| `dialogs: true` / `false` | `question: allow` / `question: deny` |
+| `spawn: []` | `task: deny` |
+| `spawn: [a,b]` | `task:` globs allowing only `a`,`b` |
+| `steps` | `steps:` |
+| `primary` | `mode: primary` |
 
-The Claude variant carries no `mode:` line (Claude has no such field); the
-OpenCode variant re-emits `mode: subagent`/`mode: primary`.
+The rendered variant re-emits `mode: subagent`/`mode: primary` from the
+`primary` flag.
 
-The `model:` line comes from the config's `[subagents.<name>.<tool>]` block,
-so the same declaration yields `opus` in Claude and the OpenCode model id.
-The block is required for every targeted tool — a production render with no
-model fails naming the agent and tool rather than silently emitting an agent
-with no model line.
+The `model:` (and optional `variant:`) lines come from the config's
+`[subagents.<name>.opencode]` block. The block is required — a production
+render with no model fails naming the agent rather than silently emitting an
+agent with no model line.
 The prompt body is single-source, never duplicated; the neutral block and its
-comments are stripped from the rendered files. Subagents without a
-`homonto:` block are projected verbatim (a plain symlink to the shared
-file), unchanged.
+comments are stripped from the rendered file. Under `.homonto/catalog/` the
+source is kept verbatim as `<name>.md` alongside the rendered
+`<name>.opencode.md` variant, and the OpenCode link prefers the variant.
+Subagents without a `homonto:` block are projected verbatim (a plain symlink
+to the shared file), unchanged.
 
 The onto framework's specialists show the division of labor: read-only
 `onto-explorer` (trivial model), `onto-reviewer` and `onto-skeptic` (review),

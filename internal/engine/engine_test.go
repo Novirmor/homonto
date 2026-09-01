@@ -13,7 +13,7 @@ const cfgTOML = `
 [mcps.brave]
 command = ["npx","server-brave"]
 env = { K = "${MISSING_VAR}" }
-targets = ["claude"]
+targets = ["opencode"]
 `
 
 func TestApplyAbortsBeforeWritingOnMissingSecret(t *testing.T) {
@@ -35,7 +35,7 @@ func TestApplyAbortsBeforeWritingOnMissingSecret(t *testing.T) {
 	if err := e.Apply(context.Background(), sets); err == nil {
 		t.Fatal("expected apply to fail on missing secret")
 	}
-	if _, err := os.Stat(filepath.Join(home, ".claude.json")); !os.IsNotExist(err) {
+	if _, err := os.Stat(filepath.Join(home, ".config", "opencode", "opencode.jsonc")); !os.IsNotExist(err) {
 		t.Fatal("apply wrote a file despite secret failure (not two-phase)")
 	}
 	if _, err := os.Stat(filepath.Join(repo, ".homonto", "state.json")); !os.IsNotExist(err) {
@@ -46,9 +46,6 @@ func TestApplyAbortsBeforeWritingOnMissingSecret(t *testing.T) {
 func TestRelativeContentDirResolvesAgainstConfig(t *testing.T) {
 	repo := t.TempDir()
 	home := t.TempDir()
-	os.MkdirAll(filepath.Join(home, ".claude"), 0o755)
-	os.WriteFile(filepath.Join(home, ".claude.json"), []byte(`{}`), 0o644)
-	os.WriteFile(filepath.Join(home, ".claude", "settings.json"), []byte(`{}`), 0o644)
 	os.MkdirAll(filepath.Join(repo, "content", "skills", "onto"), 0o755)
 	os.WriteFile(filepath.Join(repo, "homonto.toml"), []byte("[skills.onto]\nsource=\"local:onto\"\nscope=\"user\"\n"), 0o644)
 
@@ -73,7 +70,7 @@ func TestRelativeContentDirResolvesAgainstConfig(t *testing.T) {
 	if err := e.Apply(context.Background(), sets); err != nil {
 		t.Fatalf("apply: %v", err)
 	}
-	dst := filepath.Join(home, ".claude", "skills", "onto")
+	dst := filepath.Join(home, ".config", "opencode", "skills", "onto")
 	target, err := os.Readlink(dst)
 	if err != nil {
 		t.Fatalf("link missing: %v", err)

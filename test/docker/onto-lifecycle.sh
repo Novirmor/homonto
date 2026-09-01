@@ -17,21 +17,20 @@ cat > homonto.toml <<'EOF'
 [frameworks.onto]
 source = "builtin:onto"
 scope = "project"
-targets = ["claude"]
 
-# Every framework-expanded subagent needs an explicit per-tool model for each
-# targeted tool (there are no tiers). The primary dispatcher `onto` needs one
-# too even though its Claude render is skipped (validation is per target).
-[subagents.onto.claude]
-model = "opus"
-[subagents.onto-explorer.claude]
-model = "haiku"
-[subagents.onto-reviewer.claude]
-model = "opus"
-[subagents.onto-implementer.claude]
-model = "sonnet"
-[subagents.onto-skeptic.claude]
-model = "opus"
+# Every framework-expanded subagent needs an explicit model in its
+# [subagents.<n>.opencode] block (there are no tiers). The primary dispatcher
+# `onto` needs one too — it renders for OpenCode like every other agent.
+[subagents.onto.opencode]
+model = "anthropic/claude-opus-4-8"
+[subagents.onto-explorer.opencode]
+model = "openai/gpt-5-mini"
+[subagents.onto-reviewer.opencode]
+model = "anthropic/claude-opus-4-8"
+[subagents.onto-implementer.opencode]
+model = "anthropic/claude-sonnet-4"
+[subagents.onto-skeptic.opencode]
+model = "anthropic/claude-opus-4-8"
 EOF
 if "$ONTO" init >/dev/null 2>&1; then fail "onto init must refuse before the framework is applied"; fi
 absent "$W/docs"

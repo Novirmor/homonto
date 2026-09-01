@@ -58,46 +58,6 @@ func TestNeedsTransform(t *testing.T) {
 	}
 }
 
-func TestRenderClaude_ReadOnlyReviewer(t *testing.T) {
-	s := mustRender(t, readOnlyReviewer, "claude")
-	// read-only + spawn:[] → a denylist covering exactly the denied intent;
-	// everything else keeps Claude's defaults (no allowlist stripping them).
-	if !strings.Contains(s, "disallowedTools: Edit, Write, NotebookEdit, Agent, Task\n") {
-		t.Errorf("claude denylist wrong:\n%s", s)
-	}
-	if strings.Contains(s, "tools:") {
-		t.Errorf("claude output must deny by exception, not allowlist:\n%s", s)
-	}
-	// Claude has no mode: field — emitting one is unrecognized noise.
-	if strings.Contains(s, "mode:") {
-		t.Errorf("claude output must not carry mode:\n%s", s)
-	}
-	if !strings.Contains(s, "model: opus\n") {
-		t.Errorf("override model must stamp model: opus:\n%s", s)
-	}
-	if strings.Contains(s, "permission:") || strings.Contains(s, "homonto:") {
-		t.Errorf("claude output must not carry permission/homonto:\n%s", s)
-	}
-}
-
-func TestRenderClaude_EditCapableWorker(t *testing.T) {
-	// read_only: false + bash allowed + spawn:[] → only spawning is denied.
-	worker := strings.Replace(readOnlyReviewer, "  read_only: true\n", "", 1)
-	s := mustRender(t, worker, "claude")
-	if !strings.Contains(s, "disallowedTools: Agent, Task\n") {
-		t.Errorf("worker must deny only spawning:\n%s", s)
-	}
-}
-
-func TestRenderClaude_StepsBecomeMaxTurns(t *testing.T) {
-	// steps on a NON-primary agent renders as Claude's maxTurns.
-	bounded := strings.Replace(readOnlyReviewer, "homonto:\n", "homonto:\n  steps: 40\n", 1)
-	s := mustRender(t, bounded, "claude")
-	if !strings.Contains(s, "maxTurns: 40\n") {
-		t.Errorf("steps must render as Claude maxTurns:\n%s", s)
-	}
-}
-
 func TestRenderOpenCode_ReadOnlyReviewer(t *testing.T) {
 	s := mustRender(t, readOnlyReviewer, "opencode")
 	for _, want := range []string{"mode: subagent", "model: opus", "permission:", "  edit: deny", "  question: allow", "  task: deny"} {
@@ -106,18 +66,14 @@ func TestRenderOpenCode_ReadOnlyReviewer(t *testing.T) {
 		}
 	}
 	if strings.Contains(s, "tools:") || strings.Contains(s, "homonto:") {
-		t.Errorf("opencode output must not carry a Claude tools string / homonto:\n%s", s)
+		t.Errorf("opencode output must not carry a tools string / homonto:\n%s", s)
 	}
 }
 
-func TestRenderPrimary_ClaudeSkipped_OpenCodeMode(t *testing.T) {
-	out, err := Render("onto", []byte(orchestrator), "claude", ctx())
-	if err != nil {
-		t.Fatal(err)
-	}
-	if out != nil {
-		t.Errorf("a primary agent must have no Claude variant, got:\n%s", out)
-	}
+// A primary agent is an OpenCode concept: the neutral primary flag renders as
+// mode: primary, and its iteration budget and delegation topology render
+// alongside it.
+func TestRenderOpenCode_PrimaryMode(t *testing.T) {
 	oc, err := Render("onto", []byte(orchestrator), "opencode", ctx())
 	if err != nil {
 		t.Fatalf("Render(opencode) primary: %v", err)
@@ -131,13 +87,6 @@ func TestRenderPrimary_ClaudeSkipped_OpenCodeMode(t *testing.T) {
 		if !strings.Contains(s, want) {
 			t.Errorf("opencode spawn topology missing %q:\n%s", want, s)
 		}
-	}
-	// Claude view of a NON-primary agent with the same named spawn: spawning
-	// stays available (Agent/Task not denied) — the named list is advisory in
-	// Claude, enforced in OpenCode.
-	named := strings.Replace(orchestrator, "  primary: true\n  steps: 60\n", "", 1)
-	if cl := mustRender(t, named, "claude"); strings.Contains(cl, "Agent, Task") {
-		t.Errorf("named-spawn agent must not deny spawning in Claude:\n%s", cl)
 	}
 }
 
@@ -154,43 +103,42 @@ func TestRenderOpenCode_NoDialogsDeniesQuestion(t *testing.T) {
 func TestRender_NoHomontoBlock_Unchanged(t *testing.T) {
 	in := "---\nname: x\ndescription: y\nmode: subagent\n---\nbody\n"
 	// A missing homonto block returns before model context is considered.
-	if out := mustRender(t, in, "claude"); out != in {
+	if out := mustRender(t, in, "opencode"); out != in {
 		t.Errorf("content without a homonto block must be unchanged\n got: %q", out)
 	}
 }
 
+// The removed adapters are gone for good: Render must reject them like any
+// other unknown tool rather than render something for them.
 func TestRender_UnknownTool(t *testing.T) {
-	if _, err := Render("onto-reviewer", []byte(readOnlyReviewer), "codex", ctx()); err == nil {
-		t.Fatal("unknown tool should error")
+	for _, tool := range []string{"claude", "codex"} {
+		if _, err := Render("onto-reviewer", []byte(readOnlyReviewer), tool, ctx()); err == nil {
+			t.Errorf("Render(%s): unknown tool should error", tool)
+		}
 	}
 }
 
-// A variant on a non-alias model has no Claude spelling. The render used to
-// silently drop the variant — shipping an agent quietly weaker than declared —
-// on the assumption that config validation had rejected the combination, which
-// it cannot always do: the override is judged against its own model, but a
-// future caller that bypasses Load could supply an unrenderable combination.
-func TestRenderClaude_VariantOnFullModelIDErrors(t *testing.T) {
+// OpenCode spells a model variant as its own frontmatter field: a configured
+// variant must render verbatim, never be silently dropped from the output.
+func TestRenderOpenCode_VariantIsItsOwnField(t *testing.T) {
 	ctx := &RenderContext{Overrides: map[string]ModelSpec{
-		"onto-reviewer": {Model: "claude-opus-4-8", Variant: "1m"},
+		"onto-reviewer": {Model: "opus", Variant: "fast"},
 	}}
-	_, err := Render("onto-reviewer", []byte(readOnlyReviewer), "claude", ctx)
-	if err == nil || !strings.Contains(err.Error(), "alias") {
-		t.Fatalf("a variant on a full model id must error loudly, got: %v", err)
+	out, err := Render("onto-reviewer", []byte(readOnlyReviewer), "opencode", ctx)
+	if err != nil {
+		t.Fatal(err)
 	}
-	// The same spec renders fine for OpenCode, where variant is a real field.
-	oc, err := Render("onto-reviewer", []byte(readOnlyReviewer), "opencode", ctx)
-	if err != nil || !strings.Contains(string(oc), "variant: 1m") {
-		t.Fatalf("opencode must carry the variant as its own field, got err=%v:\n%s", err, oc)
+	if !strings.Contains(string(out), "variant: fast") {
+		t.Errorf("opencode must carry the variant as its own field:\n%s", out)
 	}
 }
 
 // TestRenderNoModelErrors keeps the present-but-empty override failure distinct
 // from the missing-override production backstop below.
 func TestRenderNoModelErrors(t *testing.T) {
-	for _, tool := range []string{"claude", "opencode"} {
+	for _, tool := range []string{"opencode"} {
 		ctx := &RenderContext{Overrides: map[string]ModelSpec{
-			"ghost": {Variant: "1m"}, // entry present but no Model
+			"ghost": {Variant: "fast"}, // entry present but no Model
 		}}
 		_, err := Render("ghost", []byte(readOnlyReviewer), tool, ctx)
 		if err == nil {
@@ -206,7 +154,7 @@ func TestRenderNoModelErrors(t *testing.T) {
 }
 
 func TestRenderMissingModelOverrideErrorsWithRenderContext(t *testing.T) {
-	for _, tool := range []string{"claude", "opencode"} {
+	for _, tool := range []string{"opencode"} {
 		_, err := Render("ghost", []byte(readOnlyReviewer), tool, &RenderContext{Overrides: map[string]ModelSpec{}})
 		if err == nil {
 			t.Fatalf("Render(%s): a production render context without an override must error", tool)

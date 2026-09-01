@@ -266,11 +266,11 @@ func (e *Engine) GCRemoteCache(dryRun bool) ([]remote.Digest, error) {
 	return cache.GC(lock.Digests(), dryRun)
 }
 
-// declaredRemoteSubagents collects the remote subagents declared for either
-// tool, de-duplicated by name (a subagent targeting both tools appears once).
+// declaredRemoteSubagents collects the remote subagents declared for the tool,
+// de-duplicated by name.
 func (e *Engine) declaredRemoteSubagents() (map[string]config.Resource, error) {
 	out := map[string]config.Resource{}
-	for _, tool := range []string{"claude", "opencode"} {
+	for _, tool := range []string{"opencode"} {
 		entries, err := e.Cfg.ExpandedSubagentEntriesForTool(tool)
 		if err != nil {
 			return nil, err

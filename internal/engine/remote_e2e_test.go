@@ -63,7 +63,7 @@ func TestRemoteSubagentEndToEnd(t *testing.T) {
 	tarPath := buildSubagentTarGz(t, fixtures, "reviewer", "# remote reviewer agent")
 	pin := pinFor(t, tarPath)
 
-	cfg := "[subagents.reviewer]\nsource=\"remote:file://" + tarPath + "\"\ndigest=\"" + pin.String() + "\"\nscope=\"project\"\ntargets=[\"claude\"]\n" + remoteModels
+	cfg := "[subagents.reviewer]\nsource=\"remote:file://" + tarPath + "\"\ndigest=\"" + pin.String() + "\"\nscope=\"project\"\ntargets=[\"opencode\"]\n" + remoteModels
 	cfgPath := filepath.Join(repo, "homonto.toml")
 	if err := os.WriteFile(cfgPath, []byte(cfg), 0o644); err != nil {
 		t.Fatal(err)
@@ -145,7 +145,7 @@ func TestRemoteSubagentPinMismatchAbortsApply(t *testing.T) {
 
 	// Declare a wrong pin: apply must fail closed and write no remote content.
 	wrong := "sha256:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
-	cfg := "[subagents.reviewer]\nsource=\"remote:file://" + tarPath + "\"\ndigest=\"" + wrong + "\"\nscope=\"project\"\ntargets=[\"claude\"]\n" + remoteModels
+	cfg := "[subagents.reviewer]\nsource=\"remote:file://" + tarPath + "\"\ndigest=\"" + wrong + "\"\nscope=\"project\"\ntargets=[\"opencode\"]\n" + remoteModels
 	cfgPath := filepath.Join(repo, "homonto.toml")
 	if err := os.WriteFile(cfgPath, []byte(cfg), 0o644); err != nil {
 		t.Fatal(err)
@@ -183,7 +183,7 @@ func TestRemoteSubagentRollbackAndRevocation(t *testing.T) {
 
 	apply := func(tarPath string, pin remote.Digest) {
 		t.Helper()
-		cfg := "[subagents.reviewer]\nsource=\"remote:file://" + tarPath + "\"\ndigest=\"" + pin.String() + "\"\nscope=\"project\"\ntargets=[\"claude\"]\n" + remoteModels
+		cfg := "[subagents.reviewer]\nsource=\"remote:file://" + tarPath + "\"\ndigest=\"" + pin.String() + "\"\nscope=\"project\"\ntargets=[\"opencode\"]\n" + remoteModels
 		if err := os.WriteFile(cfgPath, []byte(cfg), 0o644); err != nil {
 			t.Fatal(err)
 		}
@@ -242,7 +242,7 @@ func TestRemoteSubagentGCReclaimsAfterPrune(t *testing.T) {
 	cfgPath := filepath.Join(repo, "homonto.toml")
 	cache := &remote.Cache{Root: filepath.Join(repo, ".homonto", "cache", "remote")}
 
-	cfg := "[subagents.reviewer]\nsource=\"remote:file://" + tarPath + "\"\ndigest=\"" + pin.String() + "\"\nscope=\"project\"\ntargets=[\"claude\"]\n" + remoteModels
+	cfg := "[subagents.reviewer]\nsource=\"remote:file://" + tarPath + "\"\ndigest=\"" + pin.String() + "\"\nscope=\"project\"\ntargets=[\"opencode\"]\n" + remoteModels
 	if err := os.WriteFile(cfgPath, []byte(cfg), 0o644); err != nil {
 		t.Fatal(err)
 	}

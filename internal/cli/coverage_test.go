@@ -12,7 +12,7 @@ func TestCoverageComplete(t *testing.T) {
 	if err := coverageComplete([]string{}); err != nil {
 		t.Errorf("coverageComplete(empty) = %v, want nil", err)
 	}
-	err := coverageComplete([]string{"skipped claude: unwritable"})
+	err := coverageComplete([]string{"skipped opencode: unwritable"})
 	if err == nil {
 		t.Fatal("coverageComplete(warnings) = nil, want error")
 	}

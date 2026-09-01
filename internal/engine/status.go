@@ -98,7 +98,6 @@ func (e *Engine) Doctor() []string {
 		out = append(out, "ok: pass found")
 	}
 	for _, loc := range []struct{ label, path string }{
-		{".claude (Claude Code)", filepath.Join(e.Home, ".claude")},
 		{".config/opencode (OpenCode)", filepath.Join(e.Home, ".config", "opencode")},
 	} {
 		if _, err := os.Stat(loc.path); err != nil {
@@ -107,35 +106,17 @@ func (e *Engine) Doctor() []string {
 			out = append(out, fmt.Sprintf("ok: %s config location present", loc.label))
 		}
 	}
-	claudeSkills, cerr := e.Cfg.ExpandedSkillEntriesForTool("claude")
-	if cerr != nil {
-		out = append(out, fmt.Sprintf("warn: cannot expand claude skills: %v", cerr))
-	} else {
-		out = append(out, e.doctorSkills("claude", claudeSkills)...)
-	}
 	opencodeSkills, oerr := e.Cfg.ExpandedSkillEntriesForTool("opencode")
 	if oerr != nil {
 		out = append(out, fmt.Sprintf("warn: cannot expand opencode skills: %v", oerr))
 	} else {
 		out = append(out, e.doctorSkills("opencode", opencodeSkills)...)
 	}
-	claudeCommands, ccerr := e.Cfg.ExpandedCommandEntriesForTool("claude")
-	if ccerr != nil {
-		out = append(out, fmt.Sprintf("warn: cannot expand claude commands: %v", ccerr))
-	} else {
-		out = append(out, e.doctorCommands("claude", claudeCommands)...)
-	}
 	opencodeCommands, ocerr := e.Cfg.ExpandedCommandEntriesForTool("opencode")
 	if ocerr != nil {
 		out = append(out, fmt.Sprintf("warn: cannot expand opencode commands: %v", ocerr))
 	} else {
 		out = append(out, e.doctorCommands("opencode", opencodeCommands)...)
-	}
-	claudeSubagents, csaerr := e.Cfg.ExpandedSubagentEntriesForTool("claude")
-	if csaerr != nil {
-		out = append(out, fmt.Sprintf("warn: cannot expand claude subagents: %v", csaerr))
-	} else {
-		out = append(out, e.doctorSubagents("claude", claudeSubagents)...)
 	}
 	opencodeSubagents, osaerr := e.Cfg.ExpandedSubagentEntriesForTool("opencode")
 	if osaerr != nil {

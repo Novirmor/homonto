@@ -33,9 +33,8 @@ func TestProjectScopeEndToEnd(t *testing.T) {
 		return e
 	}
 
-	projClaude := filepath.Join(repo, ".claude", "skills", "graphify")
 	projOpen := filepath.Join(repo, ".opencode", "skills", "graphify")
-	homeClaude := filepath.Join(home, ".claude", "skills", "graphify")
+	homeOpen := filepath.Join(home, ".config", "opencode", "skills", "graphify")
 
 	// 1. Apply at project scope.
 	writeTOML("project")
@@ -44,12 +43,10 @@ func TestProjectScopeEndToEnd(t *testing.T) {
 	if err := e.Apply(context.Background(), sets); err != nil {
 		t.Fatal(err)
 	}
-	for _, dst := range []string{projClaude, projOpen} {
-		if _, err := os.Readlink(dst); err != nil {
-			t.Fatalf("project link missing: %s (%v)", dst, err)
-		}
+	if _, err := os.Readlink(projOpen); err != nil {
+		t.Fatalf("project link missing: %s (%v)", projOpen, err)
 	}
-	if _, err := os.Lstat(homeClaude); err == nil {
+	if _, err := os.Lstat(homeOpen); err == nil {
 		t.Fatal("project scope must not link under home")
 	}
 
@@ -74,11 +71,8 @@ func TestProjectScopeEndToEnd(t *testing.T) {
 	if err := e3.Apply(context.Background(), sets3); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := os.Readlink(homeClaude); err != nil {
+	if _, err := os.Readlink(homeOpen); err != nil {
 		t.Fatalf("user link not created after switch: %v", err)
-	}
-	if _, err := os.Lstat(projClaude); err == nil {
-		t.Fatal("project claude link must be pruned after switch — orphan left behind")
 	}
 	if _, err := os.Lstat(projOpen); err == nil {
 		t.Fatal("project opencode link must be pruned after switch — orphan left behind")
@@ -190,9 +184,6 @@ func TestSkillsOnlyRebuildsLostState(t *testing.T) {
 		t.Fatal(err)
 	}
 	st, _ := state.Load(filepath.Join(repo, ".homonto"))
-	if _, ok := st.Get("claude", "skill.foo"); !ok {
-		t.Fatal("claude skill.foo not rebuilt into state")
-	}
 	if _, ok := st.Get("opencode", "skill.foo"); !ok {
 		t.Fatal("opencode skill.foo not rebuilt into state")
 	}
@@ -204,7 +195,7 @@ func TestSkillsOnlyRebuildsLostState(t *testing.T) {
 	if err := e3.Apply(context.Background(), sets3); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := os.Lstat(filepath.Join(repo, ".claude", "skills", "foo")); err == nil {
+	if _, err := os.Lstat(filepath.Join(repo, ".opencode", "skills", "foo")); err == nil {
 		t.Fatal("skill link not pruned after removal (state rebuild failed to make it prunable)")
 	}
 }

@@ -1,10 +1,11 @@
 # Getting started
 
 A hands-on walkthrough of `homonto` and `onto`. `homonto` projects your
-`homonto.toml` into Claude Code and OpenCode, Terraform-style: `plan`, then
-`apply`. `onto` gates a change through `open → design → build → verify →
-close`. onto's mutating commands need the onto framework installed *by*
-homonto first.
+`homonto.toml` into OpenCode, Terraform-style: `plan`, then `apply`. OpenCode
+is the only adapter; Claude Code and codex support was removed in v0.13.0
+(configs naming them fail at load naming the key). `onto` gates a change
+through `open → design → build → verify → close`. onto's mutating commands
+need the onto framework installed *by* homonto first.
 
 > A third binary, `to`, is the lightweight alternative to onto (`plan → do →
 > done`, no gates). See the [to workflow guide](to-workflow.md) and the
@@ -48,19 +49,19 @@ A realistic first `homonto.toml`:
 
 ```toml
 [mcps.codegraph]
-command = ["codegraph", "serve", "--mcp"]      # both tools by default
+command = ["codegraph", "serve", "--mcp"]      # every tool by default (OpenCode)
 
 [mcps.brave]
 command = ["npx", "-y", "@modelcontextprotocol/server-brave-search"]
 env = { BRAVE_API_KEY = "${BRAVE_API_KEY}" }    # a reference, never a literal secret
-targets = ["claude"]                            # restrict to Claude Code
+targets = ["opencode"]                          # the only valid target
 
 [skills.my-notes]
 source = "local:my-notes"                       # → homonto/skills/my-notes/
 scope = "project"                               # required: user | project
 
-[settings.claude]
-model = "opus"
+[settings.opencode]
+model = "anthropic/claude-opus-4-8"
 ```
 
 `plan` prints a Terraform-style diff (`+` create, `~` update, `-` delete) and
@@ -68,13 +69,10 @@ leaves secrets as unresolved tokens:
 
 ```console
 $ homonto plan
-claude:
-  + mcp.brave = {"command":"npx","args":["-y","@modelcontextprotocol/server-brave-search"],"env":{"BRAVE_API_KEY":"${BRAVE_API_KEY}"},"type":"stdio"}
-  + mcp.codegraph = {"command":"codegraph","args":["serve","--mcp"],"type":"stdio"}
-  + setting.model = "opus"
-  + skill.my-notes = …/.claude/skills/my-notes -> …/homonto/skills/my-notes
 opencode:
+  + mcp.brave = {"command":["npx","-y","@modelcontextprotocol/server-brave-search"],"env":{"BRAVE_API_KEY":"${BRAVE_API_KEY}"},"enabled":true,"type":"local"}
   + mcp.codegraph = {"command":["codegraph","serve","--mcp"],"enabled":true,"type":"local"}
+  + setting.model = "anthropic/claude-opus-4-8"
   + skill.my-notes = …/.opencode/skills/my-notes -> …/homonto/skills/my-notes
 ```
 
@@ -85,7 +83,7 @@ the three states apart:
 ```console
 $ homonto status
 1 config change(s) awaiting apply (run `homonto apply`)   # you edited the toml
-claude setting.model drifted (will reset on apply)        # disk changed outside homonto
+opencode setting.model drifted (will reset on apply)      # disk changed outside homonto
 No drift.                                                 # everything matches
 ```
 
@@ -95,12 +93,8 @@ No drift.                                                 # everything matches
 to share. See [secrets](secrets.md).
 
 **Health check:** `homonto doctor` verifies `pass` is on `PATH`, the tool
-config locations exist, and each owned skill has intact content and both tool
+config locations exist, and each owned skill has intact content and its tool
 links.
-
-**Already using Claude Code?** `homonto import` bootstraps a starter toml from
-Claude's global MCP servers only. It is experimental and narrow; review its
-output before applying.
 
 ## 3. Your first owned skill
 
@@ -115,32 +109,30 @@ $ homonto apply --yes
 ```
 
 Each skill declares its own `scope` (required, no default): `user` links into
-`~/.claude/skills/` and `~/.config/opencode/skills/`; `project` links into the
-repo itself (`.claude/skills/`, `.opencode/skills/`). Switching scope is
-clean: `plan` shows the link relocating, and `apply` removes the old link as
-it creates the new one.
+`~/.config/opencode/skills/`; `project` links into the repo itself
+(`.opencode/skills/`). Switching scope is clean: `plan` shows the link
+relocating, and `apply` removes the old link as it creates the new one.
 
 ## 4. The onto workflow
 
 Install the framework via homonto, then apply. Every subagent the framework
-expands must declare **an explicit per-tool model**:
+expands must declare **an explicit model**:
 
 ```toml
 [frameworks.onto]
 source = "builtin:onto"
 scope = "project"
 
-[subagents.onto.claude]
-model = "opus"
-[subagents.onto-explorer.claude]
-model = "haiku"
-[subagents.onto-reviewer.claude]
-model = "opus"
-[subagents.onto-implementer.claude]
-model = "sonnet"
-[subagents.onto-skeptic.claude]
-model = "opus"
-# targeting opencode too? add [subagents.<name>.opencode] blocks as well
+[subagents.onto.opencode]
+model = "anthropic/claude-opus-4-8"
+[subagents.onto-explorer.opencode]
+model = "openai/gpt-5-mini"
+[subagents.onto-reviewer.opencode]
+model = "anthropic/claude-opus-4-8"
+[subagents.onto-implementer.opencode]
+model = "anthropic/claude-sonnet-5"
+[subagents.onto-skeptic.opencode]
+model = "anthropic/claude-opus-4-8"
 ```
 
 ```console
@@ -188,20 +180,17 @@ command and gate: [onto reference](onto-reference.md).
 
 | Supported | Notes |
 |---|---|
-| MCP servers, settings, skills, plugins, marketplaces, TUI settings | Claude Code + OpenCode, full |
+| MCP servers, settings, skills, plugins, TUI settings | OpenCode, full — the only adapter (Claude Code and codex were removed in v0.13.0) |
 | Frameworks (`[frameworks.*]`) | builtin `onto` or `to` (mutually exclusive); also `local:` roots and digest-pinned `remote:` sources |
 | Commands, subagents (`builtin:` / `local:`) | subagents: `mode = link` (default) or `copy` |
 | Remote sources (`remote:…`) | subagents and frameworks; **require `digest = "sha256:…"`**; fetched, verified, pinned, cached |
-| Codex adapter | 🟡 pilot — **MCP only**, opt-in (`codex` in `targets`) → `~/.codex/config.toml` |
-| `import` | 🟡 narrow — **Claude global MCP servers only** |
 
 | Not supported (accepted for beta) | Detail |
 |---|---|
 | OpenCode JSONC comments | any apply that writes `opencode.jsonc` drops comments (no-op applies don't) |
-| Non-stdio MCP in `import` | url/http servers skipped with a warning |
 | Secrets without a backend | `${pass:…}` needs `pass` on `PATH`; `${ENV_VAR}` needs the var set |
 | Moving/renaming the repo | skill symlinks are absolute — delete stale links and reapply after a move |
-| Adapters beyond Claude / OpenCode / Codex-MCP | none |
+| Adapters beyond OpenCode | none; configs naming `claude`/`codex` fail at load citing the v0.13.0 removal |
 
 ## Where to next
 

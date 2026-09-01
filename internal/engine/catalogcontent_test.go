@@ -14,7 +14,7 @@ const localFrameworkTOML = `
 [frameworks.myfw]
 source = "local:./myfw"
 scope = "project"
-targets = ["claude"]
+targets = ["opencode"]
 `
 
 func seedLocalFramework(t *testing.T, repo, skillBody string) {
@@ -82,7 +82,9 @@ func TestApplyGCsUndeclaredCatalogEntries(t *testing.T) {
 		t.Fatalf("first apply: %v", err)
 	}
 	// Plant pre-rename litter of every kind (the command root may not exist yet
-	// — this config declares no commands, which is itself the GC case).
+	// — this config declares no commands, which is itself the GC case). The
+	// .claude.md variant is litter the removed adapter left behind — exactly
+	// the old-world file the GC must still prune.
 	stale := []string{
 		filepath.Join(e.SubagentCatalogRoot, "code-reviewer.md"),
 		filepath.Join(e.SubagentCatalogRoot, "code-reviewer.claude.md"),

@@ -52,10 +52,9 @@ func buildRemoteSubagentTar(t *testing.T, dir, name, body string) (string, strin
 	return p, "sha256:" + hex.EncodeToString(h.Sum(nil))
 }
 
-// repinModels was a [models.*.*] baseline that the old tier system required
-// when a subagent targeted claude. Tiers are gone and remote: subagents are
-// projected verbatim (never rendered through agentfm), so an empty baseline
-// is all these tests need.
+// repinModels was a [models.*.*] baseline that the old tier system required.
+// Tiers are gone and remote: subagents are projected verbatim (never rendered
+// through agentfm), so an empty baseline is all these tests need.
 const repinModels = ""
 
 // TestApplyDigestRepinIsNotSilentlyApplied exercises F6: a config whose only
@@ -69,7 +68,7 @@ func TestApplyDigestRepinIsNotSilentlyApplied(t *testing.T) {
 
 	tarV1, pinV1 := buildRemoteSubagentTar(t, fixtures, "aaa", "# reviewer v1")
 	cfg := filepath.Join(repo, "homonto.toml")
-	cfg1 := "[subagents.aaa]\nsource=\"remote:file://" + tarV1 + "\"\ndigest=\"" + pinV1 + "\"\nscope=\"project\"\ntargets=[\"claude\"]\n" + repinModels
+	cfg1 := "[subagents.aaa]\nsource=\"remote:file://" + tarV1 + "\"\ndigest=\"" + pinV1 + "\"\nscope=\"project\"\ntargets=[\"opencode\"]\n" + repinModels
 	if err := os.WriteFile(cfg, []byte(cfg1), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -83,7 +82,7 @@ func TestApplyDigestRepinIsNotSilentlyApplied(t *testing.T) {
 
 	// Repin: same subagent, new content and new digest — the ONLY config change.
 	tarV2, pinV2 := buildRemoteSubagentTar(t, t.TempDir(), "aaa", "# reviewer v2 changed")
-	cfg2 := "[subagents.aaa]\nsource=\"remote:file://" + tarV2 + "\"\ndigest=\"" + pinV2 + "\"\nscope=\"project\"\ntargets=[\"claude\"]\n" + repinModels
+	cfg2 := "[subagents.aaa]\nsource=\"remote:file://" + tarV2 + "\"\ndigest=\"" + pinV2 + "\"\nscope=\"project\"\ntargets=[\"opencode\"]\n" + repinModels
 	if err := os.WriteFile(cfg, []byte(cfg2), 0o644); err != nil {
 		t.Fatal(err)
 	}

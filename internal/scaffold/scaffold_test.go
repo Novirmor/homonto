@@ -50,8 +50,8 @@ func TestScaffoldExamplesUseCurrentFormatAndValidate(t *testing.T) {
 	}
 	// Sanity-check the reconstruction actually enabled the plugin example in the
 	// current per-plugin table form.
-	if len(cfg.Plugins.Claude) == 0 {
-		t.Error("expected the uncommented scaffold to declare a [plugins.claude.<name>] example")
+	if len(cfg.Plugins.OpenCode) == 0 {
+		t.Error("expected the uncommented scaffold to declare a [plugins.opencode.<name>] example")
 	}
 }
 

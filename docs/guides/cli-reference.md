@@ -7,7 +7,7 @@ workflow binaries see the [onto reference](onto-reference.md) and the
 Global behavior:
 
 - `--config <path>` (persistent flag, default `homonto.toml`) selects the
-  config file for `plan`, `apply`, `status`, `doctor`, and `import`. `init`
+  config file for `plan`, `apply`, `status`, and `doctor`. `init`
   instead takes an optional target directory argument.
 - All output goes to **stderr** (cobra's default). Redirect with `2>&1` when
   capturing output in scripts.
@@ -41,8 +41,8 @@ keys stay silent.
 
 ```console
 $ homonto plan
-claude:
-  ~ setting.model: "opus" -> "sonnet"
+opencode:
+  ~ setting.model: "anthropic/claude-opus-4-8" -> "anthropic/claude-sonnet-5"
 
 $ homonto plan --output json | jq .        # machine-readable
 $ homonto plan --exit-code && echo clean   # CI: fail when an apply is pending
@@ -68,7 +68,7 @@ Guarantees (details in [projection & state](projection-and-state.md) and
   unparseable tool file makes that adapter abort and report rather than
   overwrite.
 - **State per adapter.** State is saved after each successful adapter, so a
-  failure in the second tool never loses the first tool's records.
+  failure partway through never loses an already-applied adapter's records.
 - **Adoption.** A declared resource that already exists on disk exactly as
   homonto would write it is recorded into state with no file write.
 
@@ -78,7 +78,7 @@ Compare managed values on disk against the last-applied snapshot and report
 two independent things:
 
 - **Drift** — a managed value changed on disk *outside homonto*, or was
-  deleted: `claude setting.model drifted (will reset on apply)`.
+  deleted: `opencode setting.model drifted (will reset on apply)`.
 - **Pending** — unapplied `homonto.toml` edits, reported as a count:
   `1 config change(s) awaiting apply (run `homonto apply`)`.
 
@@ -114,25 +114,6 @@ those the usual way (`go install …@latest` or the release archives), then run
 `homonto update`. State records the versions behind each apply, and
 `onto doctor` / `to doctor` warn when a workflow binary and the homonto that
 installed its framework have drifted apart.
-
-## `homonto import`
-
-Experimental adoption helper: bootstrap a starter `homonto.toml` from your
-current setup. It is narrow on purpose and reads **Claude's global MCP
-servers only** (`~/.claude.json` `mcpServers`):
-
-- refuses to overwrite an existing config unless you pass `--force`;
-- redacts env values that *look* like secrets into `${pass:…}` references
-  (best-effort, not exhaustive — review before sharing);
-- copies `command`/`args` verbatim;
-- skips non-stdio (url/http) servers with a warning;
-- imports no skills, plugins, settings, or OpenCode config.
-
-Treat its output as a starting point to review, not a complete migration.
-
-| Flag | Effect |
-|---|---|
-| `--force` | overwrite an existing config file |
 
 ## `homonto cache gc`
 

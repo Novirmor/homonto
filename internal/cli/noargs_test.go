@@ -6,10 +6,10 @@ import (
 	"testing"
 )
 
-// TestPositionalFreeCommands_RejectStrayArg verifies plan/apply/status/doctor/
-// import reject an unexpected positional instead of silently ignoring it (F49).
+// TestPositionalFreeCommands_RejectStrayArg verifies plan/apply/status/doctor
+// reject an unexpected positional instead of silently ignoring it (F49).
 func TestPositionalFreeCommands_RejectStrayArg(t *testing.T) {
-	for _, name := range []string{"plan", "apply", "status", "doctor", "import"} {
+	for _, name := range []string{"plan", "apply", "status", "doctor"} {
 		t.Run(name, func(t *testing.T) {
 			cmd := NewRootCmd()
 			var out bytes.Buffer

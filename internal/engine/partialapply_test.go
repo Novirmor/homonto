@@ -36,7 +36,7 @@ func TestPartialApplyPersistsEarlierAdapterState(t *testing.T) {
 	home := t.TempDir()
 	repo := t.TempDir()
 	cfgPath := filepath.Join(repo, "homonto.toml")
-	os.WriteFile(cfgPath, []byte("[mcps.codegraph]\ncommand = [\"codegraph\",\"serve\"]\ntargets = [\"claude\"]\n"), 0o644)
+	os.WriteFile(cfgPath, []byte("[mcps.codegraph]\ncommand = [\"codegraph\",\"serve\"]\ntargets = [\"opencode\"]\n"), 0o644)
 
 	e, err := Build(context.Background(), cfgPath, home, filepath.Join(repo, "content"))
 	if err != nil {
@@ -63,7 +63,7 @@ func TestPartialApplyPersistsEarlierAdapterState(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, ok := st.Get("claude", "mcp.codegraph"); !ok {
-		t.Fatal("claude's applied state lost because a later adapter failed")
+	if _, ok := st.Get("opencode", "mcp.codegraph"); !ok {
+		t.Fatal("opencode's applied state lost because a later adapter failed")
 	}
 }

@@ -22,7 +22,7 @@ func TestRemoteStageBeforeMutateLeavesFirstIntactOnSecondFailure(t *testing.T) {
 	tarA1 := buildSubagentTarGz(t, fixtures, "aaa", "# A v1")
 	pinA1 := pinFor(t, tarA1)
 	cfgPath := filepath.Join(repo, "homonto.toml")
-	cfg1 := "[subagents.aaa]\nsource=\"remote:file://" + tarA1 + "\"\ndigest=\"" + pinA1.String() + "\"\nscope=\"project\"\ntargets=[\"claude\"]\n" + remoteModels
+	cfg1 := "[subagents.aaa]\nsource=\"remote:file://" + tarA1 + "\"\ndigest=\"" + pinA1.String() + "\"\nscope=\"project\"\ntargets=[\"opencode\"]\n" + remoteModels
 	if err := os.WriteFile(cfgPath, []byte(cfg1), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -50,8 +50,8 @@ func TestRemoteStageBeforeMutateLeavesFirstIntactOnSecondFailure(t *testing.T) {
 	pinA2 := pinFor(t, tarA2)
 	tarB := buildSubagentTarGz(t, t.TempDir(), "bbb", "# B content")
 	wrongB := "sha256:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
-	cfg2 := "[subagents.aaa]\nsource=\"remote:file://" + tarA2 + "\"\ndigest=\"" + pinA2.String() + "\"\nscope=\"project\"\ntargets=[\"claude\"]\n" +
-		"[subagents.bbb]\nsource=\"remote:file://" + tarB + "\"\ndigest=\"" + wrongB + "\"\nscope=\"project\"\ntargets=[\"claude\"]\n" + remoteModels
+	cfg2 := "[subagents.aaa]\nsource=\"remote:file://" + tarA2 + "\"\ndigest=\"" + pinA2.String() + "\"\nscope=\"project\"\ntargets=[\"opencode\"]\n" +
+		"[subagents.bbb]\nsource=\"remote:file://" + tarB + "\"\ndigest=\"" + wrongB + "\"\nscope=\"project\"\ntargets=[\"opencode\"]\n" + remoteModels
 	if err := os.WriteFile(cfgPath, []byte(cfg2), 0o644); err != nil {
 		t.Fatal(err)
 	}

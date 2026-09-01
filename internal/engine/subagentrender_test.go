@@ -105,52 +105,42 @@ func TestApplyRestoresDeletedRenderedVariant(t *testing.T) {
 }
 
 // ontoFrameworkTOML installs the onto framework and per-agent override blocks
-// for every expanded subagent (each tool they target). onto's `onto` agent is
-// OpenCode-primary — agentfm renders no Claude variant for it by design.
+// for every expanded subagent. onto's `onto` agent is OpenCode-primary (its
+// homonto: block sets primary), rendered with mode: primary.
 const ontoFrameworkTOML = `
 [frameworks.onto]
 source = "builtin:onto"
 scope = "project"
 
-[subagents.onto.claude]
-model = "opus"
 [subagents.onto.opencode]
 model = "anthropic/claude-opus-4-8"
 
-[subagents.onto-explorer.claude]
-model = "haiku"
 [subagents.onto-explorer.opencode]
 model = "openai/gpt-5-mini"
 
-[subagents.onto-reviewer.claude]
-model = "opus"
 [subagents.onto-reviewer.opencode]
 model = "anthropic/claude-opus-4-8"
 
-[subagents.onto-implementer.claude]
-model = "sonnet"
 [subagents.onto-implementer.opencode]
 model = "anthropic/claude-sonnet-4"
 
-[subagents.onto-skeptic.claude]
-model = "opus"
 [subagents.onto-skeptic.opencode]
 model = "anthropic/claude-opus-4-8"
 `
 
 // A framework's subagents may not be re-declared explicitly (that collision is
-// an error), so the per-agent [subagents.<name>.<tool>] blocks above are
+// an error), so the per-agent [subagents.<name>.opencode] blocks above are
 // tune-only entries (no source): they tune the framework's agent in place,
 // declaring its model — required now that tiers are gone. Changing one agent's
 // override must not affect any other agent.
 func TestTuneOnlyEntryOverridesFrameworkAgentModel(t *testing.T) {
 	home := t.TempDir()
 	repo := t.TempDir()
-	// onto-skeptic gets an effort tune on top of its model block — both
-	// declared in one tune-only entry, since TOML rejects duplicate tables.
+	// onto-skeptic gets a distinct model tune on top of its block, declared in
+	// one tune-only entry (TOML rejects duplicate tables).
 	doc := strings.Replace(ontoFrameworkTOML,
-		"[subagents.onto-skeptic.claude]\nmodel = \"opus\"\n",
-		"[subagents.onto-skeptic.claude]\nmodel = \"opus\"\neffort = \"xhigh\"\n", 1)
+		"[subagents.onto-skeptic.opencode]\nmodel = \"anthropic/claude-opus-4-8\"\n",
+		"[subagents.onto-skeptic.opencode]\nmodel = \"openai/o4-mini\"\n", 1)
 	if err := os.WriteFile(filepath.Join(repo, "homonto.toml"), []byte(doc), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -159,42 +149,36 @@ func TestTuneOnlyEntryOverridesFrameworkAgentModel(t *testing.T) {
 		t.Fatalf("apply: %v", err)
 	}
 
-	effortOf := func(file string) string {
+	modelOf := func(file string) string {
 		data, err := os.ReadFile(filepath.Join(e.SubagentDir(), file))
 		if err != nil {
 			t.Fatalf("read %s: %v", file, err)
 		}
 		for _, ln := range strings.Split(string(data), "\n") {
-			if v, ok := strings.CutPrefix(ln, "effort: "); ok {
-				return v
+			if m, ok := strings.CutPrefix(ln, "model: "); ok {
+				return m
 			}
 		}
 		return ""
 	}
-	if got := effortOf("onto-skeptic.claude.md"); got != "xhigh" {
-		t.Errorf("tuned agent effort = %q, want xhigh (the override must apply)", got)
+	if got := modelOf("onto-skeptic.opencode.md"); got != "openai/o4-mini" {
+		t.Errorf("tuned agent model = %q, want openai/o4-mini (the override must apply)", got)
 	}
-	// onto-reviewer has its own override block; it must stay at no effort (no
-	// cross-contamination from onto-skeptic's tune).
-	if got := effortOf("onto-reviewer.claude.md"); got != "" {
-		t.Errorf("onto-reviewer effort = %q, want empty (each agent has its own block)", got)
-	}
-	// onto-skeptic renders its declared model (the override is complete on its
-	// own — there is no tier to inherit from anymore).
-	data, _ := os.ReadFile(filepath.Join(e.SubagentDir(), "onto-skeptic.claude.md"))
-	if !strings.Contains(string(data), "model: opus") {
-		t.Errorf("onto-skeptic must render its declared model:\n%s", data)
+	// onto-reviewer has its own override block; it must stay at its declared
+	// model (no cross-contamination from onto-skeptic's tune).
+	if got := modelOf("onto-reviewer.opencode.md"); got != "anthropic/claude-opus-4-8" {
+		t.Errorf("onto-reviewer model = %q, want anthropic/claude-opus-4-8 (each agent has its own block)", got)
 	}
 }
 
-// TestDoctorSilentOnPrimaryAgentClaudeVariant guards against a permanent false
-// positive: `onto` is an OpenCode-primary agent, so agentfm deliberately renders
-// no Claude variant and the adapter deliberately does not project it. doctor
-// fell back to the shared anchor, found it, then demanded a Claude link that
-// must never exist — reporting `subagent "onto" content present, not linked for
-// claude (run apply)` on every healthy workspace. Worse, the advice was a dead
-// end: apply correctly does nothing, so the warning could never be cleared.
-func TestDoctorSilentOnPrimaryAgentClaudeVariant(t *testing.T) {
+// TestDoctorReportsPrimaryAgentHealthy guards the primary agent's doctor
+// projection: `onto` is OpenCode-primary, rendered with mode: primary and
+// projected like any other agent. Doctor must report its OpenCode link ok and
+// must never raise a warn: finding for it. (The original form of this test
+// guarded against a false positive on the primary agent's removed Claude
+// variant; with Claude gone the surviving invariant is that the one real
+// projection is reported healthy.)
+func TestDoctorReportsPrimaryAgentHealthy(t *testing.T) {
 	home := t.TempDir()
 	repo := t.TempDir()
 	if err := os.WriteFile(filepath.Join(repo, "homonto.toml"), []byte(ontoFrameworkTOML), 0o644); err != nil {
@@ -206,21 +190,18 @@ func TestDoctorSilentOnPrimaryAgentClaudeVariant(t *testing.T) {
 	}
 
 	e2 := buildEngine(t, home, repo)
-	for _, line := range e2.Doctor() {
-		if strings.Contains(line, `subagent "onto"`) && strings.Contains(line, "claude") &&
-			strings.HasPrefix(line, "warn:") {
-			t.Fatalf("doctor reports an unfixable finding for the primary agent's absent Claude variant: %q", line)
-		}
-	}
-
-	// The OpenCode side must still be reported healthy — silencing the Claude
-	// false positive must not blind doctor to the variant that IS projected.
 	var sawOpenCode bool
 	for _, line := range e2.Doctor() {
-		if strings.Contains(line, `subagent "onto"`) && strings.Contains(line, "opencode") {
+		if !strings.Contains(line, `subagent "onto"`) {
+			continue
+		}
+		if strings.HasPrefix(line, "warn:") {
+			t.Fatalf("doctor raised a finding for the primary agent: %q", line)
+		}
+		if strings.Contains(line, "opencode") {
 			sawOpenCode = true
 			if !strings.HasPrefix(line, "ok:") {
-				t.Fatalf("opencode side of the primary agent not healthy: %q", line)
+				t.Fatalf("primary agent's OpenCode projection not healthy: %q", line)
 			}
 		}
 	}

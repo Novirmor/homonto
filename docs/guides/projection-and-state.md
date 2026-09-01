@@ -6,7 +6,7 @@ content, state, drift vs. pending, adoption, and pruning.
 ## The pipeline
 
 `homonto.toml` parses into one tool-agnostic desired-state model. Each tool
-(Claude Code, OpenCode, the Codex pilot) is an **adapter** that runs
+(OpenCode, the only adapter since v0.13.0) is an **adapter** that runs
 `Read → Plan → Apply`:
 
 1. **Read** the tool's current files.
@@ -82,8 +82,8 @@ state snapshot and reports two **independent** things:
   apply, or was deleted:
 
   ```
-  claude setting.model drifted (will reset on apply)
-  claude mcp.foo missing (deleted out of band)
+  opencode setting.theme drifted (will reset on apply)
+  opencode mcp.foo missing (deleted out of band)
   ```
 
 - **Pending** — edits to `homonto.toml` not yet applied. The disk still
@@ -121,8 +121,7 @@ escaping both.
 
 Adoption never touches secret-bearing values (those are always re-applied so
 the resolved value is verified), and an apply whose only effect is adoption
-leaves `~/.claude.json`, `~/.claude/settings.json`, and `opencode.jsonc`
-byte for byte unchanged, comments included.
+leaves `opencode.jsonc` byte for byte unchanged, comments included.
 
 ## Pruning: removal is declarative too
 
@@ -137,8 +136,8 @@ $ homonto status
 1 config change(s) awaiting apply (run `homonto apply`)   # you edited homonto.toml
 
 $ homonto plan                                            # see the diff
-claude:
-  ~ setting.model: "opus" -> "sonnet"
+opencode:
+  ~ setting.model: "old" -> "new"
 
 $ homonto apply                                           # write it
 ...

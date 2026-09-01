@@ -10,28 +10,22 @@ func TestDir(t *testing.T) {
 		home, project string
 		want          string
 	}{
-		{"claude skill user", Skill, "claude", "user", "/h", "/p", "/h/.claude/skills"},
-		{"claude skill project", Skill, "claude", "project", "/h", "/p", "/p/.claude/skills"},
 		{"opencode skill user", Skill, "opencode", "user", "/h", "/p", "/h/.config/opencode/skills"},
 		{"opencode skill project", Skill, "opencode", "project", "/h", "/p", "/p/.opencode/skills"},
 
-		{"claude command user", Command, "claude", "user", "/h", "/p", "/h/.claude/commands"},
-		{"claude command project", Command, "claude", "project", "/h", "/p", "/p/.claude/commands"},
 		{"opencode command user", Command, "opencode", "user", "/h", "/p", "/h/.config/opencode/command"},
 		{"opencode command project", Command, "opencode", "project", "/h", "/p", "/p/.opencode/command"},
 
-		{"claude subagent user", Subagent, "claude", "user", "/h", "/p", "/h/.claude/agents"},
-		{"claude subagent project", Subagent, "claude", "project", "/h", "/p", "/p/.claude/agents"},
 		{"opencode subagent user", Subagent, "opencode", "user", "/h", "/p", "/h/.config/opencode/agent"},
 		{"opencode subagent project", Subagent, "opencode", "project", "/h", "/p", "/p/.opencode/agent"},
 
 		// unknown kind / tool
-		{"unknown kind", Kind("nope"), "claude", "user", "/h", "/p", ""},
+		{"unknown kind", Kind("nope"), "opencode", "user", "/h", "/p", ""},
 		{"unknown tool", Skill, "vscode", "user", "/h", "/p", ""},
 		{"subagent unknown tool", Subagent, "vscode", "user", "/h", "/p", ""},
 
 		// Any scope other than "project" is treated as "user".
-		{"empty scope falls back to user", Skill, "claude", "", "/h", "/p", "/h/.claude/skills"},
+		{"empty scope falls back to user", Skill, "opencode", "", "/h", "/p", "/h/.config/opencode/skills"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

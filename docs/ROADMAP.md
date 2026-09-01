@@ -1,3 +1,67 @@
+# Development plan — v0.13.0 (in progress)
+
+> Goals set by the maintainer on 2026-09-01, recorded here before work starts.
+> Each item carries its decided shape; the deliberate non-goals are recorded
+> too, so "why didn't X land" has an answer.
+
+## 1. OpenCode becomes the only adapter
+
+Claude Code support is **removed**, and the codex MCP pilot goes with it.
+Any config naming a removed tool — `targets = ["claude"]` or
+`targets = ["codex"]`, `[settings.claude]`, `[plugins.claude.*]`,
+`[marketplaces.claude.*]`, or a `[subagents.<name>.claude]` block — fails
+load loudly, naming the key and the release that removed it (same
+fail-closed precedent as the v0.3.0 framework removal, ADR 0015).
+Consequences that follow rather than get decided: the claude and codex
+adapter packages, the conformance suite's cross-adapter matrix, and
+`homonto import` (its only source was Claude's global MCP config) are all
+deleted; the agentfm Claude render (aliases, `opus[1m]` variants, effort
+levels) goes with them.
+
+## 2. Model variants everywhere models are used (OpenCode)
+
+`variant` and `effort` (medium, high, xhigh, …) become first-class wherever
+a model is declarable today — `[settings.opencode]` and
+`[subagents.<name>.opencode]` — rendered the way OpenCode spells them.
+`ModelSpec` already carries all three neutrally; only the OpenCode render
+and validation learn them.
+
+## 3. Implementer skill: KISS, Unix philosophy, composition over inheritance
+
+The onto and `to` implementer skills gain explicit build requirements:
+adapt the KISS rules the frameworks already enforce, prefer Unix
+philosophy (small, composable, do-one-thing pieces) where possible,
+prefer composition over inheritance, and where OOP is genuinely the right
+tool, follow SOLID. Catalog prose change; catalog + framework versions
+move.
+
+## 4. Parallelization focus
+
+With one adapter the remaining serialization is fetches and files:
+`remote:` subagent fetch+verify in parallel, skill/command/subagent link
+projection in parallel, catalog materialization where the fingerprint
+gates allow it. Write-scope rules (ADR 0019/0020) keep deciding what may
+run concurrently; nothing that writes shared state gets parallelized.
+
+## 5. Multi-repo: designated places, cross-repo effect
+
+All homonto, onto, and `to` state and artifacts live in designated places
+(one selected config repo), but operations can modify other declared repos
+too. This changes the ownership and safety contracts (prune roots, apply
+lock scope, drift semantics), so an ADR and design doc precede any code;
+if the design lands mid-release the implementation ships when the design
+says it ships, not with the tag.
+
+## Deliberate non-goals (v0.13.0)
+
+- No new adapters to replace the removed ones — OpenCode only, by decision.
+- No migration path for Claude configs beyond the loud load error naming
+  what to delete.
+- Multi-repo does not become a monorepo mandate: single-repo use stays
+  first-class and default.
+
+---
+
 # Development plan — v0.1.8 → v0.2.0 (delivered)
 
 > **This plan is history.** Everything below shipped across releases v0.1.8 →

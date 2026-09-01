@@ -15,6 +15,40 @@ bookkeeper) — for every supported OS/arch as separate archives under one
 `SHA256SUMS`. `onto` and `to` each require `homonto` to have installed their
 framework first (`[frameworks.onto]` / `[frameworks.to]` + `homonto apply`).
 
+### New in v0.12.0 — a self-healing workspace lock, honest release notes
+
+A maintenance release over v0.11.0: one user-visible behavior change, two
+public-docs corrections (one of which shipped inside every release's notes),
+and internal cleanups. Catalog content is unchanged (catalog 0.11.0, onto
+0.8.0, to 0.6.0).
+
+- **`to` reclaims a stale workspace lock by itself.** A SIGKILLed command
+  used to wedge every mutating `to` command until `docs/tasks/.to.lock` was
+  removed by hand. The lock already records its holder's pid; on a conflict
+  `to` now probes it, and a pid that provably no longer runs (finished, or
+  no such process) means the lock is stale — it is removed and the command
+  proceeds. A live pid, a pid owned by another user, and a lockfile with no
+  readable pid (a crash between creating the file and writing it) are never
+  touched, so a live session's lock cannot be stolen. `homonto apply`'s
+  project lock keeps its deliberately manual reclamation.
+- **The standing limitations block no longer denies remote frameworks.**
+  Every GitHub release carried the claim that remote sources exist for
+  subagents only and there are no remote framework sources;
+  digest-pinned `remote:` frameworks have been supported and documented all
+  along. The block now states the real rule.
+- **Release packaging fixes.** `scripts/build-release.sh` falls back to
+  `shasum -a 256` when `sha256sum` is absent (macOS runners), keeping
+  `SHA256SUMS` byte-identical; and the release checklist's post-tag smoke
+  sequence now runs as written (it previously called `onto doctor` in a
+  workspace where `onto init` had never been able to run).
+- **Internals.** The dead `internal/merge` package (zero importers since the
+  projector split) is deleted; the Claude and OpenCode adapters' duplicated
+  key/document helpers have one owner in `baseadapter`, which also gains its
+  first direct tests; and `config`'s ~180-line `validate` cascade is split
+  into per-section helpers with unchanged rules — with one nondeterminism
+  removed: skills now validate before commands instead of map iteration
+  order deciding which error surfaces.
+
 ### New in v0.11.0 — a resumable record, enforced
 
 onto's axis is now stated plainly: a change survives being handed to someone

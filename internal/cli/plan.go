@@ -57,11 +57,10 @@ func planCmd() *cobra.Command {
 			for _, w := range e.Warnings {
 				cmd.Println("warn:", w)
 			}
-			// Declared [repos] context (ADR 0024 stage 1): the plan names
-			// every repository the config spans, even while projection still
-			// targets the config repo only — so a multi-repo setup reads as
-			// one, and the later cross-repo stages change what these lines
-			// precede, not the disclosure.
+			// Declared [repos] context (ADR 0024 stage 2): the plan names every
+			// repository the config spans. Repo-tagged project resources then
+			// render in their own opencode@<repo> changeset, making every
+			// cross-repo effect visible before apply.
 			for _, line := range renderRepos(e.Cfg.RepoDirs()) {
 				cmd.Println(line)
 			}
@@ -153,14 +152,14 @@ func planJSON(cmd *cobra.Command, sets []adapter.ChangeSet, repins []engine.Remo
 	return nil
 }
 
-// renderRepos prints the declared-repos context block (ADR 0024 stage 1):
-// every repository the config spans, by name and resolved path, with the
-// disclosure that projection still targets the config repo only.
+// renderRepos prints the declared-repos context block (ADR 0024 stage 2):
+// every repository the config spans, by name and resolved path, and the rule
+// that repo-tagged project resources project only into their named repository.
 func renderRepos(repos map[string]string) []string {
 	if len(repos) == 0 {
 		return nil
 	}
-	out := []string{"repos (projection still targets this config repo only; cross-repo effect is a later stage):"}
+	out := []string{"repos (repo-tagged project resources project only into their named repo):"}
 	for _, name := range sortedRepoNames(repos) {
 		out = append(out, fmt.Sprintf("  %s  %s", name, repos[name]))
 	}

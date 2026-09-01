@@ -6,10 +6,12 @@ import (
 	"fmt"
 	"os/exec"
 	"path"
+	"path/filepath"
 	"sort"
 	"strings"
 	"time"
 
+	"github.com/noviopenworks/homonto/internal/ontostate"
 	"github.com/spf13/cobra"
 )
 
@@ -169,6 +171,18 @@ func dirtCmd() *cobra.Command {
 					return err
 				}
 			}
+			// A recorded cross-repo scope extends the diagnostic to exactly the
+			// repositories that close will gate. Keep the historic root-only
+			// behavior for ad-hoc names and legacy states without repos.
+			if change != "" {
+				if st, err := ontostate.Load(filepath.Join(dir, "docs", "changes", change, "onto-state.yaml")); err == nil && len(st.Repos) > 0 {
+					repos, err := scopedWorktreeDirt(dir, change, st.Repos)
+					if err != nil {
+						return fmt.Errorf("onto dirt: cannot determine scoped worktree state: %w", err)
+					}
+					return renderScopedDirt(cmd, change, repos, asJSON)
+				}
+			}
 			entries, determinable := worktreeDirt(dir, change)
 			if !determinable {
 				return fmt.Errorf("onto dirt: cannot determine worktree state (is %s inside a git repository?)", path.Clean(dir))
@@ -205,4 +219,37 @@ func dirtCmd() *cobra.Command {
 	cmd.Flags().StringVar(&dir, "dir", ".", "workspace root to inspect")
 	cmd.Flags().BoolVar(&asJSON, "json", false, "emit the classified dirt report as JSON")
 	return cmd
+}
+
+func renderScopedDirt(cmd *cobra.Command, change string, repos []scopedDirt, asJSON bool) error {
+	total, blocking := 0, 0
+	for _, repo := range repos {
+		total += len(repo.Entries)
+		blocking += len(blockingDirt(repo.Entries))
+	}
+	if asJSON {
+		report := struct {
+			Change        string       `json:"change"`
+			Clean         bool         `json:"clean"`
+			BlockingClose int          `json:"blocking_close"`
+			Repositories  []scopedDirt `json:"repositories"`
+		}{change, total == 0, blocking, repos}
+		b, err := json.MarshalIndent(report, "", "  ")
+		if err != nil {
+			return err
+		}
+		fmt.Fprintln(cmd.OutOrStdout(), string(b))
+		return nil
+	}
+	if total == 0 {
+		fmt.Fprintln(cmd.OutOrStdout(), "clean: no uncommitted paths")
+		return nil
+	}
+	for _, repo := range repos {
+		for _, e := range repo.Entries {
+			fmt.Fprintf(cmd.OutOrStdout(), "%s: %s %s (%s)\n", repo.Name, e.Status, e.Path, e.Class)
+		}
+	}
+	fmt.Fprintf(cmd.OutOrStdout(), "%d uncommitted path(s), %d blocking close\n", total, blocking)
+	return nil
 }

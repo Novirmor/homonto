@@ -103,9 +103,33 @@ func newState() *State { return &State{Managed: map[string]map[string]Entry{}} }
 
 func file(dir string) string { return filepath.Join(dir, "state.json") }
 
+// namedFile is the per-repo state partition (ADR 0024 stage 2): a repo's
+// adapter records its keys in <dir>/state.<name>.json so pruning and adoption
+// stay scoped to that repository, never crossing into the config repo's
+// state.json or another repo's partition.
+func namedFile(dir, name string) string {
+	return filepath.Join(dir, "state."+name+".json")
+}
+
+// LoadNamed reads <dir>/state.<name>.json, returning an empty State if the
+// file is absent — the partition shape of Load.
+func LoadNamed(dir, name string) (*State, error) {
+	return loadAt(namedFile(dir, name))
+}
+
+// SaveNamed writes the state partition atomically, creating dir if needed —
+// the partition shape of Save.
+func (s *State) SaveNamed(dir, name string) error {
+	return s.saveAt(namedFile(dir, name))
+}
+
 // Load reads <dir>/state.json, returning an empty State if the file is absent.
 func Load(dir string) (*State, error) {
-	data, err := os.ReadFile(file(dir))
+	return loadAt(file(dir))
+}
+
+func loadAt(path string) (*State, error) {
+	data, err := os.ReadFile(path)
 	if errors.Is(err, os.ErrNotExist) {
 		return newState(), nil
 	}
@@ -129,12 +153,16 @@ func Load(dir string) (*State, error) {
 // needed. state.json is one of homonto's own control-plane files, so it is
 // written no-follow (a symlinked target is refused, never followed) at 0600.
 func (s *State) Save(dir string) error {
+	return s.saveAt(file(dir))
+}
+
+func (s *State) saveAt(path string) error {
 	s.SchemaVersion = CurrentStateSchemaVersion
 	data, err := json.MarshalIndent(s, "", "  ")
 	if err != nil {
 		return err
 	}
-	return fsutil.WriteControlPlane(file(dir), data, 0o600)
+	return fsutil.WriteControlPlane(path, data, 0o600)
 }
 
 // Set records the unresolved desired value and the applied-value hash for a key.

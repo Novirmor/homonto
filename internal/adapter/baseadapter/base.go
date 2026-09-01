@@ -30,10 +30,17 @@ import (
 // config into one target tool's files. The Claude and OpenCode adapters embed
 // Base and keep only their tool-specific overrides.
 type Base struct {
-	// Tool is the adapter's tool identifier ("claude" or "opencode"); it is
-	// the prefix the state, fileproj, copyproj, and resourcepath namespaces
-	// key on.
+	// Tool is the adapter's tool identifier ("opencode"); it is the prefix
+	// the state, fileproj, copyproj, and resourcepath namespaces key on.
 	Tool string
+
+	// RepoName, when set, puts the adapter in repo mode (ADR 0024 stage 2):
+	// it projects ONLY repo-tagged project-scoped resources into the repo's
+	// .opencode/ tree, skips every global namespace (settings, user-scope
+	// MCPs, TUI, plugins — those belong to the config repo's adapter), and
+	// Name() reports "<tool>@<repo>" so plans and warnings attribute per
+	// repository. "" is the ordinary config-repo adapter.
+	RepoName string
 
 	// VariantSuffix is the per-tool rendered subagent variant suffix
 	// (".claude.md" or ".opencode.md"). When non-empty, subagentSource prefers
@@ -54,8 +61,20 @@ type Base struct {
 	Subagents []config.NamedResource
 }
 
-// Name returns the adapter's tool identifier, satisfying adapter.Adapter.
-func (b *Base) Name() string { return b.Tool }
+// Name returns the adapter's identifier, satisfying adapter.Adapter: the
+// plain tool id for the config-repo adapter, "<tool>@<repo>" in repo mode so
+// plans, warnings, and state-file matching attribute per repository.
+func (b *Base) Name() string {
+	if b.RepoName != "" {
+		return b.Tool + "@" + b.RepoName
+	}
+	return b.Tool
+}
+
+// InRepo reports whether the adapter runs in repo mode targeting repo.
+func (b *Base) InRepo(repo string) bool {
+	return b.RepoName == repo
+}
 
 // ManagedRoots returns every content root homonto owns links into. CatalogRoot,
 // CommandCatalogRoot, and SubagentCatalogRoot are included only when set:
@@ -313,23 +332,37 @@ func (b *Base) copyPruneRoots() []string {
 
 // Expand resolves the config's skill/command/subagent entries for this tool
 // into the Base's instance fields. Both Plan and Apply call it first so Apply's
-// file entries derive from the supplied config rather than a prior Plan.
+// file entries derive from the supplied config rather than a prior Plan. In
+// repo mode only the entries tagged with this adapter's repo resolve — the
+// config-repo adapter sees exactly the untagged ones, so no resource is
+// projected twice or into the wrong repository.
 func (b *Base) Expand(c *config.Config) error {
+	inRepo := func(entries []config.NamedResource) []config.NamedResource {
+		// Exact match both ways: the config-repo adapter (RepoName "")
+		// excludes repo-tagged entries; a repo adapter sees only its own.
+		var out []config.NamedResource
+		for _, e := range entries {
+			if e.Repo == b.RepoName {
+				out = append(out, e)
+			}
+		}
+		return out
+	}
 	skills, err := c.ExpandedSkillEntriesForTool(b.Tool)
 	if err != nil {
 		return err
 	}
-	b.Skills = skills
+	b.Skills = inRepo(skills)
 	commands, err := c.ExpandedCommandEntriesForTool(b.Tool)
 	if err != nil {
 		return err
 	}
-	b.Commands = commands
+	b.Commands = inRepo(commands)
 	subagents, err := c.ExpandedSubagentEntriesForTool(b.Tool)
 	if err != nil {
 		return err
 	}
-	b.Subagents = subagents
+	b.Subagents = inRepo(subagents)
 	return nil
 }
 

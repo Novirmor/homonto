@@ -66,8 +66,11 @@ plus `/to-plan`, `/to-do`, `/to-done`, and `/to-no-slop`.
 Each change is a directory `docs/tasks/<name>/` holding `to-state.yaml`
 (written **only** by the binary) and `plan.md` (written by the agent during
 plan). Finished changes move to `docs/tasks/archive/<date>-<name>/`; the date
-prefix frees the name for reuse. `to` is **git-blind**: it never inspects
-branches, worktrees, or dirt; branch-per-change is skill advice, not a gate.
+prefix frees the name for reuse. By default `to` is git-blind. For one change
+spanning declared repositories, create it in the config repo with repeatable
+`--repo` aliases, for example `to new release --repo api --repo web`. The
+state and plan still live only in the config repo; before `to done`, the
+config repo and each selected repo must be clean and Git-readable.
 
 ## The plan contract
 

@@ -113,6 +113,33 @@ if "$TO" phase feat-a >/dev/null 2>&1; then fail "phase must refuse on an archiv
 "$TO" abandon feat-a >/dev/null
 ok "feat-a done + evidence recorded; name reusable"
 
+log "scoped change records declared repos and refuses done while one is dirty"
+git init >/dev/null
+git config user.email e2e@example.com
+git config user.name E2E
+git add -A && git commit -m "workflow baseline" >/dev/null
+SVC="$(mktemp -d)"
+git -C "$SVC" init >/dev/null
+git -C "$SVC" config user.email e2e@example.com
+git -C "$SVC" config user.name E2E
+printf 'baseline\n' > "$SVC/tracked"
+git -C "$SVC" add -A && git -C "$SVC" commit -m init >/dev/null
+printf '\n[repos]\nservice = "%s"\n' "$SVC" >> homonto.toml
+git add homonto.toml && git commit -m "declare service" >/dev/null
+"$TO" new coordinated --repo service >/dev/null
+in_file "$W/docs/tasks/coordinated/to-state.yaml" 'repos:'
+in_file "$W/docs/tasks/coordinated/to-state.yaml" 'service'
+[ ! -e "$SVC/docs/tasks" ] || fail "scoped workflow files must stay in config repo"
+git add -A && git commit -m "open coordinated change" >/dev/null
+"$TO" phase coordinated >/dev/null
+git add -A && git commit -m "enter coordinated do" >/dev/null
+printf 'dirty\n' > "$SVC/dirty"
+if "$TO" done coordinated --verified >/dev/null 2>&1; then fail "dirty selected repo must block to done"; fi
+git -C "$SVC" add -A && git -C "$SVC" commit -m clean >/dev/null
+"$TO" done coordinated --verified >/dev/null
+[ -n "$(find "$W/docs/tasks/archive" -maxdepth 1 -name '*-coordinated' -type d)" ] || fail "clean scoped change was not archived"
+ok "scoped state stays designated and selected repo dirt gates done"
+
 log "abandon is the terminal exit without done"
 "$TO" new feat-b >/dev/null
 "$TO" abandon feat-b >/dev/null

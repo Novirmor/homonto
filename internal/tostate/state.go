@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"gopkg.in/yaml.v3"
 )
@@ -31,7 +32,9 @@ var validPhases = map[string]bool{
 	PhaseAbandoned: true,
 }
 
-// State is the entire schema. No git facts (the binary is git-blind).
+// State is the entire schema. Git facts are never persisted: Repos records
+// only the optional declared-repo scope, while live git state is inspected at
+// the terminal gate.
 // Verified is a self-asserted checkbox, not a guarantee; Evidence is the
 // optional text asserted alongside it (`to done --evidence`), recorded
 // verbatim and never checked — it makes a real verification distinguishable
@@ -43,6 +46,8 @@ type State struct {
 	Finished string `yaml:"finished,omitempty" json:"finished,omitempty"`
 	Verified bool   `yaml:"verified,omitempty" json:"verified,omitempty"`
 	Evidence string `yaml:"evidence,omitempty" json:"evidence,omitempty"`
+	// Repos lists selected [repos] names. The config repository is implicit.
+	Repos []string `yaml:"repos,omitempty" json:"repos,omitempty"`
 }
 
 // Validate checks the minimal shape: a change name and a known phase.
@@ -52,6 +57,13 @@ func (s State) Validate() error {
 	}
 	if !validPhases[s.Phase] {
 		return fmt.Errorf("to-state: phase %q is not one of plan|do|done|abandoned", s.Phase)
+	}
+	seenRepos := map[string]bool{}
+	for _, repo := range s.Repos {
+		if strings.TrimSpace(repo) == "" || seenRepos[repo] {
+			return fmt.Errorf("to-state: repos must contain unique non-empty declared repo names")
+		}
+		seenRepos[repo] = true
 	}
 	return nil
 }

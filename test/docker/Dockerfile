@@ -1,5 +1,5 @@
 # Triple-binary end-to-end image: builds the real homonto, onto, and to binaries
-# and runs five diagnosable suites against a throwaway $HOME inside the container,
+# and runs diagnosable suites against a throwaway $HOME inside the container,
 # so the host system is never touched. Built and run by scripts/docker-test.sh
 # (and CI). The release-packaging suite cross-compiles every target, so the image
 # carries zip (windows archives) and git (onto's worktree checks).

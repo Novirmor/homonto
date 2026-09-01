@@ -12,8 +12,9 @@ is what makes the assertion true before it is made.
 
 - `to status --json` shows the change at `phase: do` with every plan task
   checked.
-- The working tree is committed (the binary is git-blind and won't check —
-  you do).
+- For an unscoped change, commit the working tree before completion. For a
+  change created with `--repo`, commit the config repo and every selected
+  declared repo: `to done` enforces that terminal gate.
 
 ## Steps
 

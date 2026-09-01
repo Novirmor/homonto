@@ -89,6 +89,19 @@ func collectFindings(root string) ([]string, error) {
 			findings = append(findings, fmt.Sprintf("%s: terminal (%s) but still active — an interrupted archive; re-run `%s` to complete it", name, st.Phase, verb))
 			continue
 		}
+		if len(st.Repos) > 0 {
+			if _, err := worktreeDirty(root); err != nil {
+				findings = append(findings, fmt.Sprintf("%s: config repo is not a usable git worktree", name))
+			} else if names, dirs, err := scopeDirs(root, st.Repos); err != nil {
+				findings = append(findings, fmt.Sprintf("%s: cross-repo scope unavailable: %v", name, err))
+			} else {
+				for _, repo := range names {
+					if _, err := worktreeDirty(dirs[repo]); err != nil {
+						findings = append(findings, fmt.Sprintf("%s: declared repo %s is not a usable git worktree", name, repo))
+					}
+				}
+			}
+		}
 		plan, err := os.ReadFile(planPath(root, name))
 		if err != nil {
 			findings = append(findings, name+": plan.md is missing")

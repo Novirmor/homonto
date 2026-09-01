@@ -71,6 +71,12 @@ func runDone(cmd *cobra.Command, root, name string, verified bool, evidence stri
 	default:
 		return fmt.Errorf("to done: change %q is %s, which is terminal", name, st.Phase)
 	}
+	// Cross-repo changes are terminal only when every selected worktree is
+	// determinably clean. The config repo is implicit; unscoped legacy changes
+	// preserve to's historical git-blind completion behavior.
+	if err := requireCleanScope(root, st.Repos); err != nil {
+		return fmt.Errorf("to done: cannot finish cross-repo change %q: %w", name, err)
+	}
 
 	var dest string
 	if completed {

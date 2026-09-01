@@ -204,18 +204,15 @@ func runAdvance(cmd *cobra.Command, root, name string) error {
 		}
 	}
 
-	dirt, determinable := worktreeDirt(root, name)
 	if next == "close" {
-		if !determinable {
-			return fmt.Errorf("onto advance: cannot verify worktree is clean; refusing close")
+		dirt, err := scopedWorktreeDirt(root, name, st.Repos)
+		if err != nil {
+			return fmt.Errorf("onto advance: cannot verify scoped worktrees; refusing close: %w", err)
 		}
-		// Only this change's own artifacts and source paths block; another
-		// active change's uncommitted docs are its own close gate's problem —
-		// parallel changes must not deadlock each other (see worktreeDirt).
-		if blocking := blockingDirt(dirt); len(blocking) > 0 {
-			return fmt.Errorf("onto advance: dirty worktree blocks close: %s", dirtGateError(blocking, len(dirt), name))
+		if msg := scopedDirtGateError(dirt, name); msg != "" {
+			return fmt.Errorf("onto advance: dirty worktree blocks close: %s", msg)
 		}
-	} else if len(dirt) > 0 {
+	} else if dirt, determinable := worktreeDirt(root, name); determinable && len(dirt) > 0 {
 		fmt.Fprintf(cmd.ErrOrStderr(), "warning: worktree has %d uncommitted path(s) (run `onto dirt %s` to classify)\n", len(dirt), name)
 	}
 

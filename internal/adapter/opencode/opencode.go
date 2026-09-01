@@ -5,9 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"slices"
 	"sort"
-	"strings"
 
 	"github.com/noviopenworks/homonto/internal/adapter"
 	"github.com/noviopenworks/homonto/internal/adapter/baseadapter"
@@ -107,12 +105,7 @@ func (a *Adapter) tuiFile() string {
 // mcpValue renders one declared server as OpenCode's mcp entry, or ok=false
 // when there is nothing runnable to project for this tool.
 func mcpValue(m config.MCP) (string, bool) {
-	if !slices.Contains(m.TargetsOrAll(), "opencode") {
-		return "", false
-	}
-	// No command means nothing runnable to project (matches claude's
-	// adapter); writing `command: []` would just break the tool.
-	if len(m.Command) == 0 {
+	if !baseadapter.MCPProjected(m, "opencode") {
 		return "", false
 	}
 	obj := map[string]any{"type": "local", "command": m.Command, "enabled": true}
@@ -360,18 +353,6 @@ func (a *Adapter) Plan(c *config.Config, st *state.State) (adapter.ChangeSet, er
 	// same way every run. Keys are unique within a changeset.
 	sort.SliceStable(cs.Changes, func(i, j int) bool { return cs.Changes[i].Key < cs.Changes[j].Key })
 	return cs, nil
-}
-
-// filterChanges returns the subset of changes whose keys are in prefix, so each
-// structproj namespace applies only the changes it owns.
-func filterChanges(changes []adapter.Change, prefix string) []adapter.Change {
-	var out []adapter.Change
-	for _, c := range changes {
-		if strings.HasPrefix(c.Key, prefix) {
-			out = append(out, c)
-		}
-	}
-	return out
 }
 
 // ObserveHashes hashes the current on-disk value of every recorded key still

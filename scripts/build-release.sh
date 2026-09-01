@@ -53,5 +53,10 @@ done
 
 cd dist
 # One SHA256SUMS over every archive, so downloaders can verify either binary.
-sha256sum ./*.tar.gz ./*.zip > SHA256SUMS
+# sha256sum is GNU coreutils, absent on macOS runners; shasum prints the same
+# "digest  path" lines. The output format must stay identical either way —
+# downloaders check SHA256SUMS against what the other tool wrote.
+sums="sha256sum"
+command -v sha256sum >/dev/null 2>&1 || sums="shasum -a 256"
+$sums ./*.tar.gz ./*.zip > SHA256SUMS
 cat SHA256SUMS

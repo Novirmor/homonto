@@ -57,7 +57,10 @@ archive by the recorded finish. Commands that mutate a change (`new`,
 `phase`, `done`, `abandon`) take a workspace lock (`docs/tasks/.to.lock`), so
 two concurrent sessions fail fast instead of interleaving writes. `init` only
 creates the fixed directories idempotently and does not lock. A lock left by
-a killed process names its pid and is removed by hand.
+a killed process names its pid; once that pid provably no longer runs, the
+next mutating command reclaims the lock itself. A lock with no readable pid
+(a crash in the create-to-write window) is removed by hand — a live
+session's lock is never stolen.
 
 ## What `to` deliberately does not do
 

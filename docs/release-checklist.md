@@ -101,11 +101,49 @@ homonto init
 homonto plan
 homonto apply --yes
 homonto status              # expect: No drift
-homonto doctor
-onto status
-onto doctor
-to status
+homonto doctor              # warnings only (see below)
+onto status                 # expect: no active changes
+to status                   # expect: no active changes
 ```
+
+Two results here look like failures and are not:
+
+- **`homonto doctor` warns.** In a disposable `$HOME` with no editor installed
+  it reports `pass` missing from `PATH` and both tool config locations absent,
+  and — because a freshly generated `homonto.toml` declares nothing to apply —
+  `catalog upgrade pending: recorded (none)`. All four are environment facts,
+  not release defects. Read them; do not expect silence.
+- **`onto doctor` exits non-zero on an unscaffolded workspace.** A missing
+  `docs/{changes,specs,adr,guides}` layout is a documented finding, so the bare
+  command reports four problems — `onto status` and `onto doctor` are
+  config-independent and run anywhere, which is exactly why they do not imply a
+  scaffolded repo.
+
+To smoke `onto` properly you must install its framework first, because
+`onto init` is itself gated on it. That is what the "edit the generated
+`homonto.toml` minimally" step above means concretely — declare the framework
+**and** a `[subagents.<name>.<tool>]` model block for each of its five agents
+(`onto`, `onto-explorer`, `onto-reviewer`, `onto-implementer`, `onto-skeptic`),
+since a missing block fails at load:
+
+```sh
+cat >> homonto.toml <<'TOML'
+[frameworks.onto]
+source = "builtin:onto"
+scope  = "project"
+
+[subagents.onto.claude]
+model = "opus"
+# … one [subagents.<name>.<tool>] block per agent, per targeted tool
+TOML
+
+homonto apply --yes
+onto init
+onto doctor                 # expect: healthy
+```
+
+Swap `[frameworks.to]` and the four `to-*` agents to smoke `to` instead — the
+two frameworks are mutually exclusive, so a single config cannot cover both.
 
 Verify a downloaded archive's checksum matches `SHA256SUMS`:
 

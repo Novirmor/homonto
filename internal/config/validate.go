@@ -12,6 +12,8 @@ import (
 )
 
 // validate rejects a config that would project nothing or corrupt a tool file.
+// One section per helper, run in a fixed order so which error wins is
+// deterministic even for a config with several problems.
 func validate(c *Config) error {
 	// Legacy [models.<tool>.<tier>] tables were removed (D2 — no more tier
 	// routing). The TOML decoder populates the Models field on Config as a
@@ -25,28 +27,14 @@ func validate(c *Config) error {
 	if err := validateTooling(c.Tooling); err != nil {
 		return err
 	}
-	for kind, resources := range map[string]map[string]Resource{
-		"skills":   c.Skills,
-		"commands": c.Commands,
-	} {
-		if err := validateResources(kind, resources); err != nil {
-			return err
-		}
-	}
-	// Frameworks have their own source rule: builtin:<name> (expanded from the
-	// embedded catalog) or local:<path> (a local framework root). Every other
-	// source expands nothing and is rejected loudly (F35).
-	if err := validateFrameworkResources(c.Frameworks); err != nil {
+	if err := validateResources("skills", c.Skills); err != nil {
 		return err
 	}
-	// onto and to are an exclusive choice per repository: enterprise tooling
-	// vs. simple development. Their skills give conflicting process guidance
-	// and their binaries each expect to own the workflow, so declaring both
-	// is a config error, not a projection concern.
-	if _, hasOnto := c.Frameworks["onto"]; hasOnto {
-		if _, hasTo := c.Frameworks["to"]; hasTo {
-			return fmt.Errorf("parse config: [frameworks.onto] and [frameworks.to] are mutually exclusive; pick one workflow framework per repository (onto for evidence-gated enterprise changes, to for simple development)")
-		}
+	if err := validateResources("commands", c.Commands); err != nil {
+		return err
+	}
+	if err := validateFrameworks(c); err != nil {
+		return err
 	}
 	if err := validateSubagents(c.Subagents); err != nil {
 		return err
@@ -54,6 +42,46 @@ func validate(c *Config) error {
 	if err := validateModels(c); err != nil {
 		return err
 	}
+	if err := validateMCPs(c); err != nil {
+		return err
+	}
+	if err := validatePlugins(c); err != nil {
+		return err
+	}
+	if err := validateMarketplaces(c); err != nil {
+		return err
+	}
+	return validateSettingsAndTUI(c)
+}
+
+// validateFrameworks checks the framework source rule and the onto/to
+// exclusivity.
+//
+// Frameworks have their own source rule: builtin:<name> (expanded from the
+// embedded catalog) or local:<path> (a local framework root). Every other
+// source expands nothing and is rejected loudly (F35).
+//
+// onto and to are an exclusive choice per repository: enterprise tooling
+// vs. simple development. Their skills give conflicting process guidance
+// and their binaries each expect to own the workflow, so declaring both
+// is a config error, not a projection concern.
+func validateFrameworks(c *Config) error {
+	if err := validateFrameworkResources(c.Frameworks); err != nil {
+		return err
+	}
+	if _, hasOnto := c.Frameworks["onto"]; hasOnto {
+		if _, hasTo := c.Frameworks["to"]; hasTo {
+			return fmt.Errorf("parse config: [frameworks.onto] and [frameworks.to] are mutually exclusive; pick one workflow framework per repository (onto for evidence-gated enterprise changes, to for simple development)")
+		}
+	}
+	return nil
+}
+
+// validateMCPs rejects MCP entries that could not project cleanly: names
+// unusable as JSON object keys, servers with no command, targets naming no
+// adapter (a silent typo), bad scopes, and the codex project-scope
+// combination the pilot cannot honor.
+func validateMCPs(c *Config) error {
 	// Every other name becomes a key written into a tool's JSON file. sjson
 	// treats index-like segments ("0", "-1") as array positions, silently
 	// turning the containing object into a JSON ARRAY; empty names address
@@ -87,6 +115,12 @@ func validate(c *Config) error {
 			return fmt.Errorf("parse config: mcps entry %q is project-scoped but targets codex, which supports only user scope (~/.codex/config.toml)", name)
 		}
 	}
+	return nil
+}
+
+// validatePlugins rejects plugin declarations that would collide or silently
+// project nothing, for both [plugins.claude] and [plugins.opencode].
+func validatePlugins(c *Config) error {
 	for _, tool := range []struct {
 		name string
 		m    map[string]Plugin
@@ -119,9 +153,16 @@ func validate(c *Config) error {
 			seenSource[pl.Source] = declName
 		}
 	}
-	// Marketplace declarations project to extraKnownMarketplaces.<name>. Each
-	// source kind requires its locator field(s); an unknown source or a missing
-	// locator projects nothing meaningful, so fail fast naming the marketplace.
+	return nil
+}
+
+// validateMarketplaces checks that each marketplace declaration carries the
+// locator fields its source kind requires.
+//
+// Marketplace declarations project to extraKnownMarketplaces.<name>. Each
+// source kind requires its locator field(s); an unknown source or a missing
+// locator projects nothing meaningful, so fail fast naming the marketplace.
+func validateMarketplaces(c *Config) error {
 	for name, mk := range c.Marketplaces.Claude {
 		if err := validateKey("marketplaces.claude", name); err != nil {
 			return err
@@ -147,16 +188,20 @@ func validate(c *Config) error {
 			return fmt.Errorf("parse config: marketplaces.claude %q has unknown source %q; valid sources are \"github\", \"url\", \"git-subdir\", \"directory\"", name, mk.Source)
 		}
 	}
-	// Settings keys that homonto itself manages in the same tool file would
-	// collide with its own writes: claude projects plugins as `enabledPlugins`
-	// into settings.json; opencode projects MCPs and plugins as the `mcp` and
-	// `plugin` structures in opencode.jsonc. Reject those reserved names.
-	//
-	// `mcpServers` is reserved too: claude's current() deliberately skips that
-	// settings.json key when reading managed values back (MCP servers are owned
-	// via [mcps], projected into .claude.json). A settings.claude.mcpServers
-	// value would be written on apply but never read back, so every plan would
-	// re-propose it — a non-idempotent loop. Reject it up front instead.
+	return nil
+}
+
+// validateSettingsAndTUI rejects settings keys that homonto itself manages in
+// the same tool file — they would collide with its own writes: claude projects
+// plugins as `enabledPlugins` into settings.json; opencode projects MCPs and
+// plugins as the `mcp` and `plugin` structures in opencode.jsonc.
+//
+// `mcpServers` is reserved too: claude's current() deliberately skips that
+// settings.json key when reading managed values back (MCP servers are owned
+// via [mcps], projected into .claude.json). A settings.claude.mcpServers
+// value would be written on apply but never read back, so every plan would
+// re-propose it — a non-idempotent loop. Reject it up front instead.
+func validateSettingsAndTUI(c *Config) error {
 	for k := range c.Settings.Claude {
 		if err := validateKey("settings.claude", k); err != nil {
 			return err

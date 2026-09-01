@@ -1,11 +1,10 @@
 package opencode
 
 import (
-	"fmt"
-	"os"
 	"strings"
 
-	"github.com/noviopenworks/homonto/internal/jsonutil"
+	"github.com/noviopenworks/homonto/internal/adapter"
+	"github.com/noviopenworks/homonto/internal/adapter/baseadapter"
 	"github.com/tidwall/gjson"
 )
 
@@ -27,28 +26,17 @@ func trim(s, p string) string    { return strings.TrimPrefix(s, p) }
 // structproj.Project calls instead, so they are excluded here to avoid a double
 // delete.
 func managedPrefix(k string) bool {
-	for _, p := range []string{"plugin.", "skill.", "command.", "subagent."} {
-		if strings.HasPrefix(k, p) {
-			return true
-		}
-	}
-	return false
+	return baseadapter.HasAnyPrefix(k, "plugin.", "skill.", "command.", "subagent.")
 }
 
+// filterChanges returns the subset of changes whose keys are in prefix, so each
+// structproj namespace applies only the changes it owns.
+func filterChanges(changes []adapter.Change, prefix string) []adapter.Change {
+	return baseadapter.FilterChanges(changes, prefix)
+}
+
+// readStandardized reads a managed tool document normalized for the codec
+// (missing file = empty object; unparseable = error; non-object root named).
 func readStandardized(path string) ([]byte, error) {
-	b, err := os.ReadFile(path)
-	if os.IsNotExist(err) {
-		return jsonutil.Standardize(nil)
-	}
-	if err != nil {
-		return nil, err
-	}
-	doc, err := jsonutil.Standardize(b)
-	if err != nil {
-		return nil, err
-	}
-	if err := jsonutil.ObjectRoot(doc); err != nil {
-		return nil, fmt.Errorf("%s: %w", path, err)
-	}
-	return doc, nil
+	return baseadapter.ReadStandardizedJSON(path)
 }

@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"slices"
 	"sort"
 
 	"github.com/noviopenworks/homonto/internal/adapter"
@@ -114,10 +113,7 @@ func (a *Adapter) readProjectMCP() ([]byte, error) {
 // mcpValue renders one declared server as Claude's mcpServers entry, or
 // ok=false when there is nothing runnable to project for this tool.
 func mcpValue(m config.MCP) (string, bool) {
-	if !slices.Contains(m.TargetsOrAll(), "claude") {
-		return "", false
-	}
-	if len(m.Command) == 0 {
+	if !baseadapter.MCPProjected(m, "claude") {
 		return "", false
 	}
 	// Claude Code's real schema: command is a string with a separate args
@@ -624,22 +620,4 @@ func (a *Adapter) Apply(cfg *config.Config, cs adapter.ChangeSet, res *secret.Re
 		return err
 	}
 	return nil
-}
-
-func readStandardized(path string) ([]byte, error) {
-	b, err := os.ReadFile(path)
-	if os.IsNotExist(err) {
-		return jsonutil.Standardize(nil)
-	}
-	if err != nil {
-		return nil, err
-	}
-	doc, err := jsonutil.Standardize(b)
-	if err != nil {
-		return nil, err
-	}
-	if err := jsonutil.ObjectRoot(doc); err != nil {
-		return nil, fmt.Errorf("%s: %w", path, err)
-	}
-	return doc, nil
 }

@@ -4,6 +4,7 @@ import (
 	"strings"
 
 	"github.com/noviopenworks/homonto/internal/adapter"
+	"github.com/noviopenworks/homonto/internal/adapter/baseadapter"
 )
 
 func hasPrefix(s, p string) bool { return strings.HasPrefix(s, p) }
@@ -14,34 +15,23 @@ func trim(s, p string) string    { return strings.TrimPrefix(s, p) }
 // plugin./pluginconfig./marketplace.) are pruned by their structproj.Project
 // calls instead, so they are excluded here to avoid a double delete.
 func filePrefix(k string) bool {
-	for _, p := range []string{"skill.", "command.", "subagent."} {
-		if strings.HasPrefix(k, p) {
-			return true
-		}
-	}
-	return false
+	return baseadapter.HasAnyPrefix(k, "skill.", "command.", "subagent.")
 }
 
 // filterDesired returns the subset of desired values whose keys are in prefix,
 // so each structproj namespace sees only the keys it owns.
 func filterDesired(m map[string]string, prefix string) map[string]string {
-	out := map[string]string{}
-	for k, v := range m {
-		if strings.HasPrefix(k, prefix) {
-			out[k] = v
-		}
-	}
-	return out
+	return baseadapter.FilterDesired(m, prefix)
 }
 
 // filterChanges returns the subset of changes whose keys are in prefix, so each
 // structproj namespace applies only the changes it owns.
 func filterChanges(changes []adapter.Change, prefix string) []adapter.Change {
-	var out []adapter.Change
-	for _, c := range changes {
-		if strings.HasPrefix(c.Key, prefix) {
-			out = append(out, c)
-		}
-	}
-	return out
+	return baseadapter.FilterChanges(changes, prefix)
+}
+
+// readStandardized reads a managed tool document normalized for the codec
+// (missing file = empty object; unparseable = error; non-object root named).
+func readStandardized(path string) ([]byte, error) {
+	return baseadapter.ReadStandardizedJSON(path)
 }

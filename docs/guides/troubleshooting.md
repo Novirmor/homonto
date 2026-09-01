@@ -168,6 +168,8 @@ interrupted finish (a crash between the state write and the archive move).
 archive.
 
 **"another to command is in progress (lock held at …)".** A concurrent
-session holds `docs/tasks/.to.lock`, or a killed process left it behind.
-The file records the holder's pid; if nothing is running, remove it by
-hand.
+session holds `docs/tasks/.to.lock`, or a killed process left it behind. The
+file records the holder's pid; when that pid is provably no longer running,
+the next mutating `to` command reclaims the lock itself. A lock with no
+readable pid (a crash between creating the file and writing it) is the one
+case for hand removal — a live session's lock is never stolen.

@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/noviopenworks/homonto/internal/remote"
@@ -86,5 +87,46 @@ func TestRemoteStageBeforeMutateLeavesFirstIntactOnSecondFailure(t *testing.T) {
 	// bbb must never have been locked.
 	if _, ok := lock.Get("subagent", "bbb"); ok {
 		t.Fatal("failed remote bbb must not be recorded in the lock")
+	}
+}
+
+// TestRemoteParallelStageErrorIsDeterministic locks the parallel fetch's error
+// contract: remotes stage concurrently, but the reported failure is the
+// lexicographically first one — the same error the sequential loop produced —
+// regardless of which goroutine actually finished first.
+func TestRemoteParallelStageErrorIsDeterministic(t *testing.T) {
+	home := t.TempDir()
+	repo := t.TempDir()
+	fixtures := t.TempDir()
+
+	// Two remotes, both carrying wrong pins (verification fails). "aaa" sorts
+	// before "zzz", so the error must name aaa even if zzz's goroutine fails
+	// first.
+	tarA := buildSubagentTarGz(t, fixtures, "aaa", "# A content")
+	tarZ := buildSubagentTarGz(t, fixtures, "zzz", "# Z content")
+	wrong := "sha256:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+	cfgPath := filepath.Join(repo, "homonto.toml")
+	cfg := "[subagents.aaa]\nsource=\"remote:file://" + tarA + "\"\ndigest=\"" + wrong + "\"\nscope=\"project\"\ntargets=[\"opencode\"]\n" +
+		"[subagents.zzz]\nsource=\"remote:file://" + tarZ + "\"\ndigest=\"" + wrong + "\"\nscope=\"project\"\ntargets=[\"opencode\"]\n" + remoteModels
+	if err := os.WriteFile(cfgPath, []byte(cfg), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	e, err := Build(context.Background(), cfgPath, home, filepath.Join(repo, "content"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	sets, err := e.Plan()
+	if err != nil {
+		t.Fatal(err)
+	}
+	err = e.Apply(context.Background(), sets)
+	if err == nil {
+		t.Fatal("apply must fail closed when a remote fails verification")
+	}
+	if !strings.Contains(err.Error(), `"aaa"`) {
+		t.Errorf("parallel stage error = %v, want it to name the sorted-first failing remote \"aaa\"", err)
+	}
+	if strings.Contains(err.Error(), `"zzz"`) {
+		t.Errorf("parallel stage error = %v, must report one deterministic offender, not zzz", err)
 	}
 }

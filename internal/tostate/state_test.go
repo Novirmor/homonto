@@ -3,6 +3,7 @@ package tostate
 import (
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 )
@@ -11,7 +12,7 @@ func TestSaveLoadRoundTrip(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "nested", FileName)
 
-	want := State{Change: "my-change", Phase: PhasePlan, Created: "2026-07-18"}
+	want := State{Change: "my-change", Phase: PhasePlan, Created: "2026-07-18", Repos: []string{"api", "web"}}
 	if err := Save(path, want); err != nil {
 		t.Fatalf("Save: %v", err)
 	}
@@ -20,7 +21,7 @@ func TestSaveLoadRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Load: %v", err)
 	}
-	if got != want {
+	if !reflect.DeepEqual(got, want) {
 		t.Errorf("Load = %+v, want %+v", got, want)
 	}
 
@@ -40,6 +41,8 @@ func TestValidate(t *testing.T) {
 		{"valid terminal", State{Change: "x", Phase: PhaseAbandoned, Finished: "2026-07-18"}, ""},
 		{"missing change", State{Phase: PhasePlan}, "change is required"},
 		{"unknown phase", State{Change: "x", Phase: "build"}, "plan|do|done|abandoned"},
+		{"duplicate repos", State{Change: "x", Phase: PhasePlan, Repos: []string{"api", "api"}}, "unique non-empty"},
+		{"empty repo", State{Change: "x", Phase: PhasePlan, Repos: []string{""}}, "unique non-empty"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

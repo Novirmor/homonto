@@ -27,6 +27,7 @@ phase: open                # open | design | build | verify | close
 created: YYYY-MM-DD
 base_ref: <git rev-parse HEAD, captured when open creates the workspace>
 deps: []                   # change names that must archive before this builds
+repos: []                  # selected declared [repos] aliases; config repo is implicit
 supersedes: []             # change names this change replaces (ungated, traceability)
 deviates_from: []          # targets this change knowingly diverges from (ungated)
 isolation: null            # branch | worktree (required before entering build)
@@ -76,6 +77,10 @@ observed:                  # observational only — never a gate, never blocking
   never bare suffix). The dispatcher warns before resuming a change whose deps
   are not all archived; a dep matching no active or archived change, a self-dep,
   or a dep cycle reaching this change are findings to correct or drop.
+- `repos` is set only by `onto new --repo <declared-name>` and names sibling
+  repositories from `homonto.toml`; it never stores paths. The config repo is
+  implicit. Before close, `onto` audits that repo plus every selected sibling;
+  any dirty or unavailable selected worktree fails the close gate.
 - `close.merged` is set exclusively by `onto merge-deltas` after the spec deltas
   merge and lint clean. Do not set it by hand — `onto set close-merged` exists
   for recovery but bypasses the actual merge.

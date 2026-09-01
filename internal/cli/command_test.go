@@ -78,9 +78,8 @@ func TestPlanReportsMissingConfig(t *testing.T) {
 }
 
 // TestPlanNamesDeclaredRepos verifies the plan context block (ADR 0024 stage
-// 1): a config with [repos] lists every declared repo by name and resolved
-// path, with the disclosure that projection still targets the config repo —
-// and the JSON output carries the same facts.
+// 2): a config with [repos] lists every declared repo by name and resolved
+// path, with the projection rule disclosed before its changesets.
 func TestPlanNamesDeclaredRepos(t *testing.T) {
 	home := t.TempDir()
 	repo := t.TempDir()
@@ -106,7 +105,7 @@ func TestPlanNamesDeclaredRepos(t *testing.T) {
 	if !strings.Contains(got, "repos (") || !strings.Contains(got, "service-a") || !strings.Contains(got, svc) {
 		t.Errorf("plan should name the declared repo and its path:\n%s", got)
 	}
-	if !strings.Contains(got, "cross-repo effect is a later stage") {
-		t.Errorf("plan must disclose that projection still targets the config repo only:\n%s", got)
+	if !strings.Contains(got, "repo-tagged project resources project only into their named repo") {
+		t.Errorf("plan must disclose the per-repo projection rule:\n%s", got)
 	}
 }

@@ -16,6 +16,10 @@ type MCP struct {
 	Command []string          `toml:"command"`
 	Env     map[string]string `toml:"env"`
 	Targets []string          `toml:"targets"`
+	// Repo optionally targets this server at a declared repository's
+	// project-level opencode.jsonc instead of the config repo's (ADR 0024
+	// stage 2). Requires scope = "project" and a name declared under [repos].
+	Repo string `toml:"repo"`
 	// Scope selects where the server projects: "user" (default) → the global
 	// tool config; "project" → the project-level config the tool merges over
 	// it (OpenCode <repo>/opencode.jsonc), so a repository's servers don't
@@ -50,6 +54,12 @@ type Resource struct {
 	Source  string   `toml:"source"`
 	Scope   string   `toml:"scope"`
 	Targets []string `toml:"targets"`
+	// Repo optionally targets this resource at a declared repository instead
+	// of the config repo (ADR 0024 stage 2): the skill/command installs its
+	// link under that repo's .opencode/ tree. Requires scope = "project" and
+	// a name declared under [repos]. Frameworks do not take repo (their
+	// projection is config-repo only).
+	Repo string `toml:"repo"`
 	// Digest is the sha256 content pin required when Source is a remote: source.
 	Digest string `toml:"digest"`
 }
@@ -69,6 +79,10 @@ func (r Resource) TargetsOrAll() []string {
 type NamedResource struct {
 	Name     string
 	Resource Resource
+	// Repo names the declared repository this entry targets ("" = the config
+	// repo). Populated by the entry methods from the declared repo field so
+	// the engine can fan out per-repo adapters (ADR 0024 stage 2).
+	Repo string
 	// Mode is the subagent projection mode ("link"|"copy"); empty means link and
 	// is the only value skills/commands ever carry. It lets the adapters route a
 	// copy-mode subagent to the content-file path instead of the symlink path.
@@ -84,8 +98,12 @@ type Subagent struct {
 	Source  string   `toml:"source"`
 	Scope   string   `toml:"scope"`
 	Targets []string `toml:"targets"`
-	Mode    string   `toml:"mode"`
-	Version string   `toml:"version"`
+	// Repo optionally targets this subagent at a declared repository instead
+	// of the config repo (ADR 0024 stage 2). Requires scope = "project"
+	// (the default) and a name declared under [repos].
+	Repo    string `toml:"repo"`
+	Mode    string `toml:"mode"`
+	Version string `toml:"version"`
 	// Digest is the sha256 content pin ("sha256:<hex>") required when Source is a
 	// remote: source and unused otherwise.
 	Digest string `toml:"digest"`
@@ -360,7 +378,7 @@ func (c *Config) SubagentEntriesForTool(tool string) []NamedResource {
 			continue
 		}
 		if slices.Contains(s.TargetsOrAll(), tool) {
-			out = append(out, NamedResource{Name: name, Resource: s.asResource(), Mode: s.ModeOrDefault()})
+			out = append(out, NamedResource{Name: name, Resource: s.asResource(), Repo: s.Repo, Mode: s.ModeOrDefault()})
 		}
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].Name < out[j].Name })

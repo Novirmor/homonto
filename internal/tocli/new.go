@@ -16,6 +16,7 @@ func newCmd() *cobra.Command {
 	var (
 		dir      string
 		jsonMode bool
+		repos    []string
 	)
 
 	cmd := &cobra.Command{
@@ -23,20 +24,41 @@ func newCmd() *cobra.Command {
 		Short: "Create a new change (phase plan), if the to framework is installed",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return runNew(cmd, dir, args[0], jsonMode)
+			return runNewWithRepos(cmd, dir, args[0], jsonMode, repos)
 		},
 	}
 	cmd.Flags().StringVar(&dir, "dir", ".", "workspace root to create the change in")
 	cmd.Flags().BoolVar(&jsonMode, "json", false, "emit the result as JSON")
+	cmd.Flags().StringSliceVar(&repos, "repo", nil, "declared repository to include (repeatable)")
 	return cmd
 }
 
 func runNew(cmd *cobra.Command, root, name string, jsonMode bool) error {
+	return runNewWithRepos(cmd, root, name, jsonMode, nil)
+}
+
+// runNewWithRepos records a selected cross-repo scope without creating any
+// workflow files outside the config repository.
+func runNewWithRepos(cmd *cobra.Command, root, name string, jsonMode bool, repos []string) error {
 	if err := toFramework.Gate(root); err != nil {
 		return err
 	}
 	if err := toFramework.ValidChangeName(name); err != nil {
 		return err
+	}
+	names, dirs, err := scopeDirs(root, repos)
+	if err != nil {
+		return fmt.Errorf("to new: %w", err)
+	}
+	if len(names) > 0 {
+		if _, err := worktreeDirty(root); err != nil {
+			return fmt.Errorf("to new: %w", err)
+		}
+		for _, repo := range names {
+			if _, err := worktreeDirty(dirs[repo]); err != nil {
+				return fmt.Errorf("to new: declared repo %q is not a usable git worktree", repo)
+			}
+		}
 	}
 	unlock, err := lock(root)
 	if err != nil {
@@ -58,6 +80,7 @@ func runNew(cmd *cobra.Command, root, name string, jsonMode bool) error {
 		Change:  name,
 		Phase:   tostate.PhasePlan,
 		Created: todayFn(),
+		Repos:   names,
 	}
 	if err := tostate.Save(statePath(root, name), st); err != nil {
 		return fmt.Errorf("to new: %w", err)

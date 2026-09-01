@@ -80,6 +80,7 @@ scope   = "project"                         # optional; user (default) | project
 | `env` | table of strings | no | values may hold `${pass:…}` / `${ENV_VAR}` references — never plaintext secrets |
 | `targets` | array | no | default: every tool; `"opencode"` is the only valid value |
 | `scope` | string | no | `user` (default) → global tool config; `project` → the project-level config the tool merges over it |
+| `repo` | string | no | a declared `[repos]` name; requires `scope = "project"` and writes only that repo's project config |
 
 Projection at user scope: OpenCode global `opencode.jsonc` `mcp`
 (`type: local`). At project scope: OpenCode `<repo>/opencode.jsonc` `mcp` —
@@ -101,6 +102,7 @@ targets = ["opencode"]       # optional; default: every tool
 | `source` | string | **yes** | `local:<name>` or `builtin:<name>` |
 | `scope` | string | **yes** | `user` → `~/.config/opencode/skills/`; `project` → `<repo>/.opencode/skills/` |
 | `targets` | array | no | default: every tool |
+| `repo` | string | no | a declared `[repos]` name; requires `scope = "project"` and links only into that repo |
 
 Skills are **symlinked**, not copied, so editing `homonto/skills/<name>/` is
 instantly live in every tool. Switching a skill's `scope` relocates the link
@@ -189,12 +191,19 @@ service-a = "../service-a"
 service-b = "../libs/service-b"
 ```
 
-Stage 1 (this release) is declarative context: all state — `.homonto/`,
-onto's `docs/changes/`, `to`'s `docs/tasks/` — stays in the **config repo**
-(the designated place), `homonto plan` names every declared repo, `homonto
-doctor` reports each one's health, and `onto init` / `to init` state the
-designated-home scope. Cross-repo projection and cross-repo workflow changes
-are staged after it; nothing writes outside the config repo yet.
+The config repository remains the designated state home: `.homonto/`,
+onto's `docs/changes/`, and `to`'s `docs/tasks/` stay there. `homonto plan`
+names every declared repo and `homonto doctor` reports each one's health.
+
+For a project-scoped skill, command, subagent, or MCP, `repo = "<name>"`
+projects that one resource into the named declared repo. A repo-tagged skill,
+command, or subagent links under that repo's `.opencode/`; a repo-tagged MCP
+writes that repo's `opencode.jsonc`. The config repo receives untagged
+project-scoped resources. User-scoped resources, settings, TUI configuration,
+plugins, and frameworks cannot target another repo. Each declared repo has a
+separate `.homonto/state.<name>.json` partition in the config repo, so prune,
+adoption, and drift remain isolated; `status` labels findings as
+`opencode@<name>`.
 
 Framework-declared commands and subagents project exactly like top-level
 ones. Do **not** also declare a framework's subagent in a `[subagents.*]`

@@ -15,6 +15,17 @@ bookkeeper) — for every supported OS/arch as separate archives under one
 `SHA256SUMS`. `onto` and `to` each require `homonto` to have installed their
 framework first (`[frameworks.onto]` / `[frameworks.to]` + `homonto apply`).
 
+### New in v0.13.0 — OpenCode-only and designated multi-repo work
+
+- **OpenCode is the sole adapter.** Claude Code and codex configuration now
+  fail closed with a migration error instead of projecting stale support.
+- **Declared repos are real effect targets.** Repo-tagged project resources
+  project into the named declared repository with isolated state and
+  per-repository drift reporting; undeclared siblings remain untouched.
+- **Scoped workflow gates.** `onto new` and `to new` accept `--repo` aliases.
+  Workflow state stays in the config repo, while selected repositories must be
+  Git-clean before `onto` close or `to` done can complete.
+
 ### New in v0.12.0 — a self-healing workspace lock, honest release notes
 
 A maintenance release over v0.11.0: one user-visible behavior change, two

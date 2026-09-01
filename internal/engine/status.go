@@ -67,6 +67,30 @@ func (e *Engine) Status() (drift []string, pending int, err error) {
 			}
 		}
 	}
+	// Per-repo attribution (ADR 0024 stage 2): each declared repository's
+	// partition is observed and labeled with its adapter's name, so drift and
+	// pending report WHICH repository a finding belongs to. State keys inside a
+	// partition live under the plain tool id; the partition file is the scope.
+	for _, t := range e.RepoTargets {
+		observed, oerr := t.Adapter.ObserveHashes(t.State)
+		if oerr != nil {
+			e.Warnings = append(e.Warnings, fmt.Sprintf("%s drift skipped: %v", t.Adapter.Name(), oerr))
+			continue
+		}
+		for _, key := range t.State.Keys("opencode") {
+			h, ok := observed[key]
+			if !ok {
+				drift = append(drift, fmt.Sprintf("%s %s missing (deleted out of band)", t.Adapter.Name(), key))
+				mark(t.Adapter.Name(), key)
+				continue
+			}
+			entry, _ := t.State.Get("opencode", key)
+			if h != entry.Applied {
+				drift = append(drift, fmt.Sprintf("%s %s drifted (will reset on apply)", t.Adapter.Name(), key))
+				mark(t.Adapter.Name(), key)
+			}
+		}
+	}
 
 	for _, cs := range sets {
 		for _, c := range cs.Changes {
@@ -109,7 +133,7 @@ func (e *Engine) Doctor() []string {
 	// Declared [repos] are load-validated; doctor re-reports the current
 	// filesystem facts (a repo deleted or de-git'd after load is a finding,
 	// not a silent pass) — ADR 0024 stage 1.
-	for _, name := range sortedRepos(e.Cfg.RepoDirs()) {
+	for _, name := range sortedRepoNames(e.Cfg.RepoDirs()) {
 		dir := e.Cfg.RepoDirs()[name]
 		if info, err := os.Stat(dir); err != nil || !info.IsDir() {
 			out = append(out, fmt.Sprintf("warn: declared repo %s: %s is missing (was present at load)", name, dir))
@@ -318,15 +342,4 @@ func (e *Engine) doctorSubagents(tool string, entries []config.NamedResource) []
 			return filepath.Join(resourcepath.Dir(resourcepath.Subagent, tool, entry.Resource.Scope, e.Home, e.ProjectRoot), entry.Name+".md")
 		},
 	})
-}
-
-// sortedRepos returns the declared repo names in deterministic order, so
-// doctor findings list repos the same way every run.
-func sortedRepos(repos map[string]string) []string {
-	names := make([]string, 0, len(repos))
-	for name := range repos {
-		names = append(names, name)
-	}
-	sort.Strings(names)
-	return names
 }

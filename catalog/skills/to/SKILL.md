@@ -24,7 +24,9 @@ and nothing more: never hand-edit `.homonto/`, `to-state.yaml` outside `to`
 commands, or the projected `.opencode/` links (when projection looks wrong,
 `homonto status` and `homonto doctor` diagnose, `homonto apply` fixes); a
 sibling repository declared under `[repos]` never moves this workflow's
-files — `docs/tasks/` and all state stay in the config repository; and onto
+files — `docs/tasks/` and all state stay in the config repository. A change
+that spans siblings is created once with `to new <name> --repo <declared-name>`;
+the selected aliases become a terminal `to done` clean-worktree gate; and onto
 is the heavier sibling framework (evidence-gated open → design → build →
 verify → close) — a repository declares exactly one of the two, and wanting
 more ceremony mid-change is a scoping question, not a framework switch.

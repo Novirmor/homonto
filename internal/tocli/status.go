@@ -13,11 +13,12 @@ import (
 // when a change directory exists but its state is missing or malformed —
 // status reports it rather than failing the whole listing.
 type statusEntry struct {
-	Change   string `json:"change"`
-	Phase    string `json:"phase,omitempty"`
-	Created  string `json:"created,omitempty"`
-	Verified bool   `json:"verified,omitempty"`
-	Error    string `json:"error,omitempty"`
+	Change   string   `json:"change"`
+	Phase    string   `json:"phase,omitempty"`
+	Created  string   `json:"created,omitempty"`
+	Verified bool     `json:"verified,omitempty"`
+	Repos    []string `json:"repos,omitempty"`
+	Error    string   `json:"error,omitempty"`
 }
 
 // statusCmd builds "to status": read-only and config-independent — it never
@@ -49,7 +50,11 @@ func statusCmd() *cobra.Command {
 					cmd.Printf("%s\tinvalid\t%s\n", e.Change, e.Error)
 					continue
 				}
-				cmd.Printf("%s\t%s\n", e.Change, e.Phase)
+				if len(e.Repos) == 0 {
+					cmd.Printf("%s\t%s\n", e.Change, e.Phase)
+					continue
+				}
+				cmd.Printf("%s\t%s\trepos=%v\n", e.Change, e.Phase, e.Repos)
 			}
 			return nil
 		},
@@ -90,6 +95,7 @@ func collectStatus(root string) ([]statusEntry, error) {
 			Phase:    st.Phase,
 			Created:  st.Created,
 			Verified: st.Verified,
+			Repos:    st.Repos,
 		})
 	}
 	sort.Slice(entries, func(i, j int) bool { return entries[i].Change < entries[j].Change })

@@ -107,6 +107,11 @@ type State struct {
 	Created  string   `yaml:"created,omitempty" json:"created,omitempty"`
 	BaseRef  string   `yaml:"base_ref,omitempty" json:"base_ref,omitempty"`
 	Deps     []string `yaml:"deps,omitempty" json:"deps,omitempty"`
+	// Repos is the optional cross-repo scope for this change. Entries are
+	// declared [repos] names; the config repository is implicit and is never
+	// listed. Paths deliberately stay in homonto.toml so a workflow record does
+	// not preserve stale filesystem locations.
+	Repos []string `yaml:"repos,omitempty" json:"repos,omitempty"`
 	// Supersedes lists change names this change replaces/obsoletes (a traceability
 	// relationship surfaced by `onto graph`). Ungated: never blocks a transition.
 	Supersedes []string `yaml:"supersedes,omitempty" json:"supersedes,omitempty"`
@@ -215,6 +220,13 @@ func (s State) Validate() error {
 	}
 	if !ValidGuides(s.Guides) {
 		return fmt.Errorf("onto-state: guides %q is not one of pending|updated|waived:<reason>", s.Guides)
+	}
+	seenRepos := map[string]bool{}
+	for _, repo := range s.Repos {
+		if strings.TrimSpace(repo) == "" || seenRepos[repo] {
+			return fmt.Errorf("onto-state: repos must contain unique non-empty declared repo names")
+		}
+		seenRepos[repo] = true
 	}
 	return nil
 }

@@ -279,7 +279,7 @@ func entriesForTool(resources map[string]Resource, tool string) []NamedResource 
 	var out []NamedResource
 	for name, r := range resources {
 		if slices.Contains(r.TargetsOrAll(), tool) {
-			out = append(out, NamedResource{Name: name, Resource: r})
+			out = append(out, NamedResource{Name: name, Resource: r, Repo: r.Repo})
 		}
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].Name < out[j].Name })

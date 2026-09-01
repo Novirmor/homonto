@@ -19,6 +19,7 @@ func newCmd() *cobra.Command {
 	var (
 		dir      string
 		workflow string
+		repos    []string
 	)
 
 	cmd := &cobra.Command{
@@ -26,11 +27,12 @@ func newCmd() *cobra.Command {
 		Short: "Create a new change-workspace skeleton, if the onto framework is installed",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return runNew(cmd, dir, args[0], workflow)
+			return runNewWithRepos(cmd, dir, args[0], workflow, repos)
 		},
 	}
 	cmd.Flags().StringVar(&dir, "dir", ".", "workspace root to create the change in")
 	cmd.Flags().StringVar(&workflow, "workflow", "full", "workflow for the change: full, fix, or tweak")
+	cmd.Flags().StringSliceVar(&repos, "repo", nil, "declared repository to include (repeatable)")
 	return cmd
 }
 
@@ -41,6 +43,13 @@ func newCmd() *cobra.Command {
 // task list in design). Each file is written only if absent. It reports the
 // created change and its files.
 func runNew(cmd *cobra.Command, root, name, workflow string) error {
+	return runNewWithRepos(cmd, root, name, workflow, nil)
+}
+
+// runNewWithRepos records the selected declared-repo aliases with a new
+// change. Names are validated before any scaffold write; the config repository
+// is implicit and therefore never accepted as an alias.
+func runNewWithRepos(cmd *cobra.Command, root, name, workflow string, repos []string) error {
 	if err := ontoFramework.Gate(root); err != nil {
 		return err
 	}
@@ -51,6 +60,10 @@ func runNew(cmd *cobra.Command, root, name, workflow string) error {
 
 	if !ontostate.ValidWorkflow(workflow) {
 		return fmt.Errorf("onto new: workflow %q is not one of full|fix|tweak", workflow)
+	}
+	names, _, err := scopeDirs(root, repos)
+	if err != nil {
+		return fmt.Errorf("onto new: %w", err)
 	}
 
 	changeDir := filepath.Join(root, "docs", "changes", name)
@@ -68,6 +81,7 @@ func runNew(cmd *cobra.Command, root, name, workflow string) error {
 		Workflow: workflow,
 		Phase:    "open",
 		Created:  time.Now().Format("2006-01-02"),
+		Repos:    names,
 	}
 	statePath := filepath.Join(changeDir, "onto-state.yaml")
 	if err := ontostate.Save(statePath, st); err != nil {

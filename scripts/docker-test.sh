@@ -1,5 +1,5 @@
 #!/bin/sh
-# Build the triple-binary E2E image and run all five suites. The container builds
+# Build the triple-binary E2E image and run all suites. The container builds
 # homonto, onto, and to and runs the suites (see test/docker/run-all.sh) against
 # a disposable $HOME, so the host is never touched. Exits non-zero if the build
 # or any suite fails.

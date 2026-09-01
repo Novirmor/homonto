@@ -44,6 +44,9 @@ func validate(c *Config) error {
 	if err := validateRepos(c); err != nil {
 		return err
 	}
+	if err := validateRepoTargets(c); err != nil {
+		return err
+	}
 	if err := validateModels(c); err != nil {
 		return err
 	}
@@ -108,6 +111,79 @@ func validateRepos(c *Config) error {
 		seen[p] = name
 	}
 	return nil
+}
+
+// validateRepoTargets checks every repo = "<name>" declaration (ADR 0024
+// stage 2): the name must be declared under [repos], the resource must be
+// project-scoped (a repo-targeted user-scope resource would mean one repo's
+// name in every session's global config — exactly what scoping prevents), and
+// frameworks do not take repo at all (their projection is config-repo only).
+func validateRepoTargets(c *Config) error {
+	declared := func(name string) bool { _, ok := c.Repos[name]; return ok }
+	check := func(label, repo, scope string, isProject bool) error {
+		if repo == "" {
+			return nil
+		}
+		if !declared(repo) {
+			return fmt.Errorf("parse config: %s repo %q is not declared under [repos]", label, repo)
+		}
+		if !isProject {
+			return fmt.Errorf("parse config: %s repo %q requires scope = \"project\" — a repo-targeted resource projects into that repository's .opencode/, which only project scope reaches", label, repo)
+		}
+		return nil
+	}
+	// Deterministic walks so a config failing several rules names the same
+	// offender every run.
+	for _, name := range sortedResourceNames(c.Skills) {
+		r := c.Skills[name]
+		if err := check("skills."+name, r.Repo, r.Scope, r.Scope == "project"); err != nil {
+			return err
+		}
+	}
+	for _, name := range sortedResourceNames(c.Commands) {
+		r := c.Commands[name]
+		if err := check("commands."+name, r.Repo, r.Scope, r.Scope == "project"); err != nil {
+			return err
+		}
+	}
+	for _, name := range sortedSubagentNames(c) {
+		s := c.Subagents[name]
+		if err := check("subagents."+name, s.Repo, s.Scope, s.ScopeOrDefault() == "project"); err != nil {
+			return err
+		}
+	}
+	for _, name := range sortedMCPNames(c) {
+		m := c.MCPs[name]
+		if err := check("mcps."+name, m.Repo, m.Scope, m.ScopeOrDefault() == "project"); err != nil {
+			return err
+		}
+	}
+	for _, name := range sortedResourceNames(c.Frameworks) {
+		if r := c.Frameworks[name]; r.Repo != "" {
+			return fmt.Errorf("parse config: frameworks.%s repo %q — frameworks project into the config repository only; declare their skills/commands/subagents per repo instead", name, r.Repo)
+		}
+	}
+	return nil
+}
+
+// sortedResourceNames returns the map's keys in deterministic order.
+func sortedResourceNames(m map[string]Resource) []string {
+	out := make([]string, 0, len(m))
+	for k := range m {
+		out = append(out, k)
+	}
+	sort.Strings(out)
+	return out
+}
+
+// sortedMCPNames returns the map's keys in deterministic order.
+func sortedMCPNames(c *Config) []string {
+	out := make([]string, 0, len(c.MCPs))
+	for k := range c.MCPs {
+		out = append(out, k)
+	}
+	sort.Strings(out)
+	return out
 }
 
 // validateRemovedTools fails closed on every declaration naming a tool whose

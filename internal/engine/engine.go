@@ -11,6 +11,7 @@ import (
 	"strings"
 
 	"github.com/noviopenworks/homonto/internal/adapter"
+	"github.com/noviopenworks/homonto/internal/adapter/opencode"
 	"github.com/noviopenworks/homonto/internal/adapter/registry"
 	"github.com/noviopenworks/homonto/internal/agentfm"
 	"github.com/noviopenworks/homonto/internal/catalog"
@@ -18,6 +19,17 @@ import (
 	"github.com/noviopenworks/homonto/internal/secret"
 	"github.com/noviopenworks/homonto/internal/state"
 )
+
+// sortedRepoNames returns the declared repo names in deterministic order, so
+// adapter fan-out order — and plan output — is stable.
+func sortedRepoNames(repos map[string]string) []string {
+	names := make([]string, 0, len(repos))
+	for name := range repos {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	return names
+}
 
 // Engine wires config, adapters, secret resolver, and state for plan/apply.
 type Engine struct {
@@ -34,6 +46,12 @@ type Engine struct {
 	Home                string
 	ProjectRoot         string // directory of homonto.toml; skill-scope project root
 	Resolver            *secret.Resolver
+	// RepoTargets pairs each declared [repos] repository with its own adapter
+	// and state partition (ADR 0024 stage 2): the adapter projects that repo's
+	// repo-tagged project-scoped resources into the repo's .opencode/ tree,
+	// recording state in <stateDir>/state.<name>.json so pruning, adoption,
+	// and drift never cross repositories. Empty for single-repo configs.
+	RepoTargets []RepoTarget
 	// HomontoVersion is the running binary version, set by the CLI. When set, Plan
 	// enforces each declared framework's [compat].homonto range fail-closed; empty
 	// (tests/unstamped) skips the check.
@@ -41,6 +59,14 @@ type Engine struct {
 	// Warnings collects non-fatal per-adapter failures from the last Plan (e.g.
 	// an unparseable tool file); other tools still proceed.
 	Warnings []string
+}
+
+// RepoTarget is one declared repository's projection pair.
+type RepoTarget struct {
+	Name    string          // the [repos] key
+	Dir     string          // resolved absolute repository directory
+	Adapter adapter.Adapter // opencode adapter in repo mode (Name() = "opencode@<name>")
+	State   *state.State    // partition at <stateDir>/state.<name>.json
 }
 
 // Build loads config and wires both adapters. home is $HOME; contentDir is the
@@ -120,6 +146,25 @@ func Build(ctx context.Context, configPath, home, contentDir string) (*Engine, e
 	if len(dirs) > 0 {
 		cfg.SetRemoteFrameworkDirs(dirs)
 	}
+	// Fan out one adapter+state pair per declared repository (ADR 0024 stage
+	// 2). Each shares the config repo's materialized catalog roots (links
+	// point here, absolute) but projects into its own root with its own state
+	// partition. Sorted names keep adapter order — and plan output —
+	// deterministic.
+	for _, name := range sortedRepoNames(cfg.Repos) {
+		st, err := state.LoadNamed(stateDir, name)
+		if err != nil {
+			return nil, fmt.Errorf("repo %s: %w", name, err)
+		}
+		a := opencode.New(home, contentDir).
+			WithProjectRoot(cfg.RepoDirs()[name]).
+			WithCatalogRoot(catalogDir).
+			WithCommandCatalogRoot(commandCatalogDir).
+			WithSubagentCatalogRoot(subagentCatalogDir).
+			WithRemoteSubagentRoot(remoteSubagentDir).
+			WithRepo(name)
+		e.RepoTargets = append(e.RepoTargets, RepoTarget{Name: name, Dir: cfg.RepoDirs()[name], Adapter: a, State: st})
+	}
 	return e, nil
 }
 
@@ -149,6 +194,14 @@ func (e *Engine) Plan() ([]adapter.ChangeSet, error) {
 		}
 		sets = append(sets, cs)
 	}
+	for _, t := range e.RepoTargets {
+		cs, err := t.Adapter.Plan(e.Cfg, t.State)
+		if err != nil {
+			e.Warnings = append(e.Warnings, fmt.Sprintf("%s skipped: %v", t.Adapter.Name(), err))
+			continue
+		}
+		sets = append(sets, cs)
+	}
 	return sets, nil
 }
 
@@ -162,9 +215,12 @@ func (e *Engine) Apply(ctx context.Context, sets []adapter.ChangeSet) error {
 	// (otherwise silently skipped below) or an operation with an undefined action
 	// (otherwise a silent no-op) must abort — never quietly drop a change to a
 	// user's config files.
-	knownTools := make(map[string]bool, len(e.Adapters))
+	knownTools := make(map[string]bool, len(e.Adapters)+len(e.RepoTargets))
 	for _, a := range e.Adapters {
 		knownTools[a.Name()] = true
+	}
+	for _, t := range e.RepoTargets {
+		knownTools[t.Adapter.Name()] = true
 	}
 	for _, cs := range sets {
 		if err := cs.Validate(knownTools); err != nil {
@@ -197,14 +253,34 @@ func (e *Engine) Apply(ctx context.Context, sets []adapter.ChangeSet) error {
 		return err
 	}
 	// Match each planned set to its adapter by tool name (Plan may have skipped
-	// some adapters, so indexes need not line up).
+	// some adapters, so indexes need not line up). The config repo's adapters
+	// record into the main state; each repo target's changeset records into
+	// that repository's partition, saved immediately after its adapter writes
+	// (ADR 0024 stage 2: one apply, per-repo state scoping).
 	byName := map[string]adapter.Adapter{}
 	for _, a := range e.Adapters {
 		byName[a.Name()] = a
 	}
+	pair := map[string]RepoTarget{}
+	for _, t := range e.RepoTargets {
+		byName[t.Adapter.Name()] = t.Adapter
+		pair[t.Adapter.Name()] = t
+	}
 	for _, cs := range sets {
 		a, ok := byName[cs.Tool]
 		if !ok {
+			continue
+		}
+		if t, isRepo := pair[cs.Tool]; isRepo {
+			// Name the tool in every per-adapter failure: with several adapters
+			// an unwrapped error leaves the user guessing which file broke.
+			if err := a.Apply(e.Cfg, cs, e.Resolver, t.State); err != nil {
+				return fmt.Errorf("%s: %w", cs.Tool, err)
+			}
+			// Persist immediately into the repo's own partition.
+			if err := t.State.SaveNamed(e.StateDir, t.Name); err != nil {
+				return fmt.Errorf("%s: save state: %w", cs.Tool, err)
+			}
 			continue
 		}
 		// Name the tool in every per-adapter failure: with several adapters an

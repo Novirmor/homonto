@@ -94,10 +94,10 @@ checks, and `version` prints plain text):
 | Command | Role |
 |---|---|
 | `to init` | Scaffold `docs/tasks/` in a repo. |
-| `to new <name>` | Create a change: state YAML + empty `plan.md`. Only an active change blocks a name — archives are date-prefixed, so recurring names reuse. |
+| `to new <name> [--repo <declared-name>]` | Create a change: state YAML + empty `plan.md`. Selected repo names are recorded in the config repo; only an active change blocks a name. |
 | `to status` | All active changes and their phases. Read-only, config-independent. |
 | `to phase <name>` | Advance the change one phase forward. |
-| `to done <name> --verified [--evidence "<text>"]` | Mark done and archive to `docs/tasks/archive/<date>-<name>/`. `--verified` is required but self-asserted; `--evidence` optionally records what was asserted, verbatim and unchecked. |
+| `to done <name> --verified [--evidence "<text>"]` | Mark done and archive to `docs/tasks/archive/<date>-<name>/`. A scoped change also requires clean, determinable Git state for the config repo and every selected declared repo. |
 | `to abandon <name>` | Terminal exit without done. |
 | `to handoff <name>` | Compact context-recovery pack (phase, plan head + complete unchecked task contracts, final check, bounded notes, safe next skill) for resuming after compaction. Read-only, config-independent. |
 | `to doctor [--quiet]` | Workspace health: invalid state, wedged terminal-but-active changes, missing plans, incomplete `Files:`/`Change:`/`Verify:` task contracts or `Final Verify:`, and version skew. Findings are diagnostic, not phase gates. `--quiet` is exit-code-only — the enforcement hook primitive. Read-only, config-independent. |
@@ -110,12 +110,13 @@ workspace lock so concurrent sessions cannot interleave writes. `init` only
 creates the fixed task directories with idempotent `mkdir` operations and does
 not take the lock.
 
-### Git-blind
+### Scoped Git Gate
 
-The binary never inspects git: no isolation field, no dirt classification, no
-staleness checks. Recorded git facts rot (onto's dirt/scale machinery exists
-to keep them true, and `to` refuses that inheritance). Branch-per-change is a
-*suggestion in skill prose only*.
+Unscoped changes remain Git-blind. A change created with one or more
+`--repo <declared-name>` aliases records that scope in `to-state.yaml`; the
+config repo is implicit. `to done` then fails closed unless every selected
+worktree is clean and Git can inspect it. The record stores aliases, not paths
+or Git facts, so current `[repos]` remains authoritative and facts do not rot.
 
 ### Skills: dispatcher + three phase skills + quality skills
 

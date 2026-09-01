@@ -75,6 +75,15 @@ func (a *Adapter) WithRemoteSubagentRoot(remoteSubagentRoot string) *Adapter {
 	return a
 }
 
+// WithRepo puts the adapter in repo mode (ADR 0024 stage 2): it projects only
+// repo-tagged project-scoped resources into the repo's files — the project
+// root the caller set with WithProjectRoot must be that repository's
+// directory. Name() then reports "opencode@<repo>" for per-repo attribution.
+func (a *Adapter) WithRepo(repo string) *Adapter {
+	a.Base.RepoName = repo
+	return a
+}
+
 func (a *Adapter) cfgFile() string {
 	return filepath.Join(a.Home, ".config", "opencode", "opencode.jsonc")
 }
@@ -132,17 +141,17 @@ func (a *Adapter) desiredMCPs(c *config.Config) map[string]string {
 	return out
 }
 
-// desiredProjectMCPs maps the project-scoped servers to their projmcp.* state
-// keys — the same mcp.<name> entries, written into the project-level
-// opencode.jsonc instead, so one repository's servers don't run in every other
-// session.
+// desiredProjectMCPs maps the project-scoped servers tagged at this adapter's
+// repo ("" = the config repo) to their projmcp.* state keys — the same
+// mcp.<name> entries, written into the repository's opencode.jsonc instead,
+// so one repository's servers don't run in every other session.
 func (a *Adapter) desiredProjectMCPs(c *config.Config) map[string]string {
 	out := map[string]string{}
 	if a.ProjectRoot == "" {
 		return out
 	}
 	for name, m := range c.MCPs {
-		if m.ScopeOrDefault() != "project" {
+		if m.ScopeOrDefault() != "project" || m.Repo != a.RepoName {
 			continue
 		}
 		if v, ok := mcpValue(m); ok {
@@ -215,19 +224,26 @@ func (a *Adapter) Plan(c *config.Config, st *state.State) (adapter.ChangeSet, er
 	if err := a.Expand(c); err != nil {
 		return adapter.ChangeSet{}, err
 	}
-	doc, err := readStandardized(a.cfgFile())
-	if err != nil {
-		return adapter.ChangeSet{}, err
+	// Repo mode (ADR 0024 stage 2): this adapter owns exactly one declared
+	// repository's project files. Global namespaces — the user config, TUI
+	// file, plugins, user-scope MCPs and settings — belong to the config
+	// repo's adapter alone, so they are neither read nor planned here.
+	global := a.RepoName == ""
+	var doc, tuiDoc []byte
+	if global {
+		var err error
+		if doc, err = readStandardized(a.cfgFile()); err != nil {
+			return adapter.ChangeSet{}, err
+		}
+		if tuiDoc, err = readStandardized(a.tuiFile()); err != nil {
+			return adapter.ChangeSet{}, err
+		}
 	}
 	projDoc, err := a.readProjectCfg()
 	if err != nil {
 		return adapter.ChangeSet{}, err
 	}
-	tuiDoc, err := readStandardized(a.tuiFile())
-	if err != nil {
-		return adapter.ChangeSet{}, err
-	}
-	cs := adapter.ChangeSet{Tool: "opencode"}
+	cs := adapter.ChangeSet{Tool: a.Name()}
 
 	// Structured-document namespaces go through the shared projection contract:
 	// mcp./setting.* live in the global opencode.jsonc; projsetting.* lives in
@@ -235,61 +251,66 @@ func (a *Adapter) Plan(c *config.Config, st *state.State) (adapter.ChangeSet, er
 	// call prunes only its own recorded keys, so the generic delete loop below no
 	// longer touches these prefixes. plugin.* stays bespoke (array membership).
 	codec := jsoncodec.Codec{}
-	des := a.desiredMCPs(c)
-	if changes, err := structproj.Project("opencode", "mcp.", des, doc, st, codec, mcpDocPath); err != nil {
-		return adapter.ChangeSet{}, err
-	} else {
-		cs.Changes = append(cs.Changes, changes...)
+	if global {
+		if changes, err := structproj.Project("opencode", "mcp.", a.desiredMCPs(c), doc, st, codec, mcpDocPath); err != nil {
+			return adapter.ChangeSet{}, err
+		} else {
+			cs.Changes = append(cs.Changes, changes...)
+		}
 	}
 	if changes, err := structproj.Project("opencode", "projmcp.", a.desiredProjectMCPs(c), projDoc, st, codec, projMCPDocPath); err != nil {
 		return adapter.ChangeSet{}, err
 	} else {
 		cs.Changes = append(cs.Changes, changes...)
 	}
-	if changes, err := structproj.Project("opencode", "setting.", a.desiredSettings(c), doc, st, codec, settingDocPath); err != nil {
-		return adapter.ChangeSet{}, err
-	} else {
-		cs.Changes = append(cs.Changes, changes...)
-	}
-	if changes, err := structproj.Project("opencode", "projsetting.", a.desiredProjectSettings(c), projDoc, st, codec, projSettingDocPath); err != nil {
-		return adapter.ChangeSet{}, err
-	} else {
-		cs.Changes = append(cs.Changes, changes...)
-	}
-	if changes, err := structproj.Project("opencode", "tui.", desiredTUI(c), tuiDoc, st, codec, tuiDocPath); err != nil {
-		return adapter.ChangeSet{}, err
-	} else {
-		cs.Changes = append(cs.Changes, changes...)
-	}
-	for _, pl := range c.Plugins.OpenCode {
-		src := pl.Source
-		_, inState := st.Get("opencode", "plugin."+src)
-		if !pl.IsEnabled() {
-			// Disabled: ensure absent, but only ever remove a homonto-managed
-			// entry (recorded in state). A present-but-unmanaged source is left
-			// untouched. The delete is emitted for ANY recorded entry, present on
-			// disk or not: an entry removed out of band used to emit nothing,
-			// leaving the state record orphaned — the declared loop then shielded
-			// it from the generic prune, so `status` reported "missing (deleted
-			// out of band)" forever and no apply could clear it. (Apply's delete
-			// is idempotent on an absent array element and only rewrites the doc
-			// when its bytes actually change.)
-			if inState {
-				cs.Changes = append(cs.Changes, adapter.Change{Action: "delete", Key: "plugin." + src, Old: adapter.SecretRedaction})
-			}
-			continue
-		}
-		if arrayHas(doc, "plugin", src) {
-			// Present on disk. If recorded, steady-state noop; otherwise adopt it
-			// into state so pruning and drift can see it (plugin names are plain,
-			// never secret-bearing).
-			if inState {
-				cs.Changes = append(cs.Changes, adapter.Change{Action: "noop", Key: "plugin." + src})
-			} else {
-				cs.Changes = append(cs.Changes, adapter.Change{Action: "adopt", Key: "plugin." + src, New: structproj.MustJSON(src)})
-			}
+	if global {
+		if changes, err := structproj.Project("opencode", "setting.", a.desiredSettings(c), doc, st, codec, settingDocPath); err != nil {
+			return adapter.ChangeSet{}, err
 		} else {
-			cs.Changes = append(cs.Changes, adapter.Change{Action: "create", Key: "plugin." + src, New: structproj.MustJSON(src)})
+			cs.Changes = append(cs.Changes, changes...)
+		}
+		if changes, err := structproj.Project("opencode", "projsetting.", a.desiredProjectSettings(c), projDoc, st, codec, projSettingDocPath); err != nil {
+			return adapter.ChangeSet{}, err
+		} else {
+			cs.Changes = append(cs.Changes, changes...)
+		}
+		if changes, err := structproj.Project("opencode", "tui.", desiredTUI(c), tuiDoc, st, codec, tuiDocPath); err != nil {
+			return adapter.ChangeSet{}, err
+		} else {
+			cs.Changes = append(cs.Changes, changes...)
+		}
+	}
+	if global {
+		for _, pl := range c.Plugins.OpenCode {
+			src := pl.Source
+			_, inState := st.Get("opencode", "plugin."+src)
+			if !pl.IsEnabled() {
+				// Disabled: ensure absent, but only ever remove a homonto-managed
+				// entry (recorded in state). A present-but-unmanaged source is left
+				// untouched. The delete is emitted for ANY recorded entry, present on
+				// disk or not: an entry removed out of band used to emit nothing,
+				// leaving the state record orphaned — the declared loop then shielded
+				// it from the generic prune, so `status` reported "missing (deleted
+				// out of band)" forever and no apply could clear it. (Apply's delete
+				// is idempotent on an absent array element and only rewrites the doc
+				// when its bytes actually change.)
+				if inState {
+					cs.Changes = append(cs.Changes, adapter.Change{Action: "delete", Key: "plugin." + src, Old: adapter.SecretRedaction})
+				}
+				continue
+			}
+			if arrayHas(doc, "plugin", src) {
+				// Present on disk. If recorded, steady-state noop; otherwise adopt it
+				// into state so pruning and drift can see it (plugin names are plain,
+				// never secret-bearing).
+				if inState {
+					cs.Changes = append(cs.Changes, adapter.Change{Action: "noop", Key: "plugin." + src})
+				} else {
+					cs.Changes = append(cs.Changes, adapter.Change{Action: "adopt", Key: "plugin." + src, New: structproj.MustJSON(src)})
+				}
+			} else {
+				cs.Changes = append(cs.Changes, adapter.Change{Action: "create", Key: "plugin." + src, New: structproj.MustJSON(src)})
+			}
 		}
 	}
 	// File-projection namespaces go through the shared symlink contract: each
@@ -315,18 +336,22 @@ func (a *Adapter) Plan(c *config.Config, st *state.State) (adapter.ChangeSet, er
 	// Orphans: a state key no longer declared in config is de-declared — plan a
 	// delete. (A declared key missing from disk is drift, handled above.) Old is
 	// always redacted: a removed key's provenance is stale by definition.
+	// Global namespaces only contribute declared keys in the config-repo
+	// adapter; a repo adapter's partition carries only project/file keys.
 	declared := map[string]bool{}
-	for k := range des {
+	for k := range a.desiredMCPs(c) {
 		declared[k] = true
 	}
-	for k := range c.Settings.OpenCode {
-		declared["setting."+k] = true
-	}
-	for k := range c.TUI.OpenCode {
-		declared["tui."+k] = true
-	}
-	for _, pl := range c.Plugins.OpenCode {
-		declared["plugin."+pl.Source] = true
+	if global {
+		for k := range c.Settings.OpenCode {
+			declared["setting."+k] = true
+		}
+		for k := range c.TUI.OpenCode {
+			declared["tui."+k] = true
+		}
+		for _, pl := range c.Plugins.OpenCode {
+			declared["plugin."+pl.Source] = true
+		}
 	}
 	for _, entry := range a.Skills {
 		declared["skill."+entry.Name] = true
@@ -378,13 +403,19 @@ func (a *Adapter) Plan(c *config.Config, st *state.State) (adapter.ChangeSet, er
 // as far as opencode's data model allows). Only hashes escape — raw values
 // (possibly resolved secrets) never leave the adapter.
 func (a *Adapter) ObserveHashes(st *state.State) (map[string]string, error) {
-	doc, err := readStandardized(a.cfgFile())
-	if err != nil {
-		return nil, err
-	}
-	tuiDoc, err := readStandardized(a.tuiFile())
-	if err != nil {
-		return nil, err
+	// Repo mode: global files are not this adapter's; its partition holds only
+	// project/file keys, so global observes would match nothing anyway — and
+	// reading the global config could fail a repo apply for a file outside its
+	// scope.
+	var doc, tuiDoc []byte
+	if a.RepoName == "" {
+		var err error
+		if doc, err = readStandardized(a.cfgFile()); err != nil {
+			return nil, err
+		}
+		if tuiDoc, err = readStandardized(a.tuiFile()); err != nil {
+			return nil, err
+		}
 	}
 	codec := jsoncodec.Codec{}
 	out := map[string]string{}
@@ -473,15 +504,21 @@ func (a *Adapter) Apply(cfg *config.Config, cs adapter.ChangeSet, res *secret.Re
 	if err := a.Expand(cfg); err != nil {
 		return err
 	}
-	doc, err := readStandardized(a.cfgFile())
-	if err != nil {
-		return err
+	// Repo mode: the global user config and TUI file are the config-repo
+	// adapter's territory — never read here (an unparseable global file must
+	// not block a repo apply), never written (no global changes are planned).
+	global := a.RepoName == ""
+	var doc, tuiDoc []byte
+	if global {
+		var err error
+		if doc, err = readStandardized(a.cfgFile()); err != nil {
+			return err
+		}
+		if tuiDoc, err = readStandardized(a.tuiFile()); err != nil {
+			return err
+		}
 	}
 	projDoc, err := a.readProjectCfg()
-	if err != nil {
-		return err
-	}
-	tuiDoc, err := readStandardized(a.tuiFile())
 	if err != nil {
 		return err
 	}
@@ -495,6 +532,9 @@ func (a *Adapter) Apply(cfg *config.Config, cs adapter.ChangeSet, res *secret.Re
 	// for byte-identical output: mcp./plugin./setting.* all live in opencode.jsonc,
 	// and the prior single sorted-change loop appended them in mcp < plugin <
 	// setting order — so apply them in that order too. tui.* lives in tui.json.
+	// In repo mode the change filters match nothing (global namespaces are never
+	// planned there) and the write gates below stay false; passing the empty
+	// filters keeps this one code path for both modes.
 	doc, docChanged, err := structproj.Apply("opencode", "mcp.", filterChanges(cs.Changes, "mcp."), doc, codec, res, st, mcpDocPath)
 	if err != nil {
 		return err

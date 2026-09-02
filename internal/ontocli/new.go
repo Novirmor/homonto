@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"time"
 
+	"github.com/noviopenworks/homonto/internal/destlock"
 	"github.com/noviopenworks/homonto/internal/ontostate"
 	"github.com/spf13/cobra"
 )
@@ -65,6 +66,16 @@ func runNewWithRepos(cmd *cobra.Command, root, name, workflow string, repos []st
 	if err != nil {
 		return fmt.Errorf("onto new: %w", err)
 	}
+
+	// Destination reservation shared with `to promote` (ADR 0028): both
+	// create under docs/changes, and a promotion renaming its result into
+	// place must not race a concurrent create of the same name. Held across
+	// the existence check and scaffold.
+	unlock, err := destlock.Acquire(root)
+	if err != nil {
+		return fmt.Errorf("onto new: %w", err)
+	}
+	defer unlock()
 
 	changeDir := filepath.Join(root, "docs", "changes", name)
 	if _, err := os.Stat(changeDir); err == nil {

@@ -6,6 +6,7 @@ import (
 	"os"
 	"strings"
 
+	"github.com/noviopenworks/homonto/internal/adapter"
 	"github.com/noviopenworks/homonto/internal/applylock"
 	"github.com/noviopenworks/homonto/internal/buildinfo"
 	"github.com/noviopenworks/homonto/internal/engine"
@@ -14,24 +15,28 @@ import (
 )
 
 func applyCmd() *cobra.Command {
+	var (
+		yes          bool
+		snapshotMode bool
+	)
 	cmd := &cobra.Command{
 		Use:   "apply",
 		Short: "Project config into the AI tools",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			cfgPath, _ := cmd.Flags().GetString("config")
-			yes, _ := cmd.Flags().GetBool("yes")
-			return runApply(cmd, cfgPath, yes, nil)
+			return runApply(cmd, cfgPath, yes, snapshotMode, nil)
 		},
 	}
-	cmd.Flags().Bool("yes", false, "skip confirmation")
+	cmd.Flags().BoolVar(&yes, "yes", false, "skip confirmation")
+	cmd.Flags().BoolVar(&snapshotMode, "snapshot", false, "journal the apply as an undoable snapshot (opt-in; ADR 0030)")
 	return cmd
 }
 
 // runApply builds the engine and runs the plan → confirm → apply projection. An
 // optional banner runs after Build (with the engine) and before Plan, so `update`
 // can print the version transition ahead of the same flow apply uses.
-func runApply(cmd *cobra.Command, cfgPath string, yes bool, banner func(*engine.Engine)) error {
+func runApply(cmd *cobra.Command, cfgPath string, yes, snapshotMode bool, banner func(*engine.Engine)) error {
 	home, _ := os.UserHomeDir()
 	e, err := engine.Build(cmd.Context(), cfgPath, home, "homonto")
 	if err != nil {
@@ -137,7 +142,7 @@ func runApply(cmd *cobra.Command, cfgPath string, yes bool, banner func(*engine.
 				}
 			}
 		}
-		if err := e.Apply(cmd.Context(), sets); err != nil {
+		if err := applySets(cmd, e, sets, snapshotMode); err != nil {
 			return err
 		}
 		cmd.Printf("Reconciled %d pre-existing resource(s) into state.\n", n)
@@ -156,11 +161,24 @@ func runApply(cmd *cobra.Command, cfgPath string, yes bool, banner func(*engine.
 			return nil
 		}
 	}
-	if err := e.Apply(cmd.Context(), sets); err != nil {
+	if err := applySets(cmd, e, sets, snapshotMode); err != nil {
 		return err
 	}
 	cmd.Println("Applied.")
 	return skipped()
+}
+
+// applySets runs the engine apply, in snapshot mode when --snapshot is set
+// (ADR 0030): journaled, rollback-on-failure, undoable.
+func applySets(cmd *cobra.Command, e *engine.Engine, sets []adapter.ChangeSet, snapshotMode bool) error {
+	if snapshotMode {
+		id, err := e.ApplySnapshot(cmd.Context(), sets)
+		if err == nil {
+			fmt.Fprintf(cmd.OutOrStdout(), "snapshot: apply recorded as %s (undo with `homonto snapshot undo %s`)\n", id, id)
+		}
+		return err
+	}
+	return e.Apply(cmd.Context(), sets)
 }
 
 // renderRepins formats digest-only remote repins as terraform-style change

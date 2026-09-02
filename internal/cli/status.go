@@ -96,6 +96,15 @@ func doctorCmd() *cobra.Command {
 			}
 			e.HomontoVersion = Version
 			findings := e.Doctor()
+			// Incomplete snapshot journals are the crash-recovery surface: a
+			// SIGKILLed snapshot apply leaves a prepared journal that blocks
+			// nothing but needs a decision. Surface it with the exact
+			// recovery command (ADR 0030).
+			if ids, err := e.IncompleteSnapshots(); err == nil {
+				for _, id := range ids {
+					findings = append(findings, fmt.Sprintf("incomplete snapshot apply %s — run `homonto snapshot recover %s`", id, id))
+				}
+			}
 			if output == "json" {
 				if findings == nil {
 					findings = []string{}

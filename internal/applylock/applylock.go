@@ -26,6 +26,9 @@ const lockName = "apply.lock"
 // Lock is a held project apply lock. Release removes the lockfile.
 type Lock struct {
 	path string
+	// f is non-nil when the lock is a held process lock (flock); Release
+	// unlocks and closes it. The O_EXCL lockfile mode leaves it nil.
+	f *os.File
 }
 
 // Acquire takes the project apply lock under dir (created if needed). It fails
@@ -55,6 +58,11 @@ func Acquire(dir string) (*Lock, error) {
 func (l *Lock) Release() error {
 	if l == nil {
 		return nil
+	}
+	if l.f != nil {
+		// flock releases on close; the lockfile itself stays (it is the flock
+		// anchor, not the lock). Removing it would race a waiter's open.
+		return l.f.Close()
 	}
 	if err := os.Remove(l.path); err != nil && !errors.Is(err, fs.ErrNotExist) {
 		return fmt.Errorf("apply lock release: %w", err)

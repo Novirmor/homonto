@@ -24,7 +24,7 @@ func updateCmd() *cobra.Command {
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			cfgPath, _ := cmd.Flags().GetString("config")
 			yes, _ := cmd.Flags().GetBool("yes")
-			return runApply(cmd, cfgPath, yes, func(e *engine.Engine) {
+			return runApply(cmd, cfgPath, yes, false, func(e *engine.Engine) {
 				printVersionTransition(cmd, e)
 			})
 		},

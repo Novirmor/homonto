@@ -61,7 +61,7 @@ func TestRepoMoveConverges(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	e2.Resolver = &secret.Resolver{Getenv: func(string) string { return "" }, Pass: func(string) (string, error) { return "", nil } }
+	e2.Resolver = &secret.Resolver{Getenv: func(string) string { return "" }, Pass: func(string) (string, error) { return "", nil }}
 	sets, err := e2.Plan()
 	if err != nil {
 		t.Fatalf("plan after move: %v", err)
@@ -138,7 +138,7 @@ func TestLegacyAbsoluteLinkRepair(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	e2.Resolver = &secret.Resolver{Getenv: func(string) string { return "" }, Pass: func(string) (string, error) { return "", nil } }
+	e2.Resolver = &secret.Resolver{Getenv: func(string) string { return "" }, Pass: func(string) (string, error) { return "", nil }}
 	sets, err := e2.Plan()
 	if err != nil {
 		t.Fatalf("plan with stale legacy link: %v (repair must be authorized)", err)
@@ -182,7 +182,7 @@ func TestForeignLinkAfterMoveStillRefused(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	e2.Resolver = &secret.Resolver{Getenv: func(string) string { return "" }, Pass: func(string) (string, error) { return "", nil } }
+	e2.Resolver = &secret.Resolver{Getenv: func(string) string { return "" }, Pass: func(string) (string, error) { return "", nil }}
 	// The adapter's conflict surfaces as a skipped-adapter warning at engine
 	// level (the pre-existing contract): the tool is never written over a
 	// foreign link. Assert the warning, not a Plan error.
@@ -239,7 +239,7 @@ func TestDeDeclareAfterMoveLeavesNoOrphan(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	e2.Resolver = &secret.Resolver{Getenv: func(string) string { return "" }, Pass: func(string) (string, error) { return "", nil } }
+	e2.Resolver = &secret.Resolver{Getenv: func(string) string { return "" }, Pass: func(string) (string, error) { return "", nil }}
 	sets, err := e2.Plan()
 	if err != nil {
 		t.Fatalf("plan: %v", err)

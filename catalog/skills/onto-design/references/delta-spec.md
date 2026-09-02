@@ -13,9 +13,15 @@ merges into `docs/specs/<capability>.md`.
 
 ### Requirement: <name>
 
+Requirement-ID: <stable id, e.g. REQ-<change>-<n> — minted once at design,
+never renumbered; heading rewording keeps the ID>
+
 <First line MUST contain SHALL or MUST.> <single-behavior statement>
 
 #### Scenario: <name>
+
+Scenario-ID: <stable id, e.g. SC-<change>-<slug> — minted once, kept across
+rewording; `onto evidence record` and `onto trace` key on it>
 
 - **GIVEN** <precondition>
 - **WHEN** <action>
@@ -25,8 +31,8 @@ merges into `docs/specs/<capability>.md`.
 
 ### Requirement: <exact existing name>
 
-<full replacement text — MODIFIED replaces the whole requirement,
-scenarios included; first line MUST contain SHALL or MUST>
+<carry the existing Requirement-ID forward unchanged — MODIFIED replaces the
+body, not the identity; first line MUST contain SHALL or MUST>
 
 #### Scenario: <name>
 
@@ -60,3 +66,7 @@ scenarios included; first line MUST contain SHALL or MUST>
   same delta (rename applies first at merge).
 - RENAMED preserves the body unless a MODIFIED block also targets the new
   name.
+- IDs are optional but load-bearing once present: a Requirement-ID or
+  Scenario-ID line inside its block (`onto evidence record`, `onto trace`,
+  and `onto doctor` key on these; a duplicate ID is a doctor finding). Mint
+  an ID once at design and never renumber — heading rewording keeps its ID.

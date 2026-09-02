@@ -146,6 +146,14 @@ func runDoctor(cmd *cobra.Command, root string) error {
 			if st.Observed.VerifyRounds >= 3 {
 				findings = append(findings, fmt.Sprintf("%s: %d failed verify rounds — decide accept-deviation or continue", name, st.Observed.VerifyRounds))
 			}
+			// Structured evidence (ADR 0027). A missing sidecar is a note, not
+			// a finding — every change created before v0.15.0 is exactly that,
+			// and doctor must not fail a healthy legacy workspace.
+			evFindings, evNotes := evidenceFindings(cmd, root, changeDir, name)
+			findings = append(findings, evFindings...)
+			for _, n := range evNotes {
+				cmd.Println(n)
+			}
 		}
 	}
 

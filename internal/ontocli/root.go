@@ -46,5 +46,7 @@ func NewRootCmd() *cobra.Command {
 	root.AddCommand(scaleCmd())
 	root.AddCommand(mergeDeltasCmd())
 	root.AddCommand(handoffCmd())
+	root.AddCommand(evidenceCmd())
+	root.AddCommand(traceCmd())
 	return root
 }

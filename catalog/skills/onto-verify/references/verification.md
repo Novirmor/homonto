@@ -23,7 +23,13 @@ leave it stale.
 
 | Requirement / Scenario | Verdict | Evidence (literal command + output excerpt) |
 |---|---|---|
-| <capability>: <scenario name> | pass/fail | `$ cmd` → `output` |
+| <capability>: <scenario name or Scenario-ID> | pass/fail | `$ cmd` → `output` |
+
+For each scenario you verify, also record the structured claim (hashes only,
+never argv): `onto evidence record <change> --task N --scenario <Scenario-ID>
+--exec <name> --cmd-hash <sha256 of the command line> --exit <n> --output
+<file>`. The binary never runs the command — you run it, then record; that
+keeps verification inside the host's permission checks.
 
 ## Design conformance
 

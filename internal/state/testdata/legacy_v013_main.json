@@ -1,0 +1,17 @@
+{
+  "schemaVersion": 1,
+  "managed": {
+    "opencode": {
+      "skill.demo": {
+        "desired": "/home/user/repo/.opencode/skills/demo -> /home/user/repo/homonto/skills/demo",
+        "applied": "3f1a2b9c4d5e6f708192a3b4c5d6e7f8901234567890abcdef0123456789abcd"
+      },
+      "mcp.codegraph": {
+        "desired": "{\"command\":[\"codegraph\",\"serve\",\"--mcp\"],\"type\":\"local\"}",
+        "applied": "9a8b7c6d5e4f30291a2b3c4d5e6f708192a3b4c5d6e7f8091a2b3c4d5e6f70"
+      }
+    }
+  },
+  "catalogVersion": "0.12.0",
+  "subagentRenderFingerprint": "deadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef"
+}

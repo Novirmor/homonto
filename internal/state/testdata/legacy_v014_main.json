@@ -1,0 +1,23 @@
+{
+  "schemaVersion": 2,
+  "managed": {
+    "opencode": {
+      "skill.onto": {
+        "desired": "/home/user/repo/.opencode/skills/onto -> /home/user/repo/.homonto/catalog/skills/onto",
+        "applied": "1a2b3c4d5e6f708192a3b4c5d6e7f8901234567890abcdef0123456789abcd"
+      },
+      "subagent.onto": {
+        "desired": "/home/user/repo/.opencode/agent/onto.md -> /home/user/repo/.homonto/catalog/subagents/onto.md",
+        "applied": "2b3c4d5e6f708192a3b4c5d6e7f8901234567890abcdef0123456789abcde"
+      },
+      "setting.theme": {
+        "desired": "\"opencode-dark\"",
+        "applied": "3c4d5e6f708192a3b4c5d6e7f8901234567890abcdef0123456789abcdef"
+      }
+    }
+  },
+  "catalogVersion": "0.13.0",
+  "homontoVersion": "0.14.0",
+  "frameworkVersions": { "onto": "0.10.0" },
+  "renderFingerprint": "cafebabecafebabecafebabecafebabecafebabecafebabecafebabecafebabe"
+}

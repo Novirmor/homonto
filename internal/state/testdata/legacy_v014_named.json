@@ -1,0 +1,12 @@
+{
+  "schemaVersion": 2,
+  "managed": {
+    "opencode": {
+      "skill.service-api": {
+        "desired": "/home/user/work/service/.opencode/skills/service-api -> /home/user/repo/.homonto/catalog/skills/service-api",
+        "applied": "4d5e6f708192a3b4c5d6e7f8901234567890abcdef0123456789abcdef0"
+      }
+    }
+  },
+  "homontoVersion": "0.14.0"
+}

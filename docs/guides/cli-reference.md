@@ -135,6 +135,35 @@ references. Kept out of `apply` on purpose, so reverting a `digest` pin can
 still roll back from cache. See
 [remote source trust](remote-source-trust.md).
 
+## `homonto explain [kind] [name] [--repo <alias>] [--json]`
+
+Why each managed resource exists. `homonto explain` lists everything; a
+`kind` (`skill`, `command`, `subagent`, `subagentcopy`, `mcp`, `projmcp`,
+`setting`, `projsetting`, `tui`, `plugin`) and `name` select one resource,
+with `--repo` to disambiguate across repository partitions. Each row shows
+origin (direct declaration or framework+provider), destination, the
+operation that last touched it, and — for removed resources — the removal
+record. Values are never shown, so secrets cannot leak. Unknown selectors
+fail nonzero naming the valid kinds; ambiguous names list the partitions.
+
+## `homonto snapshot undo <apply-id>` / `recover <apply-id>` / `list`
+
+The reverse side of `homonto apply --snapshot` (ADR 0030). `undo` restores a
+committed snapshot's managed state, links, copies, and structured keys —
+refusing with zero mutation if any managed value changed after the apply.
+`recover` rolls back an interrupted snapshot apply (a killed process cannot
+hold the process lock, so recovery always starts). `list` shows snapshots and
+their status; doctor reports incomplete ones with the exact recover command.
+Retention keeps the latest 10 committed journals.
+
+## `homonto permissions suggest`
+
+Reads one exact command per line from stdin and renders a
+`bash_allow_add = [...]` TOML snippet for `[subagents.<name>.opencode]`
+(ADR 0029). Patterns, shell composition, credentials, and destructive or
+privilege-escalating commands are rejected inline. Writes nothing — paste
+the snippet, review, and keep.
+
 ## `homonto version`
 
 Print the release-stamped build version (`homonto --version` works too).

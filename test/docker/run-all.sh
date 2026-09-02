@@ -4,7 +4,7 @@
 # fails. Invoked as the image ENTRYPOINT by scripts/docker-test.sh (and CI).
 set -u
 DIR="$(cd "$(dirname "$0")" && pwd)"
-SUITES="homonto-core homonto-expanded multi-repo onto-lifecycle to-lifecycle release-packaging"
+SUITES="homonto-core homonto-expanded multi-repo onto-lifecycle to-lifecycle release-packaging v015-surface"
 
 summary=""
 fails=0

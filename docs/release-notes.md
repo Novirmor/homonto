@@ -15,6 +15,43 @@ bookkeeper) — for every supported OS/arch as separate archives under one
 `SHA256SUMS`. `onto` and `to` each require `homonto` to have installed their
 framework first (`[frameworks.onto]` / `[frameworks.to]` + `homonto apply`).
 
+### New in v0.15.0 — one release, seven capabilities
+
+- **Replayable handoffs.** `onto handoff --json`/`--write` and `to handoff
+  --json`/`--write` emit versioned recovery packs: identity, derived phase,
+  gates, commits, artifact digests, and a safe next argv. Persisted packs are
+  metadata only — never artifact prose or free-form state.
+- **`homonto explain`.** Every managed resource names its origin (direct or
+  framework), destination, last operation, and removal record. State schema 3
+  records provenance and a bounded tombstone ring; legacy state loads with
+  unknown provenance, never guessed facts.
+- **Portable projections.** Project-scope links carry relative targets, so a
+  repository rename converges on the next apply; user and cross-repo links
+  stay absolute. Stale links stranded by a wholesale move repair through the
+  plan path only, exactly matching their records.
+- **Requirement-to-evidence traceability.** Delta specs carry stable
+  Requirement-ID/Scenario-ID markers; `onto evidence record` stores hashes
+  only (never argv or output) and `onto trace` renders the typed graph.
+  `onto doctor` flags unknown scenarios, duplicate IDs, unreachable commits,
+  and stale verification artifacts.
+- **`to promote`.** A growing `to` change converts into a full onto change
+  at phase open with its complete workspace preserved under
+  `imported-to/` — atomic, crash-recoverable, tamper-refused. Frameworks stay
+  exclusive.
+- **Permission suggestions.** The `permission-observer` plugin ships as owned
+  catalog content; it correlates OpenCode's authoritative ask/reply events
+  (pinned revision 50efc055), suggests the second explicit approval exactly
+  once, and forgets it. `homonto permissions suggest` validates and renders
+  `bash_allow_add` snippets; nothing is persisted or auto-applied.
+- **Opt-in snapshots and undo.** `homonto apply --snapshot` journals semantic
+  checkpoints; failures roll back, `homonto snapshot recover` finishes
+  interrupted applies under an OS-released process lock, and `homonto
+  snapshot undo` reverses a committed apply — refusing over user edits.
+  Plain apply keeps its exact prior behavior.
+- **State migration.** One state schema migration (2 → 3) adds provenance;
+  a moved repository needs no manual link surgery. Run `homonto apply` once
+  to converge.
+
 ### New in v0.14.0 — OpenCode agent variants and longer onto runs
 
 - **Agent variants use OpenCode's native fields.** `model` and `variant` now

@@ -193,6 +193,30 @@ by hand:
 | `onto doctor [--quiet]` | workspace health across layout, state, phase/artifact match, dependency resolution, and archive layout; non-zero on any finding. Also reports **`tasks.md` ↔ `plan.md` drift** — a task number in one file and not the other, or a checkbox in `plan.md`, which breaks resuming from the first unchecked item (a change with no `plan.md` is a preset, not drift). Also reports **version skew** between the `onto` binary and the homonto that installed the framework (fix with `homonto update`), and ≥3 failed verify rounds. `--quiet` prints nothing and signals via exit code only — the hook primitive (see [enforcement](enforcement.md)) |
 | `onto version` | the release-stamped version |
 
+## Recovery packs — `onto handoff <change> [--json] [--write]`
+
+`handoff` emits the recovery context: identity, phases (claimed and
+derived), deps, repo aliases, commits, pending gates (as argv templates),
+artifact digests, and a safe next command. `--json` prints the interactive
+view (envelope plus the full state); `--write` persists the metadata-only
+recovery view — versioned JSON and Markdown under
+`docs/changes/<name>/.onto/handoff/` with create-only, no-follow, confined
+writes. Persisted packs carry no artifact prose and no free-form state, so a
+secret pasted into a plan cannot reach them (ADR 0027).
+
+## Structured evidence — `onto evidence record` and `onto trace`
+
+`onto evidence record <change> --task N --scenario <Scenario-ID> --exec <name>
+--cmd-hash <sha256> --exit <n> [--output <file>]` records one verification
+claim in `docs/changes/<name>/.onto/evidence.json`: hashes only, never argv
+or output, anchored to the current commit. The binary never executes the
+command — you run it, then record, so verification stays inside the host's
+permission checks. `onto trace [change] [--json]` renders the typed graph:
+changes, capabilities, requirements, scenarios, tasks, commits, and
+evidence. `onto doctor` reports unknown scenarios/tasks, duplicate IDs,
+unreachable commits, and changed verification artifacts; a change verified
+without a sidecar gets a note, not a finding.
+
 ## Driving it from the tool — slash commands
 
 `homonto apply` installs a slash command per phase and preset, so you can

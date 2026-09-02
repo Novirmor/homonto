@@ -128,6 +128,7 @@ Rendering:
 | `read_only: true` | `edit: deny` |
 | `bash: false` | `bash: deny` |
 | `bash_allow: [a,b]` | `bash:` rules: `*` asks; `a` and `b` allow |
+| `bash_allow_add: [c]` (config) | appends `c` after the base list, deduplicated; rejected when `bash: false` |
 | `dialogs: true` / `false` | `question: allow` / `question: deny` |
 | `spawn: []` | `task: deny` |
 | `spawn: [a,b]` | `task:` globs allowing only `a`,`b` |
@@ -140,7 +141,12 @@ The rendered variant re-emits `mode: subagent`/`mode: primary` from the
 The `model:` and optional `variant:` lines come from the config's
 `[subagents.<name>.opencode]` block. The block is required — a production
 render with no model fails naming the agent rather than silently emitting an
-agent with no model line.
+agent with no model line. `bash_allow_add = ["git status"]` in that block
+appends exact commands to a framework agent's base `bash_allow` (ADR 0029) —
+the reviewed output of `homonto permissions suggest`. Entries must be exact
+commands: patterns, shell composition, environment assignments, and
+destructive or credential-like commands fail at load, and an agent whose
+base denies bash cannot gain additions.
 The prompt body is single-source, never duplicated; the neutral block and its
 comments are stripped from the rendered file. Under `.homonto/catalog/` the
 source is kept verbatim as `<name>.md` alongside the rendered

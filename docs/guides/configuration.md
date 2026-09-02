@@ -367,6 +367,18 @@ OpenCode has no global model-variant setting. Configure a variant on a
 specific agent with `[subagents.<name>.opencode]`; `model_variant` and a
 `#variant` suffix on `model` are rejected.
 
+`bash_allow_add` in a `[subagents.<name>.opencode]` block appends exact
+commands to the agent's allowlist — the reviewed output of `homonto
+permissions suggest` (ADR 0029). Exact commands only; entries with pattern
+metacharacters, shell composition, environment assignments, or destructive
+content fail at load.
+
+Bundled plugins (`permission-observer`) are owned catalog content: declaring
+`[plugins.opencode.permission-observer]` with `source = "permission-observer"`
+projects the materialized plugin path. homonto never executes it; it observes
+explicit Bash approvals in memory and suggests allowlist additions exactly
+once per candidate.
+
 Keys that collide with structures homonto manages fail at load:
 `settings.opencode.mcp`, `settings.opencode.plugin`. `[settings.claude]` was
 removed with the Claude Code adapter in v0.13.0; a config naming it fails at

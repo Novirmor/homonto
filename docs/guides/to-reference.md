@@ -63,6 +63,25 @@ next mutating command reclaims the lock itself. A lock with no readable pid
 (a crash in the create-to-write window) is removed by hand — a live
 session's lock is never stolen.
 
+## Recovery packs — `to handoff <name> [--json] [--write]`
+
+`handoff` prints the resume pack. `--json` keeps the legacy keys
+(`change`/`state`/`plan`/`next`) and adds the versioned recovery-envelope
+fields (schema, operation id, derived phase, repo aliases, artifact
+digests, next argv). `--write` persists the metadata-only recovery view
+under `docs/tasks/<name>/.to/handoff/` — never plan prose or evidence text.
+
+## Promotion — `to promote <name> [--as <name>] --yes`
+
+Converts a growing `to` change into a full onto change (ADR 0028): the
+complete source workspace moves unchanged under
+`docs/changes/<name>/imported-to/`, and a fresh proposal-only workspace
+starts at phase open — promotion claims no design or verification. The
+command prints the next steps: swap `[frameworks.to]` for
+`[frameworks.onto]` in `homonto.toml`, `homonto apply --yes`, then `/onto`.
+The two frameworks stay exclusive; a crash between the moves is recovered
+idempotently and tampered staging is refused.
+
 ## What `to` deliberately does not do
 
 No evidence gates (the `--verified` checkbox is an assertion, not a

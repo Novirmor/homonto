@@ -23,8 +23,8 @@ The repository ships **three binaries**:
 | Binary | Role |
 |---|---|
 | `homonto` | The deterministic installer and projector described above. |
-| `onto` | A spec-driven workflow operator. It gates a change through `open → design → build → verify → close` with evidence-based, non-skippable transitions. |
-| `to` | A minimal coding-framework bookkeeper: `plan → do → done`, no gates. The lightweight, mutually exclusive alternative to onto (see [the design](docs/to-framework-design.md)). |
+| `onto` | A spec-driven workflow operator. It gates a change through `open → design → build → verify → close` with evidence-based, non-skippable transitions. `onto handoff --json`/`--write` emit versioned recovery packs, `onto evidence record` and `onto trace` keep requirement-to-evidence traceability, and `onto graph` maps change dependencies. |
+| `to` | A minimal coding-framework bookkeeper: `plan → do → done`, no gates. The lightweight, mutually exclusive alternative to onto (see [the design](docs/to-framework-design.md)). `to promote` converts a growing `to` change into a full onto change. |
 
 ## What the bundled catalog ships
 
@@ -104,12 +104,16 @@ walkthrough with real command output and a supported / not-supported matrix.
 ## Commands at a glance
 
 | Command | What it does |
-|---|---|
+|---|---|---|
 | `homonto init [dir]` | Scaffold a starter repo (never overwrites existing files). |
 | `homonto plan` | Show what apply would change. Writes nothing. |
-| `homonto apply` | Project the config into the tools, after confirmation. |
+| `homonto apply` | Project the config into the tools, after confirmation. `--snapshot` journals it as an undoable transaction. |
+| `homonto explain [kind] [name]` | Why each managed resource exists: origin, destination, last change, removal. |
+| `homonto snapshot undo <id>` | Reverse a committed snapshot apply (refuses over user edits). |
+| `homonto snapshot recover <id>` | Roll back an interrupted snapshot apply. |
+| `homonto permissions suggest` | Render a `bash_allow_add` snippet from approved commands (writes nothing). |
 | `homonto status` | Report drift (disk changed outside homonto) vs. pending (unapplied edits). |
-| `homonto doctor` | Health check: `pass` present, tool dirs, skill content and links. |
+| `homonto doctor` | Health check: `pass` present, tool dirs, skill content and links, incomplete snapshots. |
 | `homonto update` | Re-materialize the embedded catalog at this binary's version and re-project it. |
 | `homonto cache gc` | Reclaim unreferenced remote-cache entries. |
 
@@ -146,8 +150,9 @@ in [troubleshooting](docs/guides/troubleshooting.md):
   `opencode.jsonc`. A no-op apply leaves the file untouched.
 - **Secrets need a backend:** `${pass:…}` requires `pass` on `PATH`;
   `${ENV_VAR}` requires the variable set at apply time.
-- **Moving or renaming the repo** breaks skill symlinks (absolute targets).
-  Delete the stale links and re-apply.
+- **Project links survive repository moves.** Same-domain project symlinks
+  carry relative targets (ADR 0026); a link stranded by a wholesale rename is
+  repaired through the normal plan/confirm path.
 - **CLI output goes to stderr.** Redirect with `2>&1` when scripting.
 
 ## For contributors

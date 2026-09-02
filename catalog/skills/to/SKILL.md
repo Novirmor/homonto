@@ -59,6 +59,12 @@ Run `to status --json` and find the active change.
 - An entry with an `error` field is a corrupted state file — surface it to the
   user instead of guessing; the binary owns that file.
 
+A change outgrowing `to` (design questions, evidence obligations, a second
+reader)? `to promote <name> --yes` converts it into a full onto change with
+the complete workspace preserved under `imported-to/`, then swap
+`[frameworks.to]` for `[frameworks.onto]` and `homonto apply --yes` (ADR
+0028).
+
 Resuming after a context compaction? `to handoff <name>` prints the recovery
 pack (phase, plan excerpt, next skill) — read it before doing anything.
 

@@ -105,7 +105,7 @@ func TestApplyState_DeleteRemovesLinkAndState(t *testing.T) {
 	}
 	st.Set("claude", "skill.foo", dst+" -> "+src, secret.Hash(dst+" -> "+src))
 	del := []adapter.Change{{Action: "delete", Key: "skill.foo", Old: adapter.SecretRedaction}}
-	fallback := func(k string) string { return dst }
+	fallback := func(k string) []string { return []string{dst} }
 	if err := ApplyState("claude", del, st, []string{root}, fallback); err != nil {
 		t.Fatal(err)
 	}

@@ -15,6 +15,7 @@ package fileproj
 
 import (
 	"os"
+	"path/filepath"
 
 	"github.com/noviopenworks/homonto/internal/adapter"
 	"github.com/noviopenworks/homonto/internal/link"
@@ -29,14 +30,18 @@ import (
 const sep = " -> "
 
 // Link is one desired managed symlink for a resource type. Dst is where the
-// link lives, Src the content it points to, Key the full state key (e.g.
-// "skill.foo"), and Inactive the same-named link path at the OTHER scope (or ""
-// when there is nothing to relocate from).
+// link lives, Src the content it points to (relative when Dst and Src share a
+// relocation domain, absolute otherwise), Key the full state key (e.g.
+// "skill.foo"), Inactive the same-named link path at the OTHER scope (or ""
+// when there is nothing to relocate from), and Domain the project root whose
+// wholesale move (rename) both Dst and Src survive together — the
+// pre-authorization a stale absolute link needs before repair (ADR 0026).
 type Link struct {
 	Dst      string
 	Src      string
 	Key      string
 	Inactive string
+	Domain   string
 }
 
 // recordedDst extracts the destination path from a recorded "dst -> src" value.
@@ -50,7 +55,10 @@ func recordedDst(desired string) (string, bool) {
 // Project emits the create / relocate(update) / relink(update) + adopt-unrecorded
 // changes for one link namespace. It plans NO deletes and does not sort (the
 // adapter's final sort handles ordering; keys are unique). It returns link.Plan's
-// conflict error unchanged.
+// conflict error unchanged — except where a stale link left by a wholesale
+// repository move is repairable: exactly matching its recorded target, with
+// recorded destination and source sitting at the same domain-relative
+// positions the desired link occupies now (ADR 0026's repair authorization).
 func Project(tool string, links []Link, st *state.State, roots []string) ([]adapter.Change, error) {
 	byDst := make(map[string]Link, len(links))
 	srcs := make(map[string]string, len(links))
@@ -60,7 +68,28 @@ func Project(tool string, links []Link, st *state.State, roots []string) ([]adap
 	}
 	ops, err := link.Plan(srcs, roots...)
 	if err != nil {
-		return nil, err
+		// A conflict aborts Plan wholesale. Repairs may rescue it: if every
+		// conflicting link is an authorized repair, re-plan the remainder and
+		// append the repair ops; any genuinely foreign link still fails.
+		repairs := planRepairs(tool, links, st, roots)
+		if len(repairs) == 0 {
+			return nil, err
+		}
+		repairedDst := map[string]bool{}
+		for _, op := range repairs {
+			repairedDst[op.Dst] = true
+		}
+		filtered := make(map[string]string, len(srcs))
+		for dst, src := range srcs {
+			if !repairedDst[dst] {
+				filtered[dst] = src
+			}
+		}
+		rest, err2 := link.Plan(filtered, roots...)
+		if err2 != nil {
+			return nil, err
+		}
+		ops = append(rest, repairs...)
 	}
 	var changes []adapter.Change
 	opDst := make(map[string]bool, len(ops))
@@ -88,7 +117,7 @@ func Project(tool string, links []Link, st *state.State, roots []string) ([]adap
 			continue // a create/relink/relocate already covers it
 		}
 		tgt, err := os.Readlink(l.Dst)
-		if err != nil || tgt != l.Src {
+		if err != nil || !link.SameTarget(l.Dst, l.Src, tgt) {
 			continue // not a correct link into content
 		}
 		if e, ok := st.Get(tool, l.Key); ok && e.Applied == secret.Hash(l.Dst+sep+l.Src) {
@@ -99,23 +128,130 @@ func Project(tool string, links []Link, st *state.State, roots []string) ([]adap
 	return changes, nil
 }
 
+// planRepairs inspects the links link.Plan rejected as foreign and authorizes
+// repair for exactly one case: a wholesale repository move. The on-disk target
+// must match the recorded target EXACTLY, and the recorded destination and
+// source must sit at the same domain-relative positions the desired link
+// occupies now — proving the link is ours, just stranded by a rename, never a
+// user's foreign link being repointed.
+func planRepairs(tool string, links []Link, st *state.State, roots []string) []link.Op {
+	var out []link.Op
+	for _, l := range links {
+		if op, ok := authorizedRepair(tool, l, st); ok {
+			out = append(out, *op)
+		}
+	}
+	return out
+}
+
+// authorizedRepair is the single repair rule (ADR 0026), shared by plan,
+// conflict prechecks, and apply: a link at l.Dst whose target EXACTLY equals
+// the recorded target, where the recorded src sat at the same domain-relative
+// position the desired src occupies now — a link stranded by a wholesale
+// repository move and nothing else. Two shapes qualify: the in-domain link
+// (dst under the domain; recorded dst ends with the same domain-relative
+// path) and the user-scope link whose SOURCE moved with the repository while
+// its destination (under $HOME) did not (recorded dst equals the current dst
+// exactly).
+func authorizedRepair(tool string, l Link, st *state.State) (*link.Op, bool) {
+	if l.Domain == "" {
+		return nil, false
+	}
+	tgt, err := os.Readlink(l.Dst)
+	if err != nil {
+		return nil, false // not present or not a link
+	}
+	e, ok := st.Get(tool, l.Key)
+	if !ok {
+		return nil, false // unrecorded foreign link stays a conflict
+	}
+	recordedDst, hasDst := recordedDst(e.Desired)
+	_, recordedSrc, hasSrc := strings.Cut(e.Desired, sep)
+	if !hasDst || !hasSrc || tgt != recordedSrc {
+		return nil, false // not exactly what we recorded
+	}
+	srcAbs := resolveTarget(l.Src, l.Dst)
+	srcRel, err2 := filepath.Rel(l.Domain, srcAbs)
+	if err2 != nil || srcRel == "." || strings.HasPrefix(srcRel, "..") {
+		return nil, false // desired source outside the domain: nothing anchored the move
+	}
+	if filepath.Clean(recordedSrc) != filepath.Clean(filepath.Join(trimSuffixDir(recordedSrc, srcRel), srcRel)) {
+		return nil, false // recorded source is not domain-relative-shaped; cannot verify
+	}
+	oldDomain := trimSuffixDir(recordedSrc, srcRel)
+	if filepath.Clean(recordedSrc) != filepath.Clean(filepath.Join(oldDomain, srcRel)) {
+		return nil, false
+	}
+	dstRel, err1 := filepath.Rel(l.Domain, l.Dst)
+	inDomain := err1 == nil && dstRel != "." && !strings.HasPrefix(dstRel, "..")
+	if inDomain {
+		if filepath.Clean(recordedDst) != filepath.Clean(filepath.Join(trimSuffixDir(recordedDst, dstRel), dstRel)) {
+			return nil, false // recorded dst does not share the domain-relative position
+		}
+	} else {
+		// Out-of-domain destination (user scope): the link's location never
+		// moved; only its source did. Require the recorded dst to BE the
+		// current dst, so nothing about the destination is being guessed.
+		if filepath.Clean(recordedDst) != filepath.Clean(l.Dst) {
+			return nil, false
+		}
+	}
+	return &link.Op{Dst: l.Dst, Src: l.Src, Cur: tgt}, true
+}
+
+// trimSuffixDir removes exactly one occurrence of rel (a slash-relative path)
+// from the tail of abs, returning the prefix. Caller verifies the result by
+// re-joining.
+func trimSuffixDir(abs, rel string) string {
+	relFromSlash := filepath.FromSlash(rel)
+	if strings.HasSuffix(filepath.Clean(abs), string(filepath.Separator)+relFromSlash) {
+		return filepath.Clean(abs)[:len(filepath.Clean(abs))-len(relFromSlash)]
+	}
+	if filepath.Clean(abs) == relFromSlash {
+		return ""
+	}
+	return abs // no match; re-join check will fail
+}
+
+// resolveTarget makes a link target absolute against the link's directory.
+func resolveTarget(target, dst string) string {
+	if filepath.IsAbs(target) {
+		return filepath.Clean(target)
+	}
+	return filepath.Clean(filepath.Join(filepath.Dir(dst), target))
+}
+
 // Conflicts is the fail-fast precheck: link.Plan over the desired links, error
-// only, no mutation. The adapter runs it for every link namespace BEFORE any
-// document write or link mutation.
-func Conflicts(links []Link, roots []string) error {
+// only, no mutation. A stale link stranded by a wholesale repository move
+// (authorized repair) is not a conflict. The adapter runs it for every link
+// namespace BEFORE any document write or link mutation.
+func Conflicts(tool string, links []Link, st *state.State, roots []string) error {
 	srcs := make(map[string]string, len(links))
 	for _, l := range links {
 		srcs[l.Dst] = l.Src
 	}
-	_, err := link.Plan(srcs, roots...)
-	return err
+	if _, err := link.Plan(srcs, roots...); err == nil {
+		return nil
+	}
+	// Some link conflicts: every conflicting link must be an authorized
+	// repair, else the conflict stands.
+	for _, l := range links {
+		if _, ok := authorizedRepair(tool, l, st); ok {
+			continue
+		}
+		if _, err := link.Plan(map[string]string{l.Dst: l.Src}, roots...); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // ApplyState processes the state-only side of one namespace's already-prefix-
 // filtered changes: "adopt" records the link into state without touching disk;
-// "delete" resolves the on-disk dst (recorded dst, else fallbackDst) then
-// link.Remove + st.Delete. It creates no links. Runs before doc writes.
-func ApplyState(tool string, changes []adapter.Change, st *state.State, roots []string, fallbackDst func(key string) string) error {
+// "delete" resolves the on-disk dsts (recorded dst plus the adapter's current
+// fallback dsts, both scopes) then link.Remove + st.Delete for each. It
+// creates no links. Runs before doc writes.
+func ApplyState(tool string, changes []adapter.Change, st *state.State, roots []string, fallbackDst func(key string) []string) error {
 	for _, c := range changes {
 		switch c.Action {
 		case "adopt":
@@ -125,16 +261,23 @@ func ApplyState(tool string, changes []adapter.Change, st *state.State, roots []
 		case "delete":
 			// Only a symlink into our content dir is removed; anything else is a
 			// conflict error inside link.Remove. A de-declared resource's on-disk
-			// location is recovered from the recorded dst; fall back otherwise.
-			var dst string
+			// location is recovered from the recorded dst; the adapter's fallback
+			// dsts cover the CURRENT locations at both scopes, so a repository
+			// move between the apply that recorded the entry and this prune
+			// leaves no orphan (L5): Remove is guarded to our own symlinks.
+			var dsts []string
 			if e, ok := st.Get(tool, c.Key); ok {
-				dst, _ = recordedDst(e.Desired)
+				if d, found := recordedDst(e.Desired); found {
+					dsts = append(dsts, d)
+				}
 			}
-			if dst == "" && fallbackDst != nil {
-				dst = fallbackDst(c.Key)
+			if fallbackDst != nil {
+				dsts = append(dsts, fallbackDst(c.Key)...)
 			}
-			if err := link.Remove(dst, roots...); err != nil {
-				return err
+			for _, dst := range dsts {
+				if err := link.Remove(dst, roots...); err != nil {
+					return err
+				}
 			}
 			st.Delete(tool, c.Key)
 		}
@@ -144,7 +287,9 @@ func ApplyState(tool string, changes []adapter.Change, st *state.State, roots []
 
 // ApplyLinks prunes each link's managed inactive-scope orphan, then creates the
 // link and records state. Runs AFTER doc writes (create/update for these keys is
-// symlink work, not JSON). noop/adopt/delete are handled by ApplyState.
+// symlink work, not JSON). noop/adopt/delete are handled by ApplyState. A link
+// whose current target is a stale-but-recorded spelling (an authorized repair)
+// is relinked in place; a foreign link still fails.
 func ApplyLinks(tool string, links []Link, st *state.State, roots []string) error {
 	for _, l := range links {
 		// Prune the same-named managed link at the other scope (a scope switch),
@@ -155,7 +300,17 @@ func ApplyLinks(tool string, links []Link, st *state.State, roots []string) erro
 			}
 		}
 		if _, err := link.Link(l.Src, l.Dst, roots...); err != nil {
-			return err
+			if _, ok := authorizedRepair(tool, l, st); !ok {
+				return err
+			}
+			// Authorized repair: the link is ours, stranded by a wholesale
+			// repository move. Replace it with the desired target.
+			if err := os.Remove(l.Dst); err != nil {
+				return err
+			}
+			if err := os.Symlink(l.Src, l.Dst); err != nil {
+				return err
+			}
 		}
 		st.Set(tool, l.Key, l.Dst+sep+l.Src, secret.Hash(l.Dst+sep+l.Src))
 	}

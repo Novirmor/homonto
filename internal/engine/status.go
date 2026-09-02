@@ -13,6 +13,7 @@ import (
 	"github.com/noviopenworks/homonto/internal/catalog"
 	"github.com/noviopenworks/homonto/internal/config"
 	"github.com/noviopenworks/homonto/internal/fsutil"
+	"github.com/noviopenworks/homonto/internal/link"
 	"github.com/noviopenworks/homonto/internal/remote"
 	"github.com/noviopenworks/homonto/internal/resourcepath"
 )
@@ -246,7 +247,7 @@ func (e *Engine) doctorResource(tool string, op doctorOp) []string {
 			continue
 		}
 		dst := op.linkPath(e, tool, entry)
-		if target, err := os.Readlink(dst); err == nil && target == p {
+		if target, err := os.Readlink(dst); err == nil && link.SameTarget(dst, p, target) {
 			out = append(out, fmt.Sprintf("ok: %s %q linked (%s)", op.kind, name, tool))
 		} else {
 			out = append(out, fmt.Sprintf("warn: %s %q content present, not linked for %s (run apply)", op.kind, name, tool))

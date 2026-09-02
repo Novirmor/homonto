@@ -12,6 +12,7 @@
 package baseadapter
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -118,6 +119,50 @@ func (b *Base) InactiveSkillsDir(scope string) string {
 	return d
 }
 
+// linkTarget spells a symlink target for dst (ADR 0026): relative when the
+// source and the destination move together — both under the one project root
+// that holds .opencode/ and .homonto//homonto/ — and absolute otherwise
+// (user scope lives under $HOME, which does not move with the repo; a
+// cross-repo link's source sits in the config repo while its destination sits
+// in another). A relative spelling that would need to escape to another
+// volume's root (Windows drive letters) has no filepath.Rel; that error is
+// returned so the caller fails before writing a broken link.
+// linkDomain is the relocation domain for links this adapter builds: the
+// project root, and only for the config repo's own adapter (a repo adapter's
+// destinations live in a repository that moves independently).
+func (b *Base) linkDomain() string {
+	if b.RepoName != "" {
+		return ""
+	}
+	return b.ProjectRoot
+}
+
+func (b *Base) linkTarget(src, dst string) (string, error) {
+	domain := b.ProjectRoot
+	if b.RepoName != "" {
+		// Repo mode: the destination lives in the declared repo, which moves
+		// independently of the config repo — not a relocation domain.
+		return src, nil
+	}
+	if domain == "" {
+		return src, nil
+	}
+	relSrc, srcErr := filepath.Rel(domain, src)
+	relDst, dstErr := filepath.Rel(domain, dst)
+	if srcErr != nil || dstErr != nil {
+		// Cross-volume (or otherwise unrepresentable): keep absolute.
+		return src, nil
+	}
+	if strings.HasPrefix(relSrc, "..") || strings.HasPrefix(relDst, "..") {
+		return src, nil // source (e.g. $HOME content) outside the domain: absolute
+	}
+	rel, err := filepath.Rel(filepath.Dir(dst), src)
+	if err != nil {
+		return "", fmt.Errorf("link target for %s: %w", dst, err)
+	}
+	return rel, nil
+}
+
 // SkillFileLinks builds the desired managed skill symlinks for the fileproj
 // contract: destination, content source, state key, and the same-named link at
 // the other scope (Inactive is "" when there is nothing to relocate from).
@@ -128,11 +173,16 @@ func (b *Base) SkillFileLinks() []fileproj.Link {
 		if d := b.InactiveSkillsDir(e.Resource.Scope); d != "" {
 			inact = filepath.Join(d, e.Name)
 		}
+		src, err := b.linkTarget(b.skillSource(e), filepath.Join(b.SkillsDir(e.Resource.Scope), e.Name))
+		if err != nil {
+			continue // unrepresentable target: the plan surfaces the conflict later
+		}
 		out = append(out, fileproj.Link{
 			Dst:      filepath.Join(b.SkillsDir(e.Resource.Scope), e.Name),
-			Src:      b.skillSource(e),
+			Src:      src,
 			Key:      "skill." + e.Name,
 			Inactive: inact,
+			Domain:   b.linkDomain(),
 		})
 	}
 	return out
@@ -186,11 +236,17 @@ func (b *Base) CommandFileLinks() []fileproj.Link {
 		if d := b.InactiveCommandsDir(e.Resource.Scope); d != "" {
 			inact = filepath.Join(d, e.Name+".md")
 		}
+		dst := filepath.Join(b.CommandsDir(e.Resource.Scope), e.Name+".md")
+		src, err := b.linkTarget(b.commandSource(e), dst)
+		if err != nil {
+			continue
+		}
 		out = append(out, fileproj.Link{
-			Dst:      filepath.Join(b.CommandsDir(e.Resource.Scope), e.Name+".md"),
-			Src:      b.commandSource(e),
+			Dst:      dst,
+			Src:      src,
 			Key:      "command." + e.Name,
 			Inactive: inact,
+			Domain:   b.linkDomain(),
 		})
 	}
 	return out
@@ -269,11 +325,17 @@ func (b *Base) SubagentFileLinks() []fileproj.Link {
 		if d := b.InactiveSubagentsDir(e.Resource.Scope); d != "" {
 			inact = filepath.Join(d, e.Name+".md")
 		}
+		dst := filepath.Join(b.SubagentsDir(e.Resource.Scope), e.Name+".md")
+		src, err := b.linkTarget(b.subagentSource(e), dst)
+		if err != nil {
+			continue
+		}
 		out = append(out, fileproj.Link{
-			Dst:      filepath.Join(b.SubagentsDir(e.Resource.Scope), e.Name+".md"),
-			Src:      b.subagentSource(e),
+			Dst:      dst,
+			Src:      src,
 			Key:      "subagent." + e.Name,
 			Inactive: inact,
+			Domain:   b.linkDomain(),
 		})
 	}
 	return out

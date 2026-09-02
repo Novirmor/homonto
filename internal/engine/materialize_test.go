@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/noviopenworks/homonto/internal/adapter"
@@ -126,12 +127,18 @@ func TestApplyRelativeConfigLinksResolve(t *testing.T) {
 	if err != nil {
 		t.Fatalf("expected a symlink at %s: %v", link, err)
 	}
-	if !filepath.IsAbs(target) {
-		t.Fatalf("catalog link target must be absolute (dangles otherwise), got %q", target)
-	}
+	// ADR 0026: project links whose source moves with the repository carry a
+	// relative target computed against the link's own directory — which is
+	// exactly what the original bug got wrong. The spelling may be relative;
+	// the invariant is that it RESOLVES to real content.
+	_ = target
 	// os.Stat follows the link: it fails on a dangling target.
 	if _, err := os.Stat(link); err != nil {
-		t.Fatalf("catalog skill link does not resolve to real content: %v", err)
+		t.Fatalf("catalog skill link does not resolve to real content (target %q): %v", target, err)
+	}
+	resolved, err := filepath.EvalSymlinks(link)
+	if err != nil || !strings.HasSuffix(resolved, filepath.Join(".homonto", "catalog", "skills", "onto-open")) {
+		t.Fatalf("catalog skill link resolves to %q (%v), want the materialized catalog content", resolved, err)
 	}
 }
 

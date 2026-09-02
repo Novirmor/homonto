@@ -590,18 +590,21 @@ func (a *Adapter) Apply(cfg *config.Config, cs adapter.ChangeSet, res *secret.Re
 	// elsewhere. The fallback recovers a de-declared key's on-disk dst at user
 	// scope when state lacks a recorded dst, matching the prior inline behavior.
 	roots := a.ManagedRoots()
-	if err := fileproj.ApplyState("opencode", filterChanges(cs.Changes, "skill."), st, roots, func(k string) string {
-		return filepath.Join(a.SkillsDir("user"), trim(k, "skill."))
+	if err := fileproj.ApplyState("opencode", filterChanges(cs.Changes, "skill."), st, roots, func(k string) []string {
+		name := trim(k, "skill.")
+		return []string{filepath.Join(a.SkillsDir("user"), name), filepath.Join(a.SkillsDir("project"), name)}
 	}); err != nil {
 		return err
 	}
-	if err := fileproj.ApplyState("opencode", filterChanges(cs.Changes, "command."), st, roots, func(k string) string {
-		return filepath.Join(a.CommandsDir("user"), trim(k, "command.")+".md")
+	if err := fileproj.ApplyState("opencode", filterChanges(cs.Changes, "command."), st, roots, func(k string) []string {
+		name := trim(k, "command.") + ".md"
+		return []string{filepath.Join(a.CommandsDir("user"), name), filepath.Join(a.CommandsDir("project"), name)}
 	}); err != nil {
 		return err
 	}
-	if err := fileproj.ApplyState("opencode", filterChanges(cs.Changes, "subagent."), st, roots, func(k string) string {
-		return filepath.Join(a.SubagentsDir("user"), trim(k, "subagent.")+".md")
+	if err := fileproj.ApplyState("opencode", filterChanges(cs.Changes, "subagent."), st, roots, func(k string) []string {
+		name := trim(k, "subagent.") + ".md"
+		return []string{filepath.Join(a.SubagentsDir("user"), name), filepath.Join(a.SubagentsDir("project"), name)}
 	}); err != nil {
 		return err
 	}
@@ -609,13 +612,13 @@ func (a *Adapter) Apply(cfg *config.Config, cs adapter.ChangeSet, res *secret.Re
 	// the three namespaces must be detected here, before any JSON write or state
 	// mutation below — otherwise a command conflict could let Apply partially
 	// write opencode.jsonc and commit skill-link state before erroring.
-	if err := fileproj.Conflicts(a.SkillFileLinks(), roots); err != nil {
+	if err := fileproj.Conflicts("opencode", a.SkillFileLinks(), st, roots); err != nil {
 		return err
 	}
-	if err := fileproj.Conflicts(a.CommandFileLinks(), roots); err != nil {
+	if err := fileproj.Conflicts("opencode", a.CommandFileLinks(), st, roots); err != nil {
 		return err
 	}
-	if err := fileproj.Conflicts(a.SubagentFileLinks(), roots); err != nil {
+	if err := fileproj.Conflicts("opencode", a.SubagentFileLinks(), st, roots); err != nil {
 		return err
 	}
 	// Fail fast on a copy-mode subagent conflict too, before any file is written.

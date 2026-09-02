@@ -36,8 +36,15 @@ func TestProjectScopeLinksUnderProjectRoot(t *testing.T) {
 	}
 
 	projDst := filepath.Join(proj, ".opencode", "skills", "onto")
-	if got, err := os.Readlink(projDst); err != nil || got != filepath.Join(content, "skills", "onto") {
-		t.Fatalf("project link not created: %v %s", err, got)
+	// ADR 0026: a project link whose source moves with the repository carries
+	// a RELATIVE target; assert the link resolves to the content, not its
+	// spelling.
+	if got, err := os.Readlink(projDst); err != nil {
+		t.Fatalf("project link not created: %v", err)
+	} else if resolved, err := filepath.EvalSymlinks(projDst); err != nil || resolved != filepath.Join(content, "skills", "onto") {
+		t.Fatalf("project link resolves to %q (%v), want %q", resolved, err, filepath.Join(content, "skills", "onto"))
+	} else if filepath.IsAbs(got) {
+		t.Fatalf("same-domain project link must be relative, got %q", got)
 	}
 	if _, err := os.Lstat(filepath.Join(home, ".config", "opencode", "skills", "onto")); err == nil {
 		t.Fatal("project scope must not create a link under home")
@@ -241,11 +248,16 @@ func TestMixedScopesProjectIndependently(t *testing.T) {
 	linkA := filepath.Join(userDir, "a")
 	linkB := filepath.Join(projDir, "b")
 
+	// User scope stays absolute (ADR 0026: $HOME does not move with the
+	// repo); project scope in the same domain goes relative and must resolve.
 	if got, err := os.Readlink(linkA); err != nil || got != filepath.Join(content, "skills", "a") {
 		t.Fatalf("user-scope skill a not linked at %s: %v %s", linkA, err, got)
 	}
-	if got, err := os.Readlink(linkB); err != nil || got != filepath.Join(content, "skills", "b") {
-		t.Fatalf("project-scope skill b not linked at %s: %v %s", linkB, err, got)
+	if got, err := os.Readlink(linkB); err != nil || filepath.IsAbs(got) {
+		t.Fatalf("project-scope skill b must carry a relative target at %s: %v %s", linkB, err, got)
+	}
+	if resolved, err := filepath.EvalSymlinks(linkB); err != nil || resolved != filepath.Join(content, "skills", "b") {
+		t.Fatalf("project-scope skill b does not resolve to content: %q (%v)", resolved, err)
 	}
 	if _, err := os.Lstat(filepath.Join(userDir, "b")); err == nil {
 		t.Fatal("user dir must NOT contain project-scope skill b")

@@ -50,6 +50,9 @@ step "agent docs reference only things that exist"
 step "workflow skills shell out (no direct state writes)"
 ./scripts/onto-skills-shell-out-check.sh
 
+step "opencode permission-telemetry contract stays pinned and tested"
+./scripts/permevent-check.sh
+
 step "govulncheck ./..."
 # Pin the toolchain for the tool build too: with GOTOOLCHAIN=auto, x/vuln's own
 # go.mod can select a toolchain older than this module's pin, and a govulncheck

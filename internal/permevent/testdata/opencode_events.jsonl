@@ -1,0 +1,6 @@
+{"type":"permission.asked","properties":{"id":"per_1","sessionID":"ses_session1","permission":"bash","patterns":["git status"],"metadata":{"command":"git status"},"always":["git status"]}}
+{"type":"permission.replied","properties":{"sessionID":"ses_session1","requestID":"per_1","reply":"always"}}
+{"type":"permission.asked","properties":{"id":"per_2","sessionID":"ses_session2","permission":"bash","patterns":["rm -rf /tmp/x"],"metadata":{"command":"rm -rf /tmp/x"}}}
+{"type":"permission.replied","properties":{"sessionID":"ses_session2","requestID":"per_2","reply":"reject"}}
+{"type":"permission.asked","properties":{"id":"per_3","sessionID":"ses_session1","permission":"bash","patterns":["go test ./..."],"metadata":{"command":"go test ./..."}}}
+{"type":"permission.replied","properties":{"sessionID":"ses_session1","requestID":"per_3","reply":"once"}}

@@ -31,7 +31,7 @@ source = "permission-observer"
 	if err != nil {
 		t.Fatal(err)
 	}
-	e.Resolver = &secret.Resolver{Getenv: func(string) string { return "" }, Pass: func(string) (string, error) { return "", nil } }
+	e.Resolver = &secret.Resolver{Getenv: func(string) string { return "" }, Pass: func(string) (string, error) { return "", nil }}
 	if err := e.Apply(context.Background(), mustPlan(t, e)); err != nil {
 		t.Fatalf("apply: %v", err)
 	}

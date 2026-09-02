@@ -42,7 +42,7 @@ printf '# proj\n' > homonto/skills/projskill/SKILL.md
 
 log "apply projects the v0.15.0 surface"
 "$HOMONTO" apply --yes >/dev/null
-is_file ".opencode/skills/projskill"
+is_dir ".opencode/skills/projskill"
 # Project link carries a RELATIVE target (ADR 0026).
 link="$(readlink .opencode/skills/projskill)"
 case "$link" in
@@ -53,17 +53,17 @@ is_file ".homonto/catalog/plugins/permission-observer/plugin.ts"
 ok "relative link + bundled plugin materialized"
 
 log "explain names origins and history"
-"$HOMONTO" explain skill projskill > explain.txt
+"$HOMONTO" explain skill projskill > explain.txt 2>&1
 grep -q "direct" explain.txt || fail "explain must name a direct origin"
 grep -q "last: create" explain.txt || fail "explain must name the creating operation"
-"$HOMONTO" explain --json | grep -q '"schemaVersion"\|"kind"' || fail "explain --json malformed"
+"$HOMONTO" explain --json 2>&1 | grep -q '"schemaVersion"\|"kind"' || fail "explain --json malformed"
 ok "explain reports origin and last change"
 
 log "repository move converges without manual link surgery"
 mv "$W" "$W-moved"; cd "$W-moved"
 "$HOMONTO" apply --yes >/dev/null
 [ -e ".opencode/skills/projskill" ] || fail "project link missing after move"
-"$HOMONTO" status | grep -q "No drift" || fail "status dirty after move+apply"
+"$HOMONTO" status 2>&1 | grep -q "No drift" || fail "status dirty after move+apply"
 ok "repo move converges"
 
 log "onto handoff --write persists metadata-only packs"
@@ -97,25 +97,25 @@ printf '# Tasks\n\n- [x] #1 implement\n' > docs/changes/feat-a/tasks.md
   --exec go --cmd-hash 0123456789012345678901234567890123456789012345678901234567890123 \
   --exit 0 --output /dev/null >/dev/null
 grep -q '"schemaVersion": 1' docs/changes/feat-a/.onto/evidence.json || fail "sidecar missing"
-"$ONTO" trace feat-a --json | grep -q '"scenario"' || fail "trace lacks scenario nodes"
-"$ONTO" doctor | grep -q "healthy" || fail "doctor not healthy after clean evidence"
+"$ONTO" trace feat-a --json 2>&1 | grep -q '"scenario"' || fail "trace lacks scenario nodes"
+"$ONTO" doctor 2>&1 | grep -q "healthy" || fail "doctor not healthy after clean evidence"
 ok "evidence record/trace/doctor"
 
 log "to promote converts a to change"
-mkdir -p docs/tasks
-cat > docs/tasks/feat-a/to-state.yaml <<'YAML'
-change: feat-a
+mkdir -p docs/tasks/grower
+cat > docs/tasks/grower/to-state.yaml <<'YAML'
+change: grower
 phase: do
 YAML
-printf '# plan\n- [ ] #1 work\n  - Files: `x.go`\nFinal Verify: `go test ./...`\n' > docs/tasks/feat-a/plan.md
-"$TO" promote feat-a --yes | grep -q "promoted" || fail "promote output"
-is_file "docs/changes/feat-a/onto-state.yaml"
-is_file "docs/changes/feat-a/imported-to/plan.md"
-grep -q 'phase: open' docs/changes/feat-a/onto-state.yaml || fail "promote must start at open"
+printf '# plan\n- [ ] #1 work\n  - Files: `x.go`\nFinal Verify: `go test ./...`\n' > docs/tasks/grower/plan.md
+"$TO" promote grower --yes 2>&1 | grep -q "promoted" || fail "promote output"
+is_file "docs/changes/grower/onto-state.yaml"
+is_file "docs/changes/grower/imported-to/plan.md"
+grep -q 'phase: open' docs/changes/grower/onto-state.yaml || fail "promote must start at open"
 ok "to promote preserved the source"
 
 log "permissions suggest renders only safe commands"
-printf 'go test ./...\nrm -rf /\n' | "$HOMONTO" permissions suggest > suggest.txt
+printf 'go test ./...\nrm -rf /\n' | "$HOMONTO" permissions suggest > suggest.txt 2>&1
 grep -q 'bash_allow_add' suggest.txt || fail "snippet missing"
 grep -q '"go test ./..."' suggest.txt || fail "safe command missing from snippet"
 if grep -q '"rm -rf' suggest.txt; then :; fi
@@ -125,8 +125,16 @@ rejected="$(grep -c '# rejected' suggest.txt)"
 ok "suggestions validated"
 
 log "snapshot apply + undo restores state"
+# Add a setting (a real change to snapshot), apply it normally, then undo a
+# snapshot of the next change. The config edit happens BEFORE the snapshot
+# so the journal records a non-empty transaction.
+cat >> homonto.toml <<'TOML'
+
+[settings.opencode]
+theme = "snap-theme"
+TOML
 before="$(cat .homonto/state.json)"
-"$HOMONTO" apply --yes --snapshot > snap.txt
+"$HOMONTO" apply --yes --snapshot > snap.txt 2>&1
 grep -q "snapshot: apply recorded as" snap.txt || fail "snapshot apply output"
 id="$(sed -n 's/.*recorded as \([0-9a-f]\{8\}\).*/\1/p' snap.txt)"
 [ -n "$id" ] || fail "no apply id"

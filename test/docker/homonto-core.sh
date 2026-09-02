@@ -53,7 +53,12 @@ printf '[skills.demo]\nsource = "local:demo"\nscope = "project"\n' > homonto.tom
 homonto apply --yes
 
 [ -L "$OPEN_PROJ" ]   || fail "opencode project link not created"
-[ "$(readlink "$OPEN_PROJ")" = "$SRC" ] || fail "project link points at wrong target"
+# ADR 0026: a same-domain project link carries a RELATIVE target; the
+# invariant is that it resolves to the content, not its spelling.
+[ -d "$OPEN_PROJ" ] || fail "project link does not resolve to content"
+case "$(readlink "$OPEN_PROJ")" in
+  /*) fail "same-domain project link must be relative, got $(readlink "$OPEN_PROJ")" ;;
+esac
 # The old user-scope link must have been pruned — no orphan.
 [ -e "$OPEN_USER" ]   && fail "user link not pruned after switch to project"
 

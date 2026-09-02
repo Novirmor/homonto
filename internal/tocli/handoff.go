@@ -159,16 +159,16 @@ func runHandoff(cmd *cobra.Command, root, name string, jsonMode, doWrite bool) e
 
 	if jsonMode {
 		return printJSON(cmd, map[string]any{
-			"schemaVersion":  handoff.SchemaVersion,
-			"tool":           "to",
-			"change":         name,
-			"operationId":    recOperationID(name, st, plan),
-			"generated":      opid.New().Now().Format(time.RFC3339),
-			"phase":          st.Phase,
-			"derivedPhase":   st.Phase,
-			"repoAliases":    st.Repos,
-			"artifacts":      toArtifactDigests(plan),
-			"nextArgv":       toNextArgv(name, st.Phase, plan),
+			"schemaVersion": handoff.SchemaVersion,
+			"tool":          "to",
+			"change":        name,
+			"operationId":   recOperationID(name, st, plan),
+			"generated":     opid.New().Now().Format(time.RFC3339),
+			"phase":         st.Phase,
+			"derivedPhase":  st.Phase,
+			"repoAliases":   st.Repos,
+			"artifacts":     toArtifactDigests(plan),
+			"nextArgv":      toNextArgv(name, st.Phase, plan),
 			// Legacy keys, unchanged for existing consumers.
 			"state": st,
 			"plan":  excerpt,

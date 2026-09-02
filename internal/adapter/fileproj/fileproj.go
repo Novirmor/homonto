@@ -72,11 +72,11 @@ func Project(tool string, links []Link, st *state.State, roots []string) ([]adap
 			// Scope switch: the same-named managed link still exists at the other
 			// scope. Render as a relocate so the move (and the prune Apply performs)
 			// is visible before confirm.
-			changes = append(changes, adapter.Change{Action: "update", Key: l.Key, Old: l.Inactive, New: op.Dst + sep + op.Src})
+			changes = append(changes, adapter.Change{Action: "update", Key: l.Key, Old: l.Inactive, New: op.Dst + sep + op.Src, Cause: adapter.CauseRelocate})
 		case op.Cur == "":
-			changes = append(changes, adapter.Change{Action: "create", Key: l.Key, New: op.Dst + sep + op.Src})
+			changes = append(changes, adapter.Change{Action: "create", Key: l.Key, New: op.Dst + sep + op.Src, Cause: adapter.CauseDeclare})
 		default:
-			changes = append(changes, adapter.Change{Action: "update", Key: l.Key, Old: op.Cur, New: op.Src})
+			changes = append(changes, adapter.Change{Action: "update", Key: l.Key, Old: op.Cur, New: op.Src, Cause: adapter.CauseDriftFix})
 		}
 	}
 	// Adopt a correct-but-unrecorded link — one already on disk pointing at its
@@ -94,7 +94,7 @@ func Project(tool string, links []Link, st *state.State, roots []string) ([]adap
 		if e, ok := st.Get(tool, l.Key); ok && e.Applied == secret.Hash(l.Dst+sep+l.Src) {
 			continue // already recorded → a true noop
 		}
-		changes = append(changes, adapter.Change{Action: "adopt", Key: l.Key, New: l.Dst + sep + l.Src})
+		changes = append(changes, adapter.Change{Action: "adopt", Key: l.Key, New: l.Dst + sep + l.Src, Cause: adapter.CauseAdopt})
 	}
 	return changes, nil
 }

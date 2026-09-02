@@ -266,6 +266,10 @@ func (e *Engine) Apply(ctx context.Context, sets []adapter.ChangeSet) error {
 		byName[t.Adapter.Name()] = t.Adapter
 		pair[t.Adapter.Name()] = t
 	}
+	// Provenance recording brackets each adapter's write: origins + last
+	// events for live keys, tombstones for deletes, one operation per apply
+	// (allocated lazily so a no-op apply records nothing).
+	enrich := e.enrichApply()
 	for _, cs := range sets {
 		a, ok := byName[cs.Tool]
 		if !ok {
@@ -274,9 +278,11 @@ func (e *Engine) Apply(ctx context.Context, sets []adapter.ChangeSet) error {
 		if t, isRepo := pair[cs.Tool]; isRepo {
 			// Name the tool in every per-adapter failure: with several adapters
 			// an unwrapped error leaves the user guessing which file broke.
+			post := enrich(cs, t.State)
 			if err := a.Apply(e.Cfg, cs, e.Resolver, t.State); err != nil {
 				return fmt.Errorf("%s: %w", cs.Tool, err)
 			}
+			post()
 			// Persist immediately into the repo's own partition.
 			if err := t.State.SaveNamed(e.StateDir, t.Name); err != nil {
 				return fmt.Errorf("%s: save state: %w", cs.Tool, err)
@@ -285,9 +291,11 @@ func (e *Engine) Apply(ctx context.Context, sets []adapter.ChangeSet) error {
 		}
 		// Name the tool in every per-adapter failure: with several adapters an
 		// unwrapped error leaves the user guessing which file broke.
+		post := enrich(cs, e.State)
 		if err := a.Apply(e.Cfg, cs, e.Resolver, e.State); err != nil {
 			return fmt.Errorf("%s: %w", cs.Tool, err)
 		}
+		post()
 		// Persist immediately: a partial apply must keep the record of every
 		// adapter that already wrote its files.
 		if err := e.State.Save(e.StateDir); err != nil {

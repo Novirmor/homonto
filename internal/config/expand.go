@@ -139,11 +139,22 @@ func (c *Config) expandEntriesForTool(tool, kind string, base []NamedResource, e
 					Targets: fwRes.Targets,
 				},
 				Mode: "link", // framework-expanded resources project as symlinks
+				Origins: []ResourceOrigin{{
+					Kind:      "framework",
+					Framework: fwName,
+					Provider:  catName,
+					Source:    "builtin:" + name,
+					Scope:     fwRes.Scope,
+				}},
 			}
 			if prev, ok := byName[name]; ok {
 				if !sameResource(prev.Resource, nr.Resource) {
 					return nil, fmt.Errorf("config: %s %q expanded by multiple frameworks with conflicting scope/targets (framework %q)", kind, name, fwName)
 				}
+				// Equivalent re-expansion by another framework: keep both
+				// origins — "who declares this" has two true answers — with
+				// the first primary.
+				prev.Origins = append(prev.Origins, nr.Origins[0])
 				continue
 			}
 			byName[name] = nr
@@ -279,7 +290,15 @@ func entriesForTool(resources map[string]Resource, tool string) []NamedResource 
 	var out []NamedResource
 	for name, r := range resources {
 		if slices.Contains(r.TargetsOrAll(), tool) {
-			out = append(out, NamedResource{Name: name, Resource: r, Repo: r.Repo})
+			out = append(out, NamedResource{
+				Name: name, Resource: r, Repo: r.Repo,
+				Origins: []ResourceOrigin{{
+					Kind:   "direct",
+					Source: r.Source,
+					Scope:  r.Scope,
+					Repo:   r.Repo,
+				}},
+			})
 		}
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].Name < out[j].Name })

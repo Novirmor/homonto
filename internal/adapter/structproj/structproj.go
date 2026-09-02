@@ -58,13 +58,13 @@ func Project(tool, prefix string, desired map[string]string, disk []byte, st *st
 		e, inState := st.Get(tool, key)
 		switch {
 		case !hasDisk:
-			changes = append(changes, adapter.Change{Action: "create", Key: key, New: want})
+			changes = append(changes, adapter.Change{Action: "create", Key: key, New: want, Cause: adapter.CauseDeclare})
 		case !secret.ContainsRef(want):
 			if diskVal == codec.Canonical(want) {
 				if inState && e.Applied == secret.Hash(diskVal) {
 					changes = append(changes, adapter.Change{Action: "noop", Key: key})
 				} else {
-					changes = append(changes, adapter.Change{Action: "adopt", Key: key, New: want})
+					changes = append(changes, adapter.Change{Action: "adopt", Key: key, New: want, Cause: adapter.CauseAdopt})
 				}
 			} else {
 				old := diskVal
@@ -72,13 +72,13 @@ func Project(tool, prefix string, desired map[string]string, disk []byte, st *st
 				if !inState || secret.ContainsRef(e.Desired) {
 					old = adapter.SecretRedaction
 				}
-				changes = append(changes, adapter.Change{Action: "update", Key: key, Old: old, New: want})
+				changes = append(changes, adapter.Change{Action: "update", Key: key, Old: old, New: want, Cause: adapter.CauseUpdate})
 			}
 		default: // secret-bearing desired value: never read/expose the on-disk value
 			if inState && e.Desired == want && e.Applied == secret.Hash(diskVal) {
 				changes = append(changes, adapter.Change{Action: "noop", Key: key})
 			} else {
-				changes = append(changes, adapter.Change{Action: "update", Key: key, Old: adapter.SecretRedaction, New: want})
+				changes = append(changes, adapter.Change{Action: "update", Key: key, Old: adapter.SecretRedaction, New: want, Cause: adapter.CauseDriftFix})
 			}
 		}
 	}
@@ -87,7 +87,7 @@ func Project(tool, prefix string, desired map[string]string, disk []byte, st *st
 		if !strings.HasPrefix(k, prefix) || declared[k] {
 			continue
 		}
-		changes = append(changes, adapter.Change{Action: "delete", Key: k, Old: adapter.SecretRedaction})
+		changes = append(changes, adapter.Change{Action: "delete", Key: k, Old: adapter.SecretRedaction, Cause: adapter.CauseRemove})
 	}
 	sort.SliceStable(changes, func(i, j int) bool { return changes[i].Key < changes[j].Key })
 	return changes, nil

@@ -15,10 +15,14 @@ import (
 // Entry is the last-applied record for one managed key. Desired holds the
 // unresolved value (may contain ${...} tokens); Applied holds a non-secret
 // sha256 of the resolved value that was written to disk. Neither field ever
-// contains a plaintext secret, so state.json is safe to share.
+// contains a plaintext secret, so state.json is safe to share. Origin and
+// LastEvent carry provenance (schema 3); both are nil on legacy entries,
+// which report unknown rather than guessed facts.
 type Entry struct {
-	Desired string `json:"desired"`
-	Applied string `json:"applied"`
+	Desired   string     `json:"desired"`
+	Applied   string     `json:"applied"`
+	Origin    *Origin    `json:"origin,omitempty"`
+	LastEvent *LastEvent `json:"lastEvent,omitempty"`
 }
 
 // State is the last-applied snapshot, keyed tool -> managed key -> Entry.
@@ -52,6 +56,11 @@ type State struct {
 	// through schema 1, when it held only the model routes. It has been a
 	// composite since v0.2.1; schema 2 renames it to match.
 	RenderFingerprint string `json:"renderFingerprint,omitempty"`
+	// Tombstones are removed resources' records (schema 3): a bounded ring of
+	// the latest TombstoneLimit removals in operation order, so `homonto
+	// explain` can answer "what removed this and when" without keeping a full
+	// log.
+	Tombstones []Tombstone `json:"tombstones,omitempty"`
 }
 
 // CurrentStateSchemaVersion is the state.json schema version this binary writes.
@@ -62,7 +71,12 @@ type State struct {
 // rename forces a re-materialize for every user regardless — so carrying the
 // old value across would buy nothing while adding a code path that could be
 // wrong. A schema-1 file loads with the field empty and re-renders once.
-const CurrentStateSchemaVersion = 2
+//
+// 3 adds per-entry Origin/LastEvent and the bounded Tombstones ring (ADR
+// 0025). A schema-2 file loads with unknown provenance — entries carry no
+// Origin until the next apply rewrites them — and no tombstones; nothing is
+// guessed or back-filled.
+const CurrentStateSchemaVersion = 3
 
 // CatalogVersionRecorded returns the catalog version last materialized, or "".
 func (s *State) CatalogVersionRecorded() string { return s.CatalogVersion }
@@ -170,7 +184,57 @@ func (s *State) Set(tool, key, desired, appliedHash string) {
 	if s.Managed[tool] == nil {
 		s.Managed[tool] = map[string]Entry{}
 	}
+	// Preserve provenance across a value-only rewrite: adapters call Set on
+	// every apply; Origin and LastEvent are enriched separately and must
+	// survive an unchanged re-record.
+	if prev, ok := s.Managed[tool][key]; ok {
+		s.Managed[tool][key] = Entry{Desired: desired, Applied: appliedHash, Origin: prev.Origin, LastEvent: prev.LastEvent}
+		return
+	}
 	s.Managed[tool][key] = Entry{Desired: desired, Applied: appliedHash}
+}
+
+// Enrich records provenance on a live entry without touching its value: the
+// origin (when known now) and the operation that last touched it.
+func (s *State) Enrich(tool, key string, origin *Origin, ev LastEvent) {
+	e, ok := s.Managed[tool][key]
+	if !ok {
+		return
+	}
+	if origin != nil {
+		e.Origin = origin
+	}
+	e.LastEvent = &ev
+	s.Managed[tool][key] = e
+}
+
+// Delete drops the record for a key (after its on-disk value was pruned) and
+// appends a removal tombstone when the deletion carries an operation.
+func (s *State) Delete(tool, key string) {
+	s.DeleteWithEvent(tool, key, Tombstone{})
+}
+
+// DeleteWithEvent is Delete with the removing operation attached. A zero
+// Tombstone (no Op) behaves exactly like Delete: legacy callers that prune
+// without an operation record nothing, because a tombstone without an
+// operation would be a guess.
+func (s *State) DeleteWithEvent(tool, key string, t Tombstone) {
+	e, ok := s.Managed[tool][key]
+	if !ok && t.Op == "" {
+		return
+	}
+	delete(s.Managed[tool], key)
+	if t.Op == "" {
+		return
+	}
+	t.Tool, t.Key = tool, key
+	if t.Desired == "" {
+		t.Desired = e.Desired
+	}
+	s.Tombstones = append(s.Tombstones, t)
+	if over := len(s.Tombstones) - TombstoneLimit; over > 0 {
+		s.Tombstones = s.Tombstones[over:]
+	}
 }
 
 // Get returns the recorded Entry for a key and whether it exists.
@@ -187,9 +251,4 @@ func (s *State) Keys(tool string) []string {
 	}
 	sort.Strings(keys)
 	return keys
-}
-
-// Delete drops the record for a key (after its on-disk value was pruned).
-func (s *State) Delete(tool, key string) {
-	delete(s.Managed[tool], key)
 }

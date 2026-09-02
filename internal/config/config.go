@@ -9,6 +9,8 @@ import (
 	"slices"
 	"sort"
 	"strings"
+
+	"github.com/noviopenworks/homonto/internal/state"
 )
 
 // MCP is a declared MCP server. Env values may hold unresolved ${...} tokens.
@@ -87,7 +89,17 @@ type NamedResource struct {
 	// is the only value skills/commands ever carry. It lets the adapters route a
 	// copy-mode subagent to the content-file path instead of the symlink path.
 	Mode string
+	// Origins records why this resource exists (ADR 0025): the direct
+	// declaration when it came from a [<kind>s.<name>] table, or the
+	// framework(s) whose expansion produced it. Empty means the entry predates
+	// provenance tracking — unknown, never guessed.
+	Origins []ResourceOrigin
 }
+
+// ResourceOrigin is one declaration path that put a resource into the
+// effective set. It aliases state.Origin so engine enrichment needs no
+// conversion between the config view and the recorded view.
+type ResourceOrigin = state.Origin
 
 // Subagent is a declarative agent projected by `apply` (distinct from the shared
 // Resource so it can carry lifecycle fields the reconciliation adds without
@@ -377,7 +389,16 @@ func (c *Config) SubagentEntriesForTool(tool string) []NamedResource {
 			continue
 		}
 		if slices.Contains(s.TargetsOrAll(), tool) {
-			out = append(out, NamedResource{Name: name, Resource: s.asResource(), Repo: s.Repo, Mode: s.ModeOrDefault()})
+			src := s.asResource()
+			out = append(out, NamedResource{
+				Name: name, Resource: src, Repo: s.Repo, Mode: s.ModeOrDefault(),
+				Origins: []ResourceOrigin{{
+					Kind:   "direct",
+					Source: src.Source,
+					Scope:  src.Scope,
+					Repo:   s.Repo,
+				}},
+			})
 		}
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].Name < out[j].Name })

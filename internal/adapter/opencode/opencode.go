@@ -277,7 +277,7 @@ func (a *Adapter) Plan(c *config.Config, st *state.State) (adapter.ChangeSet, er
 				// is idempotent on an absent array element and only rewrites the doc
 				// when its bytes actually change.)
 				if inState {
-					cs.Changes = append(cs.Changes, adapter.Change{Action: "delete", Key: "plugin." + src, Old: adapter.SecretRedaction})
+					cs.Changes = append(cs.Changes, adapter.Change{Action: "delete", Key: "plugin." + src, Old: adapter.SecretRedaction, Cause: adapter.CauseDisable})
 				}
 				continue
 			}
@@ -288,10 +288,10 @@ func (a *Adapter) Plan(c *config.Config, st *state.State) (adapter.ChangeSet, er
 				if inState {
 					cs.Changes = append(cs.Changes, adapter.Change{Action: "noop", Key: "plugin." + src})
 				} else {
-					cs.Changes = append(cs.Changes, adapter.Change{Action: "adopt", Key: "plugin." + src, New: structproj.MustJSON(src)})
+					cs.Changes = append(cs.Changes, adapter.Change{Action: "adopt", Key: "plugin." + src, New: structproj.MustJSON(src), Cause: adapter.CauseAdopt})
 				}
 			} else {
-				cs.Changes = append(cs.Changes, adapter.Change{Action: "create", Key: "plugin." + src, New: structproj.MustJSON(src)})
+				cs.Changes = append(cs.Changes, adapter.Change{Action: "create", Key: "plugin." + src, New: structproj.MustJSON(src), Cause: adapter.CauseDeclare})
 			}
 		}
 	}
@@ -358,11 +358,11 @@ func (a *Adapter) Plan(c *config.Config, st *state.State) (adapter.ChangeSet, er
 		case copyfile.Conflict:
 			return adapter.ChangeSet{}, fmt.Errorf("opencode: %s exists and is not a homonto-managed copy-mode subagent; not overwriting", op.Dst)
 		case copyfile.Create:
-			cs.Changes = append(cs.Changes, adapter.Change{Action: "create", Key: "subagentcopy." + name, New: op.Dst})
+			cs.Changes = append(cs.Changes, adapter.Change{Action: "create", Key: "subagentcopy." + name, New: op.Dst, Cause: adapter.CauseDeclare})
 		case copyfile.Update, copyfile.LocalEdit:
-			cs.Changes = append(cs.Changes, adapter.Change{Action: "update", Key: "subagentcopy." + name, New: op.Dst})
+			cs.Changes = append(cs.Changes, adapter.Change{Action: "update", Key: "subagentcopy." + name, New: op.Dst, Cause: adapter.CauseUpdate})
 		case copyfile.Prune:
-			cs.Changes = append(cs.Changes, adapter.Change{Action: "delete", Key: "subagentcopy." + name, Old: op.Dst})
+			cs.Changes = append(cs.Changes, adapter.Change{Action: "delete", Key: "subagentcopy." + name, Old: op.Dst, Cause: adapter.CauseRemove})
 		}
 	}
 	// The generic prune covers plugin.* (array membership) and the file-projection
@@ -372,7 +372,7 @@ func (a *Adapter) Plan(c *config.Config, st *state.State) (adapter.ChangeSet, er
 		if declared[k] || !managedPrefix(k) {
 			continue
 		}
-		cs.Changes = append(cs.Changes, adapter.Change{Action: "delete", Key: k, Old: adapter.SecretRedaction})
+		cs.Changes = append(cs.Changes, adapter.Change{Action: "delete", Key: k, Old: adapter.SecretRedaction, Cause: adapter.CauseRemove})
 	}
 	// Keys come from map iteration (random order); a plan must render the
 	// same way every run. Keys are unique within a changeset.

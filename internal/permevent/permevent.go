@@ -23,31 +23,31 @@ const (
 
 // Decision values carried by permission.replied.
 const (
-	ReplyOnce    = "once"
-	ReplyAlways  = "always"
-	ReplyReject  = "reject"
+	ReplyOnce   = "once"
+	ReplyAlways = "always"
+	ReplyReject = "reject"
 )
 
 // Asked is the payload of permission.asked: the full request, including the
 // bash command under metadata.command and the session the ask belongs to.
 type Asked struct {
-	Type       string            `json:"type"`
-	Properties AskedProperties   `json:"properties"`
+	Type       string          `json:"type"`
+	Properties AskedProperties `json:"properties"`
 }
 
 type AskedProperties struct {
-	ID         string            `json:"id"`
-	SessionID  string            `json:"sessionID"`
-	Permission string            `json:"permission"`
-	Patterns   []string          `json:"patterns"`
-	Metadata   map[string]any    `json:"metadata,omitempty"`
-	Always     []string          `json:"always,omitempty"`
+	ID         string         `json:"id"`
+	SessionID  string         `json:"sessionID"`
+	Permission string         `json:"permission"`
+	Patterns   []string       `json:"patterns"`
+	Metadata   map[string]any `json:"metadata,omitempty"`
+	Always     []string       `json:"always,omitempty"`
 }
 
 // Replied is the payload of permission.replied: the authoritative user
 // decision for a previously asked request, on the same session.
 type Replied struct {
-	Type       string           `json:"type"`
+	Type       string            `json:"type"`
 	Properties RepliedProperties `json:"properties"`
 }
 

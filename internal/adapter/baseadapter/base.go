@@ -244,7 +244,7 @@ func (b *Base) subagentSource(entry config.NamedResource) string {
 // but has no <name><VariantSuffix> variant — agentfm skipped this tool's
 // render, so the tool simply does not project it. A verbatim subagent (no
 // block) is always projected.
-func (b *Base) skipsSubagent(e config.NamedResource) bool {
+func (b *Base) SkipsSubagent(e config.NamedResource) bool {
 	name, ok := strings.CutPrefix(e.Resource.Source, "builtin:")
 	if !ok {
 		return false
@@ -262,7 +262,7 @@ func (b *Base) skipsSubagent(e config.NamedResource) bool {
 func (b *Base) SubagentFileLinks() []fileproj.Link {
 	var out []fileproj.Link
 	for _, e := range b.Subagents {
-		if e.Mode == "copy" || b.skipsSubagent(e) {
+		if e.Mode == "copy" || b.SkipsSubagent(e) {
 			continue
 		}
 		inact := ""
@@ -284,7 +284,7 @@ func (b *Base) SubagentFileLinks() []fileproj.Link {
 func (b *Base) copySubagentDesired() (map[string][]byte, error) {
 	out := map[string][]byte{}
 	for _, entry := range b.Subagents {
-		if entry.Mode != "copy" || b.skipsSubagent(entry) {
+		if entry.Mode != "copy" || b.SkipsSubagent(entry) {
 			continue
 		}
 		content, err := os.ReadFile(b.subagentSource(entry))

@@ -67,8 +67,8 @@ func handoffCmd() *cobra.Command {
 				payload := struct {
 					handoff.Recovery
 					State        ontostate.State `json:"state"`
-					SetCommands  []string       `json:"setCommands,omitempty"`
-					ArtifactsAgg string         `json:"artifactsHash,omitempty"`
+					SetCommands  []string        `json:"setCommands,omitempty"`
+					ArtifactsAgg string          `json:"artifactsHash,omitempty"`
 				}{Recovery: rec, State: st, ArtifactsAgg: pack.artifactsHash}
 				for _, g := range pack.gates {
 					payload.SetCommands = append(payload.SetCommands, g.SetCommand)
@@ -114,9 +114,9 @@ var handoffArtifacts = []string{"proposal.md", "notes.md", "design.md", "plan.md
 // textPack is the legacy stdout view: prose with excerpts. It never reaches a
 // persisted file.
 type textPack struct {
-	text           string
-	gates          []pendingGate
-	artifactsHash  string
+	text          string
+	gates         []pendingGate
+	artifactsHash string
 }
 
 func buildHandoff(name, changeDir string, st ontostate.State) (*textPack, error) {

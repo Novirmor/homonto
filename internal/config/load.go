@@ -72,9 +72,10 @@ func normalize(c *Config) {
 	// render, silently dropping its variant.
 	trimRoute := func(r ModelRoute) ModelRoute {
 		return ModelRoute{
-			Model:   strings.TrimSpace(r.Model),
-			Effort:  strings.TrimSpace(r.Effort),
-			Variant: strings.TrimSpace(r.Variant),
+			Model:        strings.TrimSpace(r.Model),
+			Effort:       strings.TrimSpace(r.Effort),
+			Variant:      strings.TrimSpace(r.Variant),
+			BashAllowAdd: append([]string(nil), r.BashAllowAdd...),
 		}
 	}
 	for name, r := range c.Subagents {

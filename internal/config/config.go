@@ -156,7 +156,26 @@ func (s Subagent) IsTuneOnly() bool {
 	if strings.TrimSpace(s.Source) != "" {
 		return false
 	}
-	return s.OpenCode != ModelRoute{}
+	return s.OpenCode.IsSet()
+}
+
+// IsSet reports whether any override field is present — the "this block
+// tunes an agent" signal for source-less subagent entries.
+func (r ModelRoute) IsSet() bool {
+	return r.Model != "" || r.Effort != "" || r.Variant != "" || len(r.BashAllowAdd) > 0
+}
+
+// Equal compares two routes field-by-field (slice-safe).
+func (r ModelRoute) Equal(o ModelRoute) bool {
+	if r.Model != o.Model || r.Effort != o.Effort || r.Variant != o.Variant || len(r.BashAllowAdd) != len(o.BashAllowAdd) {
+		return false
+	}
+	for i := range r.BashAllowAdd {
+		if r.BashAllowAdd[i] != o.BashAllowAdd[i] {
+			return false
+		}
+	}
+	return true
 }
 
 // SubagentCatalogName returns the builtin catalog name a source resolves to.
@@ -230,6 +249,11 @@ type ModelRoute struct {
 	Model   string `toml:"model"`
 	Effort  string `toml:"effort"`
 	Variant string `toml:"variant"`
+	// BashAllowAdd appends exact commands to a framework agent's base
+	// bash_allow list (ADR 0029): the reviewed output of permission
+	// suggestions. Only legal on tune-only/opencode entries; pattern
+	// syntax and secrets are rejected at load.
+	BashAllowAdd []string `toml:"bash_allow_add"`
 }
 
 // Plugin is one declared plugin. Source is the tool-native identifier: the

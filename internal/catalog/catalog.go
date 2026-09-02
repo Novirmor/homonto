@@ -48,6 +48,7 @@ type Catalog struct {
 	skills     map[string]string // skill name -> source-relative path (global index)
 	commands   map[string]string // command name -> source-relative path (global index)
 	subagents  map[string]string // subagent name -> source-relative path (global index)
+	plugins    map[string]string // plugin name -> source-relative path (global index)
 	// skillFS/commandFS/subagentFS map each indexed resource name to the source
 	// filesystem its path is relative to. For a base-only catalog every entry is
 	// the base FS (identical to reading from c.fsys); a local overlay's resources
@@ -55,6 +56,7 @@ type Catalog struct {
 	skillFS    map[string]fs.FS
 	commandFS  map[string]fs.FS
 	subagentFS map[string]fs.FS
+	pluginFS   map[string]fs.FS
 	version    string
 }
 
@@ -169,9 +171,11 @@ func newBaseCatalog(base fs.FS) (*Catalog, error) {
 		skills:     map[string]string{},
 		commands:   map[string]string{},
 		subagents:  map[string]string{},
+		plugins:    map[string]string{},
 		skillFS:    map[string]fs.FS{},
 		commandFS:  map[string]fs.FS{},
 		subagentFS: map[string]fs.FS{},
+		pluginFS:   map[string]fs.FS{},
 	}
 	vb, err := fs.ReadFile(base, "version.txt")
 	if err != nil {
@@ -277,6 +281,28 @@ func (c *Catalog) mergeSource(src fs.FS) error {
 		}
 		c.skills[name] = sp
 		c.skillFS[name] = src
+	}
+	// Bundled plugins: every plugins/<name>/ entry holding a plugin entry
+	// file (plugin.ts) is indexed like a skill directory — owned catalog
+	// content, materialized and version-gated, but never auto-enabled.
+	pluginEntries, err := readOptionalDir("plugins")
+	if err != nil {
+		return err
+	}
+	for _, e := range pluginEntries {
+		if !e.IsDir() {
+			continue
+		}
+		name := e.Name()
+		if _, ok := c.plugins[name]; ok {
+			continue // a framework or earlier source already declares it
+		}
+		sp := path.Join("plugins", name)
+		if _, err := fs.Stat(src, path.Join(sp, "plugin.ts")); err != nil {
+			continue // a plugin directory must hold a plugin.ts
+		}
+		c.plugins[name] = sp
+		c.pluginFS[name] = src
 	}
 	commandEntries, err := readOptionalDir("commands")
 	if err != nil {

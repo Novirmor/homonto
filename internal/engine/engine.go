@@ -41,6 +41,7 @@ type Engine struct {
 	CatalogRoot         string // materialized builtin catalog root (<stateDir>/catalog/skills)
 	CommandCatalogRoot  string // materialized builtin command root (<stateDir>/catalog/commands)
 	SubagentCatalogRoot string // materialized builtin subagent root (<stateDir>/catalog/subagents)
+	PluginCatalogRoot   string // materialized bundled plugin root (<stateDir>/catalog/plugins)
 	RemoteRoot          string // materialized remote content root (<stateDir>/remote)
 	RemoteCacheRoot     string // content-addressed remote cache (<stateDir>/cache/remote)
 	Home                string
@@ -103,6 +104,7 @@ func Build(ctx context.Context, configPath, home, contentDir string) (*Engine, e
 	catalogDir := filepath.Join(stateDir, "catalog", "skills")
 	commandCatalogDir := filepath.Join(stateDir, "catalog", "commands")
 	subagentCatalogDir := filepath.Join(stateDir, "catalog", "subagents")
+	pluginCatalogDir := filepath.Join(stateDir, "catalog", "plugins")
 	remoteRoot := filepath.Join(stateDir, "remote")
 	remoteSubagentDir := filepath.Join(remoteRoot, "subagents")
 	remoteCacheRoot := filepath.Join(stateDir, "cache", "remote")
@@ -119,6 +121,7 @@ func Build(ctx context.Context, configPath, home, contentDir string) (*Engine, e
 			CatalogDir:         catalogDir,
 			CommandCatalogDir:  commandCatalogDir,
 			SubagentCatalogDir: subagentCatalogDir,
+			PluginCatalogDir:   pluginCatalogDir,
 			RemoteSubagentDir:  remoteSubagentDir,
 		}),
 		State:               st,
@@ -127,6 +130,7 @@ func Build(ctx context.Context, configPath, home, contentDir string) (*Engine, e
 		CatalogRoot:         catalogDir,
 		CommandCatalogRoot:  commandCatalogDir,
 		SubagentCatalogRoot: subagentCatalogDir,
+		PluginCatalogRoot:   pluginCatalogDir,
 		RemoteRoot:          remoteRoot,
 		RemoteCacheRoot:     remoteCacheRoot,
 		Home:                home,
@@ -161,6 +165,7 @@ func Build(ctx context.Context, configPath, home, contentDir string) (*Engine, e
 			WithCatalogRoot(catalogDir).
 			WithCommandCatalogRoot(commandCatalogDir).
 			WithSubagentCatalogRoot(subagentCatalogDir).
+			WithPluginCatalogRoot(pluginCatalogDir).
 			WithRemoteSubagentRoot(remoteSubagentDir).
 			WithRepo(name)
 		e.RepoTargets = append(e.RepoTargets, RepoTarget{Name: name, Dir: cfg.RepoDirs()[name], Adapter: a, State: st})
@@ -363,7 +368,7 @@ func (e *Engine) subagentRenderContextFor(targets map[string]map[string]bool) ma
 				}
 				name = cat
 			}
-			m[name] = agentfm.ModelSpec{Model: r.Model, Variant: r.Variant, Effort: r.Effort}
+			m[name] = agentfm.ModelSpec{Model: r.Model, Variant: r.Variant, Effort: r.Effort, BashAllowAdd: r.BashAllowAdd}
 		}
 		return m
 	}
@@ -397,12 +402,18 @@ func (e *Engine) materializeCatalog() error {
 	if err := p.cl.MaterializeSubagents(e.SubagentCatalogRoot, p.subagents, p.renderCtx); err != nil {
 		return err
 	}
+	// Bundled plugins are owned catalog content (ADR 0029): materialized with
+	// the same version gate, never auto-enabled — the user opts in through
+	// [plugins.opencode].
+	if err := p.cl.MaterializePlugins(e.PluginCatalogRoot, p.plugins); err != nil {
+		return err
+	}
 	// GC: the Materialize* calls only ever WRITE declared names, so a renamed or
 	// de-declared resource left its old files in the catalog roots forever. That
 	// litter was live ammunition, not just clutter — the adapters prefer a
 	// <name>.<tool>.md variant when one exists, so a years-old render could win
 	// over a future same-named verbatim agent.
-	if err := gcCatalogRoots(e.CatalogRoot, e.CommandCatalogRoot, e.SubagentCatalogRoot, p); err != nil {
+	if err := gcCatalogRoots(e.CatalogRoot, e.CommandCatalogRoot, e.SubagentCatalogRoot, e.PluginCatalogRoot, p); err != nil {
 		return err
 	}
 	e.State.SetCatalogVersion(p.cl.Version())
@@ -412,13 +423,25 @@ func (e *Engine) materializeCatalog() error {
 	return e.State.Save(e.StateDir)
 }
 
+// allPluginDirsExist reports whether every bundled plugin directory is
+// materialized — the plugin side of the materialize gate.
+func allPluginDirsExist(root string, names []string) bool {
+	for _, n := range names {
+		fi, err := os.Stat(filepath.Join(root, n, "plugin.ts"))
+		if err != nil || fi.IsDir() {
+			return false
+		}
+	}
+	return true
+}
+
 // gcCatalogRoots removes entries in the materialized catalog roots that no
 // declared resource owns: skill directories outside p.skills, command files
 // outside p.commands, and subagent files (anchor or per-tool variant) whose
 // base name is outside p.subagents. The roots are control-plane directories
 // under .homonto — generated content, never user-authored — so pruning the
 // undeclared is safe by construction.
-func gcCatalogRoots(skillRoot, cmdRoot, subRoot string, p *catalogPlan) error {
+func gcCatalogRoots(skillRoot, cmdRoot, subRoot, pluginRoot string, p *catalogPlan) error {
 	inSet := func(names []string) map[string]bool {
 		m := make(map[string]bool, len(names))
 		for _, n := range names {
@@ -447,6 +470,19 @@ func gcCatalogRoots(skillRoot, cmdRoot, subRoot string, p *catalogPlan) error {
 			}
 		}
 	}
+	if entries, err := os.ReadDir(pluginRoot); err == nil {
+		owned := map[string]bool{}
+		for _, n := range p.plugins {
+			owned[n] = true
+		}
+		for _, e := range entries {
+			if !owned[e.Name()] {
+				if err := os.RemoveAll(filepath.Join(pluginRoot, e.Name())); err != nil {
+					return err
+				}
+			}
+		}
+	}
 	if entries, err := os.ReadDir(subRoot); err == nil {
 		for _, e := range entries {
 			// Owner name: strip .md, then an optional per-tool variant suffix.
@@ -468,6 +504,7 @@ type catalogPlan struct {
 	skills    []string
 	commands  []string
 	subagents []string
+	plugins   []string
 	renderCtx map[string]agentfm.RenderContext
 	// shellProxy/codeIntel are the resolved [tooling] providers rendered into
 	// each dispatcher skill's generated tooling reference.
@@ -498,6 +535,7 @@ func (e *Engine) planCatalog() (*catalogPlan, error) {
 	skillSet := map[string]bool{}
 	cmdSet := map[string]bool{}
 	subSet := map[string]bool{}
+	pluginSet := map[string]bool{}
 	targetedSubagents := map[string]map[string]bool{"opencode": {}}
 	for _, tool := range []string{"opencode"} {
 		sEntries, err := e.Cfg.ExpandedSkillEntriesForTool(tool)
@@ -530,6 +568,10 @@ func (e *Engine) planCatalog() (*catalogPlan, error) {
 			}
 		}
 	}
+	// Bundled plugins ride with the catalog: any catalog materialization
+	// materializes them (they are version-gated content, not per-config
+	// declarations). When the config declares no builtin content at all,
+	// there is no catalog to materialize alongside.
 	if len(skillSet) == 0 && len(cmdSet) == 0 && len(subSet) == 0 {
 		return nil, nil
 	}
@@ -540,6 +582,9 @@ func (e *Engine) planCatalog() (*catalogPlan, error) {
 	cl, err := e.Cfg.FrameworkCatalog()
 	if err != nil {
 		return nil, err
+	}
+	for _, name := range cl.PluginNames() {
+		pluginSet[name] = true
 	}
 	skillNames := make([]string, 0, len(skillSet))
 	for n := range skillSet {
@@ -569,7 +614,12 @@ func (e *Engine) planCatalog() (*catalogPlan, error) {
 	//     how a patched resource ships),
 	//   - and the presence of every file a materialize would write.
 	renderCtx := e.subagentRenderContextFor(targetedSubagents)
-	contentFP, err := cl.ContentFingerprint(skillNames, cmdNames, subNames)
+	pluginNames := make([]string, 0, len(pluginSet))
+	for n := range pluginSet {
+		pluginNames = append(pluginNames, n)
+	}
+	sort.Strings(pluginNames)
+	contentFP, err := cl.ContentFingerprint(skillNames, cmdNames, subNames, pluginNames)
 	if err != nil {
 		return nil, err
 	}
@@ -588,12 +638,14 @@ func (e *Engine) planCatalog() (*catalogPlan, error) {
 		e.State.RenderFingerprintRecorded() == fingerprint &&
 		allSkillDirsExist(e.CatalogRoot, skillNames, cl) &&
 		allCommandFilesExist(e.CommandCatalogRoot, cmdNames) &&
-		allSubagentFilesExist(e.SubagentCatalogRoot, subNames, cl, renderCtx)
+		allSubagentFilesExist(e.SubagentCatalogRoot, subNames, cl, renderCtx) &&
+		allPluginDirsExist(e.PluginCatalogRoot, pluginNames)
 	return &catalogPlan{
 		cl:          cl,
 		skills:      skillNames,
 		commands:    cmdNames,
 		subagents:   subNames,
+		plugins:     pluginNames,
 		renderCtx:   renderCtx,
 		shellProxy:  tooling.ShellProxy,
 		codeIntel:   tooling.CodeIntel,
@@ -654,6 +706,9 @@ func renderFingerprint(ctx map[string]agentfm.RenderContext) string {
 		for _, k := range keys {
 			s := specs[k]
 			fmt.Fprintf(h, "%s\x00%s\x00%s\x00%s\x00%s\x00%s\x00", kind, tool, k, s.Model, s.Variant, s.Effort)
+			for _, add := range s.BashAllowAdd {
+				fmt.Fprintf(h, "bashadd\x00%s\x00", add)
+			}
 		}
 	}
 	tools := make([]string, 0, len(ctx))

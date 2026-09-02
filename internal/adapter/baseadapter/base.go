@@ -55,6 +55,7 @@ type Base struct {
 	CatalogRoot         string // materialized builtin catalog root (.homonto/catalog/skills)
 	CommandCatalogRoot  string // materialized builtin command root (.homonto/catalog/commands)
 	SubagentCatalogRoot string // materialized builtin subagent root (.homonto/catalog/subagents)
+	PluginCatalogRoot   string // materialized bundled plugin root (.homonto/catalog/plugins)
 	RemoteSubagentRoot  string // materialized remote subagent root (.homonto/remote/subagents)
 
 	Skills    []config.NamedResource

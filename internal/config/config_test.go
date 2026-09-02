@@ -734,7 +734,7 @@ targets = ["opencode"]
 		}
 		// Claude Code support was removed in v0.13.0; the claude route is a
 		// removal detector and resolves to no override at all.
-		if got := c.Subagents["onto-skeptic"].ModelOverrideFor("claude"); got != (ModelRoute{}) {
+		if got := c.Subagents["onto-skeptic"].ModelOverrideFor("claude"); got.IsSet() {
 			t.Fatalf("ModelOverrideFor(\"claude\") = %#v; want the zero route", got)
 		}
 	})

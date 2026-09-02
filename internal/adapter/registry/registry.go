@@ -21,6 +21,7 @@ type Deps struct {
 	CatalogDir         string
 	CommandCatalogDir  string
 	SubagentCatalogDir string
+	PluginCatalogDir   string
 	RemoteSubagentDir  string
 }
 
@@ -72,6 +73,7 @@ func Builtins() *Registry {
 			WithCatalogRoot(d.CatalogDir).
 			WithCommandCatalogRoot(d.CommandCatalogDir).
 			WithSubagentCatalogRoot(d.SubagentCatalogDir).
+			WithPluginCatalogRoot(d.PluginCatalogDir).
 			WithRemoteSubagentRoot(d.RemoteSubagentDir)
 	})
 	return r

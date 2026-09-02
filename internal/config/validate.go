@@ -207,7 +207,7 @@ func validateRemovedTools(c *Config) error {
 		return fmt.Errorf("parse config: marketplaces.claude.%s — marketplaces were a Claude-only feature removed with the adapter in v0.13.0; delete the block", names[0])
 	}
 	for _, name := range sortedSubagentNames(c) {
-		if sa := c.Subagents[name]; sa.Claude != (ModelRoute{}) {
+		if sa := c.Subagents[name]; sa.Claude.IsSet() {
 			return fmt.Errorf("parse config: subagents.%s.claude — Claude Code support was removed in v0.13.0; move the model block to [subagents.%s.opencode] or delete it", name, name)
 		}
 	}
@@ -633,6 +633,37 @@ func validateModelSpec(tool, label string, r ModelRoute, requireModel bool) erro
 		if variant != "" {
 			return variantToken(label, variant)
 		}
+		for _, add := range r.BashAllowAdd {
+			if err := bashAllowAddToken(label, add); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+// bashAllowAddToken rejects an additive bash_allow command that cannot be an
+// exact, safe allow (ADR 0029): OpenCode pattern metacharacters would
+// silently generalize the rule, shell composition would smuggle logic past
+// the allowlist, and command-bearing lines can carry credentials.
+func bashAllowAddToken(label, add string) error {
+	cmd := strings.TrimSpace(add)
+	if cmd == "" {
+		return fmt.Errorf("parse config: %s bash_allow_add entries must be non-empty", label)
+	}
+	if strings.ContainsAny(cmd, "*?[]{}") {
+		return fmt.Errorf("parse config: %s bash_allow_add %q must be an exact command; wildcards belong in the agent's base bash_allow, not in an addition", label, cmd)
+	}
+	for _, bad := range []string{"|", "&&", "||", ";", ">", "<", "$(", "`", "\\\n"} {
+		if strings.Contains(cmd, bad) {
+			return fmt.Errorf("parse config: %s bash_allow_add %q carries shell composition; only a single exact command is allowed", label, cmd)
+		}
+	}
+	if strings.ContainsAny(cmd, "=") || strings.Contains(cmd, "PASS") || strings.Contains(cmd, "TOKEN") || strings.Contains(cmd, "KEY") || strings.Contains(cmd, "SECRET") {
+		return fmt.Errorf("parse config: %s bash_allow_add %q looks like an environment assignment or carries a credential-like name; refusing", label, cmd)
+	}
+	if strings.HasPrefix(cmd, "rm ") || strings.HasPrefix(cmd, "sudo ") || strings.HasPrefix(cmd, "su ") || strings.HasPrefix(cmd, "mkfs") || strings.HasPrefix(cmd, "dd ") {
+		return fmt.Errorf("parse config: %s bash_allow_add %q is destructive or privilege-escalating; refusing", label, cmd)
 	}
 	return nil
 }
@@ -732,7 +763,7 @@ func validateModels(c *Config) error {
 					declaredByCat[cat] = true
 				}
 			}
-			if r := sa.ModelOverrideFor(tool); r != (ModelRoute{}) {
+			if r := sa.ModelOverrideFor(tool); r.IsSet() {
 				routeByCat[cat] = r
 			}
 		}
@@ -846,7 +877,7 @@ func validateSubagentOverrides(c *Config) error {
 	}{} // catalog name -> tool -> first override seen
 	for _, name := range names {
 		sa := c.Subagents[name]
-		hasOverride := sa.OpenCode != (ModelRoute{})
+		hasOverride := sa.OpenCode.IsSet()
 		if !hasOverride {
 			continue
 		}
@@ -873,7 +904,7 @@ func validateSubagentOverrides(c *Config) error {
 
 		for _, tool := range []string{"opencode"} {
 			ov := sa.ModelOverrideFor(tool)
-			if ov == (ModelRoute{}) {
+			if !ov.IsSet() {
 				continue
 			}
 			label := "subagents." + name + "." + tool
@@ -895,7 +926,7 @@ func validateSubagentOverrides(c *Config) error {
 					ov    ModelRoute
 				}{}
 			}
-			if prev, dup := seen[cat][tool]; dup && prev.ov != ov {
+			if prev, dup := seen[cat][tool]; dup && !prev.ov.Equal(ov) {
 				return fmt.Errorf("parse config: subagents.%s.%s conflicts with subagents.%s.%s — one builtin (%s) renders one file, so its overrides must agree", name, tool, prev.entry, tool, cat)
 			}
 			seen[cat][tool] = struct {

@@ -126,6 +126,56 @@ func (c *Catalog) MaterializeCommands(dstRoot string, names []string) error {
 	return nil
 }
 
+// MaterializePlugins writes each named bundled plugin directory from the
+// embedded FS to dstRoot/<name>/ — owned catalog content (ADR 0029), replaced
+// byte-for-byte on upgrade, never executed by homonto itself.
+func (c *Catalog) MaterializePlugins(dstRoot string, names []string) error {
+	for _, name := range names {
+		pp, ok := c.plugins[name]
+		if !ok {
+			return fmt.Errorf("catalog: unknown plugin %q", name)
+		}
+		sub, err := fs.Sub(c.pluginFS[name], pp)
+		if err != nil {
+			return fmt.Errorf("catalog: sub %q: %w", pp, err)
+		}
+		dst := filepath.Join(dstRoot, name)
+		if err := os.RemoveAll(dst); err != nil {
+			return err
+		}
+		if err := fs.WalkDir(sub, ".", func(p string, d fs.DirEntry, walkErr error) error {
+			if walkErr != nil {
+				return walkErr
+			}
+			rel := filepath.FromSlash(p)
+			if d.IsDir() {
+				return os.MkdirAll(filepath.Join(dst, rel), 0o755)
+			}
+			data, err := fs.ReadFile(sub, p)
+			if err != nil {
+				return err
+			}
+			return fsutil.WriteControlPlane(filepath.Join(dst, rel), data, 0o644)
+		}); err != nil {
+			return fmt.Errorf("catalog: materialize plugin %q: %w", name, err)
+		}
+	}
+	return nil
+}
+
+// PluginNames lists the bundled plugin names.
+func (c *Catalog) PluginNames() []string {
+	return sortedCopy(mapKeys(c.plugins))
+}
+
+func mapKeys[V any](m map[string]V) []string {
+	out := make([]string, 0, len(m))
+	for k := range m {
+		out = append(out, k)
+	}
+	return out
+}
+
 // MaterializeSubagents writes each named builtin subagent from the embedded FS
 // to dstRoot/<name>.md (a single file), replacing any existing file
 // byte-for-byte. Like MaterializeCommands, no RemoveAll is needed — a
@@ -150,7 +200,7 @@ func (c *Catalog) MaterializeCommands(dstRoot string, names []string) error {
 // while the version stays put, so a version-only gate served the stale bytes
 // forever ("No changes. Everything up to date.") — repinning is how a patched
 // resource ships, which made the staleness security-relevant.
-func (c *Catalog) ContentFingerprint(skills, commands, subagents []string) (string, error) {
+func (c *Catalog) ContentFingerprint(skills, commands, subagents, plugins []string) (string, error) {
 	h := sha256.New()
 	hashFile := func(kind string, src fs.FS, p string) error {
 		data, err := fs.ReadFile(src, p)
@@ -196,6 +246,25 @@ func (c *Catalog) ContentFingerprint(skills, commands, subagents []string) (stri
 			return "", fmt.Errorf("catalog: unknown subagent %q", name)
 		}
 		if err := hashFile("subagent:"+name, c.subagentFS[name], sp); err != nil {
+			return "", err
+		}
+	}
+	for _, name := range sortedCopy(plugins) {
+		sp, ok := c.plugins[name]
+		if !ok {
+			return "", fmt.Errorf("catalog: unknown plugin %q", name)
+		}
+		sub, err := fs.Sub(c.pluginFS[name], sp)
+		if err != nil {
+			return "", err
+		}
+		err = fs.WalkDir(sub, ".", func(p string, d fs.DirEntry, walkErr error) error {
+			if walkErr != nil || d.IsDir() {
+				return walkErr
+			}
+			return hashFile("plugin:"+name, sub, p)
+		})
+		if err != nil {
 			return "", err
 		}
 	}

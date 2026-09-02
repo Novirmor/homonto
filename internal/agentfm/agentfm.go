@@ -60,6 +60,9 @@ type ModelSpec struct {
 	Model   string
 	Variant string
 	Effort  string
+	// BashAllowAdd appends exact commands to the agent's base bash_allow
+	// (rendered after the base list, before "*": ask ordering stays intact).
+	BashAllowAdd []string
 }
 
 // RenderContext carries the per-subagent model overrides the render needs for
@@ -166,7 +169,10 @@ func Render(name string, content []byte, tool string, ctx *RenderContext) ([]byt
 		if h.Steps > 0 {
 			extra = append(extra, fmt.Sprintf("steps: %d", h.Steps))
 		}
-		if perm := opencodePermission(h); perm != "" {
+		if h.Bash != nil && !*h.Bash && len(spec.BashAllowAdd) > 0 {
+			return nil, fmt.Errorf("agentfm: agent %q declares bash: deny but carries bash_allow_add entries; a denied agent cannot gain exact allows", name)
+		}
+		if perm := opencodePermission(h, spec.BashAllowAdd); perm != "" {
 			extra = append(extra, "permission:", perm)
 		}
 	default:
@@ -190,21 +196,26 @@ func Render(name string, content []byte, tool string, ctx *RenderContext) ([]byt
 
 // opencodePermission renders the OpenCode `permission:` block body (indented
 // lines) for the neutral intent, including the delegation topology as task globs.
-func opencodePermission(h Homonto) string {
+func opencodePermission(h Homonto, additions []string) string {
 	var lines []string
 	if h.ReadOnly {
 		lines = append(lines, "  edit: deny")
 	}
 	if h.Bash != nil && !*h.Bash {
 		lines = append(lines, "  bash: deny")
-	} else if len(h.BashAllow) > 0 {
+	} else if len(h.BashAllow) > 0 || len(additions) > 0 {
 		// OpenCode evaluates the final matching rule, so the broad prompt must
-		// precede the command-specific allows.
+		// precede the command-specific allows. Additions (bash_allow_add, the
+		// reviewed permission-suggestion output) append after the base list,
+		// deduplicated.
 		lines = append(lines, "  bash:", `    "*": ask`)
-		for _, command := range h.BashAllow {
-			if strings.TrimSpace(command) != "" {
-				lines = append(lines, fmt.Sprintf("    %q: allow", command))
+		seen := map[string]bool{}
+		for _, command := range append(append([]string{}, h.BashAllow...), additions...) {
+			if strings.TrimSpace(command) == "" || seen[command] {
+				continue
 			}
+			seen[command] = true
+			lines = append(lines, fmt.Sprintf("    %q: allow", command))
 		}
 	}
 	// dialogs is enforced both ways: an agent whose protocol is "return a

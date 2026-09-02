@@ -72,11 +72,10 @@ variant = "thinking"
 
 No `source` is needed (or allowed) when the agent comes from a framework: a
 block with no source *tunes* the agent rather than declaring it. `model`
-and `variant` render into OpenCode's frontmatter — the variant as the
-`provider/model#variant` suffix on the model id, the spelling OpenCode uses
-everywhere a model id appears (`medium`, `high`, `xhigh`, `max`, or any
-variant the provider defines). OpenCode has no effort setting at all;
-declaring one is a config error.
+and `variant` render as separate OpenCode frontmatter fields. A variant
+selects provider-defined request options such as `medium`, `high`, `xhigh`,
+or `max`; it is not part of the model ID. OpenCode has no effort setting at
+all; declaring one is a config error.
 
 ## The agent file
 
@@ -111,6 +110,9 @@ mode: subagent
 homonto:
   read_only: false    # deny edits/writes when true
   bash: false         # optional; false denies bash (default: allowed)
+  bash_allow:         # optional; other Bash commands ask
+    - "git status*"
+    - "git diff*"
   dialogs: false      # question tool denied — subagents return a Questions: section
   spawn: []           # delegation topology: agents this one may dispatch
   primary: true       # OpenCode primary agent (renders mode: primary)
@@ -125,6 +127,7 @@ Rendering:
 |---|---|
 | `read_only: true` | `edit: deny` |
 | `bash: false` | `bash: deny` |
+| `bash_allow: [a,b]` | `bash:` rules: `*` asks; `a` and `b` allow |
 | `dialogs: true` / `false` | `question: allow` / `question: deny` |
 | `spawn: []` | `task: deny` |
 | `spawn: [a,b]` | `task:` globs allowing only `a`,`b` |
@@ -134,9 +137,8 @@ Rendering:
 The rendered variant re-emits `mode: subagent`/`mode: primary` from the
 `primary` flag.
 
-The `model:` line comes from the config's `[subagents.<name>.opencode]`
-block, with an optional `variant` suffixed as `provider/model#variant`. The
-block is required — a production
+The `model:` and optional `variant:` lines come from the config's
+`[subagents.<name>.opencode]` block. The block is required — a production
 render with no model fails naming the agent rather than silently emitting an
 agent with no model line.
 The prompt body is single-source, never duplicated; the neutral block and its

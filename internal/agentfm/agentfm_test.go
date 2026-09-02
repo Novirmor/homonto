@@ -27,7 +27,7 @@ description: dispatcher
 mode: subagent
 homonto:
   primary: true
-  steps: 60
+  steps: 600
   spawn: [onto-implementer, onto-reviewer]
 ---
 Drive the workflow.
@@ -79,7 +79,7 @@ func TestRenderOpenCode_PrimaryMode(t *testing.T) {
 		t.Fatalf("Render(opencode) primary: %v", err)
 	}
 	s := string(oc)
-	if !strings.Contains(s, "mode: primary") || !strings.Contains(s, "steps: 60") {
+	if !strings.Contains(s, "mode: primary") || !strings.Contains(s, "steps: 600") {
 		t.Errorf("opencode primary must carry mode: primary + steps:\n%s", s)
 	}
 	// named spawn → task glob allowlist.
@@ -97,6 +97,24 @@ func TestRenderOpenCode_NoDialogsDeniesQuestion(t *testing.T) {
 	s := mustRender(t, silent, "opencode")
 	if !strings.Contains(s, "  question: deny") {
 		t.Errorf("dialogs:false must render question: deny:\n%s", s)
+	}
+}
+
+func TestRenderOpenCode_BashAllowlist(t *testing.T) {
+	allowlisted := strings.Replace(orchestrator, "  spawn: [onto-implementer, onto-reviewer]\n", `  spawn: [onto-implementer, onto-reviewer]
+  bash_allow: ["onto *", "git status*", "git commit *"]
+`, 1)
+	s, err := Render("onto", []byte(allowlisted), "opencode", ctx())
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{`  bash:`, `    "*": ask`, `    "onto *": allow`, `    "git status*": allow`, `    "git commit *": allow`} {
+		if !strings.Contains(string(s), want) {
+			t.Errorf("opencode bash allowlist missing %q:\n%s", want, s)
+		}
+	}
+	if strings.Contains(string(s), "bash: deny") {
+		t.Errorf("a bash allowlist must not render bash: deny:\n%s", s)
 	}
 }
 
@@ -118,13 +136,9 @@ func TestRender_UnknownTool(t *testing.T) {
 	}
 }
 
-// OpenCode spells a model variant as its own frontmatter field: a configured
-// variant must render verbatim, never be silently dropped from the output.
-// TestRenderOpenCode_VariantSuffixesTheModelId verifies a variant renders as
-// the documented `provider/model#variant` selection syntax — the same
-// spelling OpenCode uses everywhere a model id appears — and never as a
-// separate frontmatter field an unknown-option pass-through could drop.
-func TestRenderOpenCode_VariantSuffixesTheModelId(t *testing.T) {
+// OpenCode stores a model variant in its own frontmatter field. Combining it
+// with the model ID makes OpenCode look for a nonexistent literal model.
+func TestRenderOpenCode_VariantUsesSeparateFrontmatterField(t *testing.T) {
 	ctx := &RenderContext{Overrides: map[string]ModelSpec{
 		"onto-reviewer": {Model: "openai/gpt-5", Variant: "high"},
 	}}
@@ -132,11 +146,11 @@ func TestRenderOpenCode_VariantSuffixesTheModelId(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(string(out), "model: openai/gpt-5#high") {
-		t.Errorf("opencode must carry the variant as the model-id suffix:\n%s", out)
+	if !strings.Contains(string(out), "model: openai/gpt-5") || !strings.Contains(string(out), "variant: high") {
+		t.Errorf("opencode must render the model and variant separately:\n%s", out)
 	}
-	if strings.Contains(string(out), "variant:") {
-		t.Errorf("variant must not render as its own frontmatter field:\n%s", out)
+	if strings.Contains(string(out), "model: openai/gpt-5#high") {
+		t.Errorf("opencode must not suffix the model ID with its variant:\n%s", out)
 	}
 }
 

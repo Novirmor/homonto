@@ -78,8 +78,8 @@ RVAR="$W/.homonto/catalog/subagents/onto-reviewer.opencode.md"
 in_file "$RVAR" '  edit: deny'
 in_file "$RVAR" '  task: deny'
 if grep -q 'bash: deny' "$RVAR"; then fail "reviewer keeps bash; only the block's denials may render"; fi
-in_file "$RVAR" 'model: anthropic/claude-opus-4-8#1m'
-if grep -q 'variant:' "$RVAR"; then fail "variant must render as the model-id suffix, not its own field"; fi
+in_file "$RVAR" 'model: anthropic/claude-opus-4-8'
+in_file "$RVAR" 'variant: 1m'
 # The implementer edits (coding model) but still spawns nothing: the only task
 # denial is spawning — edit stays available (absent from the permission map).
 IVAR="$W/.homonto/catalog/subagents/onto-implementer.opencode.md"
@@ -91,7 +91,7 @@ if grep -q 'edit: deny' "$IVAR"; then fail "edit-capable implementer must not de
 # delegation topology renders as task allows over a deny-all default.
 PVAR="$W/.homonto/catalog/subagents/onto.opencode.md"
 in_file "$PVAR" 'mode: primary'
-in_file "$PVAR" 'steps: 120'
+in_file "$PVAR" 'steps: 1200'
 in_file "$PVAR" '"onto-reviewer": allow'
 ok "framework skills, commands, and subagents materialized (opencode render invariants hold)"
 

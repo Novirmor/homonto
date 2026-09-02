@@ -444,6 +444,7 @@ func TestLoadRejectsReservedSettingKeys(t *testing.T) {
 	for _, tc := range []struct{ label, doc, key string }{
 		{"opencode mcp", "[settings.opencode]\nmcp={}\n", "mcp"},
 		{"opencode plugin", "[settings.opencode]\nplugin=[]\n", "plugin"},
+		{"opencode model variant", "[settings.opencode]\nmodel_variant=\"high\"\n", "model_variant"},
 	} {
 		err := loadDoc(t, tc.doc)
 		if err == nil {
@@ -676,6 +677,11 @@ targets = ["opencode"]
 			name:    "opencode rejects effort, which it has no concept of",
 			doc:     doc("model = \"anthropic/claude-opus-4-8\"\neffort = \"high\"\n"),
 			wantErr: "OpenCode has no effort setting",
+		},
+		{
+			name:    "opencode rejects a model ID containing a variant suffix",
+			doc:     doc("model = \"openai/gpt-5#high\"\n"),
+			wantErr: "must not include a #variant suffix",
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {

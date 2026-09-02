@@ -210,9 +210,8 @@ func (a Agent) ModeOrDefault() string {
 	return a.Mode
 }
 
-// ModelRoute is one tool's model binding for a subagent: which model id to
-// stamp, an optional reasoning effort, and an optional variant tag the agentfm
-// renderer uses to pick a per-tool file suffix. Declared under a
+// ModelRoute is one tool's model binding for a subagent: which model ID to
+// stamp, an optional reasoning effort, and an optional model variant. Declared under a
 // [subagents.<name>.<tool>] block; the model field is required at load when the
 // subagent is installed for that tool.
 type ModelRoute struct {

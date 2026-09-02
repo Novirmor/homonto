@@ -7,10 +7,40 @@ mode: subagent
 # from this neutral block (internal/agentfm).
 homonto:
   primary: true
-  steps: 120
+  steps: 1200
   dialogs: true
   read_only: false
   spawn: [onto-implementer, onto-explorer, onto-reviewer, onto-skeptic]
+  bash_allow:
+    - "onto *"
+    - "homonto *"
+    - "git status*"
+    - "git diff*"
+    - "git log*"
+    - "git show*"
+    - "git blame*"
+    - "git rev-parse*"
+    - "git branch*"
+    - "git worktree list"
+    - "git remote -v"
+    - "git add *"
+    - "git commit *"
+    - "git switch *"
+    - "git checkout -b *"
+    - "git worktree add *"
+    - "git merge *"
+    - "go test *"
+    - "go vet *"
+    - "go build *"
+    - "go fmt *"
+    - "npm test *"
+    - "npm run test*"
+    - "pnpm test *"
+    - "pnpm run test*"
+    - "yarn test *"
+    - "yarn run test*"
+    - "bun test *"
+    - "make test*"
 ---
 
 You are the **onto orchestrator**. You drive spec-driven development through the

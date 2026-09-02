@@ -62,18 +62,12 @@ scope = "project"                               # required: user | project
 
 [settings.opencode]
 model = "anthropic/claude-opus-4-8"
-model_variant = "thinking"                        # projects as ...opus-4-8#thinking
 ```
 
-**Model variants.** Set `model_variant` beside `model` to select a provider's
-variant tier, such as `thinking`, `high`, `xhigh`, or `max`. homonto projects
-the pair as OpenCode's single `provider/model#variant` identifier. Alternatively
-write that suffix directly in `model`, but never both forms: `model_variant`
-without `model`, or a variant combined with an already-suffixed model, fails at
-load. Subagents use the same `variant = "…"` field inside their
-`[subagents.<name>.opencode]` block. See the
-[configuration reference](configuration.md#settings--settingsopencode) for
-the full validation rules.
+**Model variants.** Configure a provider variant, such as `thinking`, `high`,
+`xhigh`, or `max`, on a subagent with `variant = "…"` in its
+`[subagents.<name>.opencode]` block. OpenCode keeps the model ID and variant
+as separate fields.
 
 `plan` prints a Terraform-style diff (`+` create, `~` update, `-` delete) and
 leaves secrets as unresolved tokens:

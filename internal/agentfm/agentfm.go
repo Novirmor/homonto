@@ -44,12 +44,13 @@ import (
 // `role:` field in the YAML, if present, is silently dropped by the YAML
 // decoder as an unknown field.
 type Homonto struct {
-	ReadOnly bool      `yaml:"read_only"` // deny edits/writes
-	Bash     *bool     `yaml:"bash"`      // nil = default (allowed); false = deny
-	Dialogs  bool      `yaml:"dialogs"`   // allow the question/dialog tool
-	Spawn    *[]string `yaml:"spawn"`     // nil = unrestricted; [] = none; [a,b] = only these
-	Primary  bool      `yaml:"primary"`   // OpenCode primary agent
-	Steps    int       `yaml:"steps"`     // OpenCode iteration budget
+	ReadOnly  bool      `yaml:"read_only"`  // deny edits/writes
+	Bash      *bool     `yaml:"bash"`       // nil = default (allowed); false = deny
+	BashAllow []string  `yaml:"bash_allow"` // allowlisted shell commands; all other commands ask
+	Dialogs   bool      `yaml:"dialogs"`    // allow the question/dialog tool
+	Spawn     *[]string `yaml:"spawn"`      // nil = unrestricted; [] = none; [a,b] = only these
+	Primary   bool      `yaml:"primary"`    // OpenCode primary agent
+	Steps     int       `yaml:"steps"`      // OpenCode iteration budget
 }
 
 // ModelSpec is a fully-resolved model choice for one tool: which model, which
@@ -152,18 +153,15 @@ func Render(name string, content []byte, tool string, ctx *RenderContext) ([]byt
 			mode = "primary"
 		}
 		extra = append(extra, "mode: "+mode)
-		// A variant is selected by suffixing the model id
-		// (`provider/model#variant`) — the same spelling OpenCode uses
-		// everywhere a model id appears — with the tier names the provider
-		// defines (medium, high, xhigh, …; custom variants are legal too).
+		// OpenCode keeps the base model ID and selected variant separate. The
+		// provider defines the available variants (medium, high, xhigh, …).
 		// There is no separate effort concept: an `effort:` value is rejected
 		// at load, not silently dropped here.
 		if spec.Model != "" {
-			m := spec.Model
+			extra = append(extra, "model: "+spec.Model)
 			if spec.Variant != "" {
-				m += "#" + spec.Variant
+				extra = append(extra, "variant: "+spec.Variant)
 			}
-			extra = append(extra, "model: "+m)
 		}
 		if h.Steps > 0 {
 			extra = append(extra, fmt.Sprintf("steps: %d", h.Steps))
@@ -199,6 +197,15 @@ func opencodePermission(h Homonto) string {
 	}
 	if h.Bash != nil && !*h.Bash {
 		lines = append(lines, "  bash: deny")
+	} else if len(h.BashAllow) > 0 {
+		// OpenCode evaluates the final matching rule, so the broad prompt must
+		// precede the command-specific allows.
+		lines = append(lines, "  bash:", `    "*": ask`)
+		for _, command := range h.BashAllow {
+			if strings.TrimSpace(command) != "" {
+				lines = append(lines, fmt.Sprintf("    %q: allow", command))
+			}
+		}
 	}
 	// dialogs is enforced both ways: an agent whose protocol is "return a
 	// Questions: section, never prompt" must actually be unable to prompt —

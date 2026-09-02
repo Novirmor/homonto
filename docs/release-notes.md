@@ -15,6 +15,15 @@ bookkeeper) — for every supported OS/arch as separate archives under one
 `SHA256SUMS`. `onto` and `to` each require `homonto` to have installed their
 framework first (`[frameworks.onto]` / `[frameworks.to]` + `homonto apply`).
 
+### New in v0.14.0 — OpenCode agent variants and longer onto runs
+
+- **Agent variants use OpenCode's native fields.** `model` and `variant` now
+  render separately. homonto rejects `#variant` model IDs and the unsupported
+  global `model_variant` setting instead of generating an unknown model ID.
+- **The onto orchestrator gets a 1,200-step budget.** Its permissive Bash
+  allowlist covers workflow commands, local Git work, and common Go, Node, and
+  Make test commands. Remote and destructive operations still require approval.
+
 ### New in v0.13.0 — OpenCode-only and designated multi-repo work
 
 - **OpenCode is the sole adapter.** Claude Code and codex configuration now

@@ -28,14 +28,19 @@ type pendingGate struct {
 	Header     string       `json:"header"`
 	Options    []gateOption `json:"options,omitempty"`
 	SetCommand string       `json:"set_command"`
+	// SetArgv is SetCommand as an argv template (no shell parsing): recovery
+	// packs carry it instead of the shell string, and value placeholders stay
+	// literal "<value>" tokens.
+	SetArgv []string `json:"set_argv,omitempty"`
 }
 
 // pendingGates returns the decisions still unanswered for a change at its current
 // phase, in the order the workflow needs them. A gate is pending only when its
 // evidence token is missing, so an answered gate disappears from the list.
 func pendingGates(name string, st ontostate.State) []pendingGate {
-	set := func(field string) string {
-		return fmt.Sprintf("onto set %s %s <value>", field, name)
+	set := func(field string) (string, []string) {
+		return fmt.Sprintf("onto set %s %s <value>", field, name),
+			[]string{"onto", "set", field, name, "<value>"}
 	}
 	full := st.Workflow == "" || st.Workflow == "full"
 	var out []pendingGate
@@ -43,20 +48,25 @@ func pendingGates(name string, st ontostate.State) []pendingGate {
 	case "open":
 		if full && st.ProposalApproved == "" {
 			out = append(out, pendingGate{
-				ID: "proposal-approved", Header: "Proposal", SetCommand: fmt.Sprintf("onto set proposal-approved %s \"<evidence>\"", name),
-				Question: "Has the user reviewed and approved the proposal (artifact-review gate)?",
+				ID: "proposal-approved", Header: "Proposal",
+				SetCommand: fmt.Sprintf("onto set proposal-approved %s \"<evidence>\"", name),
+				SetArgv:    []string{"onto", "set", "proposal-approved", name, "<value>"},
+				Question:   "Has the user reviewed and approved the proposal (artifact-review gate)?",
 			})
 		}
 	case "design":
 		if full && st.ApproachConfirmed == "" {
 			out = append(out, pendingGate{
-				ID: "approach-confirmed", Header: "Approach", SetCommand: fmt.Sprintf("onto set approach-confirmed %s \"<evidence>\"", name),
-				Question: "Has the user confirmed the design approach (approach gate)?",
+				ID: "approach-confirmed", Header: "Approach",
+				SetCommand: fmt.Sprintf("onto set approach-confirmed %s \"<evidence>\"", name),
+				SetArgv:    []string{"onto", "set", "approach-confirmed", name, "<value>"},
+				Question:   "Has the user confirmed the design approach (approach gate)?",
 			})
 		}
 		if st.Isolation == "" {
+			cmd, argv := set("isolation")
 			out = append(out, pendingGate{
-				ID: "isolation", Header: "Isolation", SetCommand: set("isolation"),
+				ID: "isolation", Header: "Isolation", SetCommand: cmd, SetArgv: argv,
 				Question: "How should this change be isolated for build?",
 				Options: []gateOption{
 					{Value: "branch", Label: "A branch off the base ref", Recommended: true},
@@ -66,8 +76,9 @@ func pendingGates(name string, st ontostate.State) []pendingGate {
 		}
 	case "build":
 		if st.BuildMode == "" {
+			cmd, argv := set("build-mode")
 			out = append(out, pendingGate{
-				ID: "build-mode", Header: "Build mode", SetCommand: set("build-mode"),
+				ID: "build-mode", Header: "Build mode", SetCommand: cmd, SetArgv: argv,
 				Question: "How should the tasks be executed?",
 				Options: []gateOption{
 					{Value: "direct", Label: "Directly in this session", Recommended: true},
@@ -76,8 +87,9 @@ func pendingGates(name string, st ontostate.State) []pendingGate {
 			})
 		}
 		if st.TDDMode == "" {
+			cmd, argv := set("tdd-mode")
 			out = append(out, pendingGate{
-				ID: "tdd-mode", Header: "TDD mode", SetCommand: set("tdd-mode"),
+				ID: "tdd-mode", Header: "TDD mode", SetCommand: cmd, SetArgv: argv,
 				Question: "Test-driven or direct implementation?",
 				Options: []gateOption{
 					{Value: "tdd", Label: "Failing test first (anything with testable logic)", Recommended: true},
@@ -87,8 +99,9 @@ func pendingGates(name string, st ontostate.State) []pendingGate {
 		}
 	case "verify":
 		if st.Verify.Result != "pass" {
+			cmd, argv := set("verify-result")
 			out = append(out, pendingGate{
-				ID: "verify-result", Header: "Verify result", SetCommand: set("verify-result"),
+				ID: "verify-result", Header: "Verify result", SetCommand: cmd, SetArgv: argv,
 				Question: "What is the verification outcome?",
 				Options: []gateOption{
 					{Value: "pass", Label: "All scenarios verified with fresh evidence"},
@@ -99,20 +112,25 @@ func pendingGates(name string, st ontostate.State) []pendingGate {
 	case "close":
 		if st.CloseConfirmed == "" {
 			out = append(out, pendingGate{
-				ID: "close-confirmed", Header: "Close plan", SetCommand: fmt.Sprintf("onto set close-confirmed %s \"<evidence>\"", name),
-				Question: "Has the user confirmed the close plan (final-confirmation gate)? merge-deltas and close refuse without this.",
+				ID: "close-confirmed", Header: "Close plan",
+				SetCommand: fmt.Sprintf("onto set close-confirmed %s \"<evidence>\"", name),
+				SetArgv:    []string{"onto", "set", "close-confirmed", name, "<value>"},
+				Question:   "Has the user confirmed the close plan (final-confirmation gate)? merge-deltas and close refuse without this.",
 			})
 		}
 		if !st.Close.Merged {
 			out = append(out, pendingGate{
-				ID: "close-merged", Header: "Specs merged", SetCommand: fmt.Sprintf("onto set close-merged %s", name),
-				Question: "Have the change's spec deltas been merged into the living specs?",
-				Options:  []gateOption{{Value: "yes", Label: "Merged — mark close.merged"}},
+				ID: "close-merged", Header: "Specs merged",
+				SetCommand: fmt.Sprintf("onto set close-merged %s", name),
+				SetArgv:    []string{"onto", "set", "close-merged", name},
+				Question:   "Have the change's spec deltas been merged into the living specs?",
+				Options:    []gateOption{{Value: "yes", Label: "Merged — mark close.merged"}},
 			})
 		}
 		if (st.Workflow == "full" || st.Workflow == "") && !ontostate.GuidesResolved(st.Guides) {
+			cmd, argv := set("guides")
 			out = append(out, pendingGate{
-				ID: "guides", Header: "Guides", SetCommand: set("guides"),
+				ID: "guides", Header: "Guides", SetCommand: cmd, SetArgv: argv,
 				Question: "How is the guides obligation resolved?",
 				Options: []gateOption{
 					{Value: "updated", Label: "The affected guides were written/updated"},
@@ -121,8 +139,9 @@ func pendingGates(name string, st ontostate.State) []pendingGate {
 			})
 		}
 		if st.Integration == "" {
+			cmd, argv := set("integration")
 			out = append(out, pendingGate{
-				ID: "integration", Header: "Integration", SetCommand: set("integration"),
+				ID: "integration", Header: "Integration", SetCommand: cmd, SetArgv: argv,
 				Question: "How should the branch be integrated at close?",
 				Options: []gateOption{
 					{Value: "merge", Label: "Merge the branch into its base ref"},

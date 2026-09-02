@@ -1,6 +1,8 @@
 package tocli
 
 import (
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -106,6 +108,65 @@ func TestHandoff_JSONShape(t *testing.T) {
 	for _, want := range []string{`"change":`, `"state":`, `"plan":`, `"next":`} {
 		if !strings.Contains(out, want) {
 			t.Errorf("handoff JSON %q missing %s", out, want)
+		}
+	}
+}
+
+// TestHandoff_JSONEnvelope (H3): the legacy keys survive AND the versioned
+// recovery-envelope fields ride alongside, so a machine consumer re-grounds
+// without parsing prose.
+func TestHandoff_JSONEnvelope(t *testing.T) {
+	dir := t.TempDir()
+	if err := tostate.Save(statePath(dir, "env"), tostate.State{
+		Change: "env", Phase: tostate.PhasePlan, Created: "2030-04-04", Repos: []string{"service"},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	writeFile(t, planPath(dir, "env"), "# plan\n- [ ] one\nFinal Verify: `go test ./...`\n")
+
+	out := run(t, false, "handoff", "env", "--json", "--dir", dir)
+	for _, want := range []string{
+		`"schemaVersion": 1`, `"tool": "to"`, `"change": "env"`, `"phase": "plan"`,
+		`"derivedPhase": "plan"`, `"repoAliases"`, `"artifacts"`, `"nextArgv"`,
+		`"change": "env"`, `"state"`, `"plan"`, `"next"`,
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("handoff JSON envelope missing %q:\n%s", want, out)
+		}
+	}
+}
+
+// TestHandoff_WritePersistsMetadataOnly (H4/H5): --write persists a JSON
+// envelope and markdown under the change workspace with unique operation-ID
+// filenames, and a secret planted in plan prose never reaches either file.
+func TestHandoff_WritePersistsMetadataOnly(t *testing.T) {
+	dir := t.TempDir()
+	if err := tostate.Save(statePath(dir, "w"), tostate.State{
+		Change: "w", Phase: tostate.PhaseDo, Created: "2030-04-04",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	writeFile(t, planPath(dir, "w"), "# plan\nAPI_KEY=hunter2-super-secret\n- [ ] one\nFinal Verify: `go test ./...`\n")
+
+	if out := run(t, false, "handoff", "w", "--dir", dir, "--write"); !strings.Contains(out, "wrote ") {
+		t.Fatalf("handoff --write output: %q", out)
+	}
+	hd := filepath.Join(changeDir(dir, "w"), ".to", "handoff")
+	mds, err := filepath.Glob(filepath.Join(hd, "*-context.md"))
+	if err != nil || len(mds) != 1 {
+		t.Fatalf("markdown pack missing: %v %v", mds, err)
+	}
+	jsons, err := filepath.Glob(filepath.Join(hd, "*-context.json"))
+	if err != nil || len(jsons) != 1 {
+		t.Fatalf("json pack missing: %v %v", jsons, err)
+	}
+	for _, f := range append(mds, jsons...) {
+		b, err := os.ReadFile(f)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if strings.Contains(string(b), "hunter2") {
+			t.Errorf("%s leaked plan prose/secret:\n%s", f, b)
 		}
 	}
 }

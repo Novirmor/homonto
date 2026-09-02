@@ -27,12 +27,47 @@ func TestHandoff_ContentAndWrite(t *testing.T) {
 		}
 	}
 
-	// --write persists it under the workspace.
+	// --write persists the metadata-only recovery view under the workspace:
+	// unique operation-ID filenames, JSON envelope + markdown, no prose.
 	if _, err := runOnto(t, "handoff", "c", "--dir", root, "--write"); err != nil {
 		t.Fatalf("handoff --write: %v", err)
 	}
-	if _, err := os.Stat(filepath.Join(changeDir, ".onto", "handoff", "design-context.md")); err != nil {
-		t.Errorf("handoff --write did not persist the pack: %v", err)
+	hd := filepath.Join(changeDir, ".onto", "handoff")
+	matches, err := filepath.Glob(filepath.Join(hd, "*-context.md"))
+	if err != nil || len(matches) != 1 {
+		t.Fatalf("handoff --write did not persist the markdown pack: %v %v", matches, err)
+	}
+	persisted, err := os.ReadFile(matches[0])
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(persisted), "Build the thing.") {
+		t.Errorf("persisted pack leaked artifact prose:\n%s", persisted)
+	}
+	if !strings.Contains(string(persisted), "design") || !strings.Contains(string(persisted), "dep-a") {
+		t.Errorf("persisted pack lost identity:\n%s", persisted)
+	}
+	jmatches, err := filepath.Glob(filepath.Join(hd, "*-context.json"))
+	if err != nil || len(jmatches) != 1 {
+		t.Fatalf("handoff --write did not persist the JSON envelope: %v %v", jmatches, err)
+	}
+	jb, err := os.ReadFile(jmatches[0])
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(jb), `"schemaVersion"`) || strings.Contains(string(jb), "Build the thing.") {
+		t.Errorf("persisted envelope wrong:\n%s", jb)
+	}
+
+	// --json prints the interactive view: envelope fields plus full state.
+	out, err = runOnto(t, "handoff", "c", "--dir", root, "--json")
+	if err != nil {
+		t.Fatalf("handoff --json: %v", err)
+	}
+	for _, want := range []string{`"schemaVersion"`, `"change": "c"`, `"state"`, `"derivedPhase"`} {
+		if !strings.Contains(out, want) {
+			t.Errorf("handoff --json missing %q:\n%s", want, out)
+		}
 	}
 }
 

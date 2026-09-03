@@ -37,6 +37,12 @@ onto v0.5.0
 
 ## 2. homonto in five commands
 
+Run these commands from the directory that should contain `homonto.toml`.
+`homonto init` scaffolds configuration; it does not create a Git repository or
+install a workflow framework. Git remains your decision, and an MCP is optional
+until you need a server. Frameworks install declaratively after you add their
+`[frameworks.*]` table and apply the configuration.
+
 ```console
 $ homonto init            # scaffold homonto.toml + .gitignore + .env.example (never overwrites)
 $ $EDITOR homonto.toml    # declare MCPs / skills / plugins / settings
@@ -144,9 +150,12 @@ model = "anthropic/claude-opus-4-8"
 $ homonto apply --yes            # materializes the shared knowledge and onto workflow surface
 
 $ onto init && onto new add-search
+$ onto set proposal-approved add-search "proposal matches request"
 $ onto advance add-search        # open → design
 $ onto advance add-search        # error: cannot leave "design": missing design.md
-$ printf '# Design\n' > docs/changes/add-search/design.md
+$ printf '# Design\n\nStatus: Confirmed\n' > docs/changes/add-search/design.md
+$ printf '%s\n' '- [ ] 1.1 implement search' > docs/changes/add-search/tasks.md
+$ onto set approach-confirmed add-search "selected indexed search"
 $ onto set isolation add-search branch
 $ onto advance add-search        # design → build
 ```
@@ -167,14 +176,25 @@ or any source path, but not another change's in-flight docs (`onto dirt
 its own evidence gates:
 
 ```console
-$ onto close add-search          # error: change not merged (close.merged=false)
-$ onto set close-merged add-search && onto set guides add-search updated
-$ git add -A && git commit -q -m "close evidence"
+$ onto close add-search          # error: unresolved close evidence
+$ onto set guides add-search updated
+$ onto set base-ref add-search "$(git rev-parse <original-base>)"
+$ onto set base-branch add-search main
+$ onto set integration add-search merge
+$ onto set close-confirmed add-search "validated close plan"
+$ onto merge-deltas add-search
+$ git add -- docs/changes/add-search docs/specs docs/guides
+$ git commit -q -m "close evidence"
 $ onto close add-search          # archived to docs/changes/archive/2026-07-14-add-search
+$ git add -A && git commit -m "archive add-search"
+$ git switch main && git merge --no-ff <change-branch>
+$ onto complete-integration add-search --receipt "merge:$(git rev-parse HEAD)"
 ```
 
-`close` also refuses while any dependency is unresolved (see `onto graph`).
-Terminal states: archived via `onto close` (success) and `onto abandon`
+`close` also refuses while any dependency is unresolved (see `onto graph`). A
+new archive remains resumable at close until integration is recorded; a manual
+PR handoff is not completion. Terminal states: archived and integrated (success)
+and `onto abandon`
 (failure). Read-only inspectors: `onto status`, `doctor`, `state --json`,
 `gate --json`, `scale`, `graph`, `handoff`, `dirt`.
 

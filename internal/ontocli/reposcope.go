@@ -48,7 +48,8 @@ func scopeDirs(root string, repos []string) ([]string, map[string]string, error)
 // scopedWorktreeDirt audits the config repo and every selected declared repo.
 // The config-repo scan retains onto's change-artifact carve-out; external
 // repositories have no central workflow tree, so every uncommitted path is
-// blocking there.
+// blocking there — including paths under a docs/changes/ the sibling may
+// happen to have, which the config carve-out would otherwise excuse.
 func scopedWorktreeDirt(root, change string, repos []string) ([]scopedDirt, error) {
 	entries, ok := worktreeDirt(root, change)
 	if !ok {
@@ -63,6 +64,9 @@ func scopedWorktreeDirt(root, change string, repos []string) ([]scopedDirt, erro
 		entries, ok := worktreeDirt(dirs[name], "")
 		if !ok {
 			return nil, fmt.Errorf("cannot determine declared repo %q worktree state", name)
+		}
+		for i := range entries {
+			entries[i].BlocksClose = true
 		}
 		out = append(out, scopedDirt{Name: name, Dir: dirs[name], Entries: entries})
 	}

@@ -12,12 +12,14 @@ leave it stale.
 - **Date:** YYYY-MM-DD
 - **Mode:** light | full (why: <scale rule that picked it>)
 - **Range:** <base_ref short>..HEAD on `<branch>`
-- **Result: pass | fail** — with accepted deviations, append the count:
-  `Result: pass (2 accepted deviations)`. Derivation and close entry match
-  on the `Result: pass` prefix; the count keeps a caveated pass visibly
-  different from a clean one. (A third value, `superseded (revision
-  <date>)`, is written by a mid-build design revisit to invalidate this
-  report — never by the verify phase itself.)
+
+Result: <pass | fail>
+
+With accepted deviations, append the count on that same machine-read line:
+`Result: pass (2 accepted deviations)`. Derivation and close entry match the
+canonical pass forms only; the count distinguishes a caveated pass from a clean one.
+A mid-build design revisit writes `Result: superseded (revision <date>)` to
+invalidate the report; the verify phase does not write that value.
 
 ## Scenario evidence
 

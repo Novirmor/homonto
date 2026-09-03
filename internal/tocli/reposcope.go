@@ -47,25 +47,38 @@ func scopeDirs(root string, repos []string) ([]string, map[string]string, error)
 // clean. It is used only by cross-repo workflows; legacy to changes remain
 // intentionally git-blind.
 func worktreeDirty(dir string) (bool, error) {
-	return worktreeDirtyIgnoring(dir, "")
+	return worktreeDirtyIgnoring(dir)
 }
 
-// worktreeDirtyIgnoring is the same bounded porcelain probe, except for one
-// known internal path. `to done` holds docs/tasks/.to.lock while checking its
-// terminal gate; that lock serializes the operation and must not make the
-// config repo appear dirty by itself.
-func worktreeDirtyIgnoring(dir, ignore string) (bool, error) {
+// worktreeDirtyIgnoring is the same bounded porcelain probe, except for known
+// internal paths. A directory argument ignores that directory and its contents.
+func worktreeDirtyIgnoring(dir string, ignores ...string) (bool, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), repoGitTimeout)
 	defer cancel()
-	out, err := exec.CommandContext(ctx, "git", "-C", dir, "status", "--porcelain", "-z").Output()
+	out, err := exec.CommandContext(ctx, "git", "-C", dir, "status", "--porcelain=v1", "-z", "--no-renames", "--untracked-files=all").Output()
 	if err != nil {
 		return false, fmt.Errorf("cannot determine git state for %s", dir)
 	}
-	for _, record := range strings.Split(string(out), "\x00") {
-		if len(record) < 4 || record[2] != ' ' {
+	if len(out) > 0 && out[len(out)-1] != 0 {
+		return false, fmt.Errorf("cannot parse git state for %s: unterminated porcelain record", dir)
+	}
+	for _, record := range strings.Split(strings.TrimSuffix(string(out), "\x00"), "\x00") {
+		if record == "" {
 			continue
 		}
-		if record[3:] != ignore {
+		if len(record) < 4 || record[2] != ' ' {
+			return false, fmt.Errorf("cannot parse git state for %s: malformed porcelain record", dir)
+		}
+		path := filepath.ToSlash(record[3:])
+		ignored := false
+		for _, ignore := range ignores {
+			ignore = filepath.ToSlash(ignore)
+			if path == ignore || strings.HasPrefix(path, strings.TrimSuffix(ignore, "/")+"/") {
+				ignored = true
+				break
+			}
+		}
+		if !ignored {
 			return true, nil
 		}
 	}
@@ -73,12 +86,14 @@ func worktreeDirtyIgnoring(dir, ignore string) (bool, error) {
 }
 
 // requireCleanScope checks the config repo and every selected external repo
-// immediately before a scoped change records its terminal state.
-func requireCleanScope(root string, repos []string) error {
+// immediately before a scoped change records its terminal state. The active
+// change workspace is ignored because done moves its uncommitted verification
+// record and terminal state into the archive atomically.
+func requireCleanScope(root, change string, repos []string) error {
 	if len(repos) == 0 {
 		return nil
 	}
-	if dirty, err := worktreeDirtyIgnoring(root, "docs/tasks/.to.lock"); err != nil {
+	if dirty, err := worktreeDirtyIgnoring(root, "docs/tasks/.to.lock", filepath.Join("docs", "tasks", change)); err != nil {
 		return err
 	} else if dirty {
 		return fmt.Errorf("config repo has uncommitted paths")

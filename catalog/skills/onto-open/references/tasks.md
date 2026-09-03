@@ -1,9 +1,9 @@
 # tasks.md — canonical template
 
-The change's checklist, and the **single source of completion state**. Open
-creates the skeleton (boundaries); build refines and checks items off — one
-commit per checked item. The phase derivation and the build exit gate read
-these checkboxes and nothing else.
+The change's checklist, and the **single source of completion state**. Design
+derives it from the confirmed approach; build refines and checks items off, one
+commit per checked item. The phase derivation and the build exit gate read these
+checkboxes and nothing else.
 
 On a full change, each item's executable detail (files, what to do, how it is
 verified) lives in `plan.md` under a matching `## Task N.M` heading. Same

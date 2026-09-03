@@ -8,14 +8,15 @@ capability profile (homonto renders it per tool):
 
 - **`onto-implementer`** — the worker. Edits, runs build/test, **spawns
   nothing**. Hand it one task's spec; it returns a diff.
-- **`onto-reviewer`** — the reviewer. Read-only, keeps bash for inspection.
+- **`onto-reviewer`** — the reviewer. Read-only with no shell; the coordinator
+  supplies the exact diff and relevant files.
   (Each agent's model comes from the installer's `[subagents.<name>.<tool>]`
   block, not from this protocol.)
 
-**A subagent never prompts the user.** If the implementer hits an ambiguous spec
-it **returns** the question (a `Questions:` section), and the coordinator asks the
-user (via a dialog) and re-dispatches — a Claude Task subagent cannot prompt
-mid-run, so this protocol is identical in both tools.
+**A subagent never prompts the user.** If the implementer hits an ambiguous spec,
+it returns a `Questions:` section. The coordinator resolves factual or technical
+uncertainty from repository evidence and asks the user only when product intent
+is missing, then re-dispatches.
 
 ## When to choose subagent over direct
 
@@ -88,11 +89,12 @@ and is not worth the speed.
   sha exists (`git log`), the `tasks.md` checkoff landed, the working
   tree is clean, and the stated verification output is plausible
   (spot-run it when cheap).
-- A failed or half-done task is re-dispatched with the failure context, or
-  taken through the failure gate — never silently absorbed. Before
-  re-dispatch, restore a clean tree: stash/reset the partial work, or hand
-  it to the replacement agent explicitly as part of the failure context —
-  a fresh agent must never inherit dirty state unknowingly.
+- A failed or half-done task is re-dispatched with the failure context after
+  root-cause analysis — never silently absorbed. Before
+  re-dispatch, preserve and attribute partial work. Reset only current-change
+  work that is proven disposable; otherwise hand it to the replacement agent
+  explicitly as part of the failure context. Never stash or discard
+  unattributed work to manufacture a clean tree.
 
 ## Reviewer agents
 

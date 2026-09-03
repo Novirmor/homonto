@@ -2,6 +2,7 @@ package ontocli
 
 import (
 	"bytes"
+	"os"
 	"path/filepath"
 	"testing"
 
@@ -63,6 +64,12 @@ func TestAdvanceCommand_EnteringBuildAllowedWithAcyclicDeps(t *testing.T) {
 		if _, err := runOnto(t, args...); err != nil {
 			t.Fatalf("setup %v: %v", args, err)
 		}
+	}
+	if err := os.RemoveAll(filepath.Join(dir, "docs", "changes", "b")); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(dir, "docs", "changes", "archive", "2026-09-03-b"), 0o755); err != nil {
+		t.Fatal(err)
 	}
 	commitAll(t, dir, "seed acyclic")
 

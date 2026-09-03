@@ -34,8 +34,9 @@ test pass, then run the surrounding suite.
 
 After **3 failed hypotheses**, stop patching: the problem is likely the
 architecture or a wrong assumption, not the line you keep editing. Surface it,
-re-analyze from phase 1 with the new information, and bring the user a
-"fix-vs-rethink" decision rather than a fourth guess.
+re-analyze from phase 1 with the new information, and use fresh exploration or a
+reviewer rather than a fourth guess. Ask the user only if the rethink changes
+the agreed behavior, scope, compatibility, cost, or another constraint they own.
 
 ## Red flags — stop and return to phase 1
 

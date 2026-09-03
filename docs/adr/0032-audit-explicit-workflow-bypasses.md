@@ -1,6 +1,6 @@
 # Audit explicit workflow bypasses
 
-- **Status:** Accepted
+- **Status:** Superseded by 0034
 - **Date:** 2026-09-03
 
 ## Context

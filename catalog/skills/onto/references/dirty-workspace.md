@@ -32,12 +32,13 @@ stranger's. Classify each into exactly one:
    plan, or delta specs. Fold it into the owning task explicitly: verify it,
    say so in that task's commit, never redo it and never build on top of it
    unknowingly.
-2. **Does not belong** — pause and ask: include it, split it into a new
-   change, leave it alone, or discard it (discarding requires explicit
-   authorization — never revert, overwrite, or reformat over unattributed
-   work).
-3. **Unclear** — report the paths and your reasoning, and stop; do not
-   advance any phase over unattributed dirt.
+2. **Does not belong** — leave it alone and use a worktree when isolation is
+   needed. Do not ask merely to choose that safe default. Including or splitting
+   it requires a matching user request; discarding always requires explicit
+   authorization. Never revert, overwrite, stash, or reformat unattributed work.
+3. **Unclear** — inspect the content and history first. If ownership still
+   cannot be established and the dirt blocks safe progress, report the paths and
+   ask who owns them; do not advance over unattributed dirt.
 
 `change`-class dirt needs no attribution — leave it for its own change.
 

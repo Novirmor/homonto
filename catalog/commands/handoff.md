@@ -1,7 +1,5 @@
 ---
-name: handoff
 description: Write a handoff document so a fresh agent can continue this work.
-argument-hint: "What will the next session focus on?"
 ---
 
 # /handoff

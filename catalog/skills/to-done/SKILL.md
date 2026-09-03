@@ -7,14 +7,17 @@ description: to phase 3 — done. Use when a change's plan is fully executed —
 
 Finish honestly. The binary will accept `--verified` from anyone; this skill
 is what makes the assertion true before it is made.
+Apply the dispatcher's shared autonomous workflow policy throughout.
 
 ## Entry check
 
 - `to status --json` shows the change at `phase: do` with every plan task
   checked.
 - For an unscoped change, commit the working tree before completion. For a
-  change created with `--repo`, commit the config repo and every selected
-  declared repo: `to done` enforces that terminal gate.
+  change created with `--repo`, commit implementation changes in the config
+  repo and every selected declared repo. The final `plan.md` verification entry
+  remains uncommitted because `to done` ignores only the current task workspace
+  while enforcing the terminal clean-worktree gate.
 
 ## Steps
 
@@ -28,9 +31,10 @@ is what makes the assertion true before it is made.
    several concurrently when the change warrants it, each with a distinct lens
    (does it do what it claims / what breaks it / does the evidence hold). One
    completed pass is the floor, not the ceiling.
-   - A skeptic attempt that returns a blocking `Questions:` section is
-     incomplete. Resolve the question, then re-dispatch against the same
-     candidate.
+   - A skeptic attempt that returns `Evidence requests:` or `Questions:` is
+     incomplete. Run technical probes and resolve factual questions yourself;
+     ask the user only for missing product intent. Then re-dispatch against the
+     same candidate with the literal evidence.
    - If accepted findings change code, the previous verdict describes an old
      tree. Re-run `Final Verify:`, then re-dispatch once against the new final
      candidate. Keep only the completed verdict for the tree being archived.
@@ -57,6 +61,7 @@ is what makes the assertion true before it is made.
 - **Never pass `--verified` before steps 1–4 are done.** The checkbox is
   self-asserted by design; asserting it without the work is lying in writing,
   in a reviewable artifact.
-- If verification fails and the fix isn't obvious, stay in `do` — tell the
-  user rather than force the finish.
+- If verification fails, stay in `do`, investigate the root cause, add or repair
+  the task contract, fix it, and repeat the final pass. Stop only for a hard
+  blocker or a scope decision that genuinely needs the user.
 - Never hand-edit `to-state.yaml`; archiving is the binary's move, not `mv`.

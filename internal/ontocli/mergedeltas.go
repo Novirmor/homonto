@@ -1,12 +1,16 @@
 package ontocli
 
 import (
+	"context"
+	"errors"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"sort"
 	"strings"
 
+	"github.com/noviopenworks/homonto/internal/applylock"
 	"github.com/noviopenworks/homonto/internal/deltamerge"
 	"github.com/noviopenworks/homonto/internal/fsutil"
 	"github.com/noviopenworks/homonto/internal/ontostate"
@@ -40,6 +44,11 @@ func runMergeDeltas(cmd *cobra.Command, root, name string) error {
 	if err := ontoFramework.ValidChangeName(name); err != nil {
 		return err
 	}
+	lock, err := acquireSpecMergeLock(root)
+	if err != nil {
+		return fmt.Errorf("onto merge-deltas: %w", err)
+	}
+	defer lock.Release()
 	changeDir := filepath.Join(root, "docs", "changes", name)
 	statePath := filepath.Join(changeDir, "onto-state.yaml")
 	st, err := ontostate.Load(statePath)
@@ -50,6 +59,9 @@ func runMergeDeltas(cmd *cobra.Command, root, name string) error {
 	// not reach the merge logic. Load migrates but does not validate (F9).
 	if err := st.Validate(); err != nil {
 		return fmt.Errorf("onto merge-deltas: %w", err)
+	}
+	if st.Change != name {
+		return fmt.Errorf("onto merge-deltas: state change %q does not match directory %q", st.Change, name)
 	}
 	// An abandoned change is the unsuccessful terminal state: its deltas were
 	// never accepted, so they must never mutate the living specs.
@@ -63,22 +75,45 @@ func runMergeDeltas(cmd *cobra.Command, root, name string) error {
 	if st.Phase != "close" {
 		return fmt.Errorf("onto merge-deltas: change %q is at phase %q; merge-deltas runs only at close", name, st.Phase)
 	}
+	if err := passingVerificationEvidence(changeDir, st); err != nil {
+		return fmt.Errorf("onto merge-deltas: %w", err)
+	}
+	inputs, err := deltaInputs(root, changeDir)
+	if err != nil {
+		return fmt.Errorf("onto merge-deltas: listing delta specs: %w", err)
+	}
 	if st.Close.Merged {
-		fmt.Fprintf(cmd.OutOrStdout(), "%s: already merged (close.merged=true)\n", name)
+		if err := validateCompletedMergeReceipt(root, changeDir, name); err != nil {
+			return fmt.Errorf("onto merge-deltas: recorded merge is stale or unbound: %w; invalidate verification and reconcile explicitly rather than replaying over living specs", err)
+		}
+		fmt.Fprintf(cmd.OutOrStdout(), "%s: already merged (receipt verified)\n", name)
 		return nil
 	}
-	// The final-confirmation gate must be answered before the first global
-	// mutation: merging deltas rewrites the living specs, and a declined gate
-	// must leave the repo untouched. Checked AFTER the idempotent no-op above —
-	// an already-merged change re-running an interrupted close has nothing
-	// left to confirm.
+	// The close-plan review must be recorded before the first global mutation:
+	// merging deltas rewrites the living specs. Checked AFTER the idempotent
+	// no-op above because an interrupted close has nothing left to validate.
 	if st.CloseConfirmed == "" {
-		return fmt.Errorf("onto merge-deltas: close not confirmed: answer the final-confirmation gate, then run `onto set close-confirmed %s \"<evidence>\"`", name)
+		return fmt.Errorf("onto merge-deltas: close plan not validated: review it, then run `onto set close-confirmed %s \"<evidence>\"`", name)
 	}
 
-	deltaDir := filepath.Join(changeDir, "specs")
-	entries, _ := filepath.Glob(filepath.Join(deltaDir, "*.md"))
-	sort.Strings(entries)
+	receipt, recovering, err := loadMergeReceipt(changeDir, name)
+	if err != nil {
+		return fmt.Errorf("onto merge-deltas: %w", err)
+	}
+	if recovering {
+		if err := validateReceiptManifest(receipt, inputs); err != nil {
+			// close.merged is false here (a true marker returned above), so
+			// this receipt is from an interrupted run OR a round whose
+			// verification was invalidated and whose deltas then changed.
+			// Crash recovery always has an unchanged manifest, so a mismatch
+			// means the invalidated round: discard the stale receipt and
+			// recompute from the current pre-images instead of dead-ending.
+			receipt = mergeReceipt{Change: name, Entries: make([]mergeReceiptEntry, 0, len(inputs))}
+			recovering = false
+		}
+	} else {
+		receipt = mergeReceipt{Change: name, Entries: make([]mergeReceiptEntry, 0, len(inputs))}
+	}
 
 	// Compute every merge first; write nothing until all succeed and lint clean.
 	type result struct {
@@ -86,36 +121,62 @@ func runMergeDeltas(cmd *cobra.Command, root, name string) error {
 	}
 	var results []result
 	specsDir := filepath.Join(root, "docs", "specs")
-	for _, delta := range entries {
-		capability := strings.TrimSuffix(filepath.Base(delta), ".md")
-		if strings.EqualFold(capability, "README") {
-			continue
-		}
-		deltaBytes, err := os.ReadFile(delta)
+	if err := fsutil.RequireRealParents(root, specsDir); err != nil {
+		return fmt.Errorf("onto merge-deltas: unsafe living-spec directory: %w", err)
+	}
+	for i, input := range inputs {
+		exists, currentDigest, livingBytes, err := fileImage(input.target)
 		if err != nil {
-			return fmt.Errorf("onto merge-deltas: reading %s: %w", delta, err)
+			return fmt.Errorf("onto merge-deltas: reading %s: %w", input.target, err)
 		}
-		target := filepath.Join(specsDir, capability+".md")
-		living := ""
-		if b, err := os.ReadFile(target); err == nil {
-			living = string(b)
+		if recovering {
+			entry := receipt.Entries[i]
+			if exists && currentDigest == entry.AfterSHA256 {
+				continue
+			}
+			matchesBefore := exists == entry.BeforeExists && ((!exists && entry.BeforeSHA256 == "") || currentDigest == entry.BeforeSHA256)
+			if !matchesBefore {
+				return fmt.Errorf("onto merge-deltas: %s matches neither the recorded pre-image nor post-image; refusing to overwrite newer content", input.targetRel)
+			}
 		}
-		merged, err := deltamerge.Merge(capability, living, string(deltaBytes))
+		merged, err := deltamerge.Merge(input.capability, string(livingBytes), string(input.data))
 		if err != nil {
-			// Crash recovery: writes below are one atomic file at a time, so a
-			// prior run that died mid-commit leaves each spec either untouched
-			// (Merge still applies) or fully merged (its post-state holds). A
-			// fully-merged spec is skipped rather than poisoning every re-run;
-			// anything else (a typo'd name, a hand-edited spec) still fails.
-			if deltamerge.Applied(capability, living, string(deltaBytes)) {
+			// A prior round (verification invalidated) or receipt-less
+			// partial write may already have applied this delta. Recognize
+			// exactly that — the ADDED conflict with the post-state present —
+			// and bind the fresh receipt to the current image. Every other
+			// failure (typo'd REMOVED, missing MODIFIED target, conflicting
+			// content) stays loud.
+			if !recovering && exists && errors.Is(err, deltamerge.ErrAlreadyExists) &&
+				deltamerge.Applied(input.capability, string(livingBytes), string(input.data)) {
+				receipt.Entries = append(receipt.Entries, mergeReceiptEntry{
+					Delta: input.delta, DeltaSHA256: input.digest, Target: input.targetRel,
+					BeforeExists: true, BeforeSHA256: currentDigest, AfterSHA256: currentDigest,
+				})
 				continue
 			}
 			return fmt.Errorf("onto merge-deltas: %w", err)
 		}
 		if findings := deltamerge.Lint(merged); len(findings) > 0 {
-			return fmt.Errorf("onto merge-deltas: %s would produce an invalid living spec: %s", capability, strings.Join(findings, "; "))
+			return fmt.Errorf("onto merge-deltas: %s would produce an invalid living spec: %s", input.capability, strings.Join(findings, "; "))
 		}
-		results = append(results, result{capability, target, merged})
+		afterDigest := digestBytes([]byte(merged))
+		if recovering {
+			if afterDigest != receipt.Entries[i].AfterSHA256 {
+				return fmt.Errorf("onto merge-deltas: recomputed post-image for %s does not match its receipt", input.targetRel)
+			}
+		} else {
+			receipt.Entries = append(receipt.Entries, mergeReceiptEntry{
+				Delta: input.delta, DeltaSHA256: input.digest, Target: input.targetRel,
+				BeforeExists: exists, BeforeSHA256: currentDigest, AfterSHA256: afterDigest,
+			})
+		}
+		results = append(results, result{input.capability, input.target, merged})
+	}
+	if !recovering {
+		if err := saveMergeReceipt(changeDir, receipt); err != nil {
+			return fmt.Errorf("onto merge-deltas: %w", err)
+		}
 	}
 
 	// Commit: write the merged living specs, then record close.merged.
@@ -123,7 +184,7 @@ func runMergeDeltas(cmd *cobra.Command, root, name string) error {
 		return fmt.Errorf("onto merge-deltas: %w", err)
 	}
 	for _, r := range results {
-		if err := fsutil.WriteAtomic(r.target, []byte(r.merged)); err != nil {
+		if err := fsutil.WriteControlPlaneWithin(root, r.target, []byte(r.merged), 0o644); err != nil {
 			return fmt.Errorf("onto merge-deltas: writing %s: %w", r.target, err)
 		}
 	}
@@ -132,13 +193,66 @@ func runMergeDeltas(cmd *cobra.Command, root, name string) error {
 		return fmt.Errorf("onto merge-deltas: %w", err)
 	}
 
-	if len(results) == 0 {
+	if len(inputs) == 0 {
 		fmt.Fprintf(cmd.OutOrStdout(), "%s: no delta specs; marked close.merged\n", name)
 		return nil
 	}
 	for _, r := range results {
 		fmt.Fprintf(cmd.OutOrStdout(), "  merged %s → docs/specs/%s.md\n", r.capability, r.capability)
 	}
-	fmt.Fprintf(cmd.OutOrStdout(), "%s: %d delta spec(s) merged; marked close.merged\n", name, len(results))
+	fmt.Fprintf(cmd.OutOrStdout(), "%s: %d delta spec(s) merged; marked close.merged\n", name, len(inputs))
 	return nil
+}
+
+// acquireStateLockBestEffort serializes whole-state writers (`onto set`,
+// `onto close`) against merge-deltas and complete-integration on the same
+// repository, closing the lost-update window where a close saves a snapshot
+// clobbering a concurrent set. Workspaces outside git have no shared lock
+// anchor and proceed unlocked (the same best-effort as before).
+func acquireStateLockBestEffort(root string) func() {
+	lock, err := acquireSpecMergeLock(root)
+	if err != nil {
+		return func() {}
+	}
+	return func() { _ = lock.Release() }
+}
+
+func acquireSpecMergeLock(root string) (*applylock.Lock, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), gitCmdTimeout)
+	defer cancel()
+	out, err := exec.CommandContext(ctx, "git", "-C", root, "rev-parse", "--git-common-dir").CombinedOutput()
+	if err != nil {
+		return nil, fmt.Errorf("cannot locate the repository git directory: %s", strings.TrimSpace(string(out)))
+	}
+	gitDir := strings.TrimSpace(string(out))
+	if !filepath.IsAbs(gitDir) {
+		gitDir = filepath.Join(root, gitDir)
+	}
+	lock, err := applylock.AcquireProcess(filepath.Join(filepath.Clean(gitDir), "homonto-onto-merge"))
+	if err != nil {
+		return nil, fmt.Errorf("spec merge lock: %w", err)
+	}
+	return lock, nil
+}
+
+func deltaSpecPaths(deltaDir string) ([]string, error) {
+	entries, err := os.ReadDir(deltaDir)
+	if os.IsNotExist(err) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	paths := make([]string, 0, len(entries))
+	for _, entry := range entries {
+		if entry.IsDir() || !strings.EqualFold(filepath.Ext(entry.Name()), ".md") || strings.EqualFold(entry.Name(), "README.md") {
+			continue
+		}
+		if entry.Type()&os.ModeSymlink != 0 {
+			return nil, fmt.Errorf("delta spec %s must not be a symlink", entry.Name())
+		}
+		paths = append(paths, filepath.Join(deltaDir, entry.Name()))
+	}
+	sort.Strings(paths)
+	return paths, nil
 }

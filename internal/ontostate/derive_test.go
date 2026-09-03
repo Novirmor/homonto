@@ -36,8 +36,10 @@ func TestDeriveWorkingPhase_EvidenceTable(t *testing.T) {
 			map[string]string{"design.md": "Status: Under revision\n"}, "done"},
 		{"under revision wins over confirmed evidence", State{Phase: "build", Workflow: "full"},
 			map[string]string{"proposal.md": "p", "design.md": "Status: Under revision\n", "tasks.md": "- [x] a\n", "verification.md": "Result: pass\n"}, "design"},
-		{"verification pass derives close", State{Phase: "verify", Workflow: "full"},
+		{"verification pass derives close", State{Phase: "verify", Workflow: "full", Verify: Verify{Result: "pass"}},
 			map[string]string{"proposal.md": "p", "design.md": "Status: Confirmed\n", "tasks.md": "- [x] a\n", "verification.md": "Result: pass\n"}, "close"},
+		{"report pass without state pass stays verify", State{Phase: "verify", Workflow: "full", Verify: Verify{Result: "pending"}},
+			map[string]string{"proposal.md": "p", "design.md": "Status: Confirmed\n", "tasks.md": "- [x] a\n", "verification.md": "Result: pass\n"}, "verify"},
 		{"all tasks checked derives verify", State{Phase: "build", Workflow: "full"},
 			map[string]string{"proposal.md": "p", "design.md": "Status: Confirmed\n", "tasks.md": "- [x] a\n- [x] b\n"}, "verify"},
 		{"confirmed design derives build", State{Phase: "design", Workflow: "full"},
@@ -64,5 +66,46 @@ func TestDeriveWorkingPhase_EvidenceTable(t *testing.T) {
 				t.Errorf("DeriveWorkingPhase = %q, want %q", got, tc.want)
 			}
 		})
+	}
+}
+
+func TestResultLineIsPassRequiresDelimitedPassValue(t *testing.T) {
+	for _, line := range []string{"Result: pass", "Result: pass (2 accepted deviations)"} {
+		if !ResultLineIsPass(line) {
+			t.Errorf("ResultLineIsPass(%q) = false, want true", line)
+		}
+	}
+	for _, line := range []string{
+		"Result: passing",
+		"Result: pass(2 accepted deviations)",
+		"Result: pass | fail",
+		"Result: pass anything",
+		"Result: pass (0 accepted deviations)",
+		"Result: fail",
+	} {
+		if ResultLineIsPass(line) {
+			t.Errorf("ResultLineIsPass(%q) = true, want false", line)
+		}
+	}
+}
+
+func TestVerificationResultLineRejectsDuplicateMarkers(t *testing.T) {
+	for _, report := range []string{
+		"Result: pass\nResult: fail\n",
+		"Result: fail\nResult: pass\n",
+		"Result: pass\nResult: pass\n",
+	} {
+		path := filepath.Join(deriveFixture(t, map[string]string{"verification.md": report}), "verification.md")
+		if line, ok := VerificationResultLine(path); ok {
+			t.Errorf("VerificationResultLine(%q) = %q, true; want contradictory evidence rejected", report, line)
+		}
+	}
+}
+
+func TestDeriveWorkingPhase_MissingRequiredIntegrationStaysClose(t *testing.T) {
+	dir := deriveFixture(t, nil)
+	st := State{Change: "c", Phase: "close", Archived: true, Integration: "merge", BaseBranch: "main", IntegrationRequired: true}
+	if got := DeriveWorkingPhase(dir, st); got != "close" {
+		t.Fatalf("derived phase = %q, want close", got)
 	}
 }

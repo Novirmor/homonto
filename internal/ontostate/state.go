@@ -5,6 +5,7 @@ package ontostate
 
 import (
 	"bufio"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -14,6 +15,7 @@ import (
 
 	"github.com/noviopenworks/homonto/internal/bypasslog"
 	"github.com/noviopenworks/homonto/internal/fsutil"
+	"github.com/noviopenworks/homonto/internal/integrationrecord"
 	"gopkg.in/yaml.v3"
 )
 
@@ -28,7 +30,7 @@ var validPhases = map[string]bool{
 }
 
 // CurrentSchemaVersion is the schema_version every write emits.
-const CurrentSchemaVersion = 1
+const CurrentSchemaVersion = 2
 
 // enum membership sets for optional gated core fields. An empty value is
 // always allowed (legacy-tolerant); a non-empty value must be a member.
@@ -76,6 +78,10 @@ func ValidGuides(v string) bool {
 type Verify struct {
 	Scale  string `yaml:"scale,omitempty" json:"scale,omitempty"`   // light | full | ""
 	Result string `yaml:"result,omitempty" json:"result,omitempty"` // pending | pass | fail
+	// Heads freezes each scoped repository's HEAD when result is recorded pass
+	// (alias "" = config repository). Close uses it to refuse archival when
+	// source commits landed after the verified state. Absent on legacy states.
+	Heads map[string]string `yaml:"heads,omitempty" json:"heads,omitempty"`
 }
 
 // Close holds the gated close-phase progress fields.
@@ -102,12 +108,16 @@ type State struct {
 	// ID is a stable, name-independent identifier assigned once at `onto new` and
 	// never rewritten by any later command, so a change's identity survives a
 	// rename. Absent on legacy states (never retro-minted on read).
-	ID       string   `yaml:"id,omitempty" json:"id,omitempty"`
-	Workflow string   `yaml:"workflow,omitempty" json:"workflow,omitempty"`
-	Phase    string   `yaml:"phase" json:"phase"`
-	Created  string   `yaml:"created,omitempty" json:"created,omitempty"`
-	BaseRef  string   `yaml:"base_ref,omitempty" json:"base_ref,omitempty"`
-	Deps     []string `yaml:"deps,omitempty" json:"deps,omitempty"`
+	ID       string `yaml:"id,omitempty" json:"id,omitempty"`
+	Workflow string `yaml:"workflow,omitempty" json:"workflow,omitempty"`
+	Phase    string `yaml:"phase" json:"phase"`
+	Created  string `yaml:"created,omitempty" json:"created,omitempty"`
+	BaseRef  string `yaml:"base_ref,omitempty" json:"base_ref,omitempty"`
+	// BaseBranch is the branch the change started from. BaseRef remains the
+	// immutable diff/verification anchor; integration targets this branch so a
+	// commit SHA is never mistaken for a checkout or pull-request branch.
+	BaseBranch string   `yaml:"base_branch,omitempty" json:"base_branch,omitempty"`
+	Deps       []string `yaml:"deps,omitempty" json:"deps,omitempty"`
 	// Repos is the optional cross-repo scope for this change. Entries are
 	// declared [repos] names; the config repository is implicit and is never
 	// listed. Paths deliberately stay in homonto.toml so a workflow record does
@@ -122,16 +132,20 @@ type State struct {
 	DeviatesFrom []string `yaml:"deviates_from,omitempty" json:"deviates_from,omitempty"`
 	Isolation    string   `yaml:"isolation,omitempty" json:"isolation,omitempty"`
 	// Integration is how the change's git branch is integrated at close: "merge"
-	// (the branch is merged into its base ref) or "pr" (a pull request is opened
-	// and the branch stays for review). Empty leaves integration to the user. It
-	// is a recorded choice the onto-close skill acts on (it performs the actual
-	// git work); it is orthogonal to close.merged, which tracks spec-delta merging
-	// and is always required at close. Ungated by the binary: never blocks a
-	// transition on its own.
+	// (the branch is merged into its base branch) or "pr" (a pull request is opened
+	// and the branch stays for review). Empty leaves integration to repository
+	// policy, with local merge as the workflow default. It is a recorded choice
+	// the onto-close skill acts on (it performs the actual git work); it is
+	// orthogonal to close.merged, which tracks spec-delta merging. The binary
+	// requires both at close and tracks post-archive completion in a sidecar.
 	Integration string `yaml:"integration,omitempty" json:"integration,omitempty"`
-	BuildMode   string `yaml:"build_mode,omitempty" json:"build_mode,omitempty"`
+	// IntegrationRequired distinguishes newly tracked archives from legacy
+	// archives that predate integration sidecars. Once set at close it is never
+	// cleared; a missing or invalid sidecar then fails closed.
+	IntegrationRequired bool   `yaml:"integration_required,omitempty" json:"integration_required,omitempty"`
+	BuildMode           string `yaml:"build_mode,omitempty" json:"build_mode,omitempty"`
 	// BuildPause records a deliberate pause in the build phase — currently only
-	// "plan-ready" (the plan is written and the user chose to stop before
+	// "plan-ready" (the plan is written and an explicit request stopped before
 	// executing, e.g. to switch models/sessions). The dispatcher resumes from it
 	// instead of re-running the planning step. Empty = not paused. Ungated.
 	BuildPause string `yaml:"build_pause,omitempty" json:"build_pause,omitempty"`
@@ -139,13 +153,13 @@ type State struct {
 	Verify     Verify `yaml:"verify,omitempty" json:"verify,omitempty"`
 	Close      Close  `yaml:"close,omitempty" json:"close,omitempty"`
 	Directive  string `yaml:"directive,omitempty" json:"directive,omitempty"`
-	// Judgment-gate evidence tokens: free-form, non-empty = the gate was
-	// answered (convention: "YYYY-MM-DD <summary>"). The binary checks
-	// presence, never content — ceremony, not judgment (B1). Empty on states
+	// Review evidence tokens: free-form, non-empty = the review was recorded
+	// (convention: "YYYY-MM-DD <summary>"). The binary checks presence, never
+	// content; identity and timing come from Git. Empty on states
 	// written before these fields existed; no schema bump needed.
 	ProposalApproved  string `yaml:"proposal_approved,omitempty" json:"proposal_approved,omitempty"`   // open's artifact-review gate (full only)
 	ApproachConfirmed string `yaml:"approach_confirmed,omitempty" json:"approach_confirmed,omitempty"` // design's approach gate (full only)
-	CloseConfirmed    string `yaml:"close_confirmed,omitempty" json:"close_confirmed,omitempty"`       // close's final-confirmation gate (all workflows)
+	CloseConfirmed    string `yaml:"close_confirmed,omitempty" json:"close_confirmed,omitempty"`       // close-plan review (all workflows)
 	Guides            string `yaml:"guides,omitempty" json:"guides,omitempty"`                         // "" | pending | updated | waived:<reason>
 	Archived          bool   `yaml:"archived,omitempty" json:"archived,omitempty"`
 	// Abandoned marks the unsuccessful terminal state — a change cancelled without
@@ -221,6 +235,15 @@ func (s State) Validate() error {
 	}
 	if !ValidGuides(s.Guides) {
 		return fmt.Errorf("onto-state: guides %q is not one of pending|updated|waived:<reason>", s.Guides)
+	}
+	for field, value := range map[string]string{
+		"proposal_approved":  s.ProposalApproved,
+		"approach_confirmed": s.ApproachConfirmed,
+		"close_confirmed":    s.CloseConfirmed,
+	} {
+		if value != "" && strings.TrimSpace(value) == "" {
+			return fmt.Errorf("onto-state: %s must not be whitespace-only", field)
+		}
 	}
 	seenRepos := map[string]bool{}
 	for _, repo := range s.Repos {
@@ -364,7 +387,7 @@ func CheckTaskPlan(tasksPath, planPath string) (TaskPlanDrift, error) {
 	var drift TaskPlanDrift
 
 	if _, err := os.Stat(planPath); err != nil {
-		if os.IsNotExist(err) {
+		if errors.Is(err, os.ErrNotExist) {
 			return drift, nil
 		}
 		return drift, fmt.Errorf("onto-state: failed to stat %s: %w", planPath, err)
@@ -463,6 +486,78 @@ func TasksAllChecked(tasksPath string) (bool, error) {
 // ("YYYY-MM-DD-") that onto close puts in front of the change name.
 var archiveDatePrefix = regexp.MustCompile(`^\d{4}-\d{2}-\d{2}-`)
 
+var archiveDaySuffix = regexp.MustCompile(`^(.*)-(\d+)$`)
+
+// NewerArchiveName orders two dated archive directory names of the SAME
+// change. Dates order lexically; within one date the same-day numeric suffix
+// orders numerically, so generation 10 outranks 9 (a plain string compare
+// would pick "-9" over "-10"). Callers key entries by exact name or by the
+// state's change field first, so the suffix/base ambiguity between a change
+// literally named "x-2" and generation 2 of "x" never reaches this compare.
+func NewerArchiveName(a, b string) bool {
+	dayA, baseA, sA, nA := parseArchiveName(a)
+	dayB, baseB, sB, nB := parseArchiveName(b)
+	if dayA != dayB || baseA != baseB {
+		return a > b
+	}
+	if sA != sB {
+		return sA // a suffixed generation is newer than the unsuffixed first
+	}
+	return nA > nB
+}
+
+func splitArchiveName(name string) (day, rest string) {
+	if p := archiveDatePrefix.FindString(name); p != "" {
+		return name[:len(p)-1], name[len(p):]
+	}
+	return "", name
+}
+
+func parseArchiveName(name string) (day, base string, suffixed bool, n int) {
+	day, rest := splitArchiveName(name)
+	if m := archiveDaySuffix.FindStringSubmatch(rest); m != nil {
+		v := 0
+		for _, c := range m[2] {
+			v = v*10 + int(c-'0')
+		}
+		return day, m[1], true, v
+	}
+	return day, rest, false, 0
+}
+
+// ArchiveIntegrationComplete reports whether an archived state has completed
+// its post-archive integration. Legacy archives without a durable requirement
+// marker remain terminal. Any existing sidecar is authoritative, and malformed,
+// mismatched, missing-required, or pending records fail closed — including a
+// record whose entry set no longer covers the change's repository scope.
+func ArchiveIntegrationComplete(changeDir string, st State) bool {
+	integration, tracked, err := integrationrecord.Load(changeDir, st.Change)
+	if err != nil {
+		return false
+	}
+	if !tracked {
+		return !st.IntegrationRequired
+	}
+	if integration.Mode != st.Integration || integration.BaseBranch != st.BaseBranch {
+		return false
+	}
+	if integration.Status != integrationrecord.StatusComplete {
+		return false
+	}
+	want := map[string]bool{"": true}
+	for _, name := range st.Repos {
+		want[name] = true
+	}
+	got := map[string]bool{}
+	for _, entry := range integration.Repositories {
+		if !want[entry.Alias] || got[entry.Alias] {
+			return false
+		}
+		got[entry.Alias] = true
+	}
+	return len(got) == len(want)
+}
+
 // DepsResolved reports which of deps are not yet archived under root. A dep is
 // resolved iff docs/changes/archive/ contains a directory named exactly
 // <YYYY-MM-DD>-<dep>. The comparison is an exact string match on the name after
@@ -478,7 +573,7 @@ func DepsResolved(root string, deps []string) []string {
 	// unresolved, so the gate refuses to advance rather than greenlighting an
 	// unverified dependency. Do not "fix" this by surfacing the error — it
 	// would change the gate-closed contract.
-	archived := map[string]bool{}
+	latest := map[string]string{}
 	archiveRoot := filepath.Join(root, "docs", "changes", "archive")
 	if entries, err := os.ReadDir(archiveRoot); err == nil {
 		for _, e := range entries {
@@ -487,10 +582,16 @@ func DepsResolved(root string, deps []string) []string {
 			}
 			if p := archiveDatePrefix.FindString(e.Name()); p != "" {
 				name := e.Name()[len(p):]
-				// A bypass archive is deliberately not a successful close, so it
-				// cannot satisfy a normal dependency gate.
-				if bypassed, err := bypasslog.ArchiveBypassed(filepath.Join(archiveRoot, e.Name()), name, "onto"); err == nil && !bypassed {
-					archived[name] = true
+				archiveDir := filepath.Join(archiveRoot, e.Name())
+				if previous := latest[name]; previous == "" || NewerArchiveName(e.Name(), filepath.Base(previous)) {
+					latest[name] = archiveDir
+				}
+				// Same-day archive suffixes are identified by their durable state,
+				// not by guessing whether "-2" belongs to the change name.
+				if archivedState, stateErr := Load(filepath.Join(archiveDir, "onto-state.yaml")); stateErr == nil && archivedState.Change != "" {
+					if previous := latest[archivedState.Change]; previous == "" || NewerArchiveName(e.Name(), filepath.Base(previous)) {
+						latest[archivedState.Change] = archiveDir
+					}
 				}
 			}
 		}
@@ -511,10 +612,33 @@ func DepsResolved(root string, deps []string) []string {
 	}
 	unresolved := make([]string, 0, len(deps))
 	for _, dep := range deps {
-		if archived[dep] && !active[dep] {
+		if active[dep] {
+			unresolved = append(unresolved, dep)
 			continue
 		}
-		unresolved = append(unresolved, dep)
+		archiveDir := latest[dep]
+		if archiveDir == "" {
+			unresolved = append(unresolved, dep)
+			continue
+		}
+		// A bypass archive is deliberately not a successful close, so it
+		// cannot satisfy a normal dependency gate.
+		if bypassed, err := bypasslog.ArchiveBypassed(archiveDir, dep, "onto"); err != nil || bypassed {
+			unresolved = append(unresolved, dep)
+			continue
+		}
+		statePath := filepath.Join(archiveDir, "onto-state.yaml")
+		if _, err := os.Stat(statePath); errors.Is(err, os.ErrNotExist) {
+			// Pre-state archives are legacy successful closes.
+			continue
+		} else if err != nil {
+			unresolved = append(unresolved, dep)
+			continue
+		}
+		archivedState, err := Load(statePath)
+		if err != nil || archivedState.Change != dep || !archivedState.Archived || !ArchiveIntegrationComplete(archiveDir, archivedState) {
+			unresolved = append(unresolved, dep)
+		}
 	}
 	return unresolved
 }

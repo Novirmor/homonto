@@ -1,10 +1,5 @@
 ---
-name: onto
 description: Start or resume the onto spec-driven workflow for this repo.
-argument-hint: "What to work on (optional; omit to resume the active change)"
-# OpenCode routes this command into the `onto` primary agent (which carries the
-# orchestrator prompt + delegation topology). Claude has no primary agent and
-# ignores this key, so there the command loads the onto skill (below).
 agent: onto
 ---
 
@@ -26,12 +21,14 @@ never performs phase work itself:
    none and `$ARGUMENTS` describes new work, start one with `onto new`).
 3. **Derive** — cross-check the recorded phase against real file state; the state
    file is a cache of truth, not truth.
-4. **Route** — hand off to the matching sub-skill (`onto-open`, `onto-design`,
-   `onto-build`, `onto-verify`, `onto-close`, or the `onto-fix` / `onto-tweak`
-   presets) for the derived phase.
+4. **Route** — load the matching sub-skill (`onto-open`, `onto-design`,
+    `onto-build`, `onto-verify`, `onto-close`, or the `onto-fix` / `onto-tweak`
+    presets) for the derived phase and continue through later phases unless the
+    user names an endpoint or asks to pause.
 
 Every state mutation goes through the `onto` binary (`onto new`, `onto set …`,
-`onto advance`, `onto close`) — never hand-edit `onto-state.yaml`.
+`onto advance`, `onto close`, `onto complete-integration`) — never hand-edit
+`onto-state.yaml` or workflow sidecars.
 
 `$ARGUMENTS`, if present, describes what to work on — use it to open a new change
 or to focus the current phase. If absent, resume the active change.

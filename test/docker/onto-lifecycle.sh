@@ -91,9 +91,14 @@ log "onto init scaffolds the workspace"
 "$ONTO" init >/dev/null
 for d in changes specs adr guides; do is_dir "$W/docs/$d"; done
 ok "docs/{changes,specs,adr,guides} created"
+git add -A && git commit -q -m "onto lifecycle baseline"
+BASE_REF="$(git rev-parse HEAD)"
+BASE_BRANCH="$(git branch --show-current)"
 
 log "onto new creates an open-phase change (full: proposal only, no tasks yet)"
 "$ONTO" new feat-a >/dev/null
+"$ONTO" set base-ref feat-a "$BASE_REF" >/dev/null
+"$ONTO" set base-branch feat-a "$BASE_BRANCH" >/dev/null
 CH="$W/docs/changes/feat-a"
 is_file "$CH/onto-state.yaml"; is_file "$CH/proposal.md"
 absent "$CH/tasks.md"   # full derives its task list from the confirmed design
@@ -136,19 +141,21 @@ printf '# Verification\nResult: pass\n' > "$CH/verification.md"
 git add -A && git commit -q -m "feat-a report passes"
 "$ONTO" advance feat-a >/dev/null; in_file "$CH/onto-state.yaml" 'phase: close'
 ok "verify exit cross-checked verification.md against the recorded result"
-# close additionally requires the merged flag and resolved guides (full
-# workflow); record them before the commit so the worktree stays clean.
-"$ONTO" set close-merged feat-a >/dev/null
+# close additionally requires resolved guides and an integration choice.
 "$ONTO" set guides feat-a updated >/dev/null
+"$ONTO" set integration feat-a merge >/dev/null
 # The final-confirmation gate's token: close refuses without it.
 git add -A && git commit -q -m "feat-a close evidence" >/dev/null 2>&1 || true
 if "$ONTO" close feat-a >/dev/null 2>&1; then fail "close must refuse without close-confirmed"; fi
 "$ONTO" set close-confirmed feat-a "2026-07-22 confirmed" >/dev/null
+"$ONTO" merge-deltas feat-a >/dev/null
 git add -A && git commit -q -m "feat-a enters close"
 ok "feat-a advanced through every gate to close"
 
 log "dependency-aware close: feat-b depends on the still-active feat-a"
 "$ONTO" new feat-b >/dev/null
+"$ONTO" set base-ref feat-b "$BASE_REF" >/dev/null
+"$ONTO" set base-branch feat-b "$BASE_BRANCH" >/dev/null
 # Shortcut feat-b straight to the close phase (skip the per-phase advances).
 sed 's/^phase: open/phase: close/' "$W/docs/changes/feat-b/onto-state.yaml" > /tmp/fb.yaml
 mv /tmp/fb.yaml "$W/docs/changes/feat-b/onto-state.yaml"
@@ -156,28 +163,48 @@ mv /tmp/fb.yaml "$W/docs/changes/feat-b/onto-state.yaml"
 # unresolved dependency on the still-active feat-a.
 "$ONTO" set deps feat-b --dep feat-a >/dev/null
 "$ONTO" set verify-result feat-b pass >/dev/null
-"$ONTO" set close-merged feat-b >/dev/null
+printf '# Verification\nResult: pass\n' > "$W/docs/changes/feat-b/verification.md"
+printf '# Design\nStatus: Confirmed\n' > "$W/docs/changes/feat-b/design.md"
+printf -- '- [x] dependency close fixture\n' > "$W/docs/changes/feat-b/tasks.md"
+printf '# Plan\n' > "$W/docs/changes/feat-b/plan.md"
 "$ONTO" set guides feat-b updated >/dev/null
+"$ONTO" set integration feat-b merge >/dev/null
 "$ONTO" set close-confirmed feat-b "2026-07-22 confirmed" >/dev/null
+"$ONTO" merge-deltas feat-b >/dev/null
 git add -A && git commit -q -m "feat-b at close depending on feat-a"
 if "$ONTO" close feat-b >/dev/null 2>&1; then fail "close must refuse while dependency feat-a is unresolved"; fi
 is_dir "$W/docs/changes/feat-b"
 ok "close refused with an unresolved dependency"
 
 log "close feat-a (archives it), then feat-b's dependency is satisfied"
+# Close captures integration anchors from a real change branch; the receipt
+# below must be a genuine --no-ff merge into the base branch.
+git checkout -q -b change/feat-a
 "$ONTO" close feat-a >/dev/null
 ARCH="$(find "$W/docs/changes/archive" -maxdepth 1 -name '*-feat-a' -type d | head -1)"
 [ -n "$ARCH" ] || fail "feat-a was not archived"
 in_file "$ARCH/onto-state.yaml" 'archived: true'
 absent "$CH"
 git add -A && git commit -q -m "archive feat-a"
+git checkout -q "$BASE_BRANCH"
+git merge --no-ff -q -m "merge change/feat-a" change/feat-a
+"$ONTO" complete-integration feat-a --receipt "merge:$(git rev-parse HEAD)" >/dev/null
+git add -A && git commit -q -m "record feat-a integration"
+git checkout -q -b change/feat-b
 "$ONTO" close feat-b >/dev/null
 [ -n "$(find "$W/docs/changes/archive" -maxdepth 1 -name '*-feat-b' -type d)" ] || fail "feat-b did not archive after its dependency resolved"
-ok "feat-a archived; feat-b closed once its dependency resolved"
+git add -A && git commit -q -m "archive feat-b"
+git checkout -q "$BASE_BRANCH"
+git merge --no-ff -q -m "merge change/feat-b" change/feat-b
+"$ONTO" complete-integration feat-b --receipt "merge:$(git rev-parse HEAD)" >/dev/null
+git add -A && git commit -q -m "record feat-b integration"
+ok "feat-a integrated; feat-b closed once its dependency resolved"
 
 log "preset (fix) advances mechanically open->build->verify->close (N2 regression)"
 git add -A && git commit -q -m "archive feat-b" || true
 "$ONTO" new feat-fix --workflow fix >/dev/null
+"$ONTO" set base-ref feat-fix "$BASE_REF" >/dev/null
+"$ONTO" set base-branch feat-fix "$BASE_BRANCH" >/dev/null
 FX="$W/docs/changes/feat-fix"
 is_file "$FX/proposal.md"; is_file "$FX/tasks.md"   # presets scaffold tasks at open-lite
 printf -- '- [x] reproduce\n- [x] fix\n' > "$FX/tasks.md"
@@ -190,15 +217,21 @@ printf '# Verification\nResult: pass\n' > "$FX/verification.md"
 "$ONTO" set verify-result feat-fix pass >/dev/null
 git add -A && git commit -q -m "feat-fix artifacts"
 "$ONTO" advance feat-fix >/dev/null; in_file "$FX/onto-state.yaml" 'phase: close'
-"$ONTO" set close-merged feat-fix >/dev/null   # presets need no guides
+"$ONTO" set integration feat-fix merge >/dev/null   # presets need no guides
 "$ONTO" set close-confirmed feat-fix "2026-07-22 confirmed" >/dev/null
+"$ONTO" merge-deltas feat-fix >/dev/null
 git add -A && git commit -q -m "feat-fix enters close"
+git checkout -q -b change/feat-fix
 "$ONTO" close feat-fix >/dev/null
 [ -n "$(find "$W/docs/changes/archive" -maxdepth 1 -name '*-feat-fix' -type d)" ] || fail "preset did not archive"
-ok "preset advanced through every phase mechanically and archived"
+git add -A && git commit -q -m "archive feat-fix"
+git checkout -q "$BASE_BRANCH"
+git merge --no-ff -q -m "merge change/feat-fix" change/feat-fix
+"$ONTO" complete-integration feat-fix --receipt "merge:$(git rev-parse HEAD)" >/dev/null
+git add -A && git commit -q -m "record feat-fix integration"
+ok "preset advanced through every phase mechanically, archived, and integrated"
 
 log "onto doctor is healthy after clean closes"
-git add -A && git commit -q -m "archive feat-fix" || true
 "$ONTO" doctor >/dev/null 2>&1 || fail "onto doctor reported problems"
 ok "onto doctor healthy"
 

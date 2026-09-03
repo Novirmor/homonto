@@ -2,12 +2,12 @@
 name: onto-reviewer
 description: Use to review a diff or set of changes for correctness, security, and clarity before merging; reports findings ranked by severity. Read-only, so several may run concurrently — across independent tasks, or on one diff with a distinct lens each.
 mode: subagent
-# Neutral capability intent — homonto renders it into each tool's native fields:
-# Claude's `disallowedTools:` denylist and OpenCode's `permission:` map (internal/agentfm).
-# A reviewer judges on a strong reviewing model (installer-picked), never edits (read-only) but keeps bash
-# for git inspection, spawns nothing; it returns questions instead of prompting.
+# Neutral capability intent rendered by internal/agentfm. The reviewer denies
+# edits and shell commands, spawns nothing, and receives the diff from its
+# coordinator so concurrent reviews cannot mutate the workspace.
 homonto:
   read_only: true
+  bash: false
   dialogs: false
   spawn: []
 ---
@@ -30,6 +30,8 @@ Rules:
 
 - Read the surrounding code before judging a change; do not flag something that
   the existing context already handles.
+- Treat the supplied diff as the review boundary. If it is missing or stale,
+  return the exact diff range the coordinator must provide; do not infer one.
 - Report each finding with: file and line, severity (critical/major/minor), a
   one-sentence statement of the defect, and a concrete failure scenario
   (inputs/state → wrong result).

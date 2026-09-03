@@ -21,8 +21,9 @@ homonto. Read-only commands do not write; `onto dirt <change>` reads
 ```
                  ┌─────────────────── onto advance (one phase per call) ───────────────────┐
                  ▼                                                                          │
-   onto new → [ open ] → [ design ] → [ build ] → [ verify ] → [ close ] ──── onto close ──→ archived/
-                                                                                   (terminal, success)
+   onto new → [ open ] → [ design ] → [ build ] → [ verify ] → [ close ] ── onto close ──→ archived/pending
+                                                                                                  │
+                                                   done ← onto complete-integration ←──────────────┘
 
    presets:   --workflow fix / tweak run a reduced path (open-lite → build → verify → close),
               and upgrade to the full path when scope grows.
@@ -33,7 +34,9 @@ homonto. Read-only commands do not write; `onto dirt <change>` reads
 A change tracks its phase and evidence in
 `docs/changes/<name>/onto-state.yaml`. The phase set is exactly
 `open → design → build → verify → close`; `close` is the terminal phase
-(reached by advancing), after which `onto close` **archives** the change.
+(reached by advancing), after which `onto close` archives the change and records
+pending Git integration. `done` is derived only after `onto
+complete-integration` records the merge commit or opened PR URL.
 There is no `archive` phase.
 
 ## Entering — `onto init` and `onto new`
@@ -89,21 +92,19 @@ below still applies to each step it walks.
 6. **Evidence / entry tokens** (recorded via `onto set`, not inferred from
    files):
    - **Leaving `open`** (full only): `proposal_approved` is non-empty — the
-     open phase's artifact-review answer, recorded verbatim.
+     open phase's proposal-review summary.
    - **Entering `build`** (design→build): `isolation` is set (`branch` or
      `worktree`), so planning and build work is never committed unisolated;
-     **and** `approach_confirmed` is non-empty (full only) — the design
-     phase's approach answer; **and** the change is **not in a dependency
-     cycle** (no valid build order exists).
+      **and** `approach_confirmed` is non-empty (full only) — the design
+      phase's selected approach and basis; **and** every dependency is complete;
+      **and** the change is **not in a dependency cycle** (no valid build order
+      exists).
    - **Leaving `verify`** (verify→close): `verify.result == pass`.
 
-   The approval tokens are what make a user gate non-skippable: the binary
-   refuses the transition while the token is empty, so an honest agent cannot
-   advance past a question it never asked. Presets are exempt from the two
-   full-only tokens (they have no open/design phases) but not from
-   `close_confirmed`, below. A change already in flight when these landed
-   refuses its next `advance` until the missing token is recorded — that is
-   the unanswered gate being re-asked, not a fault.
+   These review tokens preserve the decision across sessions: the binary refuses
+   the transition while a token is empty. The coordinator records a truthful
+   review summary; Git records who wrote it. Presets are exempt from the two
+   full-only tokens but still record close-plan validation.
 7. **Worktree cleanliness:** entering `close` is **blocked** by uncommitted
    paths in the config repo and every repo selected with `onto new --repo`.
    The config repo keeps the carve-out for another active change's
@@ -117,7 +118,7 @@ A failed gate exits non-zero and leaves the recorded phase unchanged.
 ## Explicit bypass — `onto bypass <change> --to <phase|archive> --reason <reason>`
 
 This is an emergency operator command, surfaced through the dedicated
-`/onto-bypass` skill only after the user explicitly requests it. It accepts any
+`/onto-bypass` slash command only after the user explicitly requests it. It accepts any
 workflow phase (`open`, `design`, `build`, `verify`, or `close`) or `archive`;
 it skips the normal transition, evidence, dependency, merge, and worktree
 checks. The framework-install gate, change-name validation, readable valid
@@ -134,12 +135,14 @@ Before archiving, the close phase merges the change's spec deltas into the
 living specs with `onto merge-deltas`: a deterministic
 RENAMED → MODIFIED → REMOVED → ADDED application, lint-checked,
 **transactional** (writes nothing unless every delta merges clean), and
-**idempotent** (it sets and honors `close.merged`). This replaces the
+**receipt-bound and resumable** (it records the exact delta manifest and living
+spec pre/post-images in `.onto/merge-receipt.json`). A changed delta, deleted
+delta, or unexpected living-spec image fails closed instead of being replayed.
+This replaces the
 by-hand merge that was the workflow's most destructive step.
 
-It shares the close phase's confirmation gate: `merge-deltas` refuses while
-`close_confirmed` is empty, so the specs never move before the user has
-confirmed the close.
+It shares the close-plan review gate: `merge-deltas` refuses while
+`close_confirmed` is empty, so the specs never move before the plan is validated.
 
 ## Exiting — `onto close <change>`
 
@@ -147,25 +150,45 @@ Archives a change that has reached the `close` phase. Gates, in order:
 
 1. Framework installed; valid name; state loads.
 2. Phase **is `close`** (advance until it reaches close first).
-3. **Close-evidence gate** — the tokens the workflow produces:
-   - `close_confirmed` is non-empty — the final-confirmation answer, recorded
-     verbatim, required of **every** workflow including presets, **and**
+3. Every cumulative artifact for the workflow exists.
+4. **Close-evidence gate** — the tokens the workflow produces:
+   - `close_confirmed` is non-empty — the close-plan review summary, required of
+     **every** workflow including presets, **and**
    - `verify.result == pass`, **and**
-   - `close.merged == true`, **and**
+   - `close.merged == true` with a matching merge receipt, **and**
    - for the **full** workflow only, **guides resolved**: `guides` is
-     `updated` or `waived:<reason>`. The fix/tweak presets produce no
-     guides, so they skip this; an empty or unknown workflow is treated as
-     full.
-4. **Dependencies resolved** — every change in `deps` is already archived
-   (a `docs/changes/archive/*-<dep>/` exists).
-5. **Clean, determinable scope** (same config-repo plus selected-repo rule as
+      `updated` or `waived:<reason>`. The fix/tweak presets produce no
+      guides, so they skip this; an empty or unknown workflow is treated as
+      full, **and**
+   - `integration` is `merge` or `pr`, recorded while the workspace is active,
+     **and**
+   - immutable `base_ref` and `base_branch` anchors are recorded.
+5. **Dependencies resolved** — every tracked dependency is archived and has
+   completed integration; legacy archives remain accepted.
+6. **Clean, determinable scope** (same config-repo plus selected-repo rule as
    entering close).
-6. **No-clobber** — the dated archive target must not already exist.
+ 7. **No-clobber** — the dated archive target takes a numeric suffix on
+    same-day name reuse.
 
-On success it sets `archived: true` and moves the workspace to
-`docs/changes/archive/<YYYY-MM-DD>-<name>/`. The move is transactional: if
-it fails after the flag is written, the flag is rolled back, so a failed
-close never leaves a change marked archived at its original path.
+On success it writes a pending `.onto/integration.json` with one entry per
+repository in the change's scope (the config repository plus every selected
+sibling), sets `archived: true` and `integration_required: true`, and moves the
+workspace to `docs/changes/archive/<YYYY-MM-DD>-<name>/`. If the process stops
+between the move and flag write, rerunning `onto close <change>` repairs the
+newest dated archive. The archived change remains at derived phase `close`
+while any repository's integration is pending. Close also refuses when commits
+landed after the recorded verification pass that are not workflow bookkeeping
+(source paths in the config repo; anything at all in a selected sibling) —
+re-verify and record a fresh pass first.
+
+**`onto complete-integration <change> [--repo <alias>] --receipt <receipt>`**
+records the one-way post-archive result, one repository at a time. Use
+`merge:<commit-sha>` naming the real `--no-ff` merge commit (the binary
+verifies parents and base-branch reachability against git and canonicalizes
+the id) or `pr:<https-url>` after opening a pull request. Repeating the same
+receipt is idempotent; replacing it is refused. The derived phase becomes
+`done` and dependencies resolve once **every** repository is complete. A
+manual `ship.md` handoff is not completion because no PR has opened.
 
 **`onto abandon <change>`** is the other terminal state — the unsuccessful
 one — for work that stops rather than completes.
@@ -177,19 +200,21 @@ by hand:
 
 | `onto set` field | Gate it satisfies / records |
 |---|---|
-| `proposal-approved <change> <evidence>` | required to **leave open** (full only); the user's answer, verbatim |
-| `approach-confirmed <change> <evidence>` | required to **enter build** (full only); the user's answer, verbatim |
-| `close-confirmed <change> <evidence>` | required for **`merge-deltas`** and **`close`** (all workflows); the user's answer, verbatim |
+| `proposal-approved <change> <evidence>` | required to **leave open** (full only); proposal review and basis |
+| `approach-confirmed <change> <evidence>` | required to **enter build** (full only); selected approach and basis |
+| `close-confirmed <change> <evidence>` | required for **`merge-deltas`** and **`close`** (all workflows); close-plan review summary |
 | `isolation <branch\|worktree>` | required to **enter build** |
-| `integration <merge\|pr>` | how the branch is integrated at close — merge into base, or open a PR (the onto-close skill performs the git work) |
-| `build-pause <plan-ready\|clear>` | record/clear a first-class pause at the plan-ready gate so a fresh session resumes without re-planning |
+| `integration <merge\|pr>` | required to **close**; how the branch is integrated after archive |
+| `build-pause <plan-ready\|clear>` | record/clear an explicitly requested pause after planning so a fresh session resumes without re-planning |
 | `verify-result <pass\|fail\|…>` | `pass` required to **leave verify** and to **close**; `fail` also increments `observed.verify_rounds` (≥3 is an `onto doctor` finding) |
 | `verify-scale` | records the verification level for the verify phase (see `onto scale --set`) |
-| `close-merged` | sets `close.merged=true`, required to **close** |
+| `close-merged` | compatibility spelling that delegates to `onto merge-deltas`; it cannot set an unbound marker |
 | `guides <updated\|waived:<reason>>` | required to **close** a full workflow |
 | `deps --dep <name> …` | dependency list; each must be archived before **close** |
 | `build-mode`, `tdd-mode` | records how build executes |
-| `base-ref` | the git ref the change branched from (input to `onto scale`) |
+| `base-ref` | immutable commit anchor the change branched from (input to `onto scale`) |
+| `base-branch` | immutable, syntax-checked branch targeted by local integration or a pull request; separate from commit-valued `base-ref` |
+| `workflow <full>` | one-way preset upgrade from `fix`/`tweak` to the full workflow |
 | `supersedes`, `deviates-from` | cross-change relationships (surfaced by `onto graph`) |
 | `directive` | a verbatim pre-authorization directive on the change |
 
@@ -199,7 +224,7 @@ by hand:
 |---|---|
 | `onto status` | each active change's derived phase and skeleton validity |
 | `onto state <change> [--json]` | a change's full state |
-| `onto gate <change> [--json]` | the pending evidence gate(s), as a structured schema (question, header, options, the `onto set` that records the answer) a skill renders as a dialog |
+| `onto gate <change> [--json]` | pending evidence decisions and the exact command that resolves each; most use `onto set`, while delta merging uses `onto merge-deltas` |
 | `onto scale <change> [--json] [--set]` | the verification level derived from the measured `base_ref..HEAD` diff (non-test files, changed lines); `--set` records it via `verify-scale` |
 | `onto graph [--json] [--check]` | the change dependency graph (`{nodes, edges, cycles}`); `--check` exits non-zero on a cycle — the same cycles the build gate rejects |
 | `onto dirt [change] [--json]` | Every uncommitted path classified against the change. For a scoped change it audits the config repo plus its selected aliases and labels every repository; config-repo `own` and other-change `change` classifications retain their existing meanings, while external paths are `source` and block close. |

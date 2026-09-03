@@ -74,7 +74,7 @@ func runDone(cmd *cobra.Command, root, name string, verified bool, evidence stri
 	// Cross-repo changes are terminal only when every selected worktree is
 	// determinably clean. The config repo is implicit; unscoped legacy changes
 	// preserve to's historical git-blind completion behavior.
-	if err := requireCleanScope(root, st.Repos); err != nil {
+	if err := requireCleanScope(root, name, st.Repos); err != nil {
 		return fmt.Errorf("to done: cannot finish cross-repo change %q: %w", name, err)
 	}
 

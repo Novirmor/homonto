@@ -145,6 +145,22 @@ func TestMerge_Idempotentish_MissingTargetsError(t *testing.T) {
 	}
 }
 
+func TestMerge_RejectsMalformedOrVacuousDelta(t *testing.T) {
+	for _, delta := range []string{
+		"",
+		"# Delta only\n",
+		"## ADDED Requirements\n",
+		"## CHANGED Requirements\n\n### Requirement: A\n",
+		"### Requirement: A\n\nSHALL a.\n",
+		"## RENAMED Requirements\n\n- FROM: Login\n",
+		"## RENAMED Requirements\n\n- FROM: Login\n- FROM: Logout\n  TO: Sign Out\n",
+	} {
+		if _, err := Merge("auth", living, delta); err == nil {
+			t.Errorf("Merge accepted malformed delta %q", delta)
+		}
+	}
+}
+
 func TestLint_CatchesLeakAndDuplicate(t *testing.T) {
 	bad := "# X\n\n## Requirements\n\n### Requirement: A\n\nSHALL.\n\n### Requirement: A\n\nSHALL.\n\n## ADDED Requirements\n"
 	f := Lint(bad)

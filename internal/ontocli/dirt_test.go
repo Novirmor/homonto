@@ -42,10 +42,10 @@ func TestWorktreeDirt_Classification(t *testing.T) {
 		class  string
 		blocks bool
 	}{
-		"docs/changes/demo/scratch.txt": {"own", true},
-		"docs/changes/other/notes.md":   {"change", false},
-		"docs/changes/archive/":         {"change", false}, // untracked dir collapses
-		"main.go":                       {"source", true},
+		"docs/changes/demo/scratch.txt":                       {"own", true},
+		"docs/changes/other/notes.md":                         {"change", false},
+		"docs/changes/archive/2026-01-01-old/onto-state.yaml": {"change", false},
+		"main.go": {"source", true},
 	} {
 		e, ok := got[path]
 		if !ok {
@@ -58,10 +58,8 @@ func TestWorktreeDirt_Classification(t *testing.T) {
 	}
 }
 
-// TestWorktreeDirt_UntrackedAncestorIsOwn: git collapses an entirely-untracked
-// tree to its topmost directory ("?? docs/"), which may CONTAIN the change's
-// own uncommitted evidence — it must classify "own" (conservative), never
-// slip through as "change".
+// TestWorktreeDirt_UntrackedArtifactIsOwn verifies that untracked-files=all
+// reports the concrete change artifact and classifies it as blocking own dirt.
 func TestWorktreeDirt_UntrackedAncestorIsOwn(t *testing.T) {
 	dir := t.TempDir()
 	runGit(t, dir, "init")
@@ -76,8 +74,8 @@ func TestWorktreeDirt_UntrackedAncestorIsOwn(t *testing.T) {
 	if !determinable {
 		t.Fatal("determinable = false, want true")
 	}
-	if len(entries) != 1 || entries[0].Class != "own" || !entries[0].BlocksClose {
-		t.Errorf("entries = %+v, want one blocking 'own' entry for the untracked ancestor dir", entries)
+	if len(entries) != 1 || entries[0].Path != "docs/changes/demo/onto-state.yaml" || entries[0].Class != "own" || !entries[0].BlocksClose {
+		t.Errorf("entries = %+v, want one blocking 'own' artifact", entries)
 	}
 }
 
@@ -114,10 +112,7 @@ func TestWorktreeDirt_SubdirWorkspace(t *testing.T) {
 	}
 }
 
-// TestWorktreeDirt_RenameParsedAsOneEntry: porcelain -z renames carry a second
-// NUL-separated token (the original path); the parser must consume it instead
-// of fabricating a bogus entry from it.
-func TestWorktreeDirt_RenameParsedAsOneEntry(t *testing.T) {
+func TestWorktreeDirt_RenameRetainsSourceDeletion(t *testing.T) {
 	dir := t.TempDir()
 	runGit(t, dir, "init")
 	runGit(t, dir, "config", "user.email", "test@example.com")
@@ -131,11 +126,15 @@ func TestWorktreeDirt_RenameParsedAsOneEntry(t *testing.T) {
 	if !determinable {
 		t.Fatal("determinable = false, want true")
 	}
-	if len(entries) != 1 {
-		t.Fatalf("entries = %+v, want exactly one rename entry", entries)
+	if len(entries) != 2 {
+		t.Fatalf("entries = %+v, want deletion and addition", entries)
 	}
-	if entries[0].Path != "new.txt" || entries[0].Status[0] != 'R' {
-		t.Errorf("entry = %+v, want R-status entry for new.txt", entries[0])
+	got := map[string]string{}
+	for _, entry := range entries {
+		got[entry.Path] = entry.Status
+	}
+	if got["old.txt"] != "D " || got["new.txt"] != "A " {
+		t.Fatalf("rename records = %v, want old deletion and new addition", got)
 	}
 }
 
@@ -204,6 +203,7 @@ func TestAdvanceCommand_CloseBlockErrorListsPaths(t *testing.T) {
 func TestCloseCommand_AllowsForeignChangeDirt(t *testing.T) {
 	dir := prepWorkspace(t)
 	seedClose(t, dir, "demo", nil)
+	checkoutChangeBranch(t, dir, "demo")
 	commitAll(t, dir, "seed change")
 	writeFile(t, filepath.Join(dir, "docs", "changes", "in-flight", "proposal.md"), "another change's WIP\n")
 

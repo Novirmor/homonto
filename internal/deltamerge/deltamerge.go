@@ -11,10 +11,16 @@
 package deltamerge
 
 import (
+	"errors"
 	"fmt"
 	"regexp"
 	"strings"
 )
+
+// ErrAlreadyExists marks an ADDED name that the living spec already carries.
+// Callers pair it with Applied to recognize a prior round's completed work
+// without weakening the loud failure for genuinely conflicting content.
+var ErrAlreadyExists = errors.New("requirement already exists")
 
 var (
 	reqHeading     = regexp.MustCompile(`^### Requirement:\s*(.+?)\s*$`)
@@ -80,7 +86,7 @@ func Merge(capability, living, delta string) (string, error) {
 	// 4. ADDED — append; a name that already exists is a conflict.
 	for _, a := range added {
 		if find(a.name) >= 0 {
-			return "", fmt.Errorf("deltamerge: ADDED %q already exists in living spec %q", a.name, capability)
+			return "", fmt.Errorf("deltamerge: ADDED %q already exists in living spec %q: %w", a.name, capability, ErrAlreadyExists)
 		}
 		reqs = append(reqs, a)
 	}
@@ -202,14 +208,32 @@ func parseDelta(delta string) (renamed [][2]string, modified, removed []requirem
 	lines := strings.Split(strings.ReplaceAll(delta, "\r\n", "\n"), "\n")
 	section := ""
 	var pendingFrom string
+	seenSections := map[string]bool{}
+	sectionOps := map[string]int{}
 	i := 0
 	for i < len(lines) {
 		ln := lines[i]
 		if m := sectionHeading.FindStringSubmatch(ln); m != nil {
+			if section != "" && sectionOps[section] == 0 {
+				return nil, nil, nil, nil, fmt.Errorf("deltamerge: %s section has no operations", section)
+			}
+			if pendingFrom != "" {
+				return nil, nil, nil, nil, fmt.Errorf("deltamerge: RENAMED FROM %q has no TO", pendingFrom)
+			}
+			if seenSections[m[1]] {
+				return nil, nil, nil, nil, fmt.Errorf("deltamerge: duplicate %s section", m[1])
+			}
 			section = m[1]
+			seenSections[section] = true
 			pendingFrom = ""
 			i++
 			continue
+		}
+		if topHeading.MatchString(ln) {
+			return nil, nil, nil, nil, fmt.Errorf("deltamerge: unsupported section %q", strings.TrimSpace(ln))
+		}
+		if reqHeading.MatchString(ln) && section == "" {
+			return nil, nil, nil, nil, fmt.Errorf("deltamerge: requirement appears outside a delta section")
 		}
 		switch section {
 		case "ADDED", "MODIFIED":
@@ -226,24 +250,41 @@ func parseDelta(delta string) (renamed [][2]string, modified, removed []requirem
 				} else {
 					modified = append(modified, r)
 				}
+				sectionOps[section]++
 				continue
 			}
 		case "REMOVED":
 			if m := reqHeading.FindStringSubmatch(ln); m != nil {
 				removed = append(removed, requirement{name: m[1]})
+				sectionOps[section]++
 			}
 		case "RENAMED":
 			if m := fromLine.FindStringSubmatch(ln); m != nil {
+				if pendingFrom != "" {
+					return nil, nil, nil, nil, fmt.Errorf("deltamerge: RENAMED FROM %q has no TO", pendingFrom)
+				}
 				pendingFrom = m[1]
 			} else if m := toLine.FindStringSubmatch(ln); m != nil {
 				if pendingFrom == "" {
 					return nil, nil, nil, nil, fmt.Errorf("deltamerge: RENAMED TO %q has no preceding FROM", m[1])
 				}
 				renamed = append(renamed, [2]string{pendingFrom, m[1]})
+				sectionOps[section]++
 				pendingFrom = ""
+			} else if strings.TrimSpace(ln) != "" {
+				return nil, nil, nil, nil, fmt.Errorf("deltamerge: invalid RENAMED line %q", strings.TrimSpace(ln))
 			}
 		}
 		i++
+	}
+	if pendingFrom != "" {
+		return nil, nil, nil, nil, fmt.Errorf("deltamerge: RENAMED FROM %q has no TO", pendingFrom)
+	}
+	if section != "" && sectionOps[section] == 0 {
+		return nil, nil, nil, nil, fmt.Errorf("deltamerge: %s section has no operations", section)
+	}
+	if len(renamed)+len(modified)+len(removed)+len(added) == 0 {
+		return nil, nil, nil, nil, fmt.Errorf("deltamerge: delta has no operations")
 	}
 	return renamed, modified, removed, added, nil
 }

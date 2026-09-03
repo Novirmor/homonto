@@ -7,6 +7,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/noviopenworks/homonto/internal/integrationrecord"
 )
 
 // treeSnapshot walks dir and records each file's relative path, size, and
@@ -155,7 +157,7 @@ func TestStatusCommand_SucceedsWithoutHomontoToml(t *testing.T) {
 func TestStatusCommand_SkipsArchivedChanges(t *testing.T) {
 	dir := t.TempDir()
 	writeFile(t, filepath.Join(dir, "docs", "changes", "alpha", "onto-state.yaml"), "change: alpha\nphase: build\n")
-	writeFile(t, filepath.Join(dir, "docs", "changes", "archive", "old-change", "onto-state.yaml"), "change: old-change\nphase: close\n")
+	writeFile(t, filepath.Join(dir, "docs", "changes", "archive", "old-change", "onto-state.yaml"), "change: old-change\nphase: close\narchived: true\n")
 
 	cmd := NewRootCmd()
 	var out bytes.Buffer
@@ -273,5 +275,21 @@ func TestStatusCommand_FlagsWorkingPhaseMismatch(t *testing.T) {
 	}
 	if !strings.Contains(out, "(working: design)") {
 		t.Errorf("status must flag the mismatch, got:\n%s", out)
+	}
+}
+
+func TestStatusCommand_ReportsArchivedPendingIntegration(t *testing.T) {
+	dir := t.TempDir()
+	archiveDir := filepath.Join(dir, "docs", "changes", "archive", "2026-09-03-c")
+	writeFile(t, filepath.Join(archiveDir, "onto-state.yaml"), "change: c\nworkflow: full\nphase: close\narchived: true\nintegration: merge\nbase_branch: main\n")
+	if err := integrationrecord.Save(archiveDir, integrationrecord.NewPending("c", "merge", "main", []integrationrecord.Entry{{BaseBranch: "main", BaseCommit: "1111111111111111111111111111111111111111", SourceBranch: "change/c", SourceCommit: "2222222222222222222222222222222222222222"}})); err != nil {
+		t.Fatal(err)
+	}
+	out, err := runOnto(t, "status", "--dir", dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out, "c: close") || !strings.Contains(out, "integration pending") {
+		t.Fatalf("pending archive missing from status:\n%s", out)
 	}
 }

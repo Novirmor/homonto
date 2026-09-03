@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 
 	"github.com/noviopenworks/homonto/internal/buildinfo"
+	"github.com/noviopenworks/homonto/internal/integrationrecord"
 	"github.com/noviopenworks/homonto/internal/ontostate"
 	"github.com/noviopenworks/homonto/internal/workcli"
 	"github.com/spf13/cobra"
@@ -144,7 +145,7 @@ func runDoctor(cmd *cobra.Command, root string) error {
 			// A change that has failed verification 3+ times needs a decision, not
 			// another silent retry (accept the deviation or keep fixing).
 			if st.Observed.VerifyRounds >= 3 {
-				findings = append(findings, fmt.Sprintf("%s: %d failed verify rounds — decide accept-deviation or continue", name, st.Observed.VerifyRounds))
+				findings = append(findings, fmt.Sprintf("%s: %d failed verify rounds — use fresh investigation before retrying", name, st.Observed.VerifyRounds))
 			}
 			// Structured evidence (ADR 0027). A missing sidecar is a note, not
 			// a finding — every change created before v0.15.0 is exactly that,
@@ -173,7 +174,19 @@ func runDoctor(cmd *cobra.Command, root string) error {
 			continue
 		}
 		if !st.Archived {
-			findings = append(findings, "archive/"+name+": not marked archived: true")
+			findings = append(findings, "archive/"+name+": not marked archived: true; recover with `onto close "+st.Change+"`")
+		}
+		integration, tracked, integrationErr := integrationrecord.Load(entry, st.Change)
+		if integrationErr != nil {
+			findings = append(findings, fmt.Sprintf("archive/%s: invalid integration record: %v", name, integrationErr))
+		} else if !tracked && st.IntegrationRequired {
+			findings = append(findings, "archive/"+name+": required integration record is missing")
+		} else if tracked {
+			if err := validateIntegrationRecord(st, integration); err != nil {
+				findings = append(findings, fmt.Sprintf("archive/%s: %v", name, err))
+			} else if integration.Status != integrationrecord.StatusComplete {
+				findings = append(findings, "archive/"+name+": integration pending; finish Git integration, then run `onto complete-integration "+st.Change+" --receipt <receipt>`")
+			}
 		}
 	}
 

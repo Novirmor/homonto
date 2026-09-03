@@ -122,10 +122,32 @@ close. Run `onto gate <change>` to see the pending decision(s) and the
 exact `onto set` that records each one.
 
 **`close` fails.** Check, in order: the change is at phase `close`;
-`verify.result == pass`; `close.merged == true` (run `onto merge-deltas`);
-guides resolved (full workflow); every `deps` entry archived; config repo and
-every selected `--repo` worktree clean and Git-readable; archive target not
-already present.
+all cumulative artifacts exist; `verify.result == pass` and the report has one
+canonical result line; no source commit landed after that pass (close names
+the path — re-verify and record a fresh pass, or reopen for a real fix);
+`close.merged == true` with a matching receipt (run `onto merge-deltas`);
+`base_ref`, `base_branch`, and integration are recorded; the current branch is
+a change branch, not `base_branch` itself; guides resolved (full workflow);
+every `deps` entry completed; config repo and every selected `--repo` worktree
+clean and Git-readable.
+
+**`complete-integration` rejects the receipt.** A merge receipt must name a
+real `--no-ff` merge commit that contains the recorded source commit and is
+reachable from the recorded base branch. Squash merges, rebased-and-merged
+branches, and fast-forwards all fail this by design — the audit trail would
+not identify what landed. Merge the change branch again with
+`git merge --no-ff`, or open a PR and record `pr:<url>` instead.
+
+**An archived change still appears at close.** Its Git integration is pending,
+incomplete for some repository, or its `.onto/integration.json` is invalid.
+Complete the recorded local merge (`git merge --no-ff <change-branch>` into
+`base_branch` — the receipt must name that real merge commit) or open the
+recorded PR, then run `onto complete-integration <change> --receipt
+merge:<commit>` or `--receipt pr:<https-url>` per repository — once for the
+config repository and once per selected sibling with `--repo <alias>`; the
+change derives `done` only when all of them are complete. If archival stopped
+before the state flag was written, rerun `onto close <change>` first. `onto
+doctor` prints the applicable recovery command.
 
 **"dirty worktree blocks close."** The error lists the first few offending
 paths; `onto dirt <change>` shows all of them, classified. Paths under

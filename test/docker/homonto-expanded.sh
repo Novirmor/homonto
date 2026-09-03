@@ -71,13 +71,13 @@ is_file "$W/.homonto/catalog/subagents/onto-implementer.md"
 is_file "$W/.homonto/catalog/subagents/onto-skeptic.md"
 # Homonto-block subagents materialize an OpenCode variant: the render turns the
 # neutral block into OpenCode's native `permission:` map. A read-only spawn:[]
-# agent (the reviewer) denies exactly edit and task — question is denied too
-# because its block sets dialogs: false — while bash stays at the tool default,
-# and the declared model and variant stamp as their own frontmatter fields.
+# agent (the reviewer) denies edit, bash, and task — question is denied too
+# because its block sets dialogs: false. The declared model and variant stamp
+# as their own frontmatter fields.
 RVAR="$W/.homonto/catalog/subagents/onto-reviewer.opencode.md"
 in_file "$RVAR" '  edit: deny'
 in_file "$RVAR" '  task: deny'
-if grep -q 'bash: deny' "$RVAR"; then fail "reviewer keeps bash; only the block's denials may render"; fi
+in_file "$RVAR" '  bash: deny'
 in_file "$RVAR" 'model: anthropic/claude-opus-4-8'
 in_file "$RVAR" 'variant: 1m'
 # The implementer edits (coding model) but still spawns nothing: the only task

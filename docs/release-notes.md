@@ -15,6 +15,32 @@ bookkeeper) — for every supported OS/arch as separate archives under one
 `SHA256SUMS`. `onto` and `to` each require `homonto` to have installed their
 framework first (`[frameworks.onto]` / `[frameworks.to]` + `homonto apply`).
 
+### New in v0.17.0 — autonomous workflows and valid OpenCode resources
+
+- **Workflows run through by default.** Starting or resuming `onto` or `to`
+  continues through later phases unless the user names an endpoint or asks to
+  pause. Primaries investigate before asking, choose reversible technical
+  defaults, and reserve user questions for product intent and explicit waivers.
+- **Every workflow command enters its primary agent.** Direct phase and preset
+  commands now carry the same orchestration, permission, and delegation policy
+  as `/onto` and `/to`.
+- **OpenCode metadata and read-only agents are honest.** Shipped skills have
+  discoverable metadata, unsupported command fields are gone, bypasses are
+  command-only, and concurrent read-only specialists deny both edits and Bash.
+- **Close validates and receipts every destructive boundary.** The verification
+  report must contain one canonical result that agrees with state, and a
+  recorded pass freezes each scoped repository's HEAD — source commits after
+  the pass refuse close until the change is re-verified. Spec merges record
+  exact delta and living-spec pre/post-images (a receipt from an invalidated
+  round is discarded and recomputed, never a dead end), interrupted archives
+  are executable to recover, and post-archive Git integration is tracked per
+  repository with fail-closed receipts: a merge receipt must name a real
+  `--no-ff` merge commit reachable from the recorded base branch, and a
+  cross-repo change is done only when every selected repository landed.
+  Integration targets a separately recorded branch rather than the
+  commit-valued diff base; reused change names resolve to the newest archive
+  generation deterministically.
+
 ### New in v0.16.0 — parallel workflow agents and explicit bypasses
 
 - **Choose a workflow by selecting its primary agent.** `onto` stays the

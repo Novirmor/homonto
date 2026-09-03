@@ -16,6 +16,19 @@ func TestParseAndMigrate_FutureVersion_Rejected(t *testing.T) {
 	}
 }
 
+func TestParseAndMigrate_V1DoesNotAdoptIntegrationRequirement(t *testing.T) {
+	got, err := parseAndMigrate([]byte("schema_version: 1\nchange: c\nphase: close\narchived: true\nintegration_required: true\n"), "onto-state.yaml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.SchemaVersion != CurrentSchemaVersion {
+		t.Fatalf("schema version = %d, want %d", got.SchemaVersion, CurrentSchemaVersion)
+	}
+	if got.IntegrationRequired {
+		t.Fatal("schema-1 state adopted a field that did not exist in that schema")
+	}
+}
+
 // legacy 7-field binary onto-state.yaml (no schema_version).
 const legacyBinaryYAML = `change: legacy-bin
 workflow: fix

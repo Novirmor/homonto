@@ -78,8 +78,18 @@ func TestConformance_FullLifecycle_HappyPath(t *testing.T) {
 		t.Fatalf("after new: %+v, want phase=open workflow=full derived=open", v)
 	}
 
-	// Record the gated decisions and confirm they persisted.
-	for _, d := range [][2]string{{"isolation", "worktree"}, {"build-mode", "subagent"}, {"tdd-mode", "tdd"}} {
+	// Record the gated decisions and confirm they persisted. base-branch must
+	// name the branch this test really runs on: close resolves it against git,
+	// and base-ref must be a real commit (close and scale resolve it too).
+	baseBranch, err := gitOutput(t, root, "branch", "--show-current")
+	if err != nil || baseBranch == "" {
+		t.Fatalf("determining base branch: %v (%q)", err, baseBranch)
+	}
+	baseRef, err := gitOutput(t, root, "rev-parse", "HEAD")
+	if err != nil {
+		t.Fatalf("determining base ref: %v", err)
+	}
+	for _, d := range [][2]string{{"isolation", "worktree"}, {"build-mode", "subagent"}, {"tdd-mode", "tdd"}, {"integration", "merge"}, {"base-ref", baseRef}, {"base-branch", baseBranch}} {
 		if _, err := runOnto(t, "set", d[0], name, d[1], "--dir", root); err != nil {
 			t.Fatalf("onto set %s %s: %v", d[0], d[1], err)
 		}
@@ -135,20 +145,23 @@ func TestConformance_FullLifecycle_HappyPath(t *testing.T) {
 		}
 	}
 
-	// Record the remaining close-phase evidence a full workflow requires:
-	// close.merged and resolved guides. verify.result=pass was set above.
-	if _, err := runOnto(t, "set", "close-merged", name, "--dir", root); err != nil {
-		t.Fatalf("onto set close-merged: %v", err)
-	}
+	// Record the remaining close-phase evidence a full workflow requires.
+	// verify.result=pass and integration=merge were set above.
 	if _, err := runOnto(t, "set", "guides", name, "updated", "--dir", root); err != nil {
 		t.Fatalf("onto set guides updated: %v", err)
 	}
 	if _, err := runOnto(t, "set", "close-confirmed", name, "2026-07-22 confirmed", "--dir", root); err != nil {
 		t.Fatalf("onto set close-confirmed: %v", err)
 	}
+	if _, err := runOnto(t, "merge-deltas", name, "--dir", root); err != nil {
+		t.Fatalf("onto merge-deltas: %v", err)
+	}
 
 	// close archives the change: the directory moves under archive/ and the
-	// archived state is marked Archived, phase unchanged at close.
+	// archived state is marked Archived, phase unchanged at close. Integration
+	// is captured from a real change branch so the receipt below can be a real
+	// no-ff merge commit.
+	checkoutChangeBranch(t, root, name)
 	commitAll(t, root, "seed before close")
 	if _, err := runOnto(t, "close", name, "--dir", root); err != nil {
 		t.Fatalf("onto close: %v", err)
@@ -166,6 +179,22 @@ func TestConformance_FullLifecycle_HappyPath(t *testing.T) {
 	}
 	if st.Phase != "close" {
 		t.Errorf("archived state Phase = %q, want close", st.Phase)
+	}
+	if st.Integration != "merge" {
+		t.Errorf("archived state Integration = %q, want merge", st.Integration)
+	}
+	if v := readStateJSON(t, root, name); v.DerivedPhase != "close" {
+		t.Fatalf("archived change must remain at close while integration is pending: %+v", v)
+	}
+	// Commit the archive move first: merging a branch whose files the working
+	// tree shows as uncommitted deletions would be refused by git.
+	commitAll(t, root, "archive "+name)
+	mergeSHA := mergeChangeBranch(t, root, baseBranch, "change/"+name)
+	if _, err := runOnto(t, "complete-integration", name, "--receipt", "merge:"+mergeSHA, "--dir", root); err != nil {
+		t.Fatalf("onto complete-integration: %v", err)
+	}
+	if v := readStateJSON(t, root, name); v.DerivedPhase != "done" {
+		t.Fatalf("completed integration must derive done: %+v", v)
 	}
 }
 

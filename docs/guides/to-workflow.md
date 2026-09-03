@@ -36,8 +36,9 @@ One repository uses one workflow framework. Declaring both
 load. Pick **onto** for evidence-gated changes that need spec deltas,
 dependency graphs, and non-skippable transitions; pick **to** for simple
 development where that machinery costs more than it protects. There is no
-escalation path between their state formats; choose per repository, not
-per change.
+in-place framework switch: `to promote <name> --yes` preserves the workspace as
+a new full onto change, after which the repository declaration must switch from
+to to onto and be re-applied.
 
 ## Install and enable
 
@@ -59,12 +60,13 @@ scope = "project"
 
 Then `homonto apply`. It also installs the slash commands: `/to` (the
 dispatcher — it finds the active change via `to status --json` and routes),
-the explicit-user-only `/to-bypass`, plus `/to-plan`, `/to-do`, `/to-done`,
+the command-only explicit-user `/to-bypass`, plus `/to-plan`, `/to-do`, `/to-done`,
 and `/to-no-slop`.
 
 The install also adds the shared `homonto` knowledge skill and a selectable
 `to` primary agent. Choose `to` to start the workflow; it owns each workflow
-mutation, user gate, commit, and delegation.
+mutation, decision, commit, and delegation. Every `to-*` workflow command routes
+to that primary.
 
 ## The layout
 
@@ -115,6 +117,11 @@ recovery, review, and final evidence.
   `## Verification`, then `to done <name> --verified --evidence "…"` archives
   the change.
 
+Starting or resuming `to` continues across these phase boundaries in the same
+invocation unless the user names an endpoint or asks to pause. The orchestrator
+chooses reversible technical defaults and asks only when product intent, scope,
+or an explicit authorization is missing.
+
 `to abandon <name>` is the terminal exit without done, from any phase.
 
 ## Specialist subagents
@@ -124,10 +131,10 @@ agent writes, not by which agent it is:
 
 | Subagent | Role | Concurrency |
 |---|---|---|
-| `to-explorer` | Read-only codebase questions; returns conclusions, not dumps. | Concurrent — one per question |
+| `to-explorer` | Read-only, no-shell codebase questions; returns conclusions, not dumps. | Concurrent — one per question |
 | `to-implementer` | Executes one task from its written contract; reports (never does) discovered work. | **Serial** — the only agent that edits |
-| `to-reviewer` | Judges each diff for correctness, security, contract (including silent scope creep), clarity. | Concurrent — one per lens |
-| `to-skeptic` | Fresh-context passes in `to-done`, prompted to refute the "it works" claim — claims first, then gaps. | Concurrent — one per lens |
+| `to-reviewer` | No-shell review of each supplied diff for correctness, security, contract, and clarity. | Concurrent — one per lens |
+| `to-skeptic` | No-shell fresh-context passes in `to-done`, prompted to refute the "it works" claim and request exact probes. | Concurrent — one per lens |
 
 Read-only agents cannot corrupt a shared tree, so `to` runs as many as the
 work justifies. The implementer is serial because `to` keeps one working

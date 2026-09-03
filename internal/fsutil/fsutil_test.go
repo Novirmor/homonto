@@ -1,8 +1,10 @@
 package fsutil
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
+	"reflect"
 	"testing"
 )
 
@@ -73,5 +75,78 @@ func TestWriteAtomicNewFileIs0600(t *testing.T) {
 	}
 	if got := fi.Mode().Perm(); got != 0o600 {
 		t.Fatalf("new file created %v, want 0600", got)
+	}
+}
+
+func TestRenameDurableSyncsDestinationThenSource(t *testing.T) {
+	root := t.TempDir()
+	sourceDir := filepath.Join(root, "source")
+	destinationDir := filepath.Join(root, "destination")
+	if err := os.MkdirAll(sourceDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(destinationDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	oldPath := filepath.Join(sourceDir, "item")
+	newPath := filepath.Join(destinationDir, "item")
+	if err := os.WriteFile(oldPath, []byte("data"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	var synced []string
+	if err := renameDurable(oldPath, newPath, func(dir string) error {
+		synced = append(synced, dir)
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if want := []string{destinationDir, sourceDir}; !reflect.DeepEqual(synced, want) {
+		t.Fatalf("synced %v, want %v", synced, want)
+	}
+}
+
+func TestRenameDurableSyncsSameParentOnce(t *testing.T) {
+	dir := t.TempDir()
+	oldPath := filepath.Join(dir, "old")
+	newPath := filepath.Join(dir, "new")
+	if err := os.WriteFile(oldPath, []byte("data"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	calls := 0
+	if err := renameDurable(oldPath, newPath, func(string) error {
+		calls++
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if calls != 1 {
+		t.Fatalf("sync calls = %d, want 1", calls)
+	}
+}
+
+func TestRenameDurableSyncFailureLeavesMovedDestination(t *testing.T) {
+	root := t.TempDir()
+	sourceDir := filepath.Join(root, "source")
+	destinationDir := filepath.Join(root, "destination")
+	if err := os.MkdirAll(sourceDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(destinationDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	oldPath := filepath.Join(sourceDir, "item")
+	newPath := filepath.Join(destinationDir, "item")
+	if err := os.WriteFile(oldPath, []byte("data"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	wantErr := errors.New("sync failed")
+	if err := renameDurable(oldPath, newPath, func(string) error { return wantErr }); !errors.Is(err, wantErr) {
+		t.Fatalf("renameDurable error = %v, want %v", err, wantErr)
+	}
+	if _, err := os.Stat(newPath); err != nil {
+		t.Fatalf("destination missing after sync failure: %v", err)
+	}
+	if _, err := os.Stat(oldPath); !os.IsNotExist(err) {
+		t.Fatalf("source still exists after rename: %v", err)
 	}
 }

@@ -21,8 +21,8 @@ func AcquireProcess(dir string) (*Lock, error) {
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return nil, fmt.Errorf("apply lock: %w", err)
 	}
-	path := filepath.Join(dir, "apply.lock")
-	f, err := os.OpenFile(path, os.O_CREATE|os.O_RDWR, 0o600)
+	path := filepath.Join(dir, lockName)
+	f, err := os.OpenFile(path, os.O_CREATE|os.O_RDWR|syscall.O_NOFOLLOW, 0o600)
 	if err != nil {
 		return nil, fmt.Errorf("apply lock: %w", err)
 	}

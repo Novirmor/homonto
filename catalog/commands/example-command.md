@@ -1,5 +1,4 @@
 ---
-name: example-command
 description: Placeholder command shipped to exercise command projection end-to-end; real command content lands in a later change.
 ---
 

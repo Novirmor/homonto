@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/noviopenworks/homonto/internal/bypasslog"
+	"github.com/noviopenworks/homonto/internal/integrationrecord"
 )
 
 func TestParse_ValidYAML_DerivesBuildPhase(t *testing.T) {
@@ -406,6 +407,142 @@ func TestDepsResolved_OneArchivedOneMissing_ReturnsMissingOnly(t *testing.T) {
 	}
 }
 
+func TestDepsResolved_WaitsForTrackedIntegration(t *testing.T) {
+	root := t.TempDir()
+	archiveDir := filepath.Join(root, "docs", "changes", "archive", "2026-09-03-a")
+	if err := Save(filepath.Join(archiveDir, "onto-state.yaml"), State{
+		Change: "a", Workflow: "full", Phase: "close", Archived: true, Integration: "merge", BaseBranch: "main", IntegrationRequired: true,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	entry := integrationrecord.Entry{BaseBranch: "main", BaseCommit: "1111111111111111111111111111111111111111", SourceBranch: "change/a", SourceCommit: "2222222222222222222222222222222222222222"}
+	record := integrationrecord.NewPending("a", "merge", "main", []integrationrecord.Entry{entry})
+	if err := integrationrecord.Save(archiveDir, record); err != nil {
+		t.Fatal(err)
+	}
+	if unresolved := DepsResolved(root, []string{"a"}); !reflect.DeepEqual(unresolved, []string{"a"}) {
+		t.Fatalf("pending integration resolved dependency: %v", unresolved)
+	}
+	record, err := record.CompleteFor("", "merge:abcdef1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := integrationrecord.Save(archiveDir, record); err != nil {
+		t.Fatal(err)
+	}
+	if unresolved := DepsResolved(root, []string{"a"}); len(unresolved) != 0 {
+		t.Fatalf("completed integration did not resolve dependency: %v", unresolved)
+	}
+}
+
+func TestDepsResolved_MissingRequiredIntegrationDoesNotResolve(t *testing.T) {
+	root := t.TempDir()
+	archiveDir := filepath.Join(root, "docs", "changes", "archive", "2026-09-03-a")
+	if err := Save(filepath.Join(archiveDir, "onto-state.yaml"), State{
+		Change: "a", Workflow: "full", Phase: "close", Archived: true, Integration: "merge", BaseBranch: "main", IntegrationRequired: true,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if unresolved := DepsResolved(root, []string{"a"}); !reflect.DeepEqual(unresolved, []string{"a"}) {
+		t.Fatalf("missing required integration resolved dependency: %v", unresolved)
+	}
+}
+
+func TestDepsResolved_UsesNewestArchiveGeneration(t *testing.T) {
+	root := t.TempDir()
+	oldDir := filepath.Join(root, "docs", "changes", "archive", "2026-08-01-a")
+	if err := Save(filepath.Join(oldDir, "onto-state.yaml"), State{
+		Change: "a", Workflow: "full", Phase: "close", Archived: true,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	newDir := filepath.Join(root, "docs", "changes", "archive", "2026-09-03-a")
+	if err := Save(filepath.Join(newDir, "onto-state.yaml"), State{
+		Change: "a", Workflow: "full", Phase: "close", Archived: true, Integration: "merge", BaseBranch: "main", IntegrationRequired: true,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := integrationrecord.Save(newDir, integrationrecord.NewPending("a", "merge", "main", []integrationrecord.Entry{{BaseBranch: "main", BaseCommit: "1111111111111111111111111111111111111111", SourceBranch: "change/a", SourceCommit: "2222222222222222222222222222222222222222"}})); err != nil {
+		t.Fatal(err)
+	}
+	if unresolved := DepsResolved(root, []string{"a"}); !reflect.DeepEqual(unresolved, []string{"a"}) {
+		t.Fatalf("older archive resolved newer pending generation: %v", unresolved)
+	}
+}
+
+func TestDepsResolved_DoesNotFallBackFromMalformedNewestArchive(t *testing.T) {
+	root := t.TempDir()
+	oldDir := filepath.Join(root, "docs", "changes", "archive", "2026-08-01-a")
+	if err := Save(filepath.Join(oldDir, "onto-state.yaml"), State{
+		Change: "a", Workflow: "full", Phase: "close", Archived: true,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	newDir := filepath.Join(root, "docs", "changes", "archive", "2026-09-03-a")
+	if err := os.MkdirAll(newDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(newDir, "onto-state.yaml"), []byte("not: [valid"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if unresolved := DepsResolved(root, []string{"a"}); !reflect.DeepEqual(unresolved, []string{"a"}) {
+		t.Fatalf("malformed newest archive fell back to older generation: %v", unresolved)
+	}
+}
+
+// Ten same-day generations: the numeric suffix must order numerically, or a
+// lexically "newer" -9 hides the actual newest -10.
+func TestDepsResolved_NumericSameDaySuffixOrdersNumerically(t *testing.T) {
+	root := t.TempDir()
+	gen9 := filepath.Join(root, "docs", "changes", "archive", "2026-09-03-a-9")
+	if err := Save(filepath.Join(gen9, "onto-state.yaml"), State{
+		Change: "a", Workflow: "full", Phase: "close", Archived: true,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	gen10 := filepath.Join(root, "docs", "changes", "archive", "2026-09-03-a-10")
+	if err := Save(filepath.Join(gen10, "onto-state.yaml"), State{
+		Change: "a", Workflow: "full", Phase: "close", Archived: true, Integration: "merge", BaseBranch: "main", IntegrationRequired: true,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := integrationrecord.Save(gen10, integrationrecord.NewPending("a", "merge", "main", []integrationrecord.Entry{{BaseBranch: "main", BaseCommit: "1111111111111111111111111111111111111111", SourceBranch: "change/a", SourceCommit: "2222222222222222222222222222222222222222"}})); err != nil {
+		t.Fatal(err)
+	}
+	if unresolved := DepsResolved(root, []string{"a"}); !reflect.DeepEqual(unresolved, []string{"a"}) {
+		t.Fatalf("generation -9 resolved the dependency while newest -10 is pending: %v", unresolved)
+	}
+	if !NewerArchiveName("2026-09-03-a-10", "2026-09-03-a-9") {
+		t.Fatal("NewerArchiveName(-10, -9) = false; suffixes must order numerically")
+	}
+	if !NewerArchiveName("2026-09-04-a", "2026-09-03-a-10") {
+		t.Fatal("a later date must outrank any same-day suffix")
+	}
+}
+
+// A completed record whose entry set no longer covers the state's repository
+// scope is not complete: sidecar surgery must not resolve dependencies.
+func TestDepsResolved_CompletedRecordMissingRepositoryEntry(t *testing.T) {
+	root := t.TempDir()
+	archiveDir := filepath.Join(root, "docs", "changes", "archive", "2026-09-03-a")
+	if err := Save(filepath.Join(archiveDir, "onto-state.yaml"), State{
+		Change: "a", Workflow: "full", Phase: "close", Archived: true, Integration: "merge", BaseBranch: "main", IntegrationRequired: true, Repos: []string{"api"},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	entry := integrationrecord.Entry{BaseBranch: "main", BaseCommit: "1111111111111111111111111111111111111111", SourceBranch: "change/a", SourceCommit: "2222222222222222222222222222222222222222", Receipt: "merge:abcdef1"}
+	record, err := integrationrecord.NewPending("a", "merge", "main", []integrationrecord.Entry{entry}).CompleteFor("", "merge:abcdef1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := integrationrecord.Save(archiveDir, record); err != nil {
+		t.Fatal(err)
+	}
+	if unresolved := DepsResolved(root, []string{"a"}); !reflect.DeepEqual(unresolved, []string{"a"}) {
+		t.Fatalf("record missing the api entry resolved the dependency: %v", unresolved)
+	}
+}
+
 func TestDepsResolved_NilDeps_ReturnsEmptySlice(t *testing.T) {
 	root := t.TempDir()
 
@@ -481,8 +618,10 @@ func fullFixtureState() State {
 		Phase:         "verify",
 		Created:       "2026-07-13",
 		BaseRef:       "cad5274",
+		BaseBranch:    "main",
 		Deps:          []string{"onto-binary-foundation"},
 		Isolation:     "worktree",
+		Integration:   "merge",
 		BuildMode:     "subagent",
 		TDDMode:       "tdd",
 		Verify:        Verify{Scale: "full", Result: "pass"},
@@ -496,6 +635,21 @@ func fullFixtureState() State {
 			VerifyRounds:    2,
 			PresetEscalated: true,
 		},
+	}
+}
+
+func TestValidateRejectsWhitespaceOnlyReviewEvidence(t *testing.T) {
+	base := State{Change: "c", Workflow: "full", Phase: "open"}
+	for _, mutate := range []func(*State){
+		func(st *State) { st.ProposalApproved = " \t" },
+		func(st *State) { st.ApproachConfirmed = "\n" },
+		func(st *State) { st.CloseConfirmed = "  " },
+	} {
+		st := base
+		mutate(&st)
+		if err := st.Validate(); err == nil {
+			t.Fatalf("Validate(%+v) accepted whitespace-only review evidence", st)
+		}
 	}
 }
 

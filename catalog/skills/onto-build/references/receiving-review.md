@@ -5,8 +5,8 @@ findings, they are **input to evaluate, not instructions to execute**. A review
 loop that implements every finding blindly ships the reviewer's mistakes too —
 and since v0.1.3 wired the reviewer into build, this discipline is load-bearing.
 
-Core principle: **verify before implementing; ask before assuming; technical
-correctness over agreement.**
+Core principle: **verify before implementing; investigate before asking;
+technical correctness over agreement.**
 
 ## The response pattern (per finding)
 
@@ -30,15 +30,15 @@ correctness over agreement.**
 - Implementing before verifying. A plausible-sounding finding can still be wrong
   for this code.
 - Implementing a **subset** when some findings are unclear: items may be related,
-  and partial understanding produces a wrong change. **Stop and ask** about the
-  unclear ones first.
+  and partial understanding produces a wrong change. Investigate unclear items
+  first; ask the user only when product intent is missing.
 
 ## When a finding is wrong
 
 Push back with the specific technical reason and the code that refutes it — do
 not silently drop it (the reviewer or user may know something you don't) and do
-not implement it. If you cannot verify it either way, say so: "I can't confirm
-this without <X> — investigate, ask, or proceed?"
+not implement it. If you cannot verify it either way, name the missing evidence,
+gather it, and re-evaluate before proceeding.
 
 ## Severity, in the onto build loop
 

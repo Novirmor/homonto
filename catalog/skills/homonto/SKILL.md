@@ -1,3 +1,8 @@
+---
+name: homonto
+description: Shared homonto reference. Use when reasoning about homonto configuration, catalog projection, or choosing between the onto and to workflows; it explains managed paths and workflow boundaries but does not dispatch work.
+---
+
 # homonto knowledge reference
 
 Use this skill when you need to explain or reason about homonto configuration,
@@ -16,6 +21,16 @@ The catalog ships skills, commands, and agents with the binary. A framework
 declaration installs its complete surface. Each framework-expanded agent needs
 its own `[subagents.<name>.opencode]` model route.
 
+## MCP servers and extra tools
+
+`[mcps.<name>]` tables project MCP servers (command, env, scope) into the
+tools that support them, and `[tooling]` declares shared providers such as a
+shell proxy or code intelligence. When a user asks for one, edit
+`homonto.toml`, then `homonto plan` (preview) and `homonto apply` (project) —
+never edit the projected `opencode.jsonc` MCP blocks by hand; homonto manages
+them and the next apply rewrites manual edits. `docs/guides/configuration.md`
+documents every field.
+
 ## Choose A Workflow
 
 - **onto** serves work that needs a reviewable handoff and evidence-backed
@@ -30,7 +45,7 @@ change.
 
 Selecting the `onto` primary agent starts the onto workflow. Selecting the `to`
 primary agent starts the to workflow. Each primary agent loads its dispatcher
-skill and owns its workflow mutations, user gates, commits, and delegation.
+skill and owns its workflow mutations, decisions, commits, and delegation.
 
 When answering a question about an installed repository, inspect its declared
 framework and projection state before claiming what is active. Keep the answer

@@ -7,6 +7,7 @@ description: to phase 2 — do. Use when an active change has phase do — execu
 
 Execute the plan, one task at a time. This is the code-writing skill: the flow
 is simple, but the code written inside it is held to the full bar.
+Apply the dispatcher's shared autonomous workflow policy throughout.
 
 ## Entry check
 
@@ -43,7 +44,9 @@ For each unchecked task in `plan.md`, in order:
    directly). Declined findings are recorded with a reason under `## Notes` in
    `plan.md` — never silently dropped.
 5. **Check off the task** only when its stated outcome is present and its exact
-   verification has the expected result. Commit one task at a time with a
+   verification has the expected result. Resolve technical subagent questions
+   from repository evidence; ask the user only if product intent is missing.
+   Commit one task at a time with a
    message that names the outcome. De-slop the message.
 
 Small tasks (a rename, a doc line) may skip the subagent loop and be done
@@ -75,5 +78,9 @@ first.
 ## Exit
 
 All tasks checked and the plan's `Final Verify:` command passing → load the
-`to-done` skill. Do not run `to done` from here; finishing is `to-done`'s job.
-If the work is not worth finishing, `to abandon <name>` and tell the user why.
+`to-done` skill and continue in the same invocation unless the user named do as
+the endpoint or asked to pause. Do not run `to done` from here; finishing is
+`to-done`'s job.
+Run `to abandon <name>` only after the user explicitly abandons the change.
+Report a hard blocker instead of deciding that unfinished work is not worth
+completing.

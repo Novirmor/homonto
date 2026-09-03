@@ -1,6 +1,7 @@
 package ontocli
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -80,6 +81,13 @@ func runNewWithRepos(cmd *cobra.Command, root, name, workflow string, repos []st
 	changeDir := filepath.Join(root, "docs", "changes", name)
 	if _, err := os.Stat(changeDir); err == nil {
 		return fmt.Errorf("onto new: change %q already exists at %s", name, changeDir)
+	}
+	if archiveDir, archivedState, err := locateArchive(root, name); err == nil {
+		if !archivedState.Archived || !ontostate.ArchiveIntegrationComplete(archiveDir, archivedState) {
+			return fmt.Errorf("onto new: latest archive for %q has not completed integration", name)
+		}
+	} else if !errors.Is(err, errArchiveNotFound) {
+		return fmt.Errorf("onto new: cannot validate latest archive for %q: %w", name, err)
 	}
 
 	if err := os.MkdirAll(changeDir, 0o755); err != nil {

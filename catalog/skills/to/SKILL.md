@@ -34,6 +34,11 @@ more ceremony mid-change is a scoping question, not a framework switch.
 The dispatcher does three things, in order, and never performs phase work
 itself.
 
+Follow the shared [autonomous workflow policy](../homonto/references/autonomy.md)
+through every phase. Starting or resuming to authorizes continuation through
+done unless the user names an endpoint or asks to pause. Phase boundaries are
+checkpoints, not requests for permission to continue.
+
 ## 1. Preflight
 
 Run `to version`. On failure, STOP: the skills drive all workflow state
@@ -53,11 +58,17 @@ Run `to status --json` and find the active change.
 
 - **One active change** → that is the change; note its phase.
 - **No active change** and `$ARGUMENTS` (or the conversation) describes new
-  work → create one: `to new <kebab-name>`, then treat it as phase plan.
+  work → derive any declared sibling repositories in scope, create it with `to
+  new <kebab-name>` plus one `--repo <alias>` per selected sibling, then treat
+  it as phase plan.
 - **No active change and no described work** → ask what to work on.
 - **Several active changes** → ask which one, unless the conversation names it.
 - An entry with an `error` field is a corrupted state file — surface it to the
   user instead of guessing; the binary owns that file.
+
+When one change is active and the conversation adds work, continue it if the new
+request fits its recorded boundary. Ask only when it conflicts with that boundary
+or clearly describes an independent change.
 
 A change outgrowing `to` (design questions, evidence obligations, a second
 reader)? `to promote <name> --yes` converts it into a full onto change with
@@ -81,6 +92,10 @@ Load and follow the sub-skill for the change's phase:
 Terminal phases (`done`, `abandoned`) route nowhere — the change is archived;
 start a new one.
 
+After a sub-skill completes its phase, load the next sub-skill and continue in
+the same invocation. Stop only at a user-named endpoint, an explicit pause, or a
+real blocker under the autonomous workflow policy.
+
 ## Delegation rules (all phases)
 
 The sub-skills delegate to the `to-explorer`, `to-implementer`, `to-reviewer`,
@@ -90,7 +105,7 @@ last resort.
 **Parallelism is decided by what an agent writes, not by which agent it is:**
 
 - **Read-only agents run concurrently.** `to-explorer`, `to-reviewer`, and
-  `to-skeptic` never edit files, so they cannot race. Dispatch as many at once
+  `to-skeptic` deny both edits and shell commands, so they cannot race. Dispatch as many at once
   as the work justifies — several explorers on different questions, several
   reviewers or skeptics applying different lenses to the same diff.
 - **`to-implementer` runs strictly one at a time.** It is the only agent that
@@ -99,6 +114,10 @@ last resort.
   onto's territory; `to` deliberately does not go there.
 - **Bookkeeping stays with the coordinator, serially.** `plan.md` edits, task
   checkoffs, and commits are never delegated and never concurrent.
+
+Subagent questions return to the coordinator. Resolve factual and technical
+questions from repository evidence or by running the requested probe; ask the
+user only when product intent or an explicit authorization is genuinely missing.
 
 onto and to are mutually exclusive per repository — never mix their artifacts
 or advice.

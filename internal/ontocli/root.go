@@ -38,6 +38,7 @@ func NewRootCmd() *cobra.Command {
 	root.AddCommand(advanceCmd())
 	root.AddCommand(bypassCmd())
 	root.AddCommand(closeCmd())
+	root.AddCommand(completeIntegrationCmd())
 	root.AddCommand(abandonCmd())
 	root.AddCommand(doctorCmd())
 	root.AddCommand(setCmd())

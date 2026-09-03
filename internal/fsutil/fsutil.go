@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
+	"strings"
 )
 
 // WriteAtomic writes data to path via a unique temp file in the target
@@ -49,7 +51,10 @@ func WriteAtomic(path string, data []byte) error {
 	if err := f.Close(); err != nil {
 		return err
 	}
-	return os.Rename(tmp, path)
+	if err := os.Rename(tmp, path); err != nil {
+		return err
+	}
+	return syncDirectory(dir)
 }
 
 // FileExists reports whether path exists and is not a directory. Provided as
@@ -105,5 +110,110 @@ func WriteControlPlane(path string, data []byte, mode os.FileMode) error {
 	if err := f.Close(); err != nil {
 		return err
 	}
-	return os.Rename(tmp, path)
+	if err := os.Rename(tmp, path); err != nil {
+		return err
+	}
+	return syncDirectory(dir)
+}
+
+// RequireRealParents confines dir to root and refuses symlinks or non-directory
+// components along the existing path. Missing trailing components are allowed
+// so callers can validate before creating them.
+func RequireRealParents(root, dir string) error {
+	root, err := filepath.Abs(filepath.Clean(root))
+	if err != nil {
+		return fmt.Errorf("fsutil: resolving root: %w", err)
+	}
+	dir, err = filepath.Abs(filepath.Clean(dir))
+	if err != nil {
+		return fmt.Errorf("fsutil: resolving directory: %w", err)
+	}
+	rel, err := filepath.Rel(root, dir)
+	if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(os.PathSeparator)) {
+		return fmt.Errorf("fsutil: %s is outside root %s", dir, root)
+	}
+	cur := root
+	if err := requireRealDirectory(cur); err != nil {
+		return err
+	}
+	for _, component := range strings.Split(filepath.ToSlash(rel), "/") {
+		if component == "" || component == "." {
+			continue
+		}
+		cur = filepath.Join(cur, component)
+		info, err := os.Lstat(cur)
+		if os.IsNotExist(err) {
+			return nil
+		}
+		if err != nil {
+			return err
+		}
+		if !info.IsDir() || info.Mode()&os.ModeSymlink != 0 {
+			return fmt.Errorf("fsutil: %s is not a real directory (symlinked parents are refused)", cur)
+		}
+	}
+	return nil
+}
+
+func requireRealDirectory(path string) error {
+	info, err := os.Lstat(path)
+	if err != nil {
+		return err
+	}
+	if !info.IsDir() || info.Mode()&os.ModeSymlink != 0 {
+		return fmt.Errorf("fsutil: %s is not a real directory (symlinked parents are refused)", path)
+	}
+	return nil
+}
+
+// WriteControlPlaneWithin adds parent-path confinement to WriteControlPlane.
+// The second check verifies any directories created between the two calls.
+func WriteControlPlaneWithin(root, path string, data []byte, mode os.FileMode) error {
+	dir := filepath.Dir(path)
+	if err := RequireRealParents(root, dir); err != nil {
+		return err
+	}
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return err
+	}
+	if err := RequireRealParents(root, dir); err != nil {
+		return err
+	}
+	return WriteControlPlane(path, data, mode)
+}
+
+// RenameDurable atomically renames oldPath and syncs both directory entries.
+// A returned sync error may mean the rename happened; callers must recover from
+// either path rather than assuming an error rolled the move back.
+func RenameDurable(oldPath, newPath string) error {
+	return renameDurable(oldPath, newPath, syncDirectory)
+}
+
+func renameDurable(oldPath, newPath string, syncDir func(string) error) error {
+	if err := os.Rename(oldPath, newPath); err != nil {
+		return err
+	}
+	destinationDir := filepath.Dir(newPath)
+	if err := syncDir(destinationDir); err != nil {
+		return err
+	}
+	sourceDir := filepath.Dir(oldPath)
+	if filepath.Clean(sourceDir) != filepath.Clean(destinationDir) {
+		if err := syncDir(sourceDir); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func syncDirectory(dir string) error {
+	if runtime.GOOS == "windows" {
+		return nil
+	}
+	f, err := os.Open(dir)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+	return f.Sync()
 }

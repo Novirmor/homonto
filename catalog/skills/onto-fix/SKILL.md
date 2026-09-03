@@ -8,6 +8,8 @@ description: onto preset — bug fix. Use for behavior fixes that need no new ca
 Fast path for fixing broken behavior: **open-lite → build → verify → close**.
 Skips the design phase — which is exactly why the upgrade rules below are
 non-negotiable.
+Apply the dispatcher's shared autonomous workflow policy throughout and continue
+through the entire preset unless the user names an endpoint or asks to pause.
 
 ## Entry check
 
@@ -38,13 +40,18 @@ non-negotiable.
 Minimal clarification: reproduction steps, expected vs actual behavior,
 suspected blast radius. Create `docs/changes/<name>/` with:
 
-- Create the workspace via `onto new <name> --workflow fix` (`onto new`
+- Create the workspace via `onto new <name> --workflow fix`, adding one `--repo
+  <alias>` for each declared sibling the requested fix changes (`onto new`
   creates `onto-state.yaml` carrying `workflow: fix`, `phase: open`,
   `created`, and empty `proposal.md`/`tasks.md`). Then:
   - `onto set base-ref <name> "$(git rev-parse HEAD)"`
-  - `onto set guides <name> pending`
+  - `onto set base-branch <name> "$(git branch --show-current)"`; if HEAD is
+    detached, derive the intended integration branch from repository policy
+    before recording it
+  - `onto set deps <name> --dep <a> --dep <b>` for prerequisite active changes
+    identified from the request or repository (omit when there are none)
   - default the decisions (presets enter build directly): `onto set isolation
-    <name> branch`, `onto set build-mode <name> direct`, **`onto set tdd-mode
+    <name> branch|worktree`, `onto set build-mode <name> direct`, **`onto set tdd-mode
     <name> tdd`** — a fix's whole method is a failing test that reproduces the
     bug first, so its build runs the TDD branch; never default a fix to
     `tdd-mode direct`.
@@ -57,7 +64,9 @@ suspected blast radius. Create `docs/changes/<name>/` with:
   commit lands — never done silently (scope-exceeding work hits the
   upgrade gate instead)
 
-No full design and no plan.md required. Branch: `fix/YYYYMMDD/<name>`.
+No full design and no plan.md required. Choose `worktree` for unrelated dirt or
+concurrent work and `branch` for a clean serial change. Create the selected
+isolation and use branch `fix/YYYYMMDD/<name>` before implementation.
 Templates: reuse the full-workflow references (`onto/references/state-yaml.md`,
 `onto-open/references/{proposal,tasks,notes}.md`) — a `notes.md` checkpoint
 is recommended for any fix that takes more than one sitting. **Commit the
@@ -72,18 +81,19 @@ the canonical `phase` field must reach `close` before `onto close` will
 archive. Reach build in one gated call, right after `onto new`:
 
 ```
-onto set isolation <name> branch    # required before entering build
+onto set isolation <name> branch|worktree
 onto advance <name> --to build      # walks open → design → build, every gate firing
 ```
 
-Then execute the build. After verify, advance once more into close.
+Then execute the build. After its tasks and commits are complete, run `onto
+advance <name>` to enter verify. Verification records `verify.scale: light` and
+a passing report before the final advance into close.
 
-> **GATE (open-lite scope):** presets skip design, so the fix-vs-full
-> choice is the one decision that removes a phase. Confirm it: state the
-> reproduction and that this is a bug fix needing no new design, and get
-> the user's acknowledgement before building. A behavior *change* dressed
-> as a fix belongs in the full workflow — this gate is where that gets
-> caught. May be pre-authorized by a directive that named the preset.
+Classify the request from evidence before building. When the requested behavior
+already exists and the reproduction demonstrates a regression, proceed as a
+fix. If the desired behavior is new or ambiguous, ask the user to choose between
+restoring existing behavior and defining a changed contract; only that intent
+question justifies interrupting the preset.
 
 ### 2. Build — failing test first, always
 
@@ -95,56 +105,59 @@ fix, watch the test pass, run the surrounding tests. One commit per task.
 
 ### 3. Verify (light)
 
-`verify.mode: light` unless upgraded. The bug's reproduction is the core
+Run `onto set verify-scale <name> light`. The bug's reproduction is the core
 scenario: demonstrate it no longer occurs, with the literal command +
 output in `docs/changes/<name>/verification.md` (template:
 `onto-verify/references/verification.md`), plus regression-suite results.
 One adversarial skeptic (`onto-skeptic`, conformance lens) is optional in light
-mode (protocol: `onto-verify/references/adversarial.md`); record a skip. Failure → same
-gate as the full workflow (fix or accept-deviation, fresh user input).
+mode (protocol: `onto-verify/references/adversarial.md`); record a skip. On
+failure, fix by default; ask only before accepting a lower-severity deviation.
+Record the outcome with `onto set verify-result <name> pass|fail`. On pass,
+commit the report and state, then run `onto advance <name>` to enter close.
 
 ### 4. Close
 
 Same obligations as `onto-close` — lint (`onto-close/references/
-lint-checklist.md`), spec deltas merged if any requirement changed, guides
-checked (`updated` or `"waived: <reason>"`), final
-confirmation, archive to `docs/changes/archive/YYYY-MM-DD-<name>/`, ship
-handoff offered.
+lint-checklist.md`), spec deltas merged if any requirement changed, close plan
+validated and recorded, archive to `docs/changes/archive/YYYY-MM-DD-<name>/`,
+then integrate per repository policy. The preset has no guides obligation; a
+legacy `guides: pending` value must still be resolved before archive.
 
 ## Upgrade rules
 
-> **GATE (upgrade):** the moment ANY of these becomes true, pause, explain
-> the trigger, and require fresh user confirmation to upgrade:
->
-> - the fix touches **more than 5 non-test files** (the mandatory failing
->   test never counts toward the trigger; aligned with tweak's limit so a
->   fix never carries more ceremony than a same-sized feature)
-> - architecture or schema changes (new modules, interfaces, dependencies)
-> - the fix introduces a **new public API**
-> - the fix scope exceeds a single function/module
->
-> On confirmed upgrade: **annotate the proposal's first line to `Preset: fix
-> (upgraded to full YYYY-MM-DD)`** — the dispatcher re-derives `workflow: full`
-> from that marker (there is no `onto set workflow`; the marker is the
-> authority the state-rebuild reads). Then run `onto advance <name>` to reach
-> design and route through `/onto` to backfill it. Never keep patching past a
-> trigger "because it's almost done".
+The moment ANY of these becomes true, stop preset implementation and upgrade
+automatically to the full workflow:
+
+- the fix touches **more than 5 non-test files** (the mandatory failing test
+  never counts toward the trigger; aligned with tweak's limit so a fix never
+  carries more ceremony than a same-sized feature)
+- architecture or schema changes (new modules, interfaces, dependencies)
+- the fix introduces a **new public API**
+- the fix scope exceeds a single function/module
+
+On upgrade, run `onto set workflow <name> full`, annotate the proposal's first
+line to `Preset: fix (upgraded to full YYYY-MM-DD)`, and create `design.md` from
+the full template with `Status: Under revision`. That marker drives working
+phase derivation to design without moving the canonical phase backward. Route
+through `/onto` to backfill the design, then continue. Ask only if the discovered
+work exceeds the user's requested product scope. Never keep patching past a
+trigger "because it's almost done".
 
 ## Exit checklist (per phase, lite)
 
-- [ ] Open-lite: workspace + reproduction confirmed by the user, scope
-      gate acknowledged (bug fix, no new design), workspace committed;
-      `onto set isolation <name> branch` recorded; advanced to build via
+- [ ] Open-lite: workspace + reproduction establish a bug fix with no new
+      design, any genuine behavior ambiguity resolved, workspace committed;
+      `onto set isolation <name> branch|worktree` recorded and created; advanced to build via
       `onto advance <name> --to build` (gated hops, no design.md needed
       for a fix)
 - [ ] Build: failing test seen failing, root cause stated, fix committed,
-      test seen passing, tree clean (workspace docs committed)
+      test seen passing, tree clean; advanced build → verify
 - [ ] Verify: `verification.md` with reproduction evidence + regression
       results; `verify.result` set via `onto set verify-result`; advanced
       verify → close via `onto advance <name>`; workspace committed at exit
-- [ ] Close: delta coverage checked (lint §0), guides resolved (fix preset
-      needs no guides), `onto merge-deltas` run, `close.merged` set, final
-      gate **before** any spec/ADR mutation, close prep committed, archived
+- [ ] Close: delta coverage checked (lint §0), preset guides unset or any
+      carried obligation resolved, `onto merge-deltas` run, `close.merged` set, close plan
+      validated **before** any spec/ADR mutation, close prep committed, archived
       in its own commit
 - [ ] onto-no-slop pass run over each prose artifact (proposal,
       verification, new guide prose), noted in `notes.md` (`no-slop: <artifact>

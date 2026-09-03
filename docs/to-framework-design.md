@@ -138,13 +138,13 @@ Catalog framework `builtin:to`:
 match the `to` philosophy. The division of labor survives: a cheap worker
 edits, a judge reviews, neither plans.
 
-**Concurrency follows write-scope, not agent identity** (ADR 0019). Three of
-the four never edit, so they cannot corrupt a shared tree and run concurrently
-— several explorers on different questions, several reviewers or skeptics
-applying different lenses. `to-implementer` runs strictly one at a time: it is
-the only writer and `to` keeps a single working tree. Parallel implementers
-need a worktree each, which is onto's machinery and deliberately out of scope
-here.
+**Concurrency follows write capability, not agent identity** (ADR 0035). Three
+of the four deny edit and shell tools, so they cannot corrupt a shared tree and
+run concurrently: several explorers on different questions and several
+reviewers or skeptics applying different lenses. `to-implementer` runs one at a
+time because it is the only writer and `to` keeps a single working tree.
+Parallel implementers need a worktree each, which is onto's machinery and out
+of scope here.
 
 *Superseded:* this section originally read "no parallelization — `to` never
 runs subagents in parallel." That rule was broader than its own justification,
@@ -154,7 +154,7 @@ which was only ever about the shared working tree and `plan.md`.
 |---|---|---|
 | `to-explorer` | `onto-explorer` | Read-only codebase questions during `plan` and `do`; returns conclusions, not dumps. Unchanged apart from naming. |
 | `to-implementer` | `onto-implementer` | Executes one bite-sized task from the plan: edits, runs that task's verification, returns a diff summary. Never plans, never spawns. |
-| `to-reviewer` | `onto-reviewer` | Reviews the implementer's diff for correctness, security, and clarity; read-only plus git inspection; findings ranked by severity. |
+| `to-reviewer` | `onto-reviewer` | Reviews a supplied diff for correctness, security, and clarity; read-only with no shell; findings ranked by severity. |
 | `to-skeptic` | `onto-skeptic` | Read-only, so `to` may run several concurrently, one per lens; **at least one completed pass on the final candidate** is required in `/to-done`. A verdict invalidated by later code changes is rerun against the new candidate; only verdicts for the archived tree are kept. |
 
 The `/to-do` loop is: pick the next plan task → `to-implementer` writes it →

@@ -32,9 +32,9 @@ Rules:
 - **Stay in scope.** Do exactly the handed task. If you discover the task is
   wrong, underspecified, or larger than described, **stop and report that** — do
   not expand the change or invent adjacent work. When the spec is genuinely
-  ambiguous, return the question under a `Questions:` heading and stop — you
-  never prompt the user; the orchestrator asks and re-dispatches you with the
-  answer.
+  ambiguous, return the question under a `Questions:` heading and stop. You
+  never prompt the user; the orchestrator resolves technical uncertainty from
+  repository evidence and asks the user only if product intent is missing.
 - **Do not delegate.** You spawn no subagents; you do the work yourself.
 - **Do not commit** unless the spec explicitly tells you to — the orchestrator
   owns commits and checkoffs, and verifies your work against the repository, not

@@ -47,4 +47,4 @@ from the test.
 
 Content/config/docs deliverables with no testable logic run `tdd-mode: direct`
 (implement, then run the task's stated verification) — recorded as such at the
-plan-ready gate, not decided silently mid-task.
+plan review, not changed silently mid-task.

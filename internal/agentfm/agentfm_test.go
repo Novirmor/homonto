@@ -14,6 +14,7 @@ description: Use to review a diff; reports findings ranked by severity.
 mode: subagent
 homonto:
   read_only: true
+  bash: false
   dialogs: true
   spawn: []
 ---
@@ -60,7 +61,7 @@ func TestNeedsTransform(t *testing.T) {
 
 func TestRenderOpenCode_ReadOnlyReviewer(t *testing.T) {
 	s := mustRender(t, readOnlyReviewer, "opencode")
-	for _, want := range []string{"mode: subagent", "model: opus", "permission:", "  edit: deny", "  question: allow", "  task: deny"} {
+	for _, want := range []string{"mode: subagent", "model: opus", "permission:", "  edit: deny", "  bash: deny", "  question: allow", "  task: deny"} {
 		if !strings.Contains(s, want) {
 			t.Errorf("opencode output missing %q:\n%s", want, s)
 		}

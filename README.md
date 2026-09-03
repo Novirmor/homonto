@@ -17,6 +17,10 @@ v0.13.0 (configs naming them fail at load naming the key).
   every key you configured by hand, byte for byte.
 - **Pinned remote content.** A `remote:` source requires a sha256 digest and
   is verified fail-closed before anything touches your tools.
+- **Autonomous workflow agents.** The bundled `onto` and `to` primaries choose
+  routine workspace, isolation, and validation details from repository evidence
+  instead of pausing for approval; they ask only about product intent, required
+  waivers, or destructive ambiguity.
 
 The repository ships **three binaries**:
 
@@ -66,6 +70,12 @@ catalog content (frameworks, skills, commands, subagents) up to that version.
 
 ## First steps
 
+Run these commands in the directory that will hold `homonto.toml`. `homonto
+init` scaffolds configuration only: it never runs `git init`, and no MCP server
+is required. Add MCPs only when a tool needs one; framework installation is a
+separate, declarative `[frameworks.onto]` or `[frameworks.to]` entry followed by
+`homonto apply`.
+
 ```bash
 homonto init            # scaffold homonto.toml, .gitignore, .env.example, homonto/skills/
 $EDITOR homonto.toml    # declare your MCPs / skills / plugins / settings
@@ -106,7 +116,7 @@ walkthrough with real command output and a supported / not-supported matrix.
 
 | Command | What it does |
 |---|---|---|
-| `homonto init [dir]` | Scaffold a starter repo (never overwrites existing files). |
+| `homonto init [dir]` | Scaffold a starter config directory (never overwrites files or initializes Git). |
 | `homonto plan` | Show what apply would change. Writes nothing. |
 | `homonto apply` | Project the config into the tools, after confirmation. `--snapshot` journals it as an undoable transaction. |
 | `homonto explain [kind] [name]` | Why each managed resource exists: origin, destination, last change, removal. |

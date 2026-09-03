@@ -35,7 +35,7 @@ not inspect a workspace.
 | `to init` | Scaffold `docs/tasks/` + `docs/tasks/archive/` (gated; never overwrites). |
 | `to new <name> [--repo <declared-name>]` | Create a change at phase `plan` with an empty `plan.md` (gated). `--repo` is repeatable, records selected `[repos]` aliases, and creates no files outside the config repo. Only an *active* change blocks a name — archives are date-prefixed, so a finished name is reusable. |
 | `to phase <name>` | The one forward transition: `plan → do` (gated). Finishing is `to done`; there is no other advance. |
-| `to bypass <name> --to <plan|do|done|archive> --reason "<reason>"` | Emergency operator command, available through `/to-bypass` only after an explicit user request. Sets the target directly and skips phase, verification, and worktree gates, but still requires the framework, valid readable state, and a working archive filesystem. `done`/`archive` archive with `verified: false`; every use records the command, source/target, reason, timestamp, and skipped checks in `.to/bypass.json`. |
+| `to bypass <name> --to <plan|do|done|archive> --reason "<reason>"` | Emergency operator command, available through the command-only `/to-bypass` entry point after an explicit user request. Sets the target directly and skips phase, verification, and worktree gates, but still requires the framework, valid readable state, and a working archive filesystem. `done`/`archive` archive with `verified: false`; every use records the command, source/target, reason, timestamp, and skipped checks in `.to/bypass.json`. |
 | `to done <name> --verified [--evidence "<text>"]` | Mark done and archive (gated). `--verified` is **required but self-asserted** — the binary records a checkbox, it observes nothing. A scoped change additionally requires clean, determinable Git state for the config repo and every selected alias. `--evidence` records what was asserted, verbatim and unchecked. Requires phase `do`. |
 | `to abandon <name>` | Terminal exit without done; archives (gated). Works from any non-terminal phase. |
 | `to status` | Active changes and their phases (a corrupt state file is reported per-entry, not fatal). Scoped entries include their selected aliases. Read-only. |
@@ -93,6 +93,6 @@ scoped change has only the terminal clean-worktree gate; unscoped changes stay
 Git-blind. If a change needs the heavier workflow, the repo needs onto.
 
 `to` does run subagents concurrently — the three read-only ones, per
-[ADR 0019](../adr/0019-parallelism-follows-write-scope.md). What it does not
+[ADR 0035](../adr/0035-deny-shell-access-to-concurrent-specialists.md). What it does not
 do is run two *writers*: `to-implementer` is strictly one at a time, because
 `to` keeps a single working tree.

@@ -26,7 +26,7 @@ homonto:
     - "git add *"
     - "git commit *"
     - "git switch *"
-    - "git checkout -b *"
+    - "git checkout *"
     - "git worktree add *"
     - "git merge *"
     - "go test *"
@@ -52,10 +52,14 @@ rules. The prompt does not restate those rules, so the skill stays authoritative
 
 What you add on top of the skill:
 
-- You own every commit, every mutating `to` call, and every user gate. Ask gate
-  decisions through an interactive dialog. Subagents never mutate workflow
-  state and never prompt; they return questions for you to ask.
-- Keep the current task small enough to finish and commit. The durable record
+- You own every commit, every mutating `to` call, and every workflow decision.
+  Follow the shared autonomy policy linked by the dispatcher: investigate and
+  choose safe, reversible technical defaults; ask only for irreducible user
+  intent or an explicit waiver. Subagents never mutate workflow state and never
+  prompt; resolve their factual and technical questions yourself.
+- Continue through plan, do, and done in this invocation unless the user named
+  an endpoint or asked to pause. Keep the current task small enough to finish
+  and commit. The durable record
   lives in `plan.md` and `to-state.yaml`, so a fresh session can resume from the
   first unchecked item.
 

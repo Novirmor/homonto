@@ -138,6 +138,22 @@ Rendering:
 The rendered variant re-emits `mode: subagent`/`mode: primary` from the
 `primary` flag.
 
+## Bundled workflow primaries
+
+The `onto` and `to` frameworks each install a selectable primary agent plus
+four specialists. The primary is edit-capable; explorers, reviewers, and
+skeptics are deliberately read-only so they can run concurrently without
+changing the workspace. A primary's documented Git, test, and workflow commands
+are allow-listed. Other shell commands ask rather than receiving a blanket
+shell grant.
+
+Both primaries use the configuration root as their workspace root, falling back
+to the Git worktree root and then the host working directory. They do not ask
+where to work during a normal invocation and never initialize Git unless the
+user explicitly asks. `onto` runs the evidence-gated lifecycle; `to` is its
+lighter `plan → do → done` counterpart. They are mutually exclusive per
+configuration.
+
 The `model:` and optional `variant:` lines come from the config's
 `[subagents.<name>.opencode]` block. The block is required — a production
 render with no model fails naming the agent rather than silently emitting an

@@ -20,10 +20,15 @@ func runTransition(cmd *cobra.Command, root, name string, apply func(*ontostate.
 	if err := ontoFramework.ValidChangeName(name); err != nil {
 		return err
 	}
+	unlock := acquireStateLockBestEffort(root)
+	defer unlock()
 	changeDir := filepath.Join(root, "docs", "changes", name)
 	st, err := ontostate.LoadChange(changeDir)
 	if err != nil {
 		return fmt.Errorf("onto set: loading %s: %w", changeDir, err)
+	}
+	if st.Change != name {
+		return fmt.Errorf("onto set: state change %q does not match directory %q", st.Change, name)
 	}
 	// Both terminal states are immutable: an abandoned change stays abandoned
 	// (mutating it was the hole that let its evidence tokens be forged and its
@@ -91,15 +96,7 @@ func setCmd() *cobra.Command {
 		func(s *ontostate.State, v string) { s.TDDMode = v }))
 	cmd.AddCommand(enumSetterCmd("verify-scale", []string{"light", "full"},
 		func(s *ontostate.State, v string) { s.Verify.Scale = v }))
-	cmd.AddCommand(enumSetterCmd("verify-result", []string{"pending", "pass", "fail"},
-		func(s *ontostate.State, v string) {
-			s.Verify.Result = v
-			// Count each recorded failure so the ≥3-rounds "accept-deviation or
-			// continue" decision becomes a measured fact, not a memory.
-			if v == "fail" {
-				s.Observed.VerifyRounds++
-			}
-		}))
+	cmd.AddCommand(verifyResultCmd())
 	cmd.AddCommand(enumSetterCmd("build-pause", []string{"plan-ready", "clear"},
 		func(s *ontostate.State, v string) {
 			if v == "clear" {
@@ -109,21 +106,69 @@ func setCmd() *cobra.Command {
 			}
 		}))
 	cmd.AddCommand(evidenceSetterCmd("proposal-approved",
-		"Record the open phase's artifact-review gate answer",
+		"Record the open phase's proposal review",
 		func(s *ontostate.State, v string) { s.ProposalApproved = v }))
 	cmd.AddCommand(evidenceSetterCmd("approach-confirmed",
-		"Record the design phase's approach gate answer",
+		"Record the design phase's selected approach",
 		func(s *ontostate.State, v string) { s.ApproachConfirmed = v }))
 	cmd.AddCommand(evidenceSetterCmd("close-confirmed",
-		"Record the close phase's final-confirmation gate answer",
+		"Record the close phase's validated close plan",
 		func(s *ontostate.State, v string) { s.CloseConfirmed = v }))
 	cmd.AddCommand(closeMergedCmd())
 	cmd.AddCommand(directiveCmd())
 	cmd.AddCommand(baseRefCmd())
+	cmd.AddCommand(baseBranchCmd())
+	cmd.AddCommand(workflowCmd())
 	cmd.AddCommand(depsCmd())
 	cmd.AddCommand(supersedesCmd())
 	cmd.AddCommand(deviatesFromCmd())
 	cmd.AddCommand(guidesCmd())
+	return cmd
+}
+
+// verifyResultCmd records the verify outcome. A recorded pass also freezes
+// each scoped repository's HEAD (verify.heads) so close can refuse archival
+// when commits landed after the verified state; any other outcome clears the
+// binding along with the close evidence it justified.
+func verifyResultCmd() *cobra.Command {
+	var dir string
+	cmd := &cobra.Command{
+		Use:   "verify-result <change> <pending|pass|fail>",
+		Short: "Set the verify result of a change",
+		Args:  cobra.ExactArgs(2),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			name, value := args[0], args[1]
+			return runTransition(cmd, dir, name, func(st *ontostate.State) error {
+				if value != "pending" && value != "pass" && value != "fail" {
+					return fmt.Errorf("onto set verify-result: %q is not one of [pending pass fail]", value)
+				}
+				st.Verify.Result = value
+				st.Verify.Heads = nil
+				if value != "pass" {
+					st.Close.Merged = false
+					st.CloseConfirmed = ""
+				} else {
+					// Binding policy: outside git there is nothing to bind
+					// (legacy shape). Inside git, a capture failure — a
+					// missing scoped repository, an unreadable config — is a
+					// loud refusal, not a silently unbound pass.
+					if !inGitRepository(dir) {
+						return fmt.Errorf("onto set verify-result: %s is not a git repository; a pass cannot be bound to a commit here", dir)
+					}
+					heads, err := captureVerifyHeads(dir, *st)
+					if err != nil {
+						return fmt.Errorf("onto set verify-result: cannot bind the pass to the scoped repositories: %w", err)
+					}
+					st.Verify.Heads = heads
+				}
+				if value == "fail" {
+					st.Observed.VerifyRounds++
+				}
+				return nil
+			})
+		},
+	}
+	cmd.Flags().StringVar(&dir, "dir", ".", "workspace root containing the change")
 	return cmd
 }
 
@@ -150,21 +195,95 @@ func guidesCmd() *cobra.Command {
 	return cmd
 }
 
-// baseRefCmd records the change's base ref verbatim; presence-only shape
-// (empty rejected — a base ref is a real commit reference, not a clear).
+// baseRefCmd records the change's base ref as a canonical commit id. The ref
+// must resolve in the repository — base_ref is the immutable diff and
+// verification anchor, and an unresolvable value would strand scale and close.
 func baseRefCmd() *cobra.Command {
 	var dir string
 	cmd := &cobra.Command{
 		Use:   "base-ref <change> <ref>",
-		Short: "Record the base git ref a change branched from",
+		Short: "Record the base git commit a change branched from",
 		Args:  cobra.ExactArgs(2),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			name, ref := args[0], args[1]
 			return runTransition(cmd, dir, name, func(st *ontostate.State) error {
-				if ref == "" {
+				if strings.TrimSpace(ref) == "" {
 					return fmt.Errorf("onto set base-ref: ref must not be empty")
 				}
-				st.BaseRef = ref
+				canonical, err := resolveCommit(dir, ref)
+				if err != nil {
+					return fmt.Errorf("onto set base-ref: %w", err)
+				}
+				if st.BaseRef != "" && st.BaseRef != canonical {
+					return fmt.Errorf("onto set base-ref: base_ref is immutable once recorded (currently %q)", st.BaseRef)
+				}
+				st.BaseRef = canonical
+				return nil
+			})
+		},
+	}
+	cmd.Flags().StringVar(&dir, "dir", ".", "workspace root containing the change")
+	return cmd
+}
+
+// baseBranchCmd records the integration branch separately from BaseRef, which
+// remains the immutable commit used for diffs and verification.
+func baseBranchCmd() *cobra.Command {
+	var dir string
+	cmd := &cobra.Command{
+		Use:   "base-branch <change> <branch>",
+		Short: "Record the branch a change will integrate into",
+		Args:  cobra.ExactArgs(2),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			name, branch := args[0], args[1]
+			return runTransition(cmd, dir, name, func(st *ontostate.State) error {
+				if err := validateBranchName(dir, branch); err != nil {
+					return fmt.Errorf("onto set base-branch: %w", err)
+				}
+				if st.BaseBranch != "" && st.BaseBranch != branch {
+					return fmt.Errorf("onto set base-branch: base_branch is immutable once recorded (currently %q)", st.BaseBranch)
+				}
+				st.BaseBranch = branch
+				return nil
+			})
+		},
+	}
+	cmd.Flags().StringVar(&dir, "dir", ".", "workspace root containing the change")
+	return cmd
+}
+
+// workflowCmd supports the one legal lifecycle conversion: a bounded preset
+// may grow into the full workflow. Downgrades would discard obligations and
+// are therefore rejected.
+func workflowCmd() *cobra.Command {
+	var dir string
+	cmd := &cobra.Command{
+		Use:   "workflow <change> full",
+		Short: "Upgrade a fix or tweak preset to the full workflow",
+		Args:  cobra.ExactArgs(2),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			name, workflow := args[0], args[1]
+			return runTransition(cmd, dir, name, func(st *ontostate.State) error {
+				if workflow != "full" {
+					return fmt.Errorf("onto set workflow: only an upgrade to full is supported")
+				}
+				if st.Workflow == "full" || st.Workflow == "" {
+					return nil
+				}
+				if st.Workflow != "fix" && st.Workflow != "tweak" {
+					return fmt.Errorf("onto set workflow: cannot upgrade workflow %q", st.Workflow)
+				}
+				st.Workflow = "full"
+				st.Phase = "design"
+				st.ApproachConfirmed = ""
+				st.BuildMode = ""
+				st.BuildPause = ""
+				st.TDDMode = ""
+				st.Verify = ontostate.Verify{Scale: "full", Result: "pending"}
+				st.Close = ontostate.Close{}
+				st.CloseConfirmed = ""
+				st.Guides = "pending"
+				st.Observed.PresetEscalated = true
 				return nil
 			})
 		},
@@ -255,7 +374,9 @@ func deviatesFromCmd() *cobra.Command {
 	return cmd
 }
 
-// closeMergedCmd sets close.merged=true. It is idempotent and needs no value,
+// closeMergedCmd delegates to the receipt-bound merge operation. It is kept as
+// a compatibility spelling, but can no longer forge an unbound boolean. It
+// is idempotent and needs no value,
 // but tolerates an optional trailing "yes": the `onto gate --json` schema gives
 // every gate option a value that skills append to the SetCommand mechanically,
 // and this gate's option value is "yes" — rejecting it broke exactly the
@@ -270,10 +391,7 @@ func closeMergedCmd() *cobra.Command {
 			if len(args) == 2 && args[1] != "yes" {
 				return fmt.Errorf("onto set close-merged: %q is not a value; this setter takes no value (an optional literal \"yes\" is tolerated)", args[1])
 			}
-			return runTransition(cmd, dir, args[0], func(st *ontostate.State) error {
-				st.Close.Merged = true
-				return nil
-			})
+			return runMergeDeltas(cmd, dir, args[0])
 		},
 	}
 	cmd.Flags().StringVar(&dir, "dir", ".", "workspace root containing the change")

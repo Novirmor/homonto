@@ -4,8 +4,11 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
+	"github.com/noviopenworks/homonto/internal/fsutil"
+	"github.com/noviopenworks/homonto/internal/integrationrecord"
 	"github.com/noviopenworks/homonto/internal/ontostate"
 	"github.com/spf13/cobra"
 )
@@ -32,21 +35,33 @@ func closeCmd() *cobra.Command {
 // closeEvidenceGate refuses close unless the loaded state carries the
 // close-phase evidence tokens its workflow produces (B1: the token is present
 // and well-formed, not merely artifact files on disk). Every workflow requires
-// verify.result==pass and close.merged==true; a full workflow additionally
-// requires guides resolved (updated or waived:<reason>). fix/tweak presets are
-// gated on the reduced set they actually produce and do NOT require guides. An
-// empty workflow is treated as full (strictest, fail-safe). Each missing token
-// yields an error naming exactly what is absent; the caller archives nothing.
-func closeEvidenceGate(st ontostate.State) error {
+// a passing verify result that agrees with verification.md, integration,
+// close-plan review, and close.merged==true; a full workflow additionally
+// requires guides resolved (updated or waived:<reason>). fix/tweak presets use
+// the reduced guide set. An empty workflow is treated as full (strictest,
+// fail-safe). Each missing token yields an error naming what is absent; the
+// caller archives nothing.
+func passingVerificationEvidence(changeDir string, st ontostate.State) error {
 	if st.Verify.Result != "pass" {
 		result := st.Verify.Result
 		if result == "" {
 			result = "unset"
 		}
-		return fmt.Errorf("onto close: missing passing verification (verify.result=%s); run and record a passing verification before close", result)
+		return fmt.Errorf("missing passing verification (verify.result=%s); run and record a passing verification first", result)
 	}
-	if !st.Close.Merged {
-		return fmt.Errorf("onto close: change not merged (close.merged=false); mark the change merged before close")
+	line, ok := ontostate.VerificationResultLine(filepath.Join(changeDir, "verification.md"))
+	if !ok {
+		return fmt.Errorf("verification.md must contain exactly one canonical \"Result:\" line; write a passing report first")
+	}
+	if !ontostate.ResultLineIsPass(line) {
+		return fmt.Errorf("verification.md says %q but verify.result=pass; the report and state must agree", line)
+	}
+	return nil
+}
+
+func closeEvidenceGate(root, changeDir string, st ontostate.State) error {
+	if err := passingVerificationEvidence(changeDir, st); err != nil {
+		return fmt.Errorf("onto close: %w", err)
 	}
 	// guides are required only for the full workflow; the reduced fix/tweak
 	// presets never produce them. Empty workflow is treated as full.
@@ -59,12 +74,25 @@ func closeEvidenceGate(st ontostate.State) error {
 			return fmt.Errorf("onto close: unresolved guides (guides=%s); update or waive guides before close", guides)
 		}
 	}
-	// Last, the final-confirmation token: the user's explicit yes to the close
-	// plan. It is checked after the plan's own inputs so an earlier gap
-	// surfaces as itself, and before any mutation so a declined gate leaves
-	// the repo untouched.
+	if st.Integration == "" {
+		return fmt.Errorf("onto close: integration not recorded; run `onto set integration %s merge|pr` before close", st.Change)
+	}
+	if strings.TrimSpace(st.BaseRef) == "" {
+		return fmt.Errorf("onto close: base_ref not recorded; run `onto set base-ref %s <commit>` before close", st.Change)
+	}
+	if strings.TrimSpace(st.BaseBranch) == "" {
+		return fmt.Errorf("onto close: base_branch not recorded; run `onto set base-branch %s <branch>` before close", st.Change)
+	}
+	if err := validateBranchName(root, st.BaseBranch); err != nil {
+		return fmt.Errorf("onto close: base_branch is invalid: %w", err)
+	}
+	// Last, the close-plan review token. It is checked after the plan's own
+	// inputs so an earlier gap surfaces as itself, and before archival.
 	if st.CloseConfirmed == "" {
-		return fmt.Errorf("onto close: close not confirmed: answer the final-confirmation gate, then run `onto set close-confirmed %s \"<evidence>\"`", st.Change)
+		return fmt.Errorf("onto close: close plan not validated: review it, then run `onto set close-confirmed %s \"<evidence>\"`", st.Change)
+	}
+	if !st.Close.Merged {
+		return fmt.Errorf("onto close: spec deltas not merged (close.merged=false); run `onto merge-deltas %s` before close", st.Change)
 	}
 	return nil
 }
@@ -78,9 +106,9 @@ func closeEvidenceGate(st ontostate.State) error {
 // dependency named in st.Deps has already been archived
 // (ontostate.DepsResolved); that the worktree is clean and that cleanliness
 // is determinable; and that the dated archive target does not already
-// exist (no-clobber). Only once all of these pass does it mark the state
-// Archived, save it, and move the change directory into
-// docs/changes/archive/<date>-<name>/.
+// exist (no-clobber). Only once all of these pass does it move the change
+// directory into docs/changes/archive/<date>-<name>/ and save Archived=true at
+// the destination.
 func runClose(cmd *cobra.Command, root, name string) error {
 	if err := ontoFramework.Gate(root); err != nil {
 		return err
@@ -90,8 +118,16 @@ func runClose(cmd *cobra.Command, root, name string) error {
 		return err
 	}
 
+	unlock := acquireStateLockBestEffort(root)
+	defer unlock()
+
 	changeDir := filepath.Join(root, "docs", "changes", name)
 	statePath := filepath.Join(changeDir, "onto-state.yaml")
+	if _, err := os.Stat(changeDir); os.IsNotExist(err) {
+		return recoverInterruptedClose(cmd, root, name)
+	} else if err != nil {
+		return fmt.Errorf("onto close: inspecting %s: %w", changeDir, err)
+	}
 
 	st, err := ontostate.Load(statePath)
 	if err != nil {
@@ -104,6 +140,9 @@ func runClose(cmd *cobra.Command, root, name string) error {
 	// but does not validate (F9).
 	if err := st.Validate(); err != nil {
 		return fmt.Errorf("onto close: %w", err)
+	}
+	if st.Change != name {
+		return fmt.Errorf("onto close: state change %q does not match directory %q", st.Change, name)
 	}
 
 	// Abandoned is the UNSUCCESSFUL terminal state; archiving is the successful
@@ -118,29 +157,60 @@ func runClose(cmd *cobra.Command, root, name string) error {
 	if st.Phase != "close" {
 		return fmt.Errorf("onto close: change %q is at phase %q; run `onto advance` until it reaches close", name, st.Phase)
 	}
+	for _, artifact := range ontostate.RequiredArtifacts("close", st.Workflow) {
+		if _, statErr := os.Stat(filepath.Join(changeDir, artifact)); statErr != nil {
+			return fmt.Errorf("onto close: missing required artifact %s", artifact)
+		}
+	}
 
-	if err := closeEvidenceGate(st); err != nil {
+	if err := closeEvidenceGate(root, changeDir, st); err != nil {
 		return err
+	}
+	if err := verifyHeadsIntact(root, st); err != nil {
+		return fmt.Errorf("onto close: %w", err)
+	}
+	if err := validateCompletedMergeReceipt(root, changeDir, name); err != nil {
+		return fmt.Errorf("onto close: merge receipt is stale or missing: %w; run `onto merge-deltas %s`", err, name)
 	}
 
 	unresolved := ontostate.DepsResolved(root, st.Deps)
 	if len(unresolved) > 0 {
 		return fmt.Errorf("onto close: unresolved dependencies: %v", unresolved)
 	}
+	integration, integrationExists, err := integrationrecord.Load(changeDir, name)
+	if err != nil {
+		return fmt.Errorf("onto close: %w", err)
+	}
+	if integrationExists {
+		if err := validateIntegrationRecord(st, integration); err != nil {
+			return fmt.Errorf("onto close: %w", err)
+		}
+		if integration.Status != integrationrecord.StatusPending {
+			return fmt.Errorf("onto close: active change has an integration record with status %q", integration.Status)
+		}
+	}
 
 	dirt, err := scopedWorktreeDirt(root, name, st.Repos)
 	if err != nil {
 		return fmt.Errorf("onto close: cannot verify scoped worktrees; refusing close: %w", err)
 	}
+	if integrationExists {
+		dirt = ignorePendingIntegrationDirt(dirt, name)
+	}
 	if msg := scopedDirtGateError(dirt, name); msg != "" {
 		return fmt.Errorf("onto close: dirty worktree blocks close: %s", msg)
 	}
 
-	archiveDir := filepath.Join(root, "docs", "changes", "archive", time.Now().Format("2006-01-02")+"-"+name)
-	if _, err := os.Stat(archiveDir); err == nil {
-		return fmt.Errorf("onto close: archive target already exists: %s", archiveDir)
+	archiveDir, err := archiveDestination(root, name, time.Now().Format("2006-01-02"))
+	if err != nil {
+		return fmt.Errorf("onto close: choosing archive destination: %w", err)
 	}
-
+	if err := fsutil.RequireRealParents(root, filepath.Dir(archiveDir)); err != nil {
+		return fmt.Errorf("onto close: unsafe archive path: %w", err)
+	}
+	if err := os.MkdirAll(filepath.Join(root, "docs", "changes", "archive"), 0o755); err != nil {
+		return fmt.Errorf("onto close: creating archive directory: %w", err)
+	}
 	// Move FIRST, then record archived:true inside the moved directory. The old
 	// order (flag, then move) had a crash window that left `archived: true` at
 	// the ORIGINAL path — the exact state doctor flags as corrupt — and the
@@ -148,24 +218,99 @@ func runClose(cmd *cobra.Command, root, name string) error {
 	// command's own dirty-worktree check. With move-first, a crash between the
 	// two steps leaves the change correctly archived with a stale flag, which is
 	// benign: presence under archive/ is what dependency resolution keys on.
-	if err := os.MkdirAll(filepath.Join(root, "docs", "changes", "archive"), 0o755); err != nil {
-		return fmt.Errorf("onto close: creating archive directory: %w", err)
+	if err := fsutil.RequireRealParents(root, filepath.Dir(archiveDir)); err != nil {
+		return fmt.Errorf("onto close: unsafe archive path: %w", err)
 	}
-	if err := os.Rename(changeDir, archiveDir); err != nil {
+	if !integrationExists {
+		entries, err := captureIntegrationEntries(root, st)
+		if err != nil {
+			return fmt.Errorf("onto close: %w", err)
+		}
+		integration = integrationrecord.NewPending(name, st.Integration, st.BaseBranch, entries)
+		if err := integrationrecord.Save(changeDir, integration); err != nil {
+			return fmt.Errorf("onto close: %w", err)
+		}
+	}
+	if err := fsutil.RenameDurable(changeDir, archiveDir); err != nil {
 		return fmt.Errorf("onto close: moving %s to %s: %w", changeDir, archiveDir, err)
 	}
 	st.Archived = true
+	st.IntegrationRequired = true
 	if err := ontostate.Save(filepath.Join(archiveDir, "onto-state.yaml"), st); err != nil {
 		// Roll the move back so a failed close leaves the change fully
 		// un-archived rather than archived-with-a-false-flag. If even the
 		// roll-back rename fails, say so explicitly instead of silently keeping
 		// half a close.
-		if rbErr := os.Rename(archiveDir, changeDir); rbErr != nil {
+		if rbErr := fsutil.RenameDurable(archiveDir, changeDir); rbErr != nil {
 			return fmt.Errorf("onto close: recording archived flag failed (%v) AND rolling the move back failed (%v); the change is at %s with archived:false — move it back to %s by hand", err, rbErr, archiveDir, changeDir)
 		}
 		return fmt.Errorf("onto close: %w", err)
 	}
 
-	fmt.Fprintf(cmd.OutOrStdout(), "%s: archived to %s\n", name, archiveDir)
+	fmt.Fprintf(cmd.OutOrStdout(), "%s: archived to %s; integration pending\n", name, archiveDir)
+	return nil
+}
+
+func recoverInterruptedClose(cmd *cobra.Command, root, name string) error {
+	archiveDir, st, err := locateArchive(root, name)
+	if err != nil {
+		return fmt.Errorf("onto close: active workspace is absent and recovery failed: %w", err)
+	}
+	if st.Archived {
+		fmt.Fprintf(cmd.OutOrStdout(), "%s: already archived at %s\n", name, archiveDir)
+		return nil
+	}
+	if st.Abandoned || st.Phase != "close" {
+		return fmt.Errorf("onto close: archive recovery requires a non-abandoned close-phase state")
+	}
+	for _, artifact := range ontostate.RequiredArtifacts("close", st.Workflow) {
+		if _, statErr := os.Stat(filepath.Join(archiveDir, artifact)); statErr != nil {
+			return fmt.Errorf("onto close: archive recovery missing required artifact %s", artifact)
+		}
+	}
+	if err := closeEvidenceGate(root, archiveDir, st); err != nil {
+		return err
+	}
+	if err := verifyHeadsIntact(root, st); err != nil {
+		return fmt.Errorf("onto close: archive recovery: %w", err)
+	}
+	if err := validateCompletedMergeReceipt(root, archiveDir, name); err != nil {
+		return fmt.Errorf("onto close: archive recovery has an invalid merge receipt: %w", err)
+	}
+	if unresolved := ontostate.DepsResolved(root, st.Deps); len(unresolved) > 0 {
+		return fmt.Errorf("onto close: archive recovery has unresolved dependencies: %v", unresolved)
+	}
+	dirt, err := scopedWorktreeDirt(root, name, st.Repos)
+	if err != nil {
+		return fmt.Errorf("onto close: archive recovery cannot verify scoped worktrees: %w", err)
+	}
+	dirt = ignoreInterruptedArchiveMoveDirt(dirt)
+	if msg := scopedDirtGateError(dirt, name); msg != "" {
+		return fmt.Errorf("onto close: archive recovery dirty worktree blocks close: %s", msg)
+	}
+	integration, ok, err := integrationrecord.Load(archiveDir, name)
+	if err != nil {
+		return fmt.Errorf("onto close: archive recovery: %w", err)
+	}
+	if !ok {
+		entries, entriesErr := captureIntegrationEntries(root, st)
+		if entriesErr != nil {
+			return fmt.Errorf("onto close: archive recovery: %w", entriesErr)
+		}
+		integration = integrationrecord.NewPending(name, st.Integration, st.BaseBranch, entries)
+		if err := integrationrecord.Save(archiveDir, integration); err != nil {
+			return fmt.Errorf("onto close: archive recovery: %w", err)
+		}
+	} else if err := validateIntegrationRecord(st, integration); err != nil {
+		return fmt.Errorf("onto close: archive recovery: %w", err)
+	} else if integration.Status != integrationrecord.StatusPending {
+		return fmt.Errorf("onto close: archive recovery found impossible integration status %q", integration.Status)
+	}
+	st.Archived = true
+	st.IntegrationRequired = true
+	if err := ontostate.Save(filepath.Join(archiveDir, "onto-state.yaml"), st); err != nil {
+		return fmt.Errorf("onto close: archive recovery: %w", err)
+	}
+	fmt.Fprintf(cmd.OutOrStdout(), "%s: recovered interrupted archive at %s; integration pending\n", name, archiveDir)
 	return nil
 }

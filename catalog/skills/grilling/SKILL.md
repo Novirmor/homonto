@@ -33,5 +33,6 @@ a later one.
   lose them and the user can see the shape forming.
 - Stop when the open questions left are low-stakes or the user calls it. Don't
   manufacture questions to look thorough.
-- Before building, replay every decision as a short numbered summary and get one
-  explicit confirmation. Do not enact the plan until the user confirms.
+- End by replaying every decision as a short numbered summary and ask only for
+  corrections to a material misunderstanding. Do not enact the plan; this skill
+  ends with the decision record.

@@ -1,7 +1,6 @@
 ---
-name: to-no-slop
 description: Remove AI writing patterns from to prose artifacts (plans, notes, commit messages).
-argument-hint: "What to de-slop (optional; defaults to the artifact being written)"
+agent: to
 ---
 
 # /to-no-slop

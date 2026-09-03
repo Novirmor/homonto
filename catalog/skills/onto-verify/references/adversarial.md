@@ -7,10 +7,10 @@ defects self-review missed).
 
 ## When
 
-- `verify.mode: full` → REQUIRED: **at least** two skeptics, dispatched in
+- `verify.scale: full` → REQUIRED: **at least** two skeptics, dispatched in
   parallel, after the self-evidence table is drafted. Two is the floor, not
   the ceiling — see "More than two" below.
-- `verify.mode: light` → one skeptic, optional; a skip is recorded in the
+- `verify.scale: light` → one skeptic, optional; a skip is recorded in the
   report's Adversarial section with its reason.
 - No subagent capability → record "adversarial pass skipped: no dispatch
   capability" in the report's Adversarial section (protocol-mandated
@@ -21,10 +21,10 @@ defects self-review missed).
 
 Both are the **`onto-skeptic`** subagent that ships with onto — the same
 agent dispatched **twice, concurrently**, with a different **lens** named
-in each dispatch (`conformance` and `robustness`). It is read-only and
-keeps bash on purpose: a skeptic must re-run the evidence itself, and must
-never fix what it finds (that would contaminate the independent context
-that makes it worth dispatching).
+in each dispatch (`conformance` and `robustness`). It denies edits and shell
+commands so parallel skeptics cannot mutate the candidate. The coordinator
+runs any exact probes they request and returns the literal output for a fresh
+pass.
 
 Both get: the delta spec(s), `design.md`, repo access, and the drafted
 evidence table. Both are prompted to **REFUTE, never approve** — an
@@ -32,8 +32,8 @@ approving skeptic has failed its job; "I could not refute X because
 <evidence>" is the only acceptable positive form.
 
 1. **Conformance skeptic** — attack the claims: for each scenario verdict,
-   try to demonstrate the evidence doesn't hold (re-run commands, probe
-   the same behavior differently, check the implementation actually does
+   try to demonstrate the evidence doesn't hold (challenge command provenance,
+   propose a different probe of the same behavior, check the implementation actually does
    what the scenario says rather than something adjacent).
 2. **Robustness skeptic** — attack the gaps: edge cases the scenarios
    don't cover, drift/recovery paths, failure modes, order-dependence,
@@ -41,7 +41,7 @@ approving skeptic has failed its job; "I could not refute X because
 
 ## More than two
 
-Skeptics are read-only, so additional lenses race nothing and cost only
+Skeptics deny edits and shell commands, so additional lenses race nothing and cost only
 tokens. Add them when the change earns it, dispatched in the same parallel
 batch and named in the report's Adversarial section like the mandatory two:
 
@@ -82,9 +82,9 @@ are deliberately different words.
 |---|---|
 | Refuted claim (evidence doesn't hold) | That scenario's verdict → fail; failure gate applies |
 | New defect, CRITICAL (broken behavior, data loss, security) | Must fix — back through the failure gate |
-| New defect, non-critical | Fix now or record as accepted deviation (user's call at the gate) |
+| New defect, non-critical | Fix now; ask only when accepting it as a deviation is justified by a user-owned constraint |
 | Unverifiable speculation | Note and dismiss with the reason |
 
-One verify round = self-evidence + skeptics together. The verify skill's
-exit checklist owns the single `metrics.verify_rounds` increment — do not
-increment it here as well. Findings that force a fix start a new round.
+One verify round = self-evidence + skeptics together. `onto set verify-result
+<name> fail` owns the single `observed.verify_rounds` increment. Findings that
+force a fix start a new round.

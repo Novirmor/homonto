@@ -1,7 +1,5 @@
 ---
-name: grill
 description: Grill me about this plan or design to stress-test it before building.
-argument-hint: "The plan or design to pressure-test"
 ---
 
 # /grill
@@ -20,7 +18,7 @@ questions where reversal is expensive, and say when you're skipping a cheap one.
 Keep a running list of settled decisions so a reset can't lose them.
 
 Do not enact the plan. When the open questions are low-stakes or I call it,
-replay every decision as a numbered summary and wait for my explicit
-confirmation.
+replay every decision as a numbered summary and ask only for corrections to a
+material misunderstanding.
 
 `$ARGUMENTS`, if present, is the plan or design to grill.

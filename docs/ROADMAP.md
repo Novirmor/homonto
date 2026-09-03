@@ -379,7 +379,7 @@ move.
 With one adapter the remaining serialization is fetches and files:
 `remote:` subagent fetch+verify in parallel, skill/command/subagent link
 projection in parallel, catalog materialization where the fingerprint
-gates allow it. Write-scope rules (ADR 0019/0020) keep deciding what may
+gates allow it. Write-capability rules (ADR 0020/0035) keep deciding what may
 run concurrently; nothing that writes shared state gets parallelized.
 
 ## 5. Multi-repo: designated places, cross-repo effect
@@ -709,7 +709,8 @@ delegates the same step to a CLI.
 **Changes.**
 - `onto merge-deltas <change>` (also invoked by `onto close` when deltas exist):
   deterministic application of the four sections in order, duplicate-requirement
-  and leaked-delta-heading lint post-merge, idempotent via `close.merged`.
+  and leaked-delta-heading lint post-merge, idempotent through an exact
+  pre/post-image receipt bound to `close.merged`.
 - onto-close step 3 shrinks to: assemble plan → confirm → run the command →
   review its report. Skill keeps ADR numbering (rename-scan guard) for now.
 - Golden-file tests per section type + conflict cases (MODIFIED targeting a

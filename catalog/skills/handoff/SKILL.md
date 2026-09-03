@@ -1,8 +1,6 @@
 ---
 name: handoff
 description: Compact the current conversation into a handoff document so a fresh agent with no prior context can continue the work. Use when ending a session, switching agents, or before a context reset.
-argument-hint: "What will the next session focus on?"
-disable-model-invocation: true
 metadata:
   source: adapted from https://github.com/mattpocock/skills (MIT), skills/productivity/handoff
 ---

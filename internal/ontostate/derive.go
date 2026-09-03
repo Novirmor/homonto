@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 )
 
@@ -34,11 +35,9 @@ func fileExists(path string) bool {
 	return err == nil
 }
 
-// VerificationResultLine returns the FIRST "Result: "-prefixed line of the
-// file at path (leading whitespace tolerated, trailing \r trimmed). The
-// verify-exit gate and the phase derivation both read the report through this
-// one scanner, so the two can never disagree about which line is the result.
-// A missing/unreadable file or an absent Result: line returns ok=false.
+// VerificationResultLine returns the only Result: line in the file at path.
+// Duplicate markers are contradictory evidence, so they return ok=false just
+// like a missing, unreadable, or malformed report.
 func VerificationResultLine(path string) (line string, ok bool) {
 	f, err := os.Open(path)
 	if err != nil {
@@ -48,24 +47,26 @@ func VerificationResultLine(path string) (line string, ok bool) {
 	scanner := bufio.NewScanner(f)
 	for scanner.Scan() {
 		trimmed := strings.TrimSpace(scanner.Text())
-		if strings.HasPrefix(trimmed, "Result: ") {
-			return trimmed, true
+		if strings.HasPrefix(trimmed, "Result:") {
+			if ok {
+				return "", false
+			}
+			line, ok = trimmed, true
 		}
 	}
-	_ = scanner.Err() // unreadable tail = absent evidence, same as a missing file
-	return "", false
+	if scanner.Err() != nil {
+		return "", false
+	}
+	return line, ok
 }
 
-// ResultLineIsPass reports whether a verification Result line records a pass:
-// exactly "Result: pass", optionally followed by a space-separated suffix
-// (the accepted-deviations form, "Result: pass (2 accepted deviations)").
-// "Result: passing" is NOT a pass — the word must end where "pass" ends.
+var passingResultLine = regexp.MustCompile(`^Result: pass(?: \([1-9][0-9]* accepted deviations\))?$`)
+
+// ResultLineIsPass reports whether a verification Result line is one of the
+// two canonical pass forms. Free-form suffixes and template placeholders do
+// not count as evidence.
 func ResultLineIsPass(line string) bool {
-	rest, found := strings.CutPrefix(line, "Result: pass")
-	if !found {
-		return false
-	}
-	return rest == "" || strings.HasPrefix(rest, " ") || strings.HasPrefix(rest, "(")
+	return passingResultLine.MatchString(line)
 }
 
 // DeriveWorkingPhase derives a change's WORKING phase from its workspace
@@ -91,6 +92,9 @@ func ResultLineIsPass(line string) bool {
 // never errors; the function is read-only and total.
 func DeriveWorkingPhase(changeDir string, st State) string {
 	if st.Archived {
+		if !ArchiveIntegrationComplete(changeDir, st) {
+			return "close"
+		}
 		return "done"
 	}
 	// An abandoned change is retired — deriving a live working phase for it
@@ -103,8 +107,13 @@ func DeriveWorkingPhase(changeDir string, st State) string {
 	if fileHasLinePrefix(designPath, "Status: Under revision") {
 		return "design"
 	}
-	if line, ok := VerificationResultLine(filepath.Join(changeDir, "verification.md")); ok && ResultLineIsPass(line) {
+	if line, ok := VerificationResultLine(filepath.Join(changeDir, "verification.md")); st.Verify.Result == "pass" && ok && ResultLineIsPass(line) {
 		return "close"
+	}
+	// A preset-to-full upgrade explicitly returns to design. Completed preset
+	// tasks are not allowed to route around the new design obligation.
+	if st.Workflow == "full" && st.Observed.PresetEscalated && st.ApproachConfirmed == "" {
+		return "design"
 	}
 	if done, err := TasksAllChecked(filepath.Join(changeDir, "tasks.md")); err == nil && done {
 		return "verify"

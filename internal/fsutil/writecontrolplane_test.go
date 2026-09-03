@@ -3,6 +3,7 @@ package fsutil
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -72,5 +73,21 @@ func TestWriteControlPlaneNormalWrite(t *testing.T) {
 	}
 	if b, _ := os.ReadFile(p); string(b) != `{"a":2}` {
 		t.Fatalf("content after rewrite = %s", b)
+	}
+}
+
+func TestWriteControlPlaneWithinRefusesSymlinkedParent(t *testing.T) {
+	root := t.TempDir()
+	outside := t.TempDir()
+	if err := os.Symlink(outside, filepath.Join(root, ".onto")); err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(root, ".onto", "state.json")
+	err := WriteControlPlaneWithin(root, path, []byte(`{"unsafe":true}`), 0o600)
+	if err == nil || !strings.Contains(err.Error(), "symlink") {
+		t.Fatalf("symlinked parent was not refused: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(outside, "state.json")); !os.IsNotExist(err) {
+		t.Fatalf("write escaped through symlinked parent: %v", err)
 	}
 }

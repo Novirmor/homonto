@@ -107,6 +107,9 @@ func parseAndMigrate(b []byte, sourceName string) (State, error) {
 	if st.SchemaVersion > CurrentSchemaVersion {
 		return State{}, fmt.Errorf("onto-state: %s: unknown schema_version %d (this binary supports up to %d) — upgrade onto: %w", sourceName, st.SchemaVersion, CurrentSchemaVersion, schema.ErrTooNew)
 	}
+	if st.SchemaVersion < 2 {
+		st.IntegrationRequired = false
+	}
 	st.SchemaVersion = CurrentSchemaVersion
 	return st, nil
 }

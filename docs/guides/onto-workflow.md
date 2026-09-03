@@ -5,8 +5,8 @@ bundled framework. It has two halves that work together:
 
 - the **`onto` binary** (built from `cmd/onto/`, installed beside
   `homonto`) — the deterministic operator that creates change workspaces,
-  gates phase transitions, merges spec deltas, and archives completed
-  changes; and
+  gates phase transitions, merges spec deltas, archives workspaces, and records
+  completed Git integration; and
 - the **`onto-*` skills** (materialized from the builtin catalog by
   `homonto apply`) — the agent-facing process prose that drives the work
   inside each phase.
@@ -18,7 +18,9 @@ change moves through five phases in a fixed order:
 open → design → build → verify → close
 ```
 
-`close` is terminal; `onto close` then archives the change. Each change
+`close` is the final recorded phase; `onto close` archives the change, and
+`onto complete-integration` records the local merge or opened pull request
+before the derived phase becomes `done`. Each change
 tracks its phase and gate evidence in an `onto-state.yaml` inside its
 workspace directory, always written through the binary and never by hand.
 
@@ -36,7 +38,7 @@ onto version            # prints: onto <version>
 ```
 
 The mutating commands (`init`, `new`, `set`, `advance`, `bypass`, `close`, `abandon`,
-`merge-deltas`) require the onto framework to be **declared and applied
+`merge-deltas`, `complete-integration`) require the onto framework to be **declared and applied
 through homonto first**. This is how the skills land in your tools:
 
 ```toml
@@ -53,10 +55,10 @@ this: they never read `homonto.toml` and never write.
 
 `homonto apply` also installs the framework's **slash commands** into each
 tool: `/onto` (the dispatcher — it derives the active change's real phase
-and routes automatically), the explicit-user-only `/onto-bypass`, plus `/onto-open`, `/onto-design`, `/onto-build`,
+and routes automatically), the command-only explicit-user `/onto-bypass`, plus `/onto-open`, `/onto-design`, `/onto-build`,
 `/onto-verify`, `/onto-close`, `/onto-fix`, `/onto-tweak`, and
-`/onto-no-slop`. Each command loads its matching `onto-*` skill; every state
-change still goes through the binary.
+`/onto-no-slop`. Every workflow command enters the `onto` primary agent and
+loads its matching skill; every state change still goes through the binary.
 
 ## The layout
 
@@ -75,32 +77,33 @@ docs/
 
 ## Phase walkthrough
 
-The `onto-*` skills carry the process discipline inside each phase; the
-binary gates the transitions between them. Since v0.9.0 the judgment gates
-also carry **evidence tokens** — a recorded `onto set` answer the binary
-refuses to advance without, so an honest agent cannot skip a user gate:
+The `onto-*` skills carry the process discipline inside each phase; the binary
+gates the transitions between them. Review checkpoints carry **evidence
+tokens**, a recorded `onto set` summary the binary refuses to advance without:
 
 | Token | Gate it records | Refused without it |
 |---|---|---|
-| `proposal-approved` | open's artifact review (full) | `advance` out of open |
-| `approach-confirmed` | design's approach choice (full) | `advance` design → build |
-| `close-confirmed` | close's final confirmation (all) | `merge-deltas`, `close` |
+| `proposal-approved` | proposal reviewed against request and grounding (full) | `advance` out of open |
+| `approach-confirmed` | approach selected with its basis (full) | `advance` design → build |
+| `close-confirmed` | close plan validated (all) | `merge-deltas`, `close` |
 
 `onto gate <name> --json` lists whichever are still pending with the exact
-setter. Leaving verify additionally cross-checks `verification.md`'s
-`Result:` line against the recorded `verify.result` — the report and the
-state must agree. **Migration note:** a full change already in flight when
-you upgrade will refuse its next `advance` until the missing token is
-recorded — that is the unanswered gate being re-asked, not a fault; answer
-it and record the token. `onto state <name> --json` now also derives the
+resolving command. Leaving verify and closing additionally cross-check
+`verification.md`'s `Result:` line against the recorded `verify.result`; the
+report and state must agree. Close also requires both Git anchors and validates
+`close.merged` against a versioned receipt containing the exact delta manifest
+and living-spec pre/post-images. A
+full change already in flight when you upgrade refuses its
+next `advance` until its missing review is performed and recorded. `onto state
+<name> --json` also derives the
 **working phase** from the artifacts (`derived_phase`, with
 `phase_mismatch` when the claim disagrees), so skills route on tested
 derivation instead of re-reading the evidence table by hand.
 
 - **open** — clarify the requirement, decide whether the work should split
   into several changes, and create the workspace (`onto new`).
-- **design** — ground-truth exploration, 2–3 candidate approaches, user
-  confirmation, then `design.md`, ADR drafts (unnumbered,
+- **design** — ground-truth exploration, 2–3 candidate approaches, selection
+  from evidence and user-owned constraints, then `design.md`, ADR drafts (unnumbered,
   `Status: Proposed`), delta specs with testable scenarios, and the task
   list derived from the confirmed design. No implementation code in this
   phase.
@@ -118,17 +121,21 @@ derivation instead of re-reading the evidence table by hand.
   `onto scale` derives the appropriate verification level from the measured
   diff.
 - **close** — `onto merge-deltas` merges the change's delta specs into
-  `docs/specs/` deterministically, then `onto close` archives the workspace
-  once all evidence gates pass. Number and accept ADRs into `docs/adr/`, and
-  update the affected guides.
+  `docs/specs/` with a crash-recovery receipt, then `onto close` archives the
+  workspace once all evidence gates pass. Number and accept ADRs into
+  `docs/adr/`, update the affected guides, integrate the branch, and record
+  `merge:<commit>` or `pr:<url>` with `onto complete-integration`. State keeps
+  the immutable diff anchor in `base_ref` and the integration target in
+  `base_branch`; a commit SHA is never used as a checkout or pull-request base.
 
 Two **presets** run a reduced path for small work: `onto new --workflow fix`
 (an existing-behavior bug) and `--workflow tweak` (copy/config/docs-scale
 change) go `open-lite → build → verify → close`, skipping design, and
-upgrade to the full path when scope grows. A preset reaches build in one
+upgrade automatically to design in the full path when scope grows, invalidating
+its prior build, verification, and close evidence. A preset reaches build in one
 gated call — `onto advance <name> --to build` — instead of two ceremonial
-advances; presets are exempt from the two full-only tokens but not from
-`close-confirmed`. `onto abandon` is the
+advances; presets are exempt from the two full-only tokens but still record
+close-plan validation. `onto abandon` is the
 unsuccessful terminal state for work that stops rather than completes.
 
 ## Specialist subagents
@@ -145,9 +152,9 @@ specialists the skills delegate to.
   into it. The agent prompt deliberately does not restate the skill, so the
   two cannot drift.
 
-- **`onto-explorer`** — read-only; reads across many files (and keeps bash
-  for the code-intelligence CLIs and git history) to answer "how does X work
-  / where does behavior live", returning conclusions rather than dumps. Used
+- **`onto-explorer`** — read-only with no shell; reads across many files to
+  answer "how does X work / where does behavior live", returning conclusions
+  rather than dumps. Used
   for grounding in open and design.
 - **`onto-reviewer`** — read-only; reviews a diff for correctness, security,
   contract, and clarity, ranked by severity. Used per task in build and
@@ -161,33 +168,33 @@ specialists the skills delegate to.
   in parallel**, one lens each — `conformance` (refute each scenario's
   evidence) and `robustness` (attack the gaps the scenarios never cover) are
   mandatory in full mode, and a change may earn further lenses — and is
-  prompted to **refute, never approve** (ADR 0007). It keeps bash so it can
-  re-run the evidence itself, and it is read-only so it can never fix what
-  it finds. That independence is the point.
+  prompted to **refute, never approve** (ADR 0007). It has no shell, so it
+  requests exact probes for the coordinator to run and cannot mutate the
+  candidate. That independence is the point.
 
 Planning, judging scope, deciding, and every `onto` binary call stay with the
-orchestrator, because those steps are gated on user confirmation and a
-subagent cannot prompt. Who does the *editing* depends on the change's
+orchestrator. Who does the *editing* depends on the change's
 `build_mode` field (`onto set build-mode <change> direct|subagent`): under
 `direct` the orchestrator does it, and under `subagent` the implementer edits
 and commits its own task's files.
 
 All declare their capabilities once in a tool-neutral `homonto:` frontmatter
 block, rendered into OpenCode's `permission:` map (see
-[subagents](subagents.md)). Parallelization follows what an agent writes
-rather than which agent it is
-([ADR 0019](../adr/0019-parallelism-follows-write-scope.md)): the three
+[subagents](subagents.md)). Parallelization follows write capability rather
+than agent identity
+([ADR 0035](../adr/0035-deny-shell-access-to-concurrent-specialists.md)): the three
 read-only agents run concurrently wherever the work is independent — grounding
 in open and design, per-task and per-lens review in build, scenario evidence
 and the skeptic lenses in verify. The edit-capable implementer runs one at a
 time unless each has its own git worktree and a disjoint file set, which is
-what `isolation: worktree` is for. Dialogs belong to the orchestrator alone:
-a subagent that needs a decision returns a `Questions:` section and stops,
-and the orchestrator asks, then re-dispatches with the answer. That protocol
+what `isolation: worktree` is for. Questions belong to the orchestrator alone:
+a subagent returns `Questions:` or `Evidence requests:`, and the orchestrator
+investigates or runs the probe. It asks the user only when product intent
+remains unresolved, then re-dispatches. That protocol
 is the real guarantee — the rendering backs it in OpenCode, where
-`dialogs: false` becomes `question: deny`. Gate decisions are asked through
-an interactive dialog (`onto gate --json` supplies the structured decision;
-the skill renders it). The orchestrator — your main session — still owns
+`dialogs: false` becomes `question: deny`. `onto gate --json` supplies pending
+recorded decisions and safe defaults; it does not make each item a user question.
+The orchestrator — your main session — still owns
 every edit and commit.
 
 ## Working in a dirty tree
@@ -223,8 +230,8 @@ Long agent sessions get compacted. `onto handoff <change>` emits a compact
 recovery context pack — identity, phase, pending gate, artifact excerpts
 plus a content hash — and `--write` persists it under the workspace, so a
 fresh session resumes without re-deriving state. `onto set build-pause
-plan-ready` records a first-class pause at the plan-ready gate for the same
-reason.
+plan-ready` records an explicitly requested pause after planning; ordinary builds
+do not set it.
 
 ## Picking the work up cold
 
@@ -236,7 +243,7 @@ carry that, and nothing else claims to:
 |---|---|
 | Where is this change, really? | `onto state <name> --json` — `derived_phase` is read from the artifacts, so a stale claim shows up as `phase_mismatch` |
 | What do I do next? | `onto handoff <name>` — identity, phase, pending gate, artifact excerpts; the first unchecked `tasks.md` item is the resume point, and its detail is under the matching `## Task N.M` in `plan.md` (`onto doctor` reports any drift between the two) |
-| Was this actually decided, or assumed? | the evidence tokens — `proposal-approved`, `approach-confirmed`, `close-confirmed` are recorded answers the binary refuses to advance without, and `notes.md` keeps the user's words |
+| Was this actually decided, or assumed? | the evidence tokens — `proposal-approved`, `approach-confirmed`, `close-confirmed` are recorded reviews the binary refuses to advance without, and `notes.md` keeps their basis plus the user's words when supplied |
 | Did it really pass? | `verification.md` — every delta-spec scenario with the literal command output, cross-checked against the recorded `verify.result` on leaving verify |
 
 **Who** answered and **when** come from git, not from onto: the state file and

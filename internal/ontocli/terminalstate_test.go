@@ -83,6 +83,41 @@ func TestAbandonedIsTerminalEverywhere(t *testing.T) {
 	})
 }
 
+func TestCommandsRejectStateDirectoryNameMismatch(t *testing.T) {
+	commands := [][]string{
+		{"advance", "demo"},
+		{"gate", "demo"},
+		{"merge-deltas", "demo"},
+		{"close", "demo"},
+		{"set", "directive", "demo", "text"},
+	}
+	for _, args := range commands {
+		t.Run(strings.Join(args[:1], "-"), func(t *testing.T) {
+			dir := prepWorkspace(t)
+			seedCloseState(t, dir, ontostate.State{
+				Change: "demo", Workflow: "full", Phase: "close", Created: "2026-07-10",
+				Verify: ontostate.Verify{Result: "pass"}, Close: ontostate.Close{Merged: true},
+				Guides: "updated", Integration: "merge", CloseConfirmed: "reviewed",
+			})
+			mutateState(t, dir, "demo", func(st *ontostate.State) { st.Change = "other" })
+			fullArgs := append(append([]string(nil), args...), "--dir", dir)
+			if _, err := run(t, fullArgs...); err == nil || !strings.Contains(err.Error(), "does not match directory") {
+				t.Fatalf("%v must reject mismatched state identity, got %v", args, err)
+			}
+		})
+	}
+}
+
+func TestAdvanceRejectsArchivedActiveState(t *testing.T) {
+	dir := prepWorkspace(t)
+	seedCloseState(t, dir, ontostate.State{
+		Change: "demo", Workflow: "full", Phase: "build", Created: "2026-07-10", Archived: true,
+	})
+	if _, err := run(t, "advance", "demo", "--dir", dir); err == nil || !strings.Contains(err.Error(), "archived") {
+		t.Fatalf("advance must reject archived active state, got %v", err)
+	}
+}
+
 // A crash between merge-deltas' per-file atomic writes leaves each living spec
 // either untouched or fully merged with close.merged still false. Re-running
 // used to fail `ADDED %q already exists` forever — the only escape was
@@ -99,9 +134,15 @@ func TestMergeDeltasConvergesAfterPartialCommit(t *testing.T) {
 	writeFile(t, filepath.Join(changeSpecs, "alpha.md"), "## ADDED Requirements\n\n### Requirement: Alpha\nSHALL alpha.\n")
 	writeFile(t, filepath.Join(changeSpecs, "beta.md"), "## ADDED Requirements\n\n### Requirement: Beta\nSHALL beta.\n")
 
-	// Simulate the crash: alpha's merge already landed, beta's did not, and the
-	// flag was never set.
-	writeFile(t, filepath.Join(dir, "docs", "specs", "alpha.md"), "# alpha\n\n## Requirements\n\n### Requirement: Alpha\nSHALL alpha.\n")
+	// Create the exact receipt, then simulate a crash before beta's post-image
+	// landed and before the completion bit was saved.
+	if _, err := run(t, "merge-deltas", "demo", "--dir", dir); err != nil {
+		t.Fatalf("initial merge: %v", err)
+	}
+	if err := os.Remove(filepath.Join(dir, "docs", "specs", "beta.md")); err != nil {
+		t.Fatal(err)
+	}
+	mutateState(t, dir, "demo", func(st *ontostate.State) { st.Close.Merged = false })
 
 	out, err := run(t, "merge-deltas", "demo", "--dir", dir)
 	if err != nil {
@@ -123,6 +164,7 @@ func TestMergeDeltasConvergesAfterPartialCommit(t *testing.T) {
 	dir2 := prepWorkspace(t)
 	seedCloseState(t, dir2, ontostate.State{
 		Change: "demo", Workflow: "full", Phase: "close", Created: "2026-07-10", CloseConfirmed: "2026-07-22 confirmed",
+		Verify: ontostate.Verify{Result: "pass"},
 	})
 	writeFile(t, filepath.Join(dir2, "docs", "changes", "demo", "specs", "alpha.md"),
 		"## ADDED Requirements\n\n### Requirement: Alpha\nSHALL alpha.\n")
@@ -204,14 +246,16 @@ func TestGuidesRejectsPlaceholderWaiver(t *testing.T) {
 	}
 }
 
-// The gate schema gives close-merged the option value "yes", and skills append
-// an option's value to the SetCommand mechanically — the setter must tolerate
-// it (and still reject arbitrary values).
+// The recovery setter historically accepted the gate schema's option value
+// "yes". Preserve that shipped input even though ordinary close now runs
+// merge-deltas directly.
 func TestCloseMergedAcceptsSchemaValue(t *testing.T) {
 	dir := prepWorkspace(t)
 	seedCloseState(t, dir, ontostate.State{
 		Change: "demo", Workflow: "full", Phase: "close", Created: "2026-07-10", CloseConfirmed: "2026-07-22 confirmed",
+		Verify: ontostate.Verify{Result: "pass"},
 	})
+	writeFile(t, filepath.Join(dir, "docs", "changes", "demo", "verification.md"), "Result: pass\n")
 	if _, err := run(t, "set", "close-merged", "demo", "yes", "--dir", dir); err != nil {
 		t.Fatalf(`set close-merged <name> yes must succeed (gate schema value), got: %v`, err)
 	}

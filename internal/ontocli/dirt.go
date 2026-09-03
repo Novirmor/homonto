@@ -48,7 +48,7 @@ type dirtEntry struct {
 func worktreeDirt(root, change string) (entries []dirtEntry, determinable bool) {
 	ctx, cancel := context.WithTimeout(context.Background(), gitCmdTimeout)
 	defer cancel()
-	out, err := exec.CommandContext(ctx, "git", "-C", root, "status", "--porcelain", "-z").Output()
+	out, err := exec.CommandContext(ctx, "git", "-C", root, "status", "--porcelain=v1", "-z", "--no-renames", "--untracked-files=all").Output()
 	if err != nil {
 		return nil, false
 	}
@@ -64,18 +64,14 @@ func worktreeDirt(root, change string) (entries []dirtEntry, determinable bool) 
 		ownPrefix = docsPrefix + change + "/"
 	}
 
-	// -z output: NUL-separated "XY path" records; a rename/copy record is
-	// followed by one extra NUL-terminated token holding the original path.
+	// --no-renames makes deletions and additions independent records. This keeps
+	// a destination carve-out from hiding deletion of an unrelated source path.
 	tokens := strings.Split(string(out), "\x00")
-	for i := 0; i < len(tokens); i++ {
-		tok := tokens[i]
+	for _, tok := range tokens {
 		if len(tok) < 4 || tok[2] != ' ' {
 			continue
 		}
 		status, p := tok[:2], tok[3:]
-		if status[0] == 'R' || status[0] == 'C' {
-			i++ // skip the rename/copy source token
-		}
 		e := dirtEntry{Path: p, Status: status, Class: classifyDirt(p, docsPrefix, ownPrefix)}
 		e.BlocksClose = e.Class != "change"
 		entries = append(entries, e)

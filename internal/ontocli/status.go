@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/noviopenworks/homonto/internal/integrationrecord"
 	"github.com/noviopenworks/homonto/internal/ontostate"
 	"github.com/spf13/cobra"
 )
@@ -64,6 +65,31 @@ func runStatus(cmd *cobra.Command, root string) error {
 			} else {
 				cmd.Printf("%s: %s%s — skeleton ok\n", e.Name(), st.Phase, working)
 			}
+		}
+	}
+
+	archiveRoot := filepath.Join(changesDir, "archive")
+	archiveEntries, _ := os.ReadDir(archiveRoot)
+	for _, entry := range archiveEntries {
+		if !entry.IsDir() {
+			continue
+		}
+		archiveDir := filepath.Join(archiveRoot, entry.Name())
+		st, err := ontostate.Load(filepath.Join(archiveDir, "onto-state.yaml"))
+		if err != nil {
+			continue
+		}
+		if !st.Archived {
+			cmd.Printf("%s: close (archive interrupted; run `onto close %s`)\n", st.Change, st.Change)
+			continue
+		}
+		integration, tracked, integrationErr := integrationrecord.Load(archiveDir, st.Change)
+		if integrationErr != nil {
+			cmd.Printf("%s: close (archived; integration record invalid)\n", st.Change)
+		} else if !tracked && st.IntegrationRequired {
+			cmd.Printf("%s: close (archived; integration record missing)\n", st.Change)
+		} else if tracked && integration.Status != integrationrecord.StatusComplete {
+			cmd.Printf("%s: close (archived; integration pending)\n", st.Change)
 		}
 	}
 

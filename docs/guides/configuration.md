@@ -64,7 +64,18 @@ without a `digest`, a legacy `[models.<tool>.<tier>]` block (tiers were
 removed), and names that would corrupt a JSON file (empty, or index-like such
 as `"0"`/`"-1"`).
 
+**Config root and bootstrap.** The directory containing `homonto.toml` is the
+configuration root. Run `homonto init [dir]` to scaffold that configuration;
+it never runs `git init` and never installs a framework by itself. Add a
+`[frameworks.onto]` or `[frameworks.to]` table, inspect `homonto plan`, then
+run `homonto apply` to install the selected workflow. A Git worktree is needed
+only when a later workflow gate requires Git evidence or integration.
+
 ## MCP servers — `[mcps.<name>]`
+
+MCP declarations exist so a server's command, scope, and secret references are
+reviewable and reproducible rather than hand-edited into `opencode.jsonc`. They
+are optional: no MCP declarations means no MCP servers are projected.
 
 ```toml
 [mcps.codegraph]

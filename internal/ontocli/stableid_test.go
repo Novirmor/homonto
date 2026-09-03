@@ -48,12 +48,22 @@ func TestID_ImmutableAcrossSetAndReload(t *testing.T) {
 	a := newChange(t, dir, "alpha")
 	id := a.ID
 
-	// Mutate an unrelated field via `onto set` and reload — id must be preserved.
+	// Mutate an unrelated field via `onto set` and reload — id must be
+	// preserved. base-ref resolves a real commit, so give the fixture a repo.
+	runGit(t, dir, "init")
+	runGit(t, dir, "config", "user.email", "test@example.com")
+	runGit(t, dir, "config", "user.name", "Test")
+	runGit(t, dir, "add", "-A")
+	runGit(t, dir, "commit", "-m", "init")
+	head, err := gitOutput(t, dir, "rev-parse", "HEAD")
+	if err != nil {
+		t.Fatal(err)
+	}
 	cmd := NewRootCmd()
 	var out bytes.Buffer
 	cmd.SetOut(&out)
 	cmd.SetErr(&out)
-	cmd.SetArgs([]string{"set", "base-ref", "alpha", "abc123", "--dir", dir})
+	cmd.SetArgs([]string{"set", "base-ref", "alpha", head, "--dir", dir})
 	if err := cmd.Execute(); err != nil {
 		t.Fatalf("set: %v (%s)", err, out.String())
 	}

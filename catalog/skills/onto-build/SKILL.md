@@ -1,26 +1,31 @@
 ---
 name: onto-build
-description: onto phase 3 — plan and build. Use when an active change has phase build — writes the implementation plan, pauses at the plan-ready gate, then executes bite-sized tasks with one commit each under the chosen TDD/direct mode.
+description: onto phase 3 — plan and build. Use when an active change has phase build — writes the implementation plan, derives build and test modes from the work, then executes bite-sized tasks with one commit each; pauses after planning only on explicit request.
 ---
 
 # onto-build — Phase 3: Plan and Build
 
 Turn the confirmed design into a plan, then the plan into committed code —
 one small, verified task at a time.
+Apply the dispatcher's shared autonomous workflow policy throughout.
 
 ## Entry check
 
-- `onto-state.yaml` has `phase: build`.
+- `onto state <name> --json` reports recorded phase or dispatcher-routed derived
+  phase `build`.
 - `workflow: full` → a `design.md` marked `Status: Confirmed` must exist; if
   it doesn't, the design phase isn't done — route back through `/onto`.
 - Presets (`fix`/`tweak`) enter build directly after open-lite.
+- On a downward mismatch, repair the build artifacts while leaving the later
+  recorded phase unchanged. After tasks are checked, return through `/onto`
+  instead of advancing an already-ahead state.
 - Read `notes.md` at entry when present — recorded decisions and
   directives govern how tasks execute.
 - **Resume from a pause**: if `onto state <name> --json` shows
   `build_pause: plan-ready`, `plan.md` is already written — do NOT re-run the
-  planning step. Tell the user the build is stopped at plan-ready; once they
-  confirm continuing, `onto set build-pause <name> clear`, choose the build
-  config, and proceed.
+  planning step. A new build or resume invocation is the signal to continue:
+  run `onto set build-pause <name> clear`, derive the build config, and proceed
+  without asking again.
 - On resume (fresh session, context loss): run `onto dirt <name> --json`
   FIRST (falling back to `git status` on an old binary). Dirt classified
   `source` or `own` is usually an interrupted task's partial work —
@@ -47,55 +52,36 @@ task — split anything bigger. Read `notes.md` first if present.
 have its task and every task its item — a number in one file and not the
 other is drift, and the close lint checks for it.
 
-### 2. Plan-ready gate
+### 2. Plan review and build config
 
-> **GATE (plan-ready + build config):** pause. The user reviews the plan
-> and chooses the build configuration, recorded through the binary:
->
-> - `onto set build-mode <name> direct|subagent` — direct in-session; subagent
->   only when real background dispatch capability exists
-> - `onto set tdd-mode <name> tdd|direct` — tdd for anything with testable
->   logic; direct for content/docs deliverables
->
-> Isolation is NOT asked here — it was chosen at the design → build gate (see
-> `onto-design`), and the binary already refused the advance without it. If
-> isolation is somehow unset at this point (e.g. an older change created before
-> the gate moved), ask it now via `onto set isolation <name> branch|worktree`
-> before proceeding — build work must never run unisolated.
->
-> **Pausing here is first-class.** If the user wants to stop after the plan
-> (e.g. to review it later or switch models/sessions), run `onto set build-pause
-> <name> plan-ready` and end the invocation — do not choose the build config
-> or start executing. On the next dispatch the plan-ready pause is recorded state,
-> so a fresh session resumes cleanly (see Entry check) rather than re-planning.
-> Clear it with `onto set build-pause <name> clear` when resuming to execute.
->
-> This gate MAY be pre-authorized: if the user gave an explicit directive
-> (e.g. "run to completion with defaults"), record it **verbatim** via `onto
-> set directive <name> "<text>"` and proceed with the recorded config — but
-> still surface the plan summary so the user sees what will happen.
->
-> **What qualifies as a directive**: an explicit, unprompted instruction
-> covering future gates. Acquiescence is not one — "go ahead", "sounds
-> good", "yes" answer only the question just asked. When in doubt it is
-> not a directive; ask. A directive authorizes only what it names: "run
-> to completion" covers this gate and later gates that say MAY be
-> pre-authorized, **except** the close phase's archive gate, which needs
-> the directive to cover closing/archiving explicitly (see onto-close).
->
-> Record the gate's answer (chosen config, or the pre-authorizing
-> directive) in `notes.md` Confirmed as well — the state-rebuild gate cap
-> for the build→verify boundary consults notes.md, not the losable
-> state file.
+Review the plan against `tasks.md` and the confirmed design, repair drift, and
+surface a concise summary while continuing. Derive and record the build
+configuration without asking:
+
+- `onto set build-mode <name> subagent` when real dispatch capability exists
+  and the plan has non-trivial executable tasks; use `direct` for trivial work
+  or when dispatch is unavailable
+- `onto set tdd-mode <name> tdd` for testable behavior; use `direct` for
+  content, configuration values, and documentation-only deliverables
+
+Isolation was chosen before entering build. If it is unset on a legacy change,
+derive it now: `worktree` for unrelated dirt or concurrent work, otherwise
+`branch`. Build work must never run unisolated.
+
+Pause only when the user explicitly asks to stop after the plan. In that case,
+run `onto set build-pause <name> plan-ready` and end the invocation before
+execution. Otherwise never set the pause. Record the selected config and its
+basis in `notes.md`; record any explicit directive verbatim with `onto set
+directive`.
 
 Create the isolation before the first task (for `isolation: worktree`, follow
 `references/worktree-protocol.md` — creation, env/untracked-file copying, clean
 baseline, and teardown) — but check the tree first:
 run `git status`. The workspace docs should already be committed (each
 phase commits at exit); if they aren't, commit them now. Unrelated
-uncommitted changes either get stashed (say so) or force
-`isolation: worktree` — never carry a stranger's dirty state onto the
-change branch silently. Then `git checkout -b <type>/YYYYMMDD/<change-name>`
+uncommitted changes force `isolation: worktree`; never stash, discard, or carry
+a stranger's dirty state onto the change branch. Then `git checkout -b
+<type>/YYYYMMDD/<change-name>`
 (or the worktree equivalent). Type prefix: `feature` for full,
 `fix`/`tweak` for presets; an upgraded preset keeps its original branch
 (the proposal's upgrade annotation records the lifecycle, not the branch
@@ -170,8 +156,8 @@ finding against the code before acting, and push back with evidence on a wrong
 one instead of implementing it. When `plan.md` marks tasks
 whose file sets **do not overlap**, dispatch their reviews (and any needed
 `onto-explorer` investigation) **concurrently** — one subagent invocation per
-task — via the Task tool (OpenCode runs each as a child session; Claude Code runs
-parallel Task agents when you send several calls in one turn), so the reviews
+task — through the Task tool; send several independent read-only tasks in one
+turn so OpenCode runs them as parallel child sessions. The reviews then
 proceed in parallel while you implement the next task. Tasks that share files
 stay serial (one commit each, in order).
 
@@ -188,8 +174,9 @@ and dialogs" section. Under **`build_mode: direct`** the orchestrator (this
 session) owns every edit and commit and the subagents only read and report;
 under **`build_mode: subagent`** implementers edit and commit their own task's
 files. The orchestrator owns every `onto` binary call in both modes.
-Use the question dialog for the plan-ready and scope-change decisions when it is
-available.
+Technical review findings and in-scope discovered work are resolved without a
+user round-trip. Ask only when a proposed change crosses the agreed product
+scope.
 
 ### 4. Failure gate (systematic debugging)
 
@@ -198,15 +185,17 @@ On ANY build/test/unexpected failure: stop and follow
 before the **root cause** is identified (reproduce → read the whole error →
 check recent changes → trace the data flow). If the root cause is a source bug,
 add a minimal failing test that reproduces it, then fix, then watch it pass.
-Symptom-patching is prohibited; after 3 failed hypotheses, escalate a
-fix-vs-rethink decision to the user rather than guessing again.
+Symptom-patching is prohibited. After 3 failed hypotheses, reset the analysis
+with fresh exploration or a new reviewer instead of making a fourth guess. Ask
+the user only if the resulting rethink changes behavior, scope, compatibility,
+cost, or another user-owned constraint.
 
 ### 5. Mid-build scope changes
 
 - Small (missing edge case, scenario): edit the delta spec + design.md
   inline, append a task, note it in the commit message.
-- Medium (interface/component/data-flow changes): pause, get user
-  confirmation, then — **in this order, so the derivation table's
+- Medium (interface/component/data-flow changes within the agreed scope): revise
+  the design automatically, then — **in this order, so the derivation table's
   `Under revision` row wins at every intermediate state** — (1) flip
   `design.md`'s status line to `Status: Under revision`, (2) if a
   `verification.md` exists, flip its `Result:` line to
@@ -216,11 +205,11 @@ fix-vs-rethink decision to the user rather than guessing again.
   dispatcher's derivation to `design` (files win downward) — no phase field
   is written; the next dispatch routes to design. A stale pass can then
   never teleport the revised change past build/verify. The derivation
-  routes to design until the approach gate re-confirms (new
+  routes to design until the approach is selected again (new
   `Status: Confirmed` + date), after which build resumes.
-- Large (new capability, or new tasks exceed half the original task count):
-  pause; the user chooses between splitting into a new change or expanding
-  this one. Always fresh input.
+- Large (new capability, or work beyond the agreed boundary): ask the user to
+  choose between splitting into a new change or expanding this one. A larger
+  technical decomposition that preserves the boundary is not a user question.
 
 ## Exit checklist
 
@@ -233,5 +222,7 @@ fix-vs-rethink decision to the user rather than guessing again.
 - [ ] Project build + test suite run fresh and pass (state the commands and
       results — do not rely on memory)
 - [ ] Decisions recorded via `onto set isolation|build-mode|tdd-mode <name> …`
-- [ ] Phase advanced build → verify via `onto advance <name>`
-- [ ] Announce the transition and load `onto-verify`
+- [ ] If recorded phase is build, advanced build → verify via `onto advance
+      <name>`; on a downward mismatch, skipped advance and returned to `/onto`
+- [ ] Load `onto-verify` and continue in the same invocation unless the user
+      named build as the endpoint or asked to pause

@@ -193,7 +193,7 @@ func TestWorkflowFrameworksInstallSharedHomontoKnowledge(t *testing.T) {
 	}
 }
 
-func TestWorkflowFrameworksInstallDedicatedBypassResources(t *testing.T) {
+func TestWorkflowFrameworksInstallDedicatedBypassCommandsOnly(t *testing.T) {
 	c, err := New()
 	if err != nil {
 		t.Fatal(err)
@@ -207,8 +207,8 @@ func TestWorkflowFrameworksInstallDedicatedBypassResources(t *testing.T) {
 		if err != nil {
 			t.Fatalf("expand commands for %s: %v", framework, err)
 		}
-		if !hasNamedSkill(skills, bypass) || !hasNamedCommand(commands, bypass) {
-			t.Errorf("%s does not install dedicated bypass skill and command %q", framework, bypass)
+		if hasNamedSkill(skills, bypass) || !hasNamedCommand(commands, bypass) {
+			t.Errorf("%s bypass %q must install as a command, not a model-discoverable skill", framework, bypass)
 		}
 	}
 }

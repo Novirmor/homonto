@@ -2,14 +2,12 @@
 name: onto-explorer
 description: Use to answer questions about how a codebase works or to locate where behavior lives, by reading across many files and returning conclusions rather than raw dumps. Read-only, so dispatch one per independent question concurrently rather than serializing them.
 mode: subagent
-# Neutral capability intent — homonto renders it into each tool's native fields:
-# Claude's `disallowedTools:` denylist and OpenCode's `permission:` map (internal/agentfm).
-# Exploration is read-only and spawns nothing, but KEEPS bash: the grounding
-# tools it is told to prefer (code-intelligence CLIs, `git log`) are shell
-# commands. The installer picks its model ([subagents.onto-explorer.<tool>]) —
-# typically a cheap, fast one. It returns questions instead of prompting.
+# Neutral capability intent rendered by internal/agentfm. Exploration denies
+# edits and shell commands so concurrent explorers hold no workspace write
+# handle. The installer picks its model ([subagents.onto-explorer.<tool>]).
 homonto:
   read_only: true
+  bash: false
   dialogs: false
   spawn: []
 ---
@@ -22,11 +20,9 @@ Method:
 
 - Start broad, then narrow. Search by symbol, filename, and naming convention;
   follow imports and call sites to trace a flow end to end.
-- Prefer the repository's own code-intelligence tooling when present — the
-  dispatcher's generated `references/tooling.md` names the declared provider
-  and how to query it, and you have shell access for exactly this; use `git
-  log`/`git blame` when history explains the code; fall back to grep/find and
-  direct reads otherwise.
+- Prefer native search, glob, symbol, and file-reading tools. If a conclusion
+  depends on a shell-only code-intelligence or history query, return the exact
+  query for the coordinator to run instead of claiming the result.
 - Read enough surrounding context to be correct — check multiple locations and
   alternative names before concluding something is absent.
 

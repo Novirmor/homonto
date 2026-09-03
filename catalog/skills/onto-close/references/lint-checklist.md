@@ -25,7 +25,8 @@ obligation: fix them or stop.
       `## MODIFIED Requirements`, `## REMOVED Requirements`,
       `## RENAMED Requirements` — nothing else, empty sections omitted
 - [ ] Every `### Requirement:` block **in ADDED/MODIFIED sections** has
-      SHALL or MUST in its first non-empty line after the heading
+      SHALL or MUST in its first normative line after optional
+      `Requirement-ID:` metadata
       (REMOVED bodies are removal rationales; RENAMED has no bodies —
       neither is subject to this rule)
 - [ ] **Every** `#### Scenario:` block has WHEN and THEN bullets (GIVEN
@@ -78,11 +79,11 @@ obligation: fix them or stop.
 
 ## 4. Pre-archive
 
-- [ ] `guides` is not `pending` (resolved in the guides-obligation step —
-      checked here because it cannot be satisfied before that step runs)
+- [ ] Full workflows have `guides` resolved; presets leave it unset unless a
+      carried `pending` obligation must be resolved
 - [ ] No unresolved `DEFERRED to close:` markers remain in `tasks.md` —
-      deferred tasks are executed during close, before the final
-      confirmation; archiving one undone is prohibited
+      deferred tasks are executed during close, before close-plan validation;
+      archiving one undone is prohibited
 - [ ] No live doc (README, docs/guides, docs/specs, docs/adr, skills)
       references a path this change moved or deleted — archives are exempt
       (history may cite old paths)

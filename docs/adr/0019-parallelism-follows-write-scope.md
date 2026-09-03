@@ -1,6 +1,6 @@
 # Gate subagent parallelism on write-scope, not on framework
 
-- **Status:** Accepted
+- **Status:** Superseded by 0035
 - **Date:** 2026-07-27
 
 ## Context

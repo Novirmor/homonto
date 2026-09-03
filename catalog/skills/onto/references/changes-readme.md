@@ -17,6 +17,8 @@ Active and archived onto change workspaces.
 - **Archived change**: under `docs/changes/archive/YYYY-MM-DD-<name>/`,
   `onto-state.yaml` `archived: true`. Archives are history — never edited, with
   the single exception of `ship.md`.
+- **Abandoned change**: remains directly under `docs/changes/<name>/` with
+  `abandoned: true`. Discovery excludes it, but it is not a successful archive.
 
 ## State model
 
@@ -28,12 +30,12 @@ nothing to keep in sync. The dispatcher re-derives the real phase from file
 state on every run; `onto-state.yaml` is the binary's record, and files win
 for routing. Never hand-edit `onto-state.yaml` — every mutation goes through
 the `onto` binary (`onto new`, `onto set …`, `onto advance`, `onto close`,
-`onto abandon`).
+`onto complete-integration`, `onto abandon`).
 
 ## Layout contract
 
 - `docs/changes/<name>/` — one active change: `onto-state.yaml`, `notes.md`,
   `proposal.md`, `tasks.md`, and (full workflow) `design.md`, `plan.md`,
   `adr/`, `specs/`, `verification.md` as the phases produce them.
-- `docs/changes/archive/YYYY-MM-DD-<name>/` — a closed or abandoned change.
+- `docs/changes/archive/YYYY-MM-DD-<name>/` — a successfully closed change.
 ```

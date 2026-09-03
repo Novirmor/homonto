@@ -7,6 +7,7 @@ description: to phase 1 — plan. Use when an active change has phase plan — w
 
 Turn the request into a short, executable plan. The plan is a reviewable git
 artifact — write it for the person who reads the PR, not for yourself.
+Apply the dispatcher's shared autonomous workflow policy throughout.
 
 ## Entry check
 
@@ -21,9 +22,10 @@ artifact — write it for the person who reads the PR, not for yourself.
    before planning a behavior or architecture change. For questions that span
    many files, dispatch `to-explorer` — read-only, so run one per question
    concurrently rather than serializing them — and work from its conclusions.
-2. **Suggest isolation.** Recommend a branch for the change (the binary is
-   git-blind and will not check; this is process advice, not a gate). The user
-   may decline — proceed either way.
+2. **Choose isolation.** Follow repository policy. Reuse a suitable current
+   change branch; otherwise create a branch. If unrelated work makes that unsafe,
+   use a worktree or leave the unrelated paths untouched. Do not ask the user to
+   choose a reversible Git mechanic.
 3. **Write `docs/tasks/<name>/plan.md`:**
    - A two-or-three-sentence statement of the goal, the chosen approach, and
      the important boundary (what this change deliberately does not do).
@@ -61,10 +63,11 @@ artifact — write it for the person who reads the PR, not for yourself.
      [the good/bad examples](references/task-examples.md) to test whether an
      implementer could execute it without inventing scope.
 4. **De-slop it.** Run the `to-no-slop` rules over the plan prose.
-5. **Confirm scope with the user** if the plan grew beyond what they asked —
-   otherwise proceed.
+5. **Check the scope boundary.** If the plan grew beyond what the user asked,
+   ask about that product scope change. Otherwise proceed without plan approval.
 6. **Advance:** `to phase <name>`. The change is now at `do`; hand off to the
-   `to-do` skill.
+   `to-do` skill and continue in the same invocation unless the user named plan
+   as the endpoint or asked to pause.
 
 ## Rules
 

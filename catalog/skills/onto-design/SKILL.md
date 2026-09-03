@@ -1,6 +1,6 @@
 ---
 name: onto-design
-description: onto phase 2 — deep design. Use when an active full-workflow change has phase design — brainstorming-grade exploration, approach confirmation, then design.md plus ADR drafts and spec deltas.
+description: onto phase 2 — deep design. Use when an active full-workflow change has phase design — explores alternatives, selects an approach from evidence and user-owned constraints, then writes design.md, ADR drafts, spec deltas, and tasks.md.
 ---
 
 # onto-design — Phase 2: Deep Design
@@ -8,11 +8,13 @@ description: onto phase 2 — deep design. Use when an active full-workflow chan
 Produce a confirmed technical design before any implementation exists.
 **Design cannot be skipped in the full workflow** — this phase is the reason
 the full workflow exists.
+Apply the dispatcher's shared autonomous workflow policy throughout.
 
 ## Entry check
 
-- `onto-state.yaml` has `phase: design` and `workflow: full`; `proposal.md`
-  exists and was approved in open.
+- `onto state <name> --json` reports `workflow: full`, `proposal.md` exists and
+  was reviewed in open, and either recorded phase or dispatcher-routed derived
+  phase is `design`.
 - Read `notes.md` first (create it from `onto-open/references/notes.md` if
   missing) — resume from Pending; never re-ask Confirmed. After
   compaction, notes.md is the *why*-recovery; the derivation table is the
@@ -20,20 +22,23 @@ the full workflow exists.
 - Presets never enter this phase — except a preset **upgraded** to full,
   which arrives here to backfill the design it skipped.
 - **Revision entry**: if `design.md` exists marked `Status: Under
-  revision`, this is a mid-build design revisit — the approach gate is
-  re-asked **for the revised scope regardless of what notes.md Confirmed
-  records** (the old approach answer does not cover the new scope; this
-  overrides "never re-ask Confirmed" for exactly this gate).
-  Re-confirmation writes a fresh `Status: Confirmed` + date and records
-  the new answer in notes.md; the change then resumes build.
+  revision`, this is a mid-build design revisit. Re-evaluate the approach for
+  the revised scope. Ask the user only if the revision introduces a new
+  product-level trade-off; otherwise select the best technical approach and
+  record the decision. Write a fresh `Status: Confirmed` + date and update
+  notes.md; the change then resumes build.
+- **Downward mismatch entry**: the recorded phase may already be build, verify,
+  or close. Repair and confirm the design, but do not advance the recorded phase;
+  return through `/onto` so artifact derivation selects the next missing phase.
 - Any other state → route back through `/onto`.
 
 ## Steps
 
 Steps 1–3 are the **brainstorm** — follow `references/brainstorm-protocol.md` for
-the discipline behind them: why "too simple to design" is a trap, one question
-per message, real alternatives (not a fait accompli), YAGNI, and the incremental
-`notes.md` checkpoint. The design doc is written only *after* the approach gate.
+the discipline behind them: why "too simple to design" is a trap, focused
+questions only for missing intent, real alternatives, YAGNI, and the incremental
+`notes.md` checkpoint. The design doc is written only after an approach is
+selected and recorded.
 
 ### 1. Explore ground truth
 
@@ -50,31 +55,28 @@ If goals, scope, constraints, or acceptance scenarios still have gaps, keep
 asking — one question at a time. Do not write a design around an unresolved
 unknown; resolve it or explicitly record it as a risk with a fallback.
 
-### 3. Propose 2–3 approaches
+### 3. Evaluate 2–3 approaches
 
-Present genuinely different candidate approaches with trade-offs and a
-recommendation. Lead with the recommended one and say why. Record the
-candidates in `notes.md` before presenting.
+Develop genuinely different candidate approaches with trade-offs and a
+recommendation. Record them in `notes.md`. When they are equivalent from the
+user's perspective, select the recommended technical approach and continue.
+Present a choice only when the alternatives materially change product behavior,
+compatibility, security posture, cost, or another user-owned constraint.
 
-**Parallel exploration (optional):** when the approaches are genuinely
-open and substantial, you MAY dispatch 2–3 fresh-context agents, each
+**Parallel exploration:** when the approaches are genuinely open and
+substantial, dispatch 2–3 fresh-context agents, each
 developing one approach sketch (architecture, key risks, effort) in
-parallel; the main session synthesizes and still presents the comparison
-itself. Never dispatch agents to make the choice — the gate below is the
-user's.
+parallel; the main session synthesizes the comparison and owns the decision.
 
 Update `notes.md` after every clarification round and approach iteration —
 before ending the turn, not after.
 
-> **GATE (approach confirmation):** the user picks or adjusts an approach.
-> The final `design.md` MUST NOT be written before this gate is answered.
-> Always fresh input — a blanket directive does not pre-answer it. When
-> answered, record the evidence token — the binary refuses design → build
-> without it:
->
-> ```
-> onto set approach-confirmed <name> "YYYY-MM-DD <chosen approach>"
-> ```
+Record the selected approach before writing the final design. The binary refuses
+design → build without this evidence token:
+
+```
+onto set approach-confirmed <name> "YYYY-MM-DD <chosen approach and basis>"
+```
 
 **No implementation code in this phase.** Writing source code before a
 confirmed design exists is prohibited, regardless of how simple the change
@@ -82,7 +84,7 @@ looks.
 
 ### 4. Write the design artifacts
 
-After confirmation, write into the workspace, each from its canonical
+After selection, write into the workspace, each from its canonical
 template in this skill's `references/`:
 
 - `design.md` — template: `references/design.md`. `Status: Confirmed` +
@@ -107,28 +109,21 @@ the boundaries come from here. `tasks.md` does not exist until this step (onto
 new no longer scaffolds it for a full change), and leaving design requires it —
 so a design that produced no task list is not done.
 
-## Isolation gate (before leaving design)
+## Isolation decision (before leaving design)
 
-> **GATE (isolation):** the binary refuses to advance design → build unless an
-> isolation is chosen, so build work is never committed unisolated. Ask now,
-> before `onto advance`:
->
-> - `onto set isolation <name> branch|worktree` — branch for a simple change
->   off the base ref; worktree for parallel changes or a dirty current branch
->
-> This gate MAY be pre-authorized: if the user gave an explicit directive
-> covering isolation (e.g. "run to completion with defaults"), record it
-> **verbatim** via `onto set directive <name> "<text>"` and proceed with
-> `branch` as the default. When in doubt, ask.
->
-> `build-mode` and `tdd-mode` are NOT asked here — they are build-phase
-> decisions tied to the plan-ready gate (see `onto-build`). Only isolation
-> gates the advance.
+The binary refuses to advance design → build without isolation. Choose and
+record it without asking: `branch` for a clean, serial change off the base ref;
+`worktree` for parallel changes, an unrelated dirty current tree, or concurrent
+work. Run `onto set isolation <name> branch|worktree` before `onto advance`.
+Never stash, overwrite, or absorb unattributed work to make the preferred choice
+fit.
+
+`build-mode` and `tdd-mode` are build-phase decisions (see `onto-build`).
 
 ## Exit checklist
 
 - [ ] `design.md` exists, marked `Status: Confirmed` with date, and matches
-      the user-confirmed approach
+      the selected approach and any user-owned constraints
 - [ ] An ADR draft exists for every significant decision named in design.md
       — **enumerate them**: list each Key decision from design.md next to
       its `adr/<slug>.md` file; a decision with no draft is a gap to fix
@@ -151,7 +146,9 @@ so a design that produced no task list is not done.
 - [ ] Isolation chosen via `onto set isolation <name> branch|worktree` and
       the approach token recorded via `onto set approach-confirmed <name>
       "<evidence>"` — the binary refuses design → build without both
-- [ ] Phase advanced design → build via `onto advance <name>`
+- [ ] If recorded phase is design, advanced design → build via `onto advance
+      <name>`; on a downward mismatch, skipped advance and returned to `/onto`
 - [ ] **Commit the workspace**: `git add docs/changes/<name> && git commit`
       — every phase exits with its workspace committed
-- [ ] Announce the transition and load `onto-build`
+- [ ] Load `onto-build` and continue in the same invocation unless the user
+      named design as the endpoint or asked to pause

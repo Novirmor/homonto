@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/noviopenworks/homonto/internal/buildinfo"
+	"github.com/noviopenworks/homonto/internal/integrationrecord"
 	"github.com/noviopenworks/homonto/internal/ontostate"
 )
 
@@ -225,6 +226,30 @@ func TestDoctorCommand_ArchiveEntryNotArchived(t *testing.T) {
 	}
 	if !strings.Contains(out, "zeta") {
 		t.Errorf("out = %q, want it to name the archive entry %q", out, "zeta")
+	}
+}
+
+func TestDoctorCommand_ReportsPendingIntegration(t *testing.T) {
+	tmp := t.TempDir()
+	seedDocsLayout(t, tmp)
+	seedArchived(t, tmp, "zeta", true)
+	archiveDir := filepath.Join(tmp, "docs", "changes", "archive", "2026-07-11-zeta")
+	st, err := ontostate.Load(filepath.Join(archiveDir, "onto-state.yaml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	st.Integration = "merge"
+	st.BaseBranch = "main"
+	if err := ontostate.Save(filepath.Join(archiveDir, "onto-state.yaml"), st); err != nil {
+		t.Fatal(err)
+	}
+	if err := integrationrecord.Save(archiveDir, integrationrecord.NewPending("zeta", "merge", "main", []integrationrecord.Entry{{BaseBranch: "main", BaseCommit: "1111111111111111111111111111111111111111", SourceBranch: "change/zeta", SourceCommit: "2222222222222222222222222222222222222222"}})); err != nil {
+		t.Fatal(err)
+	}
+
+	out, err := execDoctor(t, tmp)
+	if err == nil || !strings.Contains(out, "integration pending") || !strings.Contains(out, "complete-integration") {
+		t.Fatalf("doctor did not report actionable pending integration; out=%q err=%v", out, err)
 	}
 }
 

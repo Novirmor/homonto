@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/noviopenworks/homonto/internal/integrationrecord"
 	"github.com/noviopenworks/homonto/internal/ontostate"
 )
 
@@ -85,6 +86,56 @@ func commitAll(t *testing.T, root, msg string) {
 func dirtyWorktree(t *testing.T, root string) {
 	t.Helper()
 	writeFile(t, filepath.Join(root, "uncommitted.txt"), "dirty\n")
+}
+
+// checkoutChangeBranch moves root onto a change branch so close can capture an
+// integratable source branch (source must differ from the base branch). -B
+// recreates the branch when a same-named change archived earlier in the same
+// fixture left it behind.
+func checkoutChangeBranch(t *testing.T, root, name string) {
+	t.Helper()
+	runGit(t, root, "checkout", "-q", "-B", "change/"+name)
+}
+
+// noFFMergeChange merges the change branch into base with a merge commit and
+// prints the resulting commit id — the receipt the close workflow records.
+func mergeChangeBranch(t *testing.T, root, base, branch string) string {
+	t.Helper()
+	runGit(t, root, "checkout", "-q", base)
+	runGit(t, root, "merge", "--no-ff", "-q", "-m", "merge "+branch, branch)
+	out, err := gitOutput(t, root, "rev-parse", "HEAD")
+	if err != nil {
+		t.Fatal(err)
+	}
+	return out
+}
+
+func gitOutput(t *testing.T, dir string, args ...string) (string, error) {
+	t.Helper()
+	cmd := exec.Command("git", append([]string{"-C", dir}, args...)...)
+	out, err := cmd.Output()
+	return strings.TrimSpace(string(out)), err
+}
+
+// syntheticEntry builds a shape-valid integration entry for fixtures that hand
+// the sidecar to recovery/doctor paths, which check shape — not git history.
+// The base branch is the repository's real current branch so record and state
+// agree.
+func syntheticEntry(t *testing.T, root, alias string) integrationrecord.Entry {
+	t.Helper()
+	return integrationrecord.Entry{
+		Alias: alias, BaseBranch: seedBaseBranch(t, root), BaseCommit: "1111111111111111111111111111111111111111",
+		SourceBranch: "change/demo", SourceCommit: "2222222222222222222222222222222222222222",
+	}
+}
+
+func seedBaseBranch(t *testing.T, root string) string {
+	t.Helper()
+	base, err := gitOutput(t, root, "branch", "--show-current")
+	if err != nil || base == "" {
+		t.Fatalf("determining base branch: %v (%q)", err, base)
+	}
+	return base
 }
 
 // --- worktreeDirty ---
@@ -612,6 +663,8 @@ func TestAdvanceCommand_LeavingVerifyCrossChecksReport(t *testing.T) {
 	}{
 		{"report says fail", "# V\nResult: fail\n", "Result: fail"},
 		{"accepted deviations still pass", "# V\nResult: pass (2 accepted deviations)\n", ""},
+		{"template placeholder is not a pass", "# V\nResult: pass | fail\n", "Result: pass | fail"},
+		{"duplicate result markers are rejected", "# V\nResult: pass\nResult: fail\n", "exactly one"},
 		{"no Result line", "# V\nall good probably\n", "Result:"},
 	}
 	for _, tc := range cases {
@@ -666,6 +719,21 @@ func TestAdvanceCommand_ToBuildPresetOneCall(t *testing.T) {
 	}
 	if loaded.Phase != "build" {
 		t.Errorf("phase = %q, want build", loaded.Phase)
+	}
+}
+
+func TestAdvanceCommand_EnteringBuildRequiresCompletedDependencies(t *testing.T) {
+	dir := prepWorkspace(t)
+	seedChange(t, dir, "feature-x", "design")
+	mutateState(t, dir, "feature-x", func(st *ontostate.State) {
+		st.Isolation = "branch"
+		st.ApproachConfirmed = "selected"
+		st.Deps = []string{"dependency"}
+	})
+	commitAll(t, dir, "seed unresolved dependency")
+
+	if _, err := runOnto(t, "advance", "feature-x", "--dir", dir); err == nil || !strings.Contains(err.Error(), "dependency") {
+		t.Fatalf("design to build with unresolved dependency must fail, got %v", err)
 	}
 }
 
@@ -748,7 +816,7 @@ func TestAdvanceCommand_ToBuildRefusesAtOrPastBuild(t *testing.T) {
 
 // TestVerificationResultLine_SharedScannerSemantics: the verify exit and the
 // phase derivation read the SAME Result line — leading whitespace tolerated,
-// first Result: line wins, and "pass" must be the exact word (a suffix like
+// exactly one Result: line is allowed, and "pass" must be the exact word (a suffix like
 // "(2 accepted deviations)" is allowed; "passing" is not).
 func TestVerificationResultLine_SharedScannerSemantics(t *testing.T) {
 	cases := []struct {
@@ -758,7 +826,9 @@ func TestVerificationResultLine_SharedScannerSemantics(t *testing.T) {
 		derived string
 	}{
 		{"indented pass", "# V\n  Result: pass\n", true, "close"},
-		{"first line wins over later pass", "Result: fail\nResult: pass\n", false, "verify"},
+		{"duplicate fail then pass is rejected", "Result: fail\nResult: pass\n", false, "verify"},
+		{"duplicate pass then fail is rejected", "Result: pass\nResult: fail\n", false, "verify"},
+		{"template placeholder is rejected", "Result: pass | fail\n", false, "verify"},
 		{"passing is not pass", "Result: passing\n", false, "verify"},
 		{"deviations suffix", "Result: pass (2 accepted deviations)\n", true, "close"},
 	}
@@ -774,7 +844,7 @@ func TestVerificationResultLine_SharedScannerSemantics(t *testing.T) {
 			commitAll(t, dir, "seed")
 
 			derived := ontostate.DeriveWorkingPhase(filepath.Join(dir, "docs", "changes", "feature-x"),
-				ontostate.State{Change: "feature-x", Workflow: "full", Phase: "verify"})
+				ontostate.State{Change: "feature-x", Workflow: "full", Phase: "verify", Verify: ontostate.Verify{Result: "pass"}})
 			if derived != tc.derived {
 				t.Errorf("derived = %q, want %q", derived, tc.derived)
 			}

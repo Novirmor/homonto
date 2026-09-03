@@ -9,19 +9,17 @@ import (
 	"github.com/spf13/cobra"
 )
 
-// gateOption is one choice for a pending gate. Recommended marks the default a
-// dialog should preselect.
+// gateOption is one choice for a pending workflow decision. Recommended marks
+// the safe default when repository evidence does not select another option.
 type gateOption struct {
 	Value       string `json:"value"`
 	Label       string `json:"label"`
 	Recommended bool   `json:"recommended,omitempty"`
 }
 
-// gate is a structured, blocking decision derived from a change's phase and
-// state — the schema a skill renders as an AskUserQuestion (Claude) or question
-// (OpenCode) dialog, and records with SetCommand. Making the gate the binary's
-// output (not free skill prose) keeps the same question asked the same way in
-// both tools and makes "which gate is pending" machine-checkable (B1).
+// pendingGate is a structured, blocking decision derived from a change's phase
+// and state. The coordinator resolves it from repository evidence or asks the
+// user when intent is genuinely missing, then records it with SetCommand.
 type pendingGate struct {
 	ID         string       `json:"id"`
 	Question   string       `json:"question"`
@@ -51,7 +49,7 @@ func pendingGates(name string, st ontostate.State) []pendingGate {
 				ID: "proposal-approved", Header: "Proposal",
 				SetCommand: fmt.Sprintf("onto set proposal-approved %s \"<evidence>\"", name),
 				SetArgv:    []string{"onto", "set", "proposal-approved", name, "<value>"},
-				Question:   "Has the user reviewed and approved the proposal (artifact-review gate)?",
+				Question:   "Has the proposal been reviewed against the request and grounding?",
 			})
 		}
 	case "design":
@@ -60,7 +58,7 @@ func pendingGates(name string, st ontostate.State) []pendingGate {
 				ID: "approach-confirmed", Header: "Approach",
 				SetCommand: fmt.Sprintf("onto set approach-confirmed %s \"<evidence>\"", name),
 				SetArgv:    []string{"onto", "set", "approach-confirmed", name, "<value>"},
-				Question:   "Has the user confirmed the design approach (approach gate)?",
+				Question:   "Has the design approach been selected and its basis recorded?",
 			})
 		}
 		if st.Isolation == "" {
@@ -81,8 +79,8 @@ func pendingGates(name string, st ontostate.State) []pendingGate {
 				ID: "build-mode", Header: "Build mode", SetCommand: cmd, SetArgv: argv,
 				Question: "How should the tasks be executed?",
 				Options: []gateOption{
-					{Value: "direct", Label: "Directly in this session", Recommended: true},
-					{Value: "subagent", Label: "Dispatch onto-implementer per task (needs real dispatch)"},
+					{Value: "direct", Label: "Directly in this session"},
+					{Value: "subagent", Label: "Dispatch onto-implementer per task (needs real dispatch)", Recommended: true},
 				},
 			})
 		}
@@ -105,26 +103,20 @@ func pendingGates(name string, st ontostate.State) []pendingGate {
 				Question: "What is the verification outcome?",
 				Options: []gateOption{
 					{Value: "pass", Label: "All scenarios verified with fresh evidence"},
-					{Value: "fail", Label: "A scenario failed — decide fix or accept-deviation"},
+					{Value: "fail", Label: "A scenario failed — fix by default; acceptance needs authorization"},
 				},
 			})
 		}
 	case "close":
-		if st.CloseConfirmed == "" {
+		if st.Verify.Result != "pass" {
+			cmd, argv := set("verify-result")
 			out = append(out, pendingGate{
-				ID: "close-confirmed", Header: "Close plan",
-				SetCommand: fmt.Sprintf("onto set close-confirmed %s \"<evidence>\"", name),
-				SetArgv:    []string{"onto", "set", "close-confirmed", name, "<value>"},
-				Question:   "Has the user confirmed the close plan (final-confirmation gate)? merge-deltas and close refuse without this.",
-			})
-		}
-		if !st.Close.Merged {
-			out = append(out, pendingGate{
-				ID: "close-merged", Header: "Specs merged",
-				SetCommand: fmt.Sprintf("onto set close-merged %s", name),
-				SetArgv:    []string{"onto", "set", "close-merged", name},
-				Question:   "Have the change's spec deltas been merged into the living specs?",
-				Options:    []gateOption{{Value: "yes", Label: "Merged — mark close.merged"}},
+				ID: "verify-result", Header: "Verify result", SetCommand: cmd, SetArgv: argv,
+				Question: "What is the verification outcome?",
+				Options: []gateOption{
+					{Value: "pass", Label: "All scenarios verified with fresh evidence"},
+					{Value: "fail", Label: "A scenario failed — fix by default; acceptance needs authorization"},
+				},
 			})
 		}
 		if (st.Workflow == "full" || st.Workflow == "") && !ontostate.GuidesResolved(st.Guides) {
@@ -138,24 +130,68 @@ func pendingGates(name string, st ontostate.State) []pendingGate {
 				},
 			})
 		}
+		if st.BaseRef == "" {
+			cmd, argv := set("base-ref")
+			out = append(out, pendingGate{
+				ID: "base-ref", Header: "Diff base", SetCommand: cmd, SetArgv: argv,
+				Question: "Which immutable commit anchors this change's diff and verification?",
+			})
+		}
+		if st.BaseBranch == "" {
+			cmd, argv := set("base-branch")
+			out = append(out, pendingGate{
+				ID: "base-branch", Header: "Base branch", SetCommand: cmd, SetArgv: argv,
+				Question: "Which branch should receive this change at integration?",
+			})
+		}
 		if st.Integration == "" {
 			cmd, argv := set("integration")
 			out = append(out, pendingGate{
 				ID: "integration", Header: "Integration", SetCommand: cmd, SetArgv: argv,
 				Question: "How should the branch be integrated at close?",
 				Options: []gateOption{
-					{Value: "merge", Label: "Merge the branch into its base ref"},
+					{Value: "merge", Label: "Merge the branch into its base branch", Recommended: true},
 					{Value: "pr", Label: "Open a pull request and leave the branch for review"},
 				},
 			})
+		}
+		if st.CloseConfirmed == "" {
+			out = append(out, pendingGate{
+				ID: "close-confirmed", Header: "Close plan",
+				SetCommand: fmt.Sprintf("onto set close-confirmed %s \"<evidence>\"", name),
+				SetArgv:    []string{"onto", "set", "close-confirmed", name, "<value>"},
+				Question:   "Has the close plan been validated against the verified workspace? merge-deltas and close refuse without this.",
+			})
+		}
+		if !st.Close.Merged {
+			out = append(out, closeMergeGate(name))
 		}
 	}
 	return out
 }
 
+func closeMergeGate(name string) pendingGate {
+	return pendingGate{
+		ID: "close-merged", Header: "Specs merged",
+		SetCommand: fmt.Sprintf("onto merge-deltas %s", name),
+		SetArgv:    []string{"onto", "merge-deltas", name},
+		Question:   "Have the change's spec deltas been merged into the living specs?",
+	}
+}
+
+func addInvalidReceiptGate(root, changeDir, name string, st ontostate.State, gates []pendingGate) []pendingGate {
+	if st.Phase == "close" && st.Close.Merged {
+		if err := validateCompletedMergeReceipt(root, changeDir, name); err != nil {
+			return append(gates, closeMergeGate(name))
+		}
+	}
+	return gates
+}
+
 // gateCmd builds "onto gate <change> [--json]": a read-only report of the
 // pending decisions for a change, with the exact `onto set` command to record
-// each. Skills render these as dialogs; the binary owns the schema.
+// each. The binary owns the schema; skills decide whether evidence settles the
+// decision or user intent is needed.
 func gateCmd() *cobra.Command {
 	var (
 		dir    string
@@ -163,7 +199,7 @@ func gateCmd() *cobra.Command {
 	)
 	cmd := &cobra.Command{
 		Use:   "gate <change>",
-		Short: "Report the pending gate decisions for a change (read-only)",
+		Short: "Report the pending workflow decisions for a change (read-only)",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			name := args[0]
@@ -175,7 +211,13 @@ func gateCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			gates := pendingGates(name, st)
+			if err := st.Validate(); err != nil {
+				return fmt.Errorf("onto gate: %w", err)
+			}
+			if st.Change != name {
+				return fmt.Errorf("onto gate: state change %q does not match directory %q", st.Change, name)
+			}
+			gates := addInvalidReceiptGate(dir, changeDir, name, st, pendingGates(name, st))
 			if asJSON {
 				b, err := json.MarshalIndent(gates, "", "  ")
 				if err != nil {

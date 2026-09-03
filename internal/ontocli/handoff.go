@@ -130,7 +130,8 @@ func buildHandoff(name, changeDir string, st ontostate.State) (*textPack, error)
 		fmt.Fprintf(&b, "- **base_ref**: %s\n", st.BaseRef)
 	}
 
-	gates := pendingGates(name, st)
+	root := filepath.Clean(filepath.Join(changeDir, "..", "..", ".."))
+	gates := addInvalidReceiptGate(root, changeDir, name, st, pendingGates(name, st))
 	if len(gates) > 0 {
 		b.WriteString("\n## Pending decision\n\n")
 		for _, g := range gates {
@@ -190,7 +191,7 @@ func buildRecovery(cmd *cobra.Command, root, name, changeDir string, st ontostat
 		rec.DerivedPhase = derived
 		rec.PhaseMismatch = derived != st.Phase
 	}
-	for _, g := range pendingGates(name, st) {
+	for _, g := range addInvalidReceiptGate(root, changeDir, name, st, pendingGates(name, st)) {
 		rec.PendingGates = append(rec.PendingGates, handoff.GateRef{ID: g.ID, Header: g.Header, SetArgv: g.SetArgv})
 	}
 	rec.Artifacts = digestArtifacts(changeDir)

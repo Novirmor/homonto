@@ -18,6 +18,11 @@ truth.
 The dispatcher does exactly four things, in order: preflight → discover →
 derive → route. It never performs phase work itself.
 
+Follow the shared [autonomous workflow policy](../homonto/references/autonomy.md)
+through every phase. Starting or resuming onto authorizes continuation through
+close unless the user names an endpoint or asks to pause. Phase boundaries are
+checkpoints, not requests for permission to continue.
+
 ## 1. Tooling preflight (runs first, every dispatch — warns, never halts)
 
 Run these checks before anything else. A missing tool produces a WARNING
@@ -49,8 +54,10 @@ skip it (a `templates/`, a scratch dir, an editor folder is not a phantom
 active change; never rebuild an onto-state.yaml into it). Also sweep
 `docs/changes/archive/*/onto-state.yaml` for `archived: false`: that is a
 close interrupted between the `git mv` and the flag — surface it and
-finish the interrupted archive (the moved workspace still needs its
-`archived: true` flag the halted `onto close` never wrote).
+finish it with `onto close <name>`. Also surface an archive whose
+`.onto/integration.json` is pending or malformed: archival happened, but close
+is not done until Git integration is completed and recorded with `onto
+complete-integration`.
 If a change carries an `abandoned: true` flag it is retired — never list it
 as active.
 
@@ -65,24 +72,26 @@ on top of, revert, or commit-around uncommitted work you haven't attributed.
 | None | description given | Route to `onto-open` with the description |
 | None | nothing | Ask what the user wants to work on, then `onto-open` |
 | Exactly one | nothing | Resume it: derive phase, route |
-| Exactly one | new description | ASK: continue the active change or open a new one |
-| Two or more | anything | LIST them (name, workflow, claimed phase, deps status) and ASK which to resume before doing anything else |
+| Exactly one | new description | Continue it when the description fits its recorded scope; ask only when it conflicts or describes independent work |
+| Two or more | anything | Use the named or uniquely matching change; otherwise list them and ask which request the user means |
 
 **Dependencies**: each change's `onto-state.yaml` may name `deps:` — changes
-that must archive before this one builds. A dep counts as **archived iff
-a directory `docs/changes/archive/????-??-??-<dep>/` exists** — the
-date-anchored exact-name match (`YYYY-MM-DD-` prefix per the archive
+that must complete before this one builds. A dep is resolved when a legacy
+archive exists, or when a tracked archive's `.onto/integration.json` records
+completed Git integration. A pending or malformed integration record does not
+resolve it. Archives use the date-anchored exact-name match (`YYYY-MM-DD-` prefix per the archive
 contract), never a bare suffix match, which falsely resolves deps whose
 name is the tail of another change's name. **An active workspace with the
 dep's name overrides any archive hit** (a reused name in flight is not
 archived). Discovery listings show deps status (`ready` /
 `blocked by <name>`). Before resuming a change whose deps are not all
-archived, warn and require an explicit user choice: proceed anyway,
-switch to the dependency, or stop. Two findings to surface immediately:
-a dep matching **no active and no archived change** (ask the user to
-correct or drop it), and a dep chain that **reaches the current change —
-including a self-dep or an A⇄B cycle** (unsatisfiable by construction;
-ask the user to break the cycle). For multiple simultaneously active
+archived, do not build the dependent change: route to an active dependency
+first when there is a unique valid next dependency. Ask only when choosing among
+dependencies changes priority or when proceeding out of order would require a
+waiver. Two findings require user intent because repository evidence cannot
+repair them: a dep matching **no active and no archived change** (correct or
+drop it), and a dep chain that **reaches the current change — including a
+self-dep or an A⇄B cycle** (break the cycle). For multiple simultaneously active
 changes, recommend one git worktree per change — coupled work that can't
 be separated should have been one change (the split-preflight rule
 already says so). **Close them one at a time**, though: two closes running
@@ -90,7 +99,7 @@ at once both merge into shared `docs/specs/*` and both draw ADR numbers
 from the same `docs/adr/` (onto-close re-scans before each move to avoid a
 clobber, but serial closes remove the race outright).
 
-If the repo has no `docs/changes/` tree at all, offer to bootstrap the
+If the repo has no `docs/changes/` tree at all, bootstrap the
 layout: create `docs/{adr,specs,changes/archive,guides}/`, writing
 `docs/changes/README.md` from `references/changes-readme.md` and
 `docs/specs/README.md` from `onto-close/references/specs-readme.md` (the
@@ -122,7 +131,8 @@ dispatch:
 
 | Evidence | Real phase |
 |---|---|
-| `archived: true` or workspace under `archive/` | done |
+| archived with pending/invalid `.onto/integration.json` | close |
+| archived with completed integration, or a legacy archive with no sidecar | done |
 | `design.md` marked `Status: Under revision` | design |
 | `verification.md` with a `Result: pass` line | close |
 | `tasks.md` contains ≥1 task and all are checked | verify |
@@ -142,15 +152,19 @@ between open and design.
    the mismatch to the user — **never hand-edit `onto-state.yaml` to
    demote it**. The binary owns that file; a backward phase move is not a
    binary operation (the workflow has no `onto reopen`). Record the
-   discrepancy in `notes.md` and let the user decide: redo the work and
-   re-advance, or `onto abandon` if the change is dead. If the derived
+   discrepancy in `notes.md` and tell the routed skill that this is a downward
+   mismatch. That skill accepts the derived phase even though the recorded phase
+   is later. It repairs the artifacts, skips `onto advance` while the recorded
+   phase is already ahead, then returns here; repeat until artifacts catch up to
+   the recorded phase. Ask only if the user must decide whether the change is
+   dead; `onto abandon` always requires explicit intent. If the derived
    phase is later than the claimed phase, do not silently promote — the
-   phase field advances only when a phase's exit gate is answered, so a
-   lagging claim means an unanswered gate: resume at the claimed phase's
-   gate (artifacts already prepared) and let it advance normally.
+   phase field advances only when a phase's exit decision is recorded, so a
+   lagging claim means an unrecorded review: resume at the claimed phase's
+   exit checklist (artifacts already prepared), record it, and advance normally.
    **One exception: the verify→close boundary has no gate** (the
-   failure gate fires only on a fail). So a `phase: verify` claim beside a
-   `verification.md` reading `Result: pass` is not an unanswered gate — it
+   failure path fires only on a fail). So a `phase: verify` claim beside a
+   `verification.md` reading `Result: pass` is not an unrecorded decision — it
    is a lagging write. Advance `phase` to `close` via `onto advance` and
    route to `onto-close` without re-verifying; the pass already stands in
    the file. Re-running verify here would only discard fresh evidence the
@@ -174,20 +188,19 @@ between open and design.
    4. Otherwise **full** (a detached HEAD or non-prefixed branch is no
       signal).
 
-   On mismatch the file sources win — surface the mismatch, reroute —
-   with one hard asymmetry: **an upgrade (preset→full) may be recorded
-   silently, but a downgrade (full→preset) never happens without fresh
-   user confirmation.** Never talk a change down. To record an upgrade,
-   annotate the proposal's `Preset:` line (the dispatcher re-derives
-   `workflow: full` from it); there is no `onto set workflow` command.
+   On mismatch the file sources win — surface the mismatch and reroute — with
+   one hard asymmetry: **an upgrade (preset→full) is recorded automatically, but
+   a downgrade (full→preset) never happens.** Run `onto set workflow <name>
+   full` and annotate the proposal's `Preset:` line to record an upgrade. Never
+   talk a change down merely to save process.
 5. A missing or malformed `onto-state.yaml` is a recovery situation, never
    a silent rewrite: surface it to the user, reconstruct the *routing*
    from the file-evidence table above, and record the recovery in
    `notes.md`. **Do not hand-write a replacement `onto-state.yaml`** — the
-   binary is its sole authority. If the file is genuinely lost, the
-   honest path is `onto abandon <name>` followed by a fresh `onto new`
-   that re-creates the canonical state, with the recovered routing
-   deciding where work resumes. Cap the resumed phase per the boundary
+   binary is its sole authority. Restore it from Git when possible. If it is
+   genuinely lost, stop for explicit destructive-recovery intent and quarantine
+   the orphaned workspace before creating a fresh change; `onto abandon` cannot
+   load a missing state file. Cap the resumed phase per the boundary
    table in `references/state-yaml.md` so a lost state file does not skip
    what the user never confirmed.
 6. Never trust conversation history for phase detection — after context
@@ -208,14 +221,14 @@ between open and design.
 | phase build | `onto-build` |
 | phase verify | `onto-verify` |
 | phase close | `onto-close` |
-| done | Report that the change is archived; ask what's next |
+| done | Report that the change is archived and integrated; continue only if the request already names more work |
 
 New work routes by intent: bug fix with clear reproduction → `onto-fix`;
 copy/config/docs/prompt touch-up or a small feature within tweak limits
 (≤5 files excluding tests, no new capability, no existing-spec requirement
 change) → `onto-tweak`; anything needing design → `onto-open` (full).
-Preset skills contain upgrade rules that force the full path when scope
-grows — never talk a change *down* from full to a preset.
+Preset skills upgrade automatically to the full path when objective limits are
+crossed — never talk a change *down* from full to a preset.
 
 **Reopen and abandon** (both need explicit user intent):
 
@@ -225,9 +238,10 @@ grows — never talk a change *down* from full to a preset.
   `Result: superseded (reopened <date>)`. The unchecked tasks plus the
   invalidated result drive the dispatcher's derivation back to build — no
   phase field is written (the binary has no reopen/backward-phase command;
-  resume at build and re-advance when the fix lands). A defect in an
-  *archived* change is new work — open a fresh `fix` change whose proposal
-  references the archived one; archives are never edited.
+  resume at build and let mismatch-aware routing catch the artifacts up). A defect in an
+  fully integrated archived change is new work — open a fresh `fix` change whose
+  proposal references the archived one. An archived change with integration
+  pending is still in close and must finish that recorded operation.
 - **Abandon** — the user drops a change. Run **`onto abandon <name>`**: it
   marks the change `abandoned: true` (the unsuccessful terminal state) and
   saves `onto-state.yaml` in place. The workspace stays under
@@ -236,10 +250,8 @@ grows — never talk a change *down* from full to a preset.
   again). No spec merge, no ADR numbering — an abandoned change's deltas
   are never merged into the living specs, and `onto close` refuses to
   archive it as a success. The binary owns the `abandoned` flag; never
-  hand-edit `onto-state.yaml` to set it. If you later want the workspace
-  out of the active tree entirely, `git mv` it under `archive/` by hand
-  and record the move — but the `abandoned: true` flag (not the location)
-  is what retires it.
+  hand-edit `onto-state.yaml` to set it. Abandoned workspaces remain in place
+  and must not be moved into the successful archive tree.
 
 ## 5. GitHub entry points (contract)
 
@@ -250,23 +262,24 @@ grows — never talk a change *down* from full to a preset.
 - **PR-feedback intake** (e.g. a continue-pr skill): review feedback resumes
   the matching change's build phase; if the change is already archived, open
   a new `fix` change whose proposal references the PR.
-- PR creation and PR review are NOT part of onto. The workflow ends at a
-  verified, closed change on a branch; hand off to the dedicated PR skills
-  from there.
+- PR creation is part of close when `integration: pr`; opening the PR completes
+  the integration operation and its URL is the receipt. PR review and merge
+  remain outside onto.
 
 ## 6. Exit
 
-After routing, the dispatcher is done — the sub-skill owns the phase,
-including its gates and exit checklist. Never execute phase work here.
+After routing, the dispatcher is done, but the invocation is not. The sub-skill
+owns the phase and loads the next one after its exit checklist. Continue this
+chain through close unless the user named an endpoint, explicitly requested a
+pause, or the autonomous policy identifies a real blocker.
 
 ## 7. Delegation, parallelization, and dialogs
 
 The onto framework ships four **specialist subagents** — they install with onto
 and the phases delegate to them. They run as independent agents, so several run
-**in parallel**. Both tools support this: **OpenCode** dispatches subagents as
-child sessions and **Claude Code** runs them as parallel Task-tool agents (send
-multiple Task calls in one turn). Each carries an enforced capability profile
-(homonto renders it per tool): only the implementer may edit.
+**in parallel**. OpenCode dispatches subagents as child sessions; send multiple
+independent read-only tasks in one turn. Each carries an enforced capability
+profile (homonto renders it for OpenCode): only the implementer may edit.
 
 **Match the task to the agent — this table is the mapping** (each agent's
 model is installer config, `[subagents.<name>.<tool>]` — not workflow
@@ -274,23 +287,22 @@ doctrine):
 
 | Task in hand | Dispatch | Capabilities |
 |---|---|---|
-| Understand something, or locate where behavior lives | `onto-explorer` | read-only, keeps bash (grounding CLIs), no spawn |
+| Understand something, or locate where behavior lives | `onto-explorer` | read-only, no bash, no spawn |
 | Execute one bite-sized task from a precise spec | `onto-implementer` | **edits**, bash, no spawn |
-| Audit a diff for correctness/security/contract/clarity | `onto-reviewer` | read-only, keeps bash, no spawn |
-| Refute a verification claim, or hunt what the scenarios miss | `onto-skeptic` **×2 minimum, parallel** | read-only, keeps bash, no spawn |
+| Audit a supplied diff for correctness/security/contract/clarity | `onto-reviewer` | read-only, no bash, no spawn |
+| Refute a verification claim, or hunt what the scenarios miss | `onto-skeptic` **×2 minimum, parallel** | read-only, no bash, no spawn |
 | **Plan, judge scope, decide, commit** | **nobody — you do it** | — |
 
 That last row is the rule the others serve: the orchestrator (this session)
-plans, judges scope, and decides, because those steps are gated on user
-confirmation and a subagent cannot ask. The **implementer** does mechanical edits
-from a handed spec; the read-only specialists investigate, audit, and attack. The
-orchestrator owns every commit and every `onto` binary call.
+plans, judges scope, and decides. The **implementer** does mechanical edits from
+a handed spec; the read-only specialists investigate, audit, and attack. The
+  orchestrator owns commit policy, validation, and every `onto` binary call.
 
-> **Subagents never prompt the user.** A subagent needing a decision **returns**
-> it as a `Questions:` section; the orchestrator asks the user (via a dialog) and
-> re-dispatches with the answer. This is a hard protocol because a **Claude** Task
-> subagent *cannot* prompt mid-run (AskUserQuestion belongs to the main session);
-> OpenCode subagents can but must not either, so the flow is identical everywhere.
+> **Subagents never prompt the user.** A subagent needing information returns it
+> as a `Questions:` or `Evidence requests:` section. The orchestrator resolves
+> factual and technical items by reading or running the requested probe, and
+> asks the user only when the unresolved answer is product intent under the
+> autonomous workflow policy. Then it re-dispatches with the result.
 
 **Delegate, and fan out — concurrency follows what an agent writes, not which
 agent it is:**
@@ -302,7 +314,7 @@ agent it is:**
 - `onto-implementer` **edits**, so it runs one at a time unless each has its own
   git worktree and a disjoint file set (`build_mode: subagent` plus
   `isolation: worktree`).
-- Every `onto` binary call, commit, and user dialog stays with the orchestrator
+- Every `onto` binary call, commit, and user question stays with the orchestrator
   and never runs concurrently.
 
 Each phase skill names its own fan-out — which questions split, and where
@@ -325,33 +337,28 @@ workflow state. Never let a subagent mutate workflow state, and never let a
 read-only specialist edit anything — its capability profile denies it, and a
 prompt that asks anyway is a bug.
 
-**Dialogs — prefer them, in either tool.** Whenever a `> **GATE:**` block or any
-either/or decision comes up, ask it through an **interactive choice dialog** — a
-clear prompt, a short header, and the concrete choices — rather than burying the
-question in prose. It is faster for the user and records a definite answer.
+## Decisions and user questions
 
-For the **recorded evidence gates** (isolation, build/tdd mode, verify result,
-close-merged, guides, integration), the binary owns the schema: run **`onto gate
-<change> --json`** to get the exact pending decision(s) — id, question, header,
-options (with a recommended default), and the `onto set …` command that records
-the answer. Render that as the dialog, then run the returned `onto set`. This
-keeps the same gate asked the same way in both tools and lets you check what is
-pending. Both tools have a dialog mechanism, so use it in both:
+Run **`onto gate <change> --json`** to list pending recorded decisions and the
+exact `onto set …` command for each. These fields are evidence checkpoints, not
+automatic user questions. Resolve them from the request, repository policy, and
+current evidence whenever possible:
 
-- **OpenCode** — the **question** tool (the shipped subagents allow it via
-  `permission.question`).
-- **Claude Code** — the **AskUserQuestion** tool.
+- review a matching proposal and record `proposal-approved`
+- choose the recommended technical approach and record `approach-confirmed`
+- choose isolation, build mode, and TDD mode from workspace and task facts
+- record the objective verification result
+- validate the close plan and record `close-confirmed`
+- update required guides rather than asking to waive them
+- derive integration from repository policy, defaulting to a local merge when
+  no policy or remote-review requirement exists
 
-Fall back to a plain written question only when neither is available. A dialog
-never *replaces* a gate — it is how the gate is asked.
-
-## Gates are sacred
-
-Every sub-skill contains `> **GATE:**` blocks — blocking user decisions.
-A gate may only be skipped when the user explicitly pre-answered *that same
-question*; a blanket directive (e.g. "run to completion") pre-answers only
-the gates that say so, and must be recorded verbatim via `onto set directive
-<name> "<text>"`. When in doubt, stop and ask.
+Use the interactive question tool only for an unresolved item that passes the
+shared policy's human-intent test. A user's explicit directive is still recorded
+verbatim via `onto set directive <name> "<text>"`, but no special wording is
+needed to authorize ordinary continuation. Never invent evidence, waive an
+obligation, accept a deviation, abandon work, or discard unattributed changes
+without the required user intent.
 
 ## Prose discipline (every artifact)
 

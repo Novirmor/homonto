@@ -78,18 +78,16 @@ func TestSetEnumSetters_HappyPaths(t *testing.T) {
 	}
 }
 
-func TestSetCloseMerged_SetsTrueIdempotently(t *testing.T) {
+func TestSetCloseMerged_CannotForgeReceipt(t *testing.T) {
 	root := prepWorkspace(t)
 	seedChange(t, root, "c", "close")
 
-	for i := 0; i < 2; i++ { // idempotent: running twice is fine
-		if _, err := runOnto(t, "set", "close-merged", "c", "--dir", root); err != nil {
-			t.Fatalf("set close-merged (run %d): %v", i, err)
-		}
+	if _, err := runOnto(t, "set", "close-merged", "c", "--dir", root); err == nil {
+		t.Fatal("set close-merged forged an unverified merge receipt")
 	}
 	st, _ := ontostate.LoadChange(filepath.Join(root, "docs", "changes", "c"))
-	if !st.Close.Merged {
-		t.Errorf("Close.Merged = false, want true")
+	if st.Close.Merged {
+		t.Errorf("Close.Merged = true after refusal")
 	}
 }
 
@@ -116,16 +114,42 @@ func TestSetDirective_EmptyRejected(t *testing.T) {
 	}
 }
 
-func TestSetBaseRef_HappyPath_WritesField(t *testing.T) {
+func TestSetBaseRef_HappyPath_WritesCanonicalCommit(t *testing.T) {
 	root := prepWorkspace(t)
 	seedChange(t, root, "c", "open")
+	head, err := gitOutput(t, root, "rev-parse", "HEAD")
+	if err != nil {
+		t.Fatal(err)
+	}
 
-	if _, err := runOnto(t, "set", "base-ref", "c", "abc123", "--dir", root); err != nil {
+	if _, err := runOnto(t, "set", "base-ref", "c", head, "--dir", root); err != nil {
 		t.Fatalf("set base-ref: %v", err)
 	}
 	st, _ := ontostate.LoadChange(filepath.Join(root, "docs", "changes", "c"))
-	if st.BaseRef != "abc123" {
-		t.Errorf("BaseRef = %q, want abc123", st.BaseRef)
+	if st.BaseRef != head {
+		t.Errorf("BaseRef = %q, want %q", st.BaseRef, head)
+	}
+	// An abbreviated spelling of the same commit is canonicalized, not treated
+	// as a different ref.
+	short := head[:10]
+	if _, err := runOnto(t, "set", "base-ref", "c", short, "--dir", root); err != nil {
+		t.Fatalf("abbreviated base-ref must canonicalize to the same commit: %v", err)
+	}
+	st, _ = ontostate.LoadChange(filepath.Join(root, "docs", "changes", "c"))
+	if st.BaseRef != head {
+		t.Errorf("BaseRef after abbreviated replay = %q, want %q", st.BaseRef, head)
+	}
+	if _, err := runOnto(t, "set", "base-ref", "c", "deadbee", "--dir", root); err == nil {
+		t.Fatal("unresolvable base-ref accepted")
+	}
+	// A different resolvable commit is an overwrite, not a replay.
+	runGit(t, root, "commit", "--allow-empty", "-q", "-m", "second")
+	next, err := gitOutput(t, root, "rev-parse", "HEAD")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := runOnto(t, "set", "base-ref", "c", next, "--dir", root); err == nil {
+		t.Fatal("overwriting immutable base-ref succeeded")
 	}
 }
 
@@ -139,6 +163,81 @@ func TestSetBaseRef_EmptyRejected(t *testing.T) {
 	st, _ := ontostate.LoadChange(filepath.Join(root, "docs", "changes", "c"))
 	if st.BaseRef != "" {
 		t.Errorf("BaseRef = %q, want unchanged empty", st.BaseRef)
+	}
+}
+
+func TestSetBaseBranch_HappyPathAndEmptyRejected(t *testing.T) {
+	root := prepWorkspace(t)
+	seedChange(t, root, "c", "open")
+
+	if _, err := runOnto(t, "set", "base-branch", "c", "release/v1", "--dir", root); err != nil {
+		t.Fatalf("set base-branch: %v", err)
+	}
+	st, _ := ontostate.LoadChange(filepath.Join(root, "docs", "changes", "c"))
+	if st.BaseBranch != "release/v1" {
+		t.Errorf("BaseBranch = %q, want release/v1", st.BaseBranch)
+	}
+	if _, err := runOnto(t, "set", "base-branch", "c", "release/v1", "--dir", root); err != nil {
+		t.Fatalf("replaying the same base-branch must be idempotent: %v", err)
+	}
+	if _, err := runOnto(t, "set", "base-branch", "c", "main", "--dir", root); err == nil {
+		t.Fatal("overwriting immutable base-branch succeeded")
+	}
+	if _, err := runOnto(t, "set", "base-branch", "c", "", "--dir", root); err == nil {
+		t.Fatal("empty base-branch accepted, want rejection")
+	}
+	for _, invalid := range []string{"-bad", "HEAD", "bad..name", "main@{1}"} {
+		root := prepWorkspace(t)
+		seedChange(t, root, "c", "open")
+		if _, err := runOnto(t, "set", "base-branch", "c", invalid, "--dir", root); err == nil {
+			t.Errorf("invalid branch %q accepted", invalid)
+		}
+	}
+}
+
+func TestSetWorkflow_OnlyUpgradesPresets(t *testing.T) {
+	root := prepWorkspace(t)
+	seedChange(t, root, "c", "build")
+	mutateState(t, root, "c", func(st *ontostate.State) { st.Workflow = "fix" })
+
+	if _, err := runOnto(t, "set", "workflow", "c", "full", "--dir", root); err != nil {
+		t.Fatalf("set workflow full: %v", err)
+	}
+	st, _ := ontostate.LoadChange(filepath.Join(root, "docs", "changes", "c"))
+	if st.Workflow != "full" || !st.Observed.PresetEscalated {
+		t.Fatalf("upgraded state = %+v, want full with preset_escalated", st)
+	}
+	if _, err := runOnto(t, "set", "workflow", "c", "tweak", "--dir", root); err == nil {
+		t.Fatal("workflow downgrade accepted, want rejection")
+	}
+}
+
+func TestSetWorkflow_InvalidatesPresetEvidence(t *testing.T) {
+	root := prepWorkspace(t)
+	seedChange(t, root, "c", "close")
+	mutateState(t, root, "c", func(st *ontostate.State) {
+		st.Workflow = "fix"
+		st.BuildMode = "direct"
+		st.TDDMode = "tdd"
+		st.Verify = ontostate.Verify{Scale: "light", Result: "pass"}
+		st.Close = ontostate.Close{Merged: true}
+		st.CloseConfirmed = "reviewed"
+		st.Guides = "updated"
+	})
+	writeFile(t, filepath.Join(root, "docs", "changes", "c", "verification.md"), "Result: pass\n")
+
+	if _, err := runOnto(t, "set", "workflow", "c", "full", "--dir", root); err != nil {
+		t.Fatalf("set workflow full: %v", err)
+	}
+	st, _ := ontostate.LoadChange(filepath.Join(root, "docs", "changes", "c"))
+	if st.Phase != "design" || st.ApproachConfirmed != "" || st.BuildMode != "" || st.TDDMode != "" {
+		t.Fatalf("upgrade did not return to an unanswered design/build state: %+v", st)
+	}
+	if st.Verify.Scale != "full" || st.Verify.Result != "pending" || st.Close.Merged || st.CloseConfirmed != "" || st.Guides != "pending" {
+		t.Fatalf("upgrade preserved stale downstream evidence: %+v", st)
+	}
+	if got := ontostate.DeriveWorkingPhase(filepath.Join(root, "docs", "changes", "c"), st); got != "design" {
+		t.Fatalf("derived phase after upgrade = %q, want design", got)
 	}
 }
 

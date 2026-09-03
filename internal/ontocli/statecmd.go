@@ -3,6 +3,7 @@ package ontocli
 import (
 	"encoding/json"
 	"fmt"
+	"os"
 	"path/filepath"
 
 	"github.com/noviopenworks/homonto/internal/ontostate"
@@ -27,9 +28,22 @@ func stateCmd() *cobra.Command {
 				return err
 			}
 			changeDir := filepath.Join(dir, "docs", "changes", name)
-			st, err := ontostate.LoadChange(changeDir)
-			if err != nil {
-				return err
+			var st ontostate.State
+			if _, err := os.Stat(changeDir); os.IsNotExist(err) {
+				archiveDir, archivedState, archiveErr := locateArchive(dir, name)
+				if archiveErr != nil {
+					return archiveErr
+				}
+				if _, sidecarErr := os.Stat(filepath.Join(archiveDir, ".onto", "integration.json")); os.IsNotExist(sidecarErr) && archivedState.Archived && !archivedState.IntegrationRequired {
+					return fmt.Errorf("onto-state: no active change %q", name)
+				}
+				changeDir, st = archiveDir, archivedState
+			} else {
+				var err error
+				st, err = ontostate.LoadChange(changeDir)
+				if err != nil {
+					return err
+				}
 			}
 			// Validate (DerivePhase's old contract) before deriving: a
 			// malformed state must not be reported as a healthy phase.

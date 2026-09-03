@@ -1,5 +1,5 @@
 name = "to"
-version = "0.10.0"
+version = "0.11.0"
 description = "to — minimal coding framework for LLMs (plan → do → done)"
 
 [dependencies]
@@ -8,7 +8,6 @@ frameworks = []
 [skills]
 homonto = "skills/homonto"
 to = "skills/to"
-to-bypass = "skills/to-bypass"
 to-plan = "skills/to-plan"
 to-do = "skills/to-do"
 to-done = "skills/to-done"

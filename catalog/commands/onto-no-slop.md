@@ -1,7 +1,6 @@
 ---
-name: onto-no-slop
 description: Strip predictable AI writing tells from onto prose artifacts.
-argument-hint: "The prose to clean (optional)"
+agent: onto
 ---
 
 # /onto-no-slop

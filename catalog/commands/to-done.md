@@ -1,7 +1,6 @@
 ---
-name: to-done
 description: Run the to done phase — real verification, at least one completed skeptic pass on the final candidate, then `to done --verified` archives the change.
-argument-hint: "The change to finish (optional)"
+agent: to
 ---
 
 # /to-done

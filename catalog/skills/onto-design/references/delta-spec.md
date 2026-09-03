@@ -31,12 +31,18 @@ rewording; `onto evidence record` and `onto trace` key on it>
 
 ### Requirement: <exact existing name>
 
-<carry the existing Requirement-ID forward unchanged — MODIFIED replaces the
-body, not the identity; first line MUST contain SHALL or MUST>
+Requirement-ID: <carry the existing ID forward unchanged when present>
+
+<First normative line MUST contain SHALL or MUST. MODIFIED replaces the body,
+not the identity.>
 
 #### Scenario: <name>
 
-- **GIVEN** … / **WHEN** … / **THEN** …
+Scenario-ID: <carry the existing ID forward unchanged when present>
+
+- **GIVEN** <precondition>
+- **WHEN** <action>
+- **THEN** <observable outcome>
 
 ## REMOVED Requirements
 
@@ -54,9 +60,10 @@ body, not the identity; first line MUST contain SHALL or MUST>
 
 - Section headings: only `## ADDED|MODIFIED|REMOVED|RENAMED Requirements`;
   omit empty sections.
-- Every ADDED/MODIFIED requirement's **first non-empty line after the
-  heading** contains SHALL or MUST (REMOVED bodies are removal rationales,
-  RENAMED entries have no bodies — neither is subject to this rule).
+- Every ADDED/MODIFIED requirement's **first normative line after optional
+  `Requirement-ID:` metadata** contains SHALL or MUST (REMOVED bodies are
+  removal rationales, RENAMED entries have no bodies — neither is subject to
+  this rule).
 - **Every** `#### Scenario:` block has WHEN and THEN bullets (GIVEN
   optional), and each ADDED/MODIFIED requirement has ≥1 — scenarios are
   what verify demands evidence for; an unverifiable requirement is a lint

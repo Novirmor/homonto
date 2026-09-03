@@ -1,7 +1,5 @@
 ---
-name: to
 description: Start or resume the to minimal coding workflow for this repo.
-argument-hint: "What to work on (optional; omit to resume the active change)"
 agent: to
 ---
 
@@ -14,7 +12,8 @@ declaring `[frameworks.to]`).
 
 The `to` skill is the dispatcher — it checks the `to` binary (`to version`),
 finds the active change via `to status --json`, and routes to the matching
-sub-skill (`to-plan`, `to-do`, or `to-done`). Every state change goes through
+sub-skill (`to-plan`, `to-do`, or `to-done`), continuing through later phases
+unless the user names an endpoint or asks to pause. Every state change goes through
 the `to` binary — never hand-edit `to-state.yaml`. The read-only subagents
 (`to-explorer`, `to-reviewer`, `to-skeptic`) are dispatched concurrently;
 `to-implementer` runs strictly one at a time, because it is the only agent

@@ -1,7 +1,7 @@
 # design.md — canonical template
 
-The confirmed technical design. MUST NOT exist before the approach gate is
-answered; once written, its `Status: Confirmed` line is what the
+The confirmed technical design. MUST NOT exist before the approach is selected
+and recorded; once written, its `Status: Confirmed` line is what the
 phase-derivation table keys on.
 
 ## Template

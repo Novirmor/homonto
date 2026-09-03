@@ -4,7 +4,7 @@ The incremental checkpoint for the conversation-shaped phases (open,
 design). The derivation table recovers *where* a change is; notes.md
 recovers *why*. Created at open; updated before ending ANY turn that
 produced new decisions (open and design — the conversation-shaped phases;
-build records its plan-ready gate answer here too, and every phase skill
+build records its selected configuration here too, and every phase skill
 reads it at entry when present); archived with the change.
 
 ## Template
@@ -17,7 +17,7 @@ marked *pending*.
 
 ## Confirmed
 
-- <fact/decision — with date and, for gate answers, the user's words>
+- <fact/decision — with date, basis, and the user's words when they supplied it>
 
 ## Pending
 
@@ -25,8 +25,8 @@ marked *pending*.
 
 ## Approaches  <!-- design phase -->
 
-- <candidate approaches with one-line trade-offs; mark the CONFIRMED one
-  and the date once the gate is answered>
+- <candidate approaches with one-line trade-offs; mark the SELECTED one,
+  its basis, and the date>
 ```
 
 ## Rules
@@ -36,8 +36,8 @@ marked *pending*.
   tooling record) in `proposal.md` `## Grounding`, design-phase grounding in
   `design.md` `## Grounding`. Those two are checked at close; a third copy
   here was checked by nothing and read by no one.
-- Move items from Pending to Confirmed the moment the user answers —
-  never leave an answered gate in Pending.
+- Move items from Pending to Confirmed when repository evidence or the user
+  settles them. Never leave a resolved decision in Pending.
 - Never record a decision here that wasn't actually made; notes.md is a
   checkpoint, not a wishlist.
 - After compaction: read notes.md FIRST, then re-derive the phase; resume

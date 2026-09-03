@@ -41,8 +41,8 @@ func advanceCmd() *cobra.Command {
 // one call instead of scripting two ceremonial advances — sugar, never a
 // bypass: every hop runs runAdvance's full gate set, and a failing hop's
 // error propagates unchanged. Full workflows are refused (they advance one
-// gate at a time — each boundary is a distinct user decision), as is any
-// target other than build (nothing past build is ever mechanical).
+// gate at a time because each phase has distinct evidence), as is any target
+// other than build (later phases require work between transitions).
 func runAdvanceTo(cmd *cobra.Command, root, name, target string) error {
 	// Same entry invariant as every other command: the framework gate and the
 	// change-name validation run before ANY path is built from the name — a
@@ -60,6 +60,12 @@ func runAdvanceTo(cmd *cobra.Command, root, name, target string) error {
 	st, err := ontostate.Load(filepath.Join(changeDir, "onto-state.yaml"))
 	if err != nil {
 		return fmt.Errorf("onto advance: loading state: %w", err)
+	}
+	if err := st.Validate(); err != nil {
+		return fmt.Errorf("onto advance: %w", err)
+	}
+	if st.Change != name {
+		return fmt.Errorf("onto advance: state change %q does not match directory %q", st.Change, name)
 	}
 	if st.Workflow != "fix" && st.Workflow != "tweak" {
 		return fmt.Errorf("onto advance --to build: workflow %q advances one gate at a time; --to is preset-only (fix/tweak skip design)", st.Workflow)
@@ -119,9 +125,15 @@ func runAdvance(cmd *cobra.Command, root, name string) error {
 	if err := st.Validate(); err != nil {
 		return fmt.Errorf("onto advance: %w", err)
 	}
+	if st.Change != name {
+		return fmt.Errorf("onto advance: state change %q does not match directory %q", st.Change, name)
+	}
 
 	if st.Abandoned {
 		return fmt.Errorf("onto advance: %q is abandoned (a terminal state); nothing to advance", name)
+	}
+	if st.Archived {
+		return fmt.Errorf("onto advance: %q is archived (a terminal state); nothing to advance", name)
 	}
 
 	next, ok := ontostate.NextPhase(st.Phase)
@@ -149,18 +161,18 @@ func runAdvance(cmd *cobra.Command, root, name string) error {
 	// certain transitions require a recorded evidence token. Leaving verify
 	// requires a passing verification; entering build requires a chosen
 	// isolation so planning work is never committed unisolated. The judgment
-	// gates (proposal approval, approach confirmation) require their tokens
-	// for full-workflow changes — the binary checks presence, never content
-	// (B1: an honest agent cannot skip the gate; it can still be asked lies).
+	// review gates (proposal approval, approach confirmation) require their
+	// tokens for full-workflow changes. The binary checks presence, never
+	// content: the token proves a review was recorded, not who made it.
 	// Presets are exempt: their scope gate lives in the preset skill, and
 	// blocking a preset on design-phase tokens would contradict its reason to
 	// exist.
 	full := st.Workflow == "" || st.Workflow == "full"
 	if st.Phase == "open" && full && st.ProposalApproved == "" {
-		return fmt.Errorf("onto advance: cannot leave open: proposal approval not recorded (answer the artifact-review gate, then run `onto set proposal-approved %s \"<evidence>\"`)", name)
+		return fmt.Errorf("onto advance: cannot leave open: proposal review not recorded (review the proposal, then run `onto set proposal-approved %s \"<evidence>\"`)", name)
 	}
 	if next == "build" && full && st.ApproachConfirmed == "" {
-		return fmt.Errorf("onto advance: cannot enter build: approach confirmation not recorded (answer the approach gate, then run `onto set approach-confirmed %s \"<evidence>\"`)", name)
+		return fmt.Errorf("onto advance: cannot enter build: approach selection not recorded (select the approach, then run `onto set approach-confirmed %s \"<evidence>\"`)", name)
 	}
 	if st.Phase == "verify" && st.Verify.Result != "pass" {
 		result := st.Verify.Result
@@ -177,7 +189,7 @@ func runAdvance(cmd *cobra.Command, root, name string) error {
 	if st.Phase == "verify" {
 		line, ok := ontostate.VerificationResultLine(filepath.Join(changeDir, "verification.md"))
 		if !ok {
-			return fmt.Errorf("onto advance: cannot leave verify: verification.md has no \"Result:\" line — write the report before leaving verify")
+			return fmt.Errorf("onto advance: cannot leave verify: verification.md must contain exactly one canonical \"Result:\" line — write the report before leaving verify")
 		}
 		if !ontostate.ResultLineIsPass(line) {
 			return fmt.Errorf("onto advance: cannot leave verify: verification.md says %q but verify.result=pass — the report and the state must agree", line)
@@ -201,6 +213,9 @@ func runAdvance(cmd *cobra.Command, root, name string) error {
 					}
 				}
 			}
+		}
+		if unresolved := ontostate.DepsResolved(root, st.Deps); len(unresolved) > 0 {
+			return fmt.Errorf("onto advance: cannot enter build: unresolved dependencies: %v", unresolved)
 		}
 	}
 

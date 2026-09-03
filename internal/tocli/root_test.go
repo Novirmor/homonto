@@ -15,6 +15,7 @@ func TestNewRootCmd_RegistersAllSubcommands(t *testing.T) {
 		"new":     true,
 		"status":  true,
 		"phase":   true,
+		"bypass":  true,
 		"done":    true,
 		"abandon": true,
 		"handoff": true,

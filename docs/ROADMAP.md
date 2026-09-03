@@ -598,7 +598,7 @@ Parity tiers are explicit; the renderer skips rather than mis-renders.
 - `internal/agentfm`: v2 schema + `RenderContext{Routes, AgentNames}`;
   `MaterializeSubagents` receives the context from the engine (which has Cfg).
 - Catalog: new `onto-implementer` (role: coding, read_only: false, spawn: []),
-  new `onto` primary agent (OpenCode-only render; dispatcher prompt;
+  a new `onto` primary agent (OpenCode-only render; dispatcher prompt;
   `spawn: [onto-implementer, onto-explorer, onto-reviewer]`); explorer and
   reviewer gain `role:` tiers.
 - Command rendering: generalize the per-tool variant mechanism to commands so

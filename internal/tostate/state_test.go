@@ -85,3 +85,18 @@ func TestLoadRejectsMissingAndMalformed(t *testing.T) {
 		t.Error("Load(malformed) = nil error, want error")
 	}
 }
+
+func TestSaveDoesNotFollowPredictableTemporaryPath(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, FileName)
+	outside := filepath.Join(t.TempDir(), "outside")
+	if err := os.Symlink(outside, path+".tmp"); err != nil {
+		t.Fatal(err)
+	}
+	if err := Save(path, State{Change: "x", Phase: PhasePlan}); err != nil {
+		t.Fatalf("Save: %v", err)
+	}
+	if _, err := os.Stat(outside); !os.IsNotExist(err) {
+		t.Fatalf("predictable temporary path was followed: %v", err)
+	}
+}

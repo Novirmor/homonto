@@ -204,7 +204,7 @@ func TestSubagentFilesMatchesWhatMaterializeWrites(t *testing.T) {
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}
-	for _, name := range []string{"onto-reviewer", "onto"} {
+	for _, name := range []string{"onto-reviewer", "onto", "to"} {
 		dst := t.TempDir()
 		if err := c.MaterializeSubagents(dst, []string{name}, nil); err != nil {
 			t.Fatalf("materialize %s: %v", name, err)

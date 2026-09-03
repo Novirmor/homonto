@@ -150,4 +150,83 @@ func TestExpandSubagentsIncludesFrameworkSubagent(t *testing.T) {
 	if !found {
 		t.Fatal("onto-explorer not returned by ExpandSubagents([onto])")
 	}
+	to, err := c.ExpandSubagents([]string{"to"})
+	if err != nil {
+		t.Fatalf("expand to: %v", err)
+	}
+	found = false
+	for _, e := range to {
+		if e.Name == "to" {
+			found = true
+			if e.Framework != "to" {
+				t.Errorf("to framework = %q, want to", e.Framework)
+			}
+		}
+	}
+	if !found {
+		t.Fatalf("to framework must expand its primary dispatcher, got %v", to)
+	}
+}
+
+func TestWorkflowFrameworksInstallSharedHomontoKnowledge(t *testing.T) {
+	c, err := New()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, framework := range []string{"onto", "to"} {
+		skills, err := c.Expand([]string{framework})
+		if err != nil {
+			t.Fatalf("expand %s: %v", framework, err)
+		}
+		found := false
+		for _, skill := range skills {
+			if skill.Name == "homonto" {
+				found = true
+				if skill.Framework != framework {
+					t.Errorf("%s homonto skill framework = %q", framework, skill.Framework)
+				}
+			}
+		}
+		if !found {
+			t.Errorf("%s framework does not install the shared homonto skill", framework)
+		}
+	}
+}
+
+func TestWorkflowFrameworksInstallDedicatedBypassResources(t *testing.T) {
+	c, err := New()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for framework, bypass := range map[string]string{"onto": "onto-bypass", "to": "to-bypass"} {
+		skills, err := c.Expand([]string{framework})
+		if err != nil {
+			t.Fatalf("expand skills for %s: %v", framework, err)
+		}
+		commands, err := c.ExpandCommands([]string{framework})
+		if err != nil {
+			t.Fatalf("expand commands for %s: %v", framework, err)
+		}
+		if !hasNamedSkill(skills, bypass) || !hasNamedCommand(commands, bypass) {
+			t.Errorf("%s does not install dedicated bypass skill and command %q", framework, bypass)
+		}
+	}
+}
+
+func hasNamedSkill(resources []ExpandedSkill, name string) bool {
+	for _, resource := range resources {
+		if resource.Name == name {
+			return true
+		}
+	}
+	return false
+}
+
+func hasNamedCommand(resources []ExpandedCommand, name string) bool {
+	for _, resource := range resources {
+		if resource.Name == name {
+			return true
+		}
+	}
+	return false
 }

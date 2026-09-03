@@ -33,10 +33,11 @@ homonto installs content it bundles (`builtin:`), content from your repo
 only what homonto authors:
 
 - **`onto`** — the native, binary-enforced workflow framework: skills, slash
-  commands, and five agents (the `onto` orchestrator, which renders for
-  OpenCode only, plus four specialists).
+  commands, the shared `homonto` knowledge skill, and five agents (the `onto`
+  primary orchestrator plus four specialists).
 - **`to`** — the native minimal coding framework for LLMs: a dispatcher, three
-  phase skills, `to-no-slop`, and four subagents. onto and
+  phase skills, `to-no-slop`, the shared `homonto` knowledge skill, and five
+  agents (the `to` primary orchestrator plus four specialists). onto and
   `to` are an exclusive choice; declaring both is a config error.
 - **Loose skills and commands** (`handoff`, `grilling`, …) — framework-agnostic
   and installed individually.

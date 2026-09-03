@@ -1,12 +1,14 @@
 name = "onto"
-version = "0.11.0"
+version = "0.13.0"
 description = "Onto self-contained development workflow"
 
 [dependencies]
 frameworks = []
 
 [skills]
+homonto = "skills/homonto"
 onto = "skills/onto"
+onto-bypass = "skills/onto-bypass"
 onto-build = "skills/onto-build"
 onto-close = "skills/onto-close"
 onto-design = "skills/onto-design"
@@ -18,6 +20,7 @@ onto-no-slop = "skills/onto-no-slop"
 
 [commands]
 onto = "commands/onto.md"
+onto-bypass = "commands/onto-bypass.md"
 onto-open = "commands/onto-open.md"
 onto-design = "commands/onto-design.md"
 onto-build = "commands/onto-build.md"

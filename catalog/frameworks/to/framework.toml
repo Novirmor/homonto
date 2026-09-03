@@ -1,12 +1,14 @@
 name = "to"
-version = "0.8.0"
+version = "0.10.0"
 description = "to — minimal coding framework for LLMs (plan → do → done)"
 
 [dependencies]
 frameworks = []
 
 [skills]
+homonto = "skills/homonto"
 to = "skills/to"
+to-bypass = "skills/to-bypass"
 to-plan = "skills/to-plan"
 to-do = "skills/to-do"
 to-done = "skills/to-done"
@@ -14,6 +16,7 @@ to-no-slop = "skills/to-no-slop"
 
 [commands]
 to = "commands/to.md"
+to-bypass = "commands/to-bypass.md"
 to-plan = "commands/to-plan.md"
 to-do = "commands/to-do.md"
 to-done = "commands/to-done.md"
@@ -29,6 +32,7 @@ to-no-slop = "commands/to-no-slop.md"
 # declare them in a top-level [subagents.*] table. onto and to are mutually
 # exclusive: homonto refuses a config that declares both frameworks.
 [subagents]
+to = "subagents/to.md"
 to-explorer = "subagents/to-explorer.md"
 to-implementer = "subagents/to-implementer.md"
 to-reviewer = "subagents/to-reviewer.md"

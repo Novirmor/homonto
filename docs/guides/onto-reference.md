@@ -114,6 +114,20 @@ below still applies to each step it walks.
 
 A failed gate exits non-zero and leaves the recorded phase unchanged.
 
+## Explicit bypass — `onto bypass <change> --to <phase|archive> --reason <reason>`
+
+This is an emergency operator command, surfaced through the dedicated
+`/onto-bypass` skill only after the user explicitly requests it. It accepts any
+workflow phase (`open`, `design`, `build`, `verify`, or `close`) or `archive`;
+it skips the normal transition, evidence, dependency, merge, and worktree
+checks. The framework-install gate, change-name validation, readable valid
+state, and filesystem safety checks still apply.
+
+Every invocation requires a non-empty user reason and appends a versioned
+`.onto/bypass.json` record with the timestamp, command, source/target, reason,
+and skipped checks. `archive` moves the existing workspace without merging its
+spec deltas or ADRs. It is not a successful close.
+
 ## Merging specs — `onto merge-deltas <change>`
 
 Before archiving, the close phase merges the change's spec deltas into the

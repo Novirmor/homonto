@@ -6,6 +6,8 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+
+	"github.com/noviopenworks/homonto/internal/bypasslog"
 )
 
 func TestParse_ValidYAML_DerivesBuildPhase(t *testing.T) {
@@ -453,6 +455,21 @@ func TestDepsResolved_ActiveWorkspaceOverridesArchiveHit(t *testing.T) {
 	want := []string{"x"}
 	if !reflect.DeepEqual(got, want) {
 		t.Errorf("DepsResolved must NOT resolve when an active workspace of the same name exists; got %v, want %v", got, want)
+	}
+}
+
+func TestDepsResolved_BypassArchiveDoesNotResolveDependency(t *testing.T) {
+	root := t.TempDir()
+	archive := filepath.Join(root, "docs", "changes", "archive", "2026-09-03-x")
+	if err := os.MkdirAll(archive, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	record := bypasslog.Record{At: "2026-09-03T12:00:00Z", Command: "onto bypass x --to archive --reason \"test\"", From: "open", To: "archive", Reason: "test", Skipped: []string{"merge"}}
+	if err := bypasslog.Append(archive, "x", "onto", record); err != nil {
+		t.Fatal(err)
+	}
+	if got := DepsResolved(root, []string{"x"}); !reflect.DeepEqual(got, []string{"x"}) {
+		t.Errorf("DepsResolved bypass archive = %v, want unresolved x", got)
 	}
 }
 

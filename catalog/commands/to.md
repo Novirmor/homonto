@@ -2,6 +2,7 @@
 name: to
 description: Start or resume the to minimal coding workflow for this repo.
 argument-hint: "What to work on (optional; omit to resume the active change)"
+agent: to
 ---
 
 # /to

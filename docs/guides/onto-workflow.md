@@ -35,7 +35,7 @@ go install github.com/noviopenworks/homonto/cmd/onto@latest
 onto version            # prints: onto <version>
 ```
 
-The mutating commands (`init`, `new`, `set`, `advance`, `close`, `abandon`,
+The mutating commands (`init`, `new`, `set`, `advance`, `bypass`, `close`, `abandon`,
 `merge-deltas`) require the onto framework to be **declared and applied
 through homonto first**. This is how the skills land in your tools:
 
@@ -53,7 +53,7 @@ this: they never read `homonto.toml` and never write.
 
 `homonto apply` also installs the framework's **slash commands** into each
 tool: `/onto` (the dispatcher — it derives the active change's real phase
-and routes automatically), plus `/onto-open`, `/onto-design`, `/onto-build`,
+and routes automatically), the explicit-user-only `/onto-bypass`, plus `/onto-open`, `/onto-design`, `/onto-build`,
 `/onto-verify`, `/onto-close`, `/onto-fix`, `/onto-tweak`, and
 `/onto-no-slop`. Each command loads its matching `onto-*` skill; every state
 change still goes through the binary.

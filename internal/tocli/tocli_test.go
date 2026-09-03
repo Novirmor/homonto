@@ -87,6 +87,7 @@ func TestMutatingCommandsRefuseWithoutGate(t *testing.T) {
 		{"init", "--dir", dir},
 		{"new", "x", "--dir", dir},
 		{"phase", "x", "--dir", dir},
+		{"bypass", "x", "--to", "do", "--reason", "test", "--dir", dir},
 		{"done", "x", "--verified", "--dir", dir},
 		{"abandon", "x", "--dir", dir},
 	} {

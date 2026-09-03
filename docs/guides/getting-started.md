@@ -141,7 +141,7 @@ model = "anthropic/claude-opus-4-8"
 ```
 
 ```console
-$ homonto apply --yes            # materializes the onto-* skills, commands, subagents
+$ homonto apply --yes            # materializes the shared knowledge and onto workflow surface
 
 $ onto init && onto new add-search
 $ onto advance add-search        # open → design

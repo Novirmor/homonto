@@ -59,7 +59,12 @@ scope = "project"
 
 Then `homonto apply`. It also installs the slash commands: `/to` (the
 dispatcher — it finds the active change via `to status --json` and routes),
-plus `/to-plan`, `/to-do`, `/to-done`, and `/to-no-slop`.
+the explicit-user-only `/to-bypass`, plus `/to-plan`, `/to-do`, `/to-done`,
+and `/to-no-slop`.
+
+The install also adds the shared `homonto` knowledge skill and a selectable
+`to` primary agent. Choose `to` to start the workflow; it owns each workflow
+mutation, user gate, commit, and delegation.
 
 ## The layout
 

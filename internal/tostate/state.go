@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/noviopenworks/homonto/internal/fsutil"
 	"gopkg.in/yaml.v3"
 )
 
@@ -86,9 +87,8 @@ func Load(path string) (State, error) {
 	return s, nil
 }
 
-// Save writes s to path as YAML, creating parent directories as needed. It
-// writes to a temp file next to path and renames it into place, removing
-// the temp file if any step fails.
+// Save writes s to path as YAML, creating parent directories as needed through
+// the shared no-follow control-plane writer.
 func Save(path string, s State) error {
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return fmt.Errorf("to-state: failed to create directory for %s: %w", path, err)
@@ -97,14 +97,8 @@ func Save(path string, s State) error {
 	if err != nil {
 		return fmt.Errorf("to-state: failed to marshal %s: %w", path, err)
 	}
-	tmp := path + ".tmp"
-	if err := os.WriteFile(tmp, b, 0o644); err != nil {
-		os.Remove(tmp)
-		return fmt.Errorf("to-state: failed to write %s: %w", tmp, err)
-	}
-	if err := os.Rename(tmp, path); err != nil {
-		os.Remove(tmp)
-		return fmt.Errorf("to-state: failed to rename %s to %s: %w", tmp, path, err)
+	if err := fsutil.WriteControlPlane(path, b, 0o644); err != nil {
+		return fmt.Errorf("to-state: failed to write %s: %w", path, err)
 	}
 	return nil
 }

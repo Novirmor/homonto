@@ -17,7 +17,10 @@ source = "builtin:to"
 scope = "project"
 
 # Every framework-expanded subagent needs an explicit model in its
-# [subagents.<n>.opencode] block (there are no tiers).
+# [subagents.<n>.opencode] block (there are no tiers). The primary dispatcher
+# `to` needs one too.
+[subagents.to.opencode]
+model = "anthropic/claude-opus-4-8"
 [subagents.to-explorer.opencode]
 model = "openai/gpt-5-mini"
 [subagents.to-implementer.opencode]
@@ -45,7 +48,14 @@ ok "homonto refused the onto+to config"
 log "homonto apply installs the to framework"
 "$HOMONTO" apply --yes >/dev/null
 is_dir "$W/.homonto/catalog/skills/to"
+is_file "$W/.homonto/catalog/skills/homonto/SKILL.md"
+is_file "$W/.homonto/catalog/subagents/to.md"
 is_file "$W/.homonto/catalog/subagents/to-skeptic.md"
+TVAR="$W/.homonto/catalog/subagents/to.opencode.md"
+in_file "$TVAR" 'mode: primary'
+in_file "$TVAR" 'steps: 1200'
+in_file "$TVAR" '"to-reviewer": allow'
+is_link "$W/.opencode/agent/to.md"
 ok "framework materialized (skills + subagents)"
 
 log "tooling reference is generated for the to dispatcher"

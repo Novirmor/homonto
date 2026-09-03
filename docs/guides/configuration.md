@@ -155,7 +155,7 @@ digest = "sha256:<64 hex>"         # REQUIRED for remote:; verified before any w
 
 | Field | Type | Required | Notes |
 |---|---|---|---|
-| `source` | string | **yes** | `builtin:` ships `onto-reviewer`, `onto-explorer`, `onto-implementer`, `onto-skeptic` (and the `to-*` twins); `local:` → `homonto/subagents/<name>.md`; `remote:` → pinned archive |
+| `source` | string | **yes** | `builtin:` ships the onto primary and specialists, or the parallel to primary and specialists; `local:` → `homonto/subagents/<name>.md`; `remote:` → pinned archive |
 | `scope` | string | no | `user` \| `project` (default `project`) |
 | `mode` | string | no | `link` (default) or `copy` — see [subagents](subagents.md) |
 | `targets` | array | no | default: every tool |
@@ -173,6 +173,8 @@ A framework is a bundled set of skills, commands, and subagents that install
 together, with dependency expansion. The builtin catalog ships exactly the
 two homonto-native frameworks, `onto` and `to`, and they are **mutually
 exclusive**: declaring both fails at load (one workflow per repository).
+Both frameworks install the shared `homonto` knowledge skill and their own
+selectable primary workflow agent.
 Beyond `builtin:`, a framework source may be `local:<path>` (a framework root
 in your repo) or `remote:<url>` with a required `digest = "sha256:…"` pin.
 Third-party workflow stacks are not bundled.

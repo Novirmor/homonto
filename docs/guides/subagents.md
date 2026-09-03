@@ -19,7 +19,7 @@ repo = "service-a"                 # optional declared [repos] name; project sco
 
 | `source` | Resolves from | Notes |
 |---|---|---|
-| `builtin:<name>` | the bundled catalog (materialized at `.homonto/catalog/subagents/<name>.md`) | ships `onto-reviewer`, `onto-explorer`, `onto-implementer`, `onto-skeptic` and the `onto` orchestrator (`primary: true`, OpenCode-only render), plus the `to-*` twins the to framework installs |
+| `builtin:<name>` | the bundled catalog (materialized at `.homonto/catalog/subagents/<name>.md`) | ships the `onto` primary orchestrator and its specialists, or the parallel `to` primary orchestrator and its specialists |
 | `local:<name>` | `homonto/subagents/<name>.md` (next to `homonto.toml`) | your own agent files |
 | `remote:<url>` | a fetched, verified, cached archive | **requires a `digest` pin** — see below |
 

@@ -10,7 +10,7 @@ import (
 func TestSubagentsEmbedded(t *testing.T) {
 	for _, name := range []string{
 		"onto", "onto-reviewer", "onto-explorer", "onto-implementer", "onto-skeptic",
-		"to-reviewer", "to-explorer", "to-implementer", "to-skeptic",
+		"to", "to-reviewer", "to-explorer", "to-implementer", "to-skeptic",
 	} {
 		p := "subagents/" + name + ".md"
 		if _, err := fs.Stat(embedded.FS, p); err != nil {

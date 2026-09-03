@@ -77,10 +77,9 @@ scope = "project"
 }
 
 // toFrameworkModels is the per-agent override blocks required by the to
-// framework's four expanded subagents (no `to` dispatcher — the to framework
-// has no `to.md`, only the specialists).
+// framework's five expanded subagents (the to dispatcher plus four specialists).
 func toFrameworkModels() string {
-	return modelsFor("to-explorer", "to-implementer", "to-reviewer", "to-skeptic")
+	return modelsFor("to", "to-explorer", "to-implementer", "to-reviewer", "to-skeptic")
 }
 
 // TestLoad_AcceptsToAlone: [frameworks.to] on its own is a valid builtin

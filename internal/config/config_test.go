@@ -850,7 +850,7 @@ scope = "project"
 model = "anthropic/claude-opus-4-8"
 variant = "fast"
 
-` + modelsFor("onto", "onto-explorer", "onto-reviewer", "onto-implementer")
+	` + modelsFor("onto", "onto-explorer", "onto-reviewer", "onto-implementer")
 	err := loadDoc(t, doc)
 	if err == nil || !strings.Contains(err.Error(), "must agree") {
 		t.Fatalf("conflicting overrides for one builtin must be a deterministic load error, got: %v", err)
@@ -873,7 +873,7 @@ variant = "thinking"
 source = "builtin:onto"
 scope = "project"
 
-`+modelsFor("onto", "onto-explorer", "onto-reviewer", "onto-implementer"))
+	`+modelsFor("onto", "onto-explorer", "onto-reviewer", "onto-implementer"))
 	if err != nil {
 		t.Fatalf("load: %v", err)
 	}

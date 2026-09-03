@@ -15,6 +15,19 @@ bookkeeper) — for every supported OS/arch as separate archives under one
 `SHA256SUMS`. `onto` and `to` each require `homonto` to have installed their
 framework first (`[frameworks.onto]` / `[frameworks.to]` + `homonto apply`).
 
+### New in v0.16.0 — parallel workflow agents and explicit bypasses
+
+- **Choose a workflow by selecting its primary agent.** `onto` stays the
+  primary evidence-gated workflow agent. `to` now ships an equivalent primary
+  agent and `/to` routes into it. Both frameworks install the shared `homonto`
+   knowledge skill for configuration, projection, and workflow-choice guidance.
+- **Audited emergency bypasses.** Dedicated `/onto-bypass` and `/to-bypass`
+  entry points invoke direct, reason-required binary commands after an explicit
+  user request.
+  Each bypass writes a versioned sidecar with its command, target, timestamp,
+  reason, and skipped gates; archive bypasses preserve unmerged workspace
+  content rather than pretending it completed normally.
+
 ### New in v0.15.0 — one release, seven capabilities
 
 - **Replayable handoffs.** `onto handoff --json`/`--write` and `to handoff

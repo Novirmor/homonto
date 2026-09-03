@@ -39,6 +39,7 @@ func NewRootCmd() *cobra.Command {
 	root.AddCommand(newCmd())
 	root.AddCommand(statusCmd())
 	root.AddCommand(phaseCmd())
+	root.AddCommand(bypassCmd())
 	root.AddCommand(doneCmd())
 	root.AddCommand(abandonCmd())
 	root.AddCommand(handoffCmd())

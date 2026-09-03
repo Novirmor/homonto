@@ -142,8 +142,9 @@ onto init
 onto doctor                 # expect: healthy
 ```
 
-Swap `[frameworks.to]` and the four `to-*` agents to smoke `to` instead — the
-two frameworks are mutually exclusive, so a single config cannot cover both.
+Replace `[frameworks.onto]`, `onto`, and its four specialists with `[frameworks.to]`, `to`, and the four
+`to-*` specialists. The two frameworks are mutually exclusive, so a single
+config cannot cover both.
 
 Verify a downloaded archive's checksum matches `SHA256SUMS`:
 

@@ -210,6 +210,43 @@ func TestDoctorReportsPrimaryAgentHealthy(t *testing.T) {
 	}
 }
 
+func TestToPrimaryAgentRenders(t *testing.T) {
+	home := t.TempDir()
+	repo := t.TempDir()
+	doc := `
+[frameworks.to]
+source = "builtin:to"
+scope = "project"
+
+[subagents.to.opencode]
+model = "anthropic/claude-opus-4-8"
+[subagents.to-explorer.opencode]
+model = "openai/gpt-5-mini"
+[subagents.to-reviewer.opencode]
+model = "anthropic/claude-opus-4-8"
+[subagents.to-implementer.opencode]
+model = "anthropic/claude-sonnet-4"
+[subagents.to-skeptic.opencode]
+model = "anthropic/claude-opus-4-8"
+`
+	if err := os.WriteFile(filepath.Join(repo, "homonto.toml"), []byte(doc), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	e := buildEngine(t, home, repo)
+	if err := e.Apply(context.Background(), mustPlan(t, e)); err != nil {
+		t.Fatal(err)
+	}
+	agent, err := os.ReadFile(filepath.Join(e.SubagentDir(), "to.opencode.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{"mode: primary", "steps: 1200", `"to-implementer": allow`, `"to-reviewer": allow`} {
+		if !strings.Contains(string(agent), want) {
+			t.Errorf("to primary missing %q:\n%s", want, agent)
+		}
+	}
+}
+
 // TestSubagentRenderFingerprintDistinguishesRoutes pins the fingerprint's job:
 // it must change when an override changes and stay put when nothing does. A
 // fingerprint that collided across override sets would silently skip the

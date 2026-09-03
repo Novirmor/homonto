@@ -107,7 +107,7 @@ is_link "$W/.opencode/agent/onto-explorer.md"; is_file "$W/.opencode/agent/onto-
 is_link "$W/.opencode/agent/onto-implementer.md";  is_file "$W/.opencode/agent/onto-implementer.md"
 is_link "$W/.opencode/agent/nav-agent.md";         is_file "$W/.opencode/agent/nav-agent.md"
 # The onto primary agent projects for OpenCode like any other agent (its entry
-# point is still the /onto command → onto skill, but the agent renders too).
+# point is still the /onto command -> onto skill, but the agent renders too).
 is_link "$W/.opencode/agent/onto.md"; is_file "$W/.opencode/agent/onto.md"
 # The onto framework ships a command per phase/preset — the dispatcher plus every
 # onto-* skill — so each phase is directly invocable. Assert the whole set links

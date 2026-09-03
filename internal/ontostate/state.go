@@ -12,6 +12,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/noviopenworks/homonto/internal/bypasslog"
 	"github.com/noviopenworks/homonto/internal/fsutil"
 	"gopkg.in/yaml.v3"
 )
@@ -478,13 +479,19 @@ func DepsResolved(root string, deps []string) []string {
 	// unverified dependency. Do not "fix" this by surfacing the error — it
 	// would change the gate-closed contract.
 	archived := map[string]bool{}
-	if entries, err := os.ReadDir(filepath.Join(root, "docs", "changes", "archive")); err == nil {
+	archiveRoot := filepath.Join(root, "docs", "changes", "archive")
+	if entries, err := os.ReadDir(archiveRoot); err == nil {
 		for _, e := range entries {
 			if !e.IsDir() {
 				continue
 			}
 			if p := archiveDatePrefix.FindString(e.Name()); p != "" {
-				archived[e.Name()[len(p):]] = true
+				name := e.Name()[len(p):]
+				// A bypass archive is deliberately not a successful close, so it
+				// cannot satisfy a normal dependency gate.
+				if bypassed, err := bypasslog.ArchiveBypassed(filepath.Join(archiveRoot, e.Name()), name, "onto"); err == nil && !bypassed {
+					archived[name] = true
+				}
 			}
 		}
 	}

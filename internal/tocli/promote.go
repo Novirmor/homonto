@@ -7,6 +7,7 @@ import (
 	"github.com/noviopenworks/homonto/internal/destlock"
 	"github.com/noviopenworks/homonto/internal/opid"
 	"github.com/noviopenworks/homonto/internal/promote"
+	"github.com/noviopenworks/homonto/internal/workcli"
 	"github.com/spf13/cobra"
 )
 
@@ -15,20 +16,25 @@ import (
 // workspace moves unchanged under docs/changes/<name>/imported-to/; a fresh
 // proposal-only workspace starts at phase open. Promotion never installs both
 // frameworks — the printed next steps are the homonto.toml swap, apply, and
-// /onto. Locks: the `to` workspace lock, then the destination lock shared
-// with `onto new`, in that fixed order, held across the final rename.
+// /onto. It is the bridge between the two frameworks, so its install gate
+// accepts either [frameworks.to] (the documented order: promote, then swap
+// the declaration) or [frameworks.onto] (promoting a leftover `to` change
+// after the declaration already moved). Locks: the `to` workspace lock, then
+// the destination lock shared with `onto new`, in that fixed order, held
+// across the final rename.
 func promoteCmd() *cobra.Command {
 	var (
 		dir   string
 		as    string
 		force bool
 	)
+	ontoAlt := workcli.Framework{Name: "onto", SkillsDir: "skills/onto", GatePrefix: "onto"}
 	cmd := &cobra.Command{
 		Use:   "promote <change-name>",
 		Short: "Promote a `to` change into a full onto change (source preserved under imported-to/)",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			if err := toFramework.Gate(dir); err != nil {
+			if err := toFramework.GateAny(dir, ontoAlt); err != nil {
 				return err
 			}
 			name := args[0]

@@ -98,6 +98,49 @@ func TestMutatingCommandsRefuseWithoutGate(t *testing.T) {
 	}
 }
 
+// TestPromoteAcceptsEitherFramework pins the promote bridge gate: promotion
+// must work both while [frameworks.to] is declared (the documented order:
+// promote, then swap the declaration) and after the declaration already moved
+// to [frameworks.onto] (promoting a leftover `to` change). With neither
+// framework applied it is refused like every other mutating command.
+func TestPromoteAcceptsEitherFramework(t *testing.T) {
+	// to declared and applied: canonical order.
+	dir := setUpGatedWorkspace(t)
+	run(t, false, "init", "--dir", dir)
+	run(t, false, "new", "grower", "--dir", dir)
+	out := run(t, false, "promote", "grower", "--yes", "--dir", dir)
+	if !strings.Contains(out, "promoted") {
+		t.Errorf("promote output = %q, want mention of promoted", out)
+	}
+	if _, err := os.Stat(filepath.Join(dir, "docs", "changes", "grower", "onto-state.yaml")); err != nil {
+		t.Errorf("onto state after to-applied promote: %v", err)
+	}
+
+	// onto declared and applied: leftover-change order (the declaration moved
+	// before the promotion).
+	dir2 := setUpGatedWorkspace(t)
+	run(t, false, "init", "--dir", dir2)
+	run(t, false, "new", "grower", "--dir", dir2)
+	writeFile(t, filepath.Join(dir2, "homonto.toml"), "[frameworks.onto]\nsource=\"builtin:onto\"\nscope=\"project\"\n")
+	if err := os.MkdirAll(filepath.Join(dir2, ".homonto", "catalog", "skills", "onto"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	out = run(t, false, "promote", "grower", "--yes", "--dir", dir2)
+	if !strings.Contains(out, "promoted") {
+		t.Errorf("promote (onto-applied) output = %q, want mention of promoted", out)
+	}
+	if _, err := os.Stat(filepath.Join(dir2, "docs", "changes", "grower", "onto-state.yaml")); err != nil {
+		t.Errorf("onto state after onto-applied promote: %v", err)
+	}
+
+	// Neither framework applied: refused, nothing written.
+	dir3 := t.TempDir()
+	run(t, true, "promote", "grower", "--yes", "--dir", dir3)
+	if _, err := os.Stat(filepath.Join(dir3, "docs")); !os.IsNotExist(err) {
+		t.Errorf("ungated promote created docs/, stat err = %v", err)
+	}
+}
+
 func TestLifecycle_PlanDoDoneArchives(t *testing.T) {
 	dir := setUpGatedWorkspace(t)
 

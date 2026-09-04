@@ -271,6 +271,31 @@ func RepoContextLines(root string) []string {
 //
 // Gate performs no writes; it is safe to call before any scaffolding.
 func (f Framework) Gate(root string) error {
+	return f.GateAny(root)
+}
+
+// GateAny is Gate, satisfied when ANY of the given frameworks is declared and
+// applied. `to promote` uses it: promotion bridges the two frameworks, so it
+// must run both while [frameworks.to] is still declared (the documented
+// order) and after the declaration already moved to [frameworks.onto]
+// (promoting a leftover `to` change). When none is satisfied, the first
+// framework's error is reported — the most specific failure.
+func (f Framework) GateAny(root string, others ...Framework) error {
+	frameworks := make([]Framework, 0, 1+len(others))
+	frameworks = append(frameworks, f)
+	frameworks = append(frameworks, others...)
+	var firstErr error
+	for _, fw := range frameworks {
+		if err := fw.gate(root); err == nil {
+			return nil
+		} else if firstErr == nil {
+			firstErr = err
+		}
+	}
+	return firstErr
+}
+
+func (f Framework) gate(root string) error {
 	tomlPath := filepath.Join(root, "homonto.toml")
 
 	data, err := os.ReadFile(tomlPath)

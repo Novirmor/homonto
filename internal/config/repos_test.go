@@ -3,6 +3,7 @@ package config
 import (
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 )
@@ -95,6 +96,16 @@ func TestReposNonGitDirectoryFailsLoad(t *testing.T) {
 	_, err := Load(cfgPath)
 	if err == nil || !strings.Contains(err.Error(), "not a git worktree") {
 		t.Errorf("load of non-git repo = %v, want a not-a-git-worktree error", err)
+	}
+}
+
+func TestReposWildcardPathFailsLoad(t *testing.T) {
+	base := t.TempDir()
+	for _, name := range []string{"service*", "service?"} {
+		cfgPath := writeReposConfig(t, base, "[repos]\nservice = "+strconv.Quote(filepath.Join(base, name))+"\n")
+		if _, err := Load(cfgPath); err == nil || !strings.Contains(err.Error(), "wildcard") {
+			t.Errorf("load of wildcard repo path %q = %v, want wildcard rejection", name, err)
+		}
 	}
 }
 

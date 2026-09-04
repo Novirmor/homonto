@@ -38,7 +38,7 @@ through the entire preset unless the user names an endpoint or asks to pause.
 ### 1. Open-lite
 
 Minimal clarification: reproduction steps, expected vs actual behavior,
-suspected blast radius. Create `docs/changes/<name>/` with:
+suspected blast radius. Create `<workflow-root>/changes/<name>/` with:
 
 - Create the workspace via `onto new <name> --workflow fix`, adding one `--repo
   <alias>` for each declared sibling the requested fix changes (`onto new`
@@ -107,7 +107,7 @@ fix, watch the test pass, run the surrounding tests. One commit per task.
 
 Run `onto set verify-scale <name> light`. The bug's reproduction is the core
 scenario: demonstrate it no longer occurs, with the literal command +
-output in `docs/changes/<name>/verification.md` (template:
+output in `<workflow-root>/changes/<name>/verification.md` (template:
 `onto-verify/references/verification.md`), plus regression-suite results.
 One adversarial skeptic (`onto-skeptic`, conformance lens) is optional in light
 mode (protocol: `onto-verify/references/adversarial.md`); record a skip. On
@@ -119,7 +119,7 @@ commit the report and state, then run `onto advance <name>` to enter close.
 
 Same obligations as `onto-close` — lint (`onto-close/references/
 lint-checklist.md`), spec deltas merged if any requirement changed, close plan
-validated and recorded, archive to `docs/changes/archive/YYYY-MM-DD-<name>/`,
+validated and recorded, archive to `<workflow-root>/changes/archive/YYYY-MM-DD-<name>/`,
 then integrate per repository policy. The preset has no guides obligation; a
 legacy `guides: pending` value must still be resolved before archive.
 

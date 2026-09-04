@@ -745,5 +745,6 @@ fails when either tool stops honoring a rendered invariant.
 - Deterministic intent routing (CometIntentFrame) — dispatcher tables are
   simpler and sufficient.
 - Artifact language config (en/zh-CN) — no current need.
-- Binary self-update — `go install @tag` / release archives own that.
+- Binary self-update — `go install @tag` / the interactive installer /
+  release archives own that.
 - Per-resource `review_mode` knob — folded into build-mode + reviewer agent.

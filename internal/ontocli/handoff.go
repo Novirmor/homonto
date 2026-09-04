@@ -43,7 +43,7 @@ func handoffCmd() *cobra.Command {
 			if err := ontoFramework.ValidChangeName(name); err != nil {
 				return err
 			}
-			changeDir := filepath.Join(dir, "docs", "changes", name)
+			changeDir := filepath.Join(changesDir(dir), name)
 			st, err := ontostate.LoadChange(changeDir)
 			if err != nil {
 				return err
@@ -102,7 +102,7 @@ func handoffCmd() *cobra.Command {
 		},
 	}
 	cmd.Flags().StringVar(&dir, "dir", ".", "workspace root containing the change")
-	cmd.Flags().BoolVar(&doWrite, "write", false, "persist the metadata-only recovery pack under docs/changes/<name>/.onto/handoff/")
+	cmd.Flags().BoolVar(&doWrite, "write", false, "persist the metadata-only recovery pack under <workflow-root>/changes/<name>/.onto/handoff/")
 	cmd.Flags().BoolVar(&asJSON, "json", false, "emit the interactive recovery view as JSON (full state; nothing is written)")
 	return cmd
 }

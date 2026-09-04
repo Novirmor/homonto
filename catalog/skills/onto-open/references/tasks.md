@@ -18,16 +18,16 @@ only this file carries the checkbox.
 
 ## 1. <area, e.g. Foundation>
 
-- [ ] 1.1 <task — outcome-stated, small enough for one reviewable commit>
-- [ ] 1.2 <task>
+- [ ] 1.1 <task — outcome-stated, small enough for one reviewable commit> [trace #1]
+- [ ] 1.2 <task> [trace #2]
 
 ## 2. <area, e.g. Implementation>
 
-- [ ] 2.1 <task>
+- [ ] 2.1 <task> [trace #3]
 
 ## N. Validation
 
-- [ ] N.1 <how this change proves itself — dry-runs, tests, evidence>
+- [ ] N.1 <how this change proves itself — dry-runs, tests, evidence> [trace #4]
 ```
 
 ## Rules
@@ -43,6 +43,10 @@ only this file carries the checkbox.
   `- [x] N.N (deferred, done at close YYYY-MM-DD): <desc>` — that rewrite
   is what the pre-archive lint's "no unresolved markers" check reads.
 - Number tasks `<area>.<n>`; keep one outcome per task.
+- Every task carries one unique positive `[trace #N]` marker. The dotted ID is
+  the `tasks.md`/`plan.md` key; the numeric trace ID binds `onto trace` and
+  `onto evidence record --task N` to that task. Legacy `- [ ] #N …` items still
+  parse, but do not add new ones.
 - **The list is live**: work discovered during build is appended as
   `- [ ] N.M (discovered <date>): <task>` — appended BEFORE its code is
   written, checked off when its commit lands. Never renumber, reorder, or

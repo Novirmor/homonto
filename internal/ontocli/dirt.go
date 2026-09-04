@@ -58,7 +58,11 @@ func worktreeDirt(root, change string) (entries []dirtEntry, determinable bool) 
 	}
 	prefix := strings.TrimSpace(string(prefixOut)) // "" at repo root, "sub/dir/" below it
 
-	docsPrefix := prefix + "docs/changes/"
+	workflowRel, err := filepath.Rel(root, workflowRoot(root))
+	if err != nil {
+		return nil, false
+	}
+	docsPrefix := prefix + filepath.ToSlash(filepath.Join(workflowRel, "changes")) + "/"
 	ownPrefix := ""
 	if change != "" {
 		ownPrefix = docsPrefix + change + "/"
@@ -171,7 +175,7 @@ func dirtCmd() *cobra.Command {
 			// repositories that close will gate. Keep the historic root-only
 			// behavior for ad-hoc names and legacy states without repos.
 			if change != "" {
-				if st, err := ontostate.Load(filepath.Join(dir, "docs", "changes", change, "onto-state.yaml")); err == nil && len(st.Repos) > 0 {
+				if st, err := ontostate.Load(filepath.Join(changesDir(dir), change, "onto-state.yaml")); err == nil && len(st.Repos) > 0 {
 					repos, err := scopedWorktreeDirt(dir, change, st.Repos)
 					if err != nil {
 						return fmt.Errorf("onto dirt: cannot determine scoped worktree state: %w", err)

@@ -66,8 +66,8 @@ obligation: fix them or stop.
 ## 3. Post-merge (run AFTER the spec merge, before archive)
 
 - [ ] Living specs contain **no** delta-only section headings:
-      `grep -nE '^## (ADDED|MODIFIED|REMOVED|RENAMED) Requirements' docs/specs/*.md`
-      → no matches outside `docs/specs/README.md` (the README legitimately
+       `grep -nE '^## (ADDED|MODIFIED|REMOVED|RENAMED) Requirements' <workflow-root>/specs/*.md`
+       → no matches outside `<workflow-root>/specs/README.md` (the README legitimately
       documents the section names; prose mentions anywhere are fine — the
       check is heading-anchored)
 - [ ] **No duplicated requirements**: in every touched living spec each
@@ -84,6 +84,6 @@ obligation: fix them or stop.
 - [ ] No unresolved `DEFERRED to close:` markers remain in `tasks.md` —
       deferred tasks are executed during close, before close-plan validation;
       archiving one undone is prohibited
-- [ ] No live doc (README, docs/guides, docs/specs, docs/adr, skills)
+- [ ] No live doc (README, <workflow-root>/guides, <workflow-root>/specs, <workflow-root>/adr, skills)
       references a path this change moved or deleted — archives are exempt
       (history may cite old paths)

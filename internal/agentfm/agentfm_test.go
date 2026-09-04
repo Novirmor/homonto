@@ -119,6 +119,55 @@ func TestRenderOpenCode_BashAllowlist(t *testing.T) {
 	}
 }
 
+func TestRenderOpenCode_ExternalDirectoriesAreAgentSpecific(t *testing.T) {
+	context := ctx()
+	context.ExternalDirectoriesByAgent = map[string][]string{
+		"onto": {"/workspace/service-b", "/workspace/service-a", "/workspace/service-a"},
+	}
+	out, err := Render("onto", []byte(orchestrator), "opencode", context)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{
+		"  external_directory:",
+		`    "*": deny`,
+		`    "/workspace/service-a/**": allow`,
+		`    "/workspace/service-b/**": allow`,
+	} {
+		if !strings.Contains(string(out), want) {
+			t.Errorf("external access render missing %q:\n%s", want, out)
+		}
+	}
+	if strings.Count(string(out), `"/workspace/service-a/**": allow`) != 1 {
+		t.Errorf("duplicate external path rendered:\n%s", out)
+	}
+
+	empty := ctx()
+	empty.ExternalDirectoriesByAgent = map[string][]string{"onto": {}}
+	out, err = Render("onto", []byte(orchestrator), "opencode", empty)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(out), "  external_directory:\n    \"*\": deny") {
+		t.Errorf("mapped agent without repos must deny external directories:\n%s", out)
+	}
+	if strings.Contains(string(out), `"/**": allow`) {
+		t.Errorf("empty external-directory map must not add an allow rule:\n%s", out)
+	}
+
+	if rendered := mustRender(t, readOnlyReviewer, "opencode"); strings.Contains(rendered, "external_directory:") {
+		t.Errorf("read-only agent must not receive external write access:\n%s", rendered)
+	}
+	if rendered, err := Render("custom-writer", []byte(orchestrator), "opencode", &RenderContext{
+		Overrides:                  map[string]ModelSpec{"custom-writer": {Model: "opus"}},
+		ExternalDirectoriesByAgent: context.ExternalDirectoriesByAgent,
+	}); err != nil {
+		t.Fatal(err)
+	} else if strings.Contains(string(rendered), "external_directory:") {
+		t.Errorf("unmapped writable agent must not receive external access:\n%s", rendered)
+	}
+}
+
 func TestRender_NoHomontoBlock_Unchanged(t *testing.T) {
 	in := "---\nname: x\ndescription: y\nmode: subagent\n---\nbody\n"
 	// A missing homonto block returns before model context is considered.

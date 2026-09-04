@@ -74,6 +74,37 @@ func TestNewCommand_CreatesSkeleton(t *testing.T) {
 	}
 }
 
+func TestCustomWorkflowRootLifecycle(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, filepath.Join(dir, "homonto.toml"), "[workflow]\nroot=\"workflow/records\"\n[frameworks.onto]\nsource=\"builtin:onto\"\nscope=\"project\"\n")
+	if err := os.MkdirAll(filepath.Join(dir, ".homonto", "catalog", "skills", "onto"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	cmd := NewRootCmd()
+	cmd.SetArgs([]string{"init", "--dir", dir})
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("init: %v", err)
+	}
+	cmd = NewRootCmd()
+	cmd.SetArgs([]string{"new", "custom", "--dir", dir})
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("new: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(dir, "workflow", "records", "changes", "custom", "onto-state.yaml")); err != nil {
+		t.Fatalf("custom workspace missing: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(dir, "docs", "changes")); !os.IsNotExist(err) {
+		t.Fatalf("default workspace was created, stat err = %v", err)
+	}
+	marker, err := os.ReadFile(filepath.Join(dir, ".homonto", "workflow-root"))
+	if err != nil {
+		t.Fatalf("reading workflow marker: %v", err)
+	}
+	if got, want := string(marker), "workflow/records\n"; got != want {
+		t.Fatalf("workflow marker = %q, want %q", got, want)
+	}
+}
+
 // A fix/tweak preset skips design and decomposes at open-lite, so `new` DOES
 // scaffold tasks.md for it.
 func TestNewCommand_PresetScaffoldsTasks(t *testing.T) {

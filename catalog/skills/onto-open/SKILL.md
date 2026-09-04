@@ -70,7 +70,7 @@ the smallest cohesive changes yourself and continue.
 ### 3. Create the workspace
 
 Derive a concise kebab-case name from the request and create
-`docs/changes/<name>/`; ask about the name only when two plausible names encode
+`<workflow-root>/changes/<name>/`; ask about the name only when two plausible names encode
 different scope. Create each artifact from its canonical template:
 
 - **Fresh work only:** create the workspace via the binary: `onto new <name>
@@ -130,7 +130,7 @@ onto set proposal-approved <name> "YYYY-MM-DD <one-line review summary>"
       into open
 - [ ] onto-no-slop pass run over `proposal.md` and `notes.md`, the pass
       recorded in `notes.md` (`no-slop: <artifact> done`)
-- [ ] **Commit the workspace**: `git add docs/changes/<name> && git commit`
+- [ ] **Commit the workspace**: `git add <workflow-root>/changes/<name> && git commit`
       — every phase exits with its workspace committed; state recovery,
       `base_ref` rebuild, and the close-phase `git mv` all depend on the
       workspace being tracked

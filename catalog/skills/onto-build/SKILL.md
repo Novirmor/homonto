@@ -41,7 +41,7 @@ Apply the dispatcher's shared autonomous workflow policy throughout.
 
 ### 1. Write the plan
 
-Write `docs/changes/<name>/plan.md` from the canonical template
+Write `<workflow-root>/changes/<name>/plan.md` from the canonical template
 `references/plan.md`: one `## Task N.M` detail block per `tasks.md` item,
 **numbered to match it**, each with exact file paths, what to do, and how to
 verify it; mark tasks warranting review `(risk: high)`. A task that can't
@@ -51,6 +51,10 @@ task — split anything bigger. Read `notes.md` first if present.
 `tasks.md` owns completion state; `plan.md` owns the detail. Every item must
 have its task and every task its item — a number in one file and not the
 other is drift, and the close lint checks for it.
+
+Each dotted task item also keeps its unique `[trace #N]` marker. It is not part
+of the plan heading: `1.1` pairs with `## Task 1.1`, while `#N` is passed to
+`onto evidence record --task N` and appears in `onto trace`.
 
 ### 2. Plan review and build config
 
@@ -127,7 +131,7 @@ gets lost. Four rules, no exceptions:
 
 - **No work outside a written task.** Discovered work — a missing edge case,
   a prerequisite refactor, a test the plan forgot — is APPENDED as an
-  unchecked `- [ ] N.M` in `tasks.md` **and** a matching `## Task N.M` detail
+  unchecked `- [ ] N.M <task> [trace #K]` in `tasks.md` **and** a matching `## Task N.M` detail
   block in `plan.md`, in the same edit, **before** any of its code is written.
   Append-then-do, never do-then-maybe-note. A few lines inside the current
   task's stated scope belong to that task; anything more is a new task.
@@ -136,7 +140,8 @@ gets lost. Four rules, no exceptions:
   batched afterwards. `plan.md` has no checkbox to update.
 - **Never renumber, reorder, or delete tasks.** A task that becomes
   unnecessary is checked with a one-line reason
-  (`- [x] N.N SUPERSEDED: <why>`); appended tasks take the next number.
+   (`- [x] N.N SUPERSEDED: <why> [trace #K]`); appended tasks take the next
+   dotted number and trace ID.
   Stable numbering is what makes "first unchecked task" a reliable resume
   point.
 - **Fix the list before writing more code.** If at any moment the checkboxes
@@ -218,7 +223,7 @@ cost, or another user-owned constraint.
       work — the close lint blocks runtime-behavior deferrals)
 - [ ] One commit per task; working tree clean — including the workspace
       docs (tasks/plan/notes updates ride their task commits; anything
-      still uncommitted in `docs/changes/<name>/` commits now)
+       still uncommitted in `<workflow-root>/changes/<name>/` commits now)
 - [ ] Project build + test suite run fresh and pass (state the commands and
       results — do not rely on memory)
 - [ ] Decisions recorded via `onto set isolation|build-mode|tdd-mode <name> …`

@@ -76,3 +76,9 @@ homonto projects this framework from `homonto.toml`. Use `homonto plan` to
 preview configuration changes and `homonto apply` to reconcile them. Never
 hand-edit `.homonto/`, projected `.opencode/` files, or `to-state.yaml`; repair
 projection through homonto and workflow state through the `to` binary.
+
+A config may declare sibling Git worktrees under `[repos]`. The config
+repository keeps `<workflow-root>/tasks/` and all workflow state, while a selected task
+may edit a declared sibling. Use that sibling as the tool working directory;
+its declared path is already permitted. Do not work in an undeclared directory
+or request a broad external-directory exception.

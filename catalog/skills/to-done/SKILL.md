@@ -50,7 +50,7 @@ Apply the dispatcher's shared autonomous workflow policy throughout.
    `to done <name> --verified --evidence "<the literal verify command and its result>"`.
    The evidence string is recorded verbatim in the archived state — it is
    what makes this verification distinguishable from a skipped one later.
-   The change moves to `docs/tasks/archive/<date>-<name>/`.
+   The change moves to `<workflow-root>/tasks/archive/<date>-<name>/`.
 6. **Commit the archived result.** Commit the `## Verification` record,
    terminal `to-state.yaml`, and directory move together. The archive is the
    durable review artifact; do not leave it as uncommitted cleanup after a

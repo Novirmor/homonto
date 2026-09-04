@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"os/exec"
+	"path/filepath"
 	"regexp"
 	"strings"
 
@@ -43,13 +44,6 @@ func captureVerifyHeads(root string, st ontostate.State) (map[string]string, err
 		heads[name] = head
 	}
 	return heads, nil
-}
-
-// workflowBookkeepingPrefixes are the paths a close may legitimately touch
-// after the verification pass: the change's own tree, merged living specs,
-// numbered ADRs, and updated guides.
-var workflowBookkeepingPrefixes = []string{
-	"docs/changes/", "docs/specs/", "docs/adr/", "docs/guides/",
 }
 
 // verifyHeadsIntact refuses a close whose repositories moved past the frozen
@@ -96,7 +90,7 @@ func verifyHeadsIntact(root string, st ontostate.State) error {
 			if alias != "" {
 				return fmt.Errorf("repository %s changed after verification (%s); re-verify the change", display, path)
 			}
-			if !isWorkflowBookkeeping(path) {
+			if !isWorkflowBookkeeping(root, path) {
 				return fmt.Errorf("source path %s changed after the verification pass; re-verify the change", path)
 			}
 		}
@@ -104,13 +98,18 @@ func verifyHeadsIntact(root string, st ontostate.State) error {
 	return nil
 }
 
-func isWorkflowBookkeeping(path string) bool {
-	for _, prefix := range workflowBookkeepingPrefixes {
-		if strings.HasPrefix(path, prefix) {
+func isWorkflowBookkeeping(root, changedPath string) bool {
+	workflowRel, err := filepath.Rel(root, workflowRoot(root))
+	if err != nil {
+		return false
+	}
+	for _, name := range []string{"changes", "specs", "adr", "guides"} {
+		prefix := filepath.ToSlash(filepath.Join(workflowRel, name)) + "/"
+		if strings.HasPrefix(changedPath, prefix) {
 			return true
 		}
 	}
-	return strings.HasPrefix(path, ".homonto/")
+	return strings.HasPrefix(changedPath, ".homonto/")
 }
 
 // changedPaths lists the paths that differ between two commits. --no-renames

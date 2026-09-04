@@ -17,13 +17,13 @@ from the archived change:
 <verification.md summary: mode, Result, scenario count, adversarial pass
 outcome, regression result>
 
-Full records: `docs/changes/archive/YYYY-MM-DD-<name>/`
+Full records: `<workflow-root>/changes/archive/YYYY-MM-DD-<name>/`
 (proposal · design · verification · notes)
 ```
 
 Use this body directly with the repository's PR command. If no remote or PR tool
 is available, write it to
-`docs/changes/archive/YYYY-MM-DD-<name>/ship.md` and commit it. This is the
+`<workflow-root>/changes/archive/YYYY-MM-DD-<name>/ship.md` and commit it. This is the
 archive contract's sanctioned post-archive addition. Report the fallback as an
 integration gap; do not ask whether to prepare text that the selected PR path
 already requires.

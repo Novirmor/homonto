@@ -122,10 +122,10 @@ shares apply's plan → confirm → apply flow.
 | `--yes` | skip the confirmation prompt |
 
 `update` does **not** download or replace the binaries themselves. Install
-those the usual way (`go install …@latest` or the release archives), then run
-`homonto update`. State records the versions behind each apply, and
-`onto doctor` / `to doctor` warn when a workflow binary and the homonto that
-installed its framework have drifted apart.
+those the usual way (`go install …@latest`, the interactive installer, or the
+release archives), then run `homonto update`. State records the versions
+behind each apply, and `onto doctor` / `to doctor` warn when a workflow binary
+and the homonto that installed its framework have drifted apart.
 
 ## `homonto cache gc`
 

@@ -15,6 +15,19 @@ bookkeeper) — for every supported OS/arch as separate archives under one
 `SHA256SUMS`. `onto` and `to` each require `homonto` to have installed their
 framework first (`[frameworks.onto]` / `[frameworks.to]` + `homonto apply`).
 
+### New in v0.18.0 — interactive release installer and a configurable workflow root
+
+- **Interactive release installer.** `scripts/install.sh` (Linux/macOS,
+  amd64/arm64) asks which binaries you want, verifies the release archives
+  against `SHA256SUMS`, installs into a directory you choose, and prints PATH
+  instructions — it never edits your shell configuration and never runs
+  project commands. Download-then-run, never `curl | bash`
+  ([ADR 0041](adr/0041-ship-an-interactive-release-installer.md)).
+- **Configurable workflow root.** `[workflow] root = "<relative path>"`
+  relocates both frameworks' records below `docs/`; changing the root while
+  workflow state exists fails closed
+  ([ADR 0040](adr/0040-configure-one-workflow-root.md)).
+
 ### New in v0.17.0 — autonomous workflows and valid OpenCode resources
 
 - **Workflows run through by default.** Starting or resuming `onto` or `to`

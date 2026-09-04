@@ -56,7 +56,7 @@ func runAdvanceTo(cmd *cobra.Command, root, name, target string) error {
 	if target != "build" {
 		return fmt.Errorf("onto advance --to: only \"build\" is a valid target (got %q) — phases past build are never advanced mechanically", target)
 	}
-	changeDir := filepath.Join(root, "docs", "changes", name)
+	changeDir := filepath.Join(changesDir(root), name)
 	st, err := ontostate.Load(filepath.Join(changeDir, "onto-state.yaml"))
 	if err != nil {
 		return fmt.Errorf("onto advance: loading state: %w", err)
@@ -110,7 +110,7 @@ func runAdvance(cmd *cobra.Command, root, name string) error {
 		return err
 	}
 
-	changeDir := filepath.Join(root, "docs", "changes", name)
+	changeDir := filepath.Join(changesDir(root), name)
 	statePath := filepath.Join(changeDir, "onto-state.yaml")
 
 	st, err := ontostate.Load(statePath)

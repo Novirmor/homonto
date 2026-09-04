@@ -34,6 +34,17 @@ func runInit(cmd *cobra.Command, root string, jsonMode bool) error {
 		return err
 	}
 
+	for _, path := range []string{tasksDir(root), archiveDir(root)} {
+		if err := workcli.ValidateWorkflowPath(root, path); err != nil {
+			return fmt.Errorf("to init: unsafe workflow path: %w", err)
+		}
+	}
+	// Record the root before the first scaffold write so a crash cannot leave
+	// custom-root state that a later config edit cannot attribute.
+	if err := workcli.MarkWorkflowState(root); err != nil {
+		return fmt.Errorf("to init: recording workflow root: %w", err)
+	}
+
 	created, existed := []string{}, []string{}
 	for _, path := range []string{tasksDir(root), archiveDir(root)} {
 		_, statErr := os.Stat(path)

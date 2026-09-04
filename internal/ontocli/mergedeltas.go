@@ -49,7 +49,7 @@ func runMergeDeltas(cmd *cobra.Command, root, name string) error {
 		return fmt.Errorf("onto merge-deltas: %w", err)
 	}
 	defer lock.Release()
-	changeDir := filepath.Join(root, "docs", "changes", name)
+	changeDir := filepath.Join(changesDir(root), name)
 	statePath := filepath.Join(changeDir, "onto-state.yaml")
 	st, err := ontostate.Load(statePath)
 	if err != nil {
@@ -120,7 +120,7 @@ func runMergeDeltas(cmd *cobra.Command, root, name string) error {
 		capability, target, merged string
 	}
 	var results []result
-	specsDir := filepath.Join(root, "docs", "specs")
+	specsDir := filepath.Join(workflowRoot(root), "specs")
 	if err := fsutil.RequireRealParents(root, specsDir); err != nil {
 		return fmt.Errorf("onto merge-deltas: unsafe living-spec directory: %w", err)
 	}
@@ -198,7 +198,7 @@ func runMergeDeltas(cmd *cobra.Command, root, name string) error {
 		return nil
 	}
 	for _, r := range results {
-		fmt.Fprintf(cmd.OutOrStdout(), "  merged %s → docs/specs/%s.md\n", r.capability, r.capability)
+		fmt.Fprintf(cmd.OutOrStdout(), "  merged %s → %s\n", r.capability, filepath.Join(workflowRoot(root), "specs", r.capability+".md"))
 	}
 	fmt.Fprintf(cmd.OutOrStdout(), "%s: %d delta spec(s) merged; marked close.merged\n", name, len(inputs))
 	return nil

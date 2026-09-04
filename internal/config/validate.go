@@ -14,6 +14,9 @@ import (
 // One section per helper, run in a fixed order so which error wins is
 // deterministic even for a config with several problems.
 func validate(c *Config) error {
+	if err := validateWorkflow(c); err != nil {
+		return err
+	}
 	// Legacy [models.<tool>.<tier>] tables were removed (D2 — no more tier
 	// routing). The TOML decoder populates the Models field on Config as a
 	// detector (pelletier/go-toml/v2 cannot write to unexported fields, so the
@@ -57,6 +60,22 @@ func validate(c *Config) error {
 		return err
 	}
 	return validateSettingsAndTUI(c)
+}
+
+func validateWorkflow(c *Config) error {
+	root := strings.TrimSpace(c.Workflow.Root)
+	if root == "" {
+		return nil
+	}
+	if filepath.IsAbs(root) || root == "." || root == string(filepath.Separator) || strings.Contains(root, `\`) {
+		return fmt.Errorf("parse config: workflow.root %q must be a relative path below the configuration repository", c.Workflow.Root)
+	}
+	clean := filepath.Clean(root)
+	if clean == ".." || strings.HasPrefix(clean, ".."+string(filepath.Separator)) {
+		return fmt.Errorf("parse config: workflow.root %q must remain below the configuration repository", c.Workflow.Root)
+	}
+	c.Workflow.Root = clean
+	return nil
 }
 
 // validateFrameworks checks the framework source rule and the onto/to

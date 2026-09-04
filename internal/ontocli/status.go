@@ -32,7 +32,7 @@ func runStatus(cmd *cobra.Command, root string) error {
 	// directory whose state file was deleted surfaces as a missing-state row
 	// instead of silently vanishing (F14). The "archive" directory holds
 	// archived changes one level deeper and is skipped here.
-	changesDir := filepath.Join(root, "docs", "changes")
+	changesDir := changesDir(root)
 	entries, err := os.ReadDir(changesDir)
 	if err != nil {
 		if os.IsNotExist(err) {

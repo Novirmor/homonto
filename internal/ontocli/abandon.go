@@ -42,7 +42,7 @@ func runAbandon(cmd *cobra.Command, root, name string) error {
 		return err
 	}
 
-	statePath := filepath.Join(root, "docs", "changes", name, "onto-state.yaml")
+	statePath := filepath.Join(changesDir(root), name, "onto-state.yaml")
 	st, err := ontostate.Load(statePath)
 	if err != nil {
 		return fmt.Errorf("onto abandon: loading %s: %w", statePath, err)

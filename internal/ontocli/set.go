@@ -22,7 +22,7 @@ func runTransition(cmd *cobra.Command, root, name string, apply func(*ontostate.
 	}
 	unlock := acquireStateLockBestEffort(root)
 	defer unlock()
-	changeDir := filepath.Join(root, "docs", "changes", name)
+	changeDir := filepath.Join(changesDir(root), name)
 	st, err := ontostate.LoadChange(changeDir)
 	if err != nil {
 		return fmt.Errorf("onto set: loading %s: %w", changeDir, err)

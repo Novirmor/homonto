@@ -1,7 +1,7 @@
 # onto-state.yaml — canonical schema and template
 
 The binary-owned workflow state for one change. This file is the canonical
-source (`docs/changes/README.md`, when the repo has one, points here rather
+source (`<workflow-root>/changes/README.md`, when the repo has one, points here rather
 than restating it). **`onto-state.yaml` is written exclusively by the `onto`
 binary** (`onto new`, `onto set …`, `onto advance`, `onto close`, `onto
 complete-integration`, `onto abandon`) — never hand-edit it. The dispatcher re-derives the *routing* phase
@@ -74,7 +74,7 @@ observed:                  # observational only — never a gate, never blocking
   `onto gate <change> --json` lists pending decisions with the exact setter. The two full-only
   tokens are not required of `fix`/`tweak` presets; `close_confirmed` is
   required of every workflow.
-- `deps` names other changes under `docs/changes/`; a legacy archive resolves a
+- `deps` names other changes under `<workflow-root>/changes/`; a legacy archive resolves a
   dependency, while a tracked archive resolves it only after
   `.onto/integration.json` records completion. Archive matching uses the
   date-anchored exact name, never a bare suffix. The dispatcher warns before
@@ -98,7 +98,7 @@ observed:                  # observational only — never a gate, never blocking
 - `verify.heads` is frozen when `onto set verify-result <change> pass` records
   a pass (alias `""` is the config repository). Close refuses when a scoped
   repository has commits past its head that are not workflow bookkeeping
-  (docs/ paths in the config repo; nothing at all in a selected sibling), or
+  (<workflow-root>/ paths in the config repo; nothing at all in a selected sibling), or
   when a head no longer resolves. Recording a new pass re-binds; any other
   result clears the heads along with the evidence they justified.
 - `integration` must be recorded before close. The skill derives `merge` or

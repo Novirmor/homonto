@@ -321,6 +321,7 @@ type Config struct {
 	// greater than CurrentConfigSchemaVersion is rejected fail-closed at load so
 	// an older binary never silently mis-applies a newer config.
 	SchemaVersion int                 `toml:"schema_version,omitempty"`
+	Workflow      Workflow            `toml:"workflow"`
 	MCPs          map[string]MCP      `toml:"mcps"`
 	Frameworks    map[string]Resource `toml:"frameworks"`
 	Skills        map[string]Resource `toml:"skills"`
@@ -367,6 +368,20 @@ type Config struct {
 	// populated by Load's filesystem validation. Nil for a config with no
 	// repos (or one not built via Load): RepoDirs then reports none.
 	repoDirs map[string]string
+}
+
+// Workflow configures the one repository-local home for onto or to artifacts.
+// The frameworks are mutually exclusive, so they deliberately share this root.
+type Workflow struct {
+	Root string `toml:"root"`
+}
+
+// RootOrDefault returns the normalized workflow root relative to homonto.toml.
+func (w Workflow) RootOrDefault() string {
+	if w.Root == "" {
+		return "docs"
+	}
+	return w.Root
 }
 
 // RepoDirs returns each declared [repos] entry resolved to its absolute

@@ -86,6 +86,64 @@ func TestGate_GatePrefixInErrors(t *testing.T) {
 	}
 }
 
+func TestGateRejectsWorkflowRootChangeWithState(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "homonto.toml"), []byte("[workflow]\nroot=\"workflow\"\n[frameworks.onto]\nsource=\"builtin:onto\"\nscope=\"project\"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(dir, ".homonto", "catalog", "skills", "onto"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(dir, "workflow", "changes"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, ".homonto", "workflow-root"), []byte("workflow\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "homonto.toml"), []byte("[workflow]\nroot=\"other\"\n[frameworks.onto]\nsource=\"builtin:onto\"\nscope=\"project\"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := onto.Gate(dir); err == nil || !strings.Contains(err.Error(), "while workflow state exists") {
+		t.Fatalf("gate = %v, want fail-closed root-change error", err)
+	}
+}
+
+func TestWorkflowRootRejectsEscapingSymlinks(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		root string
+		link string
+	}{
+		{name: "root", root: "workflow", link: "workflow"},
+		{name: "parent", root: "workflow/records", link: "workflow"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			dir := t.TempDir()
+			outside := t.TempDir()
+			if err := os.Symlink(outside, filepath.Join(dir, tc.link)); err != nil {
+				t.Skipf("symlinks unavailable: %v", err)
+			}
+			if err := os.WriteFile(filepath.Join(dir, "homonto.toml"), []byte("[workflow]\nroot=\""+tc.root+"\"\n"), 0o644); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := WorkflowRoot(dir); err == nil || !strings.Contains(err.Error(), "resolves outside") {
+				t.Fatalf("WorkflowRoot = %v, want escaping symlink rejection", err)
+			}
+		})
+	}
+}
+
+func TestWorkflowRootRejectsEscapingDefaultSymlink(t *testing.T) {
+	dir := t.TempDir()
+	outside := t.TempDir()
+	if err := os.Symlink(outside, filepath.Join(dir, "docs")); err != nil {
+		t.Skipf("symlinks unavailable: %v", err)
+	}
+	if _, err := WorkflowRoot(dir); err == nil || !strings.Contains(err.Error(), "resolves outside") {
+		t.Fatalf("WorkflowRoot = %v, want escaping default-root rejection", err)
+	}
+}
+
 // TestValidChangeName_AcceptedShape covers the lowercase-hyphenated shape both
 // frameworks share.
 func TestValidChangeName_AcceptedShape(t *testing.T) {

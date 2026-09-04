@@ -41,7 +41,10 @@ var (
 	reqHeading = regexp.MustCompile(`^### Requirement:\s*(.+?)\s*$`)
 	scHeading  = regexp.MustCompile(`^#### Scenario:\s*(.+?)\s*$`)
 	idLine     = regexp.MustCompile(`^(?:Requirement|Scenario)-ID:\s*(\S+)\s*$`)
-	taskLine   = regexp.MustCompile(`^\s*-\s+\[([ xX])\]\s+.*#(\d+)\b`)
+	// Legacy tasks began with #N. Dotted workflow task IDs carry their stable
+	// trace ID explicitly, avoiding accidental matches such as issue #123.
+	legacyTaskLine = regexp.MustCompile(`^\s*-\s+\[([ xX])\]\s+#([1-9]\d*)\b`)
+	traceTaskLine  = regexp.MustCompile(`^\s*-\s+\[([ xX])\]\s+\d+\.\d+\b.*\[trace\s+#([1-9]\d*)\]`)
 )
 
 // ParseRequirements extracts requirement and scenario blocks with their IDs
@@ -91,12 +94,17 @@ type Task struct {
 	Checked bool
 }
 
-// ParseTasks extracts the numbered task checkboxes from a tasks.md.
+// ParseTasks extracts legacy #N task checkboxes and dotted tasks with an
+// explicit [trace #N] marker. A bare number elsewhere in the description is
+// not a trace ID.
 func ParseTasks(doc string) []Task {
 	var out []Task
 	seen := map[int]bool{}
 	for _, line := range strings.Split(doc, "\n") {
-		m := taskLine.FindStringSubmatch(line)
+		m := traceTaskLine.FindStringSubmatch(line)
+		if m == nil {
+			m = legacyTaskLine.FindStringSubmatch(line)
+		}
 		if m == nil {
 			continue
 		}

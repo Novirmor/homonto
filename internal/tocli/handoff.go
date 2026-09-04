@@ -108,7 +108,7 @@ func handoffCmd() *cobra.Command {
 	}
 	cmd.Flags().StringVar(&dir, "dir", ".", "workspace root")
 	cmd.Flags().BoolVar(&jsonMode, "json", false, "emit the result as JSON")
-	cmd.Flags().BoolVar(&doWrite, "write", false, "persist the metadata-only recovery pack under docs/tasks/<name>/.to/handoff/")
+	cmd.Flags().BoolVar(&doWrite, "write", false, "persist the metadata-only recovery pack under <workflow-root>/tasks/<name>/.to/handoff/")
 	return cmd
 }
 

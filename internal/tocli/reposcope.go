@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/noviopenworks/homonto/internal/config"
+	"github.com/noviopenworks/homonto/internal/workcli"
 )
 
 const repoGitTimeout = 30 * time.Second
@@ -93,7 +94,12 @@ func requireCleanScope(root, change string, repos []string) error {
 	if len(repos) == 0 {
 		return nil
 	}
-	if dirty, err := worktreeDirtyIgnoring(root, "docs/tasks/.to.lock", filepath.Join("docs", "tasks", change)); err != nil {
+	workflowRoot := workcli.WorkflowRootOrDefault(root)
+	workflowRel, err := filepath.Rel(root, workflowRoot)
+	if err != nil {
+		return fmt.Errorf("workflow root: %w", err)
+	}
+	if dirty, err := worktreeDirtyIgnoring(root, filepath.Join(workflowRel, "tasks", ".to.lock"), filepath.Join(workflowRel, "tasks", change)); err != nil {
 		return err
 	} else if dirty {
 		return fmt.Errorf("config repo has uncommitted paths")

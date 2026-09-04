@@ -11,8 +11,9 @@ the work inside each phase. Every state change goes through the binary
 hand-edit `onto-state.yaml`, and the phase is always cross-checked against
 real file state.
 
-Most commands take `--dir <root>` (default `.`) to select the workspace
-root. Mutating commands require the onto framework to be installed by
+Most commands take `--dir <root>` (default `.`) to select the configuration
+repository. `<workflow-root>` below means `[workflow].root` from its
+`homonto.toml` (default `docs`). Mutating commands require the onto framework to be installed by
 homonto. Read-only commands do not write; `onto dirt <change>` reads
 `homonto.toml` only when that change records selected declared repos.
 
@@ -32,7 +33,7 @@ homonto. Read-only commands do not write; `onto dirt <change>` reads
 ```
 
 A change tracks its phase and evidence in
-`docs/changes/<name>/onto-state.yaml`. The phase set is exactly
+`<workflow-root>/changes/<name>/onto-state.yaml`. The phase set is exactly
 `open → design → build → verify → close`; `close` is the terminal phase
 (reached by advancing), after which `onto close` archives the change and records
 pending Git integration. `done` is derived only after `onto
@@ -41,12 +42,12 @@ There is no `archive` phase.
 
 ## Entering — `onto init` and `onto new`
 
-**`onto init [--dir <root>]`** scaffolds the `docs/{changes,specs,adr,guides}/`
+**`onto init [--dir <root>]`** scaffolds the `<workflow-root>/{changes,specs,adr,guides}/`
 layout, idempotently. It reports created vs. skipped paths and never
 overwrites existing content.
 
 **`onto new <name> [--workflow full|fix|tweak] [--repo <declared-name>]`** creates
-`docs/changes/<name>/` with:
+`<workflow-root>/changes/<name>/` with:
 
 - `onto-state.yaml` at **phase `open`**, `workflow: full` (the default);
 - a `proposal.md` skeleton — plus `tasks.md` **only for the fix/tweak
@@ -108,7 +109,7 @@ below still applies to each step it walks.
 7. **Worktree cleanliness:** entering `close` is **blocked** by uncommitted
    paths in the config repo and every repo selected with `onto new --repo`.
    The config repo keeps the carve-out for another active change's
-   `docs/changes/<other>/`; every external-repo path blocks. A missing alias,
+    `<workflow-root>/changes/<other>/`; every external-repo path blocks. A missing alias,
    unavailable Git worktree, or undeterminable result also blocks. The refusal
    labels the repository; `onto dirt <change>` shows the full classified list.
    Every other transition only **warns** on config-repo dirt and proceeds.
@@ -173,7 +174,7 @@ Archives a change that has reached the `close` phase. Gates, in order:
 On success it writes a pending `.onto/integration.json` with one entry per
 repository in the change's scope (the config repository plus every selected
 sibling), sets `archived: true` and `integration_required: true`, and moves the
-workspace to `docs/changes/archive/<YYYY-MM-DD>-<name>/`. If the process stops
+workspace to `<workflow-root>/changes/archive/<YYYY-MM-DD>-<name>/`. If the process stops
 between the move and flag write, rerunning `onto close <change>` repairs the
 newest dated archive. The archived change remains at derived phase `close`
 while any repository's integration is pending. Close also refuses when commits
@@ -228,7 +229,7 @@ by hand:
 | `onto scale <change> [--json] [--set]` | the verification level derived from the measured `base_ref..HEAD` diff (non-test files, changed lines); `--set` records it via `verify-scale` |
 | `onto graph [--json] [--check]` | the change dependency graph (`{nodes, edges, cycles}`); `--check` exits non-zero on a cycle — the same cycles the build gate rejects |
 | `onto dirt [change] [--json]` | Every uncommitted path classified against the change. For a scoped change it audits the config repo plus its selected aliases and labels every repository; config-repo `own` and other-change `change` classifications retain their existing meanings, while external paths are `source` and block close. |
-| `onto handoff <change> [--write]` | a compact recovery context pack (identity, phase, pending gate, artifact excerpts + a content hash) for continuing after a context compaction; `--write` persists it under `docs/changes/<name>/.onto/handoff/` |
+| `onto handoff <change> [--write]` | a compact recovery context pack (identity, phase, pending gate, artifact excerpts + a content hash) for continuing after a context compaction; `--write` persists it under `<workflow-root>/changes/<name>/.onto/handoff/` |
 | `onto doctor [--quiet]` | workspace health across layout, state, phase/artifact match, dependency resolution, and archive layout; non-zero on any finding. Also reports **`tasks.md` ↔ `plan.md` drift** — a task number in one file and not the other, or a checkbox in `plan.md`, which breaks resuming from the first unchecked item (a change with no `plan.md` is a preset, not drift). Also reports **version skew** between the `onto` binary and the homonto that installed the framework (fix with `homonto update`), and ≥3 failed verify rounds. `--quiet` prints nothing and signals via exit code only — the hook primitive (see [enforcement](enforcement.md)) |
 | `onto version` | the release-stamped version |
 
@@ -239,7 +240,7 @@ derived), deps, repo aliases, commits, pending gates (as argv templates),
 artifact digests, and a safe next command. `--json` prints the interactive
 view (envelope plus the full state); `--write` persists the metadata-only
 recovery view — versioned JSON and Markdown under
-`docs/changes/<name>/.onto/handoff/` with create-only, no-follow, confined
+`<workflow-root>/changes/<name>/.onto/handoff/` with create-only, no-follow, confined
 writes. Persisted packs carry no artifact prose and no free-form state, so a
 secret pasted into a plan cannot reach them (ADR 0027).
 
@@ -247,7 +248,7 @@ secret pasted into a plan cannot reach them (ADR 0027).
 
 `onto evidence record <change> --task N --scenario <Scenario-ID> --exec <name>
 --cmd-hash <sha256> --exit <n> [--output <file>]` records one verification
-claim in `docs/changes/<name>/.onto/evidence.json`: hashes only, never argv
+claim in `<workflow-root>/changes/<name>/.onto/evidence.json`: hashes only, never argv
 or output, anchored to the current commit. The binary never executes the
 command — you run it, then record, so verification stays inside the host's
 permission checks. `onto trace [change] [--json]` renders the typed graph:
@@ -255,6 +256,12 @@ changes, capabilities, requirements, scenarios, tasks, commits, and
 evidence. `onto doctor` reports unknown scenarios/tasks, duplicate IDs,
 unreachable commits, and changed verification artifacts; a change verified
 without a sidecar gets a note, not a finding.
+
+`--task N` takes the numeric marker from a task line such as
+`- [ ] 1.1 Implement parser [trace #1]`. The dotted `1.1` must match the
+corresponding `## Task 1.1` plan heading; `N` is the unique positive trace ID
+for evidence and graph links. A legacy `- [ ] #1 ...` task remains supported,
+but bare issue references such as `fixes #1` do not create trace tasks.
 
 ## Driving it from the tool — slash commands
 

@@ -1,8 +1,8 @@
 # ADR draft — canonical template
 
-Drafted in the workspace (`docs/changes/<name>/adr/<slug>.md`), unnumbered,
+Drafted in the workspace (`<workflow-root>/changes/<name>/adr/<slug>.md`), unnumbered,
 `Status: Proposed`. onto-close assigns the next global number and flips to
-Accepted. Numbering rules live in `docs/adr/README.md`.
+Accepted. Numbering rules live in `<workflow-root>/adr/README.md`.
 
 ## Template
 

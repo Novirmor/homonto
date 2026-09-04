@@ -1,8 +1,8 @@
 # Delta spec — canonical template
 
-One file per affected capability: `docs/changes/<name>/specs/<capability>.md`.
+One file per affected capability: `<workflow-root>/changes/<name>/specs/<capability>.md`.
 Deltas are living documents during build; onto-close lints them, then
-merges into `docs/specs/<capability>.md`.
+merges into `<workflow-root>/specs/<capability>.md`.
 
 ## Template
 

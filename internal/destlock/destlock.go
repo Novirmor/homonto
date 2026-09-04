@@ -16,12 +16,14 @@ import (
 	"strconv"
 	"strings"
 	"syscall"
+
+	"github.com/noviopenworks/homonto/internal/workcli"
 )
 
-// Acquire takes the creation lock for docs/changes under root, returning a
+// Acquire takes the creation lock for workflow-root/changes under root, returning a
 // releaser.
 func Acquire(root string) (func(), error) {
-	dir := filepath.Join(root, "docs", "changes")
+	dir := filepath.Join(workcli.WorkflowRootOrDefault(root), "changes")
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return nil, fmt.Errorf("destlock: %w", err)
 	}

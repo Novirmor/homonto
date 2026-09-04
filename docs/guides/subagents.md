@@ -110,10 +110,10 @@ mode: subagent
 homonto:
   read_only: false    # deny edits/writes when true
   bash: false         # optional; false denies bash (default: allowed)
-  bash_allow:         # optional; other Bash commands ask
-    - "git status*"
-    - "git diff*"
-  dialogs: false      # question tool denied — subagents return a Questions: section
+	bash_allow:         # optional; other Bash commands ask
+	  - "git status*"
+	  - "git diff*"
+	dialogs: false      # question tool denied — subagents return a Questions: section
   spawn: []           # delegation topology: agents this one may dispatch
   primary: true       # OpenCode primary agent (renders mode: primary)
   steps: 60           # iteration budget (OpenCode steps)
@@ -146,6 +146,16 @@ skeptics are deliberately read-only so they can run concurrently without
 changing the workspace. A primary's documented Git, test, and workflow commands
 are allow-listed. Other shell commands ask rather than receiving a blanket
 shell grant.
+
+When `[repos]` declares sibling Git worktrees, `homonto apply` gives only the
+builtin framework's primary and implementer an `external_directory` rule. It
+denies all other external paths before allowing the declared roots. The other
+specialists and custom agents receive no rule. Repository paths containing `*`
+or `?` are rejected because OpenCode treats them as permission wildcards.
+
+OpenCode matches these permissions lexically, not through `realpath`. Treat a
+declared repository and its symlinks as trusted: a link beneath an allowed root
+may resolve outside it. Do not use `[repos]` as a filesystem sandbox.
 
 Both primaries use the configuration root as their workspace root, falling back
 to the Git worktree root and then the host working directory. They do not ask

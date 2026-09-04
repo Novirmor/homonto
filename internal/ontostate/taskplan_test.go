@@ -61,6 +61,18 @@ func TestCheckTaskPlan_InCorrespondence(t *testing.T) {
 	}
 }
 
+func TestCheckTaskPlan_AcceptsDottedTasksWithTraceMarkers(t *testing.T) {
+	tasks := "# Tasks\n\n- [ ] 1.1 Implement parser [trace #1]\n- [x] 1.2 Add regression [trace #2]\n"
+	plan := "# Plan\n\n## Task 1.1 — Implement parser\n\n## Task 1.2 — Add regression\n"
+	drift, err := CheckTaskPlan(writeTaskPlan(t, tasks, plan))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !drift.Empty() {
+		t.Fatalf("dotted tasks with trace markers drifted: %+v", drift)
+	}
+}
+
 func TestCheckTaskPlan_NoPlanIsNotDrift(t *testing.T) {
 	// Presets (fix/tweak) run without a plan.md. Reporting that as drift would
 	// make `doctor` permanently unhappy on every preset change.

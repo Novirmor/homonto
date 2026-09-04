@@ -34,6 +34,8 @@ package agentfm
 import (
 	"bytes"
 	"fmt"
+	"path/filepath"
+	"sort"
 	"strings"
 
 	"gopkg.in/yaml.v3"
@@ -72,6 +74,10 @@ type ModelSpec struct {
 // reserved for catalog projection tests that intentionally omit model routing.
 type RenderContext struct {
 	Overrides map[string]ModelSpec
+	// ExternalDirectoriesByAgent names the resolved [repos] paths that each
+	// bundled writable workflow role may access. The engine owns this map so a
+	// custom agent cannot self-grant access by declaring frontmatter.
+	ExternalDirectoriesByAgent map[string][]string
 	// Targets names actually projected to this tool. It lets materialization skip
 	// an unselected tool variant without weakening validation for selected agents.
 	Targets map[string]bool
@@ -129,13 +135,18 @@ func Render(name string, content []byte, tool string, ctx *RenderContext) ([]byt
 	}
 	// A non-nil context marks a production render after framework expansion.
 	// Unlike the nil catalog-test context, it must resolve a non-empty model.
-	var spec ModelSpec
+	var (
+		spec                       ModelSpec
+		externalDirectories        []string
+		managesExternalDirectories bool
+	)
 	if ctx != nil {
 		var ok bool
 		spec, ok = ctx.Overrides[name]
 		if !ok || spec.Model == "" {
 			return nil, fmt.Errorf("agentfm: agent %q has no model for tool %s; [subagents.%s.%s] model is required", name, tool, name, tool)
 		}
+		externalDirectories, managesExternalDirectories = ctx.ExternalDirectoriesByAgent[name]
 	}
 
 	// Preserve every frontmatter line except the homonto block and the mode line
@@ -172,7 +183,7 @@ func Render(name string, content []byte, tool string, ctx *RenderContext) ([]byt
 		if h.Bash != nil && !*h.Bash && len(spec.BashAllowAdd) > 0 {
 			return nil, fmt.Errorf("agentfm: agent %q declares bash: deny but carries bash_allow_add entries; a denied agent cannot gain exact allows", name)
 		}
-		if perm := opencodePermission(h, spec.BashAllowAdd); perm != "" {
+		if perm := opencodePermission(h, spec.BashAllowAdd, externalDirectories, managesExternalDirectories); perm != "" {
 			extra = append(extra, "permission:", perm)
 		}
 	default:
@@ -196,7 +207,7 @@ func Render(name string, content []byte, tool string, ctx *RenderContext) ([]byt
 
 // opencodePermission renders the OpenCode `permission:` block body (indented
 // lines) for the neutral intent, including the delegation topology as task globs.
-func opencodePermission(h Homonto, additions []string) string {
+func opencodePermission(h Homonto, additions, externalDirectories []string, managesExternalDirectories bool) string {
 	var lines []string
 	if h.ReadOnly {
 		lines = append(lines, "  edit: deny")
@@ -216,6 +227,23 @@ func opencodePermission(h Homonto, additions []string) string {
 			}
 			seen[command] = true
 			lines = append(lines, fmt.Sprintf("    %q: allow", command))
+		}
+	}
+	if !h.ReadOnly && managesExternalDirectories {
+		lines = append(lines, "  external_directory:")
+		// Agent rules override inherited global permissions. Deny everything
+		// outside the declared paths before re-allowing those trusted roots.
+		lines = append(lines, `    "*": deny`)
+		dirs := append([]string(nil), externalDirectories...)
+		sort.Strings(dirs)
+		seen := map[string]bool{}
+		for _, dir := range dirs {
+			pattern := filepath.ToSlash(filepath.Join(filepath.Clean(dir), "**"))
+			if seen[pattern] {
+				continue
+			}
+			seen[pattern] = true
+			lines = append(lines, fmt.Sprintf("    %q: allow", pattern))
 		}
 	}
 	// dialogs is enforced both ways: an agent whose protocol is "return a

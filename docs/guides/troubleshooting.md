@@ -21,6 +21,16 @@ the version at link time:
 go install -ldflags "-X github.com/noviopenworks/homonto/internal/cli.Version=1.2.3" .
 ```
 
+**The installer finished but `homonto: command not found`.** The installer
+never edits your shell configuration — it only prints the export line. Run it
+in this session (`export PATH="/path/to/dir:$PATH"`) or add it to your profile
+(`~/.bashrc`, `~/.zshrc`, `~/.profile`), then start a new shell.
+
+**The installer refuses to install ("checksum mismatch").** The download did
+not match the release's `SHA256SUMS`, so nothing was installed. Re-run it;
+the GitHub release page hosts the official `SHA256SUMS` if you want to verify
+manually.
+
 **Installed a newer binary but tools still have old content.** Installing a
 binary does not touch projected content. Run `homonto update`; it
 re-materializes the embedded catalog at the running version and re-projects
@@ -151,7 +161,7 @@ doctor` prints the applicable recovery command.
 
 **"dirty worktree blocks close."** The error lists the first few offending
 paths; `onto dirt <change>` shows all of them, classified. Paths under
-*another* change's `docs/changes/<other>/` never block (they are that
+*another* change's `<workflow-root>/changes/<other>/` never block (they are that
 change's obligation). What blocks is this change's own uncommitted
 artifacts and any uncommitted source path. For a scoped change, every dirty
 selected sibling path blocks too and the error labels its repo. Commit what
@@ -182,14 +192,14 @@ re-apply; the removed framework's projected content is pruned.
 are clean and Git-readable. Commit or stash the listed repo, restore a removed
 `[repos]` alias, then run `to done` again. `to abandon` remains available.
 
-**A change shows a terminal phase but still sits in `docs/tasks/`.** An
+**A change shows a terminal phase but still sits in `<workflow-root>/tasks/`.** An
 interrupted finish (a crash between the state write and the archive move).
 `to doctor` reports it; re-run the same finishing command
 (`to done <name> --verified` or `to abandon <name>`) to complete the
 archive.
 
 **"another to command is in progress (lock held at …)".** A concurrent
-session holds `docs/tasks/.to.lock`, or a killed process left it behind. The
+session holds `<workflow-root>/tasks/.to.lock`, or a killed process left it behind. The
 file records the holder's pid; when that pid is provably no longer running,
 the next mutating `to` command reclaims the lock itself. A lock with no
 readable pid (a crash between creating the file and writing it) is the one

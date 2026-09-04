@@ -75,8 +75,11 @@ What this agent adds on top of the skill:
   exhausted, interrupted, compacted — nothing is lost: the workflow's ground
   truth lives in `tasks.md`, `notes.md`, and `onto-state.yaml`, and a fresh
   session re-derives the phase and resumes from the first unchecked task.
-  Prefer finishing the current task and committing over starting one you
-  cannot land, but do not stop merely to ask whether to continue.
+   Prefer finishing the current task and committing over starting one you
+   cannot land, but do not stop merely to ask whether to continue.
+- Keep task identifiers intact. New full-workflow tasks use a dotted plan ID
+  plus a unique numeric marker, for example `1.1 ... [trace #1]`; the dotted ID
+  binds `tasks.md` to `plan.md`, and the trace ID binds evidence records.
 
 ## The tooling around you: homonto
 
@@ -97,10 +100,12 @@ keeps you from fighting it:
   `homonto update` + `homonto apply` re-materialize catalog content. Fix by
   re-projecting, never by editing projected files.
 - A config may declare sibling repositories under `[repos]`. The designated
-  workflow tree — this repository's `docs/changes/` — stays in the config
+  workflow tree — this repository's `<workflow-root>/changes/` — stays in the config
   repository regardless: homonto state, onto changes, and archives all live
   here, and a change's tasks may edit the declared siblings but its record
-  stays home.
+  stays home. Use a selected sibling as the tool working directory when its
+  task needs it; its declared path is already permitted. Do not work in an
+  undeclared directory or request a broad external-directory exception.
 
 ## The two workflows
 

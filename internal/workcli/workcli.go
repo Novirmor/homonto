@@ -63,6 +63,160 @@ type Framework struct {
 type HomontoConfig struct {
 	Frameworks map[string]any    `toml:"frameworks"`
 	Repos      map[string]string `toml:"repos"`
+	Workflow   struct {
+		Root string `toml:"root"`
+	} `toml:"workflow"`
+}
+
+// WorkflowRoot resolves the configured workflow root beneath root. An omitted
+// setting preserves the historic docs/ layout. It intentionally reads only the
+// small configuration surface workflow CLIs require.
+func WorkflowRoot(root string) (string, error) {
+	data, err := os.ReadFile(filepath.Join(root, "homonto.toml"))
+	if err != nil {
+		if os.IsNotExist(err) {
+			workflowRoot := filepath.Join(root, "docs")
+			if err := ValidateWorkflowPath(root, workflowRoot); err != nil {
+				return "", err
+			}
+			return workflowRoot, nil
+		}
+		return "", err
+	}
+	var cfg HomontoConfig
+	if err := toml.Unmarshal(data, &cfg); err != nil {
+		return "", err
+	}
+	rel := strings.TrimSpace(cfg.Workflow.Root)
+	if rel == "" {
+		rel = "docs"
+	}
+	if filepath.IsAbs(rel) || rel == "." || strings.Contains(rel, `\`) {
+		return "", fmt.Errorf("workflow.root %q must be a relative path below the configuration repository", cfg.Workflow.Root)
+	}
+	rel = filepath.Clean(rel)
+	if rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+		return "", fmt.Errorf("workflow.root %q must remain below the configuration repository", cfg.Workflow.Root)
+	}
+	workflowRoot := filepath.Join(root, rel)
+	if err := ValidateWorkflowPath(root, workflowRoot); err != nil {
+		return "", err
+	}
+	return workflowRoot, nil
+}
+
+// ValidateWorkflowPath rejects an existing path component that redirects a
+// workflow write outside the configuration repository. Symlinks that resolve
+// within the repository remain valid.
+func ValidateWorkflowPath(root, path string) error {
+	configRoot, err := filepath.Abs(root)
+	if err != nil {
+		return fmt.Errorf("resolving configuration repository: %w", err)
+	}
+	if !filepath.IsAbs(path) {
+		path = filepath.Join(configRoot, path)
+	}
+	path, err = filepath.Abs(path)
+	if err != nil {
+		return fmt.Errorf("resolving workflow path: %w", err)
+	}
+	rel, err := filepath.Rel(configRoot, path)
+	if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+		return fmt.Errorf("workflow path %s is outside the configuration repository", path)
+	}
+	resolvedRoot, err := filepath.EvalSymlinks(configRoot)
+	if err != nil {
+		return fmt.Errorf("resolving configuration repository: %w", err)
+	}
+	current := configRoot
+	for _, component := range strings.Split(filepath.ToSlash(rel), "/") {
+		if component == "" || component == "." {
+			continue
+		}
+		current = filepath.Join(current, component)
+		info, err := os.Lstat(current)
+		if os.IsNotExist(err) {
+			return nil
+		}
+		if err != nil {
+			return fmt.Errorf("inspecting workflow path %s: %w", current, err)
+		}
+		if info.Mode()&os.ModeSymlink == 0 {
+			continue
+		}
+		resolved, err := filepath.EvalSymlinks(current)
+		if err != nil {
+			return fmt.Errorf("resolving workflow symlink %s: %w", current, err)
+		}
+		inside, err := filepath.Rel(resolvedRoot, resolved)
+		if err != nil || inside == ".." || strings.HasPrefix(inside, ".."+string(filepath.Separator)) {
+			return fmt.Errorf("workflow.root resolves outside the configuration repository through symlink %s", current)
+		}
+	}
+	return nil
+}
+
+// WorkflowRootOrDefault preserves read-only diagnostics on an absent or broken
+// config while mutating commands reject that configuration through Gate.
+func WorkflowRootOrDefault(root string) string {
+	resolved, err := WorkflowRoot(root)
+	if err != nil {
+		return filepath.Join(root, "docs")
+	}
+	return resolved
+}
+
+// MarkWorkflowState records the root that owns durable workflow artifacts.
+// A later config edit uses it to refuse an implicit migration.
+func MarkWorkflowState(root string) error {
+	workflowRoot, err := WorkflowRoot(root)
+	if err != nil {
+		return err
+	}
+	rel, err := filepath.Rel(root, workflowRoot)
+	if err != nil {
+		return err
+	}
+	dir := filepath.Join(root, ".homonto")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return err
+	}
+	return os.WriteFile(filepath.Join(dir, "workflow-root"), []byte(filepath.ToSlash(rel)+"\n"), 0o644)
+}
+
+// ValidateWorkflowRootChange gives workflow commands the same fail-closed
+// migration guard as config.Load. It is kept here because the CLIs deliberately
+// parse only their small gate surface rather than the projection configuration.
+func ValidateWorkflowRootChange(root string) error {
+	workflowRoot, err := WorkflowRoot(root)
+	if err != nil {
+		return err
+	}
+	want, err := filepath.Rel(root, workflowRoot)
+	if err != nil {
+		return err
+	}
+	want = filepath.ToSlash(want)
+	marker := filepath.Join(root, ".homonto", "workflow-root")
+	if data, err := os.ReadFile(marker); err == nil {
+		was := filepath.ToSlash(strings.TrimSpace(string(data)))
+		if was != "" && was != want && workflowStateExists(filepath.Join(root, filepath.FromSlash(was))) {
+			return fmt.Errorf("workflow.root changed from %q to %q while workflow state exists; move or remove the state explicitly before changing the root", was, want)
+		}
+	}
+	if want != "docs" && workflowStateExists(filepath.Join(root, "docs")) {
+		return fmt.Errorf("workflow.root changed from %q to %q while workflow state exists; move or remove the state explicitly before changing the root", "docs", want)
+	}
+	return nil
+}
+
+func workflowStateExists(root string) bool {
+	for _, name := range []string{"changes", "tasks", ".to-promote"} {
+		if _, err := os.Lstat(filepath.Join(root, name)); err == nil {
+			return true
+		}
+	}
+	return false
 }
 
 // DeclaredRepos reads the [repos] table from <root>/homonto.toml (nil when the
@@ -134,6 +288,12 @@ func (f Framework) Gate(root string) error {
 
 	if _, ok := cfg.Frameworks[f.Name]; !ok {
 		return fmt.Errorf("%s: %s has no [frameworks.%s] table; declare [frameworks.%s] and run `homonto apply`", f.GatePrefix, tomlPath, f.Name, f.Name)
+	}
+	if _, err := WorkflowRoot(root); err != nil {
+		return fmt.Errorf("%s: invalid workflow.root: %w", f.GatePrefix, err)
+	}
+	if err := ValidateWorkflowRootChange(root); err != nil {
+		return fmt.Errorf("%s: %w", f.GatePrefix, err)
 	}
 
 	catalogPath := filepath.Join(root, ".homonto", "catalog", f.SkillsDir)

@@ -21,6 +21,10 @@ v0.13.0 (configs naming them fail at load naming the key).
   routine workspace, isolation, and validation details from repository evidence
   instead of pausing for approval; they ask only about product intent, required
   waivers, or destructive ambiguity.
+- **Declared multi-repo access.** `[repos]` names trusted sibling Git
+  worktrees. `homonto apply` gives the bundled workflow primaries and
+  implementers OpenCode access to those paths, while undeclared directories and
+  read-only specialists stay outside that boundary.
 
 The repository ships **three binaries**:
 
@@ -29,6 +33,19 @@ The repository ships **three binaries**:
 | `homonto` | The deterministic installer and projector described above. |
 | `onto` | A spec-driven workflow operator. It gates a change through `open → design → build → verify → close` with evidence-based, non-skippable transitions. `onto handoff --json`/`--write` emit versioned recovery packs, `onto evidence record` and `onto trace` keep requirement-to-evidence traceability, and `onto graph` maps change dependencies. |
 | `to` | A minimal coding-framework bookkeeper: `plan → do → done`, no gates. The lightweight, mutually exclusive alternative to onto (see [the design](docs/to-framework-design.md)). `to promote` converts a growing `to` change into a full onto change. |
+
+### Onto Task And Trace IDs
+
+An onto task that participates in structured evidence uses both identifiers:
+
+```md
+- [ ] 1.1 Implement the parser [trace #1]
+```
+
+`1.1` pairs the `tasks.md` checkbox with `## Task 1.1` in `plan.md`; `#1`
+identifies the task to `onto trace` and `onto evidence record --task 1`.
+Trace IDs are positive, unique within the change, and never renumbered. Legacy
+`- [ ] #1 ...` tasks still parse, but new workflow tasks use the combined form.
 
 ## What the bundled catalog ships
 
@@ -57,6 +74,16 @@ through a `local:` framework or a digest-pinned `remote:` source.
 go install github.com/noviopenworks/homonto@latest           # homonto
 go install github.com/noviopenworks/homonto/cmd/onto@latest  # onto (optional)
 go install github.com/noviopenworks/homonto/cmd/to@latest    # to (optional)
+```
+
+No Go toolchain? On Linux/macOS (amd64/arm64) download and run the
+interactive installer: it asks which binaries you want, verifies the release
+archives against `SHA256SUMS`, installs into a directory you choose, and
+prints the PATH line for you to apply — it never edits your shell
+configuration:
+
+```bash
+curl -fsSL -o install.sh https://raw.githubusercontent.com/noviopenworks/homonto/main/scripts/install.sh && bash install.sh
 ```
 
 Tagged releases attach prebuilt `homonto`, `onto`, and `to` binaries for

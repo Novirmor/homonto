@@ -150,6 +150,24 @@ func TestLifecycle_PlanDoDoneArchives(t *testing.T) {
 	}
 }
 
+func TestCustomWorkflowRootLifecycle(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, filepath.Join(dir, "homonto.toml"), "[workflow]\nroot=\"workflow/records\"\n[frameworks.to]\nsource=\"builtin:to\"\nscope=\"project\"\n")
+	if err := os.MkdirAll(filepath.Join(dir, ".homonto", "catalog", "skills", "to"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	run(t, false, "init", "--dir", dir)
+	run(t, false, "new", "custom", "--dir", dir)
+	run(t, false, "phase", "custom", "--dir", dir)
+	run(t, false, "done", "custom", "--verified", "--dir", dir)
+	if got := findArchived(dir, "custom"); !strings.HasPrefix(got, filepath.Join(dir, "workflow", "records", "tasks", "archive")) {
+		t.Fatalf("archive = %q, want custom workflow root", got)
+	}
+	if _, err := os.Stat(filepath.Join(dir, "docs", "tasks")); !os.IsNotExist(err) {
+		t.Fatalf("default tasks root was created, stat err = %v", err)
+	}
+}
+
 func TestAbandonIsTerminalAndArchives(t *testing.T) {
 	dir := setUpGatedWorkspace(t)
 	run(t, false, "new", "dead-end", "--dir", dir)

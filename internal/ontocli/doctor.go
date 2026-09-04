@@ -68,18 +68,22 @@ func doctorCmd() *cobra.Command {
 func runDoctor(cmd *cobra.Command, root string) error {
 	var findings []string
 
-	// 1. docs layout: every directory in docsLayout must exist as a directory.
-	for _, d := range docsLayout {
-		info, err := os.Stat(filepath.Join(root, d))
+	// 1. docs layout: every directory in the resolved workflow root must exist.
+	for i, d := range workflowLayout {
+		info, err := os.Stat(filepath.Join(workflowRoot(root), d))
 		if err != nil || !info.IsDir() {
-			findings = append(findings, "docs layout: missing directory "+d)
+			label := filepath.Join(workflowRoot(root), d)
+			if workflowRoot(root) == filepath.Join(root, "docs") {
+				label = docsLayout[i]
+			}
+			findings = append(findings, "docs layout: missing directory "+label)
 		}
 	}
 
 	// 2. active changes: enumerate change directories first (excluding
 	// archive/), then classify. A missing-state or malformed directory is a
 	// finding — a deleted state file is reported, never silently skipped (F14).
-	changesDir := filepath.Join(root, "docs", "changes")
+	changesDir := changesDir(root)
 	if entries, readErr := os.ReadDir(changesDir); readErr == nil {
 		for _, e := range entries {
 			if !e.IsDir() || e.Name() == "archive" {
@@ -111,7 +115,7 @@ func runDoctor(cmd *cobra.Command, root string) error {
 				findings = append(findings, fmt.Sprintf("%s: unresolved dependencies: %v", name, unresolved))
 			}
 			if st.Archived {
-				findings = append(findings, name+": active change marked archived: true (belongs under docs/changes/archive/)")
+				findings = append(findings, name+": active change marked archived: true (belongs under <workflow-root>/changes/archive/)")
 			}
 			// tasks.md <-> plan.md correspondence (ADR 0018). This is the
 			// pairing that makes a change resumable by someone who was not
@@ -161,7 +165,7 @@ func runDoctor(cmd *cobra.Command, root string) error {
 	// 3. archive layout: each archive/<name> directory must hold a valid
 	// onto-state.yaml marked archived:true. Stray non-directory entries are
 	// ignored.
-	entries, _ := filepath.Glob(filepath.Join(root, "docs", "changes", "archive", "*"))
+	entries, _ := filepath.Glob(filepath.Join(ontoArchiveDir(root), "*"))
 	for _, entry := range entries {
 		info, err := os.Stat(entry)
 		if err != nil || !info.IsDir() {

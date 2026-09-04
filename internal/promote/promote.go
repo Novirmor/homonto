@@ -22,10 +22,13 @@ import (
 	"github.com/noviopenworks/homonto/internal/ontostate"
 	"github.com/noviopenworks/homonto/internal/opid"
 	"github.com/noviopenworks/homonto/internal/tostate"
+	"github.com/noviopenworks/homonto/internal/workcli"
 )
 
 // stagingRoot is the promotion staging area under the config repo.
-func stagingRoot(root string) string { return filepath.Join(root, "docs", ".to-promote") }
+func stagingRoot(root string) string {
+	return filepath.Join(workcli.WorkflowRootOrDefault(root), ".to-promote")
+}
 
 // manifest is the staging record: what is being promoted, from where, with
 // every source file's hash so recovery can prove the staged bytes are the
@@ -45,8 +48,9 @@ const manifestVersion = 1
 // output. Source artifacts move byte-for-byte; onto state and the proposal
 // are generated deterministically and regenerated on any retry.
 func Run(root, source, target string, ops opid.Supplier) (created string, err error) {
-	srcDir := filepath.Join(root, "docs", "tasks", source)
-	tgtDir := filepath.Join(root, "docs", "changes", target)
+	workflowRoot := workcli.WorkflowRootOrDefault(root)
+	srcDir := filepath.Join(workflowRoot, "tasks", source)
+	tgtDir := filepath.Join(workflowRoot, "changes", target)
 
 	// Already finished? A complete promotion (source gone, target present,
 	// matching staging cleaned) is an idempotent success on retry.
@@ -66,7 +70,7 @@ func Run(root, source, target string, ops opid.Supplier) (created string, err er
 	}
 	if !resumed {
 		if _, err := os.Stat(srcDir); err != nil {
-			return "", fmt.Errorf("promote: no such `to` change %q under docs/tasks", source)
+			return "", fmt.Errorf("promote: no such `to` change %q under <workflow-root>/tasks", source)
 		}
 	}
 	if !resumed {
@@ -83,7 +87,7 @@ func Run(root, source, target string, ops opid.Supplier) (created string, err er
 		if st.Terminal() {
 			return "", fmt.Errorf("promote: change %q is %s — promote an active change", source, st.Phase)
 		}
-		if err := buildWork(work, target, st, srcDir, filepath.Join(root, "docs", "tasks")); err != nil {
+		if err := buildWork(work, target, st, srcDir, filepath.Join(workflowRoot, "tasks")); err != nil {
 			return "", err
 		}
 	}
@@ -241,7 +245,7 @@ func buildWork(work, target string, st tostate.State, srcDir, tasksRoot string) 
 		return err
 	}
 	if err := os.Rename(srcDir, filepath.Join(work, "imported-to")); err != nil {
-		return fmt.Errorf("promote: moving the source workspace: %w (is docs/tasks on the same filesystem?)", err)
+		return fmt.Errorf("promote: moving the source workspace: %w (is <workflow-root>/tasks on the same filesystem?)", err)
 	}
 	return nil
 }

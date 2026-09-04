@@ -51,7 +51,7 @@ one interruption-prone step (mv + archived flag) is a single commit.
 - Resolve the **guides obligation** for a full workflow (read via `onto state
   <name> --json`); archiving it with `guides: pending` is prohibited. Presets
   leave guides unset, but must resolve a carried pending value. Write or update
-  the affected `docs/guides/<topic>.md` (and README if user-visible), then run
+  the affected `<workflow-root>/guides/<topic>.md` (and README if user-visible), then run
   `onto set guides <name> updated`. Ask only when a guide update is genuinely
   unwanted and a waiver is needed; record `onto set guides <name> "waived:
   <reason>"` with the user's or a recorded directive's reason, never an
@@ -68,7 +68,7 @@ one interruption-prone step (mv + archived flag) is a single commit.
   immutable commit used for diff and verification and is never a checkout or PR
   base.
 - Assemble the **close plan**: each workspace delta → its target
-  `docs/specs/<capability>.md` and the operations it applies; each ADR
+  `<workflow-root>/specs/<capability>.md` and the operations it applies; each ADR
   draft → its next number and slug; the guides outcome; the deferred tasks
   executed. This plan is what the gate shows.
 
@@ -91,7 +91,7 @@ the plan.
 
 1. **Merge spec deltas — via the binary.** Run **`onto merge-deltas <name>`**.
    It deterministically merges every workspace delta `specs/<capability>.md`
-   into `docs/specs/<capability>.md`, applying sections **RENAMED → MODIFIED →
+   into `<workflow-root>/specs/<capability>.md`, applying sections **RENAMED → MODIFIED →
    REMOVED → ADDED** in that fixed order (so a MODIFIED targeting a just-renamed
    name resolves), lints the result (no leaked delta headings, no duplicated
    requirement), writes nothing unless **every** delta merges and lints clean
@@ -109,33 +109,33 @@ the plan.
    untouched. Run onto-no-slop only over *genuinely new* guide/ADR prose, never a
    merged requirement's wording.
 2. **Number and accept ADRs.** For each draft in the workspace `adr/`:
-   next free number = highest `NNNN` in `docs/adr/` + 1; `git mv` to
-   `docs/adr/NNNN-<slug>.md`; set `Status: Accepted` (and any superseded
+   next free number = highest `NNNN` in `<workflow-root>/adr/` + 1; `git mv` to
+   `<workflow-root>/adr/NNNN-<slug>.md`; set `Status: Accepted` (and any superseded
    ADR → `Superseded by NNNN`). Assign numbers to all drafts in one pass
    before moving any, so two drafts in this change never collide.
    **Guard against a concurrent close** (the framework runs one worktree
    per active change, so two may close near the same time): re-scan
-   `docs/adr/` for the highest number **immediately before each `git mv`**,
+   `<workflow-root>/adr/` for the highest number **immediately before each `git mv`**,
    not once up front — if a number you planned now exists on disk, another
    change took it; recompute from the current highest and continue. Never
-   overwrite an existing `docs/adr/NNNN-*.md`. If a move still collides,
+   overwrite an existing `<workflow-root>/adr/NNNN-*.md`. If a move still collides,
    re-scan and retry with the next free number; report a hard blocker only when
    the filesystem keeps changing and safe numbering cannot converge.
    Then rewrite the workspace's `design.md` and `notes.md` references from
-   `adr/<slug>.md` to the final `docs/adr/NNNN-<slug>.md` path — otherwise
+   `adr/<slug>.md` to the final `<workflow-root>/adr/NNNN-<slug>.md` path — otherwise
    the archive ships dangling ADR references.
 3. Run lint-checklist section 3 (post-merge: no delta-only headings leaked,
    no duplicated requirements, scenario structure intact) and section 4
    (guides resolved, no dangling references). Findings block the archive.
 4. **Commit the close preparation.** Steps 1, 2, and the step-1 guides
-   resolution dirtied shared files (`docs/specs/`, `docs/adr/`,
-   `docs/guides/`) plus the workspace's own `onto-state.yaml` (merge-deltas
+   resolution dirtied shared files (`<workflow-root>/specs/`, `<workflow-root>/adr/`,
+   `<workflow-root>/guides/`) plus the workspace's own `onto-state.yaml` (merge-deltas
    set `close.merged`) and its `design.md`/`notes.md` references. `onto close`
    refuses to archive a dirty worktree, so this preparation MUST be committed
    before invoking it:
 
    ```
-   git add -- <named touched specs, ADRs, guides, and docs/changes/<name> paths>
+   git add -- <named touched specs, ADRs, guides, and <workflow-root>/changes/<name> paths>
    git diff --cached --name-only
    git commit -m "close <name>: merge specs, accept ADRs, resolve guides"
    ```
@@ -148,11 +148,11 @@ the plan.
     at `close`, every cumulative artifact exists, the report contains exactly
     one canonical passing result, the merge receipt matches, both `base_ref` and
     `base_branch` are recorded, all `deps` are complete, and the worktree is clean (other
-   active changes' uncommitted `docs/changes/<other>/` files are tolerated —
+   active changes' uncommitted `<workflow-root>/changes/<other>/` files are tolerated —
    they gate their own close; if it refuses, `onto dirt <name>` lists what
    blocks and the dispatcher's `dirty-workspace.md` says how to attribute
     it — never launder unrelated dirt into the archive commit), then moves
-     `docs/changes/<name>` to `docs/changes/archive/YYYY-MM-DD-<name>` and sets
+     `<workflow-root>/changes/<name>` to `<workflow-root>/changes/archive/YYYY-MM-DD-<name>` and sets
      `archived: true` with a pending `.onto/integration.json`. If interruption
      lands the directory in `archive/` with `archived: false`, rerun `onto close
      <name>`; the binary completes the interrupted move. Stage only the old and new workspace
@@ -216,7 +216,7 @@ real fix.
       duplicate-requirement check, pre-archive §4 dangling refs)
 - [ ] Every delta spec merged (RENAMED→MODIFIED→REMOVED→ADDED); living
       specs read as current truth with no duplicated requirements
-- [ ] Every ADR draft numbered, accepted, moved to `docs/adr/`; workspace
+- [ ] Every ADR draft numbered, accepted, moved to `<workflow-root>/adr/`; workspace
       references rewritten to the final paths
 - [ ] `onto set guides <name> updated` or `… "waived: <reason>"` — never pending
 - [ ] `onto set integration <name> merge|pr` recorded before archive
@@ -227,7 +227,7 @@ real fix.
 - [ ] Close preparation committed (specs, ADRs, guides, workspace references,
       `onto-state.yaml`) — the worktree is clean before `onto close`
 - [ ] Archive is its own commit: workspace under
-      `docs/changes/archive/YYYY-MM-DD-<name>/` **and** `archived: true`,
+       `<workflow-root>/changes/archive/YYYY-MM-DD-<name>/` **and** `archived: true`,
       committed together, everything tracked
 - [ ] Branch integrated per the `integration` choice — merged into base (clean,
       no forced conflict resolution) or a PR opened (URL reported); `ship.md`

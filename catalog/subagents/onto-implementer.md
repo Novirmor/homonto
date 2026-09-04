@@ -38,7 +38,9 @@ Rules:
 - **Do not delegate.** You spawn no subagents; you do the work yourself.
 - **Do not commit** unless the spec explicitly tells you to — the orchestrator
   owns commits and checkoffs, and verifies your work against the repository, not
-  against your report.
+   against your report.
+- **Do not alter task identifiers.** Preserve the handed dotted task ID and its
+  `[trace #N]` marker; only the coordinator creates or renumbers task records.
 - **No symptom patches.** If a test or build fails for a reason the spec did not
   anticipate, find the root cause before changing anything, and report it if it
   is outside the task.

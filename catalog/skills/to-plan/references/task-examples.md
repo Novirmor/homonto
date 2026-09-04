@@ -18,9 +18,9 @@ alter adapter merge behavior.
   - Verify: `go test ./internal/catalog -run TestExpandRejectsDuplicateSkills` — passes with the duplicate-name assertion
 
 - [ ] Document the validation error
-  - Files: `docs/guides/configuration.md` (framework validation)
+   - Files: `<workflow-root>/guides/configuration.md` (framework validation)
   - Change: state that duplicate expanded names fail before projection and include the emitted error shape
-  - Verify: `git diff --check -- docs/guides/configuration.md` — exits 0
+   - Verify: `git diff --check -- <workflow-root>/guides/configuration.md` — exits 0
 
 Final Verify: `go test ./internal/catalog` — all catalog tests pass
 ```
@@ -84,9 +84,9 @@ Add a documentation task only when behavior changes a durable promise.
 
 ```markdown
 - [ ] Record the new adapter boundary
-  - Files: `docs/adr/0014-adapter-contract.md`, `docs/guides/projection-and-state.md`
+   - Files: `<workflow-root>/adr/0014-adapter-contract.md`, `<workflow-root>/guides/projection-and-state.md`
   - Change: update the durable adapter responsibility and the user-visible consequence; do not restate transient implementation details
-  - Verify: `git diff --check -- docs/adr/0014-adapter-contract.md docs/guides/projection-and-state.md` — exits 0
+   - Verify: `git diff --check -- <workflow-root>/adr/0014-adapter-contract.md <workflow-root>/guides/projection-and-state.md` — exits 0
 ```
 
 Do not add an ADR task for a local rename, test refactor, or implementation

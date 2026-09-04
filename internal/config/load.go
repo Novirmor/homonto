@@ -110,7 +110,77 @@ func Load(path string) (*Config, error) {
 	if err := resolveRepos(c); err != nil {
 		return nil, err
 	}
+	if err := validateWorkflowRootLocation(c); err != nil {
+		return nil, err
+	}
+	if err := validateWorkflowStateRoot(c); err != nil {
+		return nil, err
+	}
 	return c, nil
+}
+
+// validateWorkflowRootLocation rejects an existing configured root component
+// that resolves outside the repository before projection can create workflow
+// state through it.
+func validateWorkflowRootLocation(c *Config) error {
+	configRoot, err := filepath.EvalSymlinks(c.baseDir)
+	if err != nil {
+		return fmt.Errorf("parse config: resolving configuration repository: %w", err)
+	}
+	current := c.baseDir
+	for _, component := range strings.Split(filepath.ToSlash(c.Workflow.RootOrDefault()), "/") {
+		if component == "" || component == "." {
+			continue
+		}
+		current = filepath.Join(current, component)
+		info, err := os.Lstat(current)
+		if os.IsNotExist(err) {
+			return nil
+		}
+		if err != nil {
+			return fmt.Errorf("parse config: inspecting workflow.root %s: %w", current, err)
+		}
+		if info.Mode()&os.ModeSymlink == 0 {
+			continue
+		}
+		resolved, err := filepath.EvalSymlinks(current)
+		if err != nil {
+			return fmt.Errorf("parse config: resolving workflow.root symlink %s: %w", current, err)
+		}
+		inside, err := filepath.Rel(configRoot, resolved)
+		if err != nil || inside == ".." || strings.HasPrefix(inside, ".."+string(filepath.Separator)) {
+			return fmt.Errorf("parse config: workflow.root resolves outside the configuration repository through symlink %s", current)
+		}
+	}
+	return nil
+}
+
+// validateWorkflowStateRoot prevents a config edit from silently splitting
+// durable workflow records between two trees. The marker is written by the
+// workflow CLIs when they first create state; pre-marker docs layouts are also
+// recognized so existing repositories get the same fail-closed protection.
+func validateWorkflowStateRoot(c *Config) error {
+	want := filepath.ToSlash(c.Workflow.RootOrDefault())
+	marker := filepath.Join(c.baseDir, ".homonto", "workflow-root")
+	if data, err := os.ReadFile(marker); err == nil {
+		was := filepath.ToSlash(strings.TrimSpace(string(data)))
+		if was != "" && was != want && workflowStateExists(filepath.Join(c.baseDir, filepath.FromSlash(was))) {
+			return fmt.Errorf("parse config: workflow.root changed from %q to %q while workflow state exists; move or remove the state explicitly before changing the root", was, want)
+		}
+	}
+	if want != "docs" && workflowStateExists(filepath.Join(c.baseDir, "docs")) {
+		return fmt.Errorf("parse config: workflow.root changed from %q to %q while workflow state exists; move or remove the state explicitly before changing the root", "docs", want)
+	}
+	return nil
+}
+
+func workflowStateExists(root string) bool {
+	for _, name := range []string{"changes", "tasks", ".to-promote"} {
+		if _, err := os.Lstat(filepath.Join(root, name)); err == nil {
+			return true
+		}
+	}
+	return false
 }
 
 // resolveRepos turns each [repos] path into the filesystem fact the later
@@ -140,6 +210,9 @@ func resolveRepos(c *Config) error {
 			dir = filepath.Join(c.baseDir, dir)
 		}
 		dir = filepath.Clean(dir)
+		if strings.ContainsAny(dir, "*?") {
+			return fmt.Errorf("parse config: repos.%s: %s contains OpenCode permission wildcard characters", name, dir)
+		}
 		if info, err := os.Stat(dir); err != nil {
 			return fmt.Errorf("parse config: repos.%s: %s does not exist (paths resolve relative to the config file)", name, dir)
 		} else if !info.IsDir() {

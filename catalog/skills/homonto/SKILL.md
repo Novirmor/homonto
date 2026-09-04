@@ -31,6 +31,13 @@ never edit the projected `opencode.jsonc` MCP blocks by hand; homonto manages
 them and the next apply rewrites manual edits. `docs/guides/configuration.md`
 documents every field.
 
+`[repos]` names trusted sibling Git worktrees. For installed `onto` or `to`,
+apply renders those resolved paths as OpenCode external-directory permissions
+for the builtin writable primary and implementer, with a deny baseline for
+other external paths. Read-only specialists and custom agents receive no rule.
+Declared repositories and their symlinks are trusted rather than sandboxed;
+add a repo declaration rather than approving an arbitrary directory at runtime.
+
 ## Choose A Workflow
 
 - **onto** serves work that needs a reviewable handoff and evidence-backed

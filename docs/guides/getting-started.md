@@ -21,6 +21,14 @@ go install github.com/noviopenworks/homonto@latest           # homonto
 go install github.com/noviopenworks/homonto/cmd/onto@latest  # onto
 ```
 
+No Go toolchain? On Linux/macOS run the interactive installer — it asks which
+binaries you want, verifies the release archives against `SHA256SUMS`, and
+prints PATH instructions without editing your shell configuration:
+
+```bash
+curl -fsSL -o install.sh https://raw.githubusercontent.com/noviopenworks/homonto/main/scripts/install.sh && bash install.sh
+```
+
 Or grab the prebuilt binaries and `SHA256SUMS` from the GitHub release
 (Linux/macOS/Windows, amd64/arm64). From a checked-out repo use
 `go install .`, not a bare `go build .`: the output name collides with the
@@ -154,7 +162,7 @@ $ onto set proposal-approved add-search "proposal matches request"
 $ onto advance add-search        # open → design
 $ onto advance add-search        # error: cannot leave "design": missing design.md
 $ printf '# Design\n\nStatus: Confirmed\n' > docs/changes/add-search/design.md
-$ printf '%s\n' '- [ ] 1.1 implement search' > docs/changes/add-search/tasks.md
+$ printf '%s\n' '- [ ] 1.1 implement search [trace #1]' > docs/changes/add-search/tasks.md
 $ onto set approach-confirmed add-search "selected indexed search"
 $ onto set isolation add-search branch
 $ onto advance add-search        # design → build

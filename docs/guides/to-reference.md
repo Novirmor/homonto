@@ -30,9 +30,11 @@ Workspace commands support `--dir <root>`. `init`, `new`, `status`, `phase`,
 `--quiet` for exit-code-only checks, while `version` prints plain text and does
 not inspect a workspace.
 
+`<workflow-root>` means `[workflow].root` in `homonto.toml` (default `docs`).
+
 | Command | What it does |
 |---|---|
-| `to init` | Scaffold `docs/tasks/` + `docs/tasks/archive/` (gated; never overwrites). |
+| `to init` | Scaffold `<workflow-root>/tasks/` + `<workflow-root>/tasks/archive/` (gated; never overwrites). |
 | `to new <name> [--repo <declared-name>]` | Create a change at phase `plan` with an empty `plan.md` (gated). `--repo` is repeatable, records selected `[repos]` aliases, and creates no files outside the config repo. Only an *active* change blocks a name — archives are date-prefixed, so a finished name is reusable. |
 | `to phase <name>` | The one forward transition: `plan → do` (gated). Finishing is `to done`; there is no other advance. |
 | `to bypass <name> --to <plan|do|done|archive> --reason "<reason>"` | Emergency operator command, available through the command-only `/to-bypass` entry point after an explicit user request. Sets the target directly and skips phase, verification, and worktree gates, but still requires the framework, valid readable state, and a working archive filesystem. `done`/`archive` archive with `verified: false`; every use records the command, source/target, reason, timestamp, and skipped checks in `.to/bypass.json`. |
@@ -45,7 +47,7 @@ not inspect a workspace.
 
 ## Archive naming
 
-A change finishing on date D archives to `docs/tasks/archive/<D>-<name>/`;
+A change finishing on date D archives to `<workflow-root>/tasks/archive/<D>-<name>/`;
 a same-day reuse of the name gets a numeric suffix (`<D>-<name>-2`).
 Pre-v0.5.0 unprefixed archive directories are still recognized.
 
@@ -56,7 +58,7 @@ the archive. If that is interrupted, the change is left terminal-but-active:
 `to doctor` reports it, and **re-running the same finishing command completes
 the archive** (`to done <name> --verified` / `to abandon <name>`), dating the
 archive by the recorded finish. Commands that mutate a change (`new`,
-`phase`, `done`, `abandon`) take a workspace lock (`docs/tasks/.to.lock`), so
+`phase`, `done`, `abandon`) take a workspace lock (`<workflow-root>/tasks/.to.lock`), so
 two concurrent sessions fail fast instead of interleaving writes. `init` only
 creates the fixed directories idempotently and does not lock. A lock left by
 a killed process names its pid; once that pid provably no longer runs, the
@@ -70,13 +72,13 @@ session's lock is never stolen.
 (`change`/`state`/`plan`/`next`) and adds the versioned recovery-envelope
 fields (schema, operation id, derived phase, repo aliases, artifact
 digests, next argv). `--write` persists the metadata-only recovery view
-under `docs/tasks/<name>/.to/handoff/` — never plan prose or evidence text.
+under `<workflow-root>/tasks/<name>/.to/handoff/` — never plan prose or evidence text.
 
 ## Promotion — `to promote <name> [--as <name>] --yes`
 
 Converts a growing `to` change into a full onto change (ADR 0028): the
 complete source workspace moves unchanged under
-`docs/changes/<name>/imported-to/`, and a fresh proposal-only workspace
+`<workflow-root>/changes/<name>/imported-to/`, and a fresh proposal-only workspace
 starts at phase open — promotion claims no design or verification. The
 command prints the next steps: swap `[frameworks.to]` for
 `[frameworks.onto]` in `homonto.toml`, `homonto apply --yes`, then `/onto`.

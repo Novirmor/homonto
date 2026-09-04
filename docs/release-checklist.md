@@ -91,6 +91,19 @@ export PATH="$GOBIN:$PATH"
 "$GOBIN"/to version         # expect the tagged version string
 ```
 
+Then smoke the interactive installer (Linux/macOS) against the same tag: it
+must download the tagged script, verify the real release archives against
+`SHA256SUMS`, and install into the temp dir (answers: version, no workflow
+binary, temp dir):
+
+```sh
+TMPBIN=$(mktemp -d)
+curl -fsSL -o /tmp/homonto-install.sh \
+  "https://raw.githubusercontent.com/noviopenworks/homonto/v0.1.0-rc.1/scripts/install.sh"
+printf 'v0.1.0-rc.1\nnone\n%s\n' "$TMPBIN" | bash /tmp/homonto-install.sh
+"$TMPBIN"/homonto version   # expect the tagged version string
+```
+
 Then exercise the binaries against a disposable home:
 
 ```sh
@@ -151,6 +164,10 @@ Verify a downloaded archive's checksum matches `SHA256SUMS`:
 ```sh
 sha256sum -c SHA256SUMS --ignore-missing
 ```
+
+The interactive installer performs this verification automatically before it
+installs anything; the mocked-network installer tests (`scripts/install-test.sh`)
+run in the gate.
 
 ## Rollback
 

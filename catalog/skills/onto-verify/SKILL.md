@@ -102,7 +102,7 @@ check.
 
 ### 4. Write the report
 
-Write `docs/changes/<name>/verification.md` from the canonical template
+Write `<workflow-root>/changes/<name>/verification.md` from the canonical template
 `references/verification.md` (header with machine-read `Result:` line,
 scenario-evidence table, design conformance, adversarial pass, regression,
 deviations). When deviations were accepted, the Result line carries their
@@ -140,7 +140,7 @@ replanning; the count is a warning, not a mandatory user interruption.
       machine-read `Result:` line or the evidence table structure
 - [ ] If recorded phase is verify, advanced verify → close via `onto advance
       <name>`; on a downward mismatch, skipped advance and returned to `/onto`
-- [ ] **Commit the workspace**: `git add docs/changes/<name> && git commit`
+- [ ] **Commit the workspace**: `git add <workflow-root>/changes/<name> && git commit`
       — every phase exits with its workspace committed
 - [ ] Load `onto-close` and continue in the same invocation unless the user
       named verify as the endpoint or asked to pause

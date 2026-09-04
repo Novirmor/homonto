@@ -57,7 +57,7 @@ prompt contains:
 8. Return contract: commit sha + diff summary + literal verification
    output + any **discovered work** (needed work outside this task's
    stated scope) — reported, never done. The coordinator appends each
-   reported item as an unchecked `- [ ] N.M` in `tasks.md` plus its matching
+   reported item as an unchecked `- [ ] N.M <task> [trace #K]` in `tasks.md` plus its matching
    `## Task N.M` block in `plan.md` (or routes it through the scope-change
    gate) BEFORE the next dispatch, so the task list never trails what the
    repository already knows.

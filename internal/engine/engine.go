@@ -349,6 +349,24 @@ func (e *Engine) subagentRenderContext() map[string]agentfm.RenderContext {
 }
 
 func (e *Engine) subagentRenderContextFor(targets map[string]map[string]bool) map[string]agentfm.RenderContext {
+	externalDirectories := make([]string, 0, len(e.Cfg.RepoDirs()))
+	for _, dir := range e.Cfg.RepoDirs() {
+		externalDirectories = append(externalDirectories, dir)
+	}
+	sort.Strings(externalDirectories)
+	externalDirectoriesByAgent := map[string][]string{}
+	for framework, agents := range map[string][]string{
+		"onto": {"onto", "onto-implementer"},
+		"to":   {"to", "to-implementer"},
+	} {
+		resource, installed := e.Cfg.Frameworks[framework]
+		if !installed || resource.Source != "builtin:"+framework {
+			continue
+		}
+		for _, agent := range agents {
+			externalDirectoriesByAgent[agent] = externalDirectories
+		}
+	}
 	overrides := func(pick func(config.Subagent) config.ModelRoute) map[string]agentfm.ModelSpec {
 		m := map[string]agentfm.ModelSpec{}
 		for key, sa := range e.Cfg.Subagents {
@@ -373,7 +391,11 @@ func (e *Engine) subagentRenderContextFor(targets map[string]map[string]bool) ma
 		return m
 	}
 	return map[string]agentfm.RenderContext{
-		"opencode": {Overrides: overrides(func(s config.Subagent) config.ModelRoute { return s.OpenCode }), Targets: targets["opencode"]},
+		"opencode": {
+			Overrides:                  overrides(func(s config.Subagent) config.ModelRoute { return s.OpenCode }),
+			ExternalDirectoriesByAgent: externalDirectoriesByAgent,
+			Targets:                    targets["opencode"],
+		},
 	}
 }
 
@@ -718,6 +740,18 @@ func renderFingerprint(ctx map[string]agentfm.RenderContext) string {
 	sort.Strings(tools)
 	for _, tool := range tools {
 		digestSpecs("override", tool, ctx[tool].Overrides)
+		agents := make([]string, 0, len(ctx[tool].ExternalDirectoriesByAgent))
+		for agent := range ctx[tool].ExternalDirectoriesByAgent {
+			agents = append(agents, agent)
+		}
+		sort.Strings(agents)
+		for _, agent := range agents {
+			dirs := append([]string(nil), ctx[tool].ExternalDirectoriesByAgent[agent]...)
+			sort.Strings(dirs)
+			for _, dir := range dirs {
+				fmt.Fprintf(h, "external-dir\x00%s\x00%s\x00%s\x00", tool, agent, dir)
+			}
+		}
 		targets := make([]string, 0, len(ctx[tool].Targets))
 		for name := range ctx[tool].Targets {
 			targets = append(targets, name)

@@ -21,14 +21,17 @@ var ontoFramework = workcli.Framework{
 	ReservedNames: nil,
 }
 
-// docsLayout is the fixed set of documentation directories "onto init"
-// scaffolds once the framework gate passes.
+// docsLayout preserves the historic default labels used by diagnostics and
+// tests. workflowLayout carries the same layout relative to the configured
+// root.
 var docsLayout = []string{
 	filepath.Join("docs", "changes"),
 	filepath.Join("docs", "specs"),
 	filepath.Join("docs", "adr"),
 	filepath.Join("docs", "guides"),
 }
+
+var workflowLayout = []string{"changes", "specs", "adr", "guides"}
 
 // initCmd builds the "onto init" subcommand: it enforces ontoFramework.Gate(dir)
 // (the framework-install precondition) before scaffolding the docs/ layout, and
@@ -56,8 +59,21 @@ func runInit(cmd *cobra.Command, root string) error {
 		return err
 	}
 
-	for _, d := range docsLayout {
-		path := filepath.Join(root, d)
+	paths := make([]string, 0, len(workflowLayout))
+	for _, d := range workflowLayout {
+		path := filepath.Join(workflowRoot(root), d)
+		if err := workcli.ValidateWorkflowPath(root, path); err != nil {
+			return fmt.Errorf("onto init: unsafe workflow path: %w", err)
+		}
+		paths = append(paths, path)
+	}
+	// Record the root before the first scaffold write so a crash cannot leave
+	// custom-root state that a later config edit cannot attribute.
+	if err := workcli.MarkWorkflowState(root); err != nil {
+		return fmt.Errorf("onto init: recording workflow root: %w", err)
+	}
+
+	for _, path := range paths {
 
 		_, statErr := os.Stat(path)
 		preExisted := statErr == nil
@@ -72,7 +88,6 @@ func runInit(cmd *cobra.Command, root string) error {
 			cmd.Printf("created %s\n", path)
 		}
 	}
-
 	// Multi-repo context (ADR 0024 stage 1): the designated workflow tree —
 	// these docs/ directories — lives in the config repo; declared repos are
 	// reported so a multi-repo setup reads as one, with the scope stated

@@ -20,7 +20,7 @@ var datedArchiveName = regexp.MustCompile(`^\d{4}-\d{2}-\d{2}-(.+)$`)
 var errArchiveNotFound = errors.New("no dated archive found")
 
 func locateArchive(root, name string) (string, ontostate.State, error) {
-	archiveRoot := filepath.Join(root, "docs", "changes", "archive")
+	archiveRoot := ontoArchiveDir(root)
 	entries, err := os.ReadDir(archiveRoot)
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
@@ -72,7 +72,7 @@ func locateArchive(root, name string) (string, ontostate.State, error) {
 // "taken" (e.g. an unreadable or non-directory parent) is an error rather than
 // an infinite suffix walk.
 func archiveDestination(root, name, date string) (string, error) {
-	base := filepath.Join(root, "docs", "changes", "archive", date+"-"+name)
+	base := filepath.Join(ontoArchiveDir(root), date+"-"+name)
 	for destination, n := base, 2; ; destination, n = fmt.Sprintf("%s-%d", base, n), n+1 {
 		_, err := os.Lstat(destination)
 		if errors.Is(err, os.ErrNotExist) {
@@ -184,8 +184,12 @@ func captureIntegrationEntries(root string, st ontostate.State) ([]integrationre
 	return entries, nil
 }
 
-func ignorePendingIntegrationDirt(repos []scopedDirt, name string) []scopedDirt {
-	want := filepath.ToSlash(filepath.Join("docs", "changes", name, ".onto", "integration.json"))
+func ignorePendingIntegrationDirt(root string, repos []scopedDirt, name string) []scopedDirt {
+	workflowRel, err := filepath.Rel(root, workflowRoot(root))
+	if err != nil {
+		return repos
+	}
+	want := filepath.ToSlash(filepath.Join(workflowRel, "changes", name, ".onto", "integration.json"))
 	for i := range repos {
 		if repos[i].Name != "config" {
 			continue

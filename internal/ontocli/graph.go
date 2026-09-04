@@ -244,7 +244,7 @@ func buildGraph(root string) ([]graphNode, []graphEdge, error) {
 		}
 	}
 
-	changesDir := filepath.Join(root, "docs", "changes")
+	changesDir := changesDir(root)
 	entries, err := os.ReadDir(changesDir)
 	if err != nil {
 		if os.IsNotExist(err) {

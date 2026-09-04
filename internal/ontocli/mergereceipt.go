@@ -12,6 +12,7 @@ import (
 	"strings"
 
 	"github.com/noviopenworks/homonto/internal/fsutil"
+	"github.com/noviopenworks/homonto/internal/workcli"
 )
 
 const mergeReceiptSchemaVersion = 1
@@ -51,6 +52,15 @@ func deltaInputs(root, changeDir string) ([]deltaInput, error) {
 	if err != nil {
 		return nil, err
 	}
+	workflowRoot, err := workcli.WorkflowRoot(root)
+	if err != nil {
+		return nil, err
+	}
+	specsDir := filepath.Join(workflowRoot, "specs")
+	specsRel, err := filepath.Rel(root, specsDir)
+	if err != nil {
+		return nil, err
+	}
 	inputs := make([]deltaInput, 0, len(paths))
 	seenTargets := map[string]string{}
 	for _, path := range paths {
@@ -64,7 +74,7 @@ func deltaInputs(root, changeDir string) ([]deltaInput, error) {
 		if err != nil {
 			return nil, fmt.Errorf("reading %s: %w", path, err)
 		}
-		targetRel := filepath.ToSlash(filepath.Join("docs", "specs", capability+".md"))
+		targetRel := filepath.ToSlash(filepath.Join(specsRel, capability+".md"))
 		if prior, duplicate := seenTargets[targetRel]; duplicate {
 			return nil, fmt.Errorf("delta specs %s and %s map to the same living spec %s", prior, base, targetRel)
 		}

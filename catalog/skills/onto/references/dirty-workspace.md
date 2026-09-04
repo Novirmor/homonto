@@ -16,8 +16,8 @@ Classes (structural, not judgment):
 
 | Class | Meaning | Blocks this change's close? |
 |---|---|---|
-| `own` | under this change's `docs/changes/<name>/` (or an untracked ancestor dir containing it) | **yes** — its evidence must be committed |
-| `change` | under another change's `docs/changes/<other>/` or the archive | no — that change's own close gate owns it |
+| `own` | under this change's `<workflow-root>/changes/<name>/` (or an untracked ancestor dir containing it) | **yes** — its evidence must be committed |
+| `change` | under another change's `<workflow-root>/changes/<other>/` or the archive | no — that change's own close gate owns it |
 | `source` | anything else in the repo | **yes** — until attributed and committed, stashed, or discarded with authorization |
 
 Inspect content with `git diff`, `git diff --cached`, and by reading new

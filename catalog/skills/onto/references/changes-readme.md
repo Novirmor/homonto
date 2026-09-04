@@ -1,6 +1,6 @@
-# docs/changes/README.md — canonical template
+# <workflow-root>/changes/README.md — canonical template
 
-Bootstrap writes this into a repo at `docs/changes/README.md` when it
+Bootstrap writes this into a repo at `<workflow-root>/changes/README.md` when it
 creates the onto layout. It is a **pointer**, not a second copy of the
 rules — the onto skills stay the single source, so the two never drift.
 
@@ -11,13 +11,13 @@ rules — the onto skills stay the single source, so the two never drift.
 
 Active and archived onto change workspaces.
 
-- **Active change**: a directory directly under `docs/changes/` holding a
+- **Active change**: a directory directly under `<workflow-root>/changes/` holding a
   `proposal.md` or `onto-state.yaml`, with `onto-state.yaml` reading
   `archived: false`. A directory with neither artifact is not a change.
-- **Archived change**: under `docs/changes/archive/YYYY-MM-DD-<name>/`,
+- **Archived change**: under `<workflow-root>/changes/archive/YYYY-MM-DD-<name>/`,
   `onto-state.yaml` `archived: true`. Archives are history — never edited, with
   the single exception of `ship.md`.
-- **Abandoned change**: remains directly under `docs/changes/<name>/` with
+- **Abandoned change**: remains directly under `<workflow-root>/changes/<name>/` with
   `abandoned: true`. Discovery excludes it, but it is not a successful archive.
 
 ## State model
@@ -34,8 +34,8 @@ the `onto` binary (`onto new`, `onto set …`, `onto advance`, `onto close`,
 
 ## Layout contract
 
-- `docs/changes/<name>/` — one active change: `onto-state.yaml`, `notes.md`,
+- `<workflow-root>/changes/<name>/` — one active change: `onto-state.yaml`, `notes.md`,
   `proposal.md`, `tasks.md`, and (full workflow) `design.md`, `plan.md`,
   `adr/`, `specs/`, `verification.md` as the phases produce them.
-- `docs/changes/archive/YYYY-MM-DD-<name>/` — a successfully closed change.
+- `<workflow-root>/changes/archive/YYYY-MM-DD-<name>/` — a successfully closed change.
 ```

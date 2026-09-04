@@ -42,6 +42,33 @@ func TestMergeDeltasCommand_MergesAndMarksMerged(t *testing.T) {
 	}
 }
 
+func TestMergeDeltasCommand_ReceiptUsesConfiguredWorkflowRoot(t *testing.T) {
+	root := prepWorkspace(t)
+	writeFile(t, filepath.Join(root, "homonto.toml"), "[workflow]\nroot=\"workflow/records\"\n[frameworks.onto]\nsource=\"builtin:onto\"\nscope=\"project\"\n")
+	changeDir := filepath.Join(root, "workflow", "records", "changes", "c")
+	if err := ontostate.Save(filepath.Join(changeDir, "onto-state.yaml"), ontostate.State{
+		Change: "c", Workflow: "full", Phase: "close", Verify: ontostate.Verify{Result: "pass"}, CloseConfirmed: "reviewed",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	writeFile(t, filepath.Join(changeDir, "verification.md"), "Result: pass\n")
+	writeFile(t, filepath.Join(changeDir, "specs", "cap.md"), "## ADDED Requirements\n\n### Requirement: A\n\nSHALL a.\n")
+
+	if _, err := runOnto(t, "merge-deltas", "c", "--dir", root); err != nil {
+		t.Fatalf("merge-deltas: %v", err)
+	}
+	receipt, ok, err := loadMergeReceipt(changeDir, "c")
+	if err != nil || !ok {
+		t.Fatalf("load receipt = %#v, %t, %v", receipt, ok, err)
+	}
+	if got, want := receipt.Entries[0].Target, "workflow/records/specs/cap.md"; got != want {
+		t.Errorf("receipt target = %q, want %q", got, want)
+	}
+	if _, err := os.Stat(filepath.Join(root, "workflow", "records", "specs", "cap.md")); err != nil {
+		t.Fatalf("configured living spec missing: %v", err)
+	}
+}
+
 func TestMergeDeltasCommand_InvalidDeltaWritesNothing(t *testing.T) {
 	root := prepWorkspace(t)
 	changeDir := filepath.Join(root, "docs", "changes", "c")

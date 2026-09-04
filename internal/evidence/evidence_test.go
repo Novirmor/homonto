@@ -60,7 +60,7 @@ func TestParseRequirements(t *testing.T) {
 }
 
 func TestParseTasks(t *testing.T) {
-	tasks := ParseTasks("# Tasks\n\n- [ ] #1 write the parser\n- [x] #2 test it\n  - detail\n- [ ] #3 wire the command\n")
+	tasks := ParseTasks("# Tasks\n\n- [ ] #1 legacy parser task\n- [x] 1.1 test it [trace #2]\n  - detail\n- [ ] 1.2 wire the command [trace #3]\n- [ ] 1.3 mention issue #4 without a trace marker\n- [ ] 1.4 malformed [trace #0]\n")
 	if len(tasks) != 3 {
 		t.Fatalf("want 3 tasks, got %d", len(tasks))
 	}

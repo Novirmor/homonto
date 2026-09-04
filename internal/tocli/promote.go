@@ -28,6 +28,9 @@ func promoteCmd() *cobra.Command {
 		Short: "Promote a `to` change into a full onto change (source preserved under imported-to/)",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			if err := toFramework.Gate(dir); err != nil {
+				return err
+			}
 			name := args[0]
 			if err := toFramework.ValidChangeName(name); err != nil {
 				return err
@@ -40,7 +43,7 @@ func promoteCmd() *cobra.Command {
 				target = as
 			}
 			if !force {
-				return fmt.Errorf("to promote: pass --yes to promote (the source moves under docs/changes/%s/imported-to/ and the onto framework must replace `to` in homonto.toml)", target)
+				return fmt.Errorf("to promote: pass --yes to promote (the source moves under <workflow-root>/changes/%s/imported-to/ and the onto framework must replace `to` in homonto.toml)", target)
 			}
 
 			unlockTo, err := lock(dir)

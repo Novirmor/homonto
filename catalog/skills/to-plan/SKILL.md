@@ -1,6 +1,6 @@
 ---
 name: to-plan
-description: to phase 1 — plan. Use when an active change has phase plan — writes docs/tasks/<name>/plan.md as a short list of bite-sized, verifiable tasks, then advances the change to do.
+description: to phase 1 — plan. Use when an active change has phase plan — writes <workflow-root>/tasks/<name>/plan.md as a short list of bite-sized, verifiable tasks, then advances the change to do.
 ---
 
 # to-plan — Phase 1: Plan
@@ -26,7 +26,7 @@ Apply the dispatcher's shared autonomous workflow policy throughout.
    change branch; otherwise create a branch. If unrelated work makes that unsafe,
    use a worktree or leave the unrelated paths untouched. Do not ask the user to
    choose a reversible Git mechanic.
-3. **Write `docs/tasks/<name>/plan.md`:**
+3. **Write `<workflow-root>/tasks/<name>/plan.md`:**
    - A two-or-three-sentence statement of the goal, the chosen approach, and
      the important boundary (what this change deliberately does not do).
    - An ordered task list. Every task must be executable from cold context and

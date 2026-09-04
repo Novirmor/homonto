@@ -1,13 +1,15 @@
 ---
 name: onto
-description: onto workflow dispatcher. Use when starting, resuming, or asking about any development work in a repo with the docs/ onto layout — runs tooling preflight, finds the active change, derives the real phase from file state, and routes to the matching onto sub-skill.
+description: onto workflow dispatcher. Use when starting, resuming, or asking about any development work in a repo with the configured workflow layout — runs tooling preflight, finds the active change, derives the real phase from file state, and routes to the matching onto sub-skill.
 ---
 
 # onto — Workflow Dispatcher
 
 onto is a five-phase development workflow — **open → design → build → verify →
 close** — plus two preset paths (`onto-fix` for bugs, `onto-tweak` for small
-non-bug changes). All artifacts live in one `docs/` tree. **Every state
+non-bug changes). All artifacts live in one `<workflow-root>/` tree. Here
+`<workflow-root>` is `[workflow].root` in `homonto.toml`, defaulting to `docs`.
+**Every state
 mutation goes through the `onto` binary** (`onto new`, `onto set …`, `onto
 advance`, `onto close`): it is the single authority for `onto-state.yaml` and a
 hard dependency of these skills — the tooling preflight below fails loudly if it
@@ -46,13 +48,13 @@ the user what they are missing and how to fix it.
 
 ## 2. Active-change discovery
 
-Scan `docs/changes/*/` excluding `archive/`. A change is active iff its
-directory sits directly under `docs/changes/` **and holds a `proposal.md`
+Scan `<workflow-root>/changes/*/` excluding `archive/`. A change is active iff its
+directory sits directly under `<workflow-root>/changes/` **and holds a `proposal.md`
 or an `onto-state.yaml`**, with `onto-state.yaml` (when present) reading
 `archived: false`. A directory with neither artifact is not a change —
 skip it (a `templates/`, a scratch dir, an editor folder is not a phantom
 active change; never rebuild an onto-state.yaml into it). Also sweep
-`docs/changes/archive/*/onto-state.yaml` for `archived: false`: that is a
+`<workflow-root>/changes/archive/*/onto-state.yaml` for `archived: false`: that is a
 close interrupted between the `git mv` and the flag — surface it and
 finish it with `onto close <name>`. Also surface an archive whose
 `.onto/integration.json` is pending or malformed: archival happened, but close
@@ -95,15 +97,15 @@ self-dep or an A⇄B cycle** (break the cycle). For multiple simultaneously acti
 changes, recommend one git worktree per change — coupled work that can't
 be separated should have been one change (the split-preflight rule
 already says so). **Close them one at a time**, though: two closes running
-at once both merge into shared `docs/specs/*` and both draw ADR numbers
-from the same `docs/adr/` (onto-close re-scans before each move to avoid a
+at once both merge into shared `<workflow-root>/specs/*` and both draw ADR numbers
+from the same `<workflow-root>/adr/` (onto-close re-scans before each move to avoid a
 clobber, but serial closes remove the race outright).
 
-If the repo has no `docs/changes/` tree at all, bootstrap the
-layout: create `docs/{adr,specs,changes/archive,guides}/`, writing
-`docs/changes/README.md` from `references/changes-readme.md` and
-`docs/specs/README.md` from `onto-close/references/specs-readme.md` (the
-`docs/adr/` numbering contract and `docs/guides/` are conventional). Then
+If the repo has no `<workflow-root>/changes/` tree at all, bootstrap the
+layout: create `<workflow-root>/{adr,specs,changes/archive,guides}/`, writing
+`<workflow-root>/changes/README.md` from `references/changes-readme.md` and
+`<workflow-root>/specs/README.md` from `onto-close/references/specs-readme.md` (the
+`<workflow-root>/adr/` numbering contract and `<workflow-root>/guides/` are conventional). Then
 proceed to `onto-open`.
 
 ## 3. Phase derivation and cross-check
@@ -113,7 +115,7 @@ dispatch:
 
 1. Read `onto-state.yaml`. Its canonical schema, template, and per-field
    meaning live in `references/state-yaml.md` in this skill's directory —
-   **the single source**. `docs/changes/README.md`, when the repo has one,
+   **the single source**. `<workflow-root>/changes/README.md`, when the repo has one,
    points here rather than copying, so the two never drift. If a skill's
    `references/` directory is genuinely missing, say so, fall back to
    reading this SKILL.md's own tables, and continue — degrade, never halt;
@@ -245,7 +247,7 @@ crossed — never talk a change *down* from full to a preset.
 - **Abandon** — the user drops a change. Run **`onto abandon <name>`**: it
   marks the change `abandoned: true` (the unsuccessful terminal state) and
   saves `onto-state.yaml` in place. The workspace stays under
-  `docs/changes/<name>/` — abandon is a state flag, not a move. Discovery
+  `<workflow-root>/changes/<name>/` — abandon is a state flag, not a move. Discovery
   skips abandoned changes (they leave the active list and never route
   again). No spec merge, no ADR numbering — an abandoned change's deltas
   are never merged into the living specs, and `onto close` refuses to

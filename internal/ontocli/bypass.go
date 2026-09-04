@@ -43,7 +43,7 @@ func runBypass(cmd *cobra.Command, root, name, target, reason string) error {
 	if err := ontoFramework.ValidChangeName(name); err != nil {
 		return err
 	}
-	if err := bypasslog.RequireRealParents(root, filepath.Join(root, "docs", "changes")); err != nil {
+	if err := bypasslog.RequireRealParents(root, changesDir(root)); err != nil {
 		return err
 	}
 	unlock, err := bypassLock(root)
@@ -56,7 +56,7 @@ func runBypass(cmd *cobra.Command, root, name, target, reason string) error {
 	if reason == "" {
 		return fmt.Errorf("onto bypass: --reason must be non-empty")
 	}
-	changeDir := filepath.Join(root, "docs", "changes", name)
+	changeDir := filepath.Join(changesDir(root), name)
 	statePath := filepath.Join(changeDir, "onto-state.yaml")
 	st, err := ontostate.Load(statePath)
 	if err != nil {
@@ -103,7 +103,7 @@ func runBypass(cmd *cobra.Command, root, name, target, reason string) error {
 }
 
 func bypassArchive(cmd *cobra.Command, root, changeDir string, st ontostate.State) error {
-	archiveDir := filepath.Join(root, "docs", "changes", "archive", time.Now().Format("2006-01-02")+"-"+st.Change)
+	archiveDir := filepath.Join(ontoArchiveDir(root), time.Now().Format("2006-01-02")+"-"+st.Change)
 	if err := bypasslog.RequireRealParents(root, filepath.Dir(archiveDir)); err != nil {
 		return err
 	}
@@ -130,7 +130,7 @@ func bypassArchive(cmd *cobra.Command, root, changeDir string, st ontostate.Stat
 }
 
 func bypassLock(root string) (func(), error) {
-	path := filepath.Join(root, "docs", "changes", ".onto-bypass.lock")
+	path := filepath.Join(changesDir(root), ".onto-bypass.lock")
 	f, err := os.OpenFile(path, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o600)
 	if err != nil {
 		if os.IsExist(err) {

@@ -53,6 +53,9 @@ step "workflow skills shell out (no direct state writes)"
 step "opencode permission-telemetry contract stays pinned and tested"
 ./scripts/permevent-check.sh
 
+step "installer mocked-network tests"
+./scripts/install-test.sh
+
 step "govulncheck ./..."
 # Pin the toolchain for the tool build too: with GOTOOLCHAIN=auto, x/vuln's own
 # go.mod can select a toolchain older than this module's pin, and a govulncheck

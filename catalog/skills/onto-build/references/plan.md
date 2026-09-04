@@ -31,7 +31,8 @@ Design: `design.md` (Status: Confirmed <date>). Completion state lives in
 - `(risk: high)` marks tasks that get a reviewer agent under
   `build_mode: subagent` (and deserve extra scrutiny under `direct`).
 - **Number tasks to match `tasks.md`.** `## Task 2.3` here is the detail for
-  `- [ ] 2.3` there. Check the task off in `tasks.md` only; never add a
+  `- [ ] 2.3 <task> [trace #N]` there. `#N` is the distinct positive trace ID
+  for evidence, not part of this heading. Check the task off in `tasks.md` only; never add a
   checkbox here. **`onto doctor` enforces both halves** — a number in one file
   and not the other, or any checkbox in this file, is a reported finding.
 - **The plan is live**: work discovered during execution is appended as

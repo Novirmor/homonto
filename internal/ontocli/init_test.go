@@ -218,3 +218,28 @@ func TestInitCommand_GateFailureCreatesNothing(t *testing.T) {
 		t.Errorf("expected docs/ to not exist, stat err = %v", err)
 	}
 }
+
+func TestInitAndNewRejectEscapingWorkflowRoot(t *testing.T) {
+	dir := t.TempDir()
+	outside := t.TempDir()
+	writeFile(t, filepath.Join(dir, "homonto.toml"), "[workflow]\nroot=\"workflow\"\n[frameworks.onto]\nsource=\"builtin:onto\"\nscope=\"project\"\n")
+	if err := os.MkdirAll(filepath.Join(dir, ".homonto", "catalog", "skills", "onto"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(outside, filepath.Join(dir, "workflow")); err != nil {
+		t.Skipf("symlinks unavailable: %v", err)
+	}
+
+	for _, args := range [][]string{{"init", "--dir", dir}, {"new", "escape", "--dir", dir}} {
+		cmd := NewRootCmd()
+		cmd.SetOut(&bytes.Buffer{})
+		cmd.SetErr(&bytes.Buffer{})
+		cmd.SetArgs(args)
+		if err := cmd.Execute(); err == nil || !strings.Contains(err.Error(), "workflow.root") {
+			t.Errorf("%v = %v, want workflow-root rejection", args, err)
+		}
+	}
+	if _, err := os.Stat(filepath.Join(outside, "changes")); !os.IsNotExist(err) {
+		t.Fatalf("workflow write escaped through symlink, stat err = %v", err)
+	}
+}

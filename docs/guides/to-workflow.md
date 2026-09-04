@@ -47,6 +47,11 @@ go install github.com/noviopenworks/homonto/cmd/to@latest
 to version
 ```
 
+Or install `to` together with `homonto` through the [interactive
+installer](getting-started.md#1-install): it asks which binaries you want,
+verifies the release archives against `SHA256SUMS`, and prints PATH
+instructions without editing your shell configuration.
+
 The mutating commands require the framework to be **declared and applied
 through homonto first** — this is how the skills land in your tools:
 
@@ -70,9 +75,9 @@ to that primary.
 
 ## The layout
 
-Each change is a directory `docs/tasks/<name>/` holding `to-state.yaml`
+Each change is a directory `<workflow-root>/tasks/<name>/` holding `to-state.yaml`
 (written **only** by the binary) and `plan.md` (written by the agent during
-plan). Finished changes move to `docs/tasks/archive/<date>-<name>/`; the date
+plan). Finished changes move to `<workflow-root>/tasks/archive/<date>-<name>/`; the date
 prefix frees the name for reuse. By default `to` is git-blind. For one change
 spanning declared repositories, create it in the config repo with repeatable
 `--repo` aliases, for example `to new release --repo api --repo web`. The

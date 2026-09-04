@@ -34,10 +34,10 @@ var toFramework = workcli.Framework{
 var todayFn = func() string { return time.Now().Format("2006-01-02") }
 
 // tasksDir/archiveDir are to's territory. Fully disjoint from onto's
-// docs/changes/ so a mixed repo never confuses either tool's commands —
+// workflow-root/changes so a mixed repo never confuses either tool's commands —
 // though homonto refuses to declare both frameworks anyway.
-func tasksDir(root string) string   { return filepath.Join(root, "docs", "tasks") }
-func archiveDir(root string) string { return filepath.Join(root, "docs", "tasks", "archive") }
+func tasksDir(root string) string   { return filepath.Join(workcli.WorkflowRootOrDefault(root), "tasks") }
+func archiveDir(root string) string { return filepath.Join(tasksDir(root), "archive") }
 
 func changeDir(root, name string) string { return filepath.Join(tasksDir(root), name) }
 func statePath(root, name string) string {

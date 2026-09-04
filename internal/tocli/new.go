@@ -5,6 +5,7 @@ import (
 	"os"
 
 	"github.com/noviopenworks/homonto/internal/tostate"
+	"github.com/noviopenworks/homonto/internal/workcli"
 	"github.com/spf13/cobra"
 )
 
@@ -60,6 +61,14 @@ func runNewWithRepos(cmd *cobra.Command, root, name string, jsonMode bool, repos
 			}
 		}
 	}
+	if err := workcli.ValidateWorkflowPath(root, changeDir(root, name)); err != nil {
+		return fmt.Errorf("to new: unsafe workflow path: %w", err)
+	}
+	// The lock is the first workflow-state write. Record its owner first so a
+	// crash cannot leave custom-root state without a migration marker.
+	if err := workcli.MarkWorkflowState(root); err != nil {
+		return fmt.Errorf("to new: recording workflow root: %w", err)
+	}
 	unlock, err := lock(root)
 	if err != nil {
 		return err
@@ -88,7 +97,6 @@ func runNewWithRepos(cmd *cobra.Command, root, name string, jsonMode bool, repos
 	if err := os.WriteFile(planPath(root, name), []byte{}, 0o644); err != nil {
 		return fmt.Errorf("to new: creating %s: %w", planPath(root, name), err)
 	}
-
 	if jsonMode {
 		return printJSON(cmd, map[string]any{
 			"change": name,

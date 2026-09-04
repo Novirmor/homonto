@@ -69,9 +69,9 @@ func evidenceRecordCmd() *cobra.Command {
 			if !isHexHash(cmdHash) {
 				return fmt.Errorf("evidence record: --cmd-hash must be a sha256 hex digest of the command line")
 			}
-			changeDir := filepath.Join(dir, "docs", "changes", name)
+			changeDir := filepath.Join(changesDir(dir), name)
 			if _, err := os.Stat(filepath.Join(changeDir, "onto-state.yaml")); err != nil {
-				return fmt.Errorf("evidence record: no change %q under %s", name, filepath.Join(dir, "docs", "changes"))
+				return fmt.Errorf("evidence record: no change %q under %s", name, changesDir(dir))
 			}
 			sc, _, err := evidence.Load(name, evidence.Path(changeDir))
 			if err != nil {
@@ -139,7 +139,7 @@ func traceCmd() *cobra.Command {
 		Short: "Trace requirements to scenarios, tasks, and evidence",
 		Args:  cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			changesDir := filepath.Join(dir, "docs", "changes")
+			changesDir := changesDir(dir)
 			names := activeChangeNames(cmd, changesDir)
 			if len(args) == 1 {
 				if err := ontoFramework.ValidChangeName(args[0]); err != nil {

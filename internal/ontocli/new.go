@@ -9,6 +9,7 @@ import (
 
 	"github.com/noviopenworks/homonto/internal/destlock"
 	"github.com/noviopenworks/homonto/internal/ontostate"
+	"github.com/noviopenworks/homonto/internal/workcli"
 	"github.com/spf13/cobra"
 )
 
@@ -67,6 +68,15 @@ func runNewWithRepos(cmd *cobra.Command, root, name, workflow string, repos []st
 	if err != nil {
 		return fmt.Errorf("onto new: %w", err)
 	}
+	changeDir := filepath.Join(changesDir(root), name)
+	if err := workcli.ValidateWorkflowPath(root, changeDir); err != nil {
+		return fmt.Errorf("onto new: unsafe workflow path: %w", err)
+	}
+	// Record the root before the destination lock creates workflow state. A
+	// crash later in scaffolding must still leave the state owner discoverable.
+	if err := workcli.MarkWorkflowState(root); err != nil {
+		return fmt.Errorf("onto new: recording workflow root: %w", err)
+	}
 
 	// Destination reservation shared with `to promote` (ADR 0028): both
 	// create under docs/changes, and a promotion renaming its result into
@@ -78,7 +88,6 @@ func runNewWithRepos(cmd *cobra.Command, root, name, workflow string, repos []st
 	}
 	defer unlock()
 
-	changeDir := filepath.Join(root, "docs", "changes", name)
 	if _, err := os.Stat(changeDir); err == nil {
 		return fmt.Errorf("onto new: change %q already exists at %s", name, changeDir)
 	}
@@ -124,7 +133,6 @@ func runNewWithRepos(cmd *cobra.Command, root, name, workflow string, repos []st
 			return fmt.Errorf("onto new: creating %s: %w", path, err)
 		}
 	}
-
 	cmd.Printf("created change %q at %s\n", name, changeDir)
 	cmd.Printf("  %s\n", statePath)
 	for _, f := range files {

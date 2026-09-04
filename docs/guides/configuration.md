@@ -11,6 +11,7 @@ Quick map of every table:
 | Table | Declares | Reference |
 |---|---|---|
 | `schema_version` | The config format version (top-level key, not a table) | [Schema version](#schema-version) |
+| `[workflow]` | Shared onto/to workflow artifact root | [Workflow root](#workflow-root--workflow) |
 | `[mcps.<name>]` | MCP servers | [MCP servers](#mcp-servers--mcpsname) |
 | `[skills.<name>]` | Skills (symlinked) | [Skills](#skills--skillsname) |
 | `[commands.<name>]` | Slash commands | [Commands](#commands--commandsname) |
@@ -70,6 +71,24 @@ it never runs `git init` and never installs a framework by itself. Add a
 `[frameworks.onto]` or `[frameworks.to]` table, inspect `homonto plan`, then
 run `homonto apply` to install the selected workflow. A Git worktree is needed
 only when a later workflow gate requires Git evidence or integration.
+
+## Workflow root — `[workflow]`
+
+`[workflow]` selects the one repository-relative root for workflow artifacts.
+It is shared by the mutually exclusive `onto` and `to` frameworks. Omit it to
+preserve the default `docs` layout.
+
+```toml
+[workflow]
+root = "workflow-records"
+```
+
+The root must remain below the directory containing `homonto.toml`; absolute
+paths and `..` escapes fail at load. In documentation, `<workflow-root>` means
+this configured directory: onto uses `<workflow-root>/changes`,
+`specs`, `adr`, and `guides`; to uses `<workflow-root>/tasks`. Changing `root`
+while workflow state exists fails closed. Homonto never moves workspaces,
+archives, locks, receipts, or recovery packs automatically.
 
 ## MCP servers — `[mcps.<name>]`
 
@@ -212,8 +231,29 @@ service-b = "../libs/service-b"
 ```
 
 The config repository remains the designated state home: `.homonto/`,
-onto's `docs/changes/`, and `to`'s `docs/tasks/` stay there. `homonto plan`
+onto's `<workflow-root>/changes/`, and to's `<workflow-root>/tasks/` stay there. `homonto plan`
 names every declared repo and `homonto doctor` reports each one's health.
+
+### Workflow access to declared repositories
+
+`[repos]` is also the trust boundary for the bundled workflow teams. When an
+`onto` or `to` framework is installed, `homonto apply` renders each resolved
+repository path as an OpenCode `external_directory` allow rule for that
+framework's builtin writable primary and implementer. They can read, edit, and
+run their existing approved commands there without a per-directory prompt.
+Homonto emits a deny rule before the declared paths, so a global OpenCode allow
+does not broaden these roles. Read-only specialists and custom agents receive no
+rule. Paths containing `*` or `?` are rejected because OpenCode treats them as
+permission wildcards.
+
+OpenCode authorizes external paths lexically rather than resolving symlinks.
+Treat a declared repository and its links as trusted; a symlink within it can
+lead outside the declared root. `[repos]` constrains agent workspace selection,
+not filesystem containment against a hostile repository.
+
+Changing a declared path and re-running `homonto apply` re-renders the affected
+agent files. The config repository is already the active workspace, so it is
+implicit and cannot appear in `[repos]`.
 
 For a project-scoped skill, command, subagent, or MCP, `repo = "<name>"`
 projects that one resource into the named declared repo. A repo-tagged skill,

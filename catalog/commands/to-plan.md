@@ -5,7 +5,7 @@ agent: to
 
 # /to-plan
 
-Run to phase 1 (plan): write `docs/tasks/<name>/plan.md` — a short goal
+Run to phase 1 (plan): write `<workflow-root>/tasks/<name>/plan.md` — a short goal
 statement plus a checklist of bite-sized tasks, each stating a concrete
 outcome, files and symbols, behavioral change, and exact verification command
 with its passing signal — then advance with `to phase <name>` and continue

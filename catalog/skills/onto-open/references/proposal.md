@@ -32,7 +32,7 @@ summary.
 
 ## Capability Impact
 
-- **New**: `<capability>` — <one line> (creates docs/specs/<capability>.md)
+- **New**: `<capability>` — <one line> (creates <workflow-root>/specs/<capability>.md)
 - **Modified**: `<capability>` — <which requirements change> (delta required)
 - Untouched: <capabilities explicitly out of scope>
 
@@ -56,6 +56,6 @@ preflight). Design-phase grounding goes in design.md; notes.md keeps none.>
 
 - `Preset:`/`Depends-on:` markers are machine-read (state rebuild) — keep
   them on their own lines, exactly as shown.
-- Capability names must match existing `docs/specs/*.md` files or declare
+- Capability names must match existing `<workflow-root>/specs/*.md` files or declare
   a new one.
 - Breaking changes are marked at the bullet, not buried in prose.

@@ -17,7 +17,7 @@ never performs phase work itself:
    the single authority for `onto-state.yaml` and a hard dependency. Warn (never
    halt) on any declared tooling provider that is missing — the dispatcher's
    generated `references/tooling.md` says which are declared.
-2. **Discover** — find the active change under `docs/changes/` (or, if there is
+2. **Discover** — find the active change under `<workflow-root>/changes/` (or, if there is
    none and `$ARGUMENTS` describes new work, start one with `onto new`).
 3. **Derive** — cross-check the recorded phase against real file state; the state
    file is a cache of truth, not truth.

@@ -16,6 +16,7 @@ import (
 	"github.com/noviopenworks/homonto/internal/bypasslog"
 	"github.com/noviopenworks/homonto/internal/fsutil"
 	"github.com/noviopenworks/homonto/internal/integrationrecord"
+	"github.com/noviopenworks/homonto/internal/workcli"
 	"gopkg.in/yaml.v3"
 )
 
@@ -559,7 +560,7 @@ func ArchiveIntegrationComplete(changeDir string, st State) bool {
 }
 
 // DepsResolved reports which of deps are not yet archived under root. A dep is
-// resolved iff docs/changes/archive/ contains a directory named exactly
+// resolved iff <workflow-root>/changes/archive/ contains a directory named exactly
 // <YYYY-MM-DD>-<dep>. The comparison is an exact string match on the name after
 // the date prefix — NOT a glob. The previous `*-<dep>` glob had two holes: any
 // archive whose name merely ENDED with "-<dep>" resolved it (dep "auth"
@@ -574,7 +575,8 @@ func DepsResolved(root string, deps []string) []string {
 	// unverified dependency. Do not "fix" this by surfacing the error — it
 	// would change the gate-closed contract.
 	latest := map[string]string{}
-	archiveRoot := filepath.Join(root, "docs", "changes", "archive")
+	workflowRoot := workcli.WorkflowRootOrDefault(root)
+	archiveRoot := filepath.Join(workflowRoot, "changes", "archive")
 	if entries, err := os.ReadDir(archiveRoot); err == nil {
 		for _, e := range entries {
 			if !e.IsDir() {
@@ -602,7 +604,7 @@ func DepsResolved(root string, deps []string) []string {
 	// new change reusing an old name would falsely resolve a dep that is
 	// actually still being worked on (F10).
 	active := map[string]bool{}
-	if entries, err := os.ReadDir(filepath.Join(root, "docs", "changes")); err == nil {
+	if entries, err := os.ReadDir(filepath.Join(workflowRoot, "changes")); err == nil {
 		for _, e := range entries {
 			if !e.IsDir() || e.Name() == "archive" {
 				continue

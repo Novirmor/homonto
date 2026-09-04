@@ -121,7 +121,7 @@ func runClose(cmd *cobra.Command, root, name string) error {
 	unlock := acquireStateLockBestEffort(root)
 	defer unlock()
 
-	changeDir := filepath.Join(root, "docs", "changes", name)
+	changeDir := filepath.Join(changesDir(root), name)
 	statePath := filepath.Join(changeDir, "onto-state.yaml")
 	if _, err := os.Stat(changeDir); os.IsNotExist(err) {
 		return recoverInterruptedClose(cmd, root, name)
@@ -195,7 +195,7 @@ func runClose(cmd *cobra.Command, root, name string) error {
 		return fmt.Errorf("onto close: cannot verify scoped worktrees; refusing close: %w", err)
 	}
 	if integrationExists {
-		dirt = ignorePendingIntegrationDirt(dirt, name)
+		dirt = ignorePendingIntegrationDirt(root, dirt, name)
 	}
 	if msg := scopedDirtGateError(dirt, name); msg != "" {
 		return fmt.Errorf("onto close: dirty worktree blocks close: %s", msg)
@@ -208,7 +208,7 @@ func runClose(cmd *cobra.Command, root, name string) error {
 	if err := fsutil.RequireRealParents(root, filepath.Dir(archiveDir)); err != nil {
 		return fmt.Errorf("onto close: unsafe archive path: %w", err)
 	}
-	if err := os.MkdirAll(filepath.Join(root, "docs", "changes", "archive"), 0o755); err != nil {
+	if err := os.MkdirAll(ontoArchiveDir(root), 0o755); err != nil {
 		return fmt.Errorf("onto close: creating archive directory: %w", err)
 	}
 	// Move FIRST, then record archived:true inside the moved directory. The old

@@ -37,6 +37,11 @@ go install github.com/noviopenworks/homonto/cmd/onto@latest
 onto version            # prints: onto <version>
 ```
 
+Or install `onto` together with `homonto` through the [interactive
+installer](getting-started.md#1-install): it asks which binaries you want,
+verifies the release archives against `SHA256SUMS`, and prints PATH
+instructions without editing your shell configuration.
+
 The mutating commands (`init`, `new`, `set`, `advance`, `bypass`, `close`, `abandon`,
 `merge-deltas`, `complete-integration`) require the onto framework to be **declared and applied
 through homonto first**. This is how the skills land in your tools:
@@ -115,15 +120,32 @@ derivation instead of re-reading the evidence table by hand.
   no completion state — and each checkoff rides its task's own commit, so a
   fresh session resumes from the first unchecked item. Entering build requires an
   isolation choice (`branch` or `worktree`); build work is never committed
-  unisolated.
+   unisolated.
+
+### Task and trace IDs
+
+New tasks use a dotted plan ID plus a numeric trace marker:
+
+```md
+- [ ] 1.1 Implement parser [trace #1]
+## Task 1.1 — Implement parser
+```
+
+The dotted ID binds `tasks.md` to `plan.md`, which `onto doctor` checks. The
+numeric trace ID binds evidence records and graph output: use
+`onto evidence record <change> --task 1 ...`. Keep trace IDs positive and
+unique within the change. Legacy leading `#1` task lines remain readable, but
+new work uses the explicit marker to avoid mistaking an issue reference for a
+trace ID.
+
 - **verify** — scale-appropriate check of every delta-spec scenario with
   fresh command output as evidence, recorded in `verification.md`.
   `onto scale` derives the appropriate verification level from the measured
   diff.
 - **close** — `onto merge-deltas` merges the change's delta specs into
-  `docs/specs/` with a crash-recovery receipt, then `onto close` archives the
+   `<workflow-root>/specs/` with a crash-recovery receipt, then `onto close` archives the
   workspace once all evidence gates pass. Number and accept ADRs into
-  `docs/adr/`, update the affected guides, integrate the branch, and record
+   `<workflow-root>/adr/`, update the affected guides, integrate the branch, and record
   `merge:<commit>` or `pr:<url>` with `onto complete-integration`. State keeps
   the immutable diff anchor in `base_ref` and the integration target in
   `base_branch`; a commit SHA is never used as a checkout or pull-request base.
@@ -209,7 +231,7 @@ of the change and does not block it:
 
 | Class | What it is | Blocks this change's close? |
 |---|---|---|
-| `own` | the change's own `docs/changes/<name>/` artifacts | **yes** — its evidence must be committed |
+| `own` | the change's own `<workflow-root>/changes/<name>/` artifacts | **yes** — its evidence must be committed |
 | `change` | another change's docs, or the archive | no — that change's own close gate owns it |
 | `source` | any other path in the repo | **yes** — until it is attributed and committed |
 
@@ -248,10 +270,10 @@ carry that, and nothing else claims to:
 
 **Who** answered and **when** come from git, not from onto: the state file and
 every artifact are committed, so `git log`/`git blame` over
-`docs/changes/<name>/` attributes each gate answer and each task's checkoff to
+`<workflow-root>/changes/<name>/` attributes each gate answer and each task's checkoff to
 a person and a time. onto deliberately stores no identity of its own — it would
 be a second, weaker copy of what the VCS already guarantees. The archived
-workspace under `docs/changes/archive/` is that whole record, kept.
+workspace under `<workflow-root>/changes/archive/` is that whole record, kept.
 
 ## Tooling providers
 

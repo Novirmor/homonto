@@ -2,6 +2,7 @@ package engine
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -128,6 +129,23 @@ model = "anthropic/claude-sonnet-4"
 model = "anthropic/claude-opus-4-8"
 `
 
+const toFrameworkTOML = `
+[frameworks.to]
+source = "builtin:to"
+scope = "project"
+
+[subagents.to.opencode]
+model = "anthropic/claude-opus-4-8"
+[subagents.to-explorer.opencode]
+model = "openai/gpt-5-mini"
+[subagents.to-reviewer.opencode]
+model = "anthropic/claude-opus-4-8"
+[subagents.to-implementer.opencode]
+model = "anthropic/claude-sonnet-4"
+[subagents.to-skeptic.opencode]
+model = "anthropic/claude-opus-4-8"
+`
+
 // A framework's subagents may not be re-declared explicitly (that collision is
 // an error), so the per-agent [subagents.<name>.opencode] blocks above are
 // tune-only entries (no source): they tune the framework's agent in place,
@@ -213,22 +231,7 @@ func TestDoctorReportsPrimaryAgentHealthy(t *testing.T) {
 func TestToPrimaryAgentRenders(t *testing.T) {
 	home := t.TempDir()
 	repo := t.TempDir()
-	doc := `
-[frameworks.to]
-source = "builtin:to"
-scope = "project"
-
-[subagents.to.opencode]
-model = "anthropic/claude-opus-4-8"
-[subagents.to-explorer.opencode]
-model = "openai/gpt-5-mini"
-[subagents.to-reviewer.opencode]
-model = "anthropic/claude-opus-4-8"
-[subagents.to-implementer.opencode]
-model = "anthropic/claude-sonnet-4"
-[subagents.to-skeptic.opencode]
-model = "anthropic/claude-opus-4-8"
-`
+	doc := toFrameworkTOML
 	if err := os.WriteFile(filepath.Join(repo, "homonto.toml"), []byte(doc), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -244,6 +247,97 @@ model = "anthropic/claude-opus-4-8"
 		if !strings.Contains(string(agent), want) {
 			t.Errorf("to primary missing %q:\n%s", want, agent)
 		}
+	}
+}
+
+func TestFrameworkAgentsAllowDeclaredRepoDirectories(t *testing.T) {
+	for _, tc := range []struct {
+		name      string
+		framework string
+		agents    []string
+		untrusted []string
+	}{
+		{"onto", ontoFrameworkTOML, []string{"onto", "onto-implementer"}, []string{"onto-explorer", "onto-reviewer", "onto-skeptic"}},
+		{"to", toFrameworkTOML, []string{"to", "to-implementer"}, []string{"to-explorer", "to-reviewer", "to-skeptic"}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			home := t.TempDir()
+			repo := t.TempDir()
+			sibling := filepath.Join(t.TempDir(), "service-a")
+			if err := os.MkdirAll(filepath.Join(sibling, ".git"), 0o755); err != nil {
+				t.Fatal(err)
+			}
+			doc := tc.framework + "\n[repos]\nservice-a = " + fmt.Sprintf("%q", sibling) + "\n"
+			if err := os.WriteFile(filepath.Join(repo, "homonto.toml"), []byte(doc), 0o644); err != nil {
+				t.Fatal(err)
+			}
+			e := buildEngine(t, home, repo)
+			if err := e.Apply(context.Background(), mustPlan(t, e)); err != nil {
+				t.Fatal(err)
+			}
+
+			want := fmt.Sprintf("    %q: allow", filepath.ToSlash(filepath.Join(sibling, "**")))
+			for _, agentName := range tc.agents {
+				data, err := os.ReadFile(filepath.Join(e.SubagentDir(), agentName+".opencode.md"))
+				if err != nil {
+					t.Fatal(err)
+				}
+				if !strings.Contains(string(data), "external_directory:") || !strings.Contains(string(data), want) {
+					t.Errorf("%s missing declared-repo access %q:\n%s", agentName, want, data)
+				}
+			}
+			for _, agentName := range tc.untrusted {
+				data, err := os.ReadFile(filepath.Join(e.SubagentDir(), agentName+".opencode.md"))
+				if err != nil {
+					t.Fatal(err)
+				}
+				if strings.Contains(string(data), "external_directory:") {
+					t.Errorf("%s must not receive external access:\n%s", agentName, data)
+				}
+			}
+		})
+	}
+}
+
+func TestFrameworkAgentsDenyExternalDirectoriesWithoutDeclaredRepos(t *testing.T) {
+	for _, tc := range []struct {
+		name      string
+		framework string
+		trusted   []string
+		untrusted []string
+	}{
+		{"onto", ontoFrameworkTOML, []string{"onto", "onto-implementer"}, []string{"onto-explorer", "onto-reviewer", "onto-skeptic"}},
+		{"to", toFrameworkTOML, []string{"to", "to-implementer"}, []string{"to-explorer", "to-reviewer", "to-skeptic"}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			home := t.TempDir()
+			repo := t.TempDir()
+			if err := os.WriteFile(filepath.Join(repo, "homonto.toml"), []byte(tc.framework), 0o644); err != nil {
+				t.Fatal(err)
+			}
+			e := buildEngine(t, home, repo)
+			if err := e.Apply(context.Background(), mustPlan(t, e)); err != nil {
+				t.Fatal(err)
+			}
+			for _, agentName := range tc.trusted {
+				data, err := os.ReadFile(filepath.Join(e.SubagentDir(), agentName+".opencode.md"))
+				if err != nil {
+					t.Fatal(err)
+				}
+				if !strings.Contains(string(data), "  external_directory:\n    \"*\": deny") {
+					t.Errorf("%s must deny undeclared external directories:\n%s", agentName, data)
+				}
+			}
+			for _, agentName := range tc.untrusted {
+				data, err := os.ReadFile(filepath.Join(e.SubagentDir(), agentName+".opencode.md"))
+				if err != nil {
+					t.Fatal(err)
+				}
+				if strings.Contains(string(data), "external_directory:") {
+					t.Errorf("%s must not gain an external-directory rule:\n%s", agentName, data)
+				}
+			}
+		})
 	}
 }
 
@@ -268,5 +362,12 @@ func TestSubagentRenderFingerprintDistinguishesRoutes(t *testing.T) {
 	}
 	if renderFingerprint(a) != renderFingerprint(aAgain) {
 		t.Fatal("fingerprint is not stable for identical overrides: every apply would re-materialize")
+	}
+	baseFingerprint := renderFingerprint(a)
+	opencode := a["opencode"]
+	opencode.ExternalDirectoriesByAgent = map[string][]string{"onto": {"/work/service-a"}}
+	a["opencode"] = opencode
+	if baseFingerprint == renderFingerprint(a) {
+		t.Fatal("fingerprint ignored declared repository paths; apply would leave agent permissions stale")
 	}
 }

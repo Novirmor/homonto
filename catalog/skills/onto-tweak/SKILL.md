@@ -18,7 +18,7 @@ through the entire preset unless the user names an endpoint or asks to pause.
   `workflow: tweak`. This preset owns the change's whole lifecycle.
 - Broken behavior → `onto-fix`. **Small features are tweak territory** when
   ALL of: ≤5 files touched (test files excluded), no new capability (no new
-  `docs/specs/` file), and no existing spec's requirements change.
+  `<workflow-root>/specs/` file), and no existing spec's requirements change.
   Structural work or anything introducing a new capability → full workflow
   via `onto-open`.
 - Read `notes.md` at entry when present (recommended for any tweak that
@@ -82,7 +82,7 @@ No `plan.md` required. Still binding:
 Run `onto set verify-scale <name> light`.
 Demonstrate the changed behavior/content with a fresh command + output
 (render the doc, run the config consumer, show the diff taking effect) and
-run the regression suite. Write `docs/changes/<name>/verification.md`
+run the regression suite. Write `<workflow-root>/changes/<name>/verification.md`
 (template: `onto-verify/references/verification.md`) — brief is fine,
 absent is not. One adversarial skeptic (`onto-skeptic`, conformance lens) is
 optional (skips recorded).

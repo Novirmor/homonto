@@ -1,6 +1,6 @@
-# docs/specs/README.md — canonical template
+# <workflow-root>/specs/README.md — canonical template
 
-Bootstrap writes this into a repo at `docs/specs/README.md`. It records the
+Bootstrap writes this into a repo at `<workflow-root>/specs/README.md`. It records the
 living-spec format and the delta-merge semantics onto-close applies at
 close, so the repo documents its own spec contract.
 
@@ -9,9 +9,9 @@ close, so the repo documents its own spec contract.
 ```markdown
 # Specs
 
-Living capability specifications — each `docs/specs/<capability>.md` states
+Living capability specifications — each `<workflow-root>/specs/<capability>.md` states
 what the system does **now**, as present-tense truth. No change-log
-language; history lives in `docs/changes/archive/` and `docs/adr/`.
+language; history lives in `<workflow-root>/changes/archive/` and `<workflow-root>/adr/`.
 
 ## Requirement format
 
@@ -29,7 +29,7 @@ Every requirement carries ≥1 scenario with WHEN and THEN (GIVEN optional).
 
 ## How changes land (onto-close merge semantics)
 
-A change proposes edits as a delta at `docs/changes/<name>/specs/<cap>.md`
+A change proposes edits as a delta at `<workflow-root>/changes/<name>/specs/<cap>.md`
 using `## ADDED | MODIFIED | REMOVED | RENAMED Requirements` sections.
 Close merges each delta into the living spec, applying sections in a fixed
 order so cross-references resolve:

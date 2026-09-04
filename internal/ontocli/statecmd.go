@@ -27,7 +27,7 @@ func stateCmd() *cobra.Command {
 			if err := ontoFramework.ValidChangeName(name); err != nil {
 				return err
 			}
-			changeDir := filepath.Join(dir, "docs", "changes", name)
+			changeDir := filepath.Join(changesDir(dir), name)
 			var st ontostate.State
 			if _, err := os.Stat(changeDir); os.IsNotExist(err) {
 				archiveDir, archivedState, archiveErr := locateArchive(dir, name)

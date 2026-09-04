@@ -101,13 +101,17 @@ template in this skill's `references/`:
 Mark the confirmed approach in `notes.md`.
 
 **Derive the task list.** Now — with the approach confirmed — write
-`docs/changes/<name>/tasks.md` from the confirmed design (template:
+`<workflow-root>/changes/<name>/tasks.md` from the confirmed design (template:
 `onto-open/references/tasks.md`). This is the right time: tasks flow *from* the
 design, not before it. Each task is a bite-sized, independently verifiable unit
 tracing to a design decision or delta scenario; build refines granularity but
 the boundaries come from here. `tasks.md` does not exist until this step (onto
 new no longer scaffolds it for a full change), and leaving design requires it —
 so a design that produced no task list is not done.
+
+Write every new task as `- [ ] N.M <outcome> [trace #K]`: `N.M` pairs with its
+future plan heading, while positive unique `K` is the evidence/trace key. Use
+the canonical template; do not create new legacy leading `#K` tasks.
 
 ## Isolation decision (before leaving design)
 
@@ -148,7 +152,7 @@ fit.
       "<evidence>"` — the binary refuses design → build without both
 - [ ] If recorded phase is design, advanced design → build via `onto advance
       <name>`; on a downward mismatch, skipped advance and returned to `/onto`
-- [ ] **Commit the workspace**: `git add docs/changes/<name> && git commit`
+- [ ] **Commit the workspace**: `git add <workflow-root>/changes/<name> && git commit`
       — every phase exits with its workspace committed
 - [ ] Load `onto-build` and continue in the same invocation unless the user
       named design as the endpoint or asked to pause

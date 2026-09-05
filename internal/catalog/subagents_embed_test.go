@@ -50,7 +50,7 @@ func TestOntoPrimaryPromptIsComplete(t *testing.T) {
 	if strings.Count(text, "## The tooling around you: homonto") != 1 {
 		t.Errorf("onto prompt must contain one tooling section")
 	}
-	if !strings.HasSuffix(text, "framework migration.\n") {
+	if !strings.HasSuffix(text, "Hand the\nuser to the `to` primary after a demotion.\n") {
 		t.Errorf("onto prompt has unexpected or truncated ending: %q", text[max(0, len(text)-80):])
 	}
 }

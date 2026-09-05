@@ -4,6 +4,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/noviopenworks/homonto/internal/ontostate"
@@ -111,5 +112,19 @@ func TestSetBuildPause_SetAndClear(t *testing.T) {
 	}
 	if load().BuildPause != "" {
 		t.Error("build-pause clear did not empty the field")
+	}
+}
+
+func TestScaleSetWaitsForOntoWorkspaceLock(t *testing.T) {
+	root := prepWorkspace(t)
+	seedChange(t, root, "c", "build")
+	unlock, err := lockOnto(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer unlock()
+	_, err = runOnto(t, "scale", "c", "--set", "--dir", root)
+	if err == nil || !strings.Contains(err.Error(), "in progress") {
+		t.Fatalf("scale --set while locked = %v, want lock error", err)
 	}
 }

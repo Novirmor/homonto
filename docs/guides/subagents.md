@@ -161,8 +161,8 @@ Both primaries use the configuration root as their workspace root, falling back
 to the Git worktree root and then the host working directory. They do not ask
 where to work during a normal invocation and never initialize Git unless the
 user explicitly asks. `onto` runs the evidence-gated lifecycle; `to` is its
-lighter `plan → do → done` counterpart. They are mutually exclusive per
-configuration.
+lighter `plan → do → done` counterpart. They are complementary per
+configuration: both project side by side, selected per change.
 
 The `model:` and optional `variant:` lines come from the config's
 `[subagents.<name>.opencode]` block. The block is required — a production

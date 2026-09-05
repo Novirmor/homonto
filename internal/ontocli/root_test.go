@@ -13,6 +13,40 @@ func TestNewRootCmdUse(t *testing.T) {
 	}
 }
 
+// TestNewRootCmd_RegistersAllSubcommands verifies every shipped subcommand is
+// wired (a regression here would silently drop a command from the binary).
+func TestNewRootCmd_RegistersAllSubcommands(t *testing.T) {
+	root := NewRootCmd()
+	want := map[string]bool{
+		"version": true,
+		"init":    true,
+		"new":     true,
+		"status":  true,
+		"advance": true,
+		"bypass":  true,
+		"close":   true,
+		"abandon": true,
+		"demote":  true,
+		"handoff": true,
+		"doctor":  true,
+		"set":     true,
+		"state":   true,
+		"gate":    true,
+		"dirt":    true,
+		"scale":   true,
+		"graph":   true,
+	}
+	got := map[string]bool{}
+	for _, c := range root.Commands() {
+		got[c.Name()] = true
+	}
+	for name := range want {
+		if !got[name] {
+			t.Errorf("root command missing %q; registered: %v", name, got)
+		}
+	}
+}
+
 func TestVersionCommand(t *testing.T) {
 	cmd := NewRootCmd()
 	var out bytes.Buffer

@@ -371,7 +371,8 @@ type Config struct {
 }
 
 // Workflow configures the one repository-local home for onto or to artifacts.
-// The frameworks are mutually exclusive, so they deliberately share this root.
+// The frameworks share this root; their records stay in disjoint subtrees
+// (changes/ vs tasks/, ADR 0042).
 type Workflow struct {
 	Root string `toml:"root"`
 }

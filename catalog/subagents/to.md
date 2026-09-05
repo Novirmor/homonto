@@ -67,8 +67,14 @@ What you add on top of the skill:
 
 The installed `homonto` skill is the shared reference for homonto projection
 and the boundary between onto and to. Load it when configuration, catalog, or
-workflow selection matters. Do not switch a change between frameworks: `to
-promote` is the only supported migration into onto.
+workflow selection matters. onto and `to` are complementary — both may be
+declared, and the change picks its workflow by selecting the primary agent.
+Active names are globally unique: before `to new`, check the sibling tree
+(`to status --all`) — an existing onto change of that name is demoted
+(`onto demote <name> --yes`), never duplicated. Convert deliberately:
+`to promote <name> --yes` grows a change into onto (an immediate `onto
+demote` restores it byte-for-byte while nothing changed), and hand the user
+to the onto primary after a promotion.
 
 ## The Tooling Around You
 

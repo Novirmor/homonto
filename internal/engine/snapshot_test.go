@@ -8,10 +8,24 @@ import (
 	"testing"
 
 	"github.com/noviopenworks/homonto/internal/adapter"
+	"github.com/noviopenworks/homonto/internal/config"
 	"github.com/noviopenworks/homonto/internal/secret"
 	"github.com/noviopenworks/homonto/internal/snapshot"
 	"github.com/noviopenworks/homonto/internal/state"
 )
+
+type snapshotRepoAdapter struct{ name string }
+
+func (a snapshotRepoAdapter) Name() string { return a.name }
+func (snapshotRepoAdapter) Plan(*config.Config, *state.State) (adapter.ChangeSet, error) {
+	return adapter.ChangeSet{}, nil
+}
+func (snapshotRepoAdapter) Apply(*config.Config, adapter.ChangeSet, *secret.Resolver, *state.State) error {
+	return nil
+}
+func (snapshotRepoAdapter) ObserveHashes(*state.State) (map[string]string, error) {
+	return map[string]string{}, nil
+}
 
 // partitionOf loads a state file and returns its managed entries.
 func partitionOf(t *testing.T, path string) map[string]map[string]state.Entry {
@@ -25,6 +39,53 @@ func partitionOf(t *testing.T, path string) map[string]map[string]state.Entry {
 
 func equalPartitions(a, b map[string]map[string]state.Entry) bool {
 	return snapshot.EqualEntries(a, b)
+}
+
+func TestSnapshotRepoPartitionUsesBaseAdapterStateKey(t *testing.T) {
+	dir := t.TempDir()
+	repoState, err := state.LoadNamed(dir, "svc")
+	if err != nil {
+		t.Fatal(err)
+	}
+	repoState.Set("opencode", "skill.demo", "/managed/link -> ../../catalog/demo", "")
+	e := &Engine{RepoTargets: []RepoTarget{{
+		Name: "svc", Adapter: snapshotRepoAdapter{name: "opencode@svc"}, State: repoState,
+	}}}
+	got, ok := recordedLinkDst(e, "opencode@svc", "skill.demo")
+	if !ok || got != "/managed/link" {
+		t.Fatalf("repo recorded link = %q, %v; want /managed/link, true", got, ok)
+	}
+}
+
+func TestLoadSnapshotPartitionReadsNamedState(t *testing.T) {
+	dir := t.TempDir()
+	main, err := state.Load(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	main.Set("opencode", "skill.main", "main", "")
+	if err := main.Save(dir); err != nil {
+		t.Fatal(err)
+	}
+	repo, err := state.LoadNamed(dir, "svc")
+	if err != nil {
+		t.Fatal(err)
+	}
+	repo.Set("opencode", "skill.svc", "svc", "")
+	if err := repo.SaveNamed(dir, "svc"); err != nil {
+		t.Fatal(err)
+	}
+	e := &Engine{StateDir: dir, RepoTargets: []RepoTarget{{Name: "svc"}}}
+	got, err := loadSnapshotPartition(e, stateFileName(dir, "svc"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := got.Get("opencode", "skill.svc"); !ok {
+		t.Fatal("named partition did not load the repository state")
+	}
+	if _, ok := got.Get("opencode", "skill.main"); ok {
+		t.Fatal("named partition loaded the main state")
+	}
 }
 
 const snapCfg = `

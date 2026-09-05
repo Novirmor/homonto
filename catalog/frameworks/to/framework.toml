@@ -1,5 +1,5 @@
 name = "to"
-version = "0.11.0"
+version = "0.12.0"
 description = "to — minimal coding framework for LLMs (plan → do → done)"
 
 [dependencies]
@@ -28,8 +28,8 @@ to-no-slop = "commands/to-no-slop.md"
 # resource this framework ships is namespaced `to-*` (the dispatcher skill is
 # the bare namespace root, `to`), so installing to never collides with another
 # framework's — or your own — agent of the same generic name. Do NOT also
-# declare them in a top-level [subagents.*] table. onto and to are mutually
-# exclusive: homonto refuses a config that declares both frameworks.
+# declare them in a top-level [subagents.*] table. onto and to are
+# complementary: declare either or both and pick per change.
 [subagents]
 to = "subagents/to.md"
 to-explorer = "subagents/to-explorer.md"

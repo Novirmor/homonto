@@ -2,7 +2,9 @@ package workcli
 
 import (
 	"errors"
+	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -249,4 +251,81 @@ func TestErrQuietFindingsIsSentinel(t *testing.T) {
 	if errors.Is(clone, ErrQuietFindings) {
 		t.Error("a text-equal but identity-distinct error matched ErrQuietFindings; sentinel contract is identity, not text")
 	}
+}
+
+// deadPid returns the pid of a child process that has already exited and been
+// reaped, so the number provably names no running process (CI is linux-only;
+// "true" exists everywhere we run).
+func deadPid(t *testing.T) int {
+	t.Helper()
+	cmd := exec.Command("true")
+	if err := cmd.Run(); err != nil {
+		t.Fatalf("spawning throwaway process: %v", err)
+	}
+	return cmd.Process.Pid
+}
+
+// TestPidAlive_SelfAndDead verifies both directions of the liveness probe the
+// stale-lock reclaim trusts: the test's own pid reads alive, a reaped child's
+// pid reads dead.
+func TestPidAlive_SelfAndDead(t *testing.T) {
+	if !PidAlive(os.Getpid()) {
+		t.Errorf("PidAlive(self) = false, want true")
+	}
+	if PidAlive(deadPid(t)) {
+		t.Errorf("PidAlive(reaped child) = true, want false")
+	}
+}
+
+// TestLockWorkspace_ExcludesConcurrentAndReclaims verifies the shared lock:
+// a second acquire while held fails naming the lock file, and a lockfile
+// whose holder pid provably died is reclaimed by the next attempt.
+func TestLockWorkspace_ExcludesConcurrentAndReclaims(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, ".lock")
+	unlock, err := LockWorkspace("to", path)
+	if err != nil {
+		t.Fatalf("first lock: %v", err)
+	}
+	if _, err := LockWorkspace("to", path); err == nil || !strings.Contains(err.Error(), "in progress") {
+		t.Errorf("second lock while held = %v, want an in-progress error", err)
+	}
+	unlock()
+	// A stale lock naming a dead holder is reclaimed.
+	if err := os.WriteFile(path, []byte(strings.Repeat("x", 0)), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	os.Remove(path)
+	if err := os.WriteFile(path, []byte("pid="+strings.Repeat("9", 20)+"\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := LockWorkspace("to", path); err == nil || !strings.Contains(err.Error(), "in progress") {
+		t.Errorf("unreadable-pid lock must wait for hand cleanup: %v", err)
+	}
+	os.Remove(path)
+	if err := os.WriteFile(path, []byte(fmt.Sprintf("pid=%d\n", deadPid(t))), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	unlock2, err := LockWorkspace("to", path)
+	if err != nil {
+		t.Fatalf("lock over dead holder: %v", err)
+	}
+	unlock2()
+}
+
+func TestLockChangeNames_ExcludesBothWorkflowCreators(t *testing.T) {
+	dir := t.TempDir()
+	first, err := LockChangeNames(dir)
+	if err != nil {
+		t.Fatalf("first name lock: %v", err)
+	}
+	if _, err := LockChangeNames(dir); err == nil || !strings.Contains(err.Error(), "in progress") {
+		t.Fatalf("second name lock = %v, want in-progress error", err)
+	}
+	first()
+	second, err := LockChangeNames(dir)
+	if err != nil {
+		t.Fatalf("name lock after release: %v", err)
+	}
+	second()
 }

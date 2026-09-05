@@ -110,18 +110,34 @@ YAML
 printf '# plan\n- [ ] #1 work\n  - Files: `x.go`\nFinal Verify: `go test ./...`\n' > docs/tasks/grower/plan.md
 "$TO" promote grower --yes 2>&1 | grep -q "promoted" || fail "promote output"
 is_file "docs/changes/grower/onto-state.yaml"
-is_file "docs/changes/grower/imported-to/plan.md"
+is_file "docs/changes/grower/.workflow/lineage.json"
+found="$(find docs/changes/grower/.workflow/snapshots -name plan.md | head -n1)"
+[ -n "$found" ] || fail "promoted snapshot missing the source plan"
+grep -q 'Final Verify: `go test' "$found" || fail "snapshot bytes differ"
 grep -q 'phase: open' docs/changes/grower/onto-state.yaml || fail "promote must start at open"
 ok "to promote preserved the source"
+
+log "onto demote restores the immediate inverse (ADR 0042)"
+"$ONTO" demote grower --yes 2>&1 | grep -q "demoted" || fail "demote output"
+is_file "docs/tasks/grower/to-state.yaml"
+grep -q 'phase: do' docs/tasks/grower/to-state.yaml || fail "restore must return the original do phase"
+grep -q 'Final Verify: `go test ./...`' docs/tasks/grower/plan.md || fail "restore must return the original plan bytes"
+[ ! -e docs/changes/grower ] || fail "demoted onto workspace still present"
+grep -q '"currentWorkflow": "to"' docs/tasks/grower/.workflow/lineage.json || fail "lineage must track the restore"
+ok "onto demote restored the original workspace"
 
 log "permissions suggest renders only safe commands"
 printf 'go test ./...\nrm -rf /\n' | "$HOMONTO" permissions suggest > suggest.txt 2>&1
 grep -q 'bash_allow_add' suggest.txt || fail "snippet missing"
 grep -q '"go test ./..."' suggest.txt || fail "safe command missing from snippet"
-if grep -q '"rm -rf' suggest.txt; then :; fi
-# The destructive command may appear only inside a # rejected line.
-rejected="$(grep -c '# rejected' suggest.txt)"
-[ "$rejected" -ge 1 ] || fail "unsafe command not rejected"
+# The destructive command may appear only inside a rejected comment, never in
+# the generated allowlist.
+while IFS= read -r line; do
+  case "$line" in
+    *'"rm -rf'*) case "$line" in *'# rejected'*) ;; *) fail "unsafe command entered the allowlist" ;; esac ;;
+  esac
+done < suggest.txt
+grep -q '# rejected.*rm -rf' suggest.txt || fail "unsafe command not rejected"
 ok "suggestions validated"
 
 log "snapshot apply + undo restores state"

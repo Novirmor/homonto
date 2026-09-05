@@ -159,23 +159,26 @@ func recordDiskBefore(e *Engine, sets []adapter.ChangeSet, blobs *snapshot.BlobS
 	return nil
 }
 
-// stateFor resolves the state partition an adapter label reads.
-func stateFor(e *Engine, tool string) *state.State {
+// stateFor resolves an adapter label to its state partition and the state key
+// recorded inside that partition. Repo adapters add @<repo> to their adapter
+// label, while their partition keeps the base adapter key.
+func stateFor(e *Engine, tool string) (*state.State, string) {
 	for _, t := range e.RepoTargets {
 		if t.Adapter.Name() == tool {
-			return t.State
+			key, _ := strings.CutSuffix(tool, "@"+t.Name)
+			return t.State, key
 		}
 	}
-	return e.State
+	return e.State, tool
 }
 
 // recordedLinkDst recovers a link key's recorded destination from state.
 func recordedLinkDst(e *Engine, tool, key string) (string, bool) {
-	st := stateFor(e, tool)
+	st, stateTool := stateFor(e, tool)
 	if st == nil {
 		return "", false
 	}
-	entry, ok := st.Get(tool, key)
+	entry, ok := st.Get(stateTool, key)
 	if !ok {
 		return "", false
 	}
@@ -328,7 +331,7 @@ func (e *Engine) UndoSnapshot(applyID string) error {
 	// Verify the AFTER-images against DISK, freshly loaded — the in-memory
 	// states reflect the apply, not a subsequent user edit.
 	for _, p := range j.Partitions {
-		st, err := state.Load(filepath.Dir(p.Path))
+		st, err := loadSnapshotPartition(e, p.Path)
 		if err != nil {
 			return err
 		}
@@ -343,6 +346,21 @@ func (e *Engine) UndoSnapshot(applyID string) error {
 	j.Status = snapshot.StatusRolledBack
 	j.Finished = snapshot.Now()
 	return j.Save(e.StateDir)
+}
+
+// loadSnapshotPartition reads the exact partition recorded by a journal. A
+// named repository partition is not state.json; loading it as the main state
+// would make undo compare the wrong repository's after-image.
+func loadSnapshotPartition(e *Engine, path string) (*state.State, error) {
+	if path == stateFileName(e.StateDir, "") {
+		return state.Load(e.StateDir)
+	}
+	for _, t := range e.RepoTargets {
+		if path == stateFileName(e.StateDir, t.Name) {
+			return state.LoadNamed(e.StateDir, t.Name)
+		}
+	}
+	return nil, fmt.Errorf("snapshot: journal references unknown state partition %s", path)
 }
 
 // stateAt loads the partition at a state file path (main or named).
@@ -452,13 +470,8 @@ func restoreRemoteLock(blobs *snapshot.BlobStore, op snapshot.DiskOp) error {
 // Apply — the same deterministic writer that made the change, now with the
 // before-state restored.
 func (e *Engine) reverseApplyStructured(j *snapshot.Journal) error {
-	for _, cs := range j.Changesets {
-		// The journal's changesets don't carry keys; reconstruct the reverse
-		// from partition diffs is not possible without the original sets.
-		// Instead, re-plan from the restored state: the drift the restore
-		// introduced IS the reverse, applied by a normal apply.
-		_ = cs
-	}
+	// Journal changesets do not carry keys, so reconstruct the reverse from the
+	// restored state: its drift from the current disk is the reverse plan.
 	// The reverse surface is the restored state vs the current disk: plan and
 	// apply. Secrets re-resolve from the unresolved before values.
 	sets, err := e.Plan()

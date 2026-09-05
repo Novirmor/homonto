@@ -34,8 +34,8 @@ is where the old hand-written checks now live, done against a disposable
   render, and prune behavior for the builtin catalog.
 - **`onto-lifecycle`** — drives a change through onto's gates.
 - **`to-lifecycle`** — drives a change through to's plan → do → done: gate
-  refusal, the `--verified` requirement, archive, doctor and convergence,
-  and the onto-xor-to exclusivity error.
+	refusal, the `--verified` requirement, archive, doctor and convergence,
+	and onto/to coexistence with shared-resource deduplication.
 
 > **Dogfooding is deferred to v1.** This repository is developed directly
 > on branches, with no external workflow stack
@@ -94,13 +94,13 @@ export PATH="$GOBIN:$PATH"
 Then smoke the interactive installer (Linux/macOS) against the same tag: it
 must download the tagged script, verify the real release archives against
 `SHA256SUMS`, and install into the temp dir (answers: version, no workflow
-binary, temp dir):
+binary, temp dir, decline initialization):
 
 ```sh
 TMPBIN=$(mktemp -d)
 curl -fsSL -o /tmp/homonto-install.sh \
   "https://raw.githubusercontent.com/noviopenworks/homonto/v0.1.0-rc.1/scripts/install.sh"
-printf 'v0.1.0-rc.1\nnone\n%s\n' "$TMPBIN" | bash /tmp/homonto-install.sh
+printf 'v0.1.0-rc.1\nnone\n%s\nn\n' "$TMPBIN" | bash /tmp/homonto-install.sh
 "$TMPBIN"/homonto version   # expect the tagged version string
 ```
 
@@ -156,8 +156,8 @@ onto doctor                 # expect: healthy
 ```
 
 Replace `[frameworks.onto]`, `onto`, and its four specialists with `[frameworks.to]`, `to`, and the four
-`to-*` specialists. The two frameworks are mutually exclusive, so a single
-config cannot cover both.
+`to-*` specialists. The two frameworks are complementary, so one config
+may cover both.
 
 Verify a downloaded archive's checksum matches `SHA256SUMS`:
 

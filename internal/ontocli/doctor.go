@@ -5,6 +5,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"sort"
 
 	"github.com/noviopenworks/homonto/internal/buildinfo"
 	"github.com/noviopenworks/homonto/internal/integrationrecord"
@@ -58,6 +59,50 @@ func doctorCmd() *cobra.Command {
 	cmd.Flags().StringVar(&dir, "dir", ".", "workspace root to inspect")
 	cmd.Flags().BoolVar(&quiet, "quiet", false, "print nothing; signal health via exit code only (for hooks)")
 	return cmd
+}
+
+// siblingActiveDuplicates lists active onto change names that also exist as
+// active directories in the `to` workflow's tree.
+func siblingActiveDuplicates(root string) ([]string, error) {
+	mine, err := activeDirNames(changesDir(root))
+	if err != nil {
+		return nil, err
+	}
+	wf, err := workcli.WorkflowRoot(root)
+	if err != nil {
+		return nil, err
+	}
+	theirs, err := activeDirNames(filepath.Join(wf, "tasks"))
+	if err != nil {
+		return nil, err
+	}
+	dupes := []string{}
+	for name := range mine {
+		if theirs[name] {
+			dupes = append(dupes, name)
+		}
+	}
+	sort.Strings(dupes)
+	return dupes, nil
+}
+
+// activeDirNames lists real directory names under dir, skipping the archive.
+func activeDirNames(dir string) (map[string]bool, error) {
+	entries, err := os.ReadDir(dir)
+	if os.IsNotExist(err) {
+		return map[string]bool{}, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	names := map[string]bool{}
+	for _, e := range entries {
+		if !e.IsDir() || e.Name() == "archive" {
+			continue
+		}
+		names[e.Name()] = true
+	}
+	return names, nil
 }
 
 // runDoctor accumulates health findings in a fixed order — docs layout, active
@@ -159,6 +204,14 @@ func runDoctor(cmd *cobra.Command, root string) error {
 			for _, n := range evNotes {
 				cmd.Println(n)
 			}
+		}
+	}
+
+	// 2b. Global-name uniqueness (ADR 0042): an active name colliding with
+	// the `to` workflow's active tree is ambiguous for agent routing.
+	if dupes, err := siblingActiveDuplicates(root); err == nil {
+		for _, name := range dupes {
+			findings = append(findings, fmt.Sprintf("%s: also active in the `to` workflow (<workflow-root>/tasks/%s) — active names are globally unique; convert or rename one", name, name))
 		}
 	}
 

@@ -75,7 +75,7 @@ only when a later workflow gate requires Git evidence or integration.
 ## Workflow root — `[workflow]`
 
 `[workflow]` selects the one repository-relative root for workflow artifacts.
-It is shared by the mutually exclusive `onto` and `to` frameworks. Omit it to
+It is shared by the `onto` and `to` frameworks. Omit it to
 preserve the default `docs` layout.
 
 ```toml
@@ -201,8 +201,10 @@ frontmatter block: [subagents](subagents.md). The remote pipeline:
 
 A framework is a bundled set of skills, commands, and subagents that install
 together, with dependency expansion. The builtin catalog ships exactly the
-two homonto-native frameworks, `onto` and `to`, and they are **mutually
-exclusive**: declaring both fails at load (one workflow per repository).
+two homonto-native frameworks, `onto` and `to`, and they are
+**complementary** (ADR 0042): declare either or both — the primary agent you
+select picks the workflow per change, and both frameworks' agents project
+side by side.
 Both frameworks install the shared `homonto` knowledge skill and their own
 selectable primary workflow agent.
 Beyond `builtin:`, a framework source may be `local:<path>` (a framework root
@@ -210,7 +212,7 @@ in your repo) or `remote:<url>` with a required `digest = "sha256:…"` pin.
 Third-party workflow stacks are not bundled.
 
 ```toml
-[frameworks.onto]        # or [frameworks.to] — never both
+[frameworks.onto]        # and/or [frameworks.to] — complementary (ADR 0042)
 source = "builtin:onto"
 scope  = "project"
 ```

@@ -30,8 +30,8 @@ A change
 that spans siblings is created once with `to new <name> --repo <declared-name>`;
 the selected aliases become a terminal `to done` clean-worktree gate; and onto
 is the heavier sibling framework (evidence-gated open → design → build →
-verify → close) — a repository declares exactly one of the two, and wanting
-more ceremony mid-change is a scoping question, not a framework switch.
+verify → close) — the two are complementary, the change picks its workflow by
+selecting the primary agent, and `to status --all` shows both inventories.
 
 The dispatcher does three things, in order, and never performs phase work
 itself.
@@ -74,9 +74,11 @@ or clearly describes an independent change.
 
 A change outgrowing `to` (design questions, evidence obligations, a second
 reader)? `to promote <name> --yes` converts it into a full onto change with
-the complete workspace preserved under `imported-to/`, then swap
-`[frameworks.to]` for `[frameworks.onto]` and `homonto apply --yes` (ADR
-0028).
+the complete workspace preserved under `.workflow/snapshots/` — declare
+`[frameworks.onto]` alongside `to` if it is missing, `homonto apply --yes`,
+then `/onto` (ADR 0028). An onto change that no longer needs its gates goes
+back with `onto demote <name> --yes`; converting back while nothing changed
+restores the previous workspace byte-for-byte (ADR 0042).
 
 Resuming after a context compaction? `to handoff <name>` prints the recovery
 pack (phase, plan excerpt, next skill) — read it before doing anything.
@@ -121,8 +123,8 @@ Subagent questions return to the coordinator. Resolve factual and technical
 questions from repository evidence or by running the requested probe; ask the
 user only when product intent or an explicit authorization is genuinely missing.
 
-onto and to are mutually exclusive per repository — never mix their artifacts
-or advice.
+onto and `to` are complementary: never mix their artifacts in one change, and
+route conversions through the promote/demote bridges — never by hand.
 
 All prose the change keeps (`plan.md`, its notes and verification record, and
 commit messages) goes through the `to-no-slop` rules before it lands.

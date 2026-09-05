@@ -78,27 +78,18 @@ func validateWorkflow(c *Config) error {
 	return nil
 }
 
-// validateFrameworks checks the framework source rule and the onto/to
-// exclusivity.
+// validateFrameworks checks the framework source rule.
 //
 // Frameworks have their own source rule: builtin:<name> (expanded from the
 // embedded catalog) or local:<path> (a local framework root). Every other
 // source expands nothing and is rejected loudly (F35).
 //
-// onto and to are an exclusive choice per repository: enterprise tooling
-// vs. simple development. Their skills give conflicting process guidance
-// and their binaries each expect to own the workflow, so declaring both
-// is a config error, not a projection concern.
+// onto and to may be declared together (ADR 0042): their records live in
+// disjoint directories (changes/ vs tasks/), their agents and commands are
+// namespaced, and the workflow is chosen per change by selecting its primary
+// agent — not per repository.
 func validateFrameworks(c *Config) error {
-	if err := validateFrameworkResources(c.Frameworks); err != nil {
-		return err
-	}
-	if _, hasOnto := c.Frameworks["onto"]; hasOnto {
-		if _, hasTo := c.Frameworks["to"]; hasTo {
-			return fmt.Errorf("parse config: [frameworks.onto] and [frameworks.to] are mutually exclusive; pick one workflow framework per repository (onto for evidence-gated enterprise changes, to for simple development)")
-		}
-	}
-	return nil
+	return validateFrameworkResources(c.Frameworks)
 }
 
 // validateRepos checks the shape of every [repos] entry: a plain name usable

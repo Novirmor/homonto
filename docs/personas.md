@@ -21,9 +21,9 @@ a **hard dependency on the compiled binary** (it is not markdown-only), and
 the markdown skills invoke the binary rather than editing state by hand.
 
 **to is homonto's native minimal coding framework** — the lightweight
-alternative to onto (`plan → do → done`, one bookkeeper binary, no evidence
-gates). onto and to are mutually exclusive per repository; see
-[the to workflow](guides/to-workflow.md).
+complement to onto (`plan → do → done`, one bookkeeper binary, no evidence
+gates). onto and to are complementary: declare either or both and pick per
+change; see [the to workflow](guides/to-workflow.md).
 
 **Comet, OpenSpec, and Superpowers are unenforced alternative workflows.**
 They drive the same spec-driven shape (propose → design → build → verify →

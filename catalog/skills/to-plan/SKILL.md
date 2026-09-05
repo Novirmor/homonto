@@ -78,5 +78,5 @@ Apply the dispatcher's shared autonomous workflow policy throughout.
   arbitrary file count or by separate "code" and "tests" tasks.
 - Never hand-edit `to-state.yaml`; the binary owns it.
 - If the work turns out to need evidence-gated phases, spec deltas, or a
-  dependency graph, say so: that is onto-shaped work, and this repo chose to.
-  Do not rebuild onto inside a plan.md.
+  dependency graph, say so: that is onto-shaped work. `to promote <name> --yes`
+  converts the change; do not rebuild onto inside a plan.md.

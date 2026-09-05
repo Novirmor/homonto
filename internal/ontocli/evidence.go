@@ -69,6 +69,11 @@ func evidenceRecordCmd() *cobra.Command {
 			if !isHexHash(cmdHash) {
 				return fmt.Errorf("evidence record: --cmd-hash must be a sha256 hex digest of the command line")
 			}
+			unlock, err := lockOnto(dir)
+			if err != nil {
+				return err
+			}
+			defer unlock()
 			changeDir := filepath.Join(changesDir(dir), name)
 			if _, err := os.Stat(filepath.Join(changeDir, "onto-state.yaml")); err != nil {
 				return fmt.Errorf("evidence record: no change %q under %s", name, changesDir(dir))

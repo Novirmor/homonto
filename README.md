@@ -32,7 +32,7 @@ The repository ships **three binaries**:
 |---|---|
 | `homonto` | The deterministic installer and projector described above. |
 | `onto` | A spec-driven workflow operator. It gates a change through `open → design → build → verify → close` with evidence-based, non-skippable transitions. `onto handoff --json`/`--write` emit versioned recovery packs, `onto evidence record` and `onto trace` keep requirement-to-evidence traceability, and `onto graph` maps change dependencies. |
-| `to` | A minimal coding-framework bookkeeper: `plan → do → done`, no gates. The lightweight, mutually exclusive alternative to onto (see [the design](docs/to-framework-design.md)). `to promote` converts a growing `to` change into a full onto change. |
+| `to` | A minimal coding-framework bookkeeper: `plan → do → done`, no gates. The lightweight complement to onto (see [the design](docs/to-framework-design.md)). `to promote` converts a growing `to` change into a full onto change; `onto demote` converts back. |
 
 ### Onto Task And Trace IDs
 
@@ -59,7 +59,8 @@ only what homonto authors:
 - **`to`** — the native minimal coding framework for LLMs: a dispatcher, three
   phase skills, `to-no-slop`, the shared `homonto` knowledge skill, and five
   agents (the `to` primary orchestrator plus four specialists). onto and
-  `to` are an exclusive choice; declaring both is a config error.
+  `to` are complementary; declare either or both and pick per change by
+  selecting its primary agent ([ADR 0042](docs/adr/0042-onto-and-to-are-complementary.md)).
 - **Loose skills and commands** (`handoff`, `grilling`, …) — framework-agnostic
   and installed individually.
 
@@ -80,7 +81,8 @@ No Go toolchain? On Linux/macOS (amd64/arm64) download and run the
 interactive installer: it asks which binaries you want, verifies the release
 archives against `SHA256SUMS`, installs into a directory you choose, and
 prints the PATH line for you to apply — it never edits your shell
-configuration:
+configuration. It can also run the non-destructive `homonto init` in the
+current directory when you explicitly confirm:
 
 ```bash
 curl -fsSL -o install.sh https://raw.githubusercontent.com/noviopenworks/homonto/main/scripts/install.sh && bash install.sh

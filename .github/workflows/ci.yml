@@ -12,7 +12,7 @@ jobs:
   # One shared gate drives CI, local rehearsal, and release publication
   # (scripts/gate.sh), so no path runs a weaker check set than another. It covers
   # gofmt, mod-tidy, vet, build, test, race, version-stamp + cli smoke,
-  # govulncheck, and the triple-binary Docker E2E (five suites incl. release
+  # govulncheck, and the triple-binary Docker E2E suites (including release
   # packaging). ubuntu-latest ships a Docker daemon, which the E2E suites need.
   gate:
     runs-on: ubuntu-latest

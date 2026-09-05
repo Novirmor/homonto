@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 
 	"github.com/noviopenworks/homonto/internal/buildinfo"
 	"github.com/noviopenworks/homonto/internal/tostate"
@@ -55,6 +56,50 @@ func doctorCmd() *cobra.Command {
 	cmd.Flags().StringVar(&dir, "dir", ".", "workspace root")
 	cmd.Flags().BoolVar(&quiet, "quiet", false, "print nothing; signal findings via exit code only")
 	return cmd
+}
+
+// siblingDuplicates lists active change names that also exist as active
+// directories in the sibling workflow's tree.
+func siblingDuplicates(root, siblingDir string) ([]string, error) {
+	mine, err := activeNames(tasksDir(root))
+	if err != nil {
+		return nil, err
+	}
+	wf, err := workcli.WorkflowRoot(root)
+	if err != nil {
+		return nil, err
+	}
+	theirs, err := activeNames(filepath.Join(wf, siblingDir))
+	if err != nil {
+		return nil, err
+	}
+	dupes := []string{}
+	for name := range mine {
+		if theirs[name] {
+			dupes = append(dupes, name)
+		}
+	}
+	sort.Strings(dupes)
+	return dupes, nil
+}
+
+// activeNames lists real directory names under dir, skipping the archive.
+func activeNames(dir string) (map[string]bool, error) {
+	entries, err := os.ReadDir(dir)
+	if os.IsNotExist(err) {
+		return map[string]bool{}, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	names := map[string]bool{}
+	for _, e := range entries {
+		if !e.IsDir() || e.Name() == "archive" {
+			continue
+		}
+		names[e.Name()] = true
+	}
+	return names, nil
 }
 
 // collectFindings walks the to workspace. A missing docs/tasks/ is healthy
@@ -114,7 +159,15 @@ func collectFindings(root string) ([]string, error) {
 		}
 	}
 
-	// 2. Archive entries: must hold a valid, terminal state.
+	// 2. Global-name uniqueness (ADR 0042): an active name colliding with
+	// the onto workflow's active tree is ambiguous for agent routing.
+	if dupes, err := siblingDuplicates(root, "changes"); err == nil {
+		for _, name := range dupes {
+			findings = append(findings, fmt.Sprintf("%s: also active in the onto workflow (<workflow-root>/changes/%s) — active names are globally unique; convert or rename one", name, name))
+		}
+	}
+
+	// 3. Archive entries: must hold a valid, terminal state.
 	archents, err := os.ReadDir(archiveDir(root))
 	if err != nil && !os.IsNotExist(err) {
 		return nil, fmt.Errorf("to doctor: reading %s: %w", archiveDir(root), err)

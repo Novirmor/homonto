@@ -83,8 +83,34 @@ func FrameworkCatalogName(fwName, source string) (string, bool) {
 	return "", false
 }
 
+// sameResource reports whether two expansions of one shared resource (e.g.
+// the homonto knowledge skill, expanded by both onto and to — ADR 0042)
+// place it identically. Targets compare by their EFFECTIVE set: omitted
+// targets mean "every supported tool", which today is opencode, so an
+// omitted list and an explicit ["opencode"] are the same placement.
 func sameResource(a, b Resource) bool {
-	return a.Source == b.Source && a.Scope == b.Scope && slices.Equal(a.Targets, b.Targets)
+	if a.Source != b.Source || a.Scope != b.Scope {
+		return false
+	}
+	return slices.Equal(effectiveTargets(a.Targets), effectiveTargets(b.Targets))
+}
+
+// effectiveTargets normalizes a targets list for placement comparison:
+// omitted/empty means all supported tools (opencode is the only adapter).
+func effectiveTargets(t []string) []string {
+	if len(t) == 0 {
+		return []string{"opencode"}
+	}
+	set := make(map[string]bool, len(t))
+	for _, target := range t {
+		set[target] = true
+	}
+	out := make([]string, 0, len(set))
+	for target := range set {
+		out = append(out, target)
+	}
+	sort.Strings(out)
+	return out
 }
 
 // expandEntriesForTool is the generic per-kind framework-expansion pipeline
@@ -153,8 +179,10 @@ func (c *Config) expandEntriesForTool(tool, kind string, base []NamedResource, e
 				}
 				// Equivalent re-expansion by another framework: keep both
 				// origins — "who declares this" has two true answers — with
-				// the first primary.
+				// the first primary. The map holds values, so the merged
+				// entry must be written back.
 				prev.Origins = append(prev.Origins, nr.Origins[0])
+				byName[name] = prev
 				continue
 			}
 			byName[name] = nr

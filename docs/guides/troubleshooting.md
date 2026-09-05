@@ -110,8 +110,8 @@ in v0.13.0: a config naming them — `targets = ["claude"]` or
 at load, naming the key. The `homonto import` command (a Claude MCP
 bootstrap) went with them.
 
-- **Frameworks** resolve from the builtin catalog (`onto` or `to`, mutually
-  exclusive), a `local:` root, or a digest-pinned `remote:` source.
+- **Frameworks** resolve from the builtin catalog (`onto` and/or `to`,
+  complementary), a `local:` root, or a digest-pinned `remote:` source.
 - **Remote sources** (subagents and frameworks) require a
   `digest = "sha256:…"` pin (see
   [remote source trust](remote-source-trust.md)). homonto never re-resolves
@@ -182,10 +182,6 @@ resume without re-deriving state.
 onto: the mutating commands require the to framework installed *by homonto*
 (`[frameworks.to]` + `homonto apply`). The read-only commands (`status`,
 `handoff`, `doctor`, `version`) always work.
-
-**"[frameworks.onto] and [frameworks.to] are mutually exclusive."** By
-design: one workflow framework per repository. Remove one declaration and
-re-apply; the removed framework's projected content is pruned.
 
 **`to done` refuses a scoped change.** A change created with `to new --repo
 <declared-name>` cannot finish until the config repo and every selected repo

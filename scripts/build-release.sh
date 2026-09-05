@@ -42,6 +42,13 @@ build_one() {
   rm -rf "dist/$out"
 }
 
+# Require an empty release directory. Reusing a prior dist/ would include
+# stale archives in SHA256SUMS and in the release upload glob; deleting it
+# automatically would make a packaging command destructive.
+if [ -d dist ] && [ -n "$(find dist -mindepth 1 -maxdepth 1 -print -quit)" ]; then
+  echo "build-release: dist/ is not empty; use a fresh release directory" >&2
+  exit 1
+fi
 mkdir -p dist
 for target in $TARGETS; do
   goos="${target%/*}"

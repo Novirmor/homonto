@@ -2,15 +2,9 @@ package tocli
 
 import (
 	"encoding/json"
-	"errors"
 	"fmt"
-	"io/fs"
 	"os"
 	"path/filepath"
-	"runtime"
-	"strconv"
-	"strings"
-	"syscall"
 	"time"
 
 	"github.com/noviopenworks/homonto/internal/tostate"
@@ -138,76 +132,15 @@ func completeArchive(root string, st tostate.State) (string, error) {
 
 // lock takes an exclusive per-workspace lock for a mutating command, so two
 // concurrent sessions cannot interleave writes on the same change
-// (last-writer-wins with no diagnostic). Same O_EXCL pattern as homonto's
-// applylock: portable, fail-fast, and a SIGKILLed holder leaves a lockfile
-// whose content names the holder pid. Unlike applylock (where reclamation is
-// deliberately manual), a lock whose recorded pid is provably no longer
-// running is reclaimed automatically by the next attempt: the holder is gone,
-// so nothing live can be stolen. A lock with no readable pid — a crash in the
-// create-to-write window — and a lock held by a live pid are never touched.
+// (last-writer-wins with no diagnostic). The lock lives at
+// docs/tasks/.to.lock via the shared workcli helper — the same file `onto
+// demote` holds as its destination lock — and a lock whose recorded pid is
+// provably no longer running is reclaimed automatically by the next attempt.
 func lock(root string) (func(), error) {
 	if err := os.MkdirAll(tasksDir(root), 0o755); err != nil {
 		return nil, fmt.Errorf("to: lock: %w", err)
 	}
-	path := filepath.Join(tasksDir(root), ".to.lock")
-	f, err := os.OpenFile(path, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o600)
-	if errors.Is(err, fs.ErrExist) {
-		if pid, ok := lockPid(path); ok && !pidAlive(pid) {
-			if rmErr := os.Remove(path); rmErr == nil {
-				f, err = os.OpenFile(path, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o600)
-			}
-		}
-	}
-	if err != nil {
-		if errors.Is(err, fs.ErrExist) {
-			return nil, fmt.Errorf("to: another to command is in progress (lock held at %s); wait for it, or remove the file if none is running", path)
-		}
-		return nil, fmt.Errorf("to: lock: %w", err)
-	}
-	fmt.Fprintf(f, "pid=%d\n", os.Getpid())
-	_ = f.Close()
-	return func() { _ = os.Remove(path) }, nil
-}
-
-// lockPid reads the holder pid recorded in a lockfile. ok=false when the file
-// is unreadable or carries no parseable pid= line: such a lock is never
-// auto-reclaimed, because the create-to-write window means it may still have
-// a live owner that simply has not written its pid yet.
-func lockPid(path string) (int, bool) {
-	b, err := os.ReadFile(path)
-	if err != nil {
-		return 0, false
-	}
-	for _, ln := range strings.Split(string(b), "\n") {
-		if v, ok := strings.CutPrefix(ln, "pid="); ok {
-			if pid, err := strconv.Atoi(strings.TrimSpace(v)); err == nil && pid > 0 {
-				return pid, true
-			}
-		}
-	}
-	return 0, false
-}
-
-// pidAlive reports whether pid names a running process. Only a confirmed
-// finished/dead process counts as dead — os.Signal(0) yields
-// os.ErrProcessDone (or ESRCH) for one that no longer runs — while a
-// permission error means the process exists but belongs to another user. On
-// Windows os.FindProcess itself fails for a finished pid, so its success is
-// the answer there. A recycled pid (dead holder's number taken by an
-// unrelated process) therefore reads as alive — the safe direction; the lock
-// waits for hand cleanup, as before.
-func pidAlive(pid int) bool {
-	p, err := os.FindProcess(pid)
-	if err != nil {
-		return false
-	}
-	if runtime.GOOS == "windows" {
-		return true
-	}
-	if err := p.Signal(syscall.Signal(0)); err != nil {
-		return !(errors.Is(err, os.ErrProcessDone) || errors.Is(err, syscall.ESRCH))
-	}
-	return true
+	return workcli.LockWorkspace("to", filepath.Join(tasksDir(root), ".to.lock"))
 }
 
 // printJSON marshals v with indentation to the command's stdout.

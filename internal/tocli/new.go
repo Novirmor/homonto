@@ -69,6 +69,11 @@ func runNewWithRepos(cmd *cobra.Command, root, name string, jsonMode bool, repos
 	if err := workcli.MarkWorkflowState(root); err != nil {
 		return fmt.Errorf("to new: recording workflow root: %w", err)
 	}
+	nameUnlock, err := workcli.LockChangeNames(root)
+	if err != nil {
+		return fmt.Errorf("to new: %w", err)
+	}
+	defer nameUnlock()
 	unlock, err := lock(root)
 	if err != nil {
 		return err
@@ -79,6 +84,13 @@ func runNewWithRepos(cmd *cobra.Command, root, name string, jsonMode bool, repos
 	// so a finished change frees its name for reuse (recurring chores).
 	if _, err := os.Stat(changeDir(root, name)); err == nil {
 		return fmt.Errorf("to new: change %q already exists at %s", name, changeDir(root, name))
+	}
+	// Global-name uniqueness (ADR 0042): the same active name in the onto
+	// workflow is resolved by demotion, not duplication.
+	if sib, err := workcli.SiblingChangeDir(root, "changes", name); err == nil {
+		if _, serr := os.Lstat(sib); serr == nil {
+			return fmt.Errorf("to new: change %q is already active in the onto workflow (%s); demote it (`onto demote %s --yes`) or pick another name", name, sib, name)
+		}
 	}
 
 	if err := os.MkdirAll(changeDir(root, name), 0o755); err != nil {

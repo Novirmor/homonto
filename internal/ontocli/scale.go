@@ -100,6 +100,13 @@ func scaleCmd() *cobra.Command {
 			if err := ontoFramework.ValidChangeName(name); err != nil {
 				return err
 			}
+			if doSet {
+				unlock, err := lockOnto(dir)
+				if err != nil {
+					return err
+				}
+				defer unlock()
+			}
 			changeDir := filepath.Join(changesDir(dir), name)
 			st, err := ontostate.LoadChange(changeDir)
 			if err != nil {

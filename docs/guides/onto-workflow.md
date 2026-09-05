@@ -40,7 +40,8 @@ onto version            # prints: onto <version>
 Or install `onto` together with `homonto` through the [interactive
 installer](getting-started.md#1-install): it asks which binaries you want,
 verifies the release archives against `SHA256SUMS`, and prints PATH
-instructions without editing your shell configuration.
+instructions without editing your shell configuration. On confirmation, it can
+also scaffold the current directory with `homonto init`.
 
 The mutating commands (`init`, `new`, `set`, `advance`, `bypass`, `close`, `abandon`,
 `merge-deltas`, `complete-integration`) require the onto framework to be **declared and applied
@@ -298,8 +299,8 @@ See [configuration](configuration.md#tooling) for the full reference.
 The principles the skills enforce throughout — build only what the change
 needs, as simply as it can be built — are spelled out in [YAGNI](yagni.md)
 and [KISS](kiss.md). The lightweight sibling workflow is
-[to](to-workflow.md); the two frameworks are an exclusive choice per
-repository.
+[to](to-workflow.md); the two frameworks are complementary — declare both
+and pick per change by selecting its primary agent.
 
 > homonto's own repository is not developed with onto — see
 > [`docs/personas.md`](../personas.md). onto is a shipped product framework;

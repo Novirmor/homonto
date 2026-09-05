@@ -176,20 +176,6 @@ func mapKeys[V any](m map[string]V) []string {
 	return out
 }
 
-// MaterializeSubagents writes each named builtin subagent from the embedded FS
-// to dstRoot/<name>.md (a single file), replacing any existing file
-// byte-for-byte. Like MaterializeCommands, no RemoveAll is needed — a
-// single-file overwrite fully replaces prior content on upgrade. It is the
-// caller's job (engine) to gate this on the catalog version.
-//
-// When a subagent's frontmatter carries a neutral `homonto:` access block (see
-// internal/agentfm), it ALSO writes the OpenCode variant <name>.opencode.md,
-// rendered from that block into the tool's native `permission:` map — OpenCode
-// is the only adapter since v0.13.0, so no other tool's variant exists.
-// renderCtx supplies the config-derived model values the render needs; an agent
-// the context does not target gets any stale variant removed instead of a
-// refresh. The shared <name>.md remains the version-gate anchor and the
-// fallback for verbatim subagents.
 // ContentFingerprint digests the SOURCE content of the named skills, commands,
 // and subagents — every byte a materialize would extract — deterministically
 // (sorted names, path+content per file, NUL-delimited).
@@ -315,6 +301,12 @@ func (c *Catalog) SubagentFiles(name string, renderCtx map[string]agentfm.Render
 // homonto: frontmatter block. Mirrors Materialize/MaterializeCommands: one
 // file per name, removing any stale variant a previous verbatim projection
 // left behind.
+// MaterializeSubagents writes each named builtin subagent from the embedded FS
+// to dstRoot/<name>.md, replacing any existing file byte-for-byte. When a
+// subagent has a neutral `homonto:` access block, it also renders the OpenCode
+// variant <name>.opencode.md from renderCtx; a non-targeted agent has a stale
+// variant removed. The shared file remains the version-gate anchor and
+// fallback for verbatim subagents.
 func (c *Catalog) MaterializeSubagents(dstRoot string, names []string, renderCtx map[string]agentfm.RenderContext) error {
 	for _, name := range names {
 		sp, ok := c.subagents[name]

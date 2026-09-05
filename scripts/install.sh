@@ -1,13 +1,16 @@
 #!/usr/bin/env bash
-# Interactive installer for homonto, plus optionally one workflow binary
-# (onto or to). Asks a few questions on stdin, downloads the release archives
-# from GitHub, verifies them against the release SHA256SUMS, and installs the
-# binaries into a directory you choose.
+# Interactive installer for homonto, plus the onto and to workflow binaries.
+# Asks a few questions, downloads the release archives from GitHub, verifies
+# them against the release SHA256SUMS, and installs the binaries into a
+# directory you choose — and, on your explicit confirmation only, runs
+# `homonto init` in the current directory to scaffold homonto.toml.
 #
-# The installer never edits your shell configuration — PATH setup is printed
-# for you to apply. It never runs project commands (homonto init, apply, ...):
-# installing is all it does. With no stdin (e.g. `scripts/install.sh </dev/null`)
-# every question falls back to its default: latest release, onto, ~/.local/bin.
+# Prompts use gum (https://github.com/charmbracelet/gum) when it is on PATH
+# and stdin is a TTY; otherwise they fall back to plain reads, so scripted
+# runs keep working. The installer never edits your shell configuration —
+# PATH setup is printed for you to apply. With no stdin (e.g.
+# `scripts/install.sh </dev/null`) every question falls back to its default:
+# latest release, both workflow binaries, ~/.local/bin, no init.
 #
 # Usage: scripts/install.sh [--help]
 set -euo pipefail
@@ -17,8 +20,9 @@ BASE_URL="https://github.com/${REPO}/releases/download"
 API_LATEST="https://api.github.com/repos/${REPO}/releases/latest"
 
 VERSION=""            # empty -> resolved from the GitHub API
-WORKFLOW_BIN="onto"   # onto | to | none
+WORKFLOW_BIN="both"   # both | onto | to | none
 INSTALL_DIR="${HOME}/.local/bin"
+INIT_RAN=0
 
 usage() {
   cat <<'EOF'
@@ -26,24 +30,119 @@ usage: scripts/install.sh [--help]
 
 Asks which binaries to install, downloads and verifies the release archives
 against SHA256SUMS, installs into your chosen directory, and prints PATH
-instructions. It never edits your shell configuration and never runs project
-commands. Linux and macOS (amd64 and arm64) only.
+instructions. On explicit confirmation it also runs `homonto init` in the
+current directory. It never edits your shell configuration. Linux and macOS
+(amd64 and arm64) only. Prompts use gum when available and stdin is a TTY;
+installing gum is optional.
 EOF
 }
 
 die() { printf 'install: %s\n' "$*" >&2; exit 1; }
+
+# --- prompt layer: gum when interactive, plain reads otherwise -------------
+
+ui_mode() { # echoes gum|plain; HOMONTO_UI forces it (tests use it)
+  case "${HOMONTO_UI:-auto}" in
+    gum)   echo gum ;;
+    plain) echo plain ;;
+    auto) if [ -t 0 ] && command -v gum >/dev/null 2>&1; then echo gum; else echo plain; fi ;;
+    *) die "HOMONTO_UI must be auto, gum, or plain" ;;
+  esac
+}
+
+ensure_ui() {
+  if [ "${HOMONTO_UI:-auto}" = gum ] && ! command -v gum >/dev/null 2>&1; then
+    die "HOMONTO_UI=gum requires gum on PATH (or use HOMONTO_UI=plain)"
+  fi
+}
+
+ui_heading() {
+  if [ "$(ui_mode)" = gum ]; then
+    gum style --border rounded --padding "0 1" --bold --foreground 212 \
+      "homonto installer" "Verified binaries. Your shell files stay untouched." >&2
+  else
+    printf '\n== homonto installer ==\nVerified binaries. Your shell files stay untouched.\n' >&2
+  fi
+}
+
+ui_section() {
+  if [ "$(ui_mode)" = gum ]; then
+    gum style --bold --foreground 212 "$1" >&2
+  else
+    printf '\n-- %s --\n' "$1" >&2
+  fi
+}
+
+ui_hint() { printf '  %s\n' "$1" >&2; }
 
 # ask <prompt> <default> -> echoes the answer (empty when the default is used).
 # Prompt goes to stderr so the answer is the only thing on stdout, and callers
 # capture it. EOF (closed stdin) means "use the default".
 ask() {
   local prompt="$1" default="$2" answer=""
-  printf '%s' "$prompt" >&2
+  printf '  %s' "$prompt" >&2
   [ -n "$default" ] && printf ' [%s]' "$default" >&2
   printf ' ' >&2
   if ! IFS= read -r answer; then answer=""; fi
   if [ -n "$answer" ]; then printf '%s\n' "$answer"; else printf '%s\n' "$default"; fi
 }
+
+# ui_input <prompt> <default> -> the answer (default when empty/cancelled).
+ui_input() {
+  local prompt="$1" default="$2" value=""
+  if [ "$(ui_mode)" = gum ]; then
+    if ! value="$(gum input --header "$prompt" --placeholder "$default")"; then
+      die "aborted at: ${prompt}"
+    fi
+    [ -n "$value" ] || value="$default"
+    printf '%s\n' "$value"
+  else
+    ask "$prompt" "$default"
+  fi
+}
+
+# ui_select <prompt> <option...> -> the chosen option. The FIRST option is
+# the default (gum highlights it; plain mode shows it in brackets).
+ui_select() {
+  local prompt="$1"; shift
+  if [ "$(ui_mode)" = gum ]; then
+    local choice=""
+    if ! choice="$(gum choose --header "$prompt" "$@")"; then
+      die "aborted at: ${prompt}"
+    fi
+    printf '%s\n' "$choice"
+  else
+    local input
+    while :; do
+      input="$(ask "$prompt" "$1")"
+      local o
+      for o in "$@"; do
+        if [ "$input" = "$o" ]; then printf '%s\n' "$input"; return 0; fi
+      done
+      printf 'install: choose one of: %s\n' "$*" >&2
+    done
+  fi
+}
+
+# ui_confirm <prompt> [yes|no] -> exit 0 on yes, 1 on no. Default no unless
+# the second argument is "yes".
+ui_confirm() {
+  local prompt="$1" default="${2:-no}"
+  if [ "$(ui_mode)" = gum ]; then
+    if [ "$default" = yes ]; then
+      gum confirm "$prompt"
+    else
+      gum confirm --default=false "$prompt"
+    fi
+  else
+    case "$(ask "$prompt (y/n)" "$default")" in
+      y | Y | yes | YES) return 0 ;;
+      *) return 1 ;;
+    esac
+  fi
+}
+
+# --- install steps ----------------------------------------------------------
 
 detect_platform() {
   local os arch
@@ -96,28 +195,23 @@ ask_version() {
   fi
   latest="$(normalize_version "$latest")"
   while :; do
-    input="$(normalize_version "$(ask "Install version" "$latest")")"
+    input="$(normalize_version "$(ui_input "Install version" "$latest")")"
     if [[ "$input" =~ ^v[0-9]+\.[0-9]+\.[0-9]+([-.][0-9A-Za-z.]+)?$ ]]; then
       VERSION="$input"
       return 0
     fi
-    printf 'install: "%s" is not a version like v0.17.0\n' "$input" >&2
+    printf 'install: "%s" is not a version like v0.18.0\n' "$input" >&2
   done
 }
 
 ask_workflow_bin() {
-  local input
-  while :; do
-    input="$(ask "Also install a workflow binary (onto|to|none)" "$WORKFLOW_BIN")"
-    case "$input" in
-      onto | to | none) WORKFLOW_BIN="$input"; return 0 ;;
-      *) printf 'install: choose onto, to, or none\n' >&2 ;;
-    esac
-  done
+  ui_hint "both (recommended): onto for gated work, to for lightweight work."
+  ui_hint "Choose one only when you know you need a single workflow."
+  WORKFLOW_BIN="$(ui_select "Workflow binaries" both onto to none)"
 }
 
 ask_install_dir() {
-  INSTALL_DIR="$(ask "Install directory" "$INSTALL_DIR")"
+  INSTALL_DIR="$(ui_input "Install directory" "$INSTALL_DIR")"
   case "$INSTALL_DIR" in
     /*) ;;
     *) die "install directory must be an absolute path: ${INSTALL_DIR}" ;;
@@ -128,11 +222,13 @@ ask_install_dir() {
 binaries_to_install() {
   printf '%s\n' homonto
   case "$WORKFLOW_BIN" in
-    onto | to) printf '%s\n' "$WORKFLOW_BIN" ;;
+    onto) printf '%s\n' onto ;;
+    to)   printf '%s\n' to ;;
+    both) printf '%s\n' onto; printf '%s\n' to ;;
   esac
 }
 
-asset_name() { # <binary> -> homonto_v0.17.0_linux_amd64.tar.gz
+asset_name() { # <binary> -> homonto_v0.18.0_linux_amd64.tar.gz
   printf '%s_%s_%s_%s.tar.gz\n' "$1" "$VERSION" "$GOOS" "$GOARCH"
 }
 
@@ -158,10 +254,9 @@ install_binary() { # <binary> <workdir>
   tar -xzf "$workdir/$asset" -C "$staging" --strip-components=1 "$member"
   target="$INSTALL_DIR/$bin"
   if [ -e "$target" ]; then
-    case "$(ask "$bin already exists at ${target} — overwrite? (y/N)" "n")" in
-      y | Y | yes | YES) ;;
-      *) die "aborted: ${bin} already exists at ${target} and was not replaced" ;;
-    esac
+    if ! ui_confirm "$bin already exists at ${target} — overwrite?"; then
+      die "aborted: ${bin} already exists at ${target} and was not replaced"
+    fi
   fi
   # Two moves: cross-filesystem copy first, then an atomic same-filesystem rename.
   mv -f "$staging/$bin" "$target.tmp.$$"
@@ -186,14 +281,36 @@ path_advice() {
   esac
 }
 
+maybe_init() {
+  # homonto init never overwrites an existing homonto.toml, so this is safe
+  # to accept in a directory that is already configured.
+  ui_hint "Optional: scaffold this directory now. Existing homonto.toml files are never overwritten."
+  if ui_confirm "Generate homonto.toml here (runs homonto init in $(pwd))?"; then
+    printf 'running homonto init in %s\n' "$(pwd)" >&2
+    "$INSTALL_DIR/homonto" init >&2
+    INIT_RAN=1
+  fi
+}
+
 next_steps() {
-  printf 'installed versions:\n' >&2
+  printf '\nInstalled\n' >&2
   "$INSTALL_DIR/homonto" version >&2
-  case "$WORKFLOW_BIN" in
-    onto | to) "$INSTALL_DIR/$WORKFLOW_BIN" version >&2 ;;
-  esac
-  printf 'next: in the directory that should hold homonto.toml, run homonto init,\n' >&2
-  printf 'edit homonto.toml, then homonto plan and homonto apply.\n' >&2
+  local bin
+  for bin in $(binaries_to_install); do
+    [ "$bin" = homonto ] && continue
+    "$INSTALL_DIR/$bin" version >&2
+  done
+  if [ "$INIT_RAN" -eq 1 ]; then
+    printf '\nNext steps\n' >&2
+    printf '  Edit homonto.toml (declare MCPs / skills / frameworks), then\n' >&2
+    printf 'homonto plan and homonto apply. onto and to are complementary —\n' >&2
+    printf 'declare either or both, pick per change by selecting its agent.\n' >&2
+  else
+    printf '\nNext steps\n' >&2
+    printf '  In the directory that should hold homonto.toml, run homonto init,\n' >&2
+    printf 'edit homonto.toml, then homonto plan and homonto apply. onto and to are\n' >&2
+    printf 'complementary — declare either or both, pick per change.\n' >&2
+  fi
 }
 
 WORKDIR="" # global so the EXIT trap can clean it up after main unwinds
@@ -203,14 +320,20 @@ main() {
     -h | --help) usage; exit 0 ;;
     *) [ $# -eq 0 ] || die "unknown argument: $1" ;;
   esac
+  ensure_ui
+  ui_heading
   command -v curl >/dev/null 2>&1 || die "curl is required"
   detect_platform
   pick_sum_tool
+  ui_section "Release"
   ask_version
+  ui_section "Workflow"
   ask_workflow_bin
+  ui_section "Destination"
   ask_install_dir
   WORKDIR="$(mktemp -d)"
   trap 'rm -rf "$WORKDIR"' EXIT
+  ui_section "Download and verify"
   local bin asset
   for bin in $(binaries_to_install); do
     asset="$(asset_name "$bin")"
@@ -222,10 +345,14 @@ main() {
   for bin in $(binaries_to_install); do
     verify_asset "$(asset_name "$bin")" "$WORKDIR"
   done
+  ui_hint "SHA256SUMS verified."
+  ui_section "Install"
   for bin in $(binaries_to_install); do
     install_binary "$bin" "$WORKDIR"
   done
   path_advice
+  ui_section "Project setup"
+  maybe_init
   next_steps
 }
 

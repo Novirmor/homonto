@@ -130,6 +130,23 @@ func TestEvidenceRecordAndTrace(t *testing.T) {
 	}
 }
 
+func TestEvidenceRecordWaitsForOntoWorkspaceLock(t *testing.T) {
+	root := prepWorkspace(t)
+	seedEvidenceChange(t, root, "ev")
+	seedGitRepo(t, root)
+	unlock, err := lockOnto(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer unlock()
+	_, err = runOnto(t, "evidence", "record", "ev", "--dir", root,
+		"--task", "2", "--scenario", "SC-reset-expired", "--exec", "go",
+		"--cmd-hash", cmdHash)
+	if err == nil || !strings.Contains(err.Error(), "in progress") {
+		t.Fatalf("record while locked = %v, want lock error", err)
+	}
+}
+
 // TestEvidenceRecordRefusals: a record missing its inputs, or naming an
 // unknown change, fails; nothing is written.
 func TestEvidenceRecordRefusals(t *testing.T) {

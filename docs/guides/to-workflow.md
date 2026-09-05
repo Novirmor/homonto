@@ -29,16 +29,20 @@ adversarial skeptic pass). That trade is the product: much less ceremony per
 change, no guarantee from the binary. Design rationale:
 [to-framework-design.md](../to-framework-design.md).
 
-## onto or to — an exclusive choice
+## onto and to — complementary by selection
 
-One repository uses one workflow framework. Declaring both
-`[frameworks.onto]` and `[frameworks.to]` in one `homonto.toml` fails at
-load. Pick **onto** for evidence-gated changes that need spec deltas,
-dependency graphs, and non-skippable transitions; pick **to** for simple
-development where that machinery costs more than it protects. There is no
-in-place framework switch: `to promote <name> --yes` preserves the workspace as
-a new full onto change, after which the repository declaration must switch from
-to to onto and be re-applied.
+Pick the workflow per change, not per repository. Declaring both
+`[frameworks.onto]` and `[frameworks.to]` in one `homonto.toml` is valid
+(ADR 0042): their records live in disjoint directories (`changes/` vs
+`tasks/`) and their agents and commands are namespaced, so both project side
+by side and the primary agent you select decides the workflow. Pick **onto**
+for evidence-gated changes that need spec deltas, dependency graphs, and
+non-skippable transitions; pick **to** for simple development where that
+machinery costs more than it protects. Changes cross the boundary explicitly:
+`to promote <name> --yes` grows a `to` change into a full onto change
+(preserved in `.workflow/snapshots/`), and `onto demote <name> --yes` drops an
+onto change back into `to`'s no-gates loop — converting back while nothing
+changed restores the previous workspace byte-for-byte.
 
 ## Install and enable
 
@@ -50,7 +54,8 @@ to version
 Or install `to` together with `homonto` through the [interactive
 installer](getting-started.md#1-install): it asks which binaries you want,
 verifies the release archives against `SHA256SUMS`, and prints PATH
-instructions without editing your shell configuration.
+instructions without editing your shell configuration. On confirmation, it can
+also scaffold the current directory with `homonto init`.
 
 The mutating commands require the framework to be **declared and applied
 through homonto first** — this is how the skills land in your tools:

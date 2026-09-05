@@ -26,7 +26,7 @@ a while — do not reach for it to check a one-package edit.
 In order: `gofmt -l`, `go mod tidy -diff`, `go vet`, `go build`, `go test`,
 `go test -race`, version-stamp smoke for all three binaries, a CLI plan smoke,
 the workflow-skills shell-out check, `govulncheck`, and the triple-binary
-Docker E2E (five suites, including a release-packaging smoke).
+Docker E2E suites, including a release-packaging smoke.
 
 Because CI runs this exact script, a green local gate is real evidence about
 CI — one of the few places where that inference is sound.

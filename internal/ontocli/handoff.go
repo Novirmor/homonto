@@ -43,6 +43,13 @@ func handoffCmd() *cobra.Command {
 			if err := ontoFramework.ValidChangeName(name); err != nil {
 				return err
 			}
+			if doWrite && !asJSON {
+				unlock, err := lockOnto(dir)
+				if err != nil {
+					return err
+				}
+				defer unlock()
+			}
 			changeDir := filepath.Join(changesDir(dir), name)
 			st, err := ontostate.LoadChange(changeDir)
 			if err != nil {
@@ -155,13 +162,13 @@ func buildHandoff(name, changeDir string, st ontostate.State) (*textPack, error)
 	if !any {
 		b.WriteString("- (no artifacts yet)\n")
 	}
-	// Imported `to` provenance (ADR 0028): hash the imported workspace so a
-	// promotion's source bytes stay verifiable from the pack.
-	imported := hashTree(filepath.Join(changeDir, "imported-to"), "imported-to")
-	for _, a := range imported {
+	// Conversion provenance (ADR 0028/0042): hash the neutral control plane
+	// — snapshots of prior workspaces and receipts — so a conversion's source
+	// bytes stay verifiable from the pack.
+	for _, a := range hashTree(filepath.Join(changeDir, ".workflow"), ".workflow") {
 		h.Write([]byte(a.Path))
 		h.Write([]byte(a.SHA256))
-		fmt.Fprintf(&b, "- `%s` — imported provenance\n", a.Path)
+		fmt.Fprintf(&b, "- `%s` — conversion provenance\n", a.Path)
 	}
 	fmt.Fprintf(&b, "\n**artifacts-hash**: sha256:%x\n", h.Sum(nil))
 	b.WriteString("\nRecover the phase from file state (the onto dispatcher's derivation); this pack is the *content* recovery. Re-read an artifact above if its excerpt is not enough.\n")

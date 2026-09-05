@@ -42,6 +42,12 @@ func runAbandon(cmd *cobra.Command, root, name string) error {
 		return err
 	}
 
+	unlockWs, err := lockOnto(root)
+	if err != nil {
+		return err
+	}
+	defer unlockWs()
+
 	statePath := filepath.Join(changesDir(root), name, "onto-state.yaml")
 	st, err := ontostate.Load(statePath)
 	if err != nil {

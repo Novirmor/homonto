@@ -12,7 +12,7 @@ metadata:
 Eliminate predictable AI writing patterns from prose. This is the to
 framework's build of the **stop-slop** skill by Hardik Pandya, unchanged in its
 rules and extended with a short section on applying them inside to. (to ships
-its own copy because onto and to are never installed together.)
+its own copy so each framework's prose stays independently versioned.)
 
 ## Core Rules
 

@@ -175,7 +175,7 @@ func validateWorkflowStateRoot(c *Config) error {
 }
 
 func workflowStateExists(root string) bool {
-	for _, name := range []string{"changes", "tasks", ".to-promote"} {
+	for _, name := range []string{"changes", "tasks", ".to-promote", ".onto-demote"} {
 		if _, err := os.Lstat(filepath.Join(root, name)); err == nil {
 			return true
 		}

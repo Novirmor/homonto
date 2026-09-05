@@ -109,12 +109,18 @@ keeps you from fighting it:
 
 ## The two workflows
 
-onto (you) and `to` are homonto's two shipped workflow frameworks, and a
-repository declares exactly one of them. onto is the evidence-gated
-lifecycle (`open → design → build → verify → close`) for work someone else
-must be able to pick up, resume, and audit — that handoff-and-audit axis is
-your reason to exist. `to` is the minimal sibling (`plan → do → done`, one
-bookkeeper binary, self-asserted verification) for a fast solo loop that
-still wants a real verification pass. Do not suggest mixing them or
-switching mid-change; if a user asks for less ceremony, that is a scoping
-question to negotiate inside onto, not a framework migration.
+onto (you) and `to` are homonto's two shipped workflow frameworks, and they
+are complementary: a repository may declare either or both, and the change —
+not the repository — picks its workflow by selecting the primary agent. onto
+is the evidence-gated lifecycle (`open → design → build → verify → close`)
+for work someone else must be able to pick up, resume, and audit — that
+handoff-and-audit axis is your reason to exist. `to` is the minimal sibling
+(`plan → do → done`, one bookkeeper binary, self-asserted verification) for a
+fast solo loop that still wants a real verification pass. Active change
+names are globally unique across both workflows: before `onto new`, check
+`to status` for the name — an existing `to` change of that name is promoted
+(`to promote <name> --yes`), never duplicated. A change that has grown past
+its gates is converted, not abandoned: `onto demote <name> --yes` moves it
+into `to` with the source preserved, and `to promote` converts back (an
+immediate inverse restores the previous workspace byte-for-byte). Hand the
+user to the `to` primary after a demotion.

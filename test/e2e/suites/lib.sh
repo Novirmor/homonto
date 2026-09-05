@@ -5,5 +5,5 @@ fail() { printf '\n  FAIL  %s\n' "$1" >&2; exit 1; }
 
 # Assert that a captured output string contains a literal needle.
 contains() { # <haystack> <needle> <fail-msg>
-  printf '%s' "$1" | grep -qF -- "$2" || fail "$3"
+  case "$1" in *"$2"*) ;; *) fail "$3" ;; esac
 }

@@ -1,8 +1,9 @@
 # `to` — design document
 
-Status: implemented — the `to` binary (`cmd/to/`, `internal/tocli`,
-`internal/tostate`), the `builtin:to` catalog framework, and the onto-xor-to
-config validation ship as described below.
+Status: implemented. The `to` binary (`cmd/to/`, `internal/tocli`,
+`internal/tostate`) and the `builtin:to` catalog framework ship from this
+repository. ADR 0042 supersedes this document's original exclusivity and
+no-escalation decisions.
 Origin: interview-driven design session (2026-07-18). Each decision below was
 made explicitly; the two marked **overruled** went against the interviewer's
 recommendation and carry recorded consequences.
@@ -23,9 +24,10 @@ artifacts, trustworthy cross-session status — and above all the coding
 discipline its skills impose on the LLM (see
 [Quality carried over](#quality-carried-over-from-onto)).
 
-## onto and `to` are an exclusive choice
+## onto and `to` are complementary
 
-A repository uses **one** workflow framework, never both:
+A repository may use both workflow frameworks. Select the primary agent per
+change:
 
 - **`to`** — simple development. Solo or small-team repos, straightforward
   changes, minimal ceremony per change. The record it leaves is one `plan.md`
@@ -35,15 +37,11 @@ A repository uses **one** workflow framework, never both:
   archived workspace, recorded gate answers, spec deltas, and evidence-gated
   transitions. That is the axis, not company size.
 
-Declaring both `[frameworks.onto]` and `[frameworks.to]` in one `homonto.toml`
-is a **config validation error**. The exclusivity is also structural: the two
-tools share no state format and no directory territory (`to` owns
-`docs/tasks/`, onto owns `docs/changes/`), so neither tool's commands can
-misread the other's artifacts.
-
-There is **no escalation path**. A `to` change cannot be promoted into an onto
-change (`onto adopt` is a non-goal); the documented answer is "redo it as an
-onto change by hand." Pick the framework per repository, not per change.
+`to` owns `docs/tasks/`; onto owns `docs/changes/`. Active names are global
+across both directories. `to promote` and `onto demote` transfer a single
+lineage between workflows, preserving snapshots and conversion receipts. See
+[ADR 0042](adr/0042-onto-and-to-are-complementary.md) for the conversion,
+locking, and phase-mapping rules.
 
 ## Decisions
 

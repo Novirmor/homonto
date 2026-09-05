@@ -33,7 +33,8 @@ User-facing documentation, one topic per file.
 
 ## The workflow frameworks
 
-onto and `to` are an **exclusive choice** per repository. onto is for work that
+onto and `to` are **complementary** (ADR 0042): declare either or both and
+pick per change by selecting its primary agent. onto is for work that
 someone else has to pick up or audit — it leaves an archived, gate-stamped
 record a stranger can read; `to` is for a fast solo loop that still wants a
 real verification pass.

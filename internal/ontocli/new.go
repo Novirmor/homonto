@@ -77,6 +77,11 @@ func runNewWithRepos(cmd *cobra.Command, root, name, workflow string, repos []st
 	if err := workcli.MarkWorkflowState(root); err != nil {
 		return fmt.Errorf("onto new: recording workflow root: %w", err)
 	}
+	nameUnlock, err := workcli.LockChangeNames(root)
+	if err != nil {
+		return fmt.Errorf("onto new: %w", err)
+	}
+	defer nameUnlock()
 
 	// Destination reservation shared with `to promote` (ADR 0028): both
 	// create under docs/changes, and a promotion renaming its result into
@@ -90,6 +95,13 @@ func runNewWithRepos(cmd *cobra.Command, root, name, workflow string, repos []st
 
 	if _, err := os.Stat(changeDir); err == nil {
 		return fmt.Errorf("onto new: change %q already exists at %s", name, changeDir)
+	}
+	// Global-name uniqueness (ADR 0042): the same active name in the `to`
+	// workflow is resolved by promotion, not duplication.
+	if sib, err := workcli.SiblingChangeDir(root, "tasks", name); err == nil {
+		if _, serr := os.Lstat(sib); serr == nil {
+			return fmt.Errorf("onto new: change %q is already active in the `to` workflow (%s); promote it (`to promote %s --yes`) or pick another name", name, sib, name)
+		}
 	}
 	if archiveDir, archivedState, err := locateArchive(root, name); err == nil {
 		if !archivedState.Archived || !ontostate.ArchiveIntegrationComplete(archiveDir, archivedState) {

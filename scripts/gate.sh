@@ -62,7 +62,7 @@ step "govulncheck ./..."
 # built that way cannot parse the pinned toolchain's stdlib sources.
 GOTOOLCHAIN=go1.26.6 go run golang.org/x/vuln/cmd/govulncheck@latest ./...
 
-step "triple-binary Docker E2E (five suites incl. release-packaging smoke)"
+step "triple-binary Docker E2E suites (including release-packaging smoke)"
 ./scripts/docker-test.sh
 
 printf '\n============================================================\nALL GATE CHECKS PASSED\n============================================================\n'

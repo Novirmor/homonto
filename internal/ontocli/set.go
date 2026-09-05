@@ -20,6 +20,11 @@ func runTransition(cmd *cobra.Command, root, name string, apply func(*ontostate.
 	if err := ontoFramework.ValidChangeName(name); err != nil {
 		return err
 	}
+	unlockWs, err := lockOnto(root)
+	if err != nil {
+		return err
+	}
+	defer unlockWs()
 	unlock := acquireStateLockBestEffort(root)
 	defer unlock()
 	changeDir := filepath.Join(changesDir(root), name)

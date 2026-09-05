@@ -1115,6 +1115,58 @@ targets = ["opencode"]
 	}
 }
 
+// TestExpandedSharedSkillOntoAndToDedup (ADR 0042): onto and to both expand
+// the shared homonto knowledge skill. With the same scope — and with one
+// declaration omitting targets while the other names opencode explicitly
+// (even redundantly),
+// which is the same effective placement — they dedupe into ONE entry that
+// keeps BOTH origins. Different scopes remain a conflict.
+func TestExpandedSharedSkillOntoAndToDedup(t *testing.T) {
+	c := loadTOML(t, `
+[frameworks.onto]
+source = "builtin:onto"
+scope = "project"
+
+[frameworks.to]
+source = "builtin:to"
+scope = "project"
+targets = ["opencode", "opencode"]
+
+`+ontoFrameworkModels()+toFrameworkModels())
+	got, err := c.ExpandedSkillEntriesForTool("opencode")
+	if err != nil {
+		t.Fatalf("expand: %v", err)
+	}
+	var homonto *NamedResource
+	for i, e := range got {
+		if e.Name == "homonto" {
+			homonto = &got[i]
+		}
+	}
+	if homonto == nil {
+		t.Fatal("shared homonto skill missing from expansion")
+	}
+	if len(homonto.Origins) != 2 {
+		t.Fatalf("shared skill must keep both framework origins, got %d: %+v", len(homonto.Origins), homonto.Origins)
+	}
+
+	// A genuinely different placement still conflicts.
+	c2 := loadTOML(t, `
+[frameworks.onto]
+source = "builtin:onto"
+scope = "project"
+
+[frameworks.to]
+source = "builtin:to"
+scope = "user"
+
+`+ontoFrameworkModels()+toFrameworkModels())
+	if _, err := c2.ExpandedSkillEntriesForTool("opencode"); err == nil ||
+		!strings.Contains(err.Error(), "conflicting") {
+		t.Fatalf("different scopes must conflict, got %v", err)
+	}
+}
+
 // modelsFor produces the [subagents.<name>.opencode] override block for each
 // named subagent, with a valid model spec. Every declared or framework-expanded
 // builtin subagent needs one now that tiers — and every tool but OpenCode —

@@ -110,6 +110,12 @@ func runAdvance(cmd *cobra.Command, root, name string) error {
 		return err
 	}
 
+	unlockWs, err := lockOnto(root)
+	if err != nil {
+		return err
+	}
+	defer unlockWs()
+
 	changeDir := filepath.Join(changesDir(root), name)
 	statePath := filepath.Join(changeDir, "onto-state.yaml")
 

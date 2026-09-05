@@ -3,6 +3,8 @@
 package catalog
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"io/fs"
@@ -224,7 +226,21 @@ func (c *Catalog) mergeSource(src fs.FS) error {
 		if name == e.Name() {
 			continue // not a ".md" file
 		}
-		c.subagents[name] = path.Join("subagents", e.Name())
+		resourcePath := path.Join("subagents", e.Name())
+		if prev, ok := c.subagents[name]; ok {
+			if prev != resourcePath {
+				return fmt.Errorf("catalog: subagent %q mapped to both %q and %q", name, prev, resourcePath)
+			}
+			same, err := sameCatalogResource(c.subagentFS[name], prev, src, resourcePath)
+			if err != nil {
+				return fmt.Errorf("catalog: comparing shared subagent %q: %w", name, err)
+			}
+			if !same {
+				return fmt.Errorf("catalog: shared subagent %q has different content in multiple sources", name)
+			}
+			continue
+		}
+		c.subagents[name] = resourcePath
 		c.subagentFS[name] = src
 	}
 
@@ -356,8 +372,18 @@ func (c *Catalog) indexFramework(name string, src fs.FS, ft frameworkTOML) error
 		if _, err := fs.Stat(src, sp); err != nil {
 			return fmt.Errorf("catalog: framework %q skill %q path %q missing from catalog", name, skill, sp)
 		}
-		if prev, ok := c.skills[skill]; ok && prev != sp {
-			return fmt.Errorf("catalog: skill %q mapped to both %q and %q", skill, prev, sp)
+		if prev, ok := c.skills[skill]; ok {
+			if prev != sp {
+				return fmt.Errorf("catalog: skill %q mapped to both %q and %q", skill, prev, sp)
+			}
+			same, err := sameCatalogResource(c.skillFS[skill], prev, src, sp)
+			if err != nil {
+				return fmt.Errorf("catalog: comparing shared skill %q: %w", skill, err)
+			}
+			if !same {
+				return fmt.Errorf("catalog: shared skill %q has different content in multiple frameworks", skill)
+			}
+			continue
 		}
 		c.skills[skill] = sp
 		c.skillFS[skill] = src
@@ -369,8 +395,18 @@ func (c *Catalog) indexFramework(name string, src fs.FS, ft frameworkTOML) error
 		if _, err := fs.Stat(src, cp); err != nil {
 			return fmt.Errorf("catalog: framework %q command %q path %q missing from catalog", name, command, cp)
 		}
-		if prev, ok := c.commands[command]; ok && prev != cp {
-			return fmt.Errorf("catalog: command %q mapped to both %q and %q", command, prev, cp)
+		if prev, ok := c.commands[command]; ok {
+			if prev != cp {
+				return fmt.Errorf("catalog: command %q mapped to both %q and %q", command, prev, cp)
+			}
+			same, err := sameCatalogResource(c.commandFS[command], prev, src, cp)
+			if err != nil {
+				return fmt.Errorf("catalog: comparing shared command %q: %w", command, err)
+			}
+			if !same {
+				return fmt.Errorf("catalog: shared command %q has different content in multiple frameworks", command)
+			}
+			continue
 		}
 		c.commands[command] = cp
 		c.commandFS[command] = src
@@ -382,8 +418,18 @@ func (c *Catalog) indexFramework(name string, src fs.FS, ft frameworkTOML) error
 		if _, err := fs.Stat(src, sap); err != nil {
 			return fmt.Errorf("catalog: framework %q subagent %q path %q missing from catalog", name, subagent, sap)
 		}
-		if prev, ok := c.subagents[subagent]; ok && prev != sap {
-			return fmt.Errorf("catalog: subagent %q mapped to both %q and %q", subagent, prev, sap)
+		if prev, ok := c.subagents[subagent]; ok {
+			if prev != sap {
+				return fmt.Errorf("catalog: subagent %q mapped to both %q and %q", subagent, prev, sap)
+			}
+			same, err := sameCatalogResource(c.subagentFS[subagent], prev, src, sap)
+			if err != nil {
+				return fmt.Errorf("catalog: comparing shared subagent %q: %w", subagent, err)
+			}
+			if !same {
+				return fmt.Errorf("catalog: shared subagent %q has different content in multiple frameworks", subagent)
+			}
+			continue
 		}
 		c.subagents[subagent] = sap
 		c.subagentFS[subagent] = src
@@ -418,6 +464,53 @@ func (c *Catalog) indexFramework(name string, src fs.FS, ft frameworkTOML) error
 		Subagents:             ft.Subagents,
 	}
 	return nil
+}
+
+// sameCatalogResource compares a file or directory resource byte-for-byte.
+// Framework resource names are shared at projection time, so accepting the
+// same relative path from two filesystems without this check would make the
+// catalog's later source-FS assignment depend on index order.
+func sameCatalogResource(aFS fs.FS, aPath string, bFS fs.FS, bPath string) (bool, error) {
+	a, err := catalogResourceDigest(aFS, aPath)
+	if err != nil {
+		return false, err
+	}
+	b, err := catalogResourceDigest(bFS, bPath)
+	if err != nil {
+		return false, err
+	}
+	return a == b, nil
+}
+
+func catalogResourceDigest(fsys fs.FS, root string) (string, error) {
+	h := sha256.New()
+	err := fs.WalkDir(fsys, root, func(p string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		rel := strings.TrimPrefix(strings.TrimPrefix(p, root), "/")
+		if p == root {
+			rel = "."
+		}
+		if d.IsDir() {
+			h.Write([]byte("d\x00" + rel + "\x00"))
+			return nil
+		}
+		if !d.Type().IsRegular() {
+			return fmt.Errorf("%s is not a regular file", p)
+		}
+		data, err := fs.ReadFile(fsys, p)
+		if err != nil {
+			return err
+		}
+		sum := sha256.Sum256(data)
+		h.Write([]byte("f\x00" + rel + "\x00" + hex.EncodeToString(sum[:]) + "\x00"))
+		return nil
+	})
+	if err != nil {
+		return "", err
+	}
+	return hex.EncodeToString(h.Sum(nil)), nil
 }
 
 // mergeFrameworkRoot indexes a local single-framework root: <src>/framework.toml

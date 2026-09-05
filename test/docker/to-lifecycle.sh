@@ -2,7 +2,8 @@
 # Suite: to-lifecycle — the to binary end to end against a real materialized
 # framework install: the framework-install gate, init, new, the single phase
 # advance, the required-but-self-asserted --verified flag, abandon, archive,
-# the config-free read-only commands, and the onto-xor-to exclusivity error.
+# the config-free read-only commands, and dual-framework coexistence
+# (onto + to applied side by side, ADR 0042).
 set -eu
 SUITE=to-lifecycle
 . "$(dirname "$0")/lib.sh"
@@ -38,12 +39,20 @@ log "read-only commands are config-independent even before apply"
 "$TO" status >/dev/null || fail "to status must work without an applied framework"
 ok "to status answered without the framework"
 
-log "onto and to are mutually exclusive in one config"
+log "onto and to are complementary in one config (ADR 0042)"
 cp homonto.toml /tmp/to-only.toml
-printf '\n[frameworks.onto]\nsource = "builtin:onto"\nscope = "project"\n' >> homonto.toml
-if "$HOMONTO" plan >/dev/null 2>&1; then fail "homonto must refuse a config declaring both onto and to"; fi
+printf '\n[frameworks.onto]\nsource = "builtin:onto"\nscope = "project"\n[subagents.onto.opencode]\nmodel = "anthropic/claude-opus-4-8"\n[subagents.onto-explorer.opencode]\nmodel = "openai/gpt-5-mini"\n[subagents.onto-reviewer.opencode]\nmodel = "anthropic/claude-opus-4-8"\n[subagents.onto-implementer.opencode]\nmodel = "anthropic/claude-sonnet-4"\n[subagents.onto-skeptic.opencode]\nmodel = "anthropic/claude-opus-4-8"\n' >> homonto.toml
+"$HOMONTO" plan >/dev/null || fail "homonto must accept a config declaring both onto and to"
+"$HOMONTO" apply --yes >/dev/null || fail "homonto must apply both frameworks together"
+is_dir "$W/.homonto/catalog/skills/to"
+is_dir "$W/.homonto/catalog/skills/onto"
+# The shared homonto skill deduplicates into ONE projection with both origins.
+is_link "$W/.opencode/skills/homonto"
+"$HOMONTO" explain skill homonto 2>&1 | grep -q "onto" || fail "explain must name onto"
+"$HOMONTO" explain skill homonto 2>&1 | grep -q "to" || fail "explain must name to"
+"$TO" status --json --all >/dev/null || fail "to status --all must answer with both frameworks applied"
+ok "both frameworks applied side by side; shared skill deduped"
 cp /tmp/to-only.toml homonto.toml
-ok "homonto refused the onto+to config"
 
 log "homonto apply installs the to framework"
 "$HOMONTO" apply --yes >/dev/null

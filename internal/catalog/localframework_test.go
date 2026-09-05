@@ -4,6 +4,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"testing/fstest"
 )
@@ -78,5 +79,21 @@ func TestLoadWithLocal_LocalNameMismatchErrors(t *testing.T) {
 	_, err := LoadWithLocal(baseFS(), map[string]fs.FS{"other": local})
 	if err == nil {
 		t.Fatal("a local framework whose declared name != key should error")
+	}
+}
+
+func TestLoadWithLocal_RejectsDifferentSharedResourceContent(t *testing.T) {
+	framework := func(name, body string) fstest.MapFS {
+		return fstest.MapFS{
+			"framework.toml":         {Data: []byte("name = \"" + name + "\"\nversion = \"0.1.0\"\n[skills]\nshared = \"skills/shared\"\n")},
+			"skills/shared/SKILL.md": {Data: []byte(body)},
+		}
+	}
+	_, err := LoadWithLocal(baseFS(), map[string]fs.FS{
+		"one": framework("one", "first"),
+		"two": framework("two", "second"),
+	})
+	if err == nil || !strings.Contains(err.Error(), "different content") {
+		t.Fatalf("different shared resources = %v, want content conflict", err)
 	}
 }

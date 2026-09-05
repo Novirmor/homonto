@@ -1,16 +1,16 @@
 #!/usr/bin/env bash
 # Real dual-binary E2E matrix runner.
 #
-# Builds one image containing homonto + onto (from source) and the ACTUAL Claude
-# Code and OpenCode CLIs, then runs a matrix of suites against them:
+# Builds one image containing homonto + onto (from source) and the ACTUAL
+# OpenCode CLI, then runs a matrix of suites against it:
 #
-#   suite \ tool   claude      opencode
-#   projection     ✓           ✓          (homonto apply → real tool reads config)
-#   live           ✓           ✓          (real account prompt → PONG)
+#   suite \ tool   opencode
+#   projection     ✓          (homonto apply → real tool reads config)
+#   live           ✓          (real account prompt → PONG)
 #   onto           shared, tool-independent (full open→…→close workflow)
 #
 # The `live` cells reuse the invoking user's own accounts by mounting their
-# credentials READ-ONLY at run time (never baked into the image). opencode uses a
+# credentials READ-ONLY at run time (never baked into the image). OpenCode uses a
 # free model, so the live checks cost nothing. Finally it captures a structured
 # dump of the container's internal state (the `analyze` suite).
 #
@@ -19,13 +19,12 @@
 # Examples:
 #   scripts/e2e-matrix.sh                 # build + full matrix + analysis
 #   scripts/e2e-matrix.sh --no-build onto # rerun just the onto suite
-#   scripts/e2e-matrix.sh projection/claude live/opencode
+#   scripts/e2e-matrix.sh projection/opencode live/opencode
 set -uo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 IMAGE="${HOMONTO_E2E_IMAGE:-homonto-e2e}"
 OUT="$ROOT/test/e2e/.out"
-CLAUDE_CRED="${CLAUDE_CRED:-$HOME/.claude/.credentials.json}"
 OPENCODE_AUTH="${OPENCODE_AUTH:-$HOME/.local/share/opencode/auth.json}"
 OPENCODE_MODEL="${E2E_OPENCODE_MODEL:-opencode/north-mini-code-free}"
 
@@ -72,24 +71,18 @@ run_cell() { # <suite> <tool> <mount-args...>
 skip_cell() { RESULTS+=("$1	SKIP"); printf '\n▶ %s  (SKIPPED)\n' "$1"; }
 
 if [ "$DO_BUILD" -eq 1 ]; then
-  echo "▶ building $IMAGE (homonto + onto + real claude + opencode) ..."
+  echo "▶ building $IMAGE (homonto + onto + real opencode) ..."
   docker build -f "$ROOT/test/e2e/Dockerfile" -t "$IMAGE" "$ROOT" \
     || { echo "image build failed" >&2; exit 1; }
 fi
 
 # --- matrix -----------------------------------------------------------------
-run_cell projection claude
 run_cell projection opencode
 run_cell onto ""
 
 if [ "$SKIP_LIVE" -eq 1 ]; then
-  skip_cell live/claude; skip_cell live/opencode
+  skip_cell live/opencode
 else
-  if [ -f "$CLAUDE_CRED" ]; then
-    run_cell live claude -v "$CLAUDE_CRED:/root/.claude/.credentials.json:ro"
-  else
-    echo "   (no claude credentials at $CLAUDE_CRED — skipping live/claude)"; skip_cell live/claude
-  fi
   if [ -f "$OPENCODE_AUTH" ]; then
     run_cell live opencode -v "$OPENCODE_AUTH:/root/.local/share/opencode/auth.json:ro"
   else

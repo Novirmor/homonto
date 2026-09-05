@@ -9,8 +9,8 @@ need the onto framework installed *by* homonto first.
 
 > A third binary, `to`, is the lightweight alternative to onto (`plan → do →
 > done`, no gates). See the [to workflow guide](to-workflow.md) and the
-> [to reference](to-reference.md). onto and `to` are an exclusive choice per
-> repository; this walkthrough uses onto.
+> [to reference](to-reference.md). onto and `to` are complementary — declare
+> either or both and pick per change; this walkthrough uses onto.
 
 > Output goes to **stderr**. Redirect with `2>&1` when scripting.
 
@@ -23,7 +23,9 @@ go install github.com/noviopenworks/homonto/cmd/onto@latest  # onto
 
 No Go toolchain? On Linux/macOS run the interactive installer — it asks which
 binaries you want, verifies the release archives against `SHA256SUMS`, and
-prints PATH instructions without editing your shell configuration:
+prints PATH instructions without editing your shell configuration. It also
+offers to run the non-destructive `homonto init` in the current directory;
+decline to initialize elsewhere later:
 
 ```bash
 curl -fsSL -o install.sh https://raw.githubusercontent.com/noviopenworks/homonto/main/scripts/install.sh && bash install.sh
@@ -214,7 +216,7 @@ command and gate: [onto reference](onto-reference.md).
 | Supported | Notes |
 |---|---|
 | MCP servers, settings, skills, plugins, TUI settings | OpenCode, full — the only adapter (Claude Code and codex were removed in v0.13.0) |
-| Frameworks (`[frameworks.*]`) | builtin `onto` or `to` (mutually exclusive); also `local:` roots and digest-pinned `remote:` sources |
+| Frameworks (`[frameworks.*]`) | builtin `onto` and/or `to` (complementary); also `local:` roots and digest-pinned `remote:` sources |
 | Commands, subagents (`builtin:` / `local:`) | subagents: `mode = link` (default) or `copy` |
 | Remote sources (`remote:…`) | subagents and frameworks; **require `digest = "sha256:…"`**; fetched, verified, pinned, cached |
 

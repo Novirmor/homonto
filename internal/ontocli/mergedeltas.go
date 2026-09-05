@@ -44,6 +44,11 @@ func runMergeDeltas(cmd *cobra.Command, root, name string) error {
 	if err := ontoFramework.ValidChangeName(name); err != nil {
 		return err
 	}
+	unlockWs, err := lockOnto(root)
+	if err != nil {
+		return err
+	}
+	defer unlockWs()
 	lock, err := acquireSpecMergeLock(root)
 	if err != nil {
 		return fmt.Errorf("onto merge-deltas: %w", err)

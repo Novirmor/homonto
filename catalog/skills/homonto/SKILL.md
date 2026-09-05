@@ -44,9 +44,10 @@ add a repo declaration rather than approving an arbitrary directory at runtime.
   transitions: `open -> design -> build -> verify -> close`.
 - **to** serves focused solo work with less ceremony: `plan -> do -> done`.
 
-One repository declares one workflow framework. Do not mix their workspaces or
-move a change by hand. Use `to promote` when a to change must grow into an onto
-change.
+The frameworks are complementary: declare either or both, and pick per
+change by selecting its primary agent. Do not mix their workspaces or move a
+change by hand. Use `to promote` when a to change must grow into an onto
+change, and `onto demote` for the way back.
 
 ## Agent Entry Points
 

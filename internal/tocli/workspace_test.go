@@ -259,18 +259,6 @@ func deadPid(t *testing.T) int {
 	return cmd.Process.Pid
 }
 
-// TestPidAlive_SelfAndDead verifies both directions of the liveness probe the
-// stale-lock reclaim trusts: the test's own pid reads alive, a reaped child's
-// pid reads dead.
-func TestPidAlive_SelfAndDead(t *testing.T) {
-	if !pidAlive(os.Getpid()) {
-		t.Errorf("pidAlive(self) = false, want true")
-	}
-	if pidAlive(deadPid(t)) {
-		t.Errorf("pidAlive(reaped child) = true, want false")
-	}
-}
-
 // TestLock_ExcludesConcurrentAndReleases verifies the mutual-exclusion
 // contract: a second acquire while held fails naming the lock, and succeeds
 // again after release.

@@ -1,5 +1,9 @@
 # Development plan - v0.15.0 (planned)
 
+> Historical planning record. v0.15.0 shipped; ADR 0042 supersedes the
+> exclusivity and no-escalation assumptions below. Current behavior lives in
+> code, tests, and the accepted ADRs.
+
 > One release containing seven capabilities. Work may land as focused commits,
 > but no capability ships under a separate tag. The release stays blocked until
 > every task and the final gate are complete.

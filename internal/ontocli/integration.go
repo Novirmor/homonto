@@ -28,6 +28,11 @@ func completeIntegrationCmd() *cobra.Command {
 			if receipt == "" {
 				return fmt.Errorf("onto complete-integration: --receipt is required")
 			}
+			unlockWs, err := lockOnto(dir)
+			if err != nil {
+				return err
+			}
+			defer unlockWs()
 			// The load → validate → save sequence must be serialized against a
 			// concurrent completion: two unlocked runs could both accept
 			// different receipts and the last rename would win.

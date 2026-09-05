@@ -46,6 +46,11 @@ func runBypass(cmd *cobra.Command, root, name, target, reason string) error {
 	if err := bypasslog.RequireRealParents(root, changesDir(root)); err != nil {
 		return err
 	}
+	unlockWs, err := lockOnto(root)
+	if err != nil {
+		return err
+	}
+	defer unlockWs()
 	unlock, err := bypassLock(root)
 	if err != nil {
 		return err

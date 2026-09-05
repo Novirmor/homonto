@@ -118,6 +118,12 @@ func runClose(cmd *cobra.Command, root, name string) error {
 		return err
 	}
 
+	unlockWs, err := lockOnto(root)
+	if err != nil {
+		return err
+	}
+	defer unlockWs()
+
 	unlock := acquireStateLockBestEffort(root)
 	defer unlock()
 

@@ -13,8 +13,10 @@ real file state.
 
 Most commands take `--dir <root>` (default `.`) to select the configuration
 repository. `<workflow-root>` below means `[workflow].root` from its
-`homonto.toml` (default `docs`). Mutating commands require the onto framework to be installed by
-homonto. Read-only commands do not write; `onto dirt <change>` reads
+`homonto.toml` (default `docs`). Mutating commands require the onto framework
+to be installed by homonto — except `demote`, which bridges the frameworks
+and accepts either an applied `[frameworks.onto]` or an applied
+`[frameworks.to]`. Read-only commands do not write; `onto dirt <change>` reads
 `homonto.toml` only when that change records selected declared repos.
 
 ## General flow
@@ -129,6 +131,22 @@ Every invocation requires a non-empty user reason and appends a versioned
 `.onto/bypass.json` record with the timestamp, command, source/target, reason,
 and skipped checks. `archive` moves the existing workspace without merging its
 spec deltas or ADRs. It is not a successful close.
+
+## Demotion — `onto demote <change> [--as <name>] --yes`
+
+Converts an onto change into a `to` change (ADR 0042), the mirror of
+`to promote` (ADR 0028): the complete source workspace moves unchanged into
+the neutral control plane (`.workflow/snapshots/`) of a fresh change.
+open/design restart at phase `plan`; build/verify continue at phase `do`
+when the task list translates into a contract-clean `to` plan (checkboxes,
+per-task `Files:`/`Change:`/`Verify:`, and a `Final Verify:` line), and
+restart at `plan` otherwise — demotion never fabricates an invalid plan. A
+closed, abandoned, or archived change is refused. Converting back with
+`to promote` while nothing changed restores the previous workspace
+byte-for-byte; after edits it is a fresh conversion that snapshots the edited
+bytes. Crash recovery is receipt-verified and idempotent, tampered staging is
+refused, and the locks are taken in promote's fixed order (plus the onto
+workspace lock, which excludes concurrent onto mutations of the source).
 
 ## Merging specs — `onto merge-deltas <change>`
 

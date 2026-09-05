@@ -5,8 +5,10 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"time"
 
@@ -129,6 +131,13 @@ func nextStep(name, phase, plan string) string {
 }
 
 func runHandoff(cmd *cobra.Command, root, name string, jsonMode, doWrite bool) error {
+	if doWrite {
+		unlock, err := lock(root)
+		if err != nil {
+			return err
+		}
+		defer unlock()
+	}
 	st, err := loadChange(root, name)
 	if err != nil {
 		return err
@@ -144,6 +153,7 @@ func runHandoff(cmd *cobra.Command, root, name string, jsonMode, doWrite bool) e
 
 	if doWrite {
 		rec := buildToRecovery(name, st, plan)
+		rec.Artifacts = append(rec.Artifacts, toWorkflowDigests(changeDir(root, name))...)
 		jsonBytes, err := json.MarshalIndent(rec, "", "  ")
 		if err != nil {
 			return err
@@ -206,6 +216,31 @@ func buildToRecovery(name string, st tostate.State, plan string) handoff.Recover
 func toArtifactDigests(plan string) []handoff.ArtifactDigest {
 	sum := sha256.Sum256([]byte(plan))
 	return []handoff.ArtifactDigest{{Path: "plan.md", SHA256: hex.EncodeToString(sum[:])}}
+}
+
+// toWorkflowDigests digests the conversion control plane (.workflow) of a
+// demoted change, when present, so recovery packs cover the snapshotted
+// source (ADR 0042). Returns nil when the change was never converted.
+func toWorkflowDigests(changeDir string) []handoff.ArtifactDigest {
+	var out []handoff.ArtifactDigest
+	_ = filepath.WalkDir(filepath.Join(changeDir, ".workflow"), func(p string, d fs.DirEntry, err error) error {
+		if err != nil || !d.Type().IsRegular() {
+			return nil
+		}
+		data, rerr := os.ReadFile(p)
+		if rerr != nil {
+			return nil
+		}
+		rel, rerr := filepath.Rel(changeDir, p)
+		if rerr != nil {
+			return nil
+		}
+		sum := sha256.Sum256(data)
+		out = append(out, handoff.ArtifactDigest{Path: filepath.ToSlash(rel), SHA256: hex.EncodeToString(sum[:])})
+		return nil
+	})
+	sort.Slice(out, func(i, j int) bool { return out[i].Path < out[j].Path })
+	return out
 }
 
 // toNextArgv picks the safest binary command for a fresh session: the phase

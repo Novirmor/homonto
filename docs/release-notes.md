@@ -15,6 +15,29 @@ bookkeeper) — for every supported OS/arch as separate archives under one
 `SHA256SUMS`. `onto` and `to` each require `homonto` to have installed their
 framework first (`[frameworks.onto]` / `[frameworks.to]` + `homonto apply`).
 
+### New in v0.19.0 — complementary workflows and a guided install
+
+- **onto and to are complementary.** A repository may declare both
+  `[frameworks.onto]` and `[frameworks.to]`: records stay in disjoint
+  directories, agents and commands are namespaced, and the primary agent you
+  select picks the workflow per change. Active change names are globally
+  unique across both trees, and `to status --all` reports one combined
+  inventory ([ADR 0042](adr/0042-onto-and-to-are-complementary.md)).
+- **Reversible promote/demote with a shared conversion engine.** `onto demote
+  <name> --yes` joins `to promote`: sources move whole into a neutral
+  `.workflow/` control plane (lineage, receipts, snapshots) instead of
+  nested `imported-*` copies; demotion is phase-aware (open/design → plan,
+  build/verify → do with a translated doctor-clean plan, terminal states
+  refused); completion is receipt-verified, staging authenticates before
+  generating, and converting back while unchanged restores the previous
+  workspace byte-for-byte. Every onto mutator now takes the onto workspace
+  lock, in one fixed order with the bridges' locks.
+- **The installer guides setup.** Prompts use
+  [gum](https://github.com/charmbracelet/gum) when available and stdin is a
+  TTY (plain reads otherwise), the workflow-binary default is both, and on
+  explicit confirmation it runs `homonto init` in the current directory
+  ([ADR 0043](adr/0043-the-installer-offers-initialization.md)).
+
 ### New in v0.18.0 — interactive release installer and a configurable workflow root
 
 - **Interactive release installer.** `scripts/install.sh` (Linux/macOS,
@@ -602,7 +625,7 @@ homonto is a young, deliberately narrow tool. For the current 0.x line:
 - **`import` is a narrow Claude MCP bootstrap** — Claude global MCP servers only,
   best-effort secret redaction, no skills/plugins/settings/OpenCode import.
 - **The bundled catalog ships only homonto-native content**: the `onto` and
-  `to` frameworks (mutually exclusive) plus the loose framework-agnostic
+  `to` frameworks (complementary, ADR 0042) plus the loose framework-agnostic
   skills/commands. Third-party frameworks are not bundled; vendor them via a
   `local:` path or a digest-pinned `remote:` archive (the same fail-closed
   verification `remote:` subagents use). Every `remote:` source requires a

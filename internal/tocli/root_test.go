@@ -20,6 +20,7 @@ func TestNewRootCmd_RegistersAllSubcommands(t *testing.T) {
 		"abandon": true,
 		"handoff": true,
 		"doctor":  true,
+		"promote": true,
 	}
 	got := map[string]bool{}
 	for _, c := range root.Commands() {

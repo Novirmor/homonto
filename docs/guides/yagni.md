@@ -8,9 +8,10 @@ names where, so you can lean on the mechanism instead of your discipline.
 
 ## The framework choice is YAGNI at the largest scale
 
-onto and `to` are [mutually exclusive](to-workflow.md#onto-or-to--an-exclusive-choice)
-per repository. If your repo doesn't need evidence gates, spec deltas, and a
-dependency graph, declaring onto anyway is a YAGNI violation you pay for on
+onto and `to` are [complementary](to-workflow.md#onto-and-to--complementary-by-selection):
+pick the workflow per change. If a change doesn't need evidence gates, spec
+deltas, and a dependency graph, putting it through onto anyway is a YAGNI
+violation you pay for on
 every change. Pick `to`; switch the repo to onto when a real requirement —
 audits, multi-change dependencies, non-skippable verification — shows up, not
 before.

@@ -53,10 +53,11 @@ scope = "user"
 	}
 }
 
-// TestLoad_RejectsOntoAndToTogether: onto and to are an exclusive choice per
-// repository (enterprise tooling vs. simple development), so a config that
-// declares both frameworks fails at load.
-func TestLoad_RejectsOntoAndToTogether(t *testing.T) {
+// TestLoad_AcceptsOntoAndToTogether: onto and to are complementary (ADR 0042)
+// — records in disjoint directories, namespaced agents and commands — so a
+// config that declares both frameworks loads; the workflow is chosen per
+// change by selecting its primary agent.
+func TestLoad_AcceptsOntoAndToTogether(t *testing.T) {
 	p := filepath.Join(t.TempDir(), "homonto.toml")
 	if err := os.WriteFile(p, []byte(`[frameworks.onto]
 source = "builtin:onto"
@@ -64,15 +65,18 @@ scope = "project"
 [frameworks.to]
 source = "builtin:to"
 scope = "project"
-`), 0o644); err != nil {
+`+ontoFrameworkModels()+toFrameworkModels()), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	_, err := Load(p)
-	if err == nil {
-		t.Fatal("onto+to accepted, want a load error")
+	cfg, err := Load(p)
+	if err != nil {
+		t.Fatalf("onto+to rejected at load: %v", err)
 	}
-	if !strings.Contains(err.Error(), "mutually exclusive") {
-		t.Errorf("error %q should say the frameworks are mutually exclusive", err.Error())
+	if _, ok := cfg.Frameworks["onto"]; !ok {
+		t.Error("onto framework missing from loaded config")
+	}
+	if _, ok := cfg.Frameworks["to"]; !ok {
+		t.Error("to framework missing from loaded config")
 	}
 }
 

@@ -70,7 +70,6 @@ func (en *enricher) captureDeletes(tool string, cs adapter.ChangeSet, st *state.
 
 // record applies provenance updates for one adapter's completed changeset.
 func (en *enricher) record(cs adapter.ChangeSet, deletes []state.Tombstone, st *state.State) {
-	touched := false
 	for _, c := range cs.Changes {
 		switch c.Action {
 		case adapter.ActionNoop:
@@ -79,7 +78,6 @@ func (en *enricher) record(cs adapter.ChangeSet, deletes []state.Tombstone, st *
 			continue // handled via tombstones below
 		}
 		en.allocate()
-		touched = true
 		var origin *state.Origin
 		if r, ok := en.descriptors[cs.Tool][c.Key]; ok && r.Origin != nil {
 			o := *r.Origin
@@ -90,12 +88,10 @@ func (en *enricher) record(cs adapter.ChangeSet, deletes []state.Tombstone, st *
 	}
 	for _, d := range deletes {
 		en.allocate()
-		touched = true
 		d.Op, d.At = en.op, en.at
 		d.Cause = "remove"
 		st.AppendTombstone(d)
 	}
-	_ = touched
 }
 
 // enrichApply wires provenance recording around the per-adapter apply loop:

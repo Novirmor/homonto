@@ -58,3 +58,17 @@ func TestLoadOverlays_NoOverlayIdenticalToLoad(t *testing.T) {
 		t.Error("base framework should load with no overlays")
 	}
 }
+
+func TestLoadOverlays_RejectsLooseSubagentShadowingFrameworkContent(t *testing.T) {
+	base := baseFS()
+	base["frameworks/base/framework.toml"] = &fstest.MapFile{Data: []byte("name = \"base\"\nversion = \"0.1.0\"\n[subagents]\nagent = \"subagents/agent.md\"\n")}
+	base["subagents/agent.md"] = &fstest.MapFile{Data: []byte("base agent")}
+	overlay := fstest.MapFS{
+		"subagents/agent.md":            {Data: []byte("overlay agent")},
+		"frameworks/ext/framework.toml": {Data: []byte("name = \"ext\"\nversion = \"0.1.0\"\n")},
+	}
+	_, err := LoadOverlays(base, overlay)
+	if err == nil || !strings.Contains(err.Error(), "different content") {
+		t.Fatalf("loose subagent shadow = %v, want content conflict", err)
+	}
+}

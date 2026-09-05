@@ -1,7 +1,7 @@
 # to reference — commands and behavior
 
 The `to` binary's complete command surface. Concepts — the phases, the plan
-contract, the skills and subagents, the onto-xor-to exclusivity — are in the
+contract, the skills and subagents, and onto/to complementarity — are in the
 [to workflow guide](to-workflow.md); design rationale is in
 [to-framework-design.md](../to-framework-design.md).
 
@@ -16,7 +16,9 @@ until, in order:
    been applied).
 
 Each failure names the fix (`homonto init`, declare `[frameworks.to]`, run
-`homonto apply`). Read-only commands never write. `status` and `doctor` load
+`homonto apply`). `promote` is the exception: it bridges the two frameworks,
+so either an applied `[frameworks.to]` or an applied `[frameworks.onto]`
+passes its gate. Read-only commands never write. `status` and `doctor` load
 `homonto.toml` only for an active change that records selected declared repos,
 so they can report scoped-repository availability.
 
@@ -77,20 +79,24 @@ under `<workflow-root>/tasks/<name>/.to/handoff/` — never plan prose or eviden
 ## Promotion — `to promote <name> [--as <name>] --yes`
 
 Converts a growing `to` change into a full onto change (ADR 0028): the
-complete source workspace moves unchanged under
-`<workflow-root>/changes/<name>/imported-to/`, and a fresh proposal-only workspace
-starts at phase open — promotion claims no design or verification. The
-command prints the next steps: swap `[frameworks.to]` for
-`[frameworks.onto]` in `homonto.toml`, `homonto apply --yes`, then `/onto`.
-The two frameworks stay exclusive; a crash between the moves is recovered
-idempotently and tampered staging is refused.
+complete source workspace moves unchanged into the neutral control plane
+(`<workflow-root>/changes/<name>/.workflow/snapshots/`), and a fresh
+proposal-only workspace starts at phase open — promotion claims no design or
+verification. The command prints the next steps: declare
+`[frameworks.onto]` in `homonto.toml` (alongside `to`, if not already),
+`homonto apply --yes`, then `/onto`. The frameworks are complementary, so
+nothing must be removed; a crash between the moves is recovered
+idempotently (receipt-verified) and tampered staging is refused. `onto
+demote <name> --yes` mirrors the conversion back (ADR 0042) — an unchanged
+immediate inverse restores the original workspace byte-for-byte.
 
 ## What `to` deliberately does not do
 
 No evidence gates (the `--verified` checkbox is an assertion, not a
 guarantee — the `to-done` skill is where verification rigor lives), no spec
-deltas, no dependency graph, no Git history or branch policy, no
-worktree-per-implementer orchestration, and no escalation path to onto. A
+deltas, no dependency graph, no Git history or branch policy, and no
+worktree-per-implementer orchestration; escalation is an explicit conversion
+(`to promote`), never a phase. A
 scoped change has only the terminal clean-worktree gate; unscoped changes stay
 Git-blind. If a change needs the heavier workflow, the repo needs onto.
 

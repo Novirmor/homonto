@@ -69,7 +69,32 @@ while [ $i -lt ${#args[@]} ]; do
 done
 exec sha256sum "${out[@]}"
 EOF
-  chmod +x "$d/curl" "$d/uname" "$d/shasum"
+  cat >"$d/gum" <<'EOF'
+#!/usr/bin/env bash
+# mock gum: choose prints MOCK_GUM_SELECT, input answers by --header
+# (version/dir), confirm exits per MOCK_GUM_CONFIRM.
+sub="${1:-}"; shift || true
+header=""
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --header) header="$2"; shift 2 ;;
+    *) shift ;;
+  esac
+done
+case "$sub" in
+  input)
+    case "$header" in
+      *irectory*) printf '%s\n' "${MOCK_GUM_DIR:-}" ;;
+      *) printf '%s\n' "${MOCK_GUM_VERSION:-}" ;;
+    esac
+    ;;
+  choose) printf '%s\n' "${MOCK_GUM_SELECT:-}" ;;
+  confirm) [ "${MOCK_GUM_CONFIRM:-0}" = 1 ] ;;
+  style) printf '%s\n' "gum style" ;;
+  *) exit 1 ;;
+esac
+EOF
+  chmod +x "$d/curl" "$d/uname" "$d/shasum" "$d/gum"
 }
 
 make_release() { # <version> <os> <arch> <outdir> <binaries...>
@@ -78,7 +103,9 @@ make_release() { # <version> <os> <arch> <outdir> <binaries...>
   for bin in "$@"; do
     d="$out/${bin}_${version}_${os}_${arch}"
     mkdir -p "$d"
-    printf '#!/usr/bin/env bash\necho "%s fake %s"\n' "$bin" "$version" >"$d/$bin"
+    # shellcheck disable=SC2016 # the generated mock needs the literal ${1:-}
+    printf '#!/usr/bin/env bash\nif [ "${1:-}" = init ]; then echo "%s init fake %s"; else echo "%s fake %s"; fi\n' \
+      "$bin" "$version" "$bin" "$version" >"$d/$bin"
     chmod +x "$d/$bin"
     (cd "$out" && tar -czf "${bin}_${version}_${os}_${arch}.tar.gz" "${bin}_${version}_${os}_${arch}")
     rm -rf "$d"
@@ -121,6 +148,8 @@ t1_latest_onto_linux() {
   run_install "$s" $'\nonto\n'"$s/bin"
   expect_exit "t1: latest + onto installs" 0
   expect_stderr "t1: detects linux/amd64" "platform: linux/amd64"
+  expect_stderr "t1: has a plain welcome" "== homonto installer =="
+  expect_stderr "t1: explains both workflows" "both (recommended): onto for gated work, to for lightweight work."
   expect_stderr "t1: downloads homonto asset" "downloading homonto_v9.9.9_linux_amd64.tar.gz"
   expect_stderr "t1: installs homonto" "installed homonto -> $s/bin/homonto"
   expect_stderr "t1: installs onto" "installed onto -> $s/bin/onto"
@@ -200,7 +229,7 @@ t9_invalid_version_recovers() {
   make_release v9.9.9 linux amd64 "$s/assets" homonto onto
   run_install "$s" $'banana\nv9.9.9\nonto\n'"$s/bin"
   expect_exit "t9: bad version then good installs" 0
-  expect_stderr "t9: rejects the bad version" 'is not a version like v0.17.0'
+  expect_stderr "t9: rejects the bad version" 'is not a version like v0.18.0'
   expect_stderr "t9: installs after recovery" "installed homonto -> $s/bin/homonto"
 }
 
@@ -242,6 +271,65 @@ t13_help() {
   fi
 }
 
+t14_both_binaries() {
+  local s="$1"
+  make_release v9.9.9 linux amd64 "$s/assets" homonto onto to
+  run_install "$s" $'\nboth\n'"$s/bin"
+  expect_exit "t14: both installs" 0
+  expect_stderr "t14: downloads onto" "downloading onto_v9.9.9_linux_amd64.tar.gz"
+  expect_stderr "t14: downloads to" "downloading to_v9.9.9_linux_amd64.tar.gz"
+  if [ -x "$s/bin/homonto" ] && [ -x "$s/bin/onto" ] && [ -x "$s/bin/to" ]; then
+    ok "t14: all three installed"
+  else
+    bad "t14: all three installed"
+  fi
+}
+
+t15_init_confirmed() {
+  local s="$1"
+  make_release v9.9.9 linux amd64 "$s/assets" homonto
+  run_install "$s" $'\nnone\n'"$s/bin"$'\ny'
+  expect_exit "t15: install + init" 0
+  expect_stderr "t15: announces the init run" "running homonto init"
+  expect_stderr "t15: runs homonto init" "homonto init fake v9.9.9"
+}
+
+t16_init_declined() {
+  local s="$1"
+  make_release v9.9.9 linux amd64 "$s/assets" homonto
+  run_install "$s" $'\nnone\n'"$s/bin"$'\nn'
+  expect_exit "t16: install without init" 0
+  expect_not_stderr "t16: no init run" "homonto init fake"
+}
+
+t17_gum_ui() {
+  local s="$1"
+  make_release v9.9.9 linux amd64 "$s/assets" homonto to
+  run_install "$s" "" HOMONTO_UI=gum MOCK_GUM_SELECT=to MOCK_GUM_DIR="$s/bin" MOCK_GUM_CONFIRM=0
+  expect_exit "t17: gum-driven install" 0
+  expect_stderr "t17: installs to via gum choice" "installed to -> $s/bin/to"
+  expect_not_stderr "t17: no plain prompts" "Install version ["
+}
+
+t18_gum_init_confirmed() {
+  local s="$1"
+  make_release v9.9.9 linux amd64 "$s/assets" homonto
+  run_install "$s" "" HOMONTO_UI=gum MOCK_GUM_SELECT=none MOCK_GUM_DIR="$s/bin" MOCK_GUM_CONFIRM=1
+  expect_exit "t18: gum-driven init" 0
+  expect_stderr "t18: runs homonto init via gum confirm" "homonto init fake v9.9.9"
+}
+
+t19_forced_gum_requires_binary() {
+  local s="$1"
+  mkdir -p "$s/empty"
+  env PATH="$s/empty" HOMONTO_UI=gum "${BASH:-/bin/bash}" "$INSTALLER" >"$s/stdout" 2>"$s/stderr"
+  EXIT=$?
+  OUT_STDERR="$(cat "$s/stderr")"
+  OUT_STDOUT="$(cat "$s/stdout")"
+  expect_exit "t19: forced gum without gum refuses cleanly" 1
+  expect_stderr "t19: names the recovery" "HOMONTO_UI=gum requires gum on PATH"
+}
+
 # --- run -------------------------------------------------------------------
 
 TMP="$(mktemp -d)"
@@ -260,6 +348,12 @@ t10_shasum_fallback "$TMP/t10"
 t11_already_on_path "$TMP/t11"
 t12_unknown_arg
 t13_help
+t14_both_binaries "$TMP/t14"
+t15_init_confirmed "$TMP/t15"
+t16_init_declined "$TMP/t16"
+t17_gum_ui "$TMP/t17"
+t18_gum_init_confirmed "$TMP/t18"
+t19_forced_gum_requires_binary "$TMP/t19"
 
 printf '\n'
 for line in "${SUMMARY[@]}"; do printf '%s\n' "$line"; done

@@ -17,13 +17,13 @@ new trust boundaries — but only when it is already installed.
 
 ## Decision
 
-After installing, `scripts/install.sh` asks — via gum when it is on `PATH`
-and stdin is a TTY, plain reads otherwise (HOMONTO_UI forces either) —
-whether to run `homonto init` in the current directory, and runs it only on
-explicit confirmation. `homonto init` never overwrites, so accepting in an
-already-configured directory is safe. The default workflow-binary choice
-becomes `both` (onto and to are complementary, ADR 0042). gum is never
-downloaded by the installer; using it stays the user's decision.
+After installing, `scripts/install.sh` asks — through Gum when it is on
+`PATH` and stdin is a TTY, then dialog, then plain reads (HOMONTO_UI forces a
+mode) — whether to run `homonto init` in the current directory, and runs it
+only on explicit confirmation. `homonto init` never overwrites, so accepting
+in an already-configured directory is safe. The default workflow-binary choice
+becomes `both` (onto and to are complementary, ADR 0042). The installer never
+downloads either UI dependency; using one stays the user's decision.
 
 ## Consequences
 

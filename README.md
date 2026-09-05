@@ -82,7 +82,12 @@ interactive installer: it asks which binaries you want, verifies the release
 archives against `SHA256SUMS`, installs into a directory you choose, and
 prints the PATH line for you to apply — it never edits your shell
 configuration. It can also run the non-destructive `homonto init` in the
-current directory when you explicitly confirm:
+current directory when you explicitly confirm. For a new config, it also asks
+where workflow records belong, which sibling Git repositories to trust, which
+workflow frameworks to enable, and one model for OpenCode plus every selected
+workflow agent. Existing `homonto.toml` files remain unchanged. In an
+interactive terminal it uses Gum when available, then dialog, then text
+prompts:
 
 ```bash
 curl -fsSL -o install.sh https://raw.githubusercontent.com/noviopenworks/homonto/main/scripts/install.sh && bash install.sh

@@ -15,6 +15,17 @@ bookkeeper) — for every supported OS/arch as separate archives under one
 `SHA256SUMS`. `onto` and `to` each require `homonto` to have installed their
 framework first (`[frameworks.onto]` / `[frameworks.to]` + `homonto apply`).
 
+### New in v0.20.0 — guided project configuration
+
+- **The installer configures new projects.** After `homonto init` creates a
+  config, the installer asks for the workflow-record directory, existing
+  sibling Git repositories, `onto` and/or `to`, and one OpenCode model for the
+  main session plus all selected framework agents. Existing `homonto.toml`
+  files remain untouched ([ADR 0044](adr/0044-the-installer-configures-new-projects.md)).
+- **Terminal UI selection.** Interactive installs prefer Gum, then dialog, and
+  use plain text when neither dependency is available. `HOMONTO_UI=dialog`
+  selects dialog explicitly.
+
 ### New in v0.19.0 — complementary workflows and a guided install
 
 - **onto and to are complementary.** A repository may declare both

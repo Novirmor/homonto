@@ -3,11 +3,12 @@
 # Asks a few questions, downloads the release archives from GitHub, verifies
 # them against the release SHA256SUMS, and installs the binaries into a
 # directory you choose — and, on your explicit confirmation only, runs
-# `homonto init` in the current directory to scaffold homonto.toml.
+# `homonto init` in the current directory to scaffold homonto.toml and offers
+# to configure workflow frameworks, models, records, and sibling repositories.
 #
-# Prompts use gum (https://github.com/charmbracelet/gum) when it is on PATH
-# and stdin is a TTY; otherwise they fall back to plain reads, so scripted
-# runs keep working. The installer never edits your shell configuration —
+# Prompts use gum (https://github.com/charmbracelet/gum) when it is on PATH and
+# stdin is a TTY, then dialog, then plain reads. Scripted runs keep
+# working. The installer never edits your shell configuration —
 # PATH setup is printed for you to apply. With no stdin (e.g.
 # `scripts/install.sh </dev/null`) every question falls back to its default:
 # latest release, both workflow binaries, ~/.local/bin, no init.
@@ -23,6 +24,13 @@ VERSION=""            # empty -> resolved from the GitHub API
 WORKFLOW_BIN="both"   # both | onto | to | none
 INSTALL_DIR="${HOME}/.local/bin"
 INIT_RAN=0
+SETUP_RAN=0
+SETUP_FRAMEWORKS="none"
+WORKFLOW_ROOT="docs"
+WORKFLOW_MODEL=""
+REPO_NAMES=()
+REPO_PATHS=()
+UI_SECTION="Install homonto"
 
 usage() {
   cat <<'EOF'
@@ -31,9 +39,10 @@ usage: scripts/install.sh [--help]
 Asks which binaries to install, downloads and verifies the release archives
 against SHA256SUMS, installs into your chosen directory, and prints PATH
 instructions. On explicit confirmation it also runs `homonto init` in the
-current directory. It never edits your shell configuration. Linux and macOS
-(amd64 and arm64) only. Prompts use gum when available and stdin is a TTY;
-installing gum is optional.
+current directory, then configures only the newly created homonto.toml. It
+never edits your shell configuration or an existing config. Linux and macOS
+(amd64 and arm64) only. Prompts use gum, then dialog, when available and stdin
+is a TTY; installing either is optional.
 EOF
 }
 
@@ -41,46 +50,62 @@ die() { printf 'install: %s\n' "$*" >&2; exit 1; }
 
 # --- prompt layer: gum when interactive, plain reads otherwise -------------
 
-ui_mode() { # echoes gum|plain; HOMONTO_UI forces it (tests use it)
+ui_mode() { # echoes dialog|gum|plain; HOMONTO_UI forces it (tests use it)
   case "${HOMONTO_UI:-auto}" in
+    dialog) echo dialog ;;
     gum)   echo gum ;;
     plain) echo plain ;;
-    auto) if [ -t 0 ] && command -v gum >/dev/null 2>&1; then echo gum; else echo plain; fi ;;
-    *) die "HOMONTO_UI must be auto, gum, or plain" ;;
+    auto)
+      if [ -t 0 ] && command -v gum >/dev/null 2>&1; then echo gum
+      elif [ -t 0 ] && command -v dialog >/dev/null 2>&1; then echo dialog
+      else echo plain
+      fi
+      ;;
+    *) die "HOMONTO_UI must be auto, dialog, gum, or plain" ;;
   esac
 }
 
 ensure_ui() {
-  if [ "${HOMONTO_UI:-auto}" = gum ] && ! command -v gum >/dev/null 2>&1; then
-    die "HOMONTO_UI=gum requires gum on PATH (or use HOMONTO_UI=plain)"
-  fi
+  case "${HOMONTO_UI:-auto}" in
+    dialog) command -v dialog >/dev/null 2>&1 || die "HOMONTO_UI=dialog requires dialog on PATH (or use HOMONTO_UI=plain)" ;;
+    gum) command -v gum >/dev/null 2>&1 || die "HOMONTO_UI=gum requires gum on PATH (or use HOMONTO_UI=plain)" ;;
+  esac
 }
 
 ui_heading() {
   if [ "$(ui_mode)" = gum ]; then
     gum style --border rounded --padding "0 1" --bold --foreground 212 \
       "homonto installer" "Verified binaries. Your shell files stay untouched." >&2
+  elif [ "$(ui_mode)" = dialog ]; then
+    dialog --backtitle "homonto installer" --title "$UI_SECTION" --infobox \
+      "Verified binaries. Shell setup stays yours." 5 56
   else
-    printf '\n== homonto installer ==\nVerified binaries. Your shell files stay untouched.\n' >&2
+    printf '\n+------------------------------------------------+\n' >&2
+    printf '| homonto installer                              |\n' >&2
+    printf '| Verified binaries. Shell setup stays yours.   |\n' >&2
+    printf '+------------------------------------------------+\n' >&2
   fi
 }
 
 ui_section() {
+  UI_SECTION="$1"
   if [ "$(ui_mode)" = gum ]; then
     gum style --bold --foreground 212 "$1" >&2
+  elif [ "$(ui_mode)" = dialog ]; then
+    :
   else
-    printf '\n-- %s --\n' "$1" >&2
+    printf '\n[ %s ]\n' "$1" >&2
   fi
 }
 
-ui_hint() { printf '  %s\n' "$1" >&2; }
+ui_hint() { printf '  > %s\n' "$1" >&2; }
 
 # ask <prompt> <default> -> echoes the answer (empty when the default is used).
 # Prompt goes to stderr so the answer is the only thing on stdout, and callers
 # capture it. EOF (closed stdin) means "use the default".
 ask() {
   local prompt="$1" default="$2" answer=""
-  printf '  %s' "$prompt" >&2
+  printf '  ? %s' "$prompt" >&2
   [ -n "$default" ] && printf ' [%s]' "$default" >&2
   printf ' ' >&2
   if ! IFS= read -r answer; then answer=""; fi
@@ -90,7 +115,14 @@ ask() {
 # ui_input <prompt> <default> -> the answer (default when empty/cancelled).
 ui_input() {
   local prompt="$1" default="$2" value=""
-  if [ "$(ui_mode)" = gum ]; then
+  if [ "$(ui_mode)" = dialog ]; then
+    if ! value="$(dialog --clear --stdout --backtitle "homonto installer" --title "$UI_SECTION" \
+      --inputbox "$prompt" 8 72 "$default")"; then
+      die "aborted at: ${prompt}"
+    fi
+    [ -n "$value" ] || value="$default"
+    printf '%s\n' "$value"
+  elif [ "$(ui_mode)" = gum ]; then
     if ! value="$(gum input --header "$prompt" --placeholder "$default")"; then
       die "aborted at: ${prompt}"
     fi
@@ -105,19 +137,39 @@ ui_input() {
 # the default (gum highlights it; plain mode shows it in brackets).
 ui_select() {
   local prompt="$1"; shift
-  if [ "$(ui_mode)" = gum ]; then
+  if [ "$(ui_mode)" = dialog ]; then
+    local choice="" option menu=()
+    for option in "$@"; do menu+=("$option" "$option"); done
+    if ! choice="$(dialog --clear --stdout --backtitle "homonto installer" --title "$UI_SECTION" \
+      --default-item "$1" --menu "$prompt" 15 72 6 "${menu[@]}")"; then
+      die "aborted at: ${prompt}"
+    fi
+    printf '%s\n' "$choice"
+  elif [ "$(ui_mode)" = gum ]; then
     local choice=""
     if ! choice="$(gum choose --header "$prompt" "$@")"; then
       die "aborted at: ${prompt}"
     fi
     printf '%s\n' "$choice"
   else
-    local input
+    local input o i
+    printf '  ? %s\n' "$prompt" >&2
+    i=1
+    for o in "$@"; do
+      if [ "$o" = "$1" ]; then
+        printf '    %d) %s (default)\n' "$i" "$o" >&2
+      else
+        printf '    %d) %s\n' "$i" "$o" >&2
+      fi
+      i=$((i + 1))
+    done
     while :; do
-      input="$(ask "$prompt" "$1")"
-      local o
+      input="$(ask "Choose" "$1")"
+      i=1
       for o in "$@"; do
+        if [ "$input" = "$i" ]; then printf '%s\n' "$o"; return 0; fi
         if [ "$input" = "$o" ]; then printf '%s\n' "$input"; return 0; fi
+        i=$((i + 1))
       done
       printf 'install: choose one of: %s\n' "$*" >&2
     done
@@ -128,7 +180,13 @@ ui_select() {
 # the second argument is "yes".
 ui_confirm() {
   local prompt="$1" default="${2:-no}"
-  if [ "$(ui_mode)" = gum ]; then
+  if [ "$(ui_mode)" = dialog ]; then
+    if [ "$default" = yes ]; then
+      dialog --clear --backtitle "homonto installer" --title "$UI_SECTION" --yesno "$prompt" 8 72
+    else
+      dialog --clear --backtitle "homonto installer" --title "$UI_SECTION" --defaultno --yesno "$prompt" 8 72
+    fi
+  elif [ "$(ui_mode)" = gum ]; then
     if [ "$default" = yes ]; then
       gum confirm "$prompt"
     else
@@ -284,12 +342,145 @@ path_advice() {
 maybe_init() {
   # homonto init never overwrites an existing homonto.toml, so this is safe
   # to accept in a directory that is already configured.
+  local config_existed=0
+  [ -e homonto.toml ] && config_existed=1
   ui_hint "Optional: scaffold this directory now. Existing homonto.toml files are never overwritten."
   if ui_confirm "Generate homonto.toml here (runs homonto init in $(pwd))?"; then
     printf 'running homonto init in %s\n' "$(pwd)" >&2
     "$INSTALL_DIR/homonto" init >&2
     INIT_RAN=1
+    if [ "$config_existed" -eq 0 ] && [ -f homonto.toml ]; then
+      configure_new_project
+    elif [ "$config_existed" -eq 1 ]; then
+      ui_hint "homonto.toml already exists, so its configuration was left unchanged."
+    fi
   fi
+}
+
+default_workflow_model() {
+  local config model
+  for config in "$PWD/.opencode/opencode.json" "$PWD/.opencode/opencode.jsonc" \
+    "${XDG_CONFIG_HOME:-$HOME/.config}/opencode/opencode.json" \
+    "${XDG_CONFIG_HOME:-$HOME/.config}/opencode/opencode.jsonc"; do
+    [ -r "$config" ] || continue
+    model="$(sed -n 's/^[[:space:]]*"model"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$config" | head -n 1)"
+    [ -n "$model" ] && { printf '%s\n' "$model"; return 0; }
+  done
+  printf '%s\n' 'opencode-go/qwen3.7-plus'
+}
+
+safe_toml_value() {
+  case "$1" in
+    *'"'* | *$'\r'* | *$'\n'*) die "configuration values cannot contain quotes or newlines" ;;
+  esac
+}
+
+ask_setup_frameworks() {
+  case "$WORKFLOW_BIN" in
+    both) SETUP_FRAMEWORKS="$(ui_select "Frameworks to configure" both onto to none)" ;;
+    onto) SETUP_FRAMEWORKS="$(ui_select "Frameworks to configure" onto both to none)" ;;
+    to)   SETUP_FRAMEWORKS="$(ui_select "Frameworks to configure" to both onto none)" ;;
+    *)    SETUP_FRAMEWORKS="$(ui_select "Frameworks to configure" none both onto to)" ;;
+  esac
+}
+
+ask_workflow_root() {
+  while :; do
+    WORKFLOW_ROOT="$(ui_input "Workflow records directory" "docs")"
+    safe_toml_value "$WORKFLOW_ROOT"
+    case "$WORKFLOW_ROOT" in
+      '' | . | /* | .. | ../* | */../* | *\\*)
+        printf 'install: workflow records directory must be a relative path below this repository\n' >&2
+        ;;
+      *) return 0 ;;
+    esac
+  done
+}
+
+repo_name_seen() {
+  local name="$1" existing
+  for existing in "${REPO_NAMES[@]}"; do
+    [ "$existing" = "$name" ] && return 0
+  done
+  return 1
+}
+
+collect_repositories() {
+  local path name
+  ui_hint "The current directory is the config repository and is already included."
+  ui_hint "Add sibling Git repositories one at a time; press Enter with no path when finished."
+  while :; do
+    path="$(ui_input "Additional repository path" "")"
+    [ -n "$path" ] || return 0
+    safe_toml_value "$path"
+    [ -d "$path" ] || { printf 'install: repository path does not exist: %s\n' "$path" >&2; continue; }
+    command -v git >/dev/null 2>&1 || die "git is required to add a repository"
+    git -C "$path" rev-parse --is-inside-work-tree >/dev/null 2>&1 \
+      || { printf 'install: repository path is not a Git worktree: %s\n' "$path" >&2; continue; }
+    name="$(ui_input "Repository name" "$(basename "$path")")"
+    if ! [[ "$name" =~ ^[A-Za-z0-9_-]+$ ]]; then
+      printf 'install: repository name must use letters, numbers, hyphens, or underscores\n' >&2
+      continue
+    fi
+    if repo_name_seen "$name"; then
+      printf 'install: repository name already selected: %s\n' "$name" >&2
+      continue
+    fi
+    REPO_NAMES+=("$name")
+    REPO_PATHS+=("$path")
+    ui_hint "Added repository $name -> $path"
+  done
+}
+
+write_framework_config() {
+  local framework name
+  local names=()
+  for framework in "$@"; do
+    printf '\n[frameworks.%s]\nsource = "builtin:%s"\nscope = "project"\n' "$framework" "$framework"
+    case "$framework" in
+      onto) names=(onto onto-explorer onto-reviewer onto-implementer onto-skeptic) ;;
+      to) names=(to to-explorer to-reviewer to-implementer to-skeptic) ;;
+    esac
+    for name in "${names[@]}"; do
+      printf '\n[subagents.%s.opencode]\nmodel = "%s"\n' "$name" "$WORKFLOW_MODEL"
+    done
+  done
+}
+
+configure_new_project() {
+  local i frameworks=()
+  ui_section "Configure project"
+  ui_hint "Choose the workflow configuration for this new repository."
+  ask_setup_frameworks
+  ask_workflow_root
+  if [ "$SETUP_FRAMEWORKS" != none ]; then
+    WORKFLOW_MODEL="$(ui_input "Model for OpenCode and all workflow agents" "$(default_workflow_model)")"
+    safe_toml_value "$WORKFLOW_MODEL"
+    [ -n "$WORKFLOW_MODEL" ] || die "a workflow model is required when enabling a framework"
+  fi
+  collect_repositories
+
+  case "$SETUP_FRAMEWORKS" in
+    both) frameworks=(onto to) ;;
+    onto) frameworks=(onto) ;;
+    to) frameworks=(to) ;;
+  esac
+  {
+    printf '\n# Generated by scripts/install.sh. Adjust these values as your project evolves.\n'
+    printf '\n[workflow]\nroot = "%s"\n' "$WORKFLOW_ROOT"
+    if [ "${#REPO_NAMES[@]}" -gt 0 ]; then
+      printf '\n[repos]\n'
+      for i in "${!REPO_NAMES[@]}"; do
+        printf '%s = "%s"\n' "${REPO_NAMES[$i]}" "${REPO_PATHS[$i]}"
+      done
+    fi
+    if [ "${#frameworks[@]}" -gt 0 ]; then
+      printf '\n[settings.opencode]\nmodel = "%s"\n' "$WORKFLOW_MODEL"
+      write_framework_config "${frameworks[@]}"
+    fi
+  } >> homonto.toml
+  SETUP_RAN=1
+  ui_hint "Configured homonto.toml. Review it before applying changes."
 }
 
 next_steps() {
@@ -300,7 +491,11 @@ next_steps() {
     [ "$bin" = homonto ] && continue
     "$INSTALL_DIR/$bin" version >&2
   done
-  if [ "$INIT_RAN" -eq 1 ]; then
+  if [ "$SETUP_RAN" -eq 1 ]; then
+    printf '\nNext steps\n' >&2
+    printf '  Review homonto.toml, then run homonto plan and homonto apply.\n' >&2
+    printf '  onto and to are complementary: choose either primary per change.\n' >&2
+  elif [ "$INIT_RAN" -eq 1 ]; then
     printf '\nNext steps\n' >&2
     printf '  Edit homonto.toml (declare MCPs / skills / frameworks), then\n' >&2
     printf 'homonto plan and homonto apply. onto and to are complementary —\n' >&2

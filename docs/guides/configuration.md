@@ -217,6 +217,10 @@ source = "builtin:onto"
 scope  = "project"
 ```
 
+When the interactive installer creates a new `homonto.toml`, its project-setup
+step can write the selected framework declarations and one OpenCode model for
+each expanded agent. Review the generated values before `homonto apply`.
+
 ## Repos — `[repos]`
 
 Declares the other repositories this config operates across

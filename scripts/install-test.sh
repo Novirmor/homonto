@@ -94,7 +94,26 @@ case "$sub" in
   *) exit 1 ;;
 esac
 EOF
-  chmod +x "$d/curl" "$d/uname" "$d/shasum" "$d/gum"
+  cat >"$d/dialog" <<'EOF'
+#!/usr/bin/env bash
+# mock dialog: inputbox returns its default, menu returns MOCK_DIALOG_SELECT,
+# and yesno follows MOCK_DIALOG_CONFIRM.
+args=("$@")
+mode=""
+for arg in "${args[@]}"; do
+  case "$arg" in
+    --inputbox|--menu|--yesno|--infobox) mode="$arg" ;;
+  esac
+done
+case "$mode" in
+  --inputbox) printf '%s\n' "${args[$((${#args[@]} - 1))]}" ;;
+  --menu) printf '%s\n' "${MOCK_DIALOG_SELECT:-}" ;;
+  --yesno) [ "${MOCK_DIALOG_CONFIRM:-0}" = 1 ] ;;
+  --infobox) ;;
+  *) exit 1 ;;
+esac
+EOF
+  chmod +x "$d/curl" "$d/uname" "$d/shasum" "$d/gum" "$d/dialog"
 }
 
 make_release() { # <version> <os> <arch> <outdir> <binaries...>
@@ -104,7 +123,7 @@ make_release() { # <version> <os> <arch> <outdir> <binaries...>
     d="$out/${bin}_${version}_${os}_${arch}"
     mkdir -p "$d"
     # shellcheck disable=SC2016 # the generated mock needs the literal ${1:-}
-    printf '#!/usr/bin/env bash\nif [ "${1:-}" = init ]; then echo "%s init fake %s"; else echo "%s fake %s"; fi\n' \
+    printf '#!/usr/bin/env bash\nif [ "${1:-}" = init ]; then\n  if [ "${MOCK_INIT_WRITES_CONFIG:-0}" = 1 ]; then : > homonto.toml; fi\n  echo "%s init fake %s"\nelse\n  echo "%s fake %s"\nfi\n' \
       "$bin" "$version" "$bin" "$version" >"$d/$bin"
     chmod +x "$d/$bin"
     (cd "$out" && tar -czf "${bin}_${version}_${os}_${arch}.tar.gz" "${bin}_${version}_${os}_${arch}")
@@ -148,7 +167,7 @@ t1_latest_onto_linux() {
   run_install "$s" $'\nonto\n'"$s/bin"
   expect_exit "t1: latest + onto installs" 0
   expect_stderr "t1: detects linux/amd64" "platform: linux/amd64"
-  expect_stderr "t1: has a plain welcome" "== homonto installer =="
+  expect_stderr "t1: has a plain welcome" "| homonto installer"
   expect_stderr "t1: explains both workflows" "both (recommended): onto for gated work, to for lightweight work."
   expect_stderr "t1: downloads homonto asset" "downloading homonto_v9.9.9_linux_amd64.tar.gz"
   expect_stderr "t1: installs homonto" "installed homonto -> $s/bin/homonto"
@@ -330,6 +349,74 @@ t19_forced_gum_requires_binary() {
   expect_stderr "t19: names the recovery" "HOMONTO_UI=gum requires gum on PATH"
 }
 
+t20_guided_project_setup() {
+  local s="$1" config
+  make_release v9.9.9 linux amd64 "$s/assets" homonto onto to
+  mkdir -p "$s/repo-a"
+  git -C "$s/repo-a" init -q
+  mkdir -p "$s/home/.config/opencode"
+  printf '{\n  "model": "test-provider/test-model"\n}\n' >"$s/home/.config/opencode/opencode.json"
+  run_install "$s" $'\nboth\n'"$s/bin"$'\ny\nboth\nworkflow\n\n'"$s/repo-a"$'\napi\n' \
+    HOME="$s/home" XDG_CONFIG_HOME="$s/home/.config" MOCK_INIT_WRITES_CONFIG=1
+  config="$s/homonto.toml"
+  expect_exit "t20: guided project setup" 0
+  expect_stderr "t20: configures a new project" "Configured homonto.toml"
+  if grep -qF '[workflow]' "$config" \
+    && grep -qF 'root = "workflow"' "$config" \
+    && grep -qF '[repos]' "$config" \
+    && grep -qF "api = \"$s/repo-a\"" "$config" \
+    && grep -qF '[frameworks.onto]' "$config" \
+    && grep -qF '[frameworks.to]' "$config" \
+    && grep -qF 'model = "test-provider/test-model"' "$config"; then
+    ok "t20: writes selected repos, workflow root, frameworks, and model"
+  else
+    bad "t20: writes selected repos, workflow root, frameworks, and model"
+    cat "$config" >&2
+  fi
+  if (cd "$ROOT" && go build -o "$s/homonto-real" .) \
+    && (cd "$s" && "$s/homonto-real" plan >/dev/null 2>"$s/plan.stderr"); then
+    ok "t20: generated configuration passes homonto plan"
+  else
+    bad "t20: generated configuration passes homonto plan"
+    cat "$s/plan.stderr" >&2
+  fi
+}
+
+t21_existing_config_is_unchanged() {
+  local s="$1"
+  make_release v9.9.9 linux amd64 "$s/assets" homonto
+  printf '# existing configuration\n' >"$s/homonto.toml"
+  run_install "$s" $'\nnone\n'"$s/bin"$'\ny'
+  expect_exit "t21: existing project setup" 0
+  expect_stderr "t21: names the unchanged config" "homonto.toml already exists"
+  if [ "$(cat "$s/homonto.toml")" = "# existing configuration" ]; then
+    ok "t21: preserves the existing config"
+  else
+    bad "t21: preserves the existing config"
+    cat "$s/homonto.toml" >&2
+  fi
+}
+
+t22_dialog_ui() {
+  local s="$1"
+  make_release v9.9.9 linux amd64 "$s/assets" homonto to
+  run_install "$s" "" HOME="$s/home" HOMONTO_UI=dialog MOCK_DIALOG_SELECT=to MOCK_DIALOG_CONFIRM=0
+  expect_exit "t22: dialog-driven install" 0
+  expect_stderr "t22: installs to via dialog choice" "installed to -> $s/home/.local/bin/to"
+  expect_not_stderr "t22: no plain prompts" "Workflow binaries"
+}
+
+t23_forced_dialog_requires_binary() {
+  local s="$1"
+  mkdir -p "$s/empty"
+  env PATH="$s/empty" HOMONTO_UI=dialog "${BASH:-/bin/bash}" "$INSTALLER" >"$s/stdout" 2>"$s/stderr"
+  EXIT=$?
+  OUT_STDERR="$(cat "$s/stderr")"
+  OUT_STDOUT="$(cat "$s/stdout")"
+  expect_exit "t23: forced dialog without dialog refuses cleanly" 1
+  expect_stderr "t23: names the recovery" "HOMONTO_UI=dialog requires dialog on PATH"
+}
+
 # --- run -------------------------------------------------------------------
 
 TMP="$(mktemp -d)"
@@ -354,6 +441,10 @@ t16_init_declined "$TMP/t16"
 t17_gum_ui "$TMP/t17"
 t18_gum_init_confirmed "$TMP/t18"
 t19_forced_gum_requires_binary "$TMP/t19"
+t20_guided_project_setup "$TMP/t20"
+t21_existing_config_is_unchanged "$TMP/t21"
+t22_dialog_ui "$TMP/t22"
+t23_forced_dialog_requires_binary "$TMP/t23"
 
 printf '\n'
 for line in "${SUMMARY[@]}"; do printf '%s\n' "$line"; done

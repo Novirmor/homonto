@@ -24,8 +24,12 @@ go install github.com/noviopenworks/homonto/cmd/onto@latest  # onto
 No Go toolchain? On Linux/macOS run the interactive installer — it asks which
 binaries you want, verifies the release archives against `SHA256SUMS`, and
 prints PATH instructions without editing your shell configuration. It also
-offers to run the non-destructive `homonto init` in the current directory;
-decline to initialize elsewhere later:
+offers to run the non-destructive `homonto init` in the current directory. For
+a newly created config, it asks for the workflow-record directory, sibling Git
+repositories, frameworks, and one model for OpenCode plus each selected
+framework agent. The installer leaves an existing `homonto.toml` unchanged;
+it uses Gum when available, then dialog, then text prompts. Decline to
+initialize elsewhere later:
 
 ```bash
 curl -fsSL -o install.sh https://raw.githubusercontent.com/noviopenworks/homonto/main/scripts/install.sh && bash install.sh

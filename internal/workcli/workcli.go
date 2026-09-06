@@ -57,6 +57,13 @@ type Framework struct {
 	// alone would allow. tocli reserves "archive" (the archive directory itself);
 	// ontocli reserves nothing here (its archive name conflict is structural).
 	ReservedNames []string
+	// GateAliases are extra [frameworks.<name>] tables that satisfy this
+	// framework's install gate. The h companion hard-depends on onto and to,
+	// so an applied [frameworks.h] transitively installed this framework's
+	// skills — the gate accepts it as an alternative declaration (the
+	// catalog-dir check below still must pass, which an applied h does).
+	// Empty for direct use; both workflow CLIs set ["h"].
+	GateAliases []string
 }
 
 // HomontoConfig is the minimal shape of homonto.toml the gate needs: just
@@ -315,8 +322,23 @@ func (f Framework) gate(root string) error {
 		return fmt.Errorf("%s: parsing %s: %w", f.GatePrefix, tomlPath, err)
 	}
 
-	if _, ok := cfg.Frameworks[f.Name]; !ok {
-		return fmt.Errorf("%s: %s has no [frameworks.%s] table; declare [frameworks.%s] and run `homonto apply`", f.GatePrefix, tomlPath, f.Name, f.Name)
+	declared := false
+	if _, ok := cfg.Frameworks[f.Name]; ok {
+		declared = true
+	} else {
+		for _, alias := range f.GateAliases {
+			if _, ok := cfg.Frameworks[alias]; ok {
+				declared = true
+				break
+			}
+		}
+	}
+	if !declared {
+		aliasHint := ""
+		for _, alias := range f.GateAliases {
+			aliasHint = fmt.Sprintf(" (or [frameworks.%s], which installs it transitively)", alias)
+		}
+		return fmt.Errorf("%s: %s has no [frameworks.%s] table; declare [frameworks.%s]%s and run `homonto apply`", f.GatePrefix, tomlPath, f.Name, f.Name, aliasHint)
 	}
 	if _, err := WorkflowRoot(root); err != nil {
 		return fmt.Errorf("%s: invalid workflow.root: %w", f.GatePrefix, err)

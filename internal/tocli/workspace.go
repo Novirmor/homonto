@@ -21,6 +21,9 @@ var toFramework = workcli.Framework{
 	GatePrefix:    "to",
 	NamePrefix:    "to",
 	ReservedNames: []string{"archive"},
+	// [frameworks.h] transitively installs to (its catalog dependency),
+	// so an applied h satisfies this gate too.
+	GateAliases: []string{"h"},
 }
 
 // todayFn returns today's date for created/finished stamps and archive

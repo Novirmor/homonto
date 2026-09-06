@@ -193,6 +193,73 @@ func TestWorkflowFrameworksInstallSharedHomontoKnowledge(t *testing.T) {
 	}
 }
 
+// TestHFrameworkInstallsBothWorkflowsAndItsOwnResources pins the h
+// companion's dependency surface: expanding h transitively yields onto's and
+// to's resources plus the five h skills/commands, the shared homonto
+// primary, and exactly the two read-only workers. The workflow binaries'
+// gates accept an applied [frameworks.h] on the strength of exactly this
+// expansion (workcli.Framework.GateAliases).
+func TestHFrameworkInstallsBothWorkflowsAndItsOwnResources(t *testing.T) {
+	c, err := New()
+	if err != nil {
+		t.Fatal(err)
+	}
+	skills, err := c.Expand([]string{"h"})
+	if err != nil {
+		t.Fatalf("expand h: %v", err)
+	}
+	wantSkills := map[string]bool{
+		"h-spike-issue": false, "h-resolve-issue": false, "h-review-pr": false,
+		"h-continue-pr": false, "h-review-batch": false,
+		"homonto": false, "onto": false, "to": false,
+		"onto-fix": false, "to-plan": false,
+	}
+	for _, skill := range skills {
+		if seen, ok := wantSkills[skill.Name]; ok {
+			if seen {
+				t.Errorf("skill %q expanded twice", skill.Name)
+			}
+			wantSkills[skill.Name] = true
+		}
+	}
+	for name, seen := range wantSkills {
+		if !seen {
+			t.Errorf("h expansion missing skill %q", name)
+		}
+	}
+	subs, err := c.ExpandSubagents([]string{"h"})
+	if err != nil {
+		t.Fatalf("expand h subagents: %v", err)
+	}
+	got := map[string]bool{}
+	for _, s := range subs {
+		got[s.Name] = true
+	}
+	for _, want := range []string{"homonto", "h-spike", "h-review", "onto-implementer", "to-skeptic"} {
+		if !got[want] {
+			t.Errorf("h expansion missing subagent %q (got %v)", want, got)
+		}
+	}
+	for _, unwanted := range []string{"onto", "to"} {
+		if got[unwanted] {
+			t.Errorf("h expansion must not carry the retired %q primary (ADR 0045)", unwanted)
+		}
+	}
+	cmds, err := c.ExpandCommands([]string{"h"})
+	if err != nil {
+		t.Fatalf("expand h commands: %v", err)
+	}
+	gotCmds := map[string]bool{}
+	for _, cmd := range cmds {
+		gotCmds[cmd.Name] = true
+	}
+	for _, want := range []string{"h-spike-issue", "h-resolve-issue", "h-review-pr", "h-continue-pr", "h-review-batch", "onto", "to"} {
+		if !gotCmds[want] {
+			t.Errorf("h expansion missing command %q", want)
+		}
+	}
+}
+
 func TestWorkflowFrameworksInstallDedicatedBypassCommandsOnly(t *testing.T) {
 	c, err := New()
 	if err != nil {

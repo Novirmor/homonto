@@ -19,6 +19,7 @@ var (
 		GatePrefix:    "onto init",
 		NamePrefix:    "onto new",
 		ReservedNames: nil,
+		GateAliases:   []string{"h"},
 	}
 	to = Framework{
 		Name:          "to",
@@ -26,6 +27,7 @@ var (
 		GatePrefix:    "to",
 		NamePrefix:    "to",
 		ReservedNames: []string{"archive"},
+		GateAliases:   []string{"h"},
 	}
 )
 
@@ -85,6 +87,51 @@ func TestGate_GatePrefixInErrors(t *testing.T) {
 	}
 	if err := to.Gate(dir); err == nil || !strings.HasPrefix(err.Error(), "to: ") {
 		t.Fatalf("to gate error = %v, want prefix %q", err, "to: ")
+	}
+}
+
+// TestGateAcceptsAppliedHDeclaration: the h companion hard-depends on onto
+// and to in the catalog, so an applied [frameworks.h] materializes both
+// frameworks' skill directories. The gates must accept the h table as an
+// alternative declaration — declared-but-unapplied h still fails (the
+// catalog dir is the proof, not the table), and the missing-table error
+// names both routes.
+func TestGateAcceptsAppliedHDeclaration(t *testing.T) {
+	for _, f := range []Framework{onto, to} {
+		t.Run(f.Name, func(t *testing.T) {
+			dir := t.TempDir()
+			// Declared via h but not applied: table alone proves nothing.
+			if err := os.WriteFile(
+				filepath.Join(dir, "homonto.toml"),
+				[]byte("[frameworks.h]\nsource=\"builtin:h\"\nscope=\"project\"\n"),
+				0o644,
+			); err != nil {
+				t.Fatal(err)
+			}
+			if err := f.Gate(dir); err == nil || !strings.Contains(err.Error(), "homonto apply") {
+				t.Fatalf("gate(h declared, unapplied) = %v, want mention of homonto apply", err)
+			}
+			// Applied h materializes both frameworks' skill dirs.
+			if err := os.MkdirAll(filepath.Join(dir, ".homonto", "catalog", f.SkillsDir), 0o755); err != nil {
+				t.Fatal(err)
+			}
+			if err := f.Gate(dir); err != nil {
+				t.Fatalf("gate(applied h) = %v, want nil", err)
+			}
+			// The missing-table error names the h alternative.
+			empty := t.TempDir()
+			if err := os.WriteFile(
+				filepath.Join(empty, "homonto.toml"),
+				[]byte("[frameworks.other]\nsource=\"x\"\n"),
+				0o644,
+			); err != nil {
+				t.Fatal(err)
+			}
+			err := f.Gate(empty)
+			if err == nil || !strings.Contains(err.Error(), "[frameworks."+f.Name+"]") || !strings.Contains(err.Error(), "[frameworks.h]") {
+				t.Fatalf("gate(no table) = %v, want it to name [frameworks.%s] and the h alternative", err, f.Name)
+			}
+		})
 	}
 }
 

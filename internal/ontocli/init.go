@@ -19,6 +19,9 @@ var ontoFramework = workcli.Framework{
 	GatePrefix:    "onto init",
 	NamePrefix:    "onto new",
 	ReservedNames: nil,
+	// [frameworks.h] transitively installs onto (its catalog dependency),
+	// so an applied h satisfies this gate too.
+	GateAliases: []string{"h"},
 }
 
 // docsLayout preserves the historic default labels used by diagnostics and

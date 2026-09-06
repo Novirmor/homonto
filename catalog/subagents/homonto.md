@@ -10,7 +10,7 @@ homonto:
   steps: 1200
   dialogs: true
   read_only: false
-  spawn: [onto-implementer, onto-explorer, onto-reviewer, onto-skeptic, to-implementer, to-explorer, to-reviewer, to-skeptic]
+  spawn: [onto-implementer, onto-explorer, onto-reviewer, onto-skeptic, to-implementer, to-explorer, to-reviewer, to-skeptic, h-spike, h-review]
   bash_allow:
     - "onto *"
     - "to *"

@@ -1,0 +1,34 @@
+name = "h"
+version = "0.1.0"
+description = "GitHub intake workflows over onto and to — spike, resolve, review, continue"
+
+# The h bundle drives both workflow frameworks, so it hard-depends on them:
+# declaring [frameworks.h] transitively installs onto's and to's skills,
+# commands, and specialists, and satisfies both binaries' install gates.
+[dependencies]
+frameworks = ["onto", "to"]
+
+[skills]
+h-spike-issue = "skills/h-spike-issue"
+h-resolve-issue = "skills/h-resolve-issue"
+h-review-pr = "skills/h-review-pr"
+h-continue-pr = "skills/h-continue-pr"
+h-review-batch = "skills/h-review-batch"
+
+[commands]
+h-spike-issue = "commands/h-spike-issue.md"
+h-resolve-issue = "commands/h-resolve-issue.md"
+h-review-pr = "commands/h-review-pr.md"
+h-continue-pr = "commands/h-continue-pr.md"
+h-review-batch = "commands/h-review-batch.md"
+
+# The coordinator is the shared homonto primary (same catalog path both
+# workflow frameworks declare; ADR 0045), so installing h, onto, or to all
+# connect the same coordinator. The two workers are read-only (ADR 0035):
+# the coordinator fetches from GitHub and hands them packets; they never
+# post, edit, or spawn. Do NOT also declare these in a top-level
+# [subagents.*] table (that collides with the framework declaration).
+[subagents]
+homonto = "subagents/homonto.md"
+h-spike = "subagents/h-spike.md"
+h-review = "subagents/h-review.md"

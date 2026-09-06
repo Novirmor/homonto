@@ -106,14 +106,14 @@ func TestApplyRestoresDeletedRenderedVariant(t *testing.T) {
 }
 
 // ontoFrameworkTOML installs the onto framework and per-agent override blocks
-// for every expanded subagent. onto's `onto` agent is OpenCode-primary (its
-// homonto: block sets primary), rendered with mode: primary.
+// for every expanded subagent. The shared `homonto` agent is OpenCode-primary
+// (its homonto: block sets primary), rendered with mode: primary (ADR 0045).
 const ontoFrameworkTOML = `
 [frameworks.onto]
 source = "builtin:onto"
 scope = "project"
 
-[subagents.onto.opencode]
+[subagents.homonto.opencode]
 model = "anthropic/claude-opus-4-8"
 
 [subagents.onto-explorer.opencode]
@@ -134,8 +134,45 @@ const toFrameworkTOML = `
 source = "builtin:to"
 scope = "project"
 
-[subagents.to.opencode]
+[subagents.homonto.opencode]
 model = "anthropic/claude-opus-4-8"
+[subagents.to-explorer.opencode]
+model = "openai/gpt-5-mini"
+[subagents.to-reviewer.opencode]
+model = "anthropic/claude-opus-4-8"
+[subagents.to-implementer.opencode]
+model = "anthropic/claude-sonnet-4"
+[subagents.to-skeptic.opencode]
+model = "anthropic/claude-opus-4-8"
+`
+
+// hFrameworkTOML installs the h companion alone: its catalog dependencies
+// transitively expand onto's and to's agents plus the two h workers, all
+// needing model blocks (active names are globally unique across frameworks —
+// homonto appears once).
+const hFrameworkTOML = `
+[frameworks.h]
+source = "builtin:h"
+scope = "project"
+
+[subagents.homonto.opencode]
+model = "anthropic/claude-opus-4-8"
+
+[subagents.h-spike.opencode]
+model = "openai/gpt-5-mini"
+
+[subagents.h-review.opencode]
+model = "anthropic/claude-opus-4-8"
+
+[subagents.onto-explorer.opencode]
+model = "openai/gpt-5-mini"
+[subagents.onto-reviewer.opencode]
+model = "anthropic/claude-opus-4-8"
+[subagents.onto-implementer.opencode]
+model = "anthropic/claude-sonnet-4"
+[subagents.onto-skeptic.opencode]
+model = "anthropic/claude-opus-4-8"
+
 [subagents.to-explorer.opencode]
 model = "openai/gpt-5-mini"
 [subagents.to-reviewer.opencode]
@@ -190,7 +227,7 @@ func TestTuneOnlyEntryOverridesFrameworkAgentModel(t *testing.T) {
 }
 
 // TestDoctorReportsPrimaryAgentHealthy guards the primary agent's doctor
-// projection: `onto` is OpenCode-primary, rendered with mode: primary and
+// projection: `homonto` is OpenCode-primary, rendered with mode: primary and
 // projected like any other agent. Doctor must report its OpenCode link ok and
 // must never raise a warn: finding for it. (The original form of this test
 // guarded against a false positive on the primary agent's removed Claude
@@ -210,7 +247,7 @@ func TestDoctorReportsPrimaryAgentHealthy(t *testing.T) {
 	e2 := buildEngine(t, home, repo)
 	var sawOpenCode bool
 	for _, line := range e2.Doctor() {
-		if !strings.Contains(line, `subagent "onto"`) {
+		if !strings.Contains(line, `subagent "homonto"`) {
 			continue
 		}
 		if strings.HasPrefix(line, "warn:") {
@@ -228,7 +265,10 @@ func TestDoctorReportsPrimaryAgentHealthy(t *testing.T) {
 	}
 }
 
-func TestToPrimaryAgentRenders(t *testing.T) {
+// TestHomontoPrimaryRendersViaToFramework: the shared homonto primary renders
+// mode: primary with its full delegation topology — both frameworks'
+// specialists — even when only the to framework is declared (ADR 0045).
+func TestHomontoPrimaryRendersViaToFramework(t *testing.T) {
 	home := t.TempDir()
 	repo := t.TempDir()
 	doc := toFrameworkTOML
@@ -237,15 +277,15 @@ func TestToPrimaryAgentRenders(t *testing.T) {
 	}
 	e := buildEngine(t, home, repo)
 	if err := e.Apply(context.Background(), mustPlan(t, e)); err != nil {
-		t.Fatal(err)
+		t.Fatalf("apply: %v", err)
 	}
-	agent, err := os.ReadFile(filepath.Join(e.SubagentDir(), "to.opencode.md"))
+	agent, err := os.ReadFile(filepath.Join(e.SubagentDir(), "homonto.opencode.md"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, want := range []string{"mode: primary", "steps: 1200", `"to-implementer": allow`, `"to-reviewer": allow`} {
+	for _, want := range []string{"mode: primary", "steps: 1200", `"to-implementer": allow`, `"to-reviewer": allow`, `"onto-implementer": allow`} {
 		if !strings.Contains(string(agent), want) {
-			t.Errorf("to primary missing %q:\n%s", want, agent)
+			t.Errorf("homonto primary missing %q:\n%s", want, agent)
 		}
 	}
 }
@@ -257,8 +297,8 @@ func TestFrameworkAgentsAllowDeclaredRepoDirectories(t *testing.T) {
 		agents    []string
 		untrusted []string
 	}{
-		{"onto", ontoFrameworkTOML, []string{"onto", "onto-implementer"}, []string{"onto-explorer", "onto-reviewer", "onto-skeptic"}},
-		{"to", toFrameworkTOML, []string{"to", "to-implementer"}, []string{"to-explorer", "to-reviewer", "to-skeptic"}},
+		{"onto", ontoFrameworkTOML, []string{"homonto", "onto-implementer"}, []string{"onto-explorer", "onto-reviewer", "onto-skeptic"}},
+		{"to", toFrameworkTOML, []string{"homonto", "to-implementer"}, []string{"to-explorer", "to-reviewer", "to-skeptic"}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			home := t.TempDir()
@@ -306,8 +346,8 @@ func TestFrameworkAgentsDenyExternalDirectoriesWithoutDeclaredRepos(t *testing.T
 		trusted   []string
 		untrusted []string
 	}{
-		{"onto", ontoFrameworkTOML, []string{"onto", "onto-implementer"}, []string{"onto-explorer", "onto-reviewer", "onto-skeptic"}},
-		{"to", toFrameworkTOML, []string{"to", "to-implementer"}, []string{"to-explorer", "to-reviewer", "to-skeptic"}},
+		{"onto", ontoFrameworkTOML, []string{"homonto", "onto-implementer"}, []string{"onto-explorer", "onto-reviewer", "onto-skeptic"}},
+		{"to", toFrameworkTOML, []string{"homonto", "to-implementer"}, []string{"to-explorer", "to-reviewer", "to-skeptic"}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			home := t.TempDir()
@@ -369,5 +409,63 @@ func TestSubagentRenderFingerprintDistinguishesRoutes(t *testing.T) {
 	a["opencode"] = opencode
 	if baseFingerprint == renderFingerprint(a) {
 		t.Fatal("fingerprint ignored declared repository paths; apply would leave agent permissions stale")
+	}
+}
+
+// TestHFrameworkRendersCoordinatorAndReadonlyWorkers: declaring [frameworks.h]
+// alone installs the shared homonto primary plus both frameworks' specialists
+// and the two h workers. Declared repos grant external access to the primary
+// and implementers only — the read-only workers must carry no
+// external_directory rule (ADR 0039/0045), and the workers' rendered
+// permission maps must deny both edits and bash.
+func TestHFrameworkRendersCoordinatorAndReadonlyWorkers(t *testing.T) {
+	home := t.TempDir()
+	repo := t.TempDir()
+	sibling := filepath.Join(t.TempDir(), "service-a")
+	if err := os.MkdirAll(filepath.Join(sibling, ".git"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	doc := hFrameworkTOML + "\n[repos]\nservice-a = " + fmt.Sprintf("%q", sibling) + "\n"
+	if err := os.WriteFile(filepath.Join(repo, "homonto.toml"), []byte(doc), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	e := buildEngine(t, home, repo)
+	if err := e.Apply(context.Background(), mustPlan(t, e)); err != nil {
+		t.Fatalf("apply: %v", err)
+	}
+
+	primary, err := os.ReadFile(filepath.Join(e.SubagentDir(), "homonto.opencode.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{"mode: primary", `"h-spike": allow`, `"h-review": allow`, "external_directory:"} {
+		if !strings.Contains(string(primary), want) {
+			t.Errorf("homonto primary (via h) missing %q:\n%s", want, primary)
+		}
+	}
+	for _, implementer := range []string{"onto-implementer", "to-implementer"} {
+		data, err := os.ReadFile(filepath.Join(e.SubagentDir(), implementer+".opencode.md"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !strings.Contains(string(data), "external_directory:") {
+			t.Errorf("%s must inherit declared-repo access under h:\n%s", implementer, data)
+		}
+	}
+	for _, worker := range []string{"h-spike", "h-review"} {
+		data, err := os.ReadFile(filepath.Join(e.SubagentDir(), worker+".opencode.md"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		rendered := string(data)
+		if strings.Contains(rendered, "external_directory:") {
+			t.Errorf("%s must not gain an external-directory rule:\n%s", worker, rendered)
+		}
+		if !strings.Contains(rendered, "edit: deny") || !strings.Contains(rendered, "bash: deny") {
+			t.Errorf("%s must deny edits and bash in its permission map:\n%s", worker, rendered)
+		}
+		if !strings.Contains(rendered, "task: deny") {
+			t.Errorf("%s must not spawn:\n%s", worker, rendered)
+		}
 	}
 }

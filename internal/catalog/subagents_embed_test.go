@@ -11,7 +11,7 @@ import (
 
 func TestSubagentsEmbedded(t *testing.T) {
 	for _, name := range []string{
-		"homonto",
+		"homonto", "h-spike", "h-review",
 		"onto-reviewer", "onto-explorer", "onto-implementer", "onto-skeptic",
 		"to-reviewer", "to-explorer", "to-implementer", "to-skeptic",
 	} {
@@ -33,6 +33,7 @@ func TestSubagentsEmbedded(t *testing.T) {
 
 func TestReadOnlySubagentsDenyBash(t *testing.T) {
 	for _, name := range []string{
+		"h-spike", "h-review",
 		"onto-reviewer", "onto-explorer", "onto-skeptic",
 		"to-reviewer", "to-explorer", "to-skeptic",
 	} {

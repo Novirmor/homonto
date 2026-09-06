@@ -16,6 +16,7 @@ import (
 	"github.com/noviopenworks/homonto/internal/agentfm"
 	"github.com/noviopenworks/homonto/internal/catalog"
 	"github.com/noviopenworks/homonto/internal/config"
+	"github.com/noviopenworks/homonto/internal/scaffold"
 	"github.com/noviopenworks/homonto/internal/secret"
 	"github.com/noviopenworks/homonto/internal/state"
 )
@@ -257,6 +258,12 @@ func (e *Engine) Apply(ctx context.Context, sets []adapter.ChangeSet) error {
 	if err := e.materializeCatalog(); err != nil {
 		return err
 	}
+	// The declared [tmp] directory is workspace surface, not catalog content:
+	// create it and keep it gitignored even when nothing builtin is declared
+	// (ADR 0048). Unconditional on config, independent of the materialize gate.
+	if err := e.ensureTmpSurface(); err != nil {
+		return err
+	}
 	// Match each planned set to its adapter by tool name (Plan may have skipped
 	// some adapters, so indexes need not line up). The config repo's adapters
 	// record into the main state; each repo target's changeset records into
@@ -422,7 +429,7 @@ func (e *Engine) materializeCatalog() error {
 	if p == nil || p.upToDate {
 		return nil
 	}
-	if err := p.cl.Materialize(e.CatalogRoot, p.skills, p.shellProxy, p.codeIntel); err != nil {
+	if err := p.cl.Materialize(e.CatalogRoot, p.skills, p.shellProxy, p.codeIntel, p.tmpDir); err != nil {
 		return err
 	}
 	if err := p.cl.MaterializeCommands(e.CommandCatalogRoot, p.commands); err != nil {
@@ -450,6 +457,57 @@ func (e *Engine) materializeCatalog() error {
 	// Save immediately so a later adapter failure still records the completed
 	// materialization.
 	return e.State.Save(e.StateDir)
+}
+
+// ensureTmpSurface creates the declared [tmp] directory and keeps it
+// gitignored (ADR 0048). A directory under .homonto/ is already covered by
+// the scaffolded /.homonto/ ignore entry; any other location gets its own
+// anchored entry, appended to .gitignore (created when absent) via the same
+// augment-only rule homonto init uses. homonto never deletes tmp content —
+// the directory outliving its files is the feature, not a leak.
+func (e *Engine) ensureTmpSurface() error {
+	enabled, dir := e.Cfg.ResolvedTmp()
+	if !enabled || e.tmpSurfacePresent(dir) {
+		return nil
+	}
+	if err := os.MkdirAll(filepath.Join(e.ProjectRoot, filepath.FromSlash(dir)), 0o755); err != nil {
+		return fmt.Errorf("tmp dir: %w", err)
+	}
+	if dir == ".homonto" || strings.HasPrefix(dir, ".homonto/") {
+		return nil
+	}
+	gitignore := filepath.Join(e.ProjectRoot, ".gitignore")
+	want := "/" + dir + "/\n"
+	if _, err := os.Stat(gitignore); os.IsNotExist(err) {
+		return os.WriteFile(gitignore, []byte(want), 0o644)
+	}
+	if _, err := scaffold.AugmentGitignore(gitignore, want); err != nil {
+		return fmt.Errorf("tmp gitignore: %w", err)
+	}
+	return nil
+}
+
+// tmpSurfacePresent reports whether the declared scratch directory exists and
+// is ignored. It is the cheap existence half of the [tmp] contract; the
+// content-policy half lives in the generated reference.
+func (e *Engine) tmpSurfacePresent(dir string) bool {
+	if fi, err := os.Stat(filepath.Join(e.ProjectRoot, filepath.FromSlash(dir))); err != nil || !fi.IsDir() {
+		return false
+	}
+	if dir == ".homonto" || strings.HasPrefix(dir, ".homonto/") {
+		return true
+	}
+	gi, err := os.ReadFile(filepath.Join(e.ProjectRoot, ".gitignore"))
+	if err != nil {
+		return false
+	}
+	entry := "/" + dir + "/"
+	for _, l := range strings.Split(string(gi), "\n") {
+		if strings.TrimSpace(l) == entry {
+			return true
+		}
+	}
+	return false
 }
 
 // allPluginDirsExist reports whether every bundled plugin directory is
@@ -537,8 +595,11 @@ type catalogPlan struct {
 	renderCtx map[string]agentfm.RenderContext
 	// shellProxy/codeIntel are the resolved [tooling] providers rendered into
 	// each dispatcher skill's generated tooling reference.
-	shellProxy  string
-	codeIntel   string
+	shellProxy string
+	codeIntel  string
+	// tmpDir is the resolved [tmp] scratch directory ("" when [tmp] is not
+	// declared) rendered into the dispatchers and the shared knowledge skill.
+	tmpDir      string
 	fingerprint string
 	upToDate    bool
 }
@@ -551,6 +612,13 @@ type catalogPlan struct {
 // resolving the plan counts as "needs work" so apply runs and surfaces it,
 // rather than being silently swallowed here.
 func (e *Engine) CatalogNeedsMaterialize() bool {
+	// An incomplete [tmp] surface forces the apply path on its own: the CLI
+	// short-circuits a no-change apply before Engine.Apply runs, and the
+	// surface ensure lives inside Apply (same carve-out class as the
+	// symlink-blind empty plan below).
+	if enabled, dir := e.Cfg.ResolvedTmp(); enabled && !e.tmpSurfacePresent(dir) {
+		return true
+	}
 	p, err := e.planCatalog()
 	if err != nil {
 		return true
@@ -662,10 +730,18 @@ func (e *Engine) planCatalog() (*catalogPlan, error) {
 	if err != nil {
 		return nil, err
 	}
-	fingerprint := renderFingerprint(renderCtx) + ":" + contentFP + ":" + toolingFP
+	//   - and the TMP fingerprint (whether [tmp] is declared plus the rendered
+	//     reference bytes — same staleness class the tooling fingerprint
+	//     closes: a config-only edit must re-render the generated reference).
+	tmpEnabled, tmpDir := e.Cfg.ResolvedTmp()
+	if !tmpEnabled {
+		tmpDir = ""
+	}
+	tmpFP := catalog.TmpFingerprint(tmpEnabled, tmpDir)
+	fingerprint := renderFingerprint(renderCtx) + ":" + contentFP + ":" + toolingFP + ":" + tmpFP
 	upToDate := e.State.CatalogVersionRecorded() == cl.Version() &&
 		e.State.RenderFingerprintRecorded() == fingerprint &&
-		allSkillDirsExist(e.CatalogRoot, skillNames, cl) &&
+		allSkillDirsExist(e.CatalogRoot, skillNames, cl, tmpDir) &&
 		allCommandFilesExist(e.CommandCatalogRoot, cmdNames) &&
 		allSubagentFilesExist(e.SubagentCatalogRoot, subNames, cl, renderCtx) &&
 		allPluginDirsExist(e.PluginCatalogRoot, pluginNames)
@@ -678,6 +754,7 @@ func (e *Engine) planCatalog() (*catalogPlan, error) {
 		renderCtx:   renderCtx,
 		shellProxy:  tooling.ShellProxy,
 		codeIntel:   tooling.CodeIntel,
+		tmpDir:      tmpDir,
 		fingerprint: fingerprint,
 		upToDate:    upToDate,
 	}, nil
@@ -687,8 +764,9 @@ func (e *Engine) planCatalog() (*catalogPlan, error) {
 // dispatcher skill it also requires the generated tooling reference: the
 // directory alone existing would otherwise mask a hand-deleted reference behind
 // an up-to-date fingerprint, leaving the skill pointing at a file that is not
-// there.
-func allSkillDirsExist(root string, names []string, cl *catalog.Catalog) bool {
+// there. The same holds for the generated tmp reference ([tmp] declared) on
+// dispatchers and the shared knowledge skill.
+func allSkillDirsExist(root string, names []string, cl *catalog.Catalog, tmpDir string) bool {
 	for _, n := range names {
 		fi, err := os.Stat(filepath.Join(root, n))
 		if err != nil || !fi.IsDir() {
@@ -696,6 +774,12 @@ func allSkillDirsExist(root string, names []string, cl *catalog.Catalog) bool {
 		}
 		if cl.IsDispatcher(n) {
 			ref := filepath.Join(root, n, filepath.FromSlash(catalog.ToolingReferencePath))
+			if st, err := os.Stat(ref); err != nil || st.IsDir() {
+				return false
+			}
+		}
+		if tmpDir != "" && (cl.IsDispatcher(n) || n == catalog.SharedKnowledgeSkill) {
+			ref := filepath.Join(root, n, filepath.FromSlash(catalog.TmpReferencePath))
 			if st, err := os.Stat(ref); err != nil || st.IsDir() {
 				return false
 			}

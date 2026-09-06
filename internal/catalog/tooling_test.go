@@ -120,7 +120,7 @@ func TestRenderTooling_Deterministic(t *testing.T) {
 func TestMaterialize_WritesSidecarForDispatchersOnly(t *testing.T) {
 	dst := t.TempDir()
 	c := baseCatalog(t)
-	if err := c.Materialize(dst, []string{"onto", "onto-build"}, "rtk", "okf"); err != nil {
+	if err := c.Materialize(dst, []string{"onto", "onto-build"}, "rtk", "okf", ""); err != nil {
 		t.Fatalf("Materialize: %v", err)
 	}
 	dispatcher := filepath.Join(dst, "onto", filepath.FromSlash(ToolingReferencePath))
@@ -142,10 +142,10 @@ func TestMaterialize_WritesSidecarForDispatchersOnly(t *testing.T) {
 func TestMaterialize_SidecarFollowsProviderChange(t *testing.T) {
 	dst := t.TempDir()
 	c := baseCatalog(t)
-	if err := c.Materialize(dst, []string{"onto"}, "rtk", "graphify"); err != nil {
+	if err := c.Materialize(dst, []string{"onto"}, "rtk", "graphify", ""); err != nil {
 		t.Fatalf("Materialize: %v", err)
 	}
-	if err := c.Materialize(dst, []string{"onto"}, "none", "okf"); err != nil {
+	if err := c.Materialize(dst, []string{"onto"}, "none", "okf", ""); err != nil {
 		t.Fatalf("re-Materialize: %v", err)
 	}
 	body, err := os.ReadFile(filepath.Join(dst, "onto", filepath.FromSlash(ToolingReferencePath)))

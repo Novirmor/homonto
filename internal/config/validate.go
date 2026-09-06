@@ -29,6 +29,9 @@ func validate(c *Config) error {
 	if err := validateTooling(c.Tooling); err != nil {
 		return err
 	}
+	if err := validateTmp(c.Tmp); err != nil {
+		return err
+	}
 	if err := validateResources("skills", c.Skills); err != nil {
 		return err
 	}

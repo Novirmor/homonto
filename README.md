@@ -135,6 +135,12 @@ scope = "project"                               # required: user | project
 
 [settings.opencode]
 model = "anthropic/claude-opus-4-8"
+
+# One scratch directory every agent can write to without prompts. apply
+# creates it, keeps it gitignored, and generates the skill reference that
+# names it; homonto never deletes its content ([ADR 0048](docs/adr/0048-one-declared-workspace-tmp-directory.md)).
+# [tmp]
+# dir = ".tmp"
 ```
 
 `plan` prints a Terraform-style diff (`+` create, `~` update, `-` delete).

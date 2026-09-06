@@ -41,7 +41,7 @@ func TestLoadWithLocal_MergesAndMaterializesFromLocalFS(t *testing.T) {
 
 	// The local framework's skill materializes from its own FS, not the base.
 	dst := t.TempDir()
-	if err := c.Materialize(dst, []string{"myskill"}, "none", "none"); err != nil {
+	if err := c.Materialize(dst, []string{"myskill"}, "none", "none", ""); err != nil {
 		t.Fatalf("Materialize: %v", err)
 	}
 	got, err := os.ReadFile(filepath.Join(dst, "myskill", "SKILL.md"))
@@ -64,7 +64,7 @@ func TestLoadWithLocal_NoLocalsIdenticalToLoad(t *testing.T) {
 		t.Fatal("base framework should load with no locals")
 	}
 	dst := t.TempDir()
-	if err := c.Materialize(dst, []string{"baseskill"}, "none", "none"); err != nil {
+	if err := c.Materialize(dst, []string{"baseskill"}, "none", "none", ""); err != nil {
 		t.Fatalf("Materialize base skill: %v", err)
 	}
 	got, err := os.ReadFile(filepath.Join(dst, "baseskill", "SKILL.md"))

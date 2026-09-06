@@ -71,9 +71,10 @@ done
 # --- the shipped catalog ------------------------------------------------
 # Skills and subagents are agent-facing docs too, and cross-skill references
 # are the same failure mode as the /graphify one: a skill telling an agent to
-# read a file that ships nowhere. `references/tooling.md` is the one legitimate
-# dangling name — `homonto apply` generates it per install from `[tooling]`.
-GENERATED='references/tooling.md'
+# read a file that ships nowhere. `references/tooling.md` and
+# `references/tmp.md` are the two legitimate dangling names — `homonto apply`
+# generates them per install from `[tooling]` and `[tmp]`.
+GENERATED='references/tooling.md references/tmp.md'
 
 CATALOG_DOCS=()
 while IFS= read -r f; do CATALOG_DOCS+=("$f"); done < <(find catalog -name '*.md' | sort)
@@ -105,7 +106,7 @@ for doc in "${CATALOG_DOCS[@]}"; do
   case "$dir" in */references) skilldir="$(dirname "$dir")" ;; esac
   while IFS= read -r ref; do
     case "$ref" in */*) ;; *) continue ;; esac
-    [ "$ref" = "$GENERATED" ] && continue
+    case " $GENERATED " in *" $ref "*) continue ;; esac
     # Adopter-workspace paths: `onto init` / `to init` scaffold these in the
     # repo that adopts the framework. homonto does not dogfood onto, so they
     # are correctly absent here and are not this check's business.

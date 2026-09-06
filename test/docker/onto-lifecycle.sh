@@ -87,6 +87,34 @@ mv homonto.toml.bak homonto.toml
 "$HOMONTO" apply --yes >/dev/null
 ok "unknown provider rejected; config restored"
 
+log "[tmp]: reference generated, dir created, gitignore kept"
+cat >> homonto.toml <<'EOF'
+
+[tmp]
+dir = ".tmp"
+EOF
+"$HOMONTO" apply --yes >/dev/null
+is_file "$W/.homonto/catalog/skills/onto/references/tmp.md"
+is_file "$W/.homonto/catalog/skills/homonto/references/tmp.md"
+absent "$W/.homonto/catalog/skills/onto-build/references/tmp.md"
+is_dir "$W/.tmp"
+in_file "$W/.gitignore" '/.tmp/'
+# A deleted scratch dir is surface, not catalog content: the next apply
+# recreates it with no config change.
+rmdir "$W/.tmp"
+"$HOMONTO" apply --yes >/dev/null
+is_dir "$W/.tmp"
+# Removing [tmp] withdraws the references but keeps the directory and the
+# gitignore entry (cleanup is a human decision, ADR 0048).
+printf 'scratch\n' > "$W/.tmp/keep.txt"
+sed '/^\[tmp\]$/,/^dir = ".tmp"$/d' homonto.toml > homonto.toml.new
+mv homonto.toml.new homonto.toml
+"$HOMONTO" apply --yes >/dev/null
+absent "$W/.homonto/catalog/skills/onto/references/tmp.md"
+is_file "$W/.tmp/keep.txt"
+in_file "$W/.gitignore" '/.tmp/'
+ok "tmp surface projected, restored on delete, withdrawn on disable"
+
 log "onto init scaffolds the workspace"
 "$ONTO" init >/dev/null
 for d in changes specs adr guides; do is_dir "$W/docs/$d"; done

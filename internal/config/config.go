@@ -342,7 +342,12 @@ type Config struct {
 	// code-intelligence provider selection). It is a raw map so an unknown key
 	// survives decode and can be rejected by name; read it through
 	// ResolvedTooling, which applies the "none" defaults.
-	Tooling      toolingTable     `toml:"tooling"`
+	Tooling toolingTable `toml:"tooling"`
+	// Tmp captures the raw [tmp] table (the declared workspace scratch
+	// directory, ADR 0048). A POINTER so a bare [tmp] (enabled, defaults)
+	// is distinguishable from an absent table; read it through ResolvedTmp,
+	// which applies the default dir.
+	Tmp          *tmpTable        `toml:"tmp"`
 	Plugins      Plugins          `toml:"plugins"`
 	Settings     Settings         `toml:"settings"`
 	TUI          TUI              `toml:"tui"`

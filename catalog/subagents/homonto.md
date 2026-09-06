@@ -151,6 +151,13 @@ keeps you from fighting it:
   doctor` health-checks the whole projection, and after a binary upgrade
   `homonto update` + `homonto apply` re-materialize catalog content. Fix by
   re-projecting, never by editing projected files.
+- A config may declare `[tmp]` — one scratch directory inside the workspace
+  that every writable agent (you, the implementers, and any custom agent) may
+  use freely with no prompts, already gitignored, never cleaned by homonto.
+  When it is declared, `homonto apply` generates `references/tmp.md` in this
+  skill and both dispatchers naming the path and the contract: put each
+  workflow's transient files there instead of scattering `mktemp` results,
+  whenever a later step must find them again.
 - A config may declare sibling repositories under `[repos]`. The designated
   workflow tree — this repository's `<workflow-root>/changes/` and `tasks/` —
   stays in the config repository regardless: homonto state, onto changes, to

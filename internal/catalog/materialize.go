@@ -21,9 +21,12 @@ import (
 // shellProxy and codeIntel are the resolved tooling providers. Every skill that
 // is a framework DISPATCHER — by convention the skill named after its own
 // framework — additionally receives a generated ToolingReferencePath describing
-// exactly those providers. The write lands in the staging directory before the
-// atomic swap, so a crash never leaves a half-written reference in place.
-func (c *Catalog) Materialize(dstRoot string, skillNames []string, shellProxy, codeIntel string) error {
+// exactly those providers. When tmpDir is non-empty ([tmp] declared, ADR
+// 0048), dispatchers and the shared knowledge skill also receive a generated
+// TmpReferencePath naming the workspace scratch directory. Both writes land in
+// the staging directory before the atomic swap, so a crash never leaves a
+// half-written reference in place.
+func (c *Catalog) Materialize(dstRoot string, skillNames []string, shellProxy, codeIntel, tmpDir string) error {
 	for _, name := range skillNames {
 		sp, ok := c.skills[name]
 		if !ok {
@@ -83,6 +86,21 @@ func (c *Catalog) Materialize(dstRoot string, skillNames []string, shellProxy, c
 				return mkerr
 			}
 			if werr := fsutil.WriteControlPlane(target, ref, 0o644); werr != nil {
+				_ = os.RemoveAll(staging)
+				return werr
+			}
+		}
+		// A declared [tmp] directory adds the generated tmp reference to the
+		// same skills that carry workflow entry-point doctrine: the
+		// dispatchers and the shared knowledge skill (ADR 0048). Same
+		// stage-then-swap guarantee as the tooling reference.
+		if tmpDir != "" && (c.IsDispatcher(name) || name == SharedKnowledgeSkill) {
+			target := filepath.Join(staging, filepath.FromSlash(TmpReferencePath))
+			if mkerr := os.MkdirAll(filepath.Dir(target), 0o755); mkerr != nil {
+				_ = os.RemoveAll(staging)
+				return mkerr
+			}
+			if werr := fsutil.WriteControlPlane(target, RenderTmp(tmpDir), 0o644); werr != nil {
 				_ = os.RemoveAll(staging)
 				return werr
 			}

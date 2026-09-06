@@ -51,6 +51,12 @@ var files = map[string]string{
 # [plugins.opencode.opencode-quota]
 # source = "@slkiser/opencode-quota"   # npm package
 
+# A declared scratch directory every writable agent can use without prompts
+# (apply creates it, keeps it gitignored, and generates the skill reference
+# that names it). homonto never deletes its content.
+# [tmp]
+# dir = ".tmp"
+
 # The main session model is operator-controlled. homonto projects it ONLY when
 # you declare it explicitly here; otherwise the tool uses its own default.
 # [settings.opencode]
@@ -69,7 +75,7 @@ func Init(dir string) (created, updated []string, err error) {
 		p := filepath.Join(dir, name)
 		if _, statErr := os.Stat(p); statErr == nil {
 			if name == ".gitignore" {
-				augmented, augErr := augmentGitignore(p, body)
+				augmented, augErr := AugmentGitignore(p, body)
 				if augErr != nil {
 					return created, updated, augErr
 				}
@@ -97,9 +103,11 @@ func Init(dir string) (created, updated []string, err error) {
 	return created, updated, nil
 }
 
-// augmentGitignore appends to path any newline-separated entry in want that is
-// not already present, preserving existing content. It reports whether it wrote.
-func augmentGitignore(path, want string) (bool, error) {
+// AugmentGitignore appends to path any newline-separated entry in want that is
+// not already present, preserving existing content. It reports whether it
+// wrote. Exported for the engine's [tmp] surface: apply keeps a declared
+// scratch directory ignored with the same augment-only rule init uses.
+func AugmentGitignore(path, want string) (bool, error) {
 	existing, err := os.ReadFile(path)
 	if err != nil {
 		return false, err

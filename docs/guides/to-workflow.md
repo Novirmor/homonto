@@ -179,6 +179,16 @@ nothing. A declared-but-missing provider warns and the workflow proceeds; it
 never halts. homonto never installs or runs a provider. Full reference:
 [configuration](configuration.md#tooling).
 
+## Workspace tmp
+
+A `[tmp]` table declares one gitignored scratch directory (default `.tmp`)
+that every writable agent uses without prompts: `homonto apply` creates it
+and renders `references/tmp.md` into the dispatcher and the shared `homonto`
+skill naming the path. Transient files a later step must find again —
+handoff drafts, fetched packets — belong there, not in anonymous `mktemp`
+paths. homonto never deletes its content. Full reference:
+[configuration](configuration.md#workspace-tmp--tmp).
+
 ## Where the details live
 
 Every command, flag, and crash-safety behavior:

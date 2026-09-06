@@ -108,7 +108,10 @@ Run these commands in the directory that will hold `homonto.toml`. `homonto
 init` scaffolds configuration only: it never runs `git init`, and no MCP server
 is required. Add MCPs only when a tool needs one; framework installation is a
 separate, declarative `[frameworks.onto]` or `[frameworks.to]` entry followed by
-`homonto apply`.
+`homonto apply`. A `[tmp]` entry declares one gitignored scratch directory
+every agent can write to without prompts — apply creates it and generates the
+skill reference that names it
+([ADR 0048](docs/adr/0048-one-declared-workspace-tmp-directory.md)).
 
 ```bash
 homonto init            # scaffold homonto.toml, .gitignore, .env.example, homonto/skills/

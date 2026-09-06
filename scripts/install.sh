@@ -4,7 +4,8 @@
 # them against the release SHA256SUMS, and installs the binaries into a
 # directory you choose — and, on your explicit confirmation only, runs
 # `homonto init` in the current directory to scaffold homonto.toml and offers
-# to configure workflow frameworks, models, records, and sibling repositories.
+# to configure workflow frameworks, models, records, the workspace tmp
+# directory, and sibling repositories.
 #
 # Prompts use gum (https://github.com/charmbracelet/gum) when it is on PATH and
 # stdin is a TTY, then dialog, then plain reads. Scripted runs keep
@@ -527,6 +528,10 @@ next_steps() {
   if [ "$SETUP_RAN" -eq 1 ]; then
     printf '\nNext steps\n' >&2
     printf '  Review homonto.toml, then run homonto plan and homonto apply.\n' >&2
+    if [ "$SETUP_TMP" = yes ]; then
+      printf '  apply creates the declared .tmp scratch directory and keeps it\n' >&2
+      printf '  gitignored; homonto never deletes its content.\n' >&2
+    fi
     printf '  One homonto coordinator drives both workflows: pick per change\n' >&2
     printf '  with /onto or /to; /h-* commands run the GitHub workflows.\n' >&2
   elif [ "$INIT_RAN" -eq 1 ]; then

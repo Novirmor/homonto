@@ -29,7 +29,12 @@ framework first (`[frameworks.onto]` / `[frameworks.to]` + `homonto apply`).
   withdraws the generated references but leaves the directory and its files
   untouched. The guided installer offers the declaration for new projects,
   and the path is fingerprinted with the materialize gate so a `dir` edit
-  re-projects.
+  re-projects. The dir is validated against every tree homonto and the
+  workflows own — the workflow records root, `.git`, `.opencode/`,
+  `homonto/`, and the managed `.homonto` subtrees are rejected (equal, above,
+  or inside), because a colliding scratch dir would be gitignored or rebuilt
+  over. The h skills route their transient files (draft bodies, comment
+  files, PR bodies) there too.
 
 ### New in v0.21.0 — one coordinator, and the h GitHub workflows
 

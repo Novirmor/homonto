@@ -378,6 +378,21 @@ safe_toml_value() {
   esac
 }
 
+# valid_model: a usable OpenCode model is provider/model — non-empty on both
+# sides of the slash, whitespace-free. The guided model question is free text
+# right after two yes/no confirms, and "y" is exactly what prompt-fatigue
+# produces; rejecting it here keeps a stray confirm from poisoning every
+# [subagents.*.opencode] block in the generated config.
+valid_model() {
+  case "$1" in */*) ;; *) return 1 ;; esac
+  local provider model
+  provider="${1%%/*}"
+  model="${1#*/}"
+  [ -n "$provider" ] && [ -n "$model" ] || return 1
+  case "$provider$model" in *[[:space:]]*) return 1 ;; esac
+  return 0
+}
+
 ask_setup_frameworks() {
   case "$WORKFLOW_BIN" in
     both) SETUP_FRAMEWORKS="$(ui_select "Frameworks to configure" both onto to none)" ;;
@@ -480,9 +495,18 @@ configure_new_project() {
     SETUP_TMP=yes
   fi
   if [ "$SETUP_FRAMEWORKS" != none ]; then
-    WORKFLOW_MODEL="$(ui_input "Model for OpenCode and all workflow agents" "$(default_workflow_model)")"
-    safe_toml_value "$WORKFLOW_MODEL"
-    [ -n "$WORKFLOW_MODEL" ] || die "a workflow model is required when enabling a framework"
+    local default_model model
+    default_model="$(default_workflow_model)"
+    valid_model "$default_model" || die "detected default model \"$default_model\" is not provider/model"
+    while :; do
+      model="$(ui_input "Model for OpenCode and all workflow agents" "$default_model")"
+      safe_toml_value "$model"
+      if valid_model "$model"; then
+        WORKFLOW_MODEL="$model"
+        break
+      fi
+      printf 'install: "%s" is not a model — use provider/model (e.g. %s)\n' "$model" "$default_model" >&2
+    done
   fi
   collect_repositories
 

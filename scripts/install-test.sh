@@ -492,6 +492,28 @@ t26_guided_tmp_directory() {
   fi
 }
 
+# The model question is free text right after two yes/no confirms; a stray
+# "y" (prompt fatigue) must be rejected and re-asked, not written as
+# model = "y" into every block.
+t27_model_answer_is_validated() {
+  local s="$1" config
+  make_release v9.9.9 linux amd64 "$s/assets" homonto onto to
+  mkdir -p "$s/home/.config/opencode"
+  printf '{\n  "model": "test-provider/default-model"\n}\n' >"$s/home/.config/opencode/opencode.json"
+  run_install "$s" $'\nboth\n'"$s/bin"$'\ny\nboth\nn\n\ny\ny\nprovider/real-model\n\n' \
+    HOME="$s/home" XDG_CONFIG_HOME="$s/home/.config" MOCK_INIT_WRITES_CONFIG=1
+  config="$s/homonto.toml"
+  expect_exit "t27: guided setup with stray-y model answer" 0
+  expect_stderr "t27: rejects the non-model answer" 'is not a model — use provider/model'
+  if grep -qF 'model = "provider/real-model"' "$config" \
+    && ! grep -qF 'model = "y"' "$config"; then
+    ok "t27: the retried model lands everywhere; no \"y\" poisons the config"
+  else
+    bad "t27: the retried model lands everywhere; no \"y\" poisons the config"
+    cat "$config" >&2
+  fi
+}
+
 # --- run -------------------------------------------------------------------
 
 TMP="$(mktemp -d)"
@@ -523,6 +545,7 @@ t23_forced_dialog_requires_binary "$TMP/t23"
 t24_h_with_onto_configures_transitive_models "$TMP/t24"
 t25_h_with_to_configures_transitive_models "$TMP/t25"
 t26_guided_tmp_directory "$TMP/t26"
+t27_model_answer_is_validated "$TMP/t27"
 
 printf '\n'
 for line in "${SUMMARY[@]}"; do printf '%s\n' "$line"; done

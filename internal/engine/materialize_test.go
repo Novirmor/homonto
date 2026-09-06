@@ -15,7 +15,7 @@ import (
 // framework's expanded subagents. Tests that install the onto framework must
 // declare one of these per agent now that tiers are gone.
 const ontoFrameworkModels = `
-[subagents.onto.opencode]
+[subagents.homonto.opencode]
 model = "anthropic/claude-opus-4-8"
 [subagents.onto-explorer.opencode]
 model = "openai/gpt-5-mini"

@@ -35,9 +35,19 @@ framework first (`[frameworks.onto]` / `[frameworks.to]` + `homonto apply`).
   `/h-review-batch` (full-context review through read-only `h-review`
   workers — drafts first, nothing posted without an explicit approval of the
   shown draft), and `/h-continue-pr` (collect outstanding feedback, resume
-  or open the matching workflow change, push only verified fixes, comment
-  with evidence). Only the coordinator talks to GitHub; workers receive
-  prepared context and return analysis.
+   or open the matching workflow change, merge verified onto work into the
+   existing PR head, push only verified fixes, comment with evidence). Only the coordinator talks to GitHub; workers receive
+   prepared context and return analysis. The coordinator itself denies
+   open-web fetch/search (GitHub access flows through the approved `gh`
+   surface), and commands that execute repository-controlled code — test
+   runners, package-manager scripts, make targets — always prompt, so a
+   checked-out PR head cannot run contributor scripts silently. Compound
+   shell commands always prompt too: an allowlist entry no longer matches a
+   chained second command, and the workflow's own gate-skipping subcommands
+   (`onto`/`to bypass`, evidence-token writes) are denied outright
+   ([ADR 0047](adr/0047-deny-open-web-and-compound-shell-around-github-intake.md));
+   MCP servers a config enables stay outside this map as the owner's
+   trust decision.
 
 ### New in v0.20.0 — guided project configuration
 
@@ -54,8 +64,8 @@ framework first (`[frameworks.onto]` / `[frameworks.to]` + `homonto apply`).
 
 - **onto and to are complementary.** A repository may declare both
   `[frameworks.onto]` and `[frameworks.to]`: records stay in disjoint
-  directories, agents and commands are namespaced, and the primary agent you
-  select picks the workflow per change. Active change names are globally
+  directories, agents and commands are namespaced, and `/onto` or `/to` picks
+  the workflow per change. Active change names are globally
   unique across both trees, and `to status --all` reports one combined
   inventory ([ADR 0042](adr/0042-onto-and-to-are-complementary.md)).
 - **Reversible promote/demote with a shared conversion engine.** `onto demote

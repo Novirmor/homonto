@@ -55,8 +55,8 @@ scope = "user"
 
 // TestLoad_AcceptsOntoAndToTogether: onto and to are complementary (ADR 0042)
 // — records in disjoint directories, namespaced agents and commands — so a
-// config that declares both frameworks loads; the workflow is chosen per
-// change by selecting its primary agent.
+// config that declares both frameworks loads; the shared coordinator chooses
+// the workflow per change through /onto or /to.
 func TestLoad_AcceptsOntoAndToTogether(t *testing.T) {
 	p := filepath.Join(t.TempDir(), "homonto.toml")
 	if err := os.WriteFile(p, []byte(`[frameworks.onto]

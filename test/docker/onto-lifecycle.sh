@@ -19,9 +19,9 @@ source = "builtin:onto"
 scope = "project"
 
 # Every framework-expanded subagent needs an explicit model in its
-# [subagents.<n>.opencode] block (there are no tiers). The primary dispatcher
-# `onto` needs one too — it renders for OpenCode like every other agent.
-[subagents.onto.opencode]
+# [subagents.<n>.opencode] block (there are no tiers). The shared homonto
+# coordinator needs one too — it renders for OpenCode like every other agent.
+[subagents.homonto.opencode]
 model = "anthropic/claude-opus-4-8"
 [subagents.onto-explorer.opencode]
 model = "openai/gpt-5-mini"

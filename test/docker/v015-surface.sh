@@ -15,7 +15,7 @@ cat > homonto.toml <<'EOF'
 source = "builtin:onto"
 scope = "project"
 
-[subagents.onto.opencode]
+[subagents.homonto.opencode]
 model = "anthropic/claude-opus-4-8"
 [subagents.onto-explorer.opencode]
 model = "openai/gpt-5-mini"

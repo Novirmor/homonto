@@ -421,6 +421,54 @@ t23_forced_dialog_requires_binary() {
   expect_stderr "t23: names the recovery" "HOMONTO_UI=dialog requires dialog on PATH"
 }
 
+t24_h_with_onto_configures_transitive_models() {
+  local s="$1" config
+  make_release v9.9.9 linux amd64 "$s/assets" homonto onto to
+  run_install "$s" $'\nboth\n'"$s/bin"$'\ny\nonto\ny\n\n\n' MOCK_INIT_WRITES_CONFIG=1
+  config="$s/homonto.toml"
+  expect_exit "t24: onto + h guided setup" 0
+  if grep -qF '[frameworks.onto]' "$config" \
+    && grep -qF '[frameworks.h]' "$config" \
+    && ! grep -qF '[frameworks.to]' "$config" \
+    && grep -qF '[subagents.to-explorer.opencode]' "$config"; then
+    ok "t24: onto + h declares h's transitive to models"
+  else
+    bad "t24: onto + h declares h's transitive to models"
+    cat "$config" >&2
+  fi
+  if (cd "$ROOT" && go build -o "$s/homonto-real" .) \
+    && (cd "$s" && "$s/homonto-real" plan >/dev/null 2>"$s/plan.stderr"); then
+    ok "t24: onto + h generated configuration passes homonto plan"
+  else
+    bad "t24: onto + h generated configuration passes homonto plan"
+    cat "$s/plan.stderr" >&2
+  fi
+}
+
+t25_h_with_to_configures_transitive_models() {
+  local s="$1" config
+  make_release v9.9.9 linux amd64 "$s/assets" homonto onto to
+  run_install "$s" $'\nboth\n'"$s/bin"$'\ny\nto\ny\n\n\n' MOCK_INIT_WRITES_CONFIG=1
+  config="$s/homonto.toml"
+  expect_exit "t25: to + h guided setup" 0
+  if grep -qF '[frameworks.to]' "$config" \
+    && grep -qF '[frameworks.h]' "$config" \
+    && ! grep -qF '[frameworks.onto]' "$config" \
+    && grep -qF '[subagents.onto-explorer.opencode]' "$config"; then
+    ok "t25: to + h declares h's transitive onto models"
+  else
+    bad "t25: to + h declares h's transitive onto models"
+    cat "$config" >&2
+  fi
+  if (cd "$ROOT" && go build -o "$s/homonto-real" .) \
+    && (cd "$s" && "$s/homonto-real" plan >/dev/null 2>"$s/plan.stderr"); then
+    ok "t25: to + h generated configuration passes homonto plan"
+  else
+    bad "t25: to + h generated configuration passes homonto plan"
+    cat "$s/plan.stderr" >&2
+  fi
+}
+
 # --- run -------------------------------------------------------------------
 
 TMP="$(mktemp -d)"
@@ -449,6 +497,8 @@ t20_guided_project_setup "$TMP/t20"
 t21_existing_config_is_unchanged "$TMP/t21"
 t22_dialog_ui "$TMP/t22"
 t23_forced_dialog_requires_binary "$TMP/t23"
+t24_h_with_onto_configures_transitive_models "$TMP/t24"
+t25_h_with_to_configures_transitive_models "$TMP/t25"
 
 printf '\n'
 for line in "${SUMMARY[@]}"; do printf '%s\n' "$line"; done

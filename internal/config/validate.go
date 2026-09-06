@@ -700,6 +700,15 @@ func bashAllowAddToken(label, add string) error {
 // but omits the per-tool model blocks for its expanded agents would load
 // clean and render agents with no model line — the silent default R1 forbids.
 func validateModels(c *Config) error {
+	// Retired onto/to primary model blocks (ADR 0045) are detected FIRST: a
+	// real pre-v0.21 config carries exactly that shape and no homonto block,
+	// so the required-model walk below would otherwise fail with a bare
+	// "model is required" before the rename guidance could surface.
+	for _, name := range []string{"onto", "to"} {
+		if sa, ok := c.Subagents[name]; ok && sa.IsTuneOnly() && sa.OpenCode.IsSet() {
+			return fmt.Errorf("parse config: subagents.%s.opencode names the retired %s primary — rename the model block to [subagents.homonto.opencode] (ADR 0045)", name, name)
+		}
+	}
 	for _, tool := range c.EnabledModelTools() {
 		for _, name := range sortedSubagentNames(c) {
 			sa := c.Subagents[name]
@@ -908,7 +917,7 @@ func validateSubagentOverrides(c *Config) error {
 				return err
 			}
 			if !known[cat] {
-				return fmt.Errorf("parse config: subagents.%s tunes an agent that is not installed — no framework or [subagents.*] declaration provides builtin:%s (typo?)", name, cat)
+				return fmt.Errorf("parse config: subagents.%s tunes an agent that is not installed — no framework or [subagents.*] declaration provides builtin:%s; if this is a retired onto/to primary, rename the model block to subagents.homonto", name, cat)
 			}
 		}
 

@@ -808,6 +808,37 @@ model = "anthropic/claude-opus-4-8"
 		}
 	})
 
+	t.Run("a retired primary model block names its migration", func(t *testing.T) {
+		err := loadDoc(t, `[frameworks.onto]
+source = "builtin:onto"
+scope = "project"
+
+`+ontoFrameworkModels()+`
+[subagents.onto.opencode]
+model = "test/model"
+`)
+		if err == nil || !strings.Contains(err.Error(), "subagents.homonto") {
+			t.Fatalf("retired primary model block must name homonto migration, got: %v", err)
+		}
+	})
+
+	// The real pre-v0.21 shape: the onto/to primary model block exists and NO
+	// homonto block does. The rename guidance must surface here too, not a
+	// bare required-model error from the framework-expanded walk.
+	t.Run("a retired primary block without homonto still names the migration", func(t *testing.T) {
+		err := loadDoc(t, `[frameworks.onto]
+source = "builtin:onto"
+scope = "project"
+
+`+modelsFor("onto-explorer", "onto-reviewer", "onto-implementer", "onto-skeptic")+`
+[subagents.onto.opencode]
+model = "test/model"
+`)
+		if err == nil || !strings.Contains(err.Error(), "subagents.homonto.opencode") {
+			t.Fatalf("missing homonto beside a retired primary block must name the rename, got: %v", err)
+		}
+	})
+
 	// Overrides on local:/remote: sources were validated as if meaningful, then
 	// silently discarded — local/remote content is projected verbatim and never
 	// rendered, so the override could never apply.

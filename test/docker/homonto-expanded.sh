@@ -18,9 +18,9 @@ scope = "project"
 # in its [subagents.<n>.opencode] block — a block with no source tunes the
 # framework's agent rather than re-declaring it. OpenCode spells a variant as
 # its own field and has no effort concept, so a block carries model/variant
-# only. The dispatcher `onto` declares one too; it renders for OpenCode like
+# only. The shared `homonto` coordinator declares one too; it renders for OpenCode like
 # every other agent (mode: primary).
-[subagents.onto.opencode]
+[subagents.homonto.opencode]
 model = "anthropic/claude-opus-4-8"
 [subagents.onto-explorer.opencode]
 model = "openai/gpt-5-mini"
@@ -86,10 +86,10 @@ IVAR="$W/.homonto/catalog/subagents/onto-implementer.opencode.md"
 in_file "$IVAR" 'model: anthropic/claude-sonnet-4'
 in_file "$IVAR" '  task: deny'
 if grep -q 'edit: deny' "$IVAR"; then fail "edit-capable implementer must not deny edit"; fi
-# The onto primary agent renders for OpenCode like any other agent: mode is
+# The shared homonto primary agent renders for OpenCode like any other agent: mode is
 # re-emitted from primary, its iteration budget renders as steps:, and its
 # delegation topology renders as task allows over a deny-all default.
-PVAR="$W/.homonto/catalog/subagents/onto.opencode.md"
+PVAR="$W/.homonto/catalog/subagents/homonto.opencode.md"
 in_file "$PVAR" 'mode: primary'
 in_file "$PVAR" 'steps: 1200'
 in_file "$PVAR" '"onto-reviewer": allow'
@@ -106,9 +106,8 @@ is_link "$W/.opencode/agent/onto-reviewer.md";     is_file "$W/.opencode/agent/o
 is_link "$W/.opencode/agent/onto-explorer.md"; is_file "$W/.opencode/agent/onto-explorer.md"
 is_link "$W/.opencode/agent/onto-implementer.md";  is_file "$W/.opencode/agent/onto-implementer.md"
 is_link "$W/.opencode/agent/nav-agent.md";         is_file "$W/.opencode/agent/nav-agent.md"
-# The onto primary agent projects for OpenCode like any other agent (its entry
-# point is still the /onto command -> onto skill, but the agent renders too).
-is_link "$W/.opencode/agent/onto.md"; is_file "$W/.opencode/agent/onto.md"
+# The shared primary routes /onto and /to commands while rendering once.
+is_link "$W/.opencode/agent/homonto.md"; is_file "$W/.opencode/agent/homonto.md"
 # The onto framework ships a command per phase/preset — the dispatcher plus every
 # onto-* skill — so each phase is directly invocable. Assert the whole set links
 # and resolves, not just the dispatcher.

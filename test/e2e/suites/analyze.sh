@@ -17,7 +17,7 @@ source = "builtin:onto"
 scope = "project"
 
 # Per-agent models for the framework's expanded subagents (no tiers).
-[subagents.onto.opencode]
+[subagents.homonto.opencode]
 model = "anthropic/claude-opus-4-8"
 [subagents.onto-explorer.opencode]
 model = "openai/gpt-5-mini"

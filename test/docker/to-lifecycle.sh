@@ -18,9 +18,9 @@ source = "builtin:to"
 scope = "project"
 
 # Every framework-expanded subagent needs an explicit model in its
-# [subagents.<n>.opencode] block (there are no tiers). The primary dispatcher
-# `to` needs one too.
-[subagents.to.opencode]
+# [subagents.<n>.opencode] block (there are no tiers). The shared homonto
+# coordinator needs one too.
+[subagents.homonto.opencode]
 model = "anthropic/claude-opus-4-8"
 [subagents.to-explorer.opencode]
 model = "openai/gpt-5-mini"
@@ -41,7 +41,7 @@ ok "to status answered without the framework"
 
 log "onto and to are complementary in one config (ADR 0042)"
 cp homonto.toml /tmp/to-only.toml
-printf '\n[frameworks.onto]\nsource = "builtin:onto"\nscope = "project"\n[subagents.onto.opencode]\nmodel = "anthropic/claude-opus-4-8"\n[subagents.onto-explorer.opencode]\nmodel = "openai/gpt-5-mini"\n[subagents.onto-reviewer.opencode]\nmodel = "anthropic/claude-opus-4-8"\n[subagents.onto-implementer.opencode]\nmodel = "anthropic/claude-sonnet-4"\n[subagents.onto-skeptic.opencode]\nmodel = "anthropic/claude-opus-4-8"\n' >> homonto.toml
+printf '\n[frameworks.onto]\nsource = "builtin:onto"\nscope = "project"\n[subagents.onto-explorer.opencode]\nmodel = "openai/gpt-5-mini"\n[subagents.onto-reviewer.opencode]\nmodel = "anthropic/claude-opus-4-8"\n[subagents.onto-implementer.opencode]\nmodel = "anthropic/claude-sonnet-4"\n[subagents.onto-skeptic.opencode]\nmodel = "anthropic/claude-opus-4-8"\n' >> homonto.toml
 "$HOMONTO" plan >/dev/null || fail "homonto must accept a config declaring both onto and to"
 "$HOMONTO" apply --yes >/dev/null || fail "homonto must apply both frameworks together"
 is_dir "$W/.homonto/catalog/skills/to"
@@ -58,13 +58,13 @@ log "homonto apply installs the to framework"
 "$HOMONTO" apply --yes >/dev/null
 is_dir "$W/.homonto/catalog/skills/to"
 is_file "$W/.homonto/catalog/skills/homonto/SKILL.md"
-is_file "$W/.homonto/catalog/subagents/to.md"
+is_file "$W/.homonto/catalog/subagents/homonto.md"
 is_file "$W/.homonto/catalog/subagents/to-skeptic.md"
-TVAR="$W/.homonto/catalog/subagents/to.opencode.md"
+TVAR="$W/.homonto/catalog/subagents/homonto.opencode.md"
 in_file "$TVAR" 'mode: primary'
 in_file "$TVAR" 'steps: 1200'
 in_file "$TVAR" '"to-reviewer": allow'
-is_link "$W/.opencode/agent/to.md"
+is_link "$W/.opencode/agent/homonto.md"
 ok "framework materialized (skills + subagents)"
 
 log "tooling reference is generated for the to dispatcher"

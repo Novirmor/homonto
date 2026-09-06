@@ -54,13 +54,13 @@ homonto installs content it bundles (`builtin:`), content from your repo
 only what homonto authors:
 
 - **`onto`** — the native, binary-enforced workflow framework: skills, slash
-  commands, the shared `homonto` knowledge skill, and five agents (the `onto`
-  primary orchestrator plus four specialists).
+  commands, the shared `homonto` knowledge skill, the shared `homonto`
+  coordinator, and four specialists.
 - **`to`** — the native minimal coding framework for LLMs: a dispatcher, three
-  phase skills, `to-no-slop`, the shared `homonto` knowledge skill, and five
-  agents (the `to` primary orchestrator plus four specialists). onto and
-  `to` are complementary; declare either or both and pick per change by
-  selecting its primary agent ([ADR 0042](docs/adr/0042-onto-and-to-are-complementary.md)).
+  phase skills, `to-no-slop`, the shared `homonto` knowledge skill, the shared
+  `homonto` coordinator, and four specialists. onto and `to` are complementary;
+  declare either or both and pick the workflow per change through `/onto` or
+  `/to` ([ADR 0042](docs/adr/0042-onto-and-to-are-complementary.md)).
 - **Loose skills and commands** (`handoff`, `grilling`, …) — framework-agnostic
   and installed individually.
 

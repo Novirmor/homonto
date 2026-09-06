@@ -436,6 +436,7 @@ collect_repositories() {
 write_framework_config() {
   local framework name
   local names=()
+  local emitted=()
   # The shared homonto coordinator is emitted exactly once — both workflow
   # frameworks expand it, and a duplicate [subagents.homonto.opencode] table
   # would make the generated TOML unloadable (ADR 0045).
@@ -443,13 +444,18 @@ write_framework_config() {
   for framework in "$@"; do
     printf '\n[frameworks.%s]\nsource = "builtin:%s"\nscope = "project"\n' "$framework" "$framework"
     case "$framework" in
-      onto) names=(onto-explorer onto-reviewer onto-implementer onto-skeptic) ;;
-      to) names=(to-explorer to-reviewer to-implementer to-skeptic) ;;
-      h) names=(h-spike h-review) ;;
+      onto) names+=(onto-explorer onto-reviewer onto-implementer onto-skeptic) ;;
+      to) names+=(to-explorer to-reviewer to-implementer to-skeptic) ;;
+      # h expands both workflow frameworks. It can therefore be declared with
+      # either explicit framework, but every transitive specialist needs a
+      # model block for the resulting config to load.
+      h) names+=(h-spike h-review onto-explorer onto-reviewer onto-implementer onto-skeptic to-explorer to-reviewer to-implementer to-skeptic) ;;
     esac
-    for name in "${names[@]}"; do
-      printf '\n[subagents.%s.opencode]\nmodel = "%s"\n' "$name" "$WORKFLOW_MODEL"
-    done
+  done
+  for name in "${names[@]}"; do
+    [[ " ${emitted[*]} " == *" $name "* ]] && continue
+    emitted+=("$name")
+    printf '\n[subagents.%s.opencode]\nmodel = "%s"\n' "$name" "$WORKFLOW_MODEL"
   done
 }
 
@@ -458,8 +464,14 @@ configure_new_project() {
   ui_section "Configure project"
   ui_hint "Choose the workflow configuration for this new repository."
   ask_setup_frameworks
-  if [ "$SETUP_FRAMEWORKS" != none ] && ui_confirm "Also configure the h GitHub workflows? ([frameworks.h]: /h-spike-issue, /h-resolve-issue, /h-review-pr, /h-continue-pr, /h-review-batch — depends on onto and to)"; then
-    SETUP_H=yes
+  if [ "$SETUP_FRAMEWORKS" != none ]; then
+    if [ "$WORKFLOW_BIN" = both ]; then
+      if ui_confirm "Also configure the h GitHub workflows? ([frameworks.h]: /h-spike-issue, /h-resolve-issue, /h-review-pr, /h-continue-pr, /h-review-batch — requires both onto and to)"; then
+        SETUP_H=yes
+      fi
+    else
+      ui_hint "h GitHub workflows require both onto and to binaries; install both to configure h."
+    fi
   fi
   ask_workflow_root
   if [ "$SETUP_FRAMEWORKS" != none ]; then
@@ -474,9 +486,8 @@ configure_new_project() {
     onto) frameworks=(onto) ;;
     to) frameworks=(to) ;;
   esac
-  # h is additive: it depends on onto and to in the catalog, so declaring it
-  # alongside the explicit selections keeps the config self-documenting and
-  # the workflow gates on their primary path.
+  # h is additive: it depends on onto and to in the catalog. Its model blocks
+  # cover both transitive specialist sets even when only one is explicit.
   if [ "$SETUP_H" = yes ]; then
     frameworks+=(h)
   fi
@@ -514,13 +525,13 @@ next_steps() {
   elif [ "$INIT_RAN" -eq 1 ]; then
     printf '\nNext steps\n' >&2
     printf '  Edit homonto.toml (declare MCPs / skills / frameworks), then\n' >&2
-    printf 'homonto plan and homonto apply. onto and to are complementary —\n' >&2
-    printf 'declare either or both, pick per change by selecting its agent.\n' >&2
+    printf 'homonto plan and homonto apply. One homonto coordinator drives\n' >&2
+    printf 'both workflows; pick per change with /onto or /to.\n' >&2
   else
     printf '\nNext steps\n' >&2
     printf '  In the directory that should hold homonto.toml, run homonto init,\n' >&2
-    printf 'edit homonto.toml, then homonto plan and homonto apply. onto and to are\n' >&2
-    printf 'complementary — declare either or both, pick per change.\n' >&2
+    printf 'edit homonto.toml, then homonto plan and homonto apply. One homonto\n' >&2
+    printf 'coordinator drives both workflows; pick per change with /onto or /to.\n' >&2
   fi
 }
 

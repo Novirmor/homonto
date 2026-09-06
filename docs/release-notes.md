@@ -15,6 +15,30 @@ bookkeeper) — for every supported OS/arch as separate archives under one
 `SHA256SUMS`. `onto` and `to` each require `homonto` to have installed their
 framework first (`[frameworks.onto]` / `[frameworks.to]` + `homonto apply`).
 
+### New in v0.21.0 — one coordinator, and the h GitHub workflows
+
+- **One `homonto` coordinator agent.** The separate `onto` and `to` primary
+  agents are replaced by a single shared `homonto` primary; `/onto`, `/to`,
+  and every `/h-*` command route into it, and it loads whichever dispatcher
+  the change needs
+  ([ADR 0045](adr/0045-one-homonto-coordinator-for-both-workflows.md)).
+  **Breaking:** rename any `[subagents.onto.opencode]` or
+  `[subagents.to.opencode]` model block to `[subagents.homonto.opencode]` —
+  exactly one block; the old names fail at load naming the fix. The
+  installer writes the new shape and can add the `h` bundle to new projects.
+- **The `h` framework: GitHub intake over both workflows.** Declaring
+  `[frameworks.h]` (it depends on onto and to, and an applied `h` satisfies
+  both binaries' install gates) adds five workflows:
+  `/h-spike-issue` (read-only issue research through the `h-spike` worker),
+  `/h-resolve-issue` (spike, an explicit to-or-onto choice, then the chosen
+  workflow drives to a verified pull request), `/h-review-pr` and
+  `/h-review-batch` (full-context review through read-only `h-review`
+  workers — drafts first, nothing posted without an explicit approval of the
+  shown draft), and `/h-continue-pr` (collect outstanding feedback, resume
+  or open the matching workflow change, push only verified fixes, comment
+  with evidence). Only the coordinator talks to GitHub; workers receive
+  prepared context and return analysis.
+
 ### New in v0.20.0 — guided project configuration
 
 - **The installer configures new projects.** After `homonto init` creates a

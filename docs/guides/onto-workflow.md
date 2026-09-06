@@ -63,8 +63,9 @@ this: they never read `homonto.toml` and never write.
 tool: `/onto` (the dispatcher — it derives the active change's real phase
 and routes automatically), the command-only explicit-user `/onto-bypass`, plus `/onto-open`, `/onto-design`, `/onto-build`,
 `/onto-verify`, `/onto-close`, `/onto-fix`, `/onto-tweak`, and
-`/onto-no-slop`. Every workflow command enters the `onto` primary agent and
-loads its matching skill; every state change still goes through the binary.
+`/onto-no-slop`. Every workflow command enters the shared `homonto`
+coordinator agent (ADR 0045) and loads its matching skill; every state
+change still goes through the binary.
 
 ## The layout
 
@@ -166,14 +167,16 @@ unsuccessful terminal state for work that stops rather than completes.
 `homonto apply` installs the framework's agents. Do not also declare them in a
 top-level `[subagents.*]` table; the names collide.
 
-onto ships **five** agent definitions: the `onto` orchestrator plus four
-specialists the skills delegate to.
+onto ships **five** agent definitions: the shared `homonto` coordinator plus
+four specialists the skills delegate to.
 
-- **`onto`** — the orchestrator, and the one agent that is not a specialist.
-  It is declared `primary: true`, which renders as OpenCode's
-  `mode: primary`, where the `/onto` command carries `agent: onto` and routes
-  into it. The agent prompt deliberately does not restate the skill, so the
-  two cannot drift.
+- **`homonto`** — the coordinator, and the one agent that is not a
+  specialist. Both workflow frameworks declare it from the same catalog path
+  (ADR 0045), so installing onto, to, or the `h` companion installs the same
+  agent; it is declared `primary: true`, which renders as OpenCode's
+  `mode: primary`, where the `/onto` command carries `agent: homonto` and
+  routes into it. The agent prompt deliberately does not restate the skill,
+  so the two cannot drift.
 
 - **`onto-explorer`** — read-only with no shell; reads across many files to
   answer "how does X work / where does behavior live", returning conclusions
@@ -196,7 +199,7 @@ specialists the skills delegate to.
   candidate. That independence is the point.
 
 Planning, judging scope, deciding, and every `onto` binary call stay with the
-orchestrator. Who does the *editing* depends on the change's
+coordinator. Who does the *editing* depends on the change's
 `build_mode` field (`onto set build-mode <change> direct|subagent`): under
 `direct` the orchestrator does it, and under `subagent` the implementer edits
 and commits its own task's files.
@@ -300,7 +303,8 @@ The principles the skills enforce throughout — build only what the change
 needs, as simply as it can be built — are spelled out in [YAGNI](yagni.md)
 and [KISS](kiss.md). The lightweight sibling workflow is
 [to](to-workflow.md); the two frameworks are complementary — declare both
-and pick per change by selecting its primary agent.
+and pick per change; the shared `homonto` coordinator loads whichever
+dispatcher the request names.
 
 > homonto's own repository is not developed with onto — see
 > [`docs/personas.md`](../personas.md). onto is a shipped product framework;

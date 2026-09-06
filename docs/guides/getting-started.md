@@ -141,14 +141,16 @@ relocating, and `apply` removes the old link as it creates the new one.
 ## 4. The onto workflow
 
 Install the framework via homonto, then apply. Every subagent the framework
-expands must declare **an explicit model**:
+expands must declare **an explicit model** — including the shared `homonto`
+coordinator (ADR 0045; declaring `[frameworks.to]` alongside reuses the same
+block, so write it once):
 
 ```toml
 [frameworks.onto]
 source = "builtin:onto"
 scope = "project"
 
-[subagents.onto.opencode]
+[subagents.homonto.opencode]
 model = "anthropic/claude-opus-4-8"
 [subagents.onto-explorer.opencode]
 model = "openai/gpt-5-mini"
@@ -220,7 +222,7 @@ command and gate: [onto reference](onto-reference.md).
 | Supported | Notes |
 |---|---|
 | MCP servers, settings, skills, plugins, TUI settings | OpenCode, full — the only adapter (Claude Code and codex were removed in v0.13.0) |
-| Frameworks (`[frameworks.*]`) | builtin `onto` and/or `to` (complementary); also `local:` roots and digest-pinned `remote:` sources |
+| Frameworks (`[frameworks.*]`) | builtin `onto`, `to` (complementary), and `h` (GitHub intake over both); also `local:` roots and digest-pinned `remote:` sources |
 | Commands, subagents (`builtin:` / `local:`) | subagents: `mode = link` (default) or `copy` |
 | Remote sources (`remote:…`) | subagents and frameworks; **require `digest = "sha256:…"`**; fetched, verified, pinned, cached |
 

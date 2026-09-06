@@ -34,10 +34,13 @@ User-facing documentation, one topic per file.
 ## The workflow frameworks
 
 onto and `to` are **complementary** (ADR 0042): declare either or both and
-pick per change by selecting its primary agent. onto is for work that
+pick per change — the request or command decides which dispatcher the shared
+`homonto` coordinator loads (ADR 0045). onto is for work that
 someone else has to pick up or audit — it leaves an archived, gate-stamped
 record a stranger can read; `to` is for a fast solo loop that still wants a
-real verification pass.
+real verification pass. The `h` companion framework adds the GitHub intake
+workflows (`/h-spike-issue`, `/h-resolve-issue`, `/h-review-pr`,
+`/h-continue-pr`, `/h-review-batch`) over both.
 
 - [`onto-workflow.md`](onto-workflow.md) — concepts: the binary/skills split,
   the five phases, presets, and the specialist subagents.

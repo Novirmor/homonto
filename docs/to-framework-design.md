@@ -26,8 +26,8 @@ discipline its skills impose on the LLM (see
 
 ## onto and `to` are complementary
 
-A repository may use both workflow frameworks. Select the primary agent per
-change:
+A repository may use both workflow frameworks. Select the workflow per change
+through the shared `homonto` coordinator (ADR 0045):
 
 - **`to`** — simple development. Solo or small-team repos, straightforward
   changes, minimal ceremony per change. The record it leaves is one `plan.md`

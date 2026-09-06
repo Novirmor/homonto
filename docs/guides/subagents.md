@@ -19,7 +19,7 @@ repo = "service-a"                 # optional declared [repos] name; project sco
 
 | `source` | Resolves from | Notes |
 |---|---|---|
-| `builtin:<name>` | the bundled catalog (materialized at `.homonto/catalog/subagents/<name>.md`) | ships the `onto` primary orchestrator and its specialists, or the parallel `to` primary orchestrator and its specialists |
+| `builtin:<name>` | the bundled catalog (materialized at `.homonto/catalog/subagents/<name>.md`) | ships the shared `homonto` coordinator plus the framework specialists (`onto-*`, `to-*`) and the `h` workers (`h-spike`, `h-review`) |
 | `local:<name>` | `homonto/subagents/<name>.md` (next to `homonto.toml`) | your own agent files |
 | `remote:<url>` | a fetched, verified, cached archive | **requires a `digest` pin** — see below |
 
@@ -138,17 +138,20 @@ Rendering:
 The rendered variant re-emits `mode: subagent`/`mode: primary` from the
 `primary` flag.
 
-## Bundled workflow primaries
+## Bundled workflow agents
 
-The `onto` and `to` frameworks each install a selectable primary agent plus
-four specialists. The primary is edit-capable; explorers, reviewers, and
-skeptics are deliberately read-only so they can run concurrently without
-changing the workspace. A primary's documented Git, test, and workflow commands
-are allow-listed. Other shell commands ask rather than receiving a blanket
-shell grant.
+The `onto` and `to` frameworks each install four specialists, and — together
+with the `h` companion — the one shared `homonto` coordinator primary
+(ADR 0045; all three declare the same catalog file, so any of them installs
+it). The primary is edit-capable and owns GitHub access for the `/h-*`
+workflows; explorers, reviewers, skeptics, and the `h-spike`/`h-review`
+workers are deliberately read-only so they can run concurrently without
+changing the workspace. The primary's documented Git, `gh`, test, and
+workflow commands are allow-listed. Other shell commands ask rather than
+receiving a blanket shell grant.
 
 When `[repos]` declares sibling Git worktrees, `homonto apply` gives only the
-builtin framework's primary and implementer an `external_directory` rule. It
+`homonto` coordinator and the two implementers an `external_directory` rule. It
 denies all other external paths before allowing the declared roots. The other
 specialists and custom agents receive no rule. Repository paths containing `*`
 or `?` are rejected because OpenCode treats them as permission wildcards.
@@ -157,12 +160,12 @@ OpenCode matches these permissions lexically, not through `realpath`. Treat a
 declared repository and its symlinks as trusted: a link beneath an allowed root
 may resolve outside it. Do not use `[repos]` as a filesystem sandbox.
 
-Both primaries use the configuration root as their workspace root, falling back
-to the Git worktree root and then the host working directory. They do not ask
-where to work during a normal invocation and never initialize Git unless the
-user explicitly asks. `onto` runs the evidence-gated lifecycle; `to` is its
-lighter `plan → do → done` counterpart. They are complementary per
-configuration: both project side by side, selected per change.
+The coordinator uses the configuration root as its workspace root, falling back
+to the Git worktree root and then the host working directory. It does not ask
+where to work during a normal invocation and never initializes Git unless the
+user explicitly asks. It runs the evidence-gated onto lifecycle, the lighter
+`plan → do → done` counterpart, and the h GitHub intake — complementary per
+configuration, selected per change.
 
 The `model:` and optional `variant:` lines come from the config's
 `[subagents.<name>.opencode]` block. The block is required — a production
@@ -183,7 +186,8 @@ to the shared file), unchanged.
 The onto framework's specialists show the division of labor: read-only
 `onto-explorer` (trivial model), `onto-reviewer` and `onto-skeptic` (review),
 and the edit-capable `onto-implementer` (coding) — all `spawn: []`; they
-never nest. The `to-*` twins carry the same roles.
+never nest. The `to-*` twins carry the same roles, and the h framework adds
+the read-only `h-spike` and `h-review` workers in the same shape.
 
 ## Remote subagents are pinned and fail-closed
 

@@ -136,7 +136,7 @@ To smoke `onto` properly you must install its framework first, because
 `onto init` is itself gated on it. That is what the "edit the generated
 `homonto.toml` minimally" step above means concretely — declare the framework
 **and** a `[subagents.<name>.opencode]` model block for each of its five agents
-(`onto`, `onto-explorer`, `onto-reviewer`, `onto-implementer`, `onto-skeptic`),
+(`homonto`, `onto-explorer`, `onto-reviewer`, `onto-implementer`, `onto-skeptic`),
 since a missing block fails at load:
 
 ```sh
@@ -145,7 +145,7 @@ cat >> homonto.toml <<'TOML'
 source = "builtin:onto"
 scope  = "project"
 
-[subagents.onto.opencode]
+[subagents.homonto.opencode]
 model = "anthropic/claude-opus-4-8"
 # … one [subagents.<name>.opencode] block per agent
 TOML
@@ -155,9 +155,9 @@ onto init
 onto doctor                 # expect: healthy
 ```
 
-Replace `[frameworks.onto]`, `onto`, and its four specialists with `[frameworks.to]`, `to`, and the four
-`to-*` specialists. The two frameworks are complementary, so one config
-may cover both.
+Replace `[frameworks.onto]` and the four `onto-*` specialists with `[frameworks.to]` and the four
+`to-*` specialists (the shared `homonto` block stays). The two frameworks
+are complementary, so one config may cover both.
 
 Verify a downloaded archive's checksum matches `SHA256SUMS`:
 

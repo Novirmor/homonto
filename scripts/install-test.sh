@@ -356,7 +356,7 @@ t20_guided_project_setup() {
   git -C "$s/repo-a" init -q
   mkdir -p "$s/home/.config/opencode"
   printf '{\n  "model": "test-provider/test-model"\n}\n' >"$s/home/.config/opencode/opencode.json"
-  run_install "$s" $'\nboth\n'"$s/bin"$'\ny\nboth\nworkflow\n\n'"$s/repo-a"$'\napi\n' \
+  run_install "$s" $'\nboth\n'"$s/bin"$'\ny\nboth\ny\nworkflow\n\n'"$s/repo-a"$'\napi\n' \
     HOME="$s/home" XDG_CONFIG_HOME="$s/home/.config" MOCK_INIT_WRITES_CONFIG=1
   config="$s/homonto.toml"
   expect_exit "t20: guided project setup" 0
@@ -367,10 +367,14 @@ t20_guided_project_setup() {
     && grep -qF "api = \"$s/repo-a\"" "$config" \
     && grep -qF '[frameworks.onto]' "$config" \
     && grep -qF '[frameworks.to]' "$config" \
-    && grep -qF 'model = "test-provider/test-model"' "$config"; then
-    ok "t20: writes selected repos, workflow root, frameworks, and model"
+    && grep -qF '[frameworks.h]' "$config" \
+    && grep -qF '[subagents.homonto.opencode]' "$config" \
+    && grep -qF '[subagents.h-spike.opencode]' "$config" \
+    && grep -qF 'model = "test-provider/test-model"' "$config" \
+    && [ "$(grep -cF '[subagents.homonto.opencode]' "$config")" -eq 1 ]; then
+    ok "t20: writes selected repos, workflow root, frameworks, h bundle, and model"
   else
-    bad "t20: writes selected repos, workflow root, frameworks, and model"
+    bad "t20: writes selected repos, workflow root, frameworks, h bundle, and model"
     cat "$config" >&2
   fi
   if (cd "$ROOT" && go build -o "$s/homonto-real" .) \

@@ -35,7 +35,8 @@ Pick the workflow per change, not per repository. Declaring both
 `[frameworks.onto]` and `[frameworks.to]` in one `homonto.toml` is valid
 (ADR 0042): their records live in disjoint directories (`changes/` vs
 `tasks/`) and their agents and commands are namespaced, so both project side
-by side and the primary agent you select decides the workflow. Pick **onto**
+by side and the request decides which dispatcher the shared `homonto`
+coordinator loads (ADR 0045). Pick **onto**
 for evidence-gated changes that need spec deltas, dependency graphs, and
 non-skippable transitions; pick **to** for simple development where that
 machinery costs more than it protects. Changes cross the boundary explicitly:
@@ -73,10 +74,10 @@ dispatcher — it finds the active change via `to status --json` and routes),
 the command-only explicit-user `/to-bypass`, plus `/to-plan`, `/to-do`, `/to-done`,
 and `/to-no-slop`.
 
-The install also adds the shared `homonto` knowledge skill and a selectable
-`to` primary agent. Choose `to` to start the workflow; it owns each workflow
-mutation, decision, commit, and delegation. Every `to-*` workflow command routes
-to that primary.
+The install also adds the shared `homonto` knowledge skill and the shared
+`homonto` coordinator agent (ADR 0045 — one primary serves both workflows).
+It owns each workflow mutation, decision, commit, and delegation. Every
+`to-*` workflow command routes to it.
 
 ## The layout
 

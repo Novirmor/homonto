@@ -185,7 +185,7 @@ digest = "sha256:<64 hex>"         # REQUIRED for remote:; verified before any w
 
 | Field | Type | Required | Notes |
 |---|---|---|---|
-| `source` | string | **yes** | `builtin:` ships the onto primary and specialists, or the parallel to primary and specialists; `local:` → `homonto/subagents/<name>.md`; `remote:` → pinned archive |
+| `source` | string | **yes** | `builtin:` ships the shared `homonto` coordinator plus the framework specialists (and the `h` workers); `local:` → `homonto/subagents/<name>.md`; `remote:` → pinned archive |
 | `scope` | string | no | `user` \| `project` (default `project`) |
 | `mode` | string | no | `link` (default) or `copy` — see [subagents](subagents.md) |
 | `targets` | array | no | default: every tool |
@@ -201,12 +201,17 @@ frontmatter block: [subagents](subagents.md). The remote pipeline:
 
 A framework is a bundled set of skills, commands, and subagents that install
 together, with dependency expansion. The builtin catalog ships exactly the
-two homonto-native frameworks, `onto` and `to`, and they are
-**complementary** (ADR 0042): declare either or both — the primary agent you
-select picks the workflow per change, and both frameworks' agents project
+three homonto-native frameworks, `onto`, `to`, and the `h` GitHub-intake
+companion. onto and `to` are **complementary** (ADR 0042): declare either or
+both — the change picks its workflow by which dispatcher the shared
+`homonto` coordinator loads (ADR 0045), and both frameworks' agents project
 side by side.
-Both frameworks install the shared `homonto` knowledge skill and their own
-selectable primary workflow agent.
+Every framework installs the shared `homonto` knowledge skill, and onto, to,
+and `h` all install the one shared `homonto` coordinator agent. `h` depends
+on onto and to: declaring `[frameworks.h]` transitively installs both
+workflow frameworks and satisfies their binaries' install gates, adding the
+five `/h-*` GitHub workflows and the read-only `h-spike` / `h-review`
+workers on top.
 Beyond `builtin:`, a framework source may be `local:<path>` (a framework root
 in your repo) or `remote:<url>` with a required `digest = "sha256:…"` pin.
 Third-party workflow stacks are not bundled.
@@ -498,7 +503,7 @@ model = "anthropic/claude-opus-4-8"
 theme = "gruvbox"
 
 # Required: every framework-expanded subagent needs a model.
-[subagents.onto.opencode]
+[subagents.homonto.opencode]
 model = "anthropic/claude-opus-4-8"
 
 [subagents.onto-explorer.opencode]

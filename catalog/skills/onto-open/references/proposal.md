@@ -14,6 +14,9 @@ summary.
      position is what matters, not being byte one of the file. An upgrade
      rewrites it to `Preset: fix (upgraded to full YYYY-MM-DD)`. -->
 <!-- optional: `Depends-on: <change-name>[, <change-name>]` — feeds onto-state.yaml deps -->
+<!-- optional: `Closes: #N` — the issue this change closes; close reads this
+     marker verbatim when assembling the PR body. Exactly one line; it is the
+     change's ONLY closing reference, never collected from prose. -->
 
 ## Why
 
@@ -55,7 +58,8 @@ preflight). Design-phase grounding goes in design.md; notes.md keeps none.>
 ## Rules
 
 - `Preset:`/`Depends-on:` markers are machine-read (state rebuild) — keep
-  them on their own lines, exactly as shown.
+  them on their own lines, exactly as shown. `Closes:` is machine-consumed
+  by close (PR body) the same way.
 - Capability names must match existing `<workflow-root>/specs/*.md` files or declare
   a new one.
 - Breaking changes are marked at the bullet, not buried in prose.

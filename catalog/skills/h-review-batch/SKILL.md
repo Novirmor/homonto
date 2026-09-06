@@ -16,7 +16,7 @@ let a worker touch GitHub.
 ## Required order
 
 1. **Parse input.** Either a repository URL (`https://github.com/OWNER/REPO`)
-   optionally followed by `limit N` (default 20) and `author USER`, or one
+    optionally followed by `limit N` (default 10) and `author USER`, or one
    or more explicit PR URLs. Anything unparseable is a stop with the grammar.
 2. **Preflight.** `command -v gh`, `gh auth status`, repository match.
 3. **Enumerate.**

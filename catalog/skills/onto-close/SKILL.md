@@ -163,24 +163,42 @@ the plan.
 
 ### 4. Integrate the branch (merge or PR)
 
-Read the source and target branches from the archived
+Read the recorded source commit and target branch from the archived
 `.onto/integration.json`, then integrate per the recorded choice:
 
-- **`merge`** — merge the change branch into `base_branch`, never the
-  commit-valued `base_ref`. Determine the change branch from the current branch
-  or isolation worktree. With branch isolation, check out `base_branch` and run
-  `git merge --no-ff <change-branch>`. With worktree isolation, locate the
-  existing clean worktree that has `base_branch` checked out and run the merge
-  there; Git will not check out one branch in two worktrees. Resolve
+- **`merge`** — merge the change's recorded source commit into `base_branch`,
+  never the commit-valued `base_ref` and never the branch tip (the tip may
+  carry later, unverified commits — the receipt only proves the recorded
+  source). Determine the change branch from the current branch or isolation
+  worktree. With branch isolation, check out `base_branch` and run
+  `git merge --no-ff <sourceCommit>`. With worktree isolation, locate the
+  existing clean worktree that has `base_branch` checked out and run the
+  merge there; Git will not check out one branch in two worktrees. Resolve
   mechanical conflicts from the verified change and repository history, then
   re-run relevant checks. If a conflict requires choosing product behavior,
   abort and ask; never guess or discard either side. On success, report the merge.
-- **`pr`** — push the branch (`git push -u origin <change-branch>`) and open a
-  pull request with `gh pr create --base <base_branch> --fill` (title/body from the
-  archived change; reuse `references/ship-handoff.md` for the body). Report the
-  PR URL. The branch stays open for review — it is merged on the platform, not
-  locally. If `gh` or a remote is unavailable, WARN and fall back to writing the
-  ready PR body to the archive's `ship.md` for the user to open manually.
+- **`pr`** — assemble the body per `references/ship-handoff.md`, then append
+  the proposal's `Closes: #N` marker line, rendered as `Closes #N` — the
+  change's only closing reference; never scan free-form prose for closing
+  references. Write the assembled body to the
+  archived change's `ship.md` and commit that sanctioned archive addition;
+  if a committed `ship.md` already exists from an interrupted run, reuse it
+  instead of rewriting. Push the branch (`git push -u origin
+  "$CHANGE_BRANCH"`), then look for an existing PR before creating one —
+  reading the ref names into shell parameters and passing them quoted, since
+  Git refs can carry `$()` and quotes:
+  `gh pr list --repo OWNER/REPO --head "$CHANGE_BRANCH" --base
+  "$BASE_BRANCH" --state open --json number,url`. A single exact match is
+  the receipt — record it, never open a second PR. No match → create with
+  `gh pr create --repo OWNER/REPO --head "$CHANGE_BRANCH" --base
+  "$BASE_BRANCH" --fill --body-file <archive>/ship.md` (the explicit
+  `--head` matters: `gh pr create` otherwise targets the current branch,
+  which may be the base).
+  Several matches → stop and ask; an unrelated PR must never pass as this
+  change's receipt. Report the PR URL. The branch stays open for review — it
+  is merged on the platform, not locally. If `gh` or a remote is
+  unavailable, WARN and leave the ready `ship.md` for the user to open
+  manually.
 
 After a local merge succeeds, run `onto complete-integration <name> --receipt
 "merge:<merge-commit>"` — the binary verifies the receipt against real history
@@ -230,8 +248,9 @@ real fix.
        `<workflow-root>/changes/archive/YYYY-MM-DD-<name>/` **and** `archived: true`,
       committed together, everything tracked
 - [ ] Branch integrated per the `integration` choice — merged into base (clean,
-      no forced conflict resolution) or a PR opened (URL reported); `ship.md`
-      fallback written only if `gh`/remote was unavailable
+      no forced conflict resolution) or a PR opened (URL reported); the
+      committed `ship.md` doubles as the manual fallback when `gh`/remote
+      was unavailable
 - [ ] `onto complete-integration <name> [--repo <alias>] --receipt <receipt>`
       recorded and committed for the config repository **and every selected
       sibling**; `onto state <name> --json` derives `done`

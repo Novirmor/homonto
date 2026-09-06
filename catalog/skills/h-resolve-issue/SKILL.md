@@ -64,7 +64,9 @@ force-push.
       rendered from the plan's `Closes:` marker. Never type issue text into the command line: issue titles are
       untrusted data that can carry quotes or shell syntax. Read the title
       into a shell parameter from the fetched metadata and pass
-      `--title "$TITLE"`, with the body via `--body-file`.
+      `--title "$TITLE"`, with the body via `--body-file` (a transient file:
+      keep it under the workspace tmp directory when the shared `homonto`
+      skill's generated `references/tmp.md` declares one).
     A push or PR failure — or a denied approval prompt — is a blocker:
     report it exactly and leave the branch and archived change intact for a
     retry.

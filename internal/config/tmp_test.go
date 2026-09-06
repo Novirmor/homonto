@@ -50,6 +50,15 @@ func TestTmpValidation(t *testing.T) {
 		{"escape", "[tmp]\ndir = \"../scratch\"\n", "below the workspace root"},
 		{"git", "[tmp]\ndir = \".git/scratch\"\n", ".git"},
 		{"root", "[tmp]\ndir = \".\"\n", "dedicated subdirectory"},
+		// Collisions with owned trees: a scratch dir here would be gitignored
+		// or rebuilt over, taking real content with it (workflow root = docs
+		// by default in these fixtures).
+		{"workflow root", "[tmp]\ndir = \"docs\"\n", "workflow records root"},
+		{"inside workflow root", "[tmp]\ndir = \"docs/tmp\"\n", "workflow records root"},
+		{"custom workflow root", "[workflow]\nroot = \"records\"\n\n[tmp]\ndir = \"records\"\n", "workflow records root"},
+		{"projection target", "[tmp]\ndir = \".opencode/scratch\"\n", "homonto owns"},
+		{"local skills root", "[tmp]\ndir = \"homonto\"\n", "homonto owns"},
+		{"materialized catalog", "[tmp]\ndir = \".homonto/catalog/x\"\n", "homonto owns"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

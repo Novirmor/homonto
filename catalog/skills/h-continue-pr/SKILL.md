@@ -110,7 +110,9 @@ changes do not answer.
    commit demonstrably answers it; when resolution is not possible from the
    tooling, cover the addressed threads explicitly in the comment instead.
 9. **Comment once**, via a body file (`gh pr comment NUMBER --repo
-   OWNER/REPO --body-file COMMENT_FILE`): fixes made, feedback items
+   OWNER/REPO --body-file COMMENT_FILE`, kept under the workspace tmp
+   directory when the shared `homonto` skill's generated
+   `references/tmp.md` declares one): fixes made, feedback items
    addressed (by thread), verification commands and their outcomes, and
    unresolved items. Never claim a check passed without observed output.
 10. **Report.** PR URL, the change resumed or opened, what was pushed,

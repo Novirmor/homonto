@@ -40,7 +40,9 @@ never the invocation alone.
    the fetched diff, and fold findings that existing unresolved threads
    already cover into a single confirmed item. Drop what does not survive.
 7. **Draft** per [`references/draft-format.md`](references/draft-format.md)
-   and show it.
+   and show it. Drafts and comment bodies are transient files: write them
+   under the workspace tmp directory when the shared `homonto` skill's
+   generated `references/tmp.md` declares one, otherwise `mktemp`.
 8. **Ask before posting.** One dialog after the draft: do not post / post
    the summary comment / (only if the user names it) submit a formal review
    with a chosen mode. No approval, no posting.

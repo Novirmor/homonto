@@ -436,6 +436,15 @@ Unknown keys and unusable paths fail at load, naming the offender:
 tmp.path ".tmp" is an unknown key — [tmp] takes only dir
 ```
 
+**Reserved paths.** The dir may not overlap the workflow records root
+(`[workflow] root`), `.git`, `.opencode/` (the projection target), `homonto/`
+(the local skills root), or the managed `.homonto` subtrees (`catalog`,
+`remote`, `cache`) — equal to, above, or inside. A colliding scratch dir
+would be gitignored or rebuilt over, taking real content with it.
+
+**One workspace, one tmp.** The directory lives in the config repository
+only; repositories declared under `[repos]` do not get one.
+
 ## Plugins — `[plugins.opencode.<name>]`
 
 ```toml

@@ -34,8 +34,12 @@ func (c *Config) ResolvedTmp() (bool, string) {
 
 // validateTmp rejects unknown keys and unusable directories: the dir must be
 // relative, must stay below the workspace root, must name a dedicated
-// subdirectory, and must not squat on .git.
-func validateTmp(t *tmpTable) error {
+// subdirectory, and must stay disjoint from every tree homonto or the
+// workflows own — a colliding scratch dir (the workflow records root, the
+// projection target, the local skills root, the managed .homonto subtrees)
+// would be gitignored or rebuilt over, taking real content with it.
+func validateTmp(c *Config) error {
+	t := c.Tmp
 	if t == nil {
 		return nil
 	}
@@ -60,5 +64,30 @@ func validateTmp(t *tmpTable) error {
 	case dir == ".git" || strings.HasPrefix(dir, ".git/"):
 		return fmt.Errorf("parse config: [tmp] dir %q may not live inside .git", dir)
 	}
+	// Disjoint from the workflow records tree: a scratch dir equal to, above,
+	// or inside the records root would gitignore real workflow records (dir ==
+	// root writes "/root/" into .gitignore) or bury scratch inside the
+	// audited tree the dirt gates and discovery watch.
+	root := c.Workflow.RootOrDefault()
+	if pathOverlaps(dir, root) {
+		return fmt.Errorf("parse config: [tmp] dir %q overlaps the workflow records root %q", dir, root)
+	}
+	for _, reserved := range []string{".opencode", "homonto", ".homonto/catalog", ".homonto/remote", ".homonto/cache"} {
+		if pathOverlaps(dir, reserved) {
+			return fmt.Errorf("parse config: [tmp] dir %q overlaps %q, which homonto owns (projection, local skills, or materialized state)", dir, reserved)
+		}
+	}
 	return nil
+}
+
+// pathOverlaps reports whether a and b are the same path or one contains the
+// other (slash-boundary comparison so "doc" never matches "docs").
+func pathOverlaps(a, b string) bool {
+	if a == b {
+		return true
+	}
+	if strings.HasPrefix(a, b+"/") || strings.HasPrefix(b, a+"/") {
+		return true
+	}
+	return false
 }

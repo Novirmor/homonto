@@ -47,7 +47,10 @@ let a worker touch GitHub.
    post selected (name them), or post none. Approval covers exactly the
    shown drafts; any later finding change reopens it.
 9. **Post the approved drafts**, one comment per PR via a body file
-   (`gh pr comment NUMBER --repo OWNER/REPO --body-file COMMENT_FILE`);
+   (`gh pr comment NUMBER --repo OWNER/REPO --body-file COMMENT_FILE` —
+   draft and comment files are transient: keep them under the workspace tmp
+   directory when the shared `homonto` skill's generated
+   `references/tmp.md` declares one, otherwise `mktemp`);
    report each URL and each failure exactly.
 10. **Report.** Counts (reviewed, failed, posted), the table, posted comment
     URLs, and residual risks.

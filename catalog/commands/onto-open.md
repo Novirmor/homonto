@@ -1,6 +1,6 @@
 ---
 description: Open a new onto change — clarify scope and scaffold the workspace.
-agent: onto
+agent: homonto
 ---
 
 # /onto-open

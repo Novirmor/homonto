@@ -18,7 +18,7 @@ scope = "project"
 	ok := []string{"go test ./...", "git status", "pnpm run test:unit"}
 	for _, add := range ok {
 		doc := framework + `
-[subagents.onto.opencode]
+[subagents.homonto.opencode]
 model = "anthropic/claude-opus-4-8"
 bash_allow_add = ["` + add + `"]
 `
@@ -29,7 +29,7 @@ bash_allow_add = ["` + add + `"]
 	bad := []string{"git *", "a && b", "a | b", "FOO=bar make", "echo $TOKEN", "rm -rf /", "sudo make", "sh -c 'x'"}
 	for _, add := range bad {
 		doc := framework + `
-[subagents.onto.opencode]
+[subagents.homonto.opencode]
 model = "anthropic/claude-opus-4-8"
 bash_allow_add = ["` + strings.ReplaceAll(add, "'", "\\'") + `"]
 `
@@ -49,7 +49,7 @@ source = "builtin:onto"
 scope = "project"
 
 ` + modelsFor("onto-explorer", "onto-reviewer", "onto-implementer", "onto-skeptic") + `
-[subagents.onto.opencode]
+[subagents.homonto.opencode]
 model = "anthropic/claude-opus-4-8"
 bash_allow_add = ["git status"]
 `
@@ -60,10 +60,10 @@ bash_allow_add = ["git status"]
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !c.Subagents["onto"].IsTuneOnly() {
+	if !c.Subagents["homonto"].IsTuneOnly() {
 		t.Fatal("bash_allow_add entry must be tune-only")
 	}
-	if got := c.Subagents["onto"].OpenCode.BashAllowAdd; len(got) != 1 || got[0] != "git status" {
+	if got := c.Subagents["homonto"].OpenCode.BashAllowAdd; len(got) != 1 || got[0] != "git status" {
 		t.Fatalf("BashAllowAdd lost: %v", got)
 	}
 }

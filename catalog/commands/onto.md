@@ -1,6 +1,6 @@
 ---
 description: Start or resume the onto spec-driven workflow for this repo.
-agent: onto
+agent: homonto
 ---
 
 # /onto

@@ -1,5 +1,5 @@
 name = "onto"
-version = "0.15.0"
+version = "0.16.0"
 description = "Onto self-contained development workflow"
 
 [dependencies]
@@ -30,14 +30,16 @@ onto-tweak = "commands/onto-tweak.md"
 onto-no-slop = "commands/onto-no-slop.md"
 
 # The onto skills delegate to these specialist subagents (see the dispatcher
-# skill's "Delegation" section). Shipping them with the framework means
-# installing onto connects the whole team; do NOT also declare them in a
-# top-level [subagents.*] table (that collides with the framework declaration).
-# Every resource this framework ships is namespaced `onto-*` (the dispatcher
-# itself is the bare namespace root, `onto`), so installing onto never collides
-# with another framework's — or your own — agent of the same generic name.
+# skill's "Delegation" section). The primary coordinator is `homonto`, shared
+# byte-for-byte with the to framework (same catalog path, so the shared index
+# collapses the two declarations); every workflow command routes into it
+# (ADR 0045). Shipping them with the framework means installing onto connects
+# the whole team; do NOT also declare them in a top-level [subagents.*] table
+# (that collides with the framework declaration). Every specialist is
+# namespaced `onto-*`, so installing onto never collides with another
+# framework's — or your own — agent of the same generic name.
 [subagents]
-onto = "subagents/onto.md"
+homonto = "subagents/homonto.md"
 onto-explorer = "subagents/onto-explorer.md"
 onto-reviewer = "subagents/onto-reviewer.md"
 onto-implementer = "subagents/onto-implementer.md"

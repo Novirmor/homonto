@@ -1,6 +1,6 @@
 ---
 description: Run the to plan phase — write plan.md as bite-sized, verifiable tasks.
-agent: to
+agent: homonto
 ---
 
 # /to-plan

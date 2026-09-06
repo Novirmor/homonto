@@ -1,6 +1,6 @@
 ---
 description: Run the onto close phase — merge deltas, accept ADRs, and archive the verified change.
-agent: onto
+agent: homonto
 ---
 
 # /onto-close

@@ -1,6 +1,6 @@
 ---
 description: Remove AI writing patterns from to prose artifacts (plans, notes, commit messages).
-agent: to
+agent: homonto
 ---
 
 # /to-no-slop

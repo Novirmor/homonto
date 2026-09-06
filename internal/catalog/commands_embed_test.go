@@ -20,9 +20,11 @@ func TestWorkflowCommandsRouteTheirPrimaryAgents(t *testing.T) {
 		agent := ""
 		switch {
 		case command == "onto" || strings.HasPrefix(command, "onto-"):
-			agent = "onto"
+			agent = "homonto"
 		case command == "to" || strings.HasPrefix(command, "to-"):
-			agent = "to"
+			agent = "homonto"
+		case command == "homonto" || strings.HasPrefix(command, "h-"):
+			agent = "homonto"
 		default:
 			continue
 		}
@@ -138,7 +140,7 @@ func TestBypassResourcesAreDedicatedCommands(t *testing.T) {
 func TestWorkflowPromptsDefaultToAutonomousContinuation(t *testing.T) {
 	for _, file := range []string{
 		"skills/onto/SKILL.md", "skills/to/SKILL.md",
-		"subagents/onto.md", "subagents/to.md",
+		"subagents/homonto.md",
 	} {
 		content, err := fs.ReadFile(embedded.FS, file)
 		if err != nil {

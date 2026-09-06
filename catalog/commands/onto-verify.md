@@ -1,6 +1,6 @@
 ---
 description: Run the onto verify phase — check the change against design and every spec scenario.
-agent: onto
+agent: homonto
 ---
 
 # /onto-verify

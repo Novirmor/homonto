@@ -45,15 +45,17 @@ add a repo declaration rather than approving an arbitrary directory at runtime.
 - **to** serves focused solo work with less ceremony: `plan -> do -> done`.
 
 The frameworks are complementary: declare either or both, and pick per
-change by selecting its primary agent. Do not mix their workspaces or move a
+change — the request or command decides which dispatcher the homonto
+coordinator loads (ADR 0045). Do not mix their workspaces or move a
 change by hand. Use `to promote` when a to change must grow into an onto
 change, and `onto demote` for the way back.
 
 ## Agent Entry Points
 
-Selecting the `onto` primary agent starts the onto workflow. Selecting the `to`
-primary agent starts the to workflow. Each primary agent loads its dispatcher
-skill and owns its workflow mutations, decisions, commits, and delegation.
+One coordinator agent serves both workflows: the `homonto` primary loads the
+dispatcher skill for the change's workflow and owns its mutations, decisions,
+commits, and delegation. `/onto`, `/to`, and every `/h-*` command route into
+it.
 
 When answering a question about an installed repository, inspect its declared
 framework and projection state before claiming what is active. Keep the answer

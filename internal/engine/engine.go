@@ -355,15 +355,22 @@ func (e *Engine) subagentRenderContextFor(targets map[string]map[string]bool) ma
 	}
 	sort.Strings(externalDirectories)
 	externalDirectoriesByAgent := map[string][]string{}
-	for framework, agents := range map[string][]string{
-		"onto": {"onto", "onto-implementer"},
-		"to":   {"to", "to-implementer"},
-	} {
+	// ADR 0039/0045: the builtin workflow frameworks render declared-repo
+	// access for their writable agents only — the shared homonto primary
+	// (ADR 0045 replaced the per-framework onto/to primaries) and the two
+	// implementers. Declaring any one of onto, to, or the h companion
+	// installs the primary, so any of them enables the rule; read-only
+	// specialists never gain external access.
+	workflowFrameworkInstalled := false
+	for _, framework := range []string{"onto", "to", "h"} {
 		resource, installed := e.Cfg.Frameworks[framework]
-		if !installed || resource.Source != "builtin:"+framework {
-			continue
+		if installed && resource.Source == "builtin:"+framework {
+			workflowFrameworkInstalled = true
+			break
 		}
-		for _, agent := range agents {
+	}
+	if workflowFrameworkInstalled {
+		for _, agent := range []string{"homonto", "onto-implementer", "to-implementer"} {
 			externalDirectoriesByAgent[agent] = externalDirectories
 		}
 	}

@@ -1,6 +1,6 @@
 ---
 description: Strip predictable AI writing tells from onto prose artifacts.
-agent: onto
+agent: homonto
 ---
 
 # /onto-no-slop

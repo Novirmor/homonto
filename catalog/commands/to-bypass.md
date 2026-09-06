@@ -1,6 +1,6 @@
 ---
 description: Explicit user-only bypass for to workflow gates.
-agent: to
+agent: homonto
 ---
 
 # /to-bypass

@@ -31,7 +31,7 @@ that spans siblings is created once with `to new <name> --repo <declared-name>`;
 the selected aliases become a terminal `to done` clean-worktree gate; and onto
 is the heavier sibling framework (evidence-gated open → design → build →
 verify → close) — the two are complementary, the change picks its workflow by
-selecting the primary agent, and `to status --all` shows both inventories.
+selecting its workflow through the homonto coordinator, and `to status --all` shows both inventories.
 
 The dispatcher does three things, in order, and never performs phase work
 itself.

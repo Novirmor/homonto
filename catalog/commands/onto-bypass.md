@@ -1,6 +1,6 @@
 ---
 description: Explicit user-only bypass for onto workflow gates.
-agent: onto
+agent: homonto
 ---
 
 # /onto-bypass

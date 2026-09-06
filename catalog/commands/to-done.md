@@ -1,6 +1,6 @@
 ---
 description: Run the to done phase — real verification, at least one completed skeptic pass on the final candidate, then `to done --verified` archives the change.
-agent: to
+agent: homonto
 ---
 
 # /to-done

@@ -1,6 +1,6 @@
 ---
 description: Run the onto build phase — plan, then execute tasks one commit each.
-agent: onto
+agent: homonto
 ---
 
 # /onto-build

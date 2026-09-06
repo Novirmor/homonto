@@ -1,5 +1,5 @@
 name = "to"
-version = "0.12.0"
+version = "0.13.0"
 description = "to — minimal coding framework for LLMs (plan → do → done)"
 
 [dependencies]
@@ -24,14 +24,16 @@ to-no-slop = "commands/to-no-slop.md"
 # The to skills delegate to these specialist subagents — onto's cast, adapted.
 # Concurrency follows write-scope (ADR 0019): the three read-only agents run
 # as concurrently as the work allows; to-implementer is the only writer and
-# runs strictly one at a time, because `to` keeps a single working tree. Every
-# resource this framework ships is namespaced `to-*` (the dispatcher skill is
-# the bare namespace root, `to`), so installing to never collides with another
-# framework's — or your own — agent of the same generic name. Do NOT also
-# declare them in a top-level [subagents.*] table. onto and to are
+# runs strictly one at a time, because `to` keeps a single working tree. The
+# primary coordinator is `homonto`, shared byte-for-byte with the onto
+# framework (same catalog path, so the shared index collapses the two
+# declarations); every workflow command routes into it (ADR 0045). Every
+# specialist is namespaced `to-*`, so installing to never collides with
+# another framework's — or your own — agent of the same generic name. Do NOT
+# also declare them in a top-level [subagents.*] table. onto and to are
 # complementary: declare either or both and pick per change.
 [subagents]
-to = "subagents/to.md"
+homonto = "subagents/homonto.md"
 to-explorer = "subagents/to-explorer.md"
 to-implementer = "subagents/to-implementer.md"
 to-reviewer = "subagents/to-reviewer.md"

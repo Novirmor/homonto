@@ -156,15 +156,15 @@ func TestExpandSubagentsIncludesFrameworkSubagent(t *testing.T) {
 	}
 	found = false
 	for _, e := range to {
-		if e.Name == "to" {
+		if e.Name == "homonto" {
 			found = true
 			if e.Framework != "to" {
-				t.Errorf("to framework = %q, want to", e.Framework)
+				t.Errorf("homonto framework = %q, want to", e.Framework)
 			}
 		}
 	}
 	if !found {
-		t.Fatalf("to framework must expand its primary dispatcher, got %v", to)
+		t.Fatalf("to framework must expand the shared homonto primary, got %v", to)
 	}
 }
 

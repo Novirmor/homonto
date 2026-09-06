@@ -1,6 +1,6 @@
 ---
 description: onto small-change preset for copy, config, docs, and tiny features.
-agent: onto
+agent: homonto
 ---
 
 # /onto-tweak

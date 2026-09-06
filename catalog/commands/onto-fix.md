@@ -1,6 +1,6 @@
 ---
 description: onto bug-fix preset — reproduce with a failing test, fix, verify, close.
-agent: onto
+agent: homonto
 ---
 
 # /onto-fix

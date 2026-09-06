@@ -1,6 +1,6 @@
 ---
 description: Run the to do phase — execute plan.md one task at a time, one implementer then its reviewers.
-agent: to
+agent: homonto
 ---
 
 # /to-do

@@ -42,7 +42,7 @@ source = "@slkiser/opencode-quota"
 [settings.opencode]
 model = "anthropic/claude-opus-4-8"
 
-[subagents.onto.opencode]
+[subagents.homonto.opencode]
 model = "anthropic/claude-opus-4-8"
 [subagents.onto-explorer.opencode]
 model = "openai/gpt-5-mini"
@@ -597,9 +597,9 @@ scope = "project"
 		t.Fatal("framework expanding builtin subagents with no [subagents.<name>.<tool>] model accepted; want load error")
 	}
 	// The error names the first expanded builtin (alphabetically) and its
-	// enabled tool. onto is the onto framework's primary dispatcher, expanded
+	// enabled tool. homonto is the shared primary coordinator, expanded
 	// first in sorted order; opencode is the only adapter since v0.13.0.
-	for _, want := range []string{"subagents.onto.opencode", "model is required"} {
+	for _, want := range []string{"subagents.homonto.opencode", "model is required"} {
 		if !strings.Contains(err.Error(), want) {
 			t.Fatalf("error %v does not mention %q", err, want)
 		}
@@ -623,7 +623,7 @@ targets = ["opencode"]
 [subagents.alias.opencode]
 model = "anthropic/claude-opus-4-8"
 
-[subagents.onto.opencode]
+[subagents.homonto.opencode]
 model = "anthropic/claude-opus-4-8"
 [subagents.onto-explorer.opencode]
 model = "anthropic/claude-haiku-4-5"
@@ -772,7 +772,7 @@ scope = "project"
 source = "builtin:onto"
 scope = "project"
 
-[subagents.onto.opencode]
+[subagents.homonto.opencode]
 model = "anthropic/claude-opus-4-8"
 [subagents.onto-explorer.opencode]
 model = "anthropic/claude-opus-4-8"
@@ -850,7 +850,7 @@ scope = "project"
 model = "anthropic/claude-opus-4-8"
 variant = "fast"
 
-	` + modelsFor("onto", "onto-explorer", "onto-reviewer", "onto-implementer")
+	` + modelsFor("homonto", "onto-explorer", "onto-reviewer", "onto-implementer")
 	err := loadDoc(t, doc)
 	if err == nil || !strings.Contains(err.Error(), "must agree") {
 		t.Fatalf("conflicting overrides for one builtin must be a deterministic load error, got: %v", err)
@@ -873,7 +873,7 @@ variant = "thinking"
 source = "builtin:onto"
 scope = "project"
 
-	`+modelsFor("onto", "onto-explorer", "onto-reviewer", "onto-implementer"))
+	`+modelsFor("homonto", "onto-explorer", "onto-reviewer", "onto-implementer"))
 	if err != nil {
 		t.Fatalf("load: %v", err)
 	}
@@ -1132,7 +1132,7 @@ source = "builtin:to"
 scope = "project"
 targets = ["opencode", "opencode"]
 
-`+ontoFrameworkModels()+toFrameworkModels())
+`+ontoFrameworkModels()+toSpecialistsOnly())
 	got, err := c.ExpandedSkillEntriesForTool("opencode")
 	if err != nil {
 		t.Fatalf("expand: %v", err)
@@ -1150,8 +1150,12 @@ targets = ["opencode", "opencode"]
 		t.Fatalf("shared skill must keep both framework origins, got %d: %+v", len(homonto.Origins), homonto.Origins)
 	}
 
-	// A genuinely different placement still conflicts.
-	c2 := loadTOML(t, `
+	// A genuinely different placement still conflicts. Since the shared
+	// homonto SUBAGENT replaced the per-framework primaries, the collision
+	// now surfaces at load (validateSubagentOverrides expands frameworks),
+	// before the skill expansion could report it — either surface is the
+	// same rule firing.
+	doc2 := `
 [frameworks.onto]
 source = "builtin:onto"
 scope = "project"
@@ -1160,9 +1164,14 @@ scope = "project"
 source = "builtin:to"
 scope = "user"
 
-`+ontoFrameworkModels()+toFrameworkModels())
-	if _, err := c2.ExpandedSkillEntriesForTool("opencode"); err == nil ||
-		!strings.Contains(err.Error(), "conflicting") {
+` + ontoFrameworkModels() + toSpecialistsOnly()
+	if err := loadDoc(t, doc2); err == nil {
+		c2 := loadTOML(t, doc2)
+		if _, err := c2.ExpandedSkillEntriesForTool("opencode"); err == nil ||
+			!strings.Contains(err.Error(), "conflicting") {
+			t.Fatalf("different scopes must conflict, got %v", err)
+		}
+	} else if !strings.Contains(err.Error(), "conflicting") {
 		t.Fatalf("different scopes must conflict, got %v", err)
 	}
 }
@@ -1182,7 +1191,7 @@ func modelsFor(names ...string) string {
 // ontoFrameworkModels is the per-agent override blocks required by the onto
 // framework's five expanded subagents.
 func ontoFrameworkModels() string {
-	return modelsFor("onto", "onto-explorer", "onto-reviewer", "onto-implementer", "onto-skeptic")
+	return modelsFor("homonto", "onto-explorer", "onto-reviewer", "onto-implementer", "onto-skeptic")
 }
 
 // TestExpandedCommandsExplicit: an explicit [commands.X] entry projects for its

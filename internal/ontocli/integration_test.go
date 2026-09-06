@@ -149,7 +149,7 @@ func TestCompleteIntegrationCrossRepoNeedsEveryRepository(t *testing.T) {
 	writeFile(t, filepath.Join(root, "homonto.toml"), `[frameworks.onto]
 source="builtin:onto"
 scope="project"
-[subagents.onto.opencode]
+[subagents.homonto.opencode]
 model="test/model"
 [subagents.onto-explorer.opencode]
 model="test/model"

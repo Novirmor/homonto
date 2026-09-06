@@ -19,7 +19,7 @@ var files = map[string]string{
 # scope = "project"
 # A framework expands its catalog subagents; each MUST declare a per-tool
 # block (subagents.<name>.opencode) with a non-empty model.
-# [subagents.onto.opencode]
+# [subagents.homonto.opencode]
 # model = "anthropic/claude-opus-4-8"
 # [subagents.onto-explorer.opencode]
 # model = "openai/gpt-5-mini"

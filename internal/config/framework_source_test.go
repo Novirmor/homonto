@@ -65,7 +65,7 @@ scope = "project"
 [frameworks.to]
 source = "builtin:to"
 scope = "project"
-`+ontoFrameworkModels()+toFrameworkModels()), 0o644); err != nil {
+`+ontoFrameworkModels()+toSpecialistsOnly()), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	cfg, err := Load(p)
@@ -81,9 +81,16 @@ scope = "project"
 }
 
 // toFrameworkModels is the per-agent override blocks required by the to
-// framework's five expanded subagents (the to dispatcher plus four specialists).
+// framework's five expanded subagents (the shared homonto primary plus four
+// specialists). toSpecialistsOnly omits the primary for configs that already
+// carry ontoFrameworkModels() — TOML rejects the duplicate table, and the
+// shared primary needs exactly one block.
 func toFrameworkModels() string {
-	return modelsFor("to", "to-explorer", "to-implementer", "to-reviewer", "to-skeptic")
+	return modelsFor("homonto", "to-explorer", "to-implementer", "to-reviewer", "to-skeptic")
+}
+
+func toSpecialistsOnly() string {
+	return modelsFor("to-explorer", "to-implementer", "to-reviewer", "to-skeptic")
 }
 
 // TestLoad_AcceptsToAlone: [frameworks.to] on its own is a valid builtin

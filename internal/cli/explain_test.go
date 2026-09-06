@@ -22,7 +22,7 @@ env = { BRAVE_API_KEY = "${EXPLAIN_SECRET_TOKEN}" }
 source = "builtin:onto"
 scope = "project"
 
-[subagents.onto.opencode]
+[subagents.homonto.opencode]
 model = "openai/gpt-5"
 
 [subagents.onto-explorer.opencode]

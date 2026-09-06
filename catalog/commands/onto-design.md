@@ -1,6 +1,6 @@
 ---
 description: Run the onto design phase — explore approaches and write design.md.
-agent: onto
+agent: homonto
 ---
 
 # /onto-design

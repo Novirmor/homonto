@@ -27,6 +27,7 @@ INIT_RAN=0
 SETUP_RAN=0
 SETUP_FRAMEWORKS="none"
 SETUP_H="no"
+SETUP_TMP="no"
 WORKFLOW_ROOT="docs"
 WORKFLOW_MODEL=""
 REPO_NAMES=()
@@ -474,6 +475,9 @@ configure_new_project() {
     fi
   fi
   ask_workflow_root
+  if ui_confirm "Declare a workspace tmp directory? ([tmp] dir = \".tmp\": scratch every agent can write; apply creates it and keeps it gitignored; homonto never deletes content)"; then
+    SETUP_TMP=yes
+  fi
   if [ "$SETUP_FRAMEWORKS" != none ]; then
     WORKFLOW_MODEL="$(ui_input "Model for OpenCode and all workflow agents" "$(default_workflow_model)")"
     safe_toml_value "$WORKFLOW_MODEL"
@@ -499,6 +503,9 @@ configure_new_project() {
       for i in "${!REPO_NAMES[@]}"; do
         printf '%s = "%s"\n' "${REPO_NAMES[$i]}" "${REPO_PATHS[$i]}"
       done
+    fi
+    if [ "$SETUP_TMP" = yes ]; then
+      printf '\n# Scratch space every agent can write without prompts (ADR 0048).\n[tmp]\ndir = ".tmp"\n'
     fi
     if [ "${#frameworks[@]}" -gt 0 ]; then
       printf '\n[settings.opencode]\nmodel = "%s"\n' "$WORKFLOW_MODEL"

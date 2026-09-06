@@ -401,6 +401,41 @@ tooling.code_intel "ctags" is not a known provider (accepted: graphify, okf, non
 `homonto doctor` reports a declared-but-undetected provider as a warning. It
 probes `PATH` and index/bundle directories only; it never runs the provider.
 
+## Workspace tmp — `[tmp]`
+
+One declared scratch directory the whole projection shares
+([ADR 0048](../adr/0048-one-declared-workspace-tmp-directory.md)). Opt-in: no
+`[tmp]` table, no behavior change.
+
+```toml
+[tmp]
+dir = ".tmp"   # relative, below the workspace root; default when omitted
+```
+
+| Key | Accepted | Meaning |
+|---|---|---|
+| `dir` | relative path | The scratch directory. Must stay below the workspace root, must name a dedicated subdirectory, and may not live inside `.git`. Defaults to `.tmp`. |
+
+**What apply does.** Creates the directory, keeps it gitignored (an anchored
+`/.tmp/` entry, or nothing under `.homonto/`, which init already ignores), and
+generates `references/tmp.md` into the framework dispatchers and the shared
+`homonto` knowledge skill naming the path and the contract. Editing `dir`
+re-projects; removing the table withdraws the references.
+
+**Who can write.** Every writable agent — the coordinator, the implementers,
+and any custom agent — writes there with no prompts and no permission-map
+changes, because the directory sits inside the workspace. Read-only workers
+stay read-only by design and hand scratch to the coordinator.
+
+**homonto never deletes tmp content.** Disabling `[tmp]` leaves the directory,
+its files, and the gitignore entry in place; cleanup is a human decision.
+
+Unknown keys and unusable paths fail at load, naming the offender:
+
+```
+tmp.path ".tmp" is an unknown key — [tmp] takes only dir
+```
+
 ## Plugins — `[plugins.opencode.<name>]`
 
 ```toml

@@ -356,7 +356,7 @@ t20_guided_project_setup() {
   git -C "$s/repo-a" init -q
   mkdir -p "$s/home/.config/opencode"
   printf '{\n  "model": "test-provider/test-model"\n}\n' >"$s/home/.config/opencode/opencode.json"
-  run_install "$s" $'\nboth\n'"$s/bin"$'\ny\nboth\ny\nworkflow\n\n'"$s/repo-a"$'\napi\n' \
+  run_install "$s" $'\nboth\n'"$s/bin"$'\ny\nboth\ny\nworkflow\nn\n\n'"$s/repo-a"$'\napi\n' \
     HOME="$s/home" XDG_CONFIG_HOME="$s/home/.config" MOCK_INIT_WRITES_CONFIG=1
   config="$s/homonto.toml"
   expect_exit "t20: guided project setup" 0
@@ -424,7 +424,7 @@ t23_forced_dialog_requires_binary() {
 t24_h_with_onto_configures_transitive_models() {
   local s="$1" config
   make_release v9.9.9 linux amd64 "$s/assets" homonto onto to
-  run_install "$s" $'\nboth\n'"$s/bin"$'\ny\nonto\ny\n\n\n' MOCK_INIT_WRITES_CONFIG=1
+  run_install "$s" $'\nboth\n'"$s/bin"$'\ny\nonto\ny\n\nn\n\n' MOCK_INIT_WRITES_CONFIG=1
   config="$s/homonto.toml"
   expect_exit "t24: onto + h guided setup" 0
   if grep -qF '[frameworks.onto]' "$config" \
@@ -448,7 +448,7 @@ t24_h_with_onto_configures_transitive_models() {
 t25_h_with_to_configures_transitive_models() {
   local s="$1" config
   make_release v9.9.9 linux amd64 "$s/assets" homonto onto to
-  run_install "$s" $'\nboth\n'"$s/bin"$'\ny\nto\ny\n\n\n' MOCK_INIT_WRITES_CONFIG=1
+  run_install "$s" $'\nboth\n'"$s/bin"$'\ny\nto\ny\n\nn\n\n' MOCK_INIT_WRITES_CONFIG=1
   config="$s/homonto.toml"
   expect_exit "t25: to + h guided setup" 0
   if grep -qF '[frameworks.to]' "$config" \
@@ -465,6 +465,29 @@ t25_h_with_to_configures_transitive_models() {
     ok "t25: to + h generated configuration passes homonto plan"
   else
     bad "t25: to + h generated configuration passes homonto plan"
+    cat "$s/plan.stderr" >&2
+  fi
+}
+
+t26_guided_tmp_directory() {
+  local s="$1" config
+  make_release v9.9.9 linux amd64 "$s/assets" homonto onto to
+  run_install "$s" $'\nboth\n'"$s/bin"$'\ny\nboth\ny\n\ny\n\n\n' MOCK_INIT_WRITES_CONFIG=1
+  config="$s/homonto.toml"
+  expect_exit "t26: guided setup with tmp" 0
+  if grep -qF '[tmp]' "$config" \
+    && grep -qF 'dir = ".tmp"' "$config" \
+    && [ "$(grep -cF '[tmp]' "$config")" -eq 1 ]; then
+    ok "t26: writes the declared tmp directory"
+  else
+    bad "t26: writes the declared tmp directory"
+    cat "$config" >&2
+  fi
+  if (cd "$ROOT" && go build -o "$s/homonto-real" .) \
+    && (cd "$s" && "$s/homonto-real" plan >/dev/null 2>"$s/plan.stderr"); then
+    ok "t26: tmp configuration passes homonto plan"
+  else
+    bad "t26: tmp configuration passes homonto plan"
     cat "$s/plan.stderr" >&2
   fi
 }
@@ -499,6 +522,7 @@ t22_dialog_ui "$TMP/t22"
 t23_forced_dialog_requires_binary "$TMP/t23"
 t24_h_with_onto_configures_transitive_models "$TMP/t24"
 t25_h_with_to_configures_transitive_models "$TMP/t25"
+t26_guided_tmp_directory "$TMP/t26"
 
 printf '\n'
 for line in "${SUMMARY[@]}"; do printf '%s\n' "$line"; done

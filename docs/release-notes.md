@@ -15,6 +15,22 @@ bookkeeper) — for every supported OS/arch as separate archives under one
 `SHA256SUMS`. `onto` and `to` each require `homonto` to have installed their
 framework first (`[frameworks.onto]` / `[frameworks.to]` + `homonto apply`).
 
+### New in v0.22.0 — a declared workspace tmp directory
+
+- **`[tmp]`: one scratch directory the whole projection shares**
+  ([ADR 0048](adr/0048-one-declared-workspace-tmp-directory.md)). Declare
+  `[tmp]` (optionally `dir`, default `.tmp`) and every apply creates the
+  directory, keeps it gitignored, and generates `references/tmp.md` into the
+  framework dispatchers and the shared `homonto` skill naming the path and the
+  contract. Because it sits inside the workspace, every writable agent —
+  including custom agents — writes there with no prompts and no
+  permission-map changes; read-only workers stay read-only and hand scratch
+  to the coordinator. homonto never deletes tmp content: disabling the table
+  withdraws the generated references but leaves the directory and its files
+  untouched. The guided installer offers the declaration for new projects,
+  and the path is fingerprinted with the materialize gate so a `dir` edit
+  re-projects.
+
 ### New in v0.21.0 — one coordinator, and the h GitHub workflows
 
 - **One `homonto` coordinator agent.** The separate `onto` and `to` primary

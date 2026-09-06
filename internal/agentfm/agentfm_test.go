@@ -101,6 +101,16 @@ func TestRenderOpenCode_NoDialogsDeniesQuestion(t *testing.T) {
 	}
 }
 
+func TestRenderOpenCode_NetworkDeniedWhenRequested(t *testing.T) {
+	noNetwork := strings.Replace(readOnlyReviewer, "  dialogs: true\n", "  dialogs: true\n  network: false\n", 1)
+	s := mustRender(t, noNetwork, "opencode")
+	for _, want := range []string{"  webfetch: deny", "  websearch: deny"} {
+		if !strings.Contains(s, want) {
+			t.Errorf("network:false must deny %q:\n%s", want, s)
+		}
+	}
+}
+
 func TestRenderOpenCode_BashAllowlist(t *testing.T) {
 	allowlisted := strings.Replace(orchestrator, "  spawn: [onto-implementer, onto-reviewer]\n", `  spawn: [onto-implementer, onto-reviewer]
   bash_allow: ["onto *", "git status*", "git commit *"]
@@ -116,6 +126,75 @@ func TestRenderOpenCode_BashAllowlist(t *testing.T) {
 	}
 	if strings.Contains(string(s), "bash: deny") {
 		t.Errorf("a bash allowlist must not render bash: deny:\n%s", s)
+	}
+}
+
+// A prefix allow also glob-matches chained commands ("git status; curl …"),
+// and OpenCode's last-matching-rule-wins would execute them silently. The
+// composition guards must render AFTER the allows so the guard wins.
+func TestRenderOpenCode_BashAllowGuardsCompoundCommands(t *testing.T) {
+	allowlisted := strings.Replace(orchestrator, "  spawn: [onto-implementer, onto-reviewer]\n", `  spawn: [onto-implementer, onto-reviewer]
+  bash_allow: ["git status*"]
+`, 1)
+	s, err := Render("onto", []byte(allowlisted), "opencode", ctx())
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{`    "*;*": ask`, `    "*&&*": ask`, `    "*||*": ask`, `    "*|*": ask`, `    "*$(*": ask`, "    \"*`*\": ask", `    "*>*": ask`, `    "*<*": ask`} {
+		if !strings.Contains(string(s), want) {
+			t.Errorf("opencode bash composition guard missing %q:\n%s", want, s)
+		}
+	}
+	allowIdx := strings.Index(string(s), `    "git status*": allow`)
+	guardIdx := strings.Index(string(s), `    "*;*": ask`)
+	if allowIdx == -1 || guardIdx == -1 {
+		t.Fatalf("render must carry the allow and the guard:\n%s", s)
+	}
+	if allowIdx > guardIdx {
+		t.Errorf("guards must follow the allows so last-match-wins re-asks compounds:\n%s", s)
+	}
+	// A denied-bash agent carries no allowlist, so it needs no guards.
+	if rendered := mustRender(t, readOnlyReviewer, "opencode"); strings.Contains(rendered, `"*;*": ask`) {
+		t.Errorf("bash: deny must not render guards:\n%s", rendered)
+	}
+}
+
+// bash_deny closes the single-command gate-skipping surface: "onto bypass…"
+// is one command (no composition for the guards to catch) matching the broad
+// "onto *" allow. The deny must render AFTER the allow so it wins.
+func TestRenderOpenCode_BashDenyOverridesAllow(t *testing.T) {
+	denied := strings.Replace(orchestrator, "  spawn: [onto-implementer, onto-reviewer]\n", `  spawn: [onto-implementer, onto-reviewer]
+  bash_allow: ["onto *"]
+  bash_deny: ["onto bypass*"]
+`, 1)
+	s, err := Render("onto", []byte(denied), "opencode", ctx())
+	if err != nil {
+		t.Fatal(err)
+	}
+	allowIdx := strings.Index(string(s), `    "onto *": allow`)
+	denyIdx := strings.Index(string(s), `    "onto bypass*": deny`)
+	if denyIdx == -1 {
+		t.Fatalf("bash_deny must render a deny rule:\n%s", s)
+	}
+	if allowIdx == -1 || allowIdx > denyIdx {
+		t.Errorf("deny must follow the allow so last-match-wins denies the gate skip:\n%s", s)
+	}
+	// bash: deny plus a deny list is incoherent: there is no bash surface.
+	contradiction := strings.Replace(readOnlyReviewer, "  bash: false\n", "  bash: false\n  bash_deny: [\"onto bypass*\"]\n", 1)
+	if _, err := Render("onto-reviewer", []byte(contradiction), "opencode", ctx()); err == nil {
+		t.Fatal("bash: deny with bash_deny entries must error")
+	}
+	// A deny list alone (no allows) still renders the map: catch-all ask +
+	// the deny.
+	denyOnly := strings.Replace(orchestrator, "  spawn: [onto-implementer, onto-reviewer]\n", "  spawn: [onto-implementer, onto-reviewer]\n  bash_deny: [\"onto bypass*\"]\n", 1)
+	s2, err := Render("onto", []byte(denyOnly), "opencode", ctx())
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{`    "*": ask`, `    "onto bypass*": deny`} {
+		if !strings.Contains(string(s2), want) {
+			t.Errorf("deny-only render missing %q:\n%s", want, s2)
+		}
 	}
 }
 

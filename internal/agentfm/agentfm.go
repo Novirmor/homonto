@@ -11,6 +11,7 @@
 //	homonto:
 //	  read_only: true       # deny edits/writes
 //	  bash: false           # optional; false denies bash (default: allowed)
+//	  network: false        # optional; false denies web fetch/search
 //	  dialogs: true         # allow the interactive question/dialog tool
 //	  spawn: []             # delegation topology: agents this one may dispatch
 //	  primary: true         # OpenCode primary agent
@@ -48,7 +49,9 @@ import (
 type Homonto struct {
 	ReadOnly  bool      `yaml:"read_only"`  // deny edits/writes
 	Bash      *bool     `yaml:"bash"`       // nil = default (allowed); false = deny
+	Network   *bool     `yaml:"network"`    // nil = default (allowed); false = deny web fetch/search
 	BashAllow []string  `yaml:"bash_allow"` // allowlisted shell commands; all other commands ask
+	BashDeny  []string  `yaml:"bash_deny"`  // denied even inside bash_allow's reach; rendered last so it wins
 	Dialogs   bool      `yaml:"dialogs"`    // allow the question/dialog tool
 	Spawn     *[]string `yaml:"spawn"`      // nil = unrestricted; [] = none; [a,b] = only these
 	Primary   bool      `yaml:"primary"`    // OpenCode primary agent
@@ -180,8 +183,8 @@ func Render(name string, content []byte, tool string, ctx *RenderContext) ([]byt
 		if h.Steps > 0 {
 			extra = append(extra, fmt.Sprintf("steps: %d", h.Steps))
 		}
-		if h.Bash != nil && !*h.Bash && len(spec.BashAllowAdd) > 0 {
-			return nil, fmt.Errorf("agentfm: agent %q declares bash: deny but carries bash_allow_add entries; a denied agent cannot gain exact allows", name)
+		if h.Bash != nil && !*h.Bash && (len(spec.BashAllowAdd) > 0 || len(h.BashDeny) > 0) {
+			return nil, fmt.Errorf("agentfm: agent %q declares bash: deny but carries bash_allow_add/bash_deny entries; a denied agent cannot gain exact allows or denies", name)
 		}
 		if perm := opencodePermission(h, spec.BashAllowAdd, externalDirectories, managesExternalDirectories); perm != "" {
 			extra = append(extra, "permission:", perm)
@@ -205,6 +208,15 @@ func Render(name string, content []byte, tool string, ctx *RenderContext) ([]byt
 	return b.Bytes(), nil
 }
 
+// bashCompositionGuards are shell-composition patterns re-asked after every
+// bash allowlist: separators, conditional chains, pipes, command
+// substitution, backticks, redirection, and multi-line commands. Each lets an
+// allowed prefix chain a second command, which the allow glob would otherwise
+// match and run without a prompt.
+var bashCompositionGuards = []string{
+	"*;*", "*&&*", "*||*", "*|*", "*$(*", "*`*", "*>*", "*<*", "*\n*",
+}
+
 // opencodePermission renders the OpenCode `permission:` block body (indented
 // lines) for the neutral intent, including the delegation topology as task globs.
 func opencodePermission(h Homonto, additions, externalDirectories []string, managesExternalDirectories bool) string {
@@ -214,7 +226,7 @@ func opencodePermission(h Homonto, additions, externalDirectories []string, mana
 	}
 	if h.Bash != nil && !*h.Bash {
 		lines = append(lines, "  bash: deny")
-	} else if len(h.BashAllow) > 0 || len(additions) > 0 {
+	} else if len(h.BashAllow) > 0 || len(additions) > 0 || len(h.BashDeny) > 0 {
 		// OpenCode evaluates the final matching rule, so the broad prompt must
 		// precede the command-specific allows. Additions (bash_allow_add, the
 		// reviewed permission-suggestion output) append after the base list,
@@ -228,6 +240,27 @@ func opencodePermission(h Homonto, additions, externalDirectories []string, mana
 			seen[command] = true
 			lines = append(lines, fmt.Sprintf("    %q: allow", command))
 		}
+		// Composition guards, emitted AFTER the allows: a prefix allow like
+		// "git status*" also matches "git status; curl …" under glob
+		// matching, and last-match-wins would run the chained command
+		// silently. Re-asking every compound form closes that hole for the
+		// whole allowlist at once.
+		for _, guard := range bashCompositionGuards {
+			lines = append(lines, fmt.Sprintf("    %q: ask", guard))
+		}
+		// Explicit denies render LAST: a deny like "onto bypass*" must beat
+		// the broad "onto *" allow for last-match-wins, closing the
+		// single-command gate-skipping surface guards cannot see (no
+		// composition involved).
+		for _, command := range h.BashDeny {
+			if strings.TrimSpace(command) == "" {
+				continue
+			}
+			lines = append(lines, fmt.Sprintf("    %q: deny", command))
+		}
+	}
+	if h.Network != nil && !*h.Network {
+		lines = append(lines, "  webfetch: deny", "  websearch: deny")
 	}
 	if !h.ReadOnly && managesExternalDirectories {
 		lines = append(lines, "  external_directory:")

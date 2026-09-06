@@ -10,6 +10,7 @@ mode: subagent
 homonto:
   read_only: true
   bash: false
+  network: false
   dialogs: false
   spawn: []
 ---

@@ -438,7 +438,7 @@ func TestHFrameworkRendersCoordinatorAndReadonlyWorkers(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, want := range []string{"mode: primary", `"h-spike": allow`, `"h-review": allow`, "external_directory:"} {
+	for _, want := range []string{"mode: primary", `"h-spike": allow`, `"h-review": allow`, "external_directory:", "webfetch: deny", "websearch: deny", `"*;*": ask`, `"onto bypass*": deny`} {
 		if !strings.Contains(string(primary), want) {
 			t.Errorf("homonto primary (via h) missing %q:\n%s", want, primary)
 		}
@@ -461,8 +461,10 @@ func TestHFrameworkRendersCoordinatorAndReadonlyWorkers(t *testing.T) {
 		if strings.Contains(rendered, "external_directory:") {
 			t.Errorf("%s must not gain an external-directory rule:\n%s", worker, rendered)
 		}
-		if !strings.Contains(rendered, "edit: deny") || !strings.Contains(rendered, "bash: deny") {
-			t.Errorf("%s must deny edits and bash in its permission map:\n%s", worker, rendered)
+		for _, want := range []string{"edit: deny", "bash: deny", "webfetch: deny", "websearch: deny"} {
+			if !strings.Contains(rendered, want) {
+				t.Errorf("%s must deny %s in its permission map:\n%s", worker, want, rendered)
+			}
 		}
 		if !strings.Contains(rendered, "task: deny") {
 			t.Errorf("%s must not spawn:\n%s", worker, rendered)

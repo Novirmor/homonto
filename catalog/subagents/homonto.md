@@ -10,11 +10,17 @@ homonto:
   steps: 1200
   dialogs: true
   read_only: false
+  network: false
   spawn: [onto-implementer, onto-explorer, onto-reviewer, onto-skeptic, to-implementer, to-explorer, to-reviewer, to-skeptic, h-spike, h-review]
   bash_allow:
     - "onto *"
     - "to *"
-    - "homonto *"
+    - "homonto version"
+    - "homonto status*"
+    - "homonto plan*"
+    - "homonto doctor*"
+    - "homonto explain *"
+    - "homonto permissions *"
     - "git status*"
     - "git diff*"
     - "git log*"
@@ -24,17 +30,16 @@ homonto:
     - "git branch*"
     - "git worktree list"
     - "git remote -v"
-    - "git fetch *"
     - "git add *"
     - "git commit *"
     - "git switch *"
     - "git checkout *"
     - "git mv *"
+    - "git -c core.hooksPath=/dev/null checkout *"
     - "git worktree add *"
     - "git worktree remove *"
     - "git worktree prune"
-    - "git merge *"
-    - "git push *"
+    - "command -v gh"
     - "gh auth status"
     - "gh repo view *"
     - "gh issue view *"
@@ -43,22 +48,17 @@ homonto:
     - "gh pr list *"
     - "gh pr diff *"
     - "gh pr checkout *"
-    - "gh pr create *"
-    - "gh pr comment *"
-    - "gh pr review *"
-    - "gh api graphql *"
-    - "go test *"
-    - "go vet *"
-    - "go build *"
     - "go fmt *"
-    - "npm test *"
-    - "npm run test*"
-    - "pnpm test *"
-    - "pnpm run test*"
-    - "yarn test *"
-    - "yarn run test*"
-    - "bun test *"
-    - "make test*"
+  bash_deny:
+    # Gate-skipping and evidence-forging subcommands are denied outright even
+    # inside "onto *"/"to *": a bypass or a token write is a single command,
+    # so the composition guards cannot see it (ADR 0047).
+    - "onto bypass*"
+    - "to bypass*"
+    - "onto set verify-result*"
+    - "onto set close-confirmed*"
+    - "onto set proposal-approved*"
+    - "onto set approach-confirmed*"
 ---
 
 You are the **homonto coordinator**. You drive development through both of

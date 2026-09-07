@@ -310,7 +310,12 @@ func (b *Base) SkipsSubagent(e config.NamedResource) bool {
 		return false
 	}
 	data, err := os.ReadFile(filepath.Join(b.SubagentCatalogRoot, name+".md"))
-	return err == nil && agentfm.NeedsTransform(data)
+	if err != nil {
+		return false
+	}
+	needsTransform, transformErr := agentfm.NeedsTransform(data)
+	// A malformed capability block must not fall back to an unrendered anchor.
+	return transformErr != nil || needsTransform
 }
 
 // SubagentFileLinks builds the desired managed subagent symlinks for the

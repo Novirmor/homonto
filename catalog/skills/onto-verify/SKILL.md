@@ -138,9 +138,10 @@ replanning; the count is a warning, not a mandatory user interruption.
 - [ ] onto-no-slop pass run over `verification.md`, recorded in
       `notes.md` (`no-slop: verification done`) — never touch the
       machine-read `Result:` line or the evidence table structure
-- [ ] If recorded phase is verify, advanced verify → close via `onto advance
-      <name>`; on a downward mismatch, skipped advance and returned to `/onto`
 - [ ] **Commit the workspace**: `git add <workflow-root>/changes/<name> && git commit`
-      — every phase exits with its workspace committed
+       — every phase exits with its workspace committed
+- [ ] If recorded phase is verify, advanced verify → close via `onto advance
+       <name>`; on a downward mismatch, skipped advance and returned to `/onto`
+- [ ] Commit the phase-state update from `onto advance <name>` before close
 - [ ] Load `onto-close` and continue in the same invocation unless the user
       named verify as the endpoint or asked to pause

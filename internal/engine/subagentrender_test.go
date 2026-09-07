@@ -443,13 +443,24 @@ func TestHFrameworkRendersCoordinatorAndReadonlyWorkers(t *testing.T) {
 			t.Errorf("homonto primary (via h) missing %q:\n%s", want, primary)
 		}
 	}
+	for _, deniedSetter := range []string{`"onto set verify-result*": deny`, `"onto set close-confirmed*": deny`, `"onto set proposal-approved*": deny`, `"onto set approach-confirmed*": deny`} {
+		if strings.Contains(string(primary), deniedSetter) {
+			t.Errorf("homonto must be able to record routine workflow evidence, but rendered %q:\n%s", deniedSetter, primary)
+		}
+	}
 	for _, implementer := range []string{"onto-implementer", "to-implementer"} {
 		data, err := os.ReadFile(filepath.Join(e.SubagentDir(), implementer+".opencode.md"))
 		if err != nil {
 			t.Fatal(err)
 		}
-		if !strings.Contains(string(data), "external_directory:") {
+		rendered := string(data)
+		if !strings.Contains(rendered, "external_directory:") {
 			t.Errorf("%s must inherit declared-repo access under h:\n%s", implementer, data)
+		}
+		for _, want := range []string{`"*": ask`, `"onto *": deny`, `"to *": deny`, `"gh *": deny`, `"git push": deny`, `"git push *": deny`, "webfetch: deny", "websearch: deny"} {
+			if !strings.Contains(rendered, want) {
+				t.Errorf("%s must retain the delegated execution boundary %q:\n%s", implementer, want, rendered)
+			}
 		}
 	}
 	for _, worker := range []string{"h-spike", "h-review"} {

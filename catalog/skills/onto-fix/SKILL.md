@@ -86,8 +86,8 @@ onto advance <name> --to build      # walks open → design → build, every gat
 ```
 
 Then execute the build. After its tasks and commits are complete, run `onto
-advance <name>` to enter verify. Verification records `verify.scale: light` and
-a passing report before the final advance into close.
+advance <name>` to enter verify. Verification selects its scale from the shared
+risk check and records a passing report before the final advance into close.
 
 Classify the request from evidence before building. When the requested behavior
 already exists and the reproduction demonstrates a regression, proceed as a
@@ -103,17 +103,18 @@ root cause (systematic debugging — reproduce, read the whole error, trace
 data flow; no fix before the root cause is identified), apply the minimal
 fix, watch the test pass, run the surrounding tests. One commit per task.
 
-### 3. Verify (light)
+### 3. Verify
 
-Run `onto set verify-scale <name> light`. The bug's reproduction is the core
-scenario: demonstrate it no longer occurs, with the literal command +
-output in `<workflow-root>/changes/<name>/verification.md` (template:
-`onto-verify/references/verification.md`), plus regression-suite results.
-One adversarial skeptic (`onto-skeptic`, conformance lens) is optional in light
-mode (protocol: `onto-verify/references/adversarial.md`); record a skip. On
-failure, fix by default; ask only before accepting a lower-severity deviation.
-Record the outcome with `onto set verify-result <name> pass|fail`. On pass,
-commit the report and state, then run `onto advance <name>` to enter close.
+Follow `onto-verify`'s scale and risk check. The preset is light only when it
+stays within the measured size limit and touches no security-sensitive surface;
+otherwise it uses full verification and its required skeptics. The bug's
+reproduction is the core scenario: demonstrate it no longer occurs, with the
+literal command + output in `<workflow-root>/changes/<name>/verification.md`
+(template: `onto-verify/references/verification.md`), plus regression-suite
+results. On failure, fix by default; ask only before accepting a lower-severity
+deviation. Record the outcome with `onto set verify-result <name> pass|fail`.
+On pass, commit the report and state, run `onto advance <name>` to enter close,
+then commit that phase-state update.
 
 ### 4. Close
 

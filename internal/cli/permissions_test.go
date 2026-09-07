@@ -30,6 +30,8 @@ func TestPermissionsSuggestRendersSnippet(t *testing.T) {
 		"go test ./...",
 		"git status",
 		"rm -rf /tmp/x",
+		"/bin/rm -rf /tmp/x",
+		"env sh -c id",
 		"FOO=bar make test",
 		"git *",
 		"curl https://example.com/secret",
@@ -51,8 +53,8 @@ func TestPermissionsSuggestRendersSnippet(t *testing.T) {
 	}
 	// Unsafe commands must appear only inside "# rejected:" lines, never in
 	// the rendered array.
-	array := out[strings.Index(out, "bash_allow_add"):]
-	for _, bad := range []string{`"rm -rf`, `"FOO=bar`, `"git *"`, `"curl`} {
+	array := out[strings.Index(out, "bash_allow_add = ["):]
+	for _, bad := range []string{`"rm -rf`, `"/bin/rm`, `"env sh`, `"FOO=bar`, `"git *"`, `"curl`} {
 		if strings.Contains(array, bad) {
 			t.Errorf("unsafe command %q rendered into the array:\n%s", bad, array)
 		}

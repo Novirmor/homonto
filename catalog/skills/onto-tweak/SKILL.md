@@ -77,18 +77,19 @@ No `plan.md` required. Still binding:
 - on ANY failure: systematic debugging — root cause before any fix
 - stay inside the tweak's stated scope; anything more hits the upgrade gate
 
-### 3. Light verify
+### 3. Verify
 
-Run `onto set verify-scale <name> light`.
-Demonstrate the changed behavior/content with a fresh command + output
-(render the doc, run the config consumer, show the diff taking effect) and
-run the regression suite. Write `<workflow-root>/changes/<name>/verification.md`
-(template: `onto-verify/references/verification.md`) — brief is fine,
-absent is not. One adversarial skeptic (`onto-skeptic`, conformance lens) is
-optional (skips recorded).
+Follow `onto-verify`'s scale and risk check. The preset is light only when it
+stays within the measured size limit and touches no security-sensitive surface;
+otherwise it uses full verification and its required skeptics. Demonstrate the
+changed behavior/content with a fresh command + output (render the doc, run the
+config consumer, show the diff taking effect) and run the regression suite.
+Write `<workflow-root>/changes/<name>/verification.md` (template:
+`onto-verify/references/verification.md`) — brief is fine, absent is not.
 Set `verify.result` through `onto set verify-result <name> pass|fail`; fix
 failures by default and ask only before accepting a lower-severity deviation.
-On pass, commit the report and state, then run `onto advance <name>`.
+On pass, commit the report and state, run `onto advance <name>`, then commit
+that phase-state update.
 
 ### 4. Close
 

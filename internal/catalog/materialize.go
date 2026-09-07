@@ -298,7 +298,11 @@ func (c *Catalog) SubagentFiles(name string, renderCtx map[string]agentfm.Render
 		return nil, fmt.Errorf("catalog: read %q: %w", sp, err)
 	}
 	files := []string{name + ".md"}
-	if !agentfm.NeedsTransform(data) {
+	needsTransform, err := agentfm.NeedsTransform(data)
+	if err != nil {
+		return nil, fmt.Errorf("catalog: parse subagent %q: %w", name, err)
+	}
+	if !needsTransform {
 		return files, nil
 	}
 	for _, tool := range []string{"opencode"} {
@@ -326,6 +330,8 @@ func (c *Catalog) SubagentFiles(name string, renderCtx map[string]agentfm.Render
 // variant removed. The shared file remains the version-gate anchor and
 // fallback for verbatim subagents.
 func (c *Catalog) MaterializeSubagents(dstRoot string, names []string, renderCtx map[string]agentfm.RenderContext) error {
+	// Parse and render every requested agent before changing the catalog root.
+	// A malformed later agent must not publish a partial catalog.
 	for _, name := range names {
 		sp, ok := c.subagents[name]
 		if !ok {
@@ -335,13 +341,43 @@ func (c *Catalog) MaterializeSubagents(dstRoot string, names []string, renderCtx
 		if err != nil {
 			return fmt.Errorf("catalog: read %q: %w", sp, err)
 		}
+		needsTransform, err := agentfm.NeedsTransform(data)
+		if err != nil {
+			return fmt.Errorf("catalog: parse subagent %q: %w", name, err)
+		}
+		if !needsTransform {
+			continue
+		}
+		for _, tool := range []string{"opencode"} {
+			ctx, targeted := renderContextForTool(renderCtx, tool, name)
+			if !targeted {
+				continue
+			}
+			if _, err := agentfm.Render(name, data, tool, ctx); err != nil {
+				return fmt.Errorf("catalog: render subagent %q for %s: %w", name, tool, err)
+			}
+		}
+	}
+	for _, name := range names {
+		sp, ok := c.subagents[name]
+		if !ok {
+			return fmt.Errorf("catalog: unknown subagent %q", name)
+		}
+		data, err := fs.ReadFile(c.subagentFS[name], sp)
+		if err != nil {
+			return fmt.Errorf("catalog: read %q: %w", sp, err)
+		}
+		needsTransform, err := agentfm.NeedsTransform(data)
+		if err != nil {
+			return fmt.Errorf("catalog: parse subagent %q: %w", name, err)
+		}
 		if err := os.MkdirAll(dstRoot, 0o755); err != nil {
 			return err
 		}
 		if err := fsutil.WriteControlPlane(filepath.Join(dstRoot, name+".md"), data, 0o644); err != nil {
 			return err
 		}
-		if !agentfm.NeedsTransform(data) {
+		if !needsTransform {
 			// A catalog upgrade can turn a rendered agent verbatim (its homonto:
 			// block removed). Remove any stale variant: OpenCode prefers a
 			// <name>.<tool>.md when it exists, so a leftover render from the

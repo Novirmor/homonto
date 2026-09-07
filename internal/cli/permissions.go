@@ -7,6 +7,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/noviopenworks/homonto/internal/config"
 	"github.com/spf13/cobra"
 )
 
@@ -96,24 +97,5 @@ func readCommandLines(r io.Reader) ([]string, error) {
 // commands only, no shell composition, no credential-like or destructive
 // content.
 func suggestToken(cmdLine string) error {
-	if cmdLine == "" {
-		return fmt.Errorf("empty command")
-	}
-	if strings.ContainsAny(cmdLine, "*?[]{}") {
-		return fmt.Errorf("%q must be exact; wildcards are a base-allowlist decision", cmdLine)
-	}
-	for _, bad := range []string{"|", "&&", "||", ";", ">", "<", "$(", "`", "\\\n"} {
-		if strings.Contains(cmdLine, bad) {
-			return fmt.Errorf("%q carries shell composition", cmdLine)
-		}
-	}
-	if strings.ContainsAny(cmdLine, "=") || strings.Contains(cmdLine, "PASS") || strings.Contains(cmdLine, "TOKEN") || strings.Contains(cmdLine, "KEY") || strings.Contains(cmdLine, "SECRET") {
-		return fmt.Errorf("%q looks like an environment assignment or credential name", cmdLine)
-	}
-	for _, bad := range []string{"rm ", "sudo ", "su ", "mkfs", "dd ", "chmod 777", "curl "} {
-		if strings.HasPrefix(cmdLine, bad) {
-			return fmt.Errorf("%q is destructive, privilege-escalating, or network-fetching", cmdLine)
-		}
-	}
-	return nil
+	return config.ValidateBashAllowAdd(cmdLine)
 }

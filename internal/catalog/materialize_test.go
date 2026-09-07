@@ -159,6 +159,32 @@ func TestMaterializeSubagentsUnknownErrors(t *testing.T) {
 	}
 }
 
+func TestMaterializeSubagentsRejectsMalformedCapabilitiesBeforeWriting(t *testing.T) {
+	m := matFS()
+	m["frameworks/sp/framework.toml"] = &fstest.MapFile{Data: []byte(`name = "sp"
+version = "0.1.0"
+[subagents]
+nav = "subagents/nav.md"
+ready = "subagents/ready.md"
+`)}
+	m["subagents/nav.md"] = &fstest.MapFile{Data: []byte("---\nname: nav\nhomonto:\n  bash: [false]\n---\nbody\n")}
+	m["subagents/ready.md"] = &fstest.MapFile{Data: []byte("---\nname: ready\n---\nbody\n")}
+	c, err := Load(m)
+	if err != nil {
+		t.Fatal(err)
+	}
+	dst := t.TempDir()
+	if err := c.MaterializeSubagents(dst, []string{"ready", "nav"}, nil); err == nil {
+		t.Fatal("malformed capability block must be rejected")
+	}
+	if _, err := os.Stat(filepath.Join(dst, "nav.md")); !os.IsNotExist(err) {
+		t.Errorf("malformed source was written as an unrendered anchor: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(dst, "ready.md")); !os.IsNotExist(err) {
+		t.Errorf("valid earlier agent was published before later validation failed: %v", err)
+	}
+}
+
 // A catalog upgrade can turn a rendered agent verbatim (homonto: block
 // removed). Materialize used to remove a stale variant only in the render
 // path — a verbatim transition removed nothing and left the old

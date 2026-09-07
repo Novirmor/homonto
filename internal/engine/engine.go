@@ -429,6 +429,14 @@ func (e *Engine) materializeCatalog() error {
 	if p == nil || p.upToDate {
 		return nil
 	}
+	// Validate every rendered agent before publishing any catalog class. This
+	// keeps malformed capability intent from leaving skills or commands newer
+	// than the subagent catalog that failed to materialize.
+	for _, name := range p.subagents {
+		if _, err := p.cl.SubagentFiles(name, p.renderCtx); err != nil {
+			return err
+		}
+	}
 	if err := p.cl.Materialize(e.CatalogRoot, p.skills, p.shellProxy, p.codeIntel, p.tmpDir); err != nil {
 		return err
 	}

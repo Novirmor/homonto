@@ -48,8 +48,8 @@ force-push.
     close and integration emit.
 5. **Integrate after verification.** Only once the workflow's verification
    has passed:
-    - **onto:** prefer `integration: pr` at close — `onto close` itself
-      pushes the branch and opens the PR with the prepared body; then record the receipt
+     - **onto:** prefer `integration: pr` at close — the `onto-close` skill
+       prepares, pushes, and opens the PR after `onto close` archives; then record the receipt
      (`onto complete-integration <name> --receipt "pr:<URL>"`). Do not open a
      second PR on top of the one close opened.
     - **to:** after `to done` archives the change, push the branch

@@ -31,10 +31,12 @@ Apply the dispatcher's shared autonomous workflow policy throughout.
    several concurrently when the change warrants it, each with a distinct lens
    (does it do what it claims / what breaks it / does the evidence hold). One
    completed pass is the floor, not the ceiling.
-   - A skeptic attempt that returns `Evidence requests:` or `Questions:` is
-     incomplete. Run technical probes and resolve factual questions yourself;
-     ask the user only for missing product intent. Then re-dispatch against the
-     same candidate with the literal evidence.
+    - Only a literal `Status: complete` is a completed pass. Run a blocked,
+      missing, or unrecognized status's technical probes and resolve factual
+      questions yourself; ask the user only for missing product intent. Then
+      re-dispatch against the same candidate with the literal evidence.
+      `Evidence requests: none` and `Questions: none` are compatible with
+      `Status: complete`.
    - If accepted findings change code, the previous verdict describes an old
      tree. Re-run `Final Verify:`, then re-dispatch once against the new final
      candidate. Keep only the completed verdict for the tree being archived.

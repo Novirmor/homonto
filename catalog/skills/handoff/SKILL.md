@@ -8,8 +8,10 @@ metadata:
 # handoff
 
 Write a handoff document so a fresh agent with no memory of this conversation
-can pick up the work and keep going. Save it to the OS temp directory (not the
-workspace), named `handoff-<YYYYMMDD-HHMMSS>.md`.
+can pick up the work and keep going. Save it under the declared workspace tmp
+directory when `references/tmp.md` names one, as
+`handoff-<YYYYMMDD-HHMMSS>.md`. Otherwise return the handoff in conversation;
+do not require an external-directory write.
 
 Write for a reader who has the repository but none of this chat. Capture the
 decisions and the reasons behind them, not a transcript. If a fact already lives
@@ -38,4 +40,5 @@ by path or URL instead of restating it.
 - Redact secrets: no API keys, tokens, passwords, or personal data.
 - If the user passed an argument, treat it as the next session's focus and
   weight the Next and Key-files sections toward it.
-- End by printing the saved path.
+- When saved, end by printing the path; when returned in conversation, label it
+  clearly as the handoff.

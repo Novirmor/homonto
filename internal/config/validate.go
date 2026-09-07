@@ -6,6 +6,7 @@ import (
 	"slices"
 	"sort"
 	"strings"
+	"unicode"
 
 	"github.com/noviopenworks/homonto/internal/remote"
 )
@@ -615,9 +616,17 @@ func validateSource(label, source, digest string, allowRemote bool) error {
 }
 
 // variantToken rejects an invalid OpenCode frontmatter variant: empty after
-// trim, whitespace, or an embedded `#`.
+// trim, whitespace, or a non-token character.
 func variantToken(label, variant string) error {
-	if strings.ContainsAny(variant, " \t") || strings.Contains(variant, "#") {
+	if variant == "" {
+		return fmt.Errorf("parse config: %s variant must not be empty", label)
+	}
+	for _, r := range variant {
+		if !(unicode.IsLetter(r) || unicode.IsDigit(r) || r == '.' || r == '_' || r == '-') {
+			return fmt.Errorf("parse config: %s variant %q is invalid; use a plain variant name (e.g. \"high\", \"xhigh\")", label, variant)
+		}
+	}
+	if strings.TrimSpace(variant) != variant {
 		return fmt.Errorf("parse config: %s variant %q is invalid; use a plain variant name (e.g. \"high\", \"xhigh\")", label, variant)
 	}
 	return nil
@@ -644,7 +653,9 @@ func validateModelSpec(tool, label string, r ModelRoute, requireModel bool) erro
 			return fmt.Errorf("parse config: %s sets effort %q, but OpenCode has no effort setting — select variants (medium, high, xhigh, …) with variant", label, effort)
 		}
 		if variant != "" {
-			return variantToken(label, variant)
+			if err := variantToken(label, variant); err != nil {
+				return err
+			}
 		}
 		for _, add := range r.BashAllowAdd {
 			if err := bashAllowAddToken(label, add); err != nil {
@@ -675,10 +686,22 @@ func bashAllowAddToken(label, add string) error {
 	if strings.ContainsAny(cmd, "=") || strings.Contains(cmd, "PASS") || strings.Contains(cmd, "TOKEN") || strings.Contains(cmd, "KEY") || strings.Contains(cmd, "SECRET") {
 		return fmt.Errorf("parse config: %s bash_allow_add %q looks like an environment assignment or carries a credential-like name; refusing", label, cmd)
 	}
-	if strings.HasPrefix(cmd, "rm ") || strings.HasPrefix(cmd, "sudo ") || strings.HasPrefix(cmd, "su ") || strings.HasPrefix(cmd, "mkfs") || strings.HasPrefix(cmd, "dd ") {
-		return fmt.Errorf("parse config: %s bash_allow_add %q is destructive or privilege-escalating; refusing", label, cmd)
+	fields := strings.Fields(cmd)
+	executable := fields[0]
+	if slash := strings.LastIndex(executable, "/"); slash >= 0 {
+		executable = executable[slash+1:]
+	}
+	if executable == "env" || executable == "command" || executable == "nice" || executable == "timeout" || executable == "xargs" || executable == "rm" || executable == "sudo" || executable == "su" || executable == "sh" || executable == "bash" || executable == "zsh" || executable == "fish" || executable == "curl" || strings.HasPrefix(executable, "mkfs") || strings.HasPrefix(executable, "dd") {
+		return fmt.Errorf("parse config: %s bash_allow_add %q is a wrapper, destructive, privilege-escalating, shell, or network-fetching command; refusing", label, cmd)
 	}
 	return nil
+}
+
+// ValidateBashAllowAdd applies the same additive-allow rules used while loading
+// configuration. Callers that produce suggestions must not offer snippets the
+// loader will reject.
+func ValidateBashAllowAdd(add string) error {
+	return bashAllowAddToken("bash_allow_add", add)
 }
 
 // validateModels ensures every declared subagent resolves an explicit per-tool

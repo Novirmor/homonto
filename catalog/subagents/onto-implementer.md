@@ -8,6 +8,10 @@ mode: subagent
 # returns questions instead of prompting (subagents never prompt the user).
 homonto:
   read_only: false
+  network: false
+  # No command is pre-approved for an implementer. This preserves the per-run
+  # approval boundary when a task executes code from an untrusted PR checkout.
+  bash_deny: ["onto *", "to *", "homonto *", "gh *", "git push", "git push *", "git merge", "git merge *", "git rebase", "git rebase *", "git reset", "git reset *", "git checkout", "git checkout *", "git switch", "git switch *", "git worktree", "git worktree *"]
   dialogs: false
   spawn: []
 ---
@@ -38,7 +42,11 @@ Rules:
 - **Do not delegate.** You spawn no subagents; you do the work yourself.
 - **Do not commit** unless the spec explicitly tells you to — the orchestrator
   owns commits and checkoffs, and verifies your work against the repository, not
-   against your report.
+    against your report.
+- **Do not operate the workflow or publish.** `onto`, `to`, `homonto`, GitHub,
+  branch-switching, merging, rebasing, resets, and pushes belong to the
+  coordinator. This profile asks before shell commands run; an inherited
+  auto-allow is a blocker for untrusted PR work, not permission to run a script.
 - **Do not alter task identifiers.** Preserve the handed dotted task ID and its
   `[trace #N]` marker; only the coordinator creates or renumbers task records.
 - **No symptom patches.** If a test or build fails for a reason the spec did not

@@ -40,14 +40,14 @@ First page — the cursor variable is nullable and receives a typed null
 rejects as an invalid cursor):
 
 ```bash
-gh api graphql -f owner=OWNER -f name=REPO -F number=NUMBER -F after=null -f query='query($owner:String!,$name:String!,$number:Int!,$after:String){repository(owner:$owner,name:$name){pullRequest(number:$number){reviewThreads(first:100,after:$after){pageInfo{hasNextPage endCursor}nodes{id isResolved,isOutdated,path,line,comments(first:100){pageInfo{hasNextPage endCursor}nodes{author{login}body createdAt url}}}}}}}'
+gh api graphql -f owner=OWNER -f name=REPO -F number=NUMBER -F after=null -f query='query($owner:String!,$name:String!,$number:Int!,$after:String){repository(owner:$owner,name:$name){pullRequest(number:$number){reviewThreads(first:100,after:$after){pageInfo{hasNextPage endCursor}nodes{id isResolved,isOutdated,path,line,comments(first:100){pageInfo{hasNextPage endCursor}nodes{author{login}authorAssociation body createdAt url}}}}}}}'
 ```
 
 While `reviewThreads.pageInfo.hasNextPage` is true, re-run the same query with
 the previous page's end cursor as a string:
 
 ```bash
-gh api graphql -f owner=OWNER -f name=REPO -F number=NUMBER -f after=THREAD_END_CURSOR -f query='query($owner:String!,$name:String!,$number:Int!,$after:String){repository(owner:$owner,name:$name){pullRequest(number:$number){reviewThreads(first:100,after:$after){pageInfo{hasNextPage endCursor}nodes{id isResolved,isOutdated,path,line,comments(first:100){pageInfo{hasNextPage endCursor}nodes{author{login}body createdAt url}}}}}}}'
+gh api graphql -f owner=OWNER -f name=REPO -F number=NUMBER -f after=THREAD_END_CURSOR -f query='query($owner:String!,$name:String!,$number:Int!,$after:String){repository(owner:$owner,name:$name){pullRequest(number:$number){reviewThreads(first:100,after:$after){pageInfo{hasNextPage endCursor}nodes{id isResolved,isOutdated,path,line,comments(first:100){pageInfo{hasNextPage endCursor}nodes{author{login}authorAssociation body createdAt url}}}}}}}'
 ```
 
 For each thread whose `comments.pageInfo.hasNextPage` is true, page comments
@@ -55,7 +55,7 @@ separately with the thread ID and that connection's own cursor (again `-F
 after=null` first, then the string cursor):
 
 ```bash
-gh api graphql -F thread=THREAD_ID -f after=COMMENT_CURSOR -f query='query($thread:ID!,$after:String){node(id:$thread){... on PullRequestReviewThread{comments(first:100,after:$after){pageInfo{hasNextPage endCursor}nodes{author{login}body createdAt url}}}}}'
+gh api graphql -F thread=THREAD_ID -f after=COMMENT_CURSOR -f query='query($thread:ID!,$after:String){node(id:$thread){... on PullRequestReviewThread{comments(first:100,after:$after){pageInfo{hasNextPage endCursor}nodes{author{login}authorAssociation body createdAt url}}}}}'
 ```
 
 Pagination is a hard contract, not a nicety: continue each query until its own

@@ -327,9 +327,12 @@ func (e *Engine) doctorSubagents(tool string, entries []config.NamedResource) []
 				// OpenCode-primary agent) is deliberately not projected here,
 				// so its absent link is correct — warning about it would be a
 				// permanent finding no apply could ever clear.
-				if data, rerr := os.ReadFile(shared); rerr == nil && agentfm.NeedsTransform(data) {
-					if projects, perr := agentfm.ProjectsFor(data, tool); perr == nil && !projects {
-						return "", true
+				if data, rerr := os.ReadFile(shared); rerr == nil {
+					needsTransform, transformErr := agentfm.NeedsTransform(data)
+					if needsTransform && transformErr == nil {
+						if projects, perr := agentfm.ProjectsFor(data, tool); perr == nil && !projects {
+							return "", true
+						}
 					}
 				}
 				return shared, false

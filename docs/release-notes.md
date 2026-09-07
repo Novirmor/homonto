@@ -15,6 +15,31 @@ bookkeeper) — for every supported OS/arch as separate archives under one
 `SHA256SUMS`. `onto` and `to` each require `homonto` to have installed their
 framework first (`[frameworks.onto]` / `[frameworks.to]` + `homonto apply`).
 
+### New in v0.23.0 — executable workflow contracts and safer agent projection
+
+- **Workflow agents can complete their documented gates.** The shared
+  coordinator records routine proposal, approach, verification, and close
+  evidence while explicit `onto` and `to` bypasses remain unreachable. Preset
+  verification now shares onto's risk classifier, so a small change to a
+  security-sensitive surface receives full verification. Close recovery
+  distinguishes completed spec merging from ADR promotion, and local
+  integration pins the post-archive commit so the base branch receives the
+  archive as well as the verified source.
+- **PR continuation keeps its execution boundary across delegation.**
+  Implementers prompt for shell execution, deny workflow and publishing
+  commands, and stop PR continuation when inherited auto-allows would bypass
+  per-command approval. Inline review comments now carry author association
+  through every paginated query; only owner, member, and collaborator feedback
+  routes automatically.
+- **Projection rejects malformed or unsafe input before publishing it.** Model
+  variants and additive Bash permissions reject multiline, wrapper, shell,
+  destructive, privilege-escalating, and network-fetching forms consistently
+  in both configuration and permission suggestions. Invalid or unknown
+  `homonto:` capabilities fail closed, and subagents are preflighted before a
+  catalog update publishes any content.
+- **The guided installer rejects non-model answers to its model question.**
+  This fixes a validation gap introduced after v0.22.0.
+
 ### New in v0.22.0 — a declared workspace tmp directory
 
 - **`[tmp]`: one scratch directory the whole projection shares**

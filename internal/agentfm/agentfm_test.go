@@ -51,11 +51,22 @@ func mustRender(t *testing.T, content, tool string) string {
 }
 
 func TestNeedsTransform(t *testing.T) {
-	if !NeedsTransform([]byte(readOnlyReviewer)) {
+	needs, err := NeedsTransform([]byte(readOnlyReviewer))
+	if err != nil || !needs {
 		t.Fatal("homonto block should need transform")
 	}
-	if NeedsTransform([]byte("---\nname: x\ndescription: y\n---\nbody\n")) {
+	needs, err = NeedsTransform([]byte("---\nname: x\ndescription: y\n---\nbody\n"))
+	if err != nil || needs {
 		t.Fatal("no homonto block should not need transform")
+	}
+	for _, content := range []string{
+		"---\nhomonto:\n  bash: [false]\n---\nbody\n",
+		"---\nhomonto: null\n---\nbody\n",
+		"---\nhomonto:\n  read_onnly: true\n---\nbody\n",
+	} {
+		if _, err := NeedsTransform([]byte(content)); err == nil {
+			t.Fatal("malformed homonto block must fail instead of projecting verbatim")
+		}
 	}
 }
 

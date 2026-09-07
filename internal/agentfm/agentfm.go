@@ -87,18 +87,16 @@ type RenderContext struct {
 }
 
 // NeedsTransform reports whether content carries a `homonto:` frontmatter block
-// (and therefore must be rendered per tool rather than projected verbatim). A
-// malformed `homonto:` block is reported as not-transformed: NeedsTransform is a
-// quick filter (drives whether Render is called at all), and a parse error in
-// the block surfaces from Render itself, where the agent name is in scope for a
-// clearer message.
-func NeedsTransform(content []byte) bool {
+// (and therefore must be rendered per tool rather than projected verbatim).
+// Malformed capability intent is an error: treating it as verbatim would drop
+// its declared permissions during projection.
+func NeedsTransform(content []byte) (bool, error) {
 	fm, _, ok := split(content)
 	if !ok {
-		return false
+		return false, nil
 	}
-	_, has, _ := parseHomonto(fm)
-	return has
+	_, has, err := parseHomonto(fm)
+	return has, err
 }
 
 // ProjectsFor reports whether content is projected for tool at all. It is
@@ -321,6 +319,31 @@ func split(content []byte) (fm []byte, body []byte, ok bool) {
 // "no block, project verbatim" vs "block present but unparseable, fail loudly" —
 // are surfaced as (zero, false, nil) and (zero, false, err) respectively.
 func parseHomonto(fm []byte) (Homonto, bool, error) {
+	var raw map[string]yaml.Node
+	if err := yaml.Unmarshal(fm, &raw); err != nil {
+		return Homonto{}, false, err
+	}
+	node, present := raw["homonto"]
+	if !present {
+		return Homonto{}, false, nil
+	}
+	if node.Tag == "!!null" {
+		return Homonto{}, false, fmt.Errorf("homonto block must not be null")
+	}
+	if node.Kind != yaml.MappingNode {
+		return Homonto{}, false, fmt.Errorf("homonto block must be an object")
+	}
+	allowed := map[string]bool{
+		"read_only": true, "bash": true, "network": true, "bash_allow": true,
+		"bash_deny": true, "dialogs": true, "spawn": true, "primary": true,
+		"steps": true,
+	}
+	for i := 0; i < len(node.Content); i += 2 {
+		key := node.Content[i].Value
+		if !allowed[key] {
+			return Homonto{}, false, fmt.Errorf("homonto block has unknown capability %q", key)
+		}
+	}
 	var doc struct {
 		Homonto *Homonto `yaml:"homonto"`
 	}
@@ -328,7 +351,7 @@ func parseHomonto(fm []byte) (Homonto, bool, error) {
 		return Homonto{}, false, err
 	}
 	if doc.Homonto == nil {
-		return Homonto{}, false, nil
+		return Homonto{}, false, fmt.Errorf("homonto block must be an object")
 	}
 	return *doc.Homonto, true, nil
 }

@@ -20,9 +20,10 @@ Apply the dispatcher's shared autonomous workflow policy throughout.
   at entry), the deltas already landed on a prior, interrupted close — `onto
   merge-deltas` is a safe no-op only when its versioned receipt matches the
   exact delta manifest and living-spec post-images. A mismatch fails closed; it
-  never clears the marker or replays over newer content. Do not re-number ADRs
-  by hand.
-  Resume at the guides/validation/archive steps.
+   never clears the marker or replays over newer content. Do not re-number
+   already-promoted ADRs. This receipt proves spec merging only: reconcile ADR promotion
+   independently, preserving completed moves and assigned numbers, then resume
+   at the first incomplete guides/validation/archive step.
 - Read `notes.md` at entry when present and honor any explicit endpoint or
   integration constraint already recorded.
 - Anything else → route back through `/onto`.
@@ -166,12 +167,12 @@ the plan.
 Read the recorded source commit and target branch from the archived
 `.onto/integration.json`, then integrate per the recorded choice:
 
-- **`merge`** — merge the change's recorded source commit into `base_branch`,
-  never the commit-valued `base_ref` and never the branch tip (the tip may
-  carry later, unverified commits — the receipt only proves the recorded
-  source). Determine the change branch from the current branch or isolation
-  worktree. With branch isolation, check out `base_branch` and run
-  `git merge --no-ff <sourceCommit>`. With worktree isolation, locate the
+- **`merge`** — after committing the archive move, resolve and pin the current
+  change-branch `HEAD` as `<archiveCommit>`. It contains the recorded verified
+  source plus the sanctioned archive bookkeeping; do not use a moving branch
+  name or the commit-valued `base_ref`. Determine the change branch from the
+  current branch or isolation worktree. With branch isolation, check out
+  `base_branch` and run `git merge --no-ff <archiveCommit>`. With worktree isolation, locate the
   existing clean worktree that has `base_branch` checked out and run the
   merge there; Git will not check out one branch in two worktrees. Resolve
   mechanical conflicts from the verified change and repository history, then
@@ -215,7 +216,7 @@ receipt. A `ship.md` fallback remains pending because no PR exists yet.
 
 Do this **after** the archive commit (step 3.5), so the integrated branch
 includes the archived workspace. `close.merged` tracks spec-delta merging and is
-unrelated to this git integration — both happen at close.
+unrelated to ADR promotion or Git integration — all are separate close steps.
 
 One boundary the binary enforces for you: source commits that land after the
 recorded verification pass refuse `onto close` ("re-verify the change"). If

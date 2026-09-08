@@ -15,7 +15,7 @@ bookkeeper) — for every supported OS/arch as separate archives under one
 `SHA256SUMS`. `onto` and `to` each require `homonto` to have installed their
 framework first (`[frameworks.onto]` / `[frameworks.to]` + `homonto apply`).
 
-### Unreleased: autonomous h workflows and trusted workspace execution
+### New in v0.24.0 — separate workspaces and autonomous workflows
 
 - Schema 2 separates config, records history, and explicit source scope, with
   registered execution and identity-checked terminal/archive receiver worktrees
@@ -52,6 +52,26 @@ framework first (`[frameworks.onto]` / `[frameworks.to]` + `homonto apply`).
   Configured RTK gets command-specific wrapper rules, not a blanket grant.
   Permission denial cannot be bypassed. This replaces the per-run PR execution policy described below
   for v0.23.0. See [ADR 0051](adr/0051-trust-workspace-execution-and-automate-h-routing.md).
+- The installer now passes an explicit stdin operand to checksum verification,
+  fixing false checksum mismatches with macOS `sha256sum` ([#7](https://github.com/Novirmor/homonto/issues/7)).
+
+### Upgrading to v0.24.0
+
+Install all three binaries at the same version, then run `homonto update` (or
+`homonto apply`) in each configured project. Restart OpenCode to reload the
+updated plugins, agent permissions, and budgets.
+
+- **Schema 2 is opt-in.** Configurations using schema 0/1 retain their implicit
+  configuration-repository scope. Do not change schema or workflow-root ownership
+  as a shortcut for migration: existing records are not moved or adopted
+  automatically. See the [workspace guide](guides/workspaces.md).
+- **Configuration is stricter.** Previously ignored keys, misplaced tuning
+  fields, and multiple aliases for one builtin agent now fail with diagnostics.
+  Correct the named declaration rather than editing generated files.
+- **Execution trust changes.** Routine tests, builds, and repository scripts,
+  including checked-out PR code, can run without individual approval. They run
+  with the process's privileges, not in a sandbox. Review publication still
+  requires approval of the shown draft, and tool-level publication prompts remain.
 
 ### New in v0.23.0 — executable workflow contracts and safer agent projection
 
@@ -751,10 +771,8 @@ homonto is a young, deliberately narrow tool. For the current 0.x line:
 
 - **OpenCode JSONC comments are not preserved** on any apply that writes
   `opencode.jsonc` (the file is rewritten as normalized JSON). Accepted for beta.
-- **`import` is a narrow Claude MCP bootstrap** — Claude global MCP servers only,
-  best-effort secret redaction, no skills/plugins/settings/OpenCode import.
 - **The bundled catalog ships only homonto-native content**: the `onto` and
-  `to` frameworks (complementary, ADR 0042) plus the loose framework-agnostic
+  `to` frameworks (complementary, ADR 0042), the `h` GitHub companion, and loose framework-agnostic
   skills/commands. Third-party frameworks are not bundled; vendor them via a
   `local:` path or a digest-pinned `remote:` archive (the same fail-closed
   verification `remote:` subagents use). Every `remote:` source requires a
@@ -764,8 +782,16 @@ homonto is a young, deliberately narrow tool. For the current 0.x line:
   in v0.13.0; a config naming them fails at load naming the key.
 - **Secrets require `pass` or an env var** at apply time (`${pass:...}` /
   `${ENV_VAR}`).
-- **Moving or renaming the repo** breaks skill symlinks (absolute targets):
-  delete the stale links and re-apply.
+- **After moving or renaming a repository, re-run `homonto apply`.** Project-local
+  links use relative targets; reapply refreshes absolute config bindings and
+  managed user-scoped references. Foreign links are never silently adopted.
+- **Workspace migration and bound conversion remain explicit limitations.**
+  There is no automatic records-layout migration, and converting a change with
+  registered worktrees is refused rather than silently rebinding its ownership.
+- **Native permissions are not a filesystem sandbox.** OpenCode v1.18.29 does
+  not report an `apply_patch` move destination to edit-permission checks. The
+  documented coordinator-only records policy remains binding, but static
+  permissions cannot enforce an unreported destination.
 
 See the README's "Caveats" section and
 [`docs/guides/troubleshooting.md`](https://github.com/noviopenworks/homonto/blob/main/docs/guides/troubleshooting.md) for details.

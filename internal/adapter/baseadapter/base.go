@@ -431,6 +431,21 @@ func (b *Base) Expand(c *config.Config) error {
 		return err
 	}
 	b.Subagents = inRepo(subagents)
+	for _, entry := range b.Subagents {
+		if strings.HasPrefix(entry.Resource.Source, "builtin:") {
+			continue // The engine renders the selected alias on catalog content.
+		}
+		content, err := os.ReadFile(b.subagentSource(entry))
+		if os.IsNotExist(err) {
+			continue // Missing sources retain the ordinary plan diagnostic.
+		}
+		if err != nil {
+			return err
+		}
+		if err := agentfm.ValidateInstalledName(entry.Name, content); err != nil {
+			return fmt.Errorf("subagents.%s: %w", entry.Name, err)
+		}
+	}
 	return nil
 }
 

@@ -18,7 +18,7 @@ import (
 // cmd/to/main.go hold for both workflow CLIs from one definition.
 var ErrQuietFindings = workcli.ErrQuietFindings
 
-// doctorCmd builds "to doctor": a strictly read-only, config-independent
+// doctorCmd builds "to doctor": a strictly read-only, config-free legacy
 // workspace-health diagnostic. It is NOT gated on the framework install — a
 // broken workspace is a finding, not a refusal. --quiet prints nothing and
 // signals via exit code only: the hook primitive (see the enforcement guide).
@@ -35,6 +35,9 @@ func doctorCmd() *cobra.Command {
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			findings, err := collectFindings(dir)
 			if err != nil {
+				if quiet {
+					return ErrQuietFindings
+				}
 				return err
 			}
 			if quiet {
@@ -67,6 +70,9 @@ func siblingDuplicates(root, siblingDir string) ([]string, error) {
 	}
 	wf, err := workcli.WorkflowRoot(root)
 	if err != nil {
+		return nil, err
+	}
+	if err := validateWorkflowDir(root, filepath.Join(wf, siblingDir)); err != nil {
 		return nil, err
 	}
 	theirs, err := activeNames(filepath.Join(wf, siblingDir))
@@ -105,6 +111,9 @@ func activeNames(dir string) (map[string]bool, error) {
 // collectFindings walks the to workspace. A missing docs/tasks/ is healthy
 // (the repo may not use to yet), matching status's behavior.
 func collectFindings(root string) ([]string, error) {
+	if err := validateWorkflowDir(root, tasksDir(root)); err != nil {
+		return nil, err
+	}
 	findings := []string{}
 
 	// 1. Active changes: state validity, wedged terminal state, the plan.md
@@ -118,10 +127,7 @@ func collectFindings(root string) ([]string, error) {
 			continue
 		}
 		name := d.Name()
-		st, err := tostate.Load(statePath(root, name))
-		if err == nil {
-			err = st.Validate()
-		}
+		st, err := loadChange(root, name)
 		if err != nil {
 			findings = append(findings, fmt.Sprintf("%s: invalid or missing %s: %v", name, tostate.FileName, err))
 			continue
@@ -135,13 +141,11 @@ func collectFindings(root string) ([]string, error) {
 			continue
 		}
 		if len(st.Repos) > 0 {
-			if _, err := worktreeDirty(root); err != nil {
-				findings = append(findings, fmt.Sprintf("%s: config repo is not a usable git worktree", name))
-			} else if names, dirs, err := scopeDirs(root, st.Repos); err != nil {
+			if _, dirs, err := resolvedSources(root, st); err != nil {
 				findings = append(findings, fmt.Sprintf("%s: cross-repo scope unavailable: %v", name, err))
 			} else {
-				for _, repo := range names {
-					if _, err := worktreeDirty(dirs[repo]); err != nil {
+				for repo, dir := range dirs {
+					if _, err := sourceCommonDir(dir); err != nil {
 						findings = append(findings, fmt.Sprintf("%s: declared repo %s is not a usable git worktree", name, repo))
 					}
 				}
@@ -161,13 +165,18 @@ func collectFindings(root string) ([]string, error) {
 
 	// 2. Global-name uniqueness (ADR 0042): an active name colliding with
 	// the onto workflow's active tree is ambiguous for agent routing.
-	if dupes, err := siblingDuplicates(root, "changes"); err == nil {
+	if dupes, err := siblingDuplicates(root, "changes"); err != nil {
+		return nil, fmt.Errorf("to doctor: reading sibling changes: %w", err)
+	} else {
 		for _, name := range dupes {
 			findings = append(findings, fmt.Sprintf("%s: also active in the onto workflow (<workflow-root>/changes/%s) — active names are globally unique; convert or rename one", name, name))
 		}
 	}
 
 	// 3. Archive entries: must hold a valid, terminal state.
+	if err := validateWorkflowDir(root, archiveDir(root)); err != nil {
+		return nil, err
+	}
 	archents, err := os.ReadDir(archiveDir(root))
 	if err != nil && !os.IsNotExist(err) {
 		return nil, fmt.Errorf("to doctor: reading %s: %w", archiveDir(root), err)
@@ -180,6 +189,11 @@ func collectFindings(root string) ([]string, error) {
 		st, err := tostate.Load(filepath.Join(archiveDir(root), name, tostate.FileName))
 		if err == nil {
 			err = st.Validate()
+		}
+		if err == nil {
+			if _, _, ok := archiveOrder(name, st.Change); !ok {
+				err = fmt.Errorf("archive identity mismatch: directory %q, recorded %q", name, st.Change)
+			}
 		}
 		if err != nil {
 			findings = append(findings, fmt.Sprintf("archive/%s: invalid or missing %s: %v", name, tostate.FileName, err))

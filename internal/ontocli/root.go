@@ -2,6 +2,7 @@ package ontocli
 
 import (
 	"github.com/noviopenworks/homonto/internal/buildinfo"
+	"github.com/noviopenworks/homonto/internal/workspace"
 	"github.com/spf13/cobra"
 )
 
@@ -51,5 +52,6 @@ func NewRootCmd() *cobra.Command {
 	root.AddCommand(handoffCmd())
 	root.AddCommand(evidenceCmd())
 	root.AddCommand(traceCmd())
+	workspace.AttachHistory(root, "onto")
 	return root
 }

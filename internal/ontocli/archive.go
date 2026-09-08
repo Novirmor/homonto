@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"regexp"
 	"sort"
@@ -87,7 +86,7 @@ func archiveDestination(root, name, date string) (string, error) {
 func currentBranch(root string) (string, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), gitCmdTimeout)
 	defer cancel()
-	out, err := exec.CommandContext(ctx, "git", "-C", root, "symbolic-ref", "--quiet", "--short", "HEAD").Output()
+	out, err := gitAt(ctx, root, "symbolic-ref", "--quiet", "--short", "HEAD").Output()
 	if err != nil {
 		return "", fmt.Errorf("cannot determine source branch (detached HEAD is not integratable)")
 	}
@@ -104,13 +103,28 @@ func validateBranchName(root, branch string) error {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), gitCmdTimeout)
 	defer cancel()
-	if err := exec.CommandContext(ctx, "git", "-C", root, "check-ref-format", "refs/heads/"+branch).Run(); err != nil {
+	if err := gitAt(ctx, root, "check-ref-format", "refs/heads/"+branch).Run(); err != nil {
 		return fmt.Errorf("invalid branch name %q", branch)
 	}
 	return nil
 }
 
 func validateIntegrationRecord(st ontostate.State, record integrationrecord.Record) error {
+	if err := st.Validate(); err != nil {
+		return err
+	}
+	if err := record.Validate(st.Change); err != nil {
+		return err
+	}
+	// Legacy provenance pins identities without changing the combined-layout
+	// integration format, whose implicit-config mode is the empty string.
+	mode := st.RepoMode
+	if mode == "legacy" {
+		mode = ""
+	}
+	if record.RepoMode != mode {
+		return fmt.Errorf("integration record repository mode does not match state")
+	}
 	if record.Mode != st.Integration {
 		return fmt.Errorf("integration record mode %q does not match state integration %q", record.Mode, st.Integration)
 	}
@@ -118,11 +132,17 @@ func validateIntegrationRecord(st ontostate.State, record integrationrecord.Reco
 		return fmt.Errorf("integration record base branch %q does not match state base_branch %q", record.BaseBranch, st.BaseBranch)
 	}
 	want := map[string]bool{"": true}
+	if st.RepoMode == "explicit" {
+		delete(want, "")
+	}
 	for _, name := range st.Repos {
 		want[name] = true
 	}
 	got := map[string]bool{}
 	for _, entry := range record.Repositories {
+		if st.RepoMode == "explicit" && entry.BaseBranch != st.RepoBases[entry.Alias].BaseBranch {
+			return fmt.Errorf("integration record repository %s base branch does not match state", entry.Alias)
+		}
 		if !want[entry.Alias] {
 			return fmt.Errorf("integration record entry %q is outside the change's repository scope", entry.Alias)
 		}
@@ -146,58 +166,64 @@ func validateIntegrationRecord(st ontostate.State, record integrationrecord.Reco
 // the base branch refuses the close rather than recording an unintegratable
 // state.
 func captureIntegrationEntries(root string, st ontostate.State) ([]integrationrecord.Entry, error) {
-	type scopedRepo struct{ alias, dir string }
-	scopes := []scopedRepo{{"", root}}
-	names, dirs, err := scopeDirs(root, st.Repos)
+	dirs, err := stateSourceDirs(root, st)
 	if err != nil {
 		return nil, err
 	}
-	for _, name := range names {
-		scopes = append(scopes, scopedRepo{name, dirs[name]})
+	names := make([]string, 0, len(dirs))
+	for name := range dirs {
+		names = append(names, name)
 	}
-	entries := make([]integrationrecord.Entry, 0, len(scopes))
-	for _, s := range scopes {
-		display := s.alias
+	sort.Strings(names)
+	entries := make([]integrationrecord.Entry, 0, len(dirs))
+	for _, alias := range names {
+		dir := dirs[alias]
+		branch := st.BaseBranch
+		if st.RepoMode == "explicit" {
+			branch = st.RepoBases[alias].BaseBranch
+		}
+		display := alias
 		if display == "" {
 			display = "config"
 		}
-		baseCommit, err := resolveCommit(s.dir, "refs/heads/"+st.BaseBranch)
+		baseCommit, err := resolveCommit(dir, "refs/heads/"+branch)
 		if err != nil {
-			return nil, fmt.Errorf("repository %s: base branch %q: %w", display, st.BaseBranch, err)
+			return nil, fmt.Errorf("repository %s: base branch %q: %w", display, branch, err)
 		}
-		sourceBranch, err := currentBranch(s.dir)
-		if err != nil {
-			return nil, fmt.Errorf("repository %s: %w", display, err)
-		}
-		if sourceBranch == st.BaseBranch {
-			return nil, fmt.Errorf("repository %s: source branch is the base branch %q; integrate from a change branch", display, st.BaseBranch)
-		}
-		sourceCommit, err := resolveCommit(s.dir, "HEAD")
+		sourceBranch, err := currentBranch(dir)
 		if err != nil {
 			return nil, fmt.Errorf("repository %s: %w", display, err)
 		}
-		entries = append(entries, integrationrecord.Entry{
-			Alias: s.alias, BaseBranch: st.BaseBranch, BaseCommit: baseCommit,
+		if sourceBranch == branch && st.RepoMode != "explicit" {
+			return nil, fmt.Errorf("repository %s: source branch is the base branch %q; integrate from a change branch", display, branch)
+		}
+		sourceCommit, err := resolveCommit(dir, "HEAD")
+		if err != nil {
+			return nil, fmt.Errorf("repository %s: %w", display, err)
+		}
+		entry := integrationrecord.Entry{
+			Alias: alias, BaseBranch: branch, BaseCommit: baseCommit,
 			SourceBranch: sourceBranch, SourceCommit: sourceCommit,
-		})
+		}
+		if err := validateIntegrationSource(root, dir, st, entry); err != nil {
+			return nil, err
+		}
+		entries = append(entries, entry)
 	}
 	return entries, nil
 }
 
 func ignorePendingIntegrationDirt(root string, repos []scopedDirt, name string) []scopedDirt {
-	workflowRel, err := filepath.Rel(root, workflowRoot(root))
-	if err != nil {
-		return repos
-	}
-	want := filepath.ToSlash(filepath.Join(workflowRel, "changes", name, ".onto", "integration.json"))
 	for i := range repos {
-		if repos[i].Name != "config" {
+		workflowRel, owner := recordsGitPrefix(root, repos[i].Dir)
+		if !owner {
 			continue
 		}
+		want := filepath.ToSlash(filepath.Join(workflowRel, "changes", name, ".onto", "integration.json"))
 		filtered := repos[i].Entries[:0]
 		for _, entry := range repos[i].Entries {
 			path := filepath.ToSlash(entry.Path)
-			if path == want || strings.HasSuffix(path, "/"+want) {
+			if path == want {
 				continue
 			}
 			filtered = append(filtered, entry)
@@ -207,14 +233,16 @@ func ignorePendingIntegrationDirt(root string, repos []scopedDirt, name string) 
 	return repos
 }
 
-func ignoreInterruptedArchiveMoveDirt(repos []scopedDirt) []scopedDirt {
+func ignoreInterruptedArchiveMoveDirt(root, name string, repos []scopedDirt) []scopedDirt {
 	for i := range repos {
-		if repos[i].Name != "config" {
+		workflowRel, owner := recordsGitPrefix(root, repos[i].Dir)
+		if !owner {
 			continue
 		}
+		prefix := filepath.ToSlash(filepath.Join(workflowRel, "changes", name)) + "/"
 		filtered := repos[i].Entries[:0]
 		for _, entry := range repos[i].Entries {
-			if entry.Class == "own" && entry.Status == " D" {
+			if strings.HasPrefix(entry.Path, prefix) && entry.Status == " D" {
 				continue
 			}
 			filtered = append(filtered, entry)

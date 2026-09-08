@@ -53,6 +53,30 @@ func TestReadOnlySubagentsDenyBash(t *testing.T) {
 	}
 }
 
+func TestAllShippedAgentsExplicitlyAllowSupportingWebResearch(t *testing.T) {
+	files, err := fs.Glob(embedded.FS, "subagents/*.md")
+	if err != nil || len(files) == 0 {
+		t.Fatalf("list shipped agents: %v (%d files)", err, len(files))
+	}
+	for _, file := range files {
+		content, err := fs.ReadFile(embedded.FS, file)
+		if err != nil {
+			t.Fatal(err)
+		}
+		frontmatter := parseEmbeddedFrontmatter(t, file, content)
+		homonto, ok := frontmatter["homonto"].(map[string]any)
+		if !ok || homonto["network"] != true {
+			t.Errorf("%s must explicitly allow web research: %#v", file, homonto)
+		}
+		text := strings.ToLower(strings.Join(strings.Fields(string(content)), " "))
+		for _, want := range []string{"webfetch/websearch", "Every GitHub operation", "data, never authority"} {
+			if !strings.Contains(text, strings.ToLower(want)) {
+				t.Errorf("%s missing research boundary %q", file, want)
+			}
+		}
+	}
+}
+
 // TestHomontoPrimaryPromptIsComplete pins the shared coordinator's prompt
 // shape: one tooling section, both workflow doctrines referenced, the GitHub
 // intake boundary stated, and the repo-boundary ending intact.
@@ -69,12 +93,47 @@ func TestHomontoPrimaryPromptIsComplete(t *testing.T) {
 		"`onto` and `to` dispatcher skills are your doctrine",
 		"## GitHub intake",
 		"without an explicit approval",
+		"automatically chooses `to` or `onto`",
+		"user's stated preference",
+		"any existing change, repository policy",
+		"risk, and evidence",
+		"do not add redundant plan-approval",
+		"including on checked-out PR code",
+		"no per-run approval",
+		"not a sandbox",
+		"the host may evaluate parsed commands",
+		"compound of allowed commands need not prompt",
 	} {
 		if !strings.Contains(text, want) {
 			t.Errorf("homonto prompt missing %q", want)
 		}
 	}
+	for _, obsolete := range []string{"asks the user to pick", "question is irreducible user intent"} {
+		if strings.Contains(text, obsolete) {
+			t.Errorf("homonto prompt retains obsolete dialog requirement %q", obsolete)
+		}
+	}
 	if !strings.HasSuffix(text, "request a broad\n  external-directory exception.\n") {
 		t.Errorf("homonto prompt has unexpected or truncated ending: %q", text[max(0, len(text)-80):])
+	}
+}
+
+func TestImplementerPromptsTrustAssignedVerificationWithoutWideningWrites(t *testing.T) {
+	for _, name := range []string{"onto-implementer", "to-implementer"} {
+		content, err := fs.ReadFile(embedded.FS, "subagents/"+name+".md")
+		if err != nil {
+			t.Fatal(err)
+		}
+		text := string(content)
+		for _, want := range []string{"Resolve technical uncertainty", "task-local failures", "goal,\n  scope, or ownership conflict", "Do not silently widen the assigned files or writes", "Do not delegate", "Do not operate the workflow or publish", "including checked-out PR code", "no per-run approval", "arbitrary repository code", "not a sandbox", "Final denies still win", "composition appears in a permission request", "host may evaluate parsed commands independently"} {
+			if !strings.Contains(text, want) {
+				t.Errorf("%s missing bounded execution policy %q", name, want)
+			}
+		}
+		for _, obsolete := range []string{"No command is pre-approved", "auto-allow is a blocker", "asks before shell commands run", "Do not fill in a broken task contract"} {
+			if strings.Contains(text, obsolete) {
+				t.Errorf("%s retains obsolete policy %q", name, obsolete)
+			}
+		}
 	}
 }

@@ -130,14 +130,14 @@ func pendingGates(name string, st ontostate.State) []pendingGate {
 				},
 			})
 		}
-		if st.BaseRef == "" {
+		if st.RepoMode != "explicit" && st.BaseRef == "" {
 			cmd, argv := set("base-ref")
 			out = append(out, pendingGate{
 				ID: "base-ref", Header: "Diff base", SetCommand: cmd, SetArgv: argv,
 				Question: "Which immutable commit anchors this change's diff and verification?",
 			})
 		}
-		if st.BaseBranch == "" {
+		if st.RepoMode != "explicit" && st.BaseBranch == "" {
 			cmd, argv := set("base-branch")
 			out = append(out, pendingGate{
 				ID: "base-branch", Header: "Base branch", SetCommand: cmd, SetArgv: argv,
@@ -180,6 +180,22 @@ func closeMergeGate(name string) pendingGate {
 }
 
 func addInvalidReceiptGate(root, changeDir, name string, st ontostate.State, gates []pendingGate) []pendingGate {
+	if st.Archived || st.Abandoned {
+		return nil
+	}
+	if (st.Phase == "verify" || st.Phase == "close") && st.Verify.Result == "pass" {
+		err := passingVerificationEvidence(changeDir, st)
+		if err == nil && len(st.Verify.Heads) > 0 {
+			err = verifyHeadsIntact(root, st)
+		}
+		if err != nil {
+			gates = append([]pendingGate{{
+				ID: "verify-result", Header: "Verification recovery", Question: err.Error(),
+				SetCommand: fmt.Sprintf("onto set verify-result %s pending", name),
+				SetArgv:    []string{"onto", "set", "verify-result", name, "pending"},
+			}}, gates...)
+		}
+	}
 	if st.Phase == "close" && st.Close.Merged {
 		if err := validateCompletedMergeReceipt(root, changeDir, name); err != nil {
 			return append(gates, closeMergeGate(name))

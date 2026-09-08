@@ -6,13 +6,13 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"sort"
 	"strconv"
 	"strings"
 
 	"github.com/noviopenworks/homonto/internal/evidence"
+	"github.com/noviopenworks/homonto/internal/ontostate"
 	"github.com/noviopenworks/homonto/internal/opid"
 	"github.com/spf13/cobra"
 )
@@ -50,7 +50,11 @@ func evidenceRecordCmd() *cobra.Command {
 			"named and hashed, never stored as argv; the output file is hashed, never " +
 			"copied. The current commit anchors the claim. Run the command yourself — " +
 			"onto must not execute verification, or it would bypass the orchestrator's " +
-			"permission allowlist.",
+			"permission allowlist. Finalize verification.md before recording claims. " +
+			"A new claim supersedes earlier claims for the same repository, task, and " +
+			"scenario without deleting audit history. No-spec fix/tweak changes declare " +
+			"Scenario-ID: <id> in tasks.md or verification.md. Each ID must have " +
+			"exactly one declaration site; use plain references elsewhere.",
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			name := args[0]
@@ -77,6 +81,31 @@ func evidenceRecordCmd() *cobra.Command {
 			changeDir := filepath.Join(changesDir(dir), name)
 			if _, err := os.Stat(filepath.Join(changeDir, "onto-state.yaml")); err != nil {
 				return fmt.Errorf("evidence record: no change %q under %s", name, changesDir(dir))
+			}
+			st, err := ontostate.LoadChange(changeDir)
+			if err != nil {
+				return err
+			}
+			if st.Archived || st.Abandoned {
+				return fmt.Errorf("evidence record: terminal change is immutable")
+			}
+			index, err := loadScenarioIndex(changeDir, st)
+			if err != nil {
+				return fmt.Errorf("evidence record: scenario contract: %w", err)
+			}
+			if finding := scenarioAmbiguity(scenario, index[scenario]); finding != "" {
+				return fmt.Errorf("evidence record: %s", finding)
+			}
+			alias, source, err := selectedSource(dir, st, repo)
+			if err != nil {
+				return err
+			}
+			commit := headCommitAt(cmd, source)
+			if st.RepoMode == "explicit" || alias != "" {
+				commit, err = resolveCommit(source, "HEAD")
+				if err != nil {
+					return err
+				}
 			}
 			sc, _, err := evidence.Load(name, evidence.Path(changeDir))
 			if err != nil {
@@ -106,7 +135,7 @@ func evidenceRecordCmd() *cobra.Command {
 			ops := opid.New()
 			rec := evidence.Record{
 				Task: task, Scenario: scenario, Executable: executable, CommandHash: cmdHash,
-				Repo: repo, Commit: headCommitAt(cmd, dir), OperationID: ops.NewID(),
+				Repo: alias, Commit: commit, OperationID: ops.NewID(),
 				ExitStatus: exit, OutputHash: outHash, ArtifactHash: artHash,
 				At: ops.Now().Format("2006-01-02T15:04:05Z"),
 			}
@@ -173,8 +202,9 @@ func traceCmd() *cobra.Command {
 // traceGraph is the typed output: nodes keyed by kind:id, edges as typed
 // pairs. Deterministic: nodes sorted by kind then id, edges sorted.
 type traceGraph struct {
-	Nodes []traceNode `json:"nodes"`
-	Edges []traceEdge `json:"edges"`
+	Nodes    []traceNode `json:"nodes"`
+	Edges    []traceEdge `json:"edges"`
+	Findings []string    `json:"findings,omitempty"`
 }
 
 type traceNode struct {
@@ -200,8 +230,17 @@ func buildTrace(cmd *cobra.Command, root, changesDir string, names []string) tra
 	for _, name := range names {
 		changeDir := filepath.Join(changesDir, name)
 		addNode("change", name, name)
+		st, stateErr := ontostate.LoadChange(changeDir)
+		index, indexErr := loadScenarioIndex(changeDir, st)
+		g.Findings = append(g.Findings, scenarioFindings(name, index)...)
+		if indexErr != nil {
+			g.Findings = append(g.Findings, fmt.Sprintf("%s: scenario contract: %v", name, indexErr))
+		}
+		if stateErr != nil {
+			g.Findings = append(g.Findings, fmt.Sprintf("%s: scenario contract state: %v", name, stateErr))
+		}
 		// Delta specs carry requirements and scenarios.
-		specs, _ := filepath.Glob(filepath.Join(changeDir, "specs", "*.md"))
+		specs, _ := deltaSpecPaths(filepath.Join(changeDir, "specs"))
 		for _, spec := range specs {
 			cap := strings.TrimSuffix(filepath.Base(spec), ".md")
 			addNode("capability", cap, cap)
@@ -218,12 +257,11 @@ func buildTrace(cmd *cobra.Command, root, changesDir string, names []string) tra
 				addNode("requirement", rKey, r.Name)
 				addEdge("capability:"+cap, "requirement:"+rKey, "contains")
 				for _, s := range r.Scenarios {
-					sKey := s.Name
 					if s.ID != "" {
-						sKey = s.ID
+						continue // Stable IDs come from the declaration index, never a collapsed parser value.
 					}
-					addNode("scenario", sKey, s.Name)
-					addEdge("requirement:"+rKey, "scenario:"+sKey, "requires")
+					addNode("scenario", s.Name, s.Name)
+					addEdge("requirement:"+rKey, "scenario:"+s.Name, "requires")
 				}
 			}
 		}
@@ -239,15 +277,36 @@ func buildTrace(cmd *cobra.Command, root, changesDir string, names []string) tra
 				addEdge("change:"+name, "task:"+id, "contains")
 			}
 		}
+		for id, declarations := range index {
+			for _, declaration := range declarations {
+				key, label := id, nonEmpty(declaration.Name, id)
+				if len(declarations) > 1 {
+					key = fmt.Sprintf("%s/%s@%s:%d", name, id, declaration.Path, declaration.Line)
+					label = id + " (ambiguous): " + label
+				}
+				addNode("scenario", key, label)
+				parent := "change:" + name
+				if declaration.Requirement != "" {
+					parent = "requirement:" + declaration.Requirement
+				}
+				addEdge(parent, "scenario:"+key, "requires")
+			}
+		}
 		// Evidence sidecar.
 		if sc, ok, err := evidence.Load(name, evidence.Path(changeDir)); err == nil && ok {
+			latest := latestEvidence(sc.Records)
 			for i, rec := range sc.Records {
 				id := fmt.Sprintf("%s/e%d", name, i+1)
 				addNode("evidence", id, fmt.Sprintf("%s exit=%d @%s", rec.Executable, rec.ExitStatus, short(rec.Commit)))
-				addEdge("scenario:"+rec.Scenario, "evidence:"+id, "verified-by")
+				if current := latest[evidenceKey(rec)]; current != i && len(index[rec.Scenario]) < 2 {
+					addEdge("evidence:"+id, fmt.Sprintf("evidence:%s/e%d", name, current+1), "superseded-by")
+				}
+				if indexErr == nil && stateErr == nil && len(index[rec.Scenario]) == 1 {
+					addEdge("scenario:"+rec.Scenario, "evidence:"+id, "verified-by")
+					addEdge("task:"+fmt.Sprintf("%s#%d", name, rec.Task), "evidence:"+id, "verified-by")
+				}
 				addNode("commit", rec.Commit, short(rec.Commit))
 				addEdge("evidence:"+id, "commit:"+rec.Commit, "recorded-at")
-				addEdge("task:"+fmt.Sprintf("%s#%d", name, rec.Task), "evidence:"+id, "verified-by")
 			}
 		}
 	}
@@ -266,10 +325,28 @@ func buildTrace(cmd *cobra.Command, root, changesDir string, names []string) tra
 		}
 		return g.Edges[i].Kind < g.Edges[j].Kind
 	})
+	sort.Strings(g.Findings)
 	return g
 }
 
+// Append order is authoritative, not timestamps (multiple claims can share a second).
+// A changed command can replace a claim without making the old command a permanent gate.
+func evidenceKey(rec evidence.Record) string {
+	return fmt.Sprintf("%s\x00%d\x00%s", rec.Repo, rec.Task, rec.Scenario)
+}
+
+func latestEvidence(records []evidence.Record) map[string]int {
+	latest := make(map[string]int)
+	for i, rec := range records {
+		latest[evidenceKey(rec)] = i
+	}
+	return latest
+}
+
 func renderTrace(cmd *cobra.Command, g traceGraph) {
+	for _, finding := range g.Findings {
+		fmt.Fprintln(cmd.OutOrStdout(), "finding: "+finding)
+	}
 	for _, n := range g.Nodes {
 		label := n.Label
 		if label != "" && label != n.ID {
@@ -308,12 +385,8 @@ func activeChangeNames(cmd *cobra.Command, changesDir string) []string {
 
 // headCommitAt resolves HEAD in root, read-only; empty when git is absent.
 func headCommitAt(cmd *cobra.Command, root string) string {
-	c := exec.Command("git", "-C", root, "rev-parse", "HEAD")
-	out, err := c.Output()
-	if err != nil {
-		return ""
-	}
-	return strings.TrimSpace(string(out))
+	head, _ := resolveCommit(root, "HEAD")
+	return head
 }
 
 func short(commit string) string {

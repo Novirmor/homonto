@@ -31,7 +31,17 @@ var validPhases = map[string]bool{
 }
 
 // CurrentSchemaVersion is the schema_version every write emits.
-const CurrentSchemaVersion = 2
+const CurrentSchemaVersion = 3
+
+// RepoBase pins a source's object store. Anchors are required for explicit
+// scope and optional on legacy provenance carried through conversion.
+type RepoBase struct {
+	BaseRef      string `yaml:"base_ref,omitempty" json:"base_ref,omitempty"`
+	BaseBranch   string `yaml:"base_branch,omitempty" json:"base_branch,omitempty"`
+	GitCommonDir string `yaml:"git_common_dir" json:"git_common_dir"`
+}
+
+var canonicalCommit = regexp.MustCompile(`^[0-9a-f]{40}$|^[0-9a-f]{64}$`)
 
 // enum membership sets for optional gated core fields. An empty value is
 // always allowed (legacy-tolerant); a non-empty value must be a member.
@@ -124,6 +134,11 @@ type State struct {
 	// listed. Paths deliberately stay in homonto.toml so a workflow record does
 	// not preserve stale filesystem locations.
 	Repos []string `yaml:"repos,omitempty" json:"repos,omitempty"`
+	// Empty mode permanently retains the shipped implicit-config scope, even
+	// after homonto.toml is upgraded. The legacy marker retains that scope while
+	// carrying converted identities (config alias "" plus selected repos).
+	RepoMode  string              `yaml:"repo_mode,omitempty" json:"repo_mode,omitempty"`
+	RepoBases map[string]RepoBase `yaml:"repo_bases,omitempty" json:"repo_bases,omitempty"`
 	// Supersedes lists change names this change replaces/obsoletes (a traceability
 	// relationship surfaced by `onto graph`). Ungated: never blocks a transition.
 	Supersedes []string `yaml:"supersedes,omitempty" json:"supersedes,omitempty"`
@@ -207,6 +222,9 @@ func Load(path string) (State, error) {
 // be present/known, and every optional enum, when non-empty, must be a member
 // of its set. It never inspects Observed (B1: shape, not judgment).
 func (s State) Validate() error {
+	if s.SchemaVersion > CurrentSchemaVersion || s.SchemaVersion < 0 {
+		return fmt.Errorf("onto-state: unsupported schema_version %d", s.SchemaVersion)
+	}
 	if s.Change == "" {
 		return fmt.Errorf("onto-state: change is required")
 	}
@@ -253,6 +271,61 @@ func (s State) Validate() error {
 		}
 		seenRepos[repo] = true
 	}
+	if s.RepoMode != "" && s.RepoMode != "explicit" && s.RepoMode != "legacy" {
+		return fmt.Errorf("onto-state: unknown repo_mode %q", s.RepoMode)
+	}
+	if s.RepoMode == "" && len(s.RepoBases) != 0 {
+		return fmt.Errorf("onto-state: repo_bases requires explicit or legacy repo_mode")
+	}
+	if s.RepoMode == "legacy" {
+		expected := len(seenRepos)
+		if expected > 0 {
+			seenRepos[""] = true
+			expected++
+		}
+		if len(s.RepoBases) != expected {
+			return fmt.Errorf("onto-state: legacy repo_bases must exactly cover config and selected repos")
+		}
+		for alias, base := range s.RepoBases {
+			if !seenRepos[alias] || !filepath.IsAbs(base.GitCommonDir) || filepath.Clean(base.GitCommonDir) != base.GitCommonDir {
+				return fmt.Errorf("onto-state: invalid legacy repo_bases entry %q (requires scoped alias and absolute canonical git_common_dir)", alias)
+			}
+			if base.BaseRef != "" && !canonicalCommit.MatchString(base.BaseRef) {
+				return fmt.Errorf("onto-state: legacy repo_bases entry %q requires a canonical base_ref when present", alias)
+			}
+			if base.BaseBranch != "" && strings.TrimSpace(base.BaseBranch) == "" {
+				return fmt.Errorf("onto-state: legacy repo_bases entry %q has an empty base_branch", alias)
+			}
+			if alias == "" && ((s.BaseRef != "" && base.BaseRef != "" && s.BaseRef != base.BaseRef) || (s.BaseBranch != "" && base.BaseBranch != "" && s.BaseBranch != base.BaseBranch)) {
+				return fmt.Errorf("onto-state: scalar bases disagree with legacy config repo_bases")
+			}
+		}
+	}
+	if s.RepoMode == "explicit" {
+		if s.BaseRef != "" || s.BaseBranch != "" {
+			return fmt.Errorf("onto-state: explicit repositories must not use scalar base_ref or base_branch")
+		}
+		if len(s.Repos) == 0 || len(s.RepoBases) != len(s.Repos) {
+			return fmt.Errorf("onto-state: explicit repo_bases must exactly cover nonempty repos")
+		}
+		identities := map[string]bool{}
+		for alias, base := range s.RepoBases {
+			if !seenRepos[alias] || !canonicalCommit.MatchString(base.BaseRef) || strings.TrimSpace(base.BaseBranch) == "" || !filepath.IsAbs(base.GitCommonDir) || filepath.Clean(base.GitCommonDir) != base.GitCommonDir || identities[base.GitCommonDir] {
+				return fmt.Errorf("onto-state: invalid repo_bases entry %q (requires selected alias, canonical base_ref, base_branch, unique absolute git_common_dir)", alias)
+			}
+			identities[base.GitCommonDir] = true
+		}
+		if s.Verify.Result == "pass" || len(s.Verify.Heads) != 0 {
+			if len(s.Verify.Heads) != len(seenRepos) {
+				return fmt.Errorf("onto-state: verify.heads must exactly cover explicit repos")
+			}
+			for alias, head := range s.Verify.Heads {
+				if !seenRepos[alias] || !canonicalCommit.MatchString(head) {
+					return fmt.Errorf("onto-state: invalid verify.heads entry %q", alias)
+				}
+			}
+		}
+	}
 	return nil
 }
 
@@ -279,6 +352,9 @@ func Marshal(s State) ([]byte, error) {
 // the project, and two concurrent writers cannot collide on a shared temp name
 // (F8).
 func Save(path string, s State) error {
+	if s.SchemaVersion > CurrentSchemaVersion {
+		return fmt.Errorf("onto-state: refusing to overwrite future schema_version %d", s.SchemaVersion)
+	}
 	s.SchemaVersion = CurrentSchemaVersion
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return fmt.Errorf("onto-state: failed to create directory for %s: %w", path, err)
@@ -532,6 +608,9 @@ func parseArchiveName(name string) (day, base string, suffixed bool, n int) {
 // mismatched, missing-required, or pending records fail closed — including a
 // record whose entry set no longer covers the change's repository scope.
 func ArchiveIntegrationComplete(changeDir string, st State) bool {
+	if st.RepoMode != "" && st.Validate() != nil {
+		return false
+	}
 	integration, tracked, err := integrationrecord.Load(changeDir, st.Change)
 	if err != nil {
 		return false
@@ -546,11 +625,22 @@ func ArchiveIntegrationComplete(changeDir string, st State) bool {
 		return false
 	}
 	want := map[string]bool{"": true}
+	if st.RepoMode == "explicit" {
+		if integration.RepoMode != "explicit" {
+			return false
+		}
+		delete(want, "")
+	} else if integration.RepoMode != "" {
+		return false
+	}
 	for _, name := range st.Repos {
 		want[name] = true
 	}
 	got := map[string]bool{}
 	for _, entry := range integration.Repositories {
+		if st.RepoMode == "explicit" && entry.BaseBranch != st.RepoBases[entry.Alias].BaseBranch {
+			return false
+		}
 		if !want[entry.Alias] || got[entry.Alias] {
 			return false
 		}

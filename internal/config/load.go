@@ -1,6 +1,8 @@
 package config
 
 import (
+	"bytes"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -8,6 +10,8 @@ import (
 	"strings"
 
 	"github.com/noviopenworks/homonto/internal/schema"
+	"github.com/noviopenworks/homonto/internal/workflowroot"
+	"github.com/noviopenworks/homonto/internal/workspace"
 	toml "github.com/pelletier/go-toml/v2"
 )
 
@@ -21,9 +25,41 @@ func decode(data []byte) (*Config, error) {
 	// Forward-safety: refuse a config from a newer schema before any adapter,
 	// plan, or apply logic runs, so an older binary never silently mis-applies
 	// fields it does not understand (TOML unmarshal drops unknown keys). Absent/0
-	// is a legacy config, treated as the current version.
+	// is a legacy config and retains implicit-repository semantics.
 	if c.SchemaVersion > CurrentConfigSchemaVersion {
 		return nil, fmt.Errorf("parse config: unknown config schema version %d (this binary supports up to %d) — upgrade homonto: %w", c.SchemaVersion, CurrentConfigSchemaVersion, schema.ErrTooNew)
+	}
+	if c.SchemaVersion < 0 {
+		return nil, fmt.Errorf("parse config: schema_version must be non-negative")
+	}
+	if err := toml.NewDecoder(bytes.NewReader(data)).DisallowUnknownFields().Decode(&c); err != nil {
+		var missing *toml.StrictMissingError
+		if errors.As(err, &missing) {
+			return nil, fmt.Errorf("parse config: unknown configuration fields:\n%s: %w", missing.String(), err)
+		}
+		return nil, fmt.Errorf("parse config: %w", err)
+	}
+	// Validate before normalization can trim a model's control characters away.
+	for _, name := range sortedSubagentNames(&c) {
+		if err := validateModelSpec("opencode", "subagents."+name+".opencode", c.Subagents[name].OpenCode, false); err != nil {
+			return nil, err
+		}
+	}
+	if c.SchemaVersion < 2 {
+		var fields struct {
+			Workflow struct {
+				Git *string `toml:"git"`
+			} `toml:"workflow"`
+			Worktrees *struct {
+				Dir string `toml:"dir"`
+			} `toml:"worktrees"`
+		}
+		if err := toml.Unmarshal(data, &fields); err != nil {
+			return nil, fmt.Errorf("parse config: %w", err)
+		}
+		if fields.Workflow.Git != nil || fields.Worktrees != nil {
+			return nil, fmt.Errorf("parse config: workflow.git and [worktrees] require schema_version = 2; upgrade schema_version=2 explicitly")
+		}
 	}
 	return &c, nil
 }
@@ -75,11 +111,12 @@ func normalize(c *Config) {
 			Model:        strings.TrimSpace(r.Model),
 			Effort:       strings.TrimSpace(r.Effort),
 			Variant:      strings.TrimSpace(r.Variant),
+			Steps:        r.Steps,
 			BashAllowAdd: append([]string(nil), r.BashAllowAdd...),
 		}
 	}
 	for name, r := range c.Subagents {
-		if r.Scope == "" {
+		if r.Scope == "" && !r.IsTuneOnly() {
 			r.Scope = "project"
 		}
 		r.Claude = trimRoute(r.Claude)
@@ -88,12 +125,21 @@ func normalize(c *Config) {
 	}
 }
 
-func Load(path string) (*Config, error) {
+func Load(path string) (c *Config, err error) {
+	abs, err := filepath.Abs(path)
+	if err != nil {
+		return nil, fmt.Errorf("resolve config path %q: %w", path, err)
+	}
+	defer func() {
+		if err != nil {
+			err = fmt.Errorf("config %q: %w", abs, err)
+		}
+	}()
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return nil, fmt.Errorf("read config: %w", err)
 	}
-	c, err := decode(data)
+	c, err = decode(data)
 	if err != nil {
 		return nil, err
 	}
@@ -102,10 +148,15 @@ func Load(path string) (*Config, error) {
 	if err := validate(c); err != nil {
 		return nil, err
 	}
-	if abs, err := filepath.Abs(filepath.Dir(path)); err == nil {
-		c.baseDir = abs
-	} else {
-		c.baseDir = filepath.Dir(path)
+	c.baseDir = filepath.Dir(abs)
+	if c.SchemaVersion >= 2 {
+		layout, err := workspace.Load(abs)
+		if err != nil {
+			return nil, err
+		}
+		c.repoDirs = layout.Repos
+		c.Workflow.Git = layout.GitMode
+		return c, nil
 	}
 	if err := resolveRepos(c); err != nil {
 		return nil, err
@@ -113,7 +164,7 @@ func Load(path string) (*Config, error) {
 	if err := validateWorkflowRootLocation(c); err != nil {
 		return nil, err
 	}
-	if err := validateWorkflowStateRoot(c); err != nil {
+	if err := validateWorkflowStateRoot(c, abs); err != nil {
 		return nil, err
 	}
 	return c, nil
@@ -159,28 +210,11 @@ func validateWorkflowRootLocation(c *Config) error {
 // durable workflow records between two trees. The marker is written by the
 // workflow CLIs when they first create state; pre-marker docs layouts are also
 // recognized so existing repositories get the same fail-closed protection.
-func validateWorkflowStateRoot(c *Config) error {
-	want := filepath.ToSlash(c.Workflow.RootOrDefault())
-	marker := filepath.Join(c.baseDir, ".homonto", "workflow-root")
-	if data, err := os.ReadFile(marker); err == nil {
-		was := filepath.ToSlash(strings.TrimSpace(string(data)))
-		if was != "" && was != want && workflowStateExists(filepath.Join(c.baseDir, filepath.FromSlash(was))) {
-			return fmt.Errorf("parse config: workflow.root changed from %q to %q while workflow state exists; move or remove the state explicitly before changing the root", was, want)
-		}
-	}
-	if want != "docs" && workflowStateExists(filepath.Join(c.baseDir, "docs")) {
-		return fmt.Errorf("parse config: workflow.root changed from %q to %q while workflow state exists; move or remove the state explicitly before changing the root", "docs", want)
+func validateWorkflowStateRoot(c *Config, configPath string) error {
+	if err := workflowroot.ValidateLayout(configPath, c.Workflow.RootOrDefault(), "existing", c.SchemaVersion); err != nil {
+		return fmt.Errorf("parse config: %w", err)
 	}
 	return nil
-}
-
-func workflowStateExists(root string) bool {
-	for _, name := range []string{"changes", "tasks", ".to-promote", ".onto-demote"} {
-		if _, err := os.Lstat(filepath.Join(root, name)); err == nil {
-			return true
-		}
-	}
-	return false
 }
 
 // resolveRepos turns each [repos] path into the filesystem fact the later

@@ -7,6 +7,17 @@ metadata:
 
 # grilling
 
+When installed, follow the shared [workspace and dirty-work policy](../homonto/references/workspace-policy.md).
+Read-only discussion can proceed with dirty work; inspect and resolve its exact
+paths under that policy before writing any decision record.
+
+Standalone fallback (the shared homonto skill is optional): use the host cwd,
+not a guessed parent repository, and keep the decision record in conversation.
+No filesystem writes, Git initialization, isolation allocation, or workflow
+mutations are needed. Preserve dirty work; never automatically stash, reset,
+delete, commit user changes, or copy `.env` or secrets. Missing configuration
+or policy is not authority to enact the plan.
+
 Interview the user about every consequential part of this plan until you both
 reach a shared understanding. Walk the design as a tree: settle an upstream
 decision before the choices that depend on it, so no answer gets invalidated by

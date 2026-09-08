@@ -74,7 +74,7 @@ func ReadStandardizedJSON(path string) ([]byte, error) {
 	}
 	doc, err := jsonutil.Standardize(b)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("parse JSON/JSONC %q: %w; fix the syntax and retry (file unchanged)", path, err)
 	}
 	if err := jsonutil.ObjectRoot(doc); err != nil {
 		return nil, fmt.Errorf("%s: %w", path, err)

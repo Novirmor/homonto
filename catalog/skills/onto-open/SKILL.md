@@ -7,7 +7,8 @@ description: onto phase 1 — open a change. Use when starting a new change or w
 
 Turn an idea, feature request, or problem statement into a change workspace
 with an unambiguous proposal. Nothing is designed and nothing is built here.
-Apply the dispatcher's shared autonomous workflow policy throughout.
+Apply the shared [autonomous workflow policy](../homonto/references/autonomy.md),
+including workspace roots and dirty-work decisions, even on direct entry.
 
 ## Entry check
 
@@ -69,23 +70,37 @@ the smallest cohesive changes yourself and continue.
 
 ### 3. Create the workspace
 
+Initialize an authorized empty managed records root before any scaffold write.
+Choose isolation before `onto new`; immediately after creation allocate schema-2
+bindings (or create the safe source branch), before any records/source commit.
+Do not defer allocation to build: combined records commits advance frozen bases.
+
 Derive a concise kebab-case name from the request and create
 `<workflow-root>/changes/<name>/`; ask about the name only when two plausible names encode
 different scope. Create each artifact from its canonical template:
 
 - **Fresh work only:** create the workspace via the binary: `onto new <name>
   --workflow full`
-  with one `--repo <declared-alias>` for each configured sibling repository in
-  the change's established scope
+  with `--dir "<configRoot>"` and one `--repo <declared-alias>` for each source
+  repository in scope (schema 2 requires explicit aliases, not an implicit config repo).
+  In schema 2, add repeated `--base <alias>=<local-branch>` to select alternative
+  bases before creation; for example `--base api=main --base web=develop` for
+  different repo targets. Without an override each source's current committed
+  HEAD and local branch are frozen. Selecting `api=main` leaves a dirty feature
+  checkout untouched; do not switch or clean it just to choose the base.
   (`onto new` creates `onto-state.yaml` carrying `change`, `workflow: full`,
   `phase: open`, `created`; and an empty `proposal.md`. It does **not** scaffold
   `tasks.md` — a full change's task list is derived from the confirmed design in
   onto-design, not written here). Then record the creation fields the same way:
-  - `onto set base-ref <name> "$(git rev-parse HEAD)"` — captured NOW, before
-    anything is committed; written once, never recomputed.
-  - `onto set base-branch <name> "$(git branch --show-current)"` — the branch
-    close integrates into, kept separate from the commit-valued base ref. On a
-    detached HEAD, derive the intended branch from repository policy.
+  - Schema 2 creation freezes `repo_bases` from those selections. Check
+    each with `onto set base-ref <name> <commit> --repo <alias> --dir "<configRoot>"`
+    and `onto set base-branch <name> <branch> --repo <alias> --dir "<configRoot>"`.
+    These validate immutable values, not retarget them. Worktree creation must
+    match both the frozen commit and target; never use config/records HEAD as source.
+  - Legacy combined state uses the scalar `onto set base-ref <name> <commit>`
+    and `onto set base-branch <name> <branch>` setters. Resolve the commit and
+    target branch in that source checkout before implementation, not from a
+    managed records repository. Keep the diff anchor separate from the target.
   - `onto set deps <name> --dep <a> --dep <b>` for each `Depends-on:` entry
     (omit entirely when there are none).
 - **Downward-mismatch recovery:** when the dispatcher routed an existing
@@ -130,9 +145,10 @@ onto set proposal-approved <name> "YYYY-MM-DD <one-line review summary>"
       into open
 - [ ] onto-no-slop pass run over `proposal.md` and `notes.md`, the pass
       recorded in `notes.md` (`no-slop: <artifact> done`)
-- [ ] **Commit the workspace**: `git add <workflow-root>/changes/<name> && git commit`
-      — every phase exits with its workspace committed; state recovery,
-      `base_ref` rebuild, and the close-phase `git mv` all depend on the
-      workspace being tracked
+- [ ] **Record the workspace**: in managed mode, checkpoint manual Markdown
+      before the state transition with `homonto workspace checkpoint --path changes/<name> --message "Record open phase"`;
+      binary state mutations checkpoint automatically. Existing mode retains
+      named `git add` and `git commit` in the records' Git owner, never a
+      blanket commit of source or user dirt.
 - [ ] Load `onto-design` and continue in the same invocation unless the user
       named open as the endpoint or asked to pause

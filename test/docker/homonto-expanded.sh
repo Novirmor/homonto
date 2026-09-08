@@ -78,12 +78,12 @@ RVAR="$W/.homonto/catalog/subagents/onto-reviewer.opencode.md"
 in_file "$RVAR" '  edit: deny'
 in_file "$RVAR" '  task: deny'
 in_file "$RVAR" '  bash: deny'
-in_file "$RVAR" 'model: anthropic/claude-opus-4-8'
-in_file "$RVAR" 'variant: 1m'
+in_file "$RVAR" 'model: "anthropic/claude-opus-4-8"'
+in_file "$RVAR" 'variant: "1m"'
 # The implementer edits (coding model) but still spawns nothing: the only task
 # denial is spawning — edit stays available (absent from the permission map).
 IVAR="$W/.homonto/catalog/subagents/onto-implementer.opencode.md"
-in_file "$IVAR" 'model: anthropic/claude-sonnet-4'
+in_file "$IVAR" 'model: "anthropic/claude-sonnet-4"'
 in_file "$IVAR" '  task: deny'
 if grep -q 'edit: deny' "$IVAR"; then fail "edit-capable implementer must not deny edit"; fi
 # The shared homonto primary agent renders for OpenCode like any other agent: mode is

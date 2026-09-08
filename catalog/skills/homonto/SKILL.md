@@ -9,6 +9,10 @@ Use this skill when you need to explain or reason about homonto configuration,
 catalog projection, or the choice between the onto and to workflows. It is a
 reference, not a workflow dispatcher and it does not authorize mutations.
 
+Follow the [workspace and dirty-work policy](references/workspace-policy.md),
+including for direct skill entry. The generated `references/workspace.md` names
+the exact config, records, source, and worktree roots; inspect before writes.
+
 ## homonto
 
 homonto reads `homonto.toml` and projects declared resources into AI coding

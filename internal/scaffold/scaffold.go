@@ -39,11 +39,12 @@ var files = map[string]string{
 # scope = "user"
 # targets = ["opencode"]
 
-# A standalone builtin subagent (no framework) needs its model block too.
+# A standalone builtin subagent needs its model block too. Use a source not
+# already installed by a framework (the onto framework above owns onto-reviewer).
 # Every declared subagent MUST declare a per-tool block
 # (subagents.<name>.opencode) with a non-empty model. Variant is optional.
 # [subagents.reviewer]
-# source = "builtin:onto-reviewer"
+# source = "builtin:to-reviewer"
 # scope = "project"
 # [subagents.reviewer.opencode]
 # model = "anthropic/claude-opus-4-8"

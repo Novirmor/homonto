@@ -1,10 +1,14 @@
 package config
 
 import (
+	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/noviopenworks/homonto/internal/schema"
 )
 
 func writeConfig(t *testing.T, body string) string {
@@ -25,6 +29,9 @@ func TestLoad_RejectsFutureSchemaVersion(t *testing.T) {
 	if !strings.Contains(err.Error(), "upgrade homonto") {
 		t.Errorf("error = %q, want an 'upgrade homonto' message", err)
 	}
+	if !errors.Is(err, schema.ErrTooNew) {
+		t.Fatalf("future schema lost sentinel: %v", err)
+	}
 }
 
 func TestLoad_AcceptsAbsentAndCurrentSchemaVersion(t *testing.T) {
@@ -33,8 +40,21 @@ func TestLoad_AcceptsAbsentAndCurrentSchemaVersion(t *testing.T) {
 		t.Errorf("absent schema_version should load: %v", err)
 	}
 	// Explicit current version loads fine.
-	body := "schema_version = 1\n[mcps.demo]\ncommand = [\"true\"]\n"
-	if _, err := Load(writeConfig(t, body)); err != nil {
-		t.Errorf("current schema_version should load: %v", err)
+	for _, version := range []int{0, 1, CurrentConfigSchemaVersion} {
+		body := fmt.Sprintf("schema_version = %d\n[mcps.demo]\ncommand = [\"true\"]\n", version)
+		if _, err := Load(writeConfig(t, body)); err != nil {
+			t.Errorf("schema_version %d should load: %v", version, err)
+		}
+	}
+}
+
+func TestLoadLegacyRejectsLayoutFields(t *testing.T) {
+	for _, version := range []int{0, 1} {
+		for _, fields := range []string{"[workflow]\ngit='existing'", "[workflow]\ngit=''", "[worktrees]", "[worktrees]\ndir='../trees'"} {
+			_, err := Load(writeConfig(t, fmt.Sprintf("schema_version=%d\n%s\n", version, fields)))
+			if err == nil || !strings.Contains(err.Error(), "schema_version=2") {
+				t.Fatalf("schema %d fields %q: %v", version, fields, err)
+			}
+		}
 	}
 }

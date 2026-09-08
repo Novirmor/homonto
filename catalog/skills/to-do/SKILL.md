@@ -7,15 +7,20 @@ description: to phase 2 — do. Use when an active change has phase do — execu
 
 Execute the plan, one task at a time. This is the code-writing skill: the flow
 is simple, but the code written inside it is held to the full bar.
-Apply the dispatcher's shared autonomous workflow policy throughout.
+Apply the shared [autonomous workflow policy](../homonto/references/autonomy.md),
+including workspace roots and dirty-work decisions, even on direct entry.
 
 ## Entry check
 
 - `to status --json` shows the change at `phase: do`.
 - `plan.md` has a task list whose entries state a concrete outcome and
-  non-empty `Files:`, `Change:`, and `Verify:` fields, plus one non-empty
+  non-empty `Owner:`, `Repo:`, `Cwd:`, `Files:`, `Change:`, and `Verify:` fields, plus one non-empty
   `Final Verify:` line. If it does not, repair the plan before implementation;
   do not make the implementer invent the missing contract.
+- Converted tasks must carry Owner/Repo/Cwd, not just Files/Change/Verify. Read
+  snapshot evidence and validate the carried owner/root against current bindings.
+  If any contract field is missing or ambiguous, route to `to-plan` for repair
+  without changing recorded do; never infer ownership merely from conversion.
 - On resume (fresh session, context loss): run `to handoff <name>` first, then
   find the first unchecked task in `plan.md` and continue from there; never
   redo completed tasks.
@@ -24,12 +29,21 @@ Apply the dispatcher's shared autonomous workflow policy throughout.
 
 For each unchecked task in `plan.md`, in order:
 
+Route `Owner: coordinator` records tasks to the coordinator, however substantial.
+It edits and verifies those named workflow records serially and obtains read-only
+review, then checkpoints/commits them in their records owner. Never ask a
+source-only implementer to edit records. Source tasks use the loop below.
+
 1. **Dispatch `to-implementer`** with the complete task verbatim: outcome,
    files and symbols, behavioral contract, verification command, and expected
    passing signal. Include any directly relevant conclusion from the plan's
    grounding; do not silently add scope. One implementer at a time — **never in
    parallel**: it is the only agent that edits, and `to` keeps a single working
-   tree.
+    tree per selected repo. Supply the exact source alias and validated execution
+    binding, plus the existing dirt decision; configRoot and records root are
+    not substitute source directories. Same-repo tasks are serial until
+    task-level bindings exist. Only the coordinator calls workspace/worktree
+    commands, and all workflow calls retain `--dir "<configRoot>"`.
 2. **Verify against the repository**, not the report: check the diff exists
    and the task's verification command passes.
 3. **Dispatch `to-reviewer`** with the original task contract, the resulting
@@ -46,15 +60,18 @@ For each unchecked task in `plan.md`, in order:
 5. **Check off the task** only when its stated outcome is present and its exact
    verification has the expected result. Resolve technical subagent questions
    from repository evidence; ask the user only if product intent is missing.
-   Commit one task at a time with a
-   message that names the outcome. De-slop the message.
+   Commit one task at a time in its source repo with a message that names the
+   outcome. De-slop the message. In managed mode checkpoint the checkoff and
+   notes separately with `homonto workspace checkpoint --path tasks/<name>/plan.md --message "Record task completion"`.
+   Existing combined mode keeps source and plan in the current manual commit
+   pattern; separate existing records get a named records commit.
 
 Small tasks (a rename, a doc line) may skip the subagent loop and be done
 directly — but never skip the verification command or the commit.
 
 **The plan is live state.** Discovered work — a missing edge case, a
 prerequisite, a forgotten test — is APPENDED to `plan.md` as a new unchecked
-task (full contract: Files/Change/Verify, outcome line suffixed
+task (full contract: Owner/Repo/Cwd/Files/Change/Verify, outcome line suffixed
 `(discovered <date>)`, placed before `Final Verify:`) **before** its code is
 written; append-then-do, never do-then-maybe-note. Check off only at the
 task's own commit; never reorder or delete tasks — a task made unnecessary is

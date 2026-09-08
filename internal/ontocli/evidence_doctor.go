@@ -3,25 +3,30 @@ package ontocli
 import (
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 
 	"github.com/noviopenworks/homonto/internal/evidence"
+	"github.com/noviopenworks/homonto/internal/ontostate"
 	"github.com/spf13/cobra"
 )
 
 // evidenceFindings validates a change's structured evidence against its
-// artifacts (G6): every record's task number must exist in tasks.md, its
-// scenario ID must exist in a delta spec, its commit must still be reachable
+// artifacts (G6): each current claim's task number must exist in tasks.md, its
+// scenario ID must exist in the workflow's contract, its commit must still be reachable
 // (a rebase or squash makes the record stale), and verification.md must hash
-// to the recorded artifact hash. Duplicate scenario IDs in the specs are a
-// finding — ambiguous evidence is no evidence. A change with no sidecar is
-// legacy: a printed note, never a finding.
+// to the recorded artifact hash. Ambiguous scenario declarations are findings
+// even without a sidecar; the absence of a sidecar itself is only a legacy note.
 func evidenceFindings(cmd *cobra.Command, root, changeDir, name string) (findings, notes []string) {
+	st, stateErr := ontostate.LoadChange(changeDir)
+	scenarios, scenarioErr := loadScenarioIndex(changeDir, st)
+	findings = scenarioFindings(name, scenarios)
+	if scenarioErr != nil {
+		findings = append(findings, fmt.Sprintf("%s: evidence scenario contract: %v", name, scenarioErr))
+	}
 	sc, ok, err := evidence.Load(name, evidence.Path(changeDir))
 	if err != nil {
-		return []string{fmt.Sprintf("%s: evidence sidecar unusable: %v", name, err)}, nil
+		return append(findings, fmt.Sprintf("%s: evidence sidecar unusable: %v", name, err)), nil
 	}
 	if !ok {
 		// Legacy note — only for a change that actually reached verification,
@@ -29,16 +34,15 @@ func evidenceFindings(cmd *cobra.Command, root, changeDir, name string) (finding
 		// open/design/build has nothing to note, and doctor's healthy verdict
 		// must stay exactly "healthy" for it.
 		if _, statErr := os.Stat(filepath.Join(changeDir, "verification.md")); statErr == nil {
-			return nil, []string{fmt.Sprintf("note: %s verified without an evidence sidecar (pre-v0.15.0 change; evidence is optional)", name)}
+			return findings, []string{fmt.Sprintf("note: %s verified without an evidence sidecar (pre-v0.15.0 change; evidence is optional)", name)}
 		}
-		return nil, nil
+		return findings, nil
 	}
 
-	// Index the delta specs' scenario IDs and requirement IDs.
-	scenarioIDs := map[string]bool{}
+	// Requirement IDs retain their independent uniqueness check.
 	seenReqIDs := map[string]string{}
 	dupes := []string{}
-	specs, _ := filepath.Glob(filepath.Join(changeDir, "specs", "*.md"))
+	specs, _ := deltaSpecPaths(filepath.Join(changeDir, "specs"))
 	for _, spec := range specs {
 		data, err := os.ReadFile(spec)
 		if err != nil {
@@ -50,11 +54,6 @@ func evidenceFindings(cmd *cobra.Command, root, changeDir, name string) (finding
 					dupes = append(dupes, fmt.Sprintf("%s used by %q and %q", r.ID, prev, r.Name))
 				} else {
 					seenReqIDs[r.ID] = r.Name
-				}
-			}
-			for _, s := range r.Scenarios {
-				if s.ID != "" {
-					scenarioIDs[s.ID] = true
 				}
 			}
 		}
@@ -78,24 +77,39 @@ func evidenceFindings(cmd *cobra.Command, root, changeDir, name string) (finding
 	}
 
 	seenOps := map[string]bool{}
+	var sources map[string]string
+	if stateErr == nil {
+		sources, stateErr = stateSourceDirs(root, st)
+	}
+	if stateErr != nil {
+		findings = append(findings, fmt.Sprintf("%s: evidence source scope: %v", name, stateErr))
+	}
+	latest := latestEvidence(sc.Records)
 	for i, rec := range sc.Records {
 		label := fmt.Sprintf("%s evidence[%d]", name, i+1)
-		if !taskNums[rec.Task] {
-			findings = append(findings, fmt.Sprintf("%s: task #%d not in tasks.md (stale record)", label, rec.Task))
-		}
-		if !scenarioIDs[rec.Scenario] {
-			findings = append(findings, fmt.Sprintf("%s: scenario %q not found in any delta spec (stale or orphaned record)", label, rec.Scenario))
-		}
-		if rec.Commit != "" && !commitReachable(cmd, root, rec.Commit) {
-			findings = append(findings, fmt.Sprintf("%s: commit %s unreachable (rebased or squashed; record a fresh verification)", label, short(rec.Commit)))
-		}
-		if rec.ArtifactHash != "" && verHash != "" && rec.ArtifactHash != verHash {
-			findings = append(findings, fmt.Sprintf("%s: verification.md changed since the record (stale evidence; re-verify)", label))
-		}
 		if seenOps[rec.OperationID] {
 			findings = append(findings, fmt.Sprintf("%s: duplicate operation %s", label, rec.OperationID))
 		}
 		seenOps[rec.OperationID] = true
+		if latest[evidenceKey(rec)] != i {
+			continue
+		}
+		if !taskNums[rec.Task] {
+			findings = append(findings, fmt.Sprintf("%s: task #%d not in tasks.md (stale record)", label, rec.Task))
+		}
+		if len(scenarios[rec.Scenario]) == 0 {
+			findings = append(findings, fmt.Sprintf("%s: scenario %q not found in any delta spec or no-spec preset scenario contract (stale or orphaned record)", label, rec.Scenario))
+		}
+		source, scoped := sources[rec.Repo]
+		if !scoped {
+			findings = append(findings, fmt.Sprintf("%s: repository %q is not in source scope", label, rec.Repo))
+		}
+		if (rec.Commit != "" && (!scoped || !commitReachable(cmd, source, rec.Commit))) || (st.RepoMode == "explicit" && (rec.Commit == "" || isAncestor(source, rec.Commit, "HEAD") != nil)) {
+			findings = append(findings, fmt.Sprintf("%s: commit %s unreachable (rebased or squashed; record a fresh verification)", label, short(rec.Commit)))
+		}
+		if rec.ArtifactHash != "" && rec.ArtifactHash != verHash {
+			findings = append(findings, fmt.Sprintf("%s: verification.md changed since the record (stale evidence; re-verify)", label))
+		}
 	}
 	return findings, nil
 }
@@ -104,8 +118,8 @@ func evidenceFindings(cmd *cobra.Command, root, changeDir, name string) (finding
 // repository at root (best-effort: no git or no repo means "reachable" — the
 // check is evidence staleness, not git health).
 func commitReachable(cmd *cobra.Command, root, commit string) bool {
-	c := exec.Command("git", "-C", root, "cat-file", "-e", commit+"^{commit}")
-	return c.Run() == nil
+	_, err := resolveCommit(root, commit)
+	return err == nil
 }
 
 var _ = strings.TrimSpace

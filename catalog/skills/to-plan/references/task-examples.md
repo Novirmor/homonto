@@ -13,11 +13,17 @@ the later declaration to win. Keep the change inside catalog validation; do not
 alter adapter merge behavior.
 
 - [ ] Reject duplicate expanded skill names
+  - Owner: implementer
+  - Repo: app
+  - Cwd: `/worktrees/app/to-catalog`
   - Files: `internal/catalog/expand.go`, `internal/catalog/expand_test.go` (`Expand`)
   - Change: return an error naming both the duplicate skill and its framework; preserve expansion order for unique names
   - Verify: `go test ./internal/catalog -run TestExpandRejectsDuplicateSkills` — passes with the duplicate-name assertion
 
 - [ ] Document the validation error
+  - Owner: coordinator
+  - Repo: records
+  - Cwd: `/workspace/records`
    - Files: `<workflow-root>/guides/configuration.md` (framework validation)
   - Change: state that duplicate expanded names fail before projection and include the emitted error shape
    - Verify: `git diff --check -- <workflow-root>/guides/configuration.md` — exits 0
@@ -40,6 +46,9 @@ Better:
 
 ```markdown
 - [ ] Reject an empty remote archive after download
+  - Owner: implementer
+  - Repo: app
+  - Cwd: `/worktrees/app/to-archive`
   - Files: `internal/remote/fetch.go`, `internal/remote/fetch_test.go` (`Fetch`)
   - Change: return `remote: archive is empty` before extraction; preserve the cache on this failure
   - Verify: `go test ./internal/remote -run TestFetchRejectsEmptyArchive` — passes and asserts the cache remains unchanged
@@ -73,6 +82,9 @@ implementer settle an upstream design question:
 
 ```markdown
 - [ ] Classify pending state from desired-versus-applied hashes
+  - Owner: implementer
+  - Repo: app
+  - Cwd: `/worktrees/app/to-status`
   - Files: `internal/engine/status.go`, `internal/engine/status_test.go` (`Status`)
   - Change: report pending only when desired differs from recorded applied state; preserve disk-versus-applied drift classification
   - Verify: `go test ./internal/engine -run TestStatusSeparatesPendingFromDrift` — passes for pending-only and drift-only cases
@@ -84,6 +96,9 @@ Add a documentation task only when behavior changes a durable promise.
 
 ```markdown
 - [ ] Record the new adapter boundary
+  - Owner: coordinator
+  - Repo: records
+  - Cwd: `/workspace/records`
    - Files: `<workflow-root>/adr/0014-adapter-contract.md`, `<workflow-root>/guides/projection-and-state.md`
   - Change: update the durable adapter responsibility and the user-visible consequence; do not restate transient implementation details
    - Verify: `git diff --check -- <workflow-root>/adr/0014-adapter-contract.md <workflow-root>/guides/projection-and-state.md` — exits 0

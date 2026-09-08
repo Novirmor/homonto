@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/noviopenworks/homonto/internal/integrationrecord"
 	"github.com/noviopenworks/homonto/internal/ontostate"
 	"github.com/spf13/cobra"
 )
@@ -55,11 +56,26 @@ func stateCmd() *cobra.Command {
 			// ontostate.DeriveWorkingPhase for the evidence table).
 			phase := ontostate.DeriveWorkingPhase(changeDir, st)
 			if asJSON {
+				integration, tracked, err := integrationrecord.Load(changeDir, name)
+				if err != nil {
+					return err
+				}
 				payload := struct {
 					ontostate.State
-					DerivedPhase  string `json:"derived_phase"`
-					PhaseMismatch bool   `json:"phase_mismatch,omitempty"`
+					DerivedPhase      string                    `json:"derived_phase"`
+					PhaseMismatch     bool                      `json:"phase_mismatch,omitempty"`
+					IntegrationRecord *integrationrecord.Record `json:"integration_record,omitempty"`
+					RequiredArtifacts []string                  `json:"required_artifacts"`
+					PendingGates      []pendingGate             `json:"pending_gates"`
 				}{State: st, DerivedPhase: phase, PhaseMismatch: phase != st.Phase}
+				payload.RequiredArtifacts = ontostate.RequiredArtifacts(st.Phase, st.Workflow)
+				payload.PendingGates = addInvalidReceiptGate(dir, changeDir, name, st, pendingGates(name, st))
+				if tracked {
+					if err := validateIntegrationRecord(st, integration); err != nil {
+						return err
+					}
+					payload.IntegrationRecord = &integration
+				}
 				b, err := json.MarshalIndent(payload, "", "  ")
 				if err != nil {
 					return err

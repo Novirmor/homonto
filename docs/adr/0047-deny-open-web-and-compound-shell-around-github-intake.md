@@ -1,6 +1,6 @@
 # Deny open-web and compound-shell capability around GitHub intake
 
-- **Status:** Accepted
+- **Status:** Partially superseded by 0049 (evidence setters) and 0051 (web and workspace execution)
 - **Date:** 2026-09-06
 
 ## Context

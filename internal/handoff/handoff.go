@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"time"
 )
@@ -33,26 +34,37 @@ type ArtifactDigest struct {
 	SHA256 string `json:"sha256"`
 }
 
+// Source is the read-only execution context for one selected repository.
+type Source struct {
+	Dir          string `json:"dir"`
+	HeadCommit   string `json:"headCommit"`
+	BaseRef      string `json:"baseRef,omitempty"`
+	BaseBranch   string `json:"baseBranch,omitempty"`
+	GitCommonDir string `json:"gitCommonDir,omitempty"`
+	VerifiedHead string `json:"verifiedHead,omitempty"`
+}
+
 // Recovery is the persisted recovery view: everything a fresh session needs
 // to re-ground, and nothing it could not safely commit. Free-form state
 // (directives, evidence text, plan excerpts) is excluded by construction.
 type Recovery struct {
-	SchemaVersion int              `json:"schemaVersion"`
-	Tool          string           `json:"tool"`
-	Change        string           `json:"change"`
-	OperationID   string           `json:"operationId"`
-	Generated     string           `json:"generated"`
-	Workflow      string           `json:"workflow,omitempty"`
-	Phase         string           `json:"phase"`
-	DerivedPhase  string           `json:"derivedPhase,omitempty"`
-	PhaseMismatch bool             `json:"phaseMismatch,omitempty"`
-	Deps          []string         `json:"deps,omitempty"`
-	RepoAliases   []string         `json:"repoAliases,omitempty"`
-	BaseRef       string           `json:"baseRef,omitempty"`
-	HeadCommit    string           `json:"headCommit,omitempty"`
-	PendingGates  []GateRef        `json:"pendingGates,omitempty"`
-	Artifacts     []ArtifactDigest `json:"artifacts,omitempty"`
-	NextArgv      []string         `json:"nextArgv,omitempty"`
+	SchemaVersion int               `json:"schemaVersion"`
+	Tool          string            `json:"tool"`
+	Change        string            `json:"change"`
+	OperationID   string            `json:"operationId"`
+	Generated     string            `json:"generated"`
+	Workflow      string            `json:"workflow,omitempty"`
+	Phase         string            `json:"phase"`
+	DerivedPhase  string            `json:"derivedPhase,omitempty"`
+	PhaseMismatch bool              `json:"phaseMismatch,omitempty"`
+	Deps          []string          `json:"deps,omitempty"`
+	RepoAliases   []string          `json:"repoAliases,omitempty"`
+	BaseRef       string            `json:"baseRef,omitempty"`
+	HeadCommit    string            `json:"headCommit,omitempty"`
+	Sources       map[string]Source `json:"sources,omitempty"`
+	PendingGates  []GateRef         `json:"pendingGates,omitempty"`
+	Artifacts     []ArtifactDigest  `json:"artifacts,omitempty"`
+	NextArgv      []string          `json:"nextArgv,omitempty"`
 }
 
 // ValidateSchema rejects an envelope this binary cannot understand. Unknown
@@ -96,11 +108,36 @@ func Markdown(r Recovery) string {
 	if r.HeadCommit != "" {
 		fmt.Fprintf(&b, "- **head_commit**: %s\n", r.HeadCommit)
 	}
+	if len(r.Sources) > 0 {
+		b.WriteString("\n## Sources\n\n")
+		aliases := make([]string, 0, len(r.Sources))
+		for alias := range r.Sources {
+			aliases = append(aliases, alias)
+		}
+		sort.Strings(aliases)
+		for _, alias := range aliases {
+			s := r.Sources[alias]
+			fmt.Fprintf(&b, "- **%s**: directory `%s`, HEAD `%s`", alias, s.Dir, s.HeadCommit)
+			if s.BaseRef != "" {
+				fmt.Fprintf(&b, ", base `%s`", s.BaseRef)
+			}
+			if s.BaseBranch != "" {
+				fmt.Fprintf(&b, ", target `%s`", s.BaseBranch)
+			}
+			if s.GitCommonDir != "" {
+				fmt.Fprintf(&b, ", Git identity `%s`", s.GitCommonDir)
+			}
+			if s.VerifiedHead != "" {
+				fmt.Fprintf(&b, ", verified `%s`", s.VerifiedHead)
+			}
+			b.WriteString("\n")
+		}
+	}
 	if len(r.PendingGates) > 0 {
 		b.WriteString("\n## Pending decisions\n\n")
 		for _, g := range r.PendingGates {
 			if len(g.SetArgv) > 0 {
-				fmt.Fprintf(&b, "- **%s** — record with `%s`\n", g.ID, strings.Join(g.SetArgv, " "))
+				fmt.Fprintf(&b, "- **%s** — record with `%s`\n", g.ID, commandLine(g.SetArgv))
 			} else {
 				fmt.Fprintf(&b, "- **%s**\n", g.ID)
 			}
@@ -113,10 +150,24 @@ func Markdown(r Recovery) string {
 		}
 	}
 	if len(r.NextArgv) > 0 {
-		fmt.Fprintf(&b, "\nNext: `%s`\n", strings.Join(r.NextArgv, " "))
+		fmt.Fprintf(&b, "\nNext: `%s`\n", commandLine(r.NextArgv))
 	}
 	b.WriteString("\nRe-derive the phase from file state before acting; this pack carries identity, not prose.\n")
 	return b.String()
+}
+
+// Preserve argv boundaries in the text view, including config paths with spaces.
+func commandLine(argv []string) string {
+	words := make([]string, len(argv))
+	for i, arg := range argv {
+		words[i] = arg
+		if arg == "" || strings.IndexFunc(arg, func(r rune) bool {
+			return !strings.ContainsRune("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_@%+=:,./-", r)
+		}) >= 0 {
+			words[i] = "'" + strings.ReplaceAll(arg, "'", "'\"'\"'") + "'"
+		}
+	}
+	return strings.Join(words, " ")
 }
 
 // WritePack persists the recovery JSON and Markdown under dir with

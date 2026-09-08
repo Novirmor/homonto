@@ -15,6 +15,44 @@ bookkeeper) — for every supported OS/arch as separate archives under one
 `SHA256SUMS`. `onto` and `to` each require `homonto` to have installed their
 framework first (`[frameworks.onto]` / `[frameworks.to]` + `homonto apply`).
 
+### Unreleased: autonomous h workflows and trusted workspace execution
+
+- Schema 2 separates config, records history, and explicit source scope, with
+  registered execution and identity-checked terminal/archive receiver worktrees
+  (`--state-id` disambiguates, never rebinds). Managed operations journal scoped
+  pre-write intent with a prepared archive destination/date and recover partial
+  records without sweeping unrelated paths; same-file editor attribution and
+  automatic layout/active-binding conversion remain unsupported. See
+  [workspaces](guides/workspaces.md).
+- Onto retains superseded evidence as history, requires unique scenario
+  declarations (including no-spec presets), and reports failed-round history
+  only while unresolved. Ambiguous IDs provide no coverage or supersession.
+  See [ADR 0053](adr/0053-keep-history-without-blocking-fresh-verification.md).
+  Integration binds exact verified candidates (plus allowed records-only descendants), accepts
+  proven `unchanged:` receipts, and requires an externally asserted PR `--head`
+  for explicit sources without claiming remote attestation. To surfaces root
+  errors and preserves actual verification values during archive recovery.
+  Demotion preserves task scope and multiline checks, transfers deferred-close
+  work unchecked, and restarts incomplete contracts at plan.
+- Strict config diagnostics reject ignored fields and duplicate builtin aliases;
+  per-agent positive `steps` overrides tune finite budgets. Permission suggestions
+  use the actual `permission.asked`/`permission.replied` producer contract. The
+  workflow observer refreshes compaction status and reports transient errors;
+  notifications are not enforcement.
+- The five h workflows now work toward explicit completion goals, choose `to`
+  or `onto` from intent and evidence, and recover in-scope failures without
+  routine approval dialogs. Review drafts still need approval before posting.
+- The coordinator and implementers allow routine tests, builds, and formatting,
+  including on contributor-controlled PR checkouts. All shipped agents allow
+  web research; concurrent specialists remain shell- and edit-denied.
+- This deliberately trusts repository scripts to execute arbitrary code with
+  the process's privileges. Unknown command requests still ask; publishing
+  prompts and explicit denies remain. Composition guards apply to the host's
+  permission-request patterns, not necessarily whole shell invocations.
+  Configured RTK gets command-specific wrapper rules, not a blanket grant.
+  Permission denial cannot be bypassed. This replaces the per-run PR execution policy described below
+  for v0.23.0. See [ADR 0051](adr/0051-trust-workspace-execution-and-automate-h-routing.md).
+
 ### New in v0.23.0 — executable workflow contracts and safer agent projection
 
 - **Workflow agents can complete their documented gates.** The shared

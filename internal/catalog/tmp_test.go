@@ -41,7 +41,7 @@ func TestMaterializeWritesTmpRefToDispatchersAndSharedSkill(t *testing.T) {
 	dst := t.TempDir()
 	c := baseCatalog(t)
 	names := []string{"onto", "onto-build", "homonto"}
-	if err := c.Materialize(dst, names, "none", "none", ".tmp"); err != nil {
+	if err := c.Materialize(dst, names, "none", "none", ".tmp", nil); err != nil {
 		t.Fatal(err)
 	}
 	for _, name := range []string{"onto", "homonto"} {
@@ -60,7 +60,7 @@ func TestMaterializeWritesTmpRefToDispatchersAndSharedSkill(t *testing.T) {
 
 	// Disabled: no reference anywhere, and a stale one from a prior enabled
 	// run is removed by the wholesale directory rebuild.
-	if err := c.Materialize(dst, names, "none", "none", ""); err != nil {
+	if err := c.Materialize(dst, names, "none", "none", "", nil); err != nil {
 		t.Fatal(err)
 	}
 	for _, name := range names {

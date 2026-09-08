@@ -226,7 +226,7 @@ func runAdvance(cmd *cobra.Command, root, name string) error {
 	}
 
 	if next == "close" {
-		dirt, err := scopedWorktreeDirt(root, name, st.Repos)
+		dirt, err := stateWorktreeDirt(root, st)
 		if err != nil {
 			return fmt.Errorf("onto advance: cannot verify scoped worktrees; refusing close: %w", err)
 		}

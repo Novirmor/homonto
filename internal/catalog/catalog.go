@@ -37,6 +37,7 @@ type Framework struct {
 	Skills    map[string]string // skill name -> catalog-relative path ("skills/<n>")
 	Commands  map[string]string // command name -> catalog-relative path ("commands/<n>.md")
 	Subagents map[string]string // subagent name -> catalog-relative path ("subagents/<n>.md")
+	Plugins   map[string]string // plugin name -> catalog-relative path ("plugins/<n>")
 	// srcFS is the filesystem this framework was read from (the embedded base or
 	// a local overlay). Resource paths are relative to it; carried so a consumer
 	// can resolve overlay content later. The base's is the common case.
@@ -87,6 +88,7 @@ type frameworkTOML struct {
 	Skills    map[string]string `toml:"skills"`
 	Commands  map[string]string `toml:"commands"`
 	Subagents map[string]string `toml:"subagents"`
+	Plugins   map[string]string `toml:"plugins"`
 }
 
 // New loads the production catalog from the embedded filesystem.
@@ -434,6 +436,29 @@ func (c *Catalog) indexFramework(name string, src fs.FS, ft frameworkTOML) error
 		c.subagents[subagent] = sap
 		c.subagentFS[subagent] = src
 	}
+	for plugin, pp := range ft.Plugins {
+		if err := validResourceName("plugin", plugin); err != nil {
+			return err
+		}
+		if _, err := fs.Stat(src, path.Join(pp, "plugin.ts")); err != nil {
+			return fmt.Errorf("catalog: framework %q plugin %q path %q missing from catalog", name, plugin, pp)
+		}
+		if prev, ok := c.plugins[plugin]; ok {
+			if prev != pp {
+				return fmt.Errorf("catalog: plugin %q mapped to both %q and %q", plugin, prev, pp)
+			}
+			same, err := sameCatalogResource(c.pluginFS[plugin], prev, src, pp)
+			if err != nil {
+				return fmt.Errorf("catalog: comparing shared plugin %q: %w", plugin, err)
+			}
+			if !same {
+				return fmt.Errorf("catalog: shared plugin %q has different content in multiple frameworks", plugin)
+			}
+			continue
+		}
+		c.plugins[plugin] = pp
+		c.pluginFS[plugin] = src
+	}
 	// Split each dependency "name@constraint" into the graph name (used for
 	// transitive resolution and cycle detection) and its version constraint
 	// (validated once every framework is indexed).
@@ -462,6 +487,7 @@ func (c *Catalog) indexFramework(name string, src fs.FS, ft frameworkTOML) error
 		Skills:                ft.Skills,
 		Commands:              ft.Commands,
 		Subagents:             ft.Subagents,
+		Plugins:               ft.Plugins,
 	}
 	return nil
 }

@@ -72,7 +72,7 @@ func TestNeedsTransform(t *testing.T) {
 
 func TestRenderOpenCode_ReadOnlyReviewer(t *testing.T) {
 	s := mustRender(t, readOnlyReviewer, "opencode")
-	for _, want := range []string{"mode: subagent", "model: opus", "permission:", "  edit: deny", "  bash: deny", "  question: allow", "  task: deny"} {
+	for _, want := range []string{"mode: subagent", `model: "opus"`, "permission:", "  edit: deny", "  bash: deny", "  question: allow", "  task: deny"} {
 		if !strings.Contains(s, want) {
 			t.Errorf("opencode output missing %q:\n%s", want, s)
 		}
@@ -112,13 +112,32 @@ func TestRenderOpenCode_NoDialogsDeniesQuestion(t *testing.T) {
 	}
 }
 
-func TestRenderOpenCode_NetworkDeniedWhenRequested(t *testing.T) {
-	noNetwork := strings.Replace(readOnlyReviewer, "  dialogs: true\n", "  dialogs: true\n  network: false\n", 1)
-	s := mustRender(t, noNetwork, "opencode")
-	for _, want := range []string{"  webfetch: deny", "  websearch: deny"} {
-		if !strings.Contains(s, want) {
-			t.Errorf("network:false must deny %q:\n%s", want, s)
-		}
+func TestRenderOpenCode_NetworkIntent(t *testing.T) {
+	for _, tc := range []struct {
+		name, intent, action string
+	}{
+		{"omitted", "", ""},
+		{"allowed", "  network: true\n", "allow"},
+		{"denied", "  network: false\n", "deny"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			content := strings.Replace(readOnlyReviewer, "  dialogs: true\n", "  dialogs: true\n"+tc.intent, 1)
+			s := mustRender(t, content, "opencode")
+			for _, tool := range []string{"webfetch", "websearch"} {
+				if tc.action == "" {
+					if strings.Contains(s, "  "+tool+":") {
+						t.Errorf("omitted network must leave %s unchanged:\n%s", tool, s)
+					}
+				} else if !strings.Contains(s, "  "+tool+": "+tc.action+"\n") {
+					t.Errorf("%s must render %s: %s:\n%s", tc.name, tool, tc.action, s)
+				}
+			}
+			for _, want := range []string{"  edit: deny", "  bash: deny", "  task: deny"} {
+				if !strings.Contains(s, want) {
+					t.Errorf("network intent must preserve %q:\n%s", want, s)
+				}
+			}
+		})
 	}
 }
 
@@ -140,10 +159,10 @@ func TestRenderOpenCode_BashAllowlist(t *testing.T) {
 	}
 }
 
-// A prefix allow also glob-matches chained commands ("git status; curl …"),
-// and OpenCode's last-matching-rule-wins would execute them silently. The
-// composition guards must render AFTER the allows so the guard wins.
-func TestRenderOpenCode_BashAllowGuardsCompoundCommands(t *testing.T) {
+// A request containing composition ("git status; curl ...") also matches a
+// prefix allow. Guards follow allows so that request re-asks. This does not
+// test how the host parses a shell invocation into permission requests.
+func TestRenderOpenCode_BashAllowGuardsCompositionInRequests(t *testing.T) {
 	allowlisted := strings.Replace(orchestrator, "  spawn: [onto-implementer, onto-reviewer]\n", `  spawn: [onto-implementer, onto-reviewer]
   bash_allow: ["git status*"]
 `, 1)
@@ -162,7 +181,7 @@ func TestRenderOpenCode_BashAllowGuardsCompoundCommands(t *testing.T) {
 		t.Fatalf("render must carry the allow and the guard:\n%s", s)
 	}
 	if allowIdx > guardIdx {
-		t.Errorf("guards must follow the allows so last-match-wins re-asks compounds:\n%s", s)
+		t.Errorf("guards must follow allows to re-ask composition-bearing requests:\n%s", s)
 	}
 	// A denied-bash agent carries no allowlist, so it needs no guards.
 	if rendered := mustRender(t, readOnlyReviewer, "opencode"); strings.Contains(rendered, `"*;*": ask`) {
@@ -260,8 +279,12 @@ func TestRenderOpenCode_ExternalDirectoriesAreAgentSpecific(t *testing.T) {
 
 func TestRender_NoHomontoBlock_Unchanged(t *testing.T) {
 	in := "---\nname: x\ndescription: y\nmode: subagent\n---\nbody\n"
-	// A missing homonto block returns before model context is considered.
-	if out := mustRender(t, in, "opencode"); out != in {
+	// Native content needs no model override, but its installed name must match.
+	out, err := Render("x", []byte(in), "opencode", ctx())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(out) != in {
 		t.Errorf("content without a homonto block must be unchanged\n got: %q", out)
 	}
 }
@@ -286,7 +309,7 @@ func TestRenderOpenCode_VariantUsesSeparateFrontmatterField(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(string(out), "model: openai/gpt-5") || !strings.Contains(string(out), "variant: high") {
+	if !strings.Contains(string(out), `model: "openai/gpt-5"`) || !strings.Contains(string(out), `variant: "high"`) {
 		t.Errorf("opencode must render the model and variant separately:\n%s", out)
 	}
 	if strings.Contains(string(out), "model: openai/gpt-5#high") {

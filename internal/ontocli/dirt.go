@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"os/exec"
 	"path"
 	"path/filepath"
 	"sort"
@@ -12,6 +11,7 @@ import (
 	"time"
 
 	"github.com/noviopenworks/homonto/internal/ontostate"
+	"github.com/noviopenworks/homonto/internal/workspace"
 	"github.com/spf13/cobra"
 )
 
@@ -48,11 +48,11 @@ type dirtEntry struct {
 func worktreeDirt(root, change string) (entries []dirtEntry, determinable bool) {
 	ctx, cancel := context.WithTimeout(context.Background(), gitCmdTimeout)
 	defer cancel()
-	out, err := exec.CommandContext(ctx, "git", "-C", root, "status", "--porcelain=v1", "-z", "--no-renames", "--untracked-files=all").Output()
+	out, err := gitAt(ctx, root, "status", "--porcelain=v1", "-z", "--no-renames", "--untracked-files=all").Output()
 	if err != nil {
 		return nil, false
 	}
-	prefixOut, err := exec.CommandContext(ctx, "git", "-C", root, "rev-parse", "--show-prefix").Output()
+	prefixOut, err := gitAt(ctx, root, "rev-parse", "--show-prefix").Output()
 	if err != nil {
 		return nil, false
 	}
@@ -174,14 +174,20 @@ func dirtCmd() *cobra.Command {
 			// A recorded cross-repo scope extends the diagnostic to exactly the
 			// repositories that close will gate. Keep the historic root-only
 			// behavior for ad-hoc names and legacy states without repos.
+			legacyScope := false
 			if change != "" {
-				if st, err := ontostate.Load(filepath.Join(changesDir(dir), change, "onto-state.yaml")); err == nil && len(st.Repos) > 0 {
-					repos, err := scopedWorktreeDirt(dir, change, st.Repos)
+				if st, err := ontostate.Load(filepath.Join(changesDir(dir), change, "onto-state.yaml")); err == nil && (len(st.Repos) > 0 || st.RepoMode != "") {
+					repos, err := stateWorktreeDirt(dir, st)
 					if err != nil {
 						return fmt.Errorf("onto dirt: cannot determine scoped worktree state: %w", err)
 					}
 					return renderScopedDirt(cmd, change, repos, asJSON)
+				} else if err == nil {
+					legacyScope = true
 				}
+			}
+			if layout, err := workspace.LoadRoot(dir); err == nil && layout.ExplicitRepos() && !legacyScope {
+				return fmt.Errorf("onto dirt: an existing change with selected repositories is required; config Git is not an implicit source")
 			}
 			entries, determinable := worktreeDirt(dir, change)
 			if !determinable {

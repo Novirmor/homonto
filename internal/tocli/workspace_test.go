@@ -139,21 +139,30 @@ func TestValidChangeName_AcceptsAndRejects(t *testing.T) {
 // (e.g. a recurring chore) gets a -2 suffix instead of colliding.
 func TestArchiveDest_NumericSuffixOnSameDay(t *testing.T) {
 	dir := t.TempDir()
-	first := archiveDest(dir, "chore", "2030-01-01")
+	first, err := archiveDest(dir, "chore", "2030-01-01")
+	if err != nil {
+		t.Fatal(err)
+	}
 	if !strings.HasSuffix(first, filepath.Join("archive", "2030-01-01-chore")) {
 		t.Fatalf("first dest = %q, want .../2030-01-01-chore", first)
 	}
 	if err := os.MkdirAll(first, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	second := archiveDest(dir, "chore", "2030-01-01")
+	second, err := archiveDest(dir, "chore", "2030-01-01")
+	if err != nil {
+		t.Fatal(err)
+	}
 	if !strings.HasSuffix(second, filepath.Join("archive", "2030-01-01-chore-2")) {
 		t.Errorf("second dest = %q, want .../2030-01-01-chore-2", second)
 	}
 	if err := os.MkdirAll(second, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	third := archiveDest(dir, "chore", "2030-01-01")
+	third, err := archiveDest(dir, "chore", "2030-01-01")
+	if err != nil {
+		t.Fatal(err)
+	}
 	if !strings.HasSuffix(third, filepath.Join("archive", "2030-01-01-chore-3")) {
 		t.Errorf("third dest = %q, want .../2030-01-01-chore-3", third)
 	}
@@ -179,7 +188,7 @@ func TestArchive_DestinationExistsIsError(t *testing.T) {
 func TestFindArchived_LegacyUnprefixedDir(t *testing.T) {
 	dir := t.TempDir()
 	legacy := filepath.Join(archiveDir(dir), "legacy-change")
-	if err := os.MkdirAll(legacy, 0o755); err != nil {
+	if err := tostate.Save(filepath.Join(legacy, tostate.FileName), tostate.State{Change: "legacy-change", Phase: tostate.PhaseDone}); err != nil {
 		t.Fatal(err)
 	}
 	if got := findArchived(dir, "legacy-change"); got != legacy {
@@ -197,7 +206,7 @@ func TestFindArchived_PrefixedPicksNewest(t *testing.T) {
 		"2025-06-06-recur",
 		"2026-01-01-recur",
 	} {
-		if err := os.MkdirAll(filepath.Join(archiveDir(dir), name), 0o755); err != nil {
+		if err := tostate.Save(filepath.Join(archiveDir(dir), name, tostate.FileName), tostate.State{Change: "recur", Phase: tostate.PhaseDone}); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -213,7 +222,7 @@ func TestFindArchived_PrefixedPicksNewest(t *testing.T) {
 func TestLoadChange_ArchivedNamesTheArchive(t *testing.T) {
 	dir := t.TempDir()
 	archived := filepath.Join(archiveDir(dir), "2026-03-03-old")
-	if err := os.MkdirAll(archived, 0o755); err != nil {
+	if err := tostate.Save(filepath.Join(archived, tostate.FileName), tostate.State{Change: "old", Phase: tostate.PhaseDone}); err != nil {
 		t.Fatal(err)
 	}
 	_, err := loadChange(dir, "old")

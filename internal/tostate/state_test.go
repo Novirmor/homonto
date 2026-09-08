@@ -1,11 +1,14 @@
 package tostate
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"reflect"
 	"strings"
 	"testing"
+
+	"github.com/noviopenworks/homonto/internal/schema"
 )
 
 func TestSaveLoadRoundTrip(t *testing.T) {
@@ -28,6 +31,98 @@ func TestSaveLoadRoundTrip(t *testing.T) {
 	// Atomic write leaves no temp file behind.
 	if _, err := os.Stat(path + ".tmp"); !os.IsNotExist(err) {
 		t.Errorf("temp file left behind, stat err = %v", err)
+	}
+}
+
+func TestSourceProvenanceRoundTripAndValidation(t *testing.T) {
+	for _, scope := range []string{SourceExplicit, SourceLegacy} {
+		t.Run(scope, func(t *testing.T) {
+			st := State{SchemaVersion: CurrentSchemaVersion, ID: "stable-id", Change: "scope", Phase: PhaseDo,
+				Repos: []string{"api"}, RepoMode: scope, RepoBases: map[string]RepoBase{"api": {GitCommonDir: "/sources/api/.git", BaseRef: strings.Repeat("a", 40), BaseBranch: "main"}}}
+			if scope == SourceLegacy {
+				st.RepoBases[""] = RepoBase{GitCommonDir: "/config/.git"}
+			}
+			path := filepath.Join(t.TempDir(), FileName)
+			if err := Save(path, st); err != nil {
+				t.Fatal(err)
+			}
+			got, err := Load(path)
+			if err != nil || !reflect.DeepEqual(got, st) {
+				t.Fatalf("round trip = %+v, %v; want %+v", got, err, st)
+			}
+			delete(st.RepoBases, "api")
+			if err := Save(path, st); err == nil {
+				t.Fatal("saved incomplete source identity")
+			}
+		})
+	}
+}
+
+func TestExplicitAnchorsRequiredAndLegacyAnchorsOptional(t *testing.T) {
+	for _, base := range []RepoBase{
+		{}, {BaseRef: strings.Repeat("a", 40)}, {BaseBranch: "main"},
+		{BaseRef: "HEAD", BaseBranch: "main"}, {BaseRef: "abc123", BaseBranch: "main"},
+		{BaseRef: strings.Repeat("a", 40), BaseBranch: " "},
+	} {
+		st := State{SchemaVersion: CurrentSchemaVersion, Change: "anchors", Phase: PhasePlan,
+			RepoMode: SourceExplicit, Repos: []string{"api"}, RepoBases: map[string]RepoBase{"api": base}}
+		base.GitCommonDir = "/api/.git"
+		st.RepoBases["api"] = base
+		if err := st.Validate(); err == nil || !strings.Contains(err.Error(), "base_ref") {
+			t.Fatalf("accepted incomplete explicit anchors %+v: %v", base, err)
+		}
+		if err := Save(filepath.Join(t.TempDir(), FileName), st); err == nil {
+			t.Fatalf("saved incomplete explicit anchors %+v", base)
+		}
+	}
+	for _, length := range []int{40, 64} {
+		st := State{SchemaVersion: CurrentSchemaVersion, Change: "anchors", Phase: PhasePlan,
+			RepoMode: SourceExplicit, Repos: []string{"api"}, RepoBases: map[string]RepoBase{
+				"api": {GitCommonDir: "/api/.git", BaseRef: strings.Repeat("a", length), BaseBranch: "main"},
+			}}
+		if err := st.Validate(); err != nil {
+			t.Fatal(err)
+		}
+	}
+	st := State{SchemaVersion: CurrentSchemaVersion, Change: "legacy", Phase: PhasePlan,
+		RepoMode: SourceLegacy, Repos: []string{"api"}, RepoBases: map[string]RepoBase{
+			"": {GitCommonDir: "/control/.git"}, "api": {GitCommonDir: "/api/.git"},
+		}}
+	if err := st.Validate(); err != nil {
+		t.Fatalf("legacy anchors became mandatory: %v", err)
+	}
+}
+
+func TestLoadSourceSchemaFailsClosed(t *testing.T) {
+	for _, body := range []string{
+		"schema_version: 999\n",
+		"schema_version: -1\n",
+		"schema_version: 1\n",
+		"repo_mode: explicit\nrepos: [api]\nrepo_bases: {api: {git_common_dir: /api/.git}}\n",
+		"schema_version: 1\nrepo_mode: explicit\n",
+		"schema_version: 1\nrepo_mode: explicit\nrepos: [api]\nrepo_bases: {api: {git_common_dir: relative}}\n",
+		"schema_version: 1\nrepo_mode: legacy\nunknown_authority: dangerous\n",
+		"schema_version: 1\nrepo_mode: legacy\n---\nrepo_mode: explicit\n",
+	} {
+		t.Run(body, func(t *testing.T) {
+			path := filepath.Join(t.TempDir(), FileName)
+			data := []byte("change: scope\nphase: do\n" + body)
+			if err := os.WriteFile(path, data, 0o644); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := Load(path); err == nil {
+				t.Fatal("accepted unsafe source schema")
+			} else if strings.Contains(body, "999") && !errors.Is(err, schema.ErrTooNew) {
+				t.Fatalf("future schema error = %v", err)
+			}
+		})
+	}
+	path := filepath.Join(t.TempDir(), FileName)
+	if err := Save(path, State{SchemaVersion: 999, Change: "future", Phase: PhaseDo}); !errors.Is(err, schema.ErrTooNew) {
+		t.Fatalf("Save future schema = %v", err)
+	}
+	if _, err := os.Stat(path); !os.IsNotExist(err) {
+		t.Fatalf("future schema created a file: %v", err)
 	}
 }
 

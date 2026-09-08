@@ -8,12 +8,12 @@
 //
 // Authoritative decisions come from the correlated permission events
 // (permission.asked carries the full request incl. metadata.command;
-// permission.replied carries the user's decision), verified at pinned
-// revision 50efc055. Execution alone is never treated as approval.
+// permission.replied carries the user's decision), verified against OpenCode
+// v1.18.29. Execution alone is never treated as approval.
 //
 // Requires Bun's spawn; the plugin refuses to run without it.
 
-import { PluginInput } from "@opencode-ai/plugin"
+import type { Plugin } from "@opencode-ai/plugin"
 
 interface Asked {
   id: string
@@ -35,15 +35,31 @@ interface Candidate {
   denied: boolean
 }
 
-export const permissionObserver = (input: PluginInput) => {
+// The pinned runtime producer differs from the generated v1 SDK Event union.
+// Accept unknown properties and narrow them, rather than casting stale SDK
+// payloads to an incompatible request/reply interface.
+interface RuntimeEvent { type: string; properties?: unknown }
+
+export const permissionObserver = (async (input: Parameters<Plugin>[0]) => {
   const pending = new Map<string, Asked>()
   const candidates = new Map<string, Candidate>() // sessionID \u0000 command -> candidate
-  let suggested = new Set<string>()
+  const suggested = new Set<string>()
+  let disposed = false
+  const running = new Set<() => void>()
+
+  async function dispose() {
+    if (disposed) return
+    disposed = true
+    for (const cancel of running) cancel()
+    running.clear()
+    pending.clear(); candidates.clear(); suggested.clear()
+  }
 
   function recordDecision(replied: Replied) {
-    const ask = pending.get(replied.requestID)
+    const requestKey = replied.sessionID + "\u0000" + replied.requestID
+    const ask = pending.get(requestKey)
     if (!ask) return
-    pending.delete(replied.requestID)
+    pending.delete(requestKey)
     if (ask.permission !== "bash") return
     const command = typeof ask.metadata?.command === "string" ? ask.metadata.command : ""
     if (!command) return
@@ -66,34 +82,85 @@ export const permissionObserver = (input: PluginInput) => {
   }
 
   async function suggest(command: string) {
-    if (!input.$) {
-      console.warn("permission-observer: Bun.$ unavailable; cannot render a suggestion")
-      return
-    }
+    if (disposed) return
+    let timer: ReturnType<typeof setTimeout> | undefined
+    let cancel: (() => void) | undefined
+    let kill: (() => void) | undefined
     try {
-      const proc = input.$.sync`homonto permissions suggest`
+      const proc = Bun.spawn(["homonto", "permissions", "suggest"], {
+        stdin: "pipe",
+        stdout: "pipe",
+        stderr: "pipe",
+        cwd: input.directory,
+      })
+      kill = () => { try { proc.kill() } catch { /* already exited */ } }
+      const interrupted = new Promise<never>((_resolve, reject) => {
+        cancel = () => { if (timer) clearTimeout(timer); kill?.(); reject(new Error("suggest timed out or disposed")) }
+        running.add(cancel)
+        timer = setTimeout(cancel, 5000)
+        timer.unref?.()
+      })
       proc.stdin.write(command + "\n")
       proc.stdin.end()
-      const out = await new Response(proc.stdout).text()
-      process.stdout.write(out)
+      async function drain(stream: ReadableStream<Uint8Array>) {
+        const reader = stream.getReader()
+        const decoder = new TextDecoder()
+        let text = "", size = 0
+        try {
+          while (true) {
+            const { value, done } = await reader.read()
+            if (done) return text + decoder.decode()
+            size += value.byteLength
+            if (size > 64 * 1024) throw new Error("suggest output exceeded limit")
+            text += decoder.decode(value, { stream: true })
+          }
+        } finally { reader.releaseLock() }
+      }
+      const [out, err, exitCode] = await Promise.race([Promise.all([
+        drain(proc.stdout),
+        drain(proc.stderr),
+        proc.exited,
+      ]), interrupted])
+      if (exitCode !== 0) throw new Error(err || `homonto exited ${exitCode}`)
+      if (!disposed) process.stdout.write(out)
     } catch (err) {
-      console.warn("permission-observer: suggest failed", String(err))
+      if (!disposed) console.warn("permission-observer: suggest failed", String(err))
+    } finally {
+      if (timer) clearTimeout(timer)
+      if (cancel) running.delete(cancel)
+      kill?.()
     }
   }
 
   return {
-    name: "permission-observer",
-    event: async (event: { type: string; properties: any }) => {
+    dispose,
+    event: async ({ event }: { event: RuntimeEvent }) => {
+      if (event.type === "server.instance.disposed") {
+        await dispose()
+        return
+      }
+      if (disposed) return
+      const props = event.properties
+      if (!props || typeof props !== "object") return
       if (event.type === "permission.asked") {
-        const props = event.properties as Asked
-        if (props.id && props.sessionID && props.permission) pending.set(props.id, props)
+        if (!("id" in props) || typeof props.id !== "string" || !props.id ||
+            !("sessionID" in props) || typeof props.sessionID !== "string" || !props.sessionID ||
+            !("permission" in props) || typeof props.permission !== "string") return
+        const metadata = "metadata" in props && props.metadata && typeof props.metadata === "object" ? props.metadata : undefined
+        pending.set(props.sessionID + "\u0000" + props.id, {
+          id: props.id, sessionID: props.sessionID, permission: props.permission,
+          metadata: metadata && "command" in metadata ? { command: metadata.command } : undefined,
+        })
         return
       }
       if (event.type === "permission.replied") {
-        recordDecision(event.properties as Replied)
+        if (!("sessionID" in props) || typeof props.sessionID !== "string" ||
+            !("requestID" in props) || typeof props.requestID !== "string" ||
+            !("reply" in props) || (props.reply !== "once" && props.reply !== "always" && props.reply !== "reject")) return
+        recordDecision({ sessionID: props.sessionID, requestID: props.requestID, reply: props.reply })
       }
     },
   }
-}
+}) satisfies Plugin
 
 export default permissionObserver

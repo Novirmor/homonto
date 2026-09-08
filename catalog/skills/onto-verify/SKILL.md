@@ -7,7 +7,8 @@ description: onto phase 4 — verify. Use when an active change has phase verify
 
 Prove — with fresh evidence, not recollection — that the implementation does
 what the design and specs say. **Evidence before assertions, always.**
-Apply the dispatcher's shared autonomous workflow policy throughout.
+Apply the shared [autonomous workflow policy](../homonto/references/autonomy.md),
+including workspace roots and dirty-work decisions, even on direct entry.
 
 ## Entry check
 
@@ -53,6 +54,10 @@ Walk `design.md`'s key decisions and confirm the implementation matches —
 deviations are findings, not footnotes. Re-run stated verifications from
 `plan.md` where they are cheap.
 
+For presets without design/plan/deltas, verify every proposal Acceptance Scenario
+and the inline tasks' Verify contracts. No deltas does not mean zero scenarios;
+include the fix reproduction or tweak's observable result and regression cases.
+
 **Fan out the analysis, centralize execution.** With more than a handful of
 scenarios, dispatch `onto-explorer` agents concurrently, one per capability or
 related group, to map each claim to implementation and propose exact evidence
@@ -63,13 +68,28 @@ port, or a database.
 
 Rules of evidence:
 
+Use each selected source alias's execution root and immutable `repo_bases`
+anchor, not configRoot or records HEAD. For scenario receipts, use the implemented
+`onto evidence record <name> --repo <alias> --task <trace-id> --scenario <id> --exec <executable> --cmd-hash <sha256> --exit <status> --output <absolute-output-file> --dir "<configRoot>"`.
+Run commands first and retain their actual results; do not record receipts yet.
+Step 4 finalizes the report before hashing it into receipts. `onto set verify-result
+<name> pass --dir "<configRoot>"` binds all selected source HEADs. Preserved dirt
+is not a gate waiver; use validated registered bindings, not a clean arbitrary cwd.
+
 - Every claim needs a fresh command + its literal output. No "should work",
   no "passed earlier", no stale logs.
 - A scenario that cannot be demonstrated is a **fail**, not a skip.
 
-### 2b. Adversarial pass
+### 3. Regression
 
-After the self-evidence table is drafted, follow
+Run the project's full build and test suite. Capture the output. If the
+project has no build/test suite (e.g. a content-only repo), record that
+fact as the regression result. It is a valid result, not a skipped check.
+
+### 3b. Adversarial pass
+
+After the self-evidence table and regression results are ready, supply the
+complete evidence pack to skeptics. Follow
 `references/adversarial.md`: **full mode requires two parallel
 fresh-context skeptics** — dispatch the **`onto-skeptic`** subagent twice at
 once, naming one lens per dispatch: conformance (refute each scenario claim)
@@ -93,13 +113,6 @@ for a recorded skip. No dispatch capability → record the skipped pass in the
 report's Adversarial section (protocol-mandated skips live there, no acceptor
 needed) — but a non-waivable-class finding already surfaced still blocks.
 
-### 3. Regression
-
-Run the project's full build and test suite. Capture the output. If the
-project has no build/test suite (e.g. a content-only repo), record that
-fact as the regression result — that is a valid result, not a skipped
-check.
-
 ### 4. Write the report
 
 Write `<workflow-root>/changes/<name>/verification.md` from the canonical template
@@ -108,12 +121,26 @@ scenario-evidence table, design conformance, adversarial pass, regression,
 deviations). When deviations were accepted, the Result line carries their
 count — `Result: pass (2 accepted deviations)` — so a pass with caveats is
 visibly different from a clean one everywhere the line is read. Record the
-result via `onto set verify-result <name> pass|fail`.
+result only after this ordering: finish scenario/adversarial/regression evidence
+and the no-slop edit, finalize `verification.md`, checkpoint its manual edits in
+managed mode, then record each current scenario receipt with `--artifact
+<absolute-verification.md>`, then `onto set verify-result <name> pass|fail`.
+Do not edit the report after receipts: their artifact hashes would be stale.
+If a finding changes the candidate or report, run a fresh round and record every
+current claim again using `onto evidence record`. The latest record for the same
+repository/task/scenario supersedes earlier claims without deleting audit history;
+there is no separate round-reset command. Re-record all claims bound to a changed
+report, not only the previously failing scenario. Never hand-edit the sidecar.
+For no-spec fix/tweak changes, declare stable `Scenario-ID: <id>` lines in
+`tasks.md` or `verification.md` and use those IDs in receipts. Do not invent delta
+specs merely to satisfy evidence lookup. Inspect `onto doctor` / `onto trace`
+after recording to confirm current claims and resolve stale or unknown-ID findings.
 
 ### 5. Failure handling
 
-On any failure, record `onto set verify-result <name> fail`, which increments
+On any failure, record `onto set verify-result <name> fail` once per round, which increments
 `observed.verify_rounds`, and note the date and failing items in `notes.md`.
+If step 4 already recorded fail, do not increment it again here.
 Default to **fix**: add tasks for the failures in `tasks.md`; the unchecked tasks
 drive derivation back to build without a backward phase write. Repair, then run a
 fresh verification round.
@@ -138,10 +165,13 @@ replanning; the count is a warning, not a mandatory user interruption.
 - [ ] onto-no-slop pass run over `verification.md`, recorded in
       `notes.md` (`no-slop: verification done`) — never touch the
       machine-read `Result:` line or the evidence table structure
-- [ ] **Commit the workspace**: `git add <workflow-root>/changes/<name> && git commit`
-       — every phase exits with its workspace committed
+- [ ] **Record the workspace**: managed Markdown uses
+      `homonto workspace checkpoint --path changes/<name> --message "Record verification"`
+      before state mutations; binary evidence/result writes checkpoint
+      automatically. Existing mode retains named manual records commits.
 - [ ] If recorded phase is verify, advanced verify → close via `onto advance
        <name>`; on a downward mismatch, skipped advance and returned to `/onto`
-- [ ] Commit the phase-state update from `onto advance <name>` before close
+- [ ] The phase-state update is recorded before close: automatic checkpoint in
+      managed mode, named manual commit in existing mode
 - [ ] Load `onto-close` and continue in the same invocation unless the user
       named verify as the endpoint or asked to pause

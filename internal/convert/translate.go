@@ -38,7 +38,7 @@ func buildProposal(m manifest, srcPhase, plan string) string {
 
 // buildToPlan writes the demoted change's plan. At phase do the plan carries
 // the onto change's tasks over in `to`'s contract shape (checkboxes with
-// Files/Change/Verify and a Final Verify line, doctor-clean); at phase plan
+// Owner/Repo/Cwd/Files/Change/Verify and a Final Verify line); at phase plan
 // it is an honest stub that points at the snapshot for the carry-over.
 func buildToPlan(m manifest, srcPhase, snapDir string) string {
 	if m.TargetIdent.Phase == "do" {
@@ -65,25 +65,27 @@ func buildToPlan(m manifest, srcPhase, snapDir string) string {
 // title, and optional numeric trace marker.
 var ontoTask = regexp.MustCompile(`^[-*] \[( |x)\] (\d+)\.(\d+) (.+?)(?:\s+\[trace #(\d+)\])?$`)
 
-// planFilesLine matches the "- Files: …" sub-line of an onto plan.md task
-// block, used to carry real file lists into the translated plan.
-var planFilesLine = regexp.MustCompile(`(?m)^\s*[-*]\s+Files:\s*(\S.*)$`)
+var planFieldLine = regexp.MustCompile(`^[ \t]*[-*][ \t]+(Owner|Repo|Cwd|Files|Do|Verify):[ \t]*(.*)$`)
+var planTaskHeading = regexp.MustCompile(`^## Task (\d+\.\d+)(?:[ \t].*)?$`)
 
-// planFinalVerify matches a non-empty "Final Verify:" line in plan.md.
-var planFinalVerify = regexp.MustCompile(`(?m)^\s*Final Verify:\s*(\S.*)$`)
+var planFinalVerify = regexp.MustCompile(`^Final Verify:[ \t]*(.*)$`)
 
 // translatedTask is one carried-over task.
 type translatedTask struct {
 	num    int
 	title  string
 	done   bool
+	owner  string
+	repo   string
+	cwd    string
 	files  string
+	change string
 	verify string
 }
 
 // translateTasks converts an onto change's tasks.md (plus matching plan.md
-// detail) into a doctor-clean `to` plan. ok=false when no task parses — the
-// caller then demotes to phase plan instead.
+// detail) into a doctor-clean `to` plan. Incomplete contracts return ok=false,
+// so the caller demotes to phase plan rather than inventing execution detail.
 func translateTasks(m manifest, snapDir string) (string, bool) {
 	data, err := os.ReadFile(filepath.Join(snapDir, "tasks.md"))
 	if err != nil {
@@ -93,17 +95,51 @@ func translateTasks(m manifest, snapDir string) (string, bool) {
 	if b, err := os.ReadFile(filepath.Join(snapDir, "plan.md")); err == nil {
 		plan = string(b)
 	}
-	finalVerify := "carry over from `.workflow/snapshots/" + m.OperationID + "/onto/plan.md`"
-	if mm := planFinalVerify.FindStringSubmatch(plan); mm != nil {
-		finalVerify = mm[1]
+	finalVerify := ""
+	lines := strings.Split(plan, "\n")
+	for i, line := range lines {
+		if mm := planFinalVerify.FindStringSubmatch(line); mm != nil {
+			if finalVerify != "" {
+				return "", false
+			}
+			finalVerify, _ = planFieldValue(lines, i, mm[1])
+			if !concreteContract(finalVerify) {
+				return "", false
+			}
+		}
 	}
 
 	seen := map[int]bool{}
+	seenIDs := map[string]bool{}
 	tasks := []translatedTask{}
 	for _, line := range strings.Split(string(data), "\n") {
 		mm := ontoTask.FindStringSubmatch(line)
 		if mm == nil {
+			if strings.HasPrefix(strings.TrimSpace(line), "- [") || strings.HasPrefix(strings.TrimSpace(line), "* [") {
+				return "", false
+			}
 			continue
+		}
+		id := mm[2] + "." + mm[3]
+		if seenIDs[id] {
+			return "", false
+		}
+		seenIDs[id] = true
+		fields := planContractFor(plan, id)
+		for _, key := range []string{"Owner", "Repo", "Cwd", "Files", "Do", "Verify"} {
+			if !concreteContract(fields[key]) {
+				return "", false
+			}
+		}
+		// Execution scope comes from the source contract, never a guessed repo
+		// or a title-derived owner. Paths need not exist in the staging tree.
+		for _, key := range []string{"Owner", "Repo", "Cwd"} {
+			if strings.ContainsAny(fields[key], "\r\n") {
+				return "", false
+			}
+		}
+		if !filepath.IsAbs(strings.Trim(fields["Cwd"], "`")) {
+			return "", false
 		}
 		num := 0
 		if mm[5] != "" {
@@ -119,16 +155,24 @@ func translateTasks(m manifest, snapDir string) (string, bool) {
 		t := translatedTask{
 			num:    num,
 			title:  strings.TrimSpace(mm[4]),
-			done:   mm[1] == "x",
-			files:  "see `.workflow/snapshots/" + m.OperationID + "/onto/plan.md`",
-			verify: "see the imported plan",
-		}
-		if f := planFilesFor(plan, mm[2]+"."+mm[3]); f != "" {
-			t.files = f
+			done:   mm[1] == "x" && !strings.HasPrefix(strings.ToUpper(strings.TrimSpace(mm[4])), "DEFERRED TO CLOSE:"),
+			owner:  fields["Owner"],
+			repo:   fields["Repo"],
+			cwd:    fields["Cwd"],
+			files:  fields["Files"],
+			change: fields["Do"],
+			verify: fields["Verify"],
 		}
 		tasks = append(tasks, t)
 	}
 	if len(tasks) == 0 {
+		return "", false
+	}
+	if finalVerify == "" {
+		// Carry the final task's recorded check when no aggregate is explicit.
+		finalVerify = tasks[len(tasks)-1].verify
+	}
+	if !concreteContract(finalVerify) {
 		return "", false
 	}
 
@@ -143,44 +187,96 @@ func translateTasks(m manifest, snapDir string) (string, bool) {
 			box = "x"
 		}
 		fmt.Fprintf(&b, "- [%s] #%d %s\n", box, t.num, t.title)
-		fmt.Fprintf(&b, "  - Files: %s\n", t.files)
-		fmt.Fprintf(&b, "  - Change: %s\n", t.title)
-		fmt.Fprintf(&b, "  - Verify: %s\n", t.verify)
+		for _, field := range [][2]string{{"Owner", t.owner}, {"Repo", t.repo}, {"Cwd", t.cwd}, {"Files", t.files}, {"Change", t.change}, {"Verify", t.verify}} {
+			lines := strings.Split(field[1], "\n")
+			fmt.Fprintf(&b, "  - %s: %s\n", field[0], lines[0])
+			for _, line := range lines[1:] {
+				if line != "" {
+					b.WriteString("  " + line)
+				}
+				b.WriteByte('\n')
+			}
+		}
 	}
 	fmt.Fprintf(&b, "\nFinal Verify: %s\n", finalVerify)
 	return b.String(), true
 }
 
-// planFilesFor extracts the "- Files: …" value from the plan.md block of one
-// dotted task id ("## Task 1.1"), if present.
-func planFilesFor(plan, id string) string {
-	idx := strings.Index(plan, "## Task "+id)
-	if idx < 0 {
-		return ""
-	}
-	rest := plan[idx:]
-	if next := strings.Index(rest[7:], "\n## Task "); next >= 0 {
-		rest = rest[:next+7]
-	}
-	if mm := planFilesLine.FindStringSubmatch(rest); mm != nil {
-		return mm[1]
-	}
-	return ""
-}
-
-// planTranslatable reports whether the source workspace's tasks.md carries
-// at least one parseable task — the precondition for demoting into phase do.
-func planTranslatable(srcDir string) bool {
-	data, err := os.ReadFile(filepath.Join(srcDir, "tasks.md"))
-	if err != nil {
-		return false
-	}
-	for _, line := range strings.Split(string(data), "\n") {
-		if ontoTask.MatchString(line) {
-			return true
+// planContractFor reads one exact dotted task heading, never an ID prefix.
+func planContractFor(plan, id string) map[string]string {
+	fields := map[string]string{}
+	active, found := false, false
+	lines := strings.Split(plan, "\n")
+	for i := 0; i < len(lines); i++ {
+		line := lines[i]
+		if strings.HasPrefix(line, "## ") {
+			m := planTaskHeading.FindStringSubmatch(line)
+			active = m != nil && m[1] == id
+			if active && found {
+				return nil
+			}
+			found = found || active
+			continue
+		}
+		if active {
+			if m := planFieldLine.FindStringSubmatch(line); m != nil {
+				if _, exists := fields[m[1]]; exists {
+					return nil
+				}
+				var end int
+				fields[m[1]], end = planFieldValue(lines, i, m[2])
+				i = end - 1
+			}
 		}
 	}
-	return false
+	return fields
+}
+
+// Preserve Markdown continuation text, including nested lists and code blocks.
+// Values retain indentation relative to their source field; rendering adds only
+// the destination task's outer indentation. Unindented lazy wraps are indented
+// so they cannot escape the destination checkbox's contract.
+func planFieldValue(lines []string, start int, value string) (string, int) {
+	indent := len(lines[start]) - len(strings.TrimLeft(lines[start], " \t"))
+	i := start + 1
+	blank := 0
+	for ; i < len(lines); i++ {
+		line := lines[i]
+		trimmed := strings.TrimSpace(line)
+		if trimmed == "" {
+			blank++
+			continue
+		}
+		leading := len(line) - len(strings.TrimLeft(line, " \t"))
+		if leading <= indent {
+			if blank > 0 || strings.HasPrefix(trimmed, "#") || strings.HasPrefix(trimmed, "- ") || strings.HasPrefix(trimmed, "* ") || planFinalVerify.MatchString(trimmed) {
+				break
+			}
+			line = "  " + trimmed
+		} else {
+			line = line[indent:]
+		}
+		value += strings.Repeat("\n", blank)
+		value += "\n" + line
+		blank = 0
+	}
+	return strings.TrimRight(value, " \t\r\n"), i
+}
+
+func concreteContract(value string) bool {
+	first, _, _ := strings.Cut(value, "\n")
+	if strings.TrimSpace(first) == "" {
+		return false
+	}
+	v := strings.ToLower(strings.TrimSpace(value))
+	return v != "" && v != "todo" && v != "tbd" && v != "..." && !strings.Contains(v, "<") &&
+		!strings.Contains(v, "fill in") && !strings.Contains(v, "see the imported plan") && !strings.Contains(v, ".workflow/snapshots/")
+}
+
+// planTranslatable uses the same contract translation as generation.
+func planTranslatable(srcDir string) bool {
+	_, ok := translateTasks(manifest{}, srcDir)
+	return ok
 }
 
 func firstMeaningful(plan string) string {

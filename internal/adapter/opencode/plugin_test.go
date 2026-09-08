@@ -43,6 +43,62 @@ func disabled() config.Plugin {
 	return config.Plugin{Source: "@x/quota", Enabled: &off}
 }
 
+func TestBundledPluginSourcesResolveToEntrypointFiles(t *testing.T) {
+	for _, name := range []string{"permission-observer", "homonto-workflow"} {
+		t.Run(name, func(t *testing.T) {
+			home, catalog := t.TempDir(), t.TempDir()
+			cfgPath := writeCfg(t, home, `{"plugin":["foreign"]}`)
+			a := New(home, t.TempDir()).WithPluginCatalogRoot(catalog)
+			st, err := state.Load(t.TempDir())
+			if err != nil {
+				t.Fatal(err)
+			}
+			// Previously projected directory entries are real persisted state;
+			// normal reconciliation must replace just that managed entry.
+			old := &config.Config{Plugins: config.Plugins{OpenCode: map[string]config.Plugin{name: {Source: filepath.Join(catalog, name)}}}}
+			cs, err := a.Plan(old, st)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := a.Apply(old, cs, noSecret(), st); err != nil {
+				t.Fatal(err)
+			}
+			oldKey := "plugin." + filepath.Join(catalog, name)
+			previous, _ := st.Get("opencode", oldKey)
+			st.Delete("opencode", oldKey)
+			st.Set("opencode", "plugin."+name, previous.Desired, previous.Applied)
+			c := &config.Config{Plugins: config.Plugins{OpenCode: map[string]config.Plugin{name: {Source: name}}}}
+			cs, err = a.Plan(c, st)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := a.Apply(c, cs, noSecret(), st); err != nil {
+				t.Fatal(err)
+			}
+			want := filepath.Join(catalog, name, "plugin.ts")
+			got := pluginArray(t, cfgPath)
+			if len(got) != 2 || got[0] != "foreign" || got[1] != want {
+				t.Fatalf("entrypoints = %v, want foreign and %q", got, want)
+			}
+			if entry, ok := st.Get("opencode", "plugin."+name); !ok || entry.Desired != `"`+want+`"` {
+				t.Fatal("entrypoint not tracked")
+			}
+			if _, ok := st.Get("opencode", "plugin."+filepath.Join(catalog, name)); ok {
+				t.Fatal("obsolete directory still tracked")
+			}
+			cs, err = a.Plan(c, st)
+			if err != nil {
+				t.Fatal(err)
+			}
+			for _, ch := range cs.Changes {
+				if ch.Action != "noop" {
+					t.Fatalf("not idempotent: %+v", ch)
+				}
+			}
+		})
+	}
+}
+
 // An enabled plugin's source is appended to the array without duplicating
 // existing entries.
 func TestOpenCodeEnabledPluginAppendedNoDup(t *testing.T) {

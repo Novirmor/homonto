@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -14,6 +13,8 @@ import (
 	"github.com/noviopenworks/homonto/internal/deltamerge"
 	"github.com/noviopenworks/homonto/internal/fsutil"
 	"github.com/noviopenworks/homonto/internal/ontostate"
+	"github.com/noviopenworks/homonto/internal/workcli"
+	"github.com/noviopenworks/homonto/internal/workspace"
 	"github.com/spf13/cobra"
 )
 
@@ -83,6 +84,15 @@ func runMergeDeltas(cmd *cobra.Command, root, name string) error {
 	if err := passingVerificationEvidence(changeDir, st); err != nil {
 		return fmt.Errorf("onto merge-deltas: %w", err)
 	}
+	if st.RepoMode == "explicit" {
+		if err := verifyHeadsIntact(root, st); err != nil {
+			return err
+		}
+	} else if len(st.Repos) > 0 {
+		if _, err := stateSourceDirs(root, st); err != nil {
+			return fmt.Errorf("onto merge-deltas: %w", err)
+		}
+	}
 	inputs, err := deltaInputs(root, changeDir)
 	if err != nil {
 		return fmt.Errorf("onto merge-deltas: listing delta specs: %w", err)
@@ -126,7 +136,7 @@ func runMergeDeltas(cmd *cobra.Command, root, name string) error {
 	}
 	var results []result
 	specsDir := filepath.Join(workflowRoot(root), "specs")
-	if err := fsutil.RequireRealParents(root, specsDir); err != nil {
+	if err := workcli.ValidateWorkflowPath(root, filepath.Join(specsDir, "placeholder")); err != nil {
 		return fmt.Errorf("onto merge-deltas: unsafe living-spec directory: %w", err)
 	}
 	for i, input := range inputs {
@@ -189,7 +199,7 @@ func runMergeDeltas(cmd *cobra.Command, root, name string) error {
 		return fmt.Errorf("onto merge-deltas: %w", err)
 	}
 	for _, r := range results {
-		if err := fsutil.WriteControlPlaneWithin(root, r.target, []byte(r.merged), 0o644); err != nil {
+		if err := fsutil.WriteControlPlaneWithin(workflowRoot(root), r.target, []byte(r.merged), 0o644); err != nil {
 			return fmt.Errorf("onto merge-deltas: writing %s: %w", r.target, err)
 		}
 	}
@@ -223,9 +233,18 @@ func acquireStateLockBestEffort(root string) func() {
 }
 
 func acquireSpecMergeLock(root string) (*applylock.Lock, error) {
+	// Lock ownership is independent of the operation's selected source scope.
+	layout, err := workspace.LoadScopeRoot(root, nil)
+	if err == nil && (layout.GitMode == "managed" || layout.ExplicitRepos()) {
+		root = layout.WorkflowRoot
+	} else if err != nil {
+		if _, statErr := os.Lstat(filepath.Join(root, "homonto.toml")); !os.IsNotExist(statErr) {
+			return nil, err
+		}
+	}
 	ctx, cancel := context.WithTimeout(context.Background(), gitCmdTimeout)
 	defer cancel()
-	out, err := exec.CommandContext(ctx, "git", "-C", root, "rev-parse", "--git-common-dir").CombinedOutput()
+	out, err := gitAt(ctx, root, "rev-parse", "--git-common-dir").CombinedOutput()
 	if err != nil {
 		return nil, fmt.Errorf("cannot locate the repository git directory: %s", strings.TrimSpace(string(out)))
 	}

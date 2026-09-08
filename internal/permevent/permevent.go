@@ -8,12 +8,11 @@ import (
 	"strings"
 )
 
-// PinnedOpencodeRevision is the upstream OpenCode commit the event contract
-// below was verified against (packages/opencode/src/permission/index.ts,
-// packages/schema/src/v1/permission.ts, packages/opencode/src/plugin/index.ts).
+// PinnedOpencodeRevision is the upstream OpenCode v1.18.29 commit the event
+// contract below follows (the runtime permission producer, not the stale v1 SDK).
 // A fixture/regression mismatch against a newer revision must update this pin
 // deliberately, never silently.
-const PinnedOpencodeRevision = "50efc055de282e0e54a87ccebb8e2054cc45efd2"
+const PinnedOpencodeRevision = "16747470f976aca3d362ad730bcd3fe82ecc2c9a"
 
 // Event names as OpenCode spells them.
 const (
@@ -29,7 +28,7 @@ const (
 )
 
 // Asked is the payload of permission.asked: the full request, including the
-// bash command under metadata.command and the session the ask belongs to.
+// bash command under metadata.command and the session the request belongs to.
 type Asked struct {
 	Type       string          `json:"type"`
 	Properties AskedProperties `json:"properties"`

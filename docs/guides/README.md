@@ -20,6 +20,9 @@ User-facing documentation, one topic per file.
 
 ## Concepts
 
+- [`workspaces.md`](workspaces.md) - combined or separate records and source
+  repositories, explicit source selection, managed checkpoints, and registered
+  worktree isolation and cleanup.
 - [`secrets.md`](secrets.md) — `${pass:…}` / `${ENV_VAR}` references and the
   referenced-never-stored guarantees.
 - [`projection-and-state.md`](projection-and-state.md) — the apply pipeline:

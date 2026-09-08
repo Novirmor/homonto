@@ -23,8 +23,9 @@ skills you route to were materialized by homonto. Three things to remember
 and nothing more: never hand-edit `.homonto/`, `to-state.yaml` outside `to`
 commands, or the projected `.opencode/` links (when projection looks wrong,
 `homonto status` and `homonto doctor` diagnose, `homonto apply` fixes); a
-sibling repository declared under `[repos]` never moves this workflow's
-files — `<workflow-root>/tasks/` and all state stay in the config repository.
+source repository declared under `[repos]` never moves this workflow's
+files: `<workflow-root>/tasks/` and all state stay at the configured records root,
+which may be separate from the non-Git config/OpenCode root.
 `<workflow-root>` is `[workflow].root` in `homonto.toml`, defaulting to `docs`.
 A change
 that spans siblings is created once with `to new <name> --repo <declared-name>`;
@@ -40,6 +41,14 @@ Follow the shared [autonomous workflow policy](../homonto/references/autonomy.md
 through every phase. Starting or resuming to authorizes continuation through
 done unless the user names an endpoint or asks to pause. Phase boundaries are
 checkpoints, not requests for permission to continue.
+
+Follow the shared [workspace and dirty-work policy](../homonto/references/workspace-policy.md)
+in every sub-skill, even direct entry. Read generated `references/workspace.md`
+for exact roots and inspect before writes. Present exact dirty paths and resolve
+preserve/isolate/cleanup once; read-only research need not wait. All workflow
+calls that accept it use `--dir "<configRoot>"`, even from source worktrees.
+Managed binary mutations checkpoint automatically; checkpoint manual Markdown
+with `homonto workspace checkpoint --path tasks/<name>/plan.md --message "Record plan progress"`.
 
 ## 1. Preflight
 
@@ -64,9 +73,19 @@ Run `to status --json` and find the active change.
 
 - **One active change** → that is the change; note its phase.
 - **No active change** and `$ARGUMENTS` (or the conversation) describes new
-  work → derive any declared sibling repositories in scope, create it with `to
-  new <kebab-name>` plus one `--repo <alias>` per selected sibling, then treat
-  it as phase plan.
+  work → first check bounded fit before allocation: design/spec/evidence-gated
+  or cross-cutting work routes to onto now, not after creating a binding that
+  blocks promotion. Resolve managed initialization and legacy isolation under
+  the shared policy before scaffold writes. Derive source repositories in scope,
+  create it with `to
+  new <kebab-name>` plus one `--repo <alias>` per selected source (required in
+  schema 2, with no implicit config repository). Select alternative bases now
+  with repeated `--base <alias>=<local-branch>`, for example
+  `--base api=main --base web=develop`; defaults freeze each source's current
+  committed HEAD and local branch. This leaves dirty originals untouched and
+  must precede worktree allocation. Keep `--dir "<configRoot>"`, then treat it
+  as phase plan; immediately allocate schema-2 bindings before any records/source
+  commit. Existing changes cannot be retargeted by rerunning `new`.
 - **No active change and no described work** → ask what to work on.
 - **Several active changes** → ask which one, unless the conversation names it.
 - An entry with an `error` field is a corrupted state file — surface it to the
@@ -83,11 +102,28 @@ the complete workspace preserved under `.workflow/snapshots/` — declare
 then `/onto` (ADR 0028). An onto change that no longer needs its gates goes
 back with `onto demote <name> --yes`; converting back while nothing changed
 restores the previous workspace byte-for-byte (ADR 0042).
+Check `homonto worktree list --json` before conversion. Registered bindings
+currently block promotion; if scope grows after allocation, stop implementation
+and provide an explicit handoff naming the binding, candidate, remaining scope,
+and conversion blocker. Do not remove an active binding, hand-edit state, or
+silently open a duplicate change to evade the conversion guard.
 
 Resuming after a context compaction? `to handoff <name>` prints the recovery
 pack (phase, plan excerpt, next skill) — read it before doing anything.
+If notes/verification or a task contract is truncated, read the full plan before
+acting. Carry unresolved failures, declined findings and blockers into the next
+dispatch; checked tasks alone do not prove final verification passed. A stale
+next-skill hint never overrides the actual state or a blocker in the full record.
 
 ## 3. Route
+
+After conversion, validate carried task contracts before phase routing. A
+translated executable task must preserve Owner, Repo, Cwd, Files, Change and
+Verify, with a valid Final Verify. Missing Owner/Repo/Cwd is not permission to
+assume source ownership or dispatch into the host cwd. Read the preserved
+snapshot and validate roots against current bindings; incomplete or ambiguous
+translation routes to `to-plan` for contract repair, even if an older converter
+recorded do. Preserve completed checkoffs and evidence; do not fake a phase rewind.
 
 Load and follow the sub-skill for the change's phase:
 
@@ -97,8 +133,15 @@ Load and follow the sub-skill for the change's phase:
 | do | `to-do` |
 | finishing do (work complete, verifying) | `to-done` |
 
-Terminal phases (`done`, `abandoned`) route nowhere — the change is archived;
-start a new one.
+Terminal phases (`done`, `abandoned`) require location-aware recovery before
+declaring archival. If still under active `tasks/<name>`, an interrupted terminal
+move needs `to doctor` and the workflow-specific retry (`to done` with its
+previously verified evidence, or `to abandon` with existing explicit intent).
+Recover pending managed history first with `homonto workspace recover`. Never
+assert new verification merely to finish a move. Confirm the archive exists and
+active path is gone; only then report archived and route new work separately.
+An abandoned archive is unsuccessful history, never verified completion or
+publication input. Do not resume abandoned work without new explicit user intent.
 
 After a sub-skill completes its phase, load the next sub-skill and continue in
 the same invocation. Stop only at a user-named endpoint, an explicit pause, or a
@@ -116,10 +159,10 @@ last resort.
   `to-skeptic` deny both edits and shell commands, so they cannot race. Dispatch as many at once
   as the work justifies — several explorers on different questions, several
   reviewers or skeptics applying different lenses to the same diff.
-- **`to-implementer` runs strictly one at a time.** It is the only agent that
-  edits, and `to` keeps a single working tree — two implementers at once
-  corrupt it. Parallel implementers need a worktree per agent, which is
-  onto's territory; `to` deliberately does not go there.
+- **`to-implementer` runs strictly one at a time.** Use the selected source
+  execution root, including a registered `--workflow to` binding for isolation.
+  The allocator has one binding per workflow/change/repo, not per task; do not
+  create unregistered task worktrees to parallelize implementers.
 - **Bookkeeping stays with the coordinator, serially.** `plan.md` edits, task
   checkoffs, and commits are never delegated and never concurrent.
 

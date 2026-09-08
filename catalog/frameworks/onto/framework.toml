@@ -29,6 +29,9 @@ onto-fix = "commands/onto-fix.md"
 onto-tweak = "commands/onto-tweak.md"
 onto-no-slop = "commands/onto-no-slop.md"
 
+[plugins]
+homonto-workflow = "plugins/homonto-workflow"
+
 # The onto skills delegate to these specialist subagents (see the dispatcher
 # skill's "Delegation" section). The primary coordinator is `homonto`, shared
 # byte-for-byte with the to framework (same catalog path, so the shared index

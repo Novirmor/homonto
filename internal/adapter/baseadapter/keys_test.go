@@ -1,13 +1,16 @@
 package baseadapter
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 
 	"github.com/noviopenworks/homonto/internal/adapter"
 	"github.com/noviopenworks/homonto/internal/config"
+	"github.com/noviopenworks/homonto/internal/jsonutil"
 )
 
 // TestHasAnyPrefix verifies the shared managed-key matcher: hit on any listed
@@ -89,9 +92,13 @@ func TestReadStandardizedJSON(t *testing.T) {
 	if strings.TrimSpace(string(doc)) != "{}" {
 		t.Errorf("missing file standardized = %q, want {}", doc)
 	}
+	if _, err := os.Stat(missing); !os.IsNotExist(err) {
+		t.Errorf("missing file must remain absent, stat error = %v", err)
+	}
 
 	valid := filepath.Join(dir, "cfg.json")
-	if err := os.WriteFile(valid, []byte("{\"model\":\"opus\",}"), 0o600); err != nil {
+	content := "{\"model\":\"opus\",}"
+	if err := os.WriteFile(valid, []byte(content), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	doc, err = ReadStandardizedJSON(valid)
@@ -101,6 +108,9 @@ func TestReadStandardizedJSON(t *testing.T) {
 	if !strings.Contains(string(doc), "\"model\"") {
 		t.Errorf("valid file standardized = %q, want the model key", doc)
 	}
+	if b, err := os.ReadFile(valid); err != nil || string(b) != content {
+		t.Errorf("valid file must remain unchanged, got %q (%v)", b, err)
+	}
 
 	root := filepath.Join(dir, "array.json")
 	if err := os.WriteFile(root, []byte("[1,2]"), 0o600); err != nil {
@@ -109,5 +119,32 @@ func TestReadStandardizedJSON(t *testing.T) {
 	_, err = ReadStandardizedJSON(root)
 	if err == nil || !strings.Contains(err.Error(), root) {
 		t.Errorf("array root error = %v, want an error naming %q", err, root)
+	}
+}
+
+func TestReadStandardizedJSONMalformed(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "invalid config.jsonc")
+	content := []byte("{\n// keep this comment\n\"model\": }\n")
+	if err := os.WriteFile(path, content, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	_, parseErr := jsonutil.Standardize(content)
+	if parseErr == nil {
+		t.Fatal("fixture must be malformed JSONC")
+	}
+	doc, err := ReadStandardizedJSON(path)
+	if err == nil {
+		t.Fatalf("malformed JSONC returned %q without an error", doc)
+	}
+	for _, want := range []string{strconv.Quote(path), parseErr.Error(), "fix", "unchanged"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("error = %v, want %q", err, want)
+		}
+	}
+	if cause := errors.Unwrap(err); cause == nil || cause.Error() != parseErr.Error() {
+		t.Errorf("unwrapped error = %v, want original parse error %v", cause, parseErr)
+	}
+	if b, err := os.ReadFile(path); err != nil || string(b) != string(content) {
+		t.Errorf("malformed file must remain unchanged, got %q (%v)", b, err)
 	}
 }

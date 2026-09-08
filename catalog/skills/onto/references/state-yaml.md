@@ -18,17 +18,27 @@ recovery situation (see the dispatcher's §3.5).
 
 ## Template (the shape the binary writes)
 
+Follow the shared [workspace and dirty-work policy](../../homonto/references/workspace-policy.md).
+The state schema version is independent of `homonto.toml`'s config schema.
+The example below shows new explicit-source state created under config schema 2;
+legacy combined state retains scalar anchors and implicit config scope, even
+after a config upgrade. Never convert state by hand.
+
 ```yaml
-schema_version: 2
+schema_version: 3
 change: <name>             # must equal directory name
 id: <stable-id>            # assigned once at `onto new`, never rewritten
 workflow: full             # full | fix | tweak
 phase: open                # open | design | build | verify | close
 created: YYYY-MM-DD
-base_ref: <canonical commit sha; resolves in the repo, set-once>
-base_branch: <current branch, captured separately for close integration>
+repo_mode: explicit
+repo_bases:
+  api:
+    base_ref: <canonical source commit sha; immutable>
+    base_branch: <source integration branch; immutable>
+    git_common_dir: <source Git object-store identity>
 deps: []                   # change names that must archive before this builds
-repos: []                  # selected declared [repos] aliases; config repo is implicit
+repos: [api]               # selected declared source aliases; no implicit config repo
 supersedes: []             # change names this change replaces (ungated, traceability)
 deviates_from: []          # targets this change knowingly diverges from (ungated)
 isolation: null            # branch | worktree (required before entering build)
@@ -80,11 +90,19 @@ observed:                  # observational only — never a gate, never blocking
   date-anchored exact name, never a bare suffix. The dispatcher warns before
   resuming a change whose deps are not all complete; a dep matching no active or archived change, a self-dep,
   or a dep cycle reaching this change are findings to correct or drop.
-- `repos` is set only by `onto new --repo <declared-name>` and names sibling
-  repositories from `homonto.toml`; it never stores paths. The config repo is
-  implicit. Before close, `onto` audits that repo plus every selected sibling;
-  any dirty or unavailable selected worktree fails the close gate.
-- `base_ref` is the immutable commit used for diffs and verification. The
+- `repos` is set only by `onto new --repo <declared-name>` and names source
+  aliases from `homonto.toml`; it never stores execution paths. New config
+  schema 2 changes have `repo_mode: explicit`, nonempty aliases, and no implicit
+  config repo. Only legacy state with absent `repo_mode` keeps config-plus-siblings
+  scope. Close resolves selected execution roots through registered bindings;
+  blocking dirt or unavailable worktrees fail the gate, regardless of tool cwd.
+- `repo_bases` freezes each explicit alias's commit, integration branch, and Git
+  identity at creation. `onto new --base <alias>=<local-branch>` selects an
+  alternative local branch per repo; repeat the flag for different aliases.
+  Otherwise the source's current committed HEAD and local branch are used,
+  leaving dirty working files untouched. `onto set base-ref` and `onto set base-branch`
+  with `--repo <alias> --dir "<configRoot>"` validate these immutable values;
+  they do not retarget them. Legacy scalar `base_ref` is the immutable commit used for diffs and verification. The
   setter resolves and canonicalizes it — an unresolvable ref is refused.
   `base_branch` is the branch used for local merge or as a pull request base.
   Never pass the commit-valued `base_ref` where Git or GitHub expects a branch.
@@ -96,7 +114,8 @@ observed:                  # observational only — never a gate, never blocking
   manifest plus living-spec pre/post-images; the compatibility setter delegates
   to the same merge operation and cannot forge the flag.
 - `verify.heads` is frozen when `onto set verify-result <change> pass` records
-  a pass (alias `""` is the config repository). Close refuses when a scoped
+  a pass (alias `""` is the config repository only in legacy mode; explicit state
+  uses selected source aliases, not records HEAD). Close refuses when a scoped
   repository has commits past its head that are not workflow bookkeeping
   (<workflow-root>/ paths in the config repo; nothing at all in a selected sibling), or
   when a head no longer resolves. Recording a new pass re-binds; any other
@@ -105,13 +124,24 @@ observed:                  # observational only — never a gate, never blocking
   `pr` from repository policy while the workspace is still active.
 - `onto close` writes `.onto/integration.json` as pending before archival and
   stamps `integration_required: true` into the archived state. The record
-  carries one entry per repository in the change's scope (config plus every
-  selected sibling), each freezing its base branch tip, source branch, and
+  carries one entry per repository in the change's scope (explicit selected
+  aliases, or config plus siblings for legacy state), each freezing its base branch tip, source branch, and
   source commit. `onto complete-integration [--repo <alias>] --receipt …`
   completes one repository at a time; a merge receipt must name a real
   `--no-ff` merge commit that integrated the recorded source into the recorded
   base branch (the binary verifies parents and reachability against git), and
-  a PR receipt is the opened PR's https URL. The change derives `done` and
+  a PR receipt is the opened/reused PR's https URL plus the observed remote head:
+  `onto complete-integration <name> --receipt "pr:<URL>" --head <observed-headOID> --repo <alias> --dir "<configRoot>"`.
+  Explicit-source PR completion requires `--head`; the coordinator independently
+  verifies canonical remote identity/target/delivery first, because the binary
+  stores an external claim and performs no remote publication verification.
+  A per-repo no-op can complete in either mode with
+  `onto complete-integration <name> --receipt "unchanged:<receivingSHA>" --repo <alias> --dir "<configRoot>"`;
+  the binary proves the captured source was already integrated or tree-identical
+  to its base, and the receiving commit descends from that base on the recorded
+  target. Never manufacture an empty PR/merge,
+  and never pass `--head` for merge or unchanged. Legacy implicit config receipts
+  omit `--repo` only. The change derives `done` and
   resolves dependencies only when every repository is complete. A required
   archive whose sidecar is missing or invalid fails closed (derives `close`);
   archives from before `integration_required` are legacy and remain terminal.

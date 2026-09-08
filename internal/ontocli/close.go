@@ -10,6 +10,8 @@ import (
 	"github.com/noviopenworks/homonto/internal/fsutil"
 	"github.com/noviopenworks/homonto/internal/integrationrecord"
 	"github.com/noviopenworks/homonto/internal/ontostate"
+	"github.com/noviopenworks/homonto/internal/workcli"
+	"github.com/noviopenworks/homonto/internal/workspace"
 	"github.com/spf13/cobra"
 )
 
@@ -77,14 +79,20 @@ func closeEvidenceGate(root, changeDir string, st ontostate.State) error {
 	if st.Integration == "" {
 		return fmt.Errorf("onto close: integration not recorded; run `onto set integration %s merge|pr` before close", st.Change)
 	}
-	if strings.TrimSpace(st.BaseRef) == "" {
-		return fmt.Errorf("onto close: base_ref not recorded; run `onto set base-ref %s <commit>` before close", st.Change)
-	}
-	if strings.TrimSpace(st.BaseBranch) == "" {
-		return fmt.Errorf("onto close: base_branch not recorded; run `onto set base-branch %s <branch>` before close", st.Change)
-	}
-	if err := validateBranchName(root, st.BaseBranch); err != nil {
-		return fmt.Errorf("onto close: base_branch is invalid: %w", err)
+	if st.RepoMode == "explicit" {
+		if _, err := stateSourceDirs(root, st); err != nil {
+			return err
+		}
+	} else {
+		if strings.TrimSpace(st.BaseRef) == "" {
+			return fmt.Errorf("onto close: base_ref not recorded; run `onto set base-ref %s <commit>` before close", st.Change)
+		}
+		if strings.TrimSpace(st.BaseBranch) == "" {
+			return fmt.Errorf("onto close: base_branch not recorded; run `onto set base-branch %s <branch>` before close", st.Change)
+		}
+		if err := validateBranchName(root, st.BaseBranch); err != nil {
+			return fmt.Errorf("onto close: base_branch is invalid: %w", err)
+		}
 	}
 	// Last, the close-plan review token. It is checked after the plan's own
 	// inputs so an earlier gap surfaces as itself, and before archival.
@@ -191,12 +199,23 @@ func runClose(cmd *cobra.Command, root, name string) error {
 		if err := validateIntegrationRecord(st, integration); err != nil {
 			return fmt.Errorf("onto close: %w", err)
 		}
+		if st.RepoMode == "explicit" {
+			dirs, err := stateSourceDirs(root, st)
+			if err != nil {
+				return err
+			}
+			for _, entry := range integration.Repositories {
+				if err := validateIntegrationSource(root, dirs[entry.Alias], st, entry); err != nil {
+					return err
+				}
+			}
+		}
 		if integration.Status != integrationrecord.StatusPending {
 			return fmt.Errorf("onto close: active change has an integration record with status %q", integration.Status)
 		}
 	}
 
-	dirt, err := scopedWorktreeDirt(root, name, st.Repos)
+	dirt, err := stateWorktreeDirt(root, st)
 	if err != nil {
 		return fmt.Errorf("onto close: cannot verify scoped worktrees; refusing close: %w", err)
 	}
@@ -207,11 +226,14 @@ func runClose(cmd *cobra.Command, root, name string) error {
 		return fmt.Errorf("onto close: dirty worktree blocks close: %s", msg)
 	}
 
-	archiveDir, err := archiveDestination(root, name, time.Now().Format("2006-01-02"))
+	archiveDir, _, planned, err := workspace.ArchiveTarget(cmd.Context(), changeDir)
+	if !planned && err == nil {
+		archiveDir, err = archiveDestination(root, name, time.Now().Format("2006-01-02"))
+	}
 	if err != nil {
 		return fmt.Errorf("onto close: choosing archive destination: %w", err)
 	}
-	if err := fsutil.RequireRealParents(root, filepath.Dir(archiveDir)); err != nil {
+	if err := workcli.ValidateWorkflowPath(root, archiveDir); err != nil {
 		return fmt.Errorf("onto close: unsafe archive path: %w", err)
 	}
 	if err := os.MkdirAll(ontoArchiveDir(root), 0o755); err != nil {
@@ -224,7 +246,7 @@ func runClose(cmd *cobra.Command, root, name string) error {
 	// command's own dirty-worktree check. With move-first, a crash between the
 	// two steps leaves the change correctly archived with a stale flag, which is
 	// benign: presence under archive/ is what dependency resolution keys on.
-	if err := fsutil.RequireRealParents(root, filepath.Dir(archiveDir)); err != nil {
+	if err := workcli.ValidateWorkflowPath(root, archiveDir); err != nil {
 		return fmt.Errorf("onto close: unsafe archive path: %w", err)
 	}
 	if !integrationExists {
@@ -233,9 +255,15 @@ func runClose(cmd *cobra.Command, root, name string) error {
 			return fmt.Errorf("onto close: %w", err)
 		}
 		integration = integrationrecord.NewPending(name, st.Integration, st.BaseBranch, entries)
+		if st.RepoMode == "explicit" {
+			integration = integrationrecord.NewExplicitPending(name, st.Integration, entries)
+		}
 		if err := integrationrecord.Save(changeDir, integration); err != nil {
 			return fmt.Errorf("onto close: %w", err)
 		}
+	}
+	if err := workspace.CheckArchiveTarget(cmd.Context(), changeDir, archiveDir); err != nil {
+		return err
 	}
 	if err := fsutil.RenameDurable(changeDir, archiveDir); err != nil {
 		return fmt.Errorf("onto close: moving %s to %s: %w", changeDir, archiveDir, err)
@@ -286,11 +314,11 @@ func recoverInterruptedClose(cmd *cobra.Command, root, name string) error {
 	if unresolved := ontostate.DepsResolved(root, st.Deps); len(unresolved) > 0 {
 		return fmt.Errorf("onto close: archive recovery has unresolved dependencies: %v", unresolved)
 	}
-	dirt, err := scopedWorktreeDirt(root, name, st.Repos)
+	dirt, err := stateWorktreeDirt(root, st)
 	if err != nil {
 		return fmt.Errorf("onto close: archive recovery cannot verify scoped worktrees: %w", err)
 	}
-	dirt = ignoreInterruptedArchiveMoveDirt(dirt)
+	dirt = ignoreInterruptedArchiveMoveDirt(root, name, dirt)
 	if msg := scopedDirtGateError(dirt, name); msg != "" {
 		return fmt.Errorf("onto close: archive recovery dirty worktree blocks close: %s", msg)
 	}
@@ -304,6 +332,9 @@ func recoverInterruptedClose(cmd *cobra.Command, root, name string) error {
 			return fmt.Errorf("onto close: archive recovery: %w", entriesErr)
 		}
 		integration = integrationrecord.NewPending(name, st.Integration, st.BaseBranch, entries)
+		if st.RepoMode == "explicit" {
+			integration = integrationrecord.NewExplicitPending(name, st.Integration, entries)
+		}
 		if err := integrationrecord.Save(archiveDir, integration); err != nil {
 			return fmt.Errorf("onto close: archive recovery: %w", err)
 		}
@@ -311,6 +342,17 @@ func recoverInterruptedClose(cmd *cobra.Command, root, name string) error {
 		return fmt.Errorf("onto close: archive recovery: %w", err)
 	} else if integration.Status != integrationrecord.StatusPending {
 		return fmt.Errorf("onto close: archive recovery found impossible integration status %q", integration.Status)
+	}
+	if st.RepoMode == "explicit" {
+		dirs, err := stateSourceDirs(root, st)
+		if err != nil {
+			return fmt.Errorf("onto close: archive recovery: %w", err)
+		}
+		for _, entry := range integration.Repositories {
+			if err := validateIntegrationSource(root, dirs[entry.Alias], st, entry); err != nil {
+				return fmt.Errorf("onto close: archive recovery: %w", err)
+			}
+		}
 	}
 	st.Archived = true
 	st.IntegrationRequired = true

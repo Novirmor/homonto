@@ -21,6 +21,9 @@ import (
 	"strings"
 	"syscall"
 
+	"github.com/noviopenworks/homonto/internal/schema"
+	"github.com/noviopenworks/homonto/internal/workflowroot"
+	"github.com/noviopenworks/homonto/internal/workspace"
 	"github.com/pelletier/go-toml/v2"
 )
 
@@ -72,16 +75,36 @@ type Framework struct {
 // It is intentionally a standalone struct, not homonto's own config type, so
 // each workflow CLI stays isolated from homonto's projection pipeline.
 type HomontoConfig struct {
-	Frameworks map[string]any    `toml:"frameworks"`
-	Repos      map[string]string `toml:"repos"`
-	Workflow   struct {
-		Root string `toml:"root"`
+	SchemaVersion int               `toml:"schema_version"`
+	Frameworks    map[string]any    `toml:"frameworks"`
+	Repos         map[string]string `toml:"repos"`
+	Workflow      struct {
+		Root string  `toml:"root"`
+		Git  *string `toml:"git"`
 	} `toml:"workflow"`
+	Worktrees *struct {
+		Dir string `toml:"dir"`
+	} `toml:"worktrees"`
 }
 
-// WorkflowRoot resolves the configured workflow root beneath root. An omitted
-// setting preserves the historic docs/ layout. It intentionally reads only the
-// small configuration surface workflow CLIs require.
+func decodeHomontoConfig(data []byte, cfg *HomontoConfig) error {
+	if err := toml.Unmarshal(data, cfg); err != nil {
+		return err
+	}
+	if cfg.SchemaVersion > 2 {
+		return fmt.Errorf("unknown config schema version %d (this binary supports up to 2); upgrade homonto: %w", cfg.SchemaVersion, schema.ErrTooNew)
+	}
+	if cfg.SchemaVersion < 0 {
+		return fmt.Errorf("schema_version must be non-negative")
+	}
+	if cfg.SchemaVersion < 2 && (cfg.Workflow.Git != nil || cfg.Worktrees != nil) {
+		return fmt.Errorf("workflow.git and [worktrees] require schema_version = 2; upgrade schema_version=2 explicitly")
+	}
+	return nil
+}
+
+// WorkflowRoot resolves the configured records directory. Schema 2 may place it
+// outside root; omission preserves docs/. Only the workflow config is decoded.
 func WorkflowRoot(root string) (string, error) {
 	data, err := os.ReadFile(filepath.Join(root, "homonto.toml"))
 	if err != nil {
@@ -95,8 +118,12 @@ func WorkflowRoot(root string) (string, error) {
 		return "", err
 	}
 	var cfg HomontoConfig
-	if err := toml.Unmarshal(data, &cfg); err != nil {
+	if err := decodeHomontoConfig(data, &cfg); err != nil {
 		return "", err
+	}
+	if cfg.SchemaVersion >= 2 {
+		layout, err := workspace.LoadRoot(root)
+		return layout.WorkflowRoot, err
 	}
 	rel := strings.TrimSpace(cfg.Workflow.Root)
 	if rel == "" {
@@ -116,9 +143,8 @@ func WorkflowRoot(root string) (string, error) {
 	return workflowRoot, nil
 }
 
-// ValidateWorkflowPath rejects an existing path component that redirects a
-// workflow write outside the configuration repository. Symlinks that resolve
-// within the repository remain valid.
+// ValidateWorkflowPath confines schema-2 writes to the configured records root,
+// including symlink targets. Legacy writes retain their config-repo boundary.
 func ValidateWorkflowPath(root, path string) error {
 	configRoot, err := filepath.Abs(root)
 	if err != nil {
@@ -131,13 +157,38 @@ func ValidateWorkflowPath(root, path string) error {
 	if err != nil {
 		return fmt.Errorf("resolving workflow path: %w", err)
 	}
+	v2 := false
+	data, readErr := os.ReadFile(filepath.Join(configRoot, "homonto.toml"))
+	if readErr != nil && !os.IsNotExist(readErr) {
+		return readErr
+	}
+	if readErr == nil {
+		var cfg HomontoConfig
+		if err := decodeHomontoConfig(data, &cfg); err != nil {
+			return err
+		}
+		if cfg.SchemaVersion >= 2 {
+			layout, err := workspace.LoadRoot(configRoot)
+			if err != nil {
+				return err
+			}
+			configRoot = layout.WorkflowRoot
+			v2 = true
+		}
+	}
 	rel, err := filepath.Rel(configRoot, path)
 	if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+		if v2 {
+			return fmt.Errorf("workflow path %q is outside configured workflow root %q", path, configRoot)
+		}
 		return fmt.Errorf("workflow path %s is outside the configuration repository", path)
 	}
-	resolvedRoot, err := filepath.EvalSymlinks(configRoot)
-	if err != nil {
-		return fmt.Errorf("resolving configuration repository: %w", err)
+	resolvedRoot := configRoot
+	if !v2 {
+		resolvedRoot, err = filepath.EvalSymlinks(configRoot)
+		if err != nil {
+			return fmt.Errorf("resolving configuration repository: %w", err)
+		}
 	}
 	current := configRoot
 	for _, component := range strings.Split(filepath.ToSlash(rel), "/") {
@@ -161,6 +212,9 @@ func ValidateWorkflowPath(root, path string) error {
 		}
 		inside, err := filepath.Rel(resolvedRoot, resolved)
 		if err != nil || inside == ".." || strings.HasPrefix(inside, ".."+string(filepath.Separator)) {
+			if v2 {
+				return fmt.Errorf("workflow path resolves outside configured workflow root %q through symlink %q", resolvedRoot, current)
+			}
 			return fmt.Errorf("workflow.root resolves outside the configuration repository through symlink %s", current)
 		}
 	}
@@ -184,6 +238,24 @@ func MarkWorkflowState(root string) error {
 	if err != nil {
 		return err
 	}
+	data, readErr := os.ReadFile(filepath.Join(root, "homonto.toml"))
+	if readErr != nil && !os.IsNotExist(readErr) {
+		return readErr
+	}
+	if readErr == nil {
+		var cfg HomontoConfig
+		if err := decodeHomontoConfig(data, &cfg); err != nil {
+			return err
+		}
+		if cfg.SchemaVersion >= 2 {
+			layout, err := workspace.LoadRoot(root)
+			if err != nil {
+				return err
+			}
+			marker := workflowroot.LayoutMarker{SchemaVersion: 2, ConfigPath: layout.ConfigPath, WorkflowRoot: layout.WorkflowRoot, GitMode: layout.GitMode}
+			return workflowroot.WriteLayoutMarker(marker)
+		}
+	}
 	rel, err := filepath.Rel(root, workflowRoot)
 	if err != nil {
 		return err
@@ -199,6 +271,10 @@ func MarkWorkflowState(root string) error {
 // migration guard as config.Load. It is kept here because the CLIs deliberately
 // parse only their small gate surface rather than the projection configuration.
 func ValidateWorkflowRootChange(root string) error {
+	root, err := filepath.Abs(root)
+	if err != nil {
+		return fmt.Errorf("resolving configuration repository: %w", err)
+	}
 	workflowRoot, err := WorkflowRoot(root)
 	if err != nil {
 		return err
@@ -207,40 +283,33 @@ func ValidateWorkflowRootChange(root string) error {
 	if err != nil {
 		return err
 	}
-	want = filepath.ToSlash(want)
-	marker := filepath.Join(root, ".homonto", "workflow-root")
-	if data, err := os.ReadFile(marker); err == nil {
-		was := filepath.ToSlash(strings.TrimSpace(string(data)))
-		if was != "" && was != want && workflowStateExists(filepath.Join(root, filepath.FromSlash(was))) {
-			return fmt.Errorf("workflow.root changed from %q to %q while workflow state exists; move or remove the state explicitly before changing the root", was, want)
+	data, readErr := os.ReadFile(filepath.Join(root, "homonto.toml"))
+	if readErr != nil && !os.IsNotExist(readErr) {
+		return readErr
+	}
+	var cfg HomontoConfig
+	if readErr == nil {
+		if err := decodeHomontoConfig(data, &cfg); err != nil {
+			return err
 		}
 	}
-	if want != "docs" && workflowStateExists(filepath.Join(root, "docs")) {
-		return fmt.Errorf("workflow.root changed from %q to %q while workflow state exists; move or remove the state explicitly before changing the root", "docs", want)
+	if cfg.SchemaVersion >= 2 {
+		// WorkflowRoot already validated the shared layout.
+		return nil
 	}
-	return nil
-}
-
-func workflowStateExists(root string) bool {
-	for _, name := range []string{"changes", "tasks", ".to-promote", ".onto-demote"} {
-		if _, err := os.Lstat(filepath.Join(root, name)); err == nil {
-			return true
-		}
-	}
-	return false
+	return workflowroot.ValidateLayout(filepath.Join(root, "homonto.toml"), want, "existing", cfg.SchemaVersion)
 }
 
 // DeclaredRepos reads the [repos] table from <root>/homonto.toml (nil when the
-// file or table is absent). The workflow CLIs surface it as context only: the
-// designated workflow tree stays in the config repo until the staged
-// cross-repo work ships.
+// file or table is absent). Records stay in the configured workflow tree;
+// changes select their source repositories from these declarations.
 func DeclaredRepos(root string) map[string]string {
 	data, err := os.ReadFile(filepath.Join(root, "homonto.toml"))
 	if err != nil {
 		return nil
 	}
 	var c HomontoConfig
-	if toml.Unmarshal(data, &c) != nil {
+	if decodeHomontoConfig(data, &c) != nil {
 		return nil
 	}
 	return c.Repos
@@ -261,7 +330,7 @@ func RepoContextLines(root string) []string {
 	}
 	sort.Strings(names)
 	out := []string{
-		"repos declared in homonto.toml — this workflow tree is the designated home; changes reach these repositories in a later stage:",
+		"repos declared in homonto.toml — workflow.root is the designated home for records; select source repositories with --repo:",
 	}
 	for _, name := range names {
 		out = append(out, fmt.Sprintf("  %s  %s", name, repos[name]))
@@ -318,7 +387,7 @@ func (f Framework) gate(root string) error {
 	}
 
 	var cfg HomontoConfig
-	if err := toml.Unmarshal(data, &cfg); err != nil {
+	if err := decodeHomontoConfig(data, &cfg); err != nil {
 		return fmt.Errorf("%s: parsing %s: %w", f.GatePrefix, tomlPath, err)
 	}
 

@@ -2,11 +2,43 @@ package config
 
 import (
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strconv"
 	"strings"
 	"testing"
 )
+
+func TestSchemaTwoReposAreExplicitRealAndConfigRelative(t *testing.T) {
+	base := t.TempDir()
+	for _, name := range []string{"control", "service a", "service b"} {
+		if err := os.Mkdir(filepath.Join(base, name), 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, name := range []string{"service a", "service b"} {
+		if out, err := exec.Command("git", "init", "-q", filepath.Join(base, name)).CombinedOutput(); err != nil {
+			t.Fatalf("git init: %v: %s", err, out)
+		}
+	}
+	root := filepath.Join(base, "control")
+	path := writeReposConfig(t, root, "schema_version=2\n[repos]\na='../service a'\nb='../service b'\n[workflow]\ngit='managed'\nroot='../records'\n[worktrees]\ndir='../worktrees'\n")
+	c, err := Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(c.RepoDirs()) != 2 || c.RepoDirs()["a"] != filepath.Join(base, "service a") || c.RepoDirs()["b"] != filepath.Join(base, "service b") {
+		t.Fatalf("resolved repos: %v", c.RepoDirs())
+	}
+	if c.Workflow.Git != "managed" || c.Workflow.Root != "../records" || c.Worktrees.Dir != "../worktrees" {
+		t.Fatalf("layout fields not exposed: %+v %+v", c.Workflow, c.Worktrees)
+	}
+	path = writeReposConfig(t, filepath.Join(base, "service a"), "schema_version=2\n[repos]\nself='.'\n")
+	c, err = Load(path)
+	if err != nil || c.RepoDirs()["self"] != filepath.Join(base, "service a") {
+		t.Fatalf("explicit self: %+v, %v", c, err)
+	}
+}
 
 // newGitDir creates a directory that passes the worktree check (a .git entry;
 // a plain directory stands in for a real clone — the check tests presence,

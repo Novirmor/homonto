@@ -1,9 +1,11 @@
 package engine
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -16,9 +18,12 @@ import (
 	"github.com/noviopenworks/homonto/internal/agentfm"
 	"github.com/noviopenworks/homonto/internal/catalog"
 	"github.com/noviopenworks/homonto/internal/config"
+	"github.com/noviopenworks/homonto/internal/fsutil"
+	"github.com/noviopenworks/homonto/internal/resourcepath"
 	"github.com/noviopenworks/homonto/internal/scaffold"
 	"github.com/noviopenworks/homonto/internal/secret"
 	"github.com/noviopenworks/homonto/internal/state"
+	"github.com/noviopenworks/homonto/internal/workspace"
 )
 
 // sortedRepoNames returns the declared repo names in deterministic order, so
@@ -46,7 +51,9 @@ type Engine struct {
 	RemoteRoot          string // materialized remote content root (<stateDir>/remote)
 	RemoteCacheRoot     string // content-addressed remote cache (<stateDir>/cache/remote)
 	Home                string
-	ProjectRoot         string // directory of homonto.toml; skill-scope project root
+	ConfigPath          string           // exact absolute selected config filename, for every schema
+	ProjectRoot         string           // directory of homonto.toml; skill-scope project root
+	WorkspaceLayout     workspace.Layout // resolved schema-2 layout, including the exact config filename
 	Resolver            *secret.Resolver
 	// RepoTargets pairs each declared [repos] repository with its own adapter
 	// and state partition (ADR 0024 stage 2): the adapter projects that repo's
@@ -76,9 +83,27 @@ type RepoTarget struct {
 // context bounds the in-Build remote-framework resolution (fetch/verify can
 // touch the network) and is propagated to every Resolver.Resolve call.
 func Build(ctx context.Context, configPath, home, contentDir string) (*Engine, error) {
+	configPath, err := filepath.Abs(configPath)
+	if err != nil {
+		return nil, err
+	}
 	cfg, err := config.Load(configPath)
 	if err != nil {
 		return nil, err
+	}
+	var layout workspace.Layout
+	if cfg.SchemaVersion >= 2 {
+		layout, err = workspace.Load(configPath)
+		if err != nil {
+			return nil, err
+		}
+		if layout.WorktreesDir != "" {
+			for name := range layout.Repos {
+				if strings.ContainsAny(name, "*?") {
+					return nil, fmt.Errorf("repos.%s: worktree namespace contains OpenCode permission wildcard characters", name)
+				}
+			}
+		}
 	}
 	// A relative content dir is relative to the config file, not the shell
 	// working directory — symlink targets must stay valid from anywhere.
@@ -135,7 +160,9 @@ func Build(ctx context.Context, configPath, home, contentDir string) (*Engine, e
 		RemoteRoot:          remoteRoot,
 		RemoteCacheRoot:     remoteCacheRoot,
 		Home:                home,
+		ConfigPath:          configPath,
 		ProjectRoot:         projectRoot,
+		WorkspaceLayout:     layout,
 		Resolver:            secret.NewResolver(),
 	}
 	// Resolve any [frameworks.X] source="remote:<url>" through the trust pipeline
@@ -233,6 +260,11 @@ func (e *Engine) Apply(ctx context.Context, sets []adapter.ChangeSet) error {
 			return err
 		}
 	}
+	// Remote materialization can write the shared state root even without
+	// declared remotes. Reject redirected catalog/control parents before it runs.
+	if err := e.preflightCatalogRoots(); err != nil {
+		return err
+	}
 	for _, cs := range sets {
 		for _, c := range cs.Changes {
 			// Deletes carry no New value; nothing to resolve. Adopt is non-secret
@@ -262,6 +294,12 @@ func (e *Engine) Apply(ctx context.Context, sets []adapter.ChangeSet) error {
 	// create it and keep it gitignored even when nothing builtin is declared
 	// (ADR 0048). Unconditional on config, independent of the materialize gate.
 	if err := e.ensureTmpSurface(); err != nil {
+		return err
+	}
+	// The workflow bridge is project-local runtime content. It observes the
+	// workflow snapshot but never writes state, so it is installed after its
+	// catalog source exists and before OpenCode can load the project directory.
+	if err := e.ensureWorkflowBridge(); err != nil {
 		return err
 	}
 	// Match each planned set to its adapter by tool name (Plan may have skipped
@@ -347,21 +385,39 @@ func (e *Engine) recordVersions() {
 // installed agent without a model is a load-time error).
 //
 // Overrides are keyed by the subagent's CATALOG name, not its config key,
-// because materialization writes one rendered file per catalog name — two
-// declarations of the same builtin share that file. Config validation rejects
-// conflicting overrides on one source, so resolving by catalog name here is
-// unambiguous by the time we run.
-func (e *Engine) subagentRenderContext() map[string]agentfm.RenderContext {
+// because materialization writes one rendered file per catalog name. Config
+// validation rejects multiple installed aliases and conflicting model routes;
+// Names supplies that source's single effective host identity separately.
+func (e *Engine) subagentRenderContext() (map[string]agentfm.RenderContext, error) {
 	return e.subagentRenderContextFor(nil)
 }
 
-func (e *Engine) subagentRenderContextFor(targets map[string]map[string]bool) map[string]agentfm.RenderContext {
+func (e *Engine) subagentRenderContextFor(targets map[string]map[string]bool) (map[string]agentfm.RenderContext, error) {
 	externalDirectories := make([]string, 0, len(e.Cfg.RepoDirs()))
 	for _, dir := range e.Cfg.RepoDirs() {
 		externalDirectories = append(externalDirectories, dir)
 	}
+	if e.WorkspaceLayout.ExplicitRepos() && e.WorkspaceLayout.WorktreesDir != "" {
+		for name := range e.WorkspaceLayout.Repos {
+			externalDirectories = append(externalDirectories, filepath.Join(e.WorkspaceLayout.WorktreesDir, name))
+		}
+	}
 	sort.Strings(externalDirectories)
 	externalDirectoriesByAgent := map[string][]string{}
+	externalDirectoryDeniesByAgent := map[string][]string{}
+	editDirectoryDeniesByAgent := map[string][]string{}
+	records := e.Cfg.Workflow.RootOrDefault()
+	if e.WorkspaceLayout.ExplicitRepos() {
+		records = e.WorkspaceLayout.WorkflowRoot
+	} else if !filepath.IsAbs(records) {
+		records = filepath.Join(e.ProjectRoot, records)
+	}
+	recordRoots := []string{records, permissionCanonicalPath(records)}
+	// Native record protection follows the builtin role even when installed
+	// directly rather than through a framework. It grants no external access.
+	for _, agent := range []string{"onto-implementer", "to-implementer"} {
+		externalDirectoryDeniesByAgent[agent] = recordRoots
+	}
 	// ADR 0039/0045: the builtin workflow frameworks render declared-repo
 	// access for their writable agents only — the shared homonto primary
 	// (ADR 0045 replaced the per-framework onto/to primaries) and the two
@@ -369,23 +425,81 @@ func (e *Engine) subagentRenderContextFor(targets map[string]map[string]bool) ma
 	// installs the primary, so any of them enables the rule; read-only
 	// specialists never gain external access.
 	workflowFrameworkInstalled := false
-	for _, framework := range []string{"onto", "to", "h"} {
-		resource, installed := e.Cfg.Frameworks[framework]
-		if installed && resource.Source == "builtin:"+framework {
+	for _, resource := range e.Cfg.Frameworks {
+		switch resource.Source {
+		case "builtin:onto", "builtin:to", "builtin:h":
 			workflowFrameworkInstalled = true
-			break
 		}
 	}
 	if workflowFrameworkInstalled {
+		// Grant only selected skill installations and their desired content roots,
+		// never all of HOME or even all user-installed skills.
+		if skills, err := e.Cfg.ExpandedSkillEntriesForTool("opencode"); err == nil {
+			for _, skill := range skills {
+				root := e.ProjectRoot
+				if skill.Repo != "" {
+					root = e.Cfg.RepoDirs()[skill.Repo]
+				}
+				installed := filepath.Join(resourcepath.Dir(resourcepath.Skill, "opencode", skill.Resource.Scope, e.Home, root), skill.Name)
+				externalDirectories = append(externalDirectories, installed)
+				// Resolve the parent, not a stale installed link to an old source.
+				externalDirectories = append(externalDirectories, filepath.Join(permissionCanonicalPath(filepath.Dir(installed)), skill.Name))
+				var source string
+				switch {
+				case strings.HasPrefix(skill.Resource.Source, "builtin:"):
+					source = filepath.Join(e.CatalogRoot, strings.TrimPrefix(skill.Resource.Source, "builtin:"))
+				case strings.HasPrefix(skill.Resource.Source, "local:"):
+					source = filepath.Join(e.ContentDir, "skills", strings.TrimPrefix(skill.Resource.Source, "local:"))
+				}
+				if source != "" {
+					externalDirectories = append(externalDirectories, source, permissionCanonicalPath(source))
+				}
+			}
+		}
 		for _, agent := range []string{"homonto", "onto-implementer", "to-implementer"} {
 			externalDirectoriesByAgent[agent] = externalDirectories
+		}
+		externalDirectoriesByAgent["homonto"] = append(append([]string(nil), externalDirectories...), recordRoots...)
+	}
+	names := map[string]string{}
+	hosts := map[string]string{}
+	if entries, err := e.Cfg.ExpandedSubagentEntriesForTool("opencode"); err == nil {
+		for _, entry := range entries {
+			if source, ok := config.SubagentCatalogName(entry.Resource.Source); ok {
+				names[source] = entry.Name
+				if len(externalDirectoryDeniesByAgent[source]) == 0 {
+					continue
+				}
+				// User-scoped workflow agents use this configuration's launch root;
+				// a repo-targeted project install instead belongs to that repository.
+				directory := e.ProjectRoot
+				if entry.Resource.Scope == "project" && entry.Repo != "" {
+					directory = e.Cfg.RepoDirs()[entry.Repo]
+				}
+				host, known := hosts[directory]
+				if !known {
+					var err error
+					host, err = permissionHostWorktree(directory)
+					if err != nil {
+						return nil, err
+					}
+					hosts[directory] = host
+				}
+				for _, root := range recordRoots {
+					rel, err := filepath.Rel(host, root)
+					if err != nil {
+						return nil, fmt.Errorf("permission host %q records %q: %w", host, root, err)
+					}
+					editDirectoryDeniesByAgent[source] = append(editDirectoryDeniesByAgent[source], rel)
+				}
+			}
 		}
 	}
 	overrides := func(pick func(config.Subagent) config.ModelRoute) map[string]agentfm.ModelSpec {
 		m := map[string]agentfm.ModelSpec{}
 		for key, sa := range e.Cfg.Subagents {
 			r := pick(sa)
-			if r.Model == "" && r.Variant == "" && r.Effort == "" {
+			if !r.IsSet() {
 				continue
 			}
 			// Resolve to the CATALOG name, which is what materialization renders
@@ -400,17 +514,21 @@ func (e *Engine) subagentRenderContextFor(targets map[string]map[string]bool) ma
 				}
 				name = cat
 			}
-			m[name] = agentfm.ModelSpec{Model: r.Model, Variant: r.Variant, Effort: r.Effort, BashAllowAdd: r.BashAllowAdd}
+			m[name] = agentfm.ModelSpec{Model: r.Model, Variant: r.Variant, Effort: r.Effort, Steps: r.Steps, BashAllowAdd: r.BashAllowAdd}
 		}
 		return m
 	}
 	return map[string]agentfm.RenderContext{
 		"opencode": {
-			Overrides:                  overrides(func(s config.Subagent) config.ModelRoute { return s.OpenCode }),
-			ExternalDirectoriesByAgent: externalDirectoriesByAgent,
-			Targets:                    targets["opencode"],
+			Names:                          names,
+			Overrides:                      overrides(func(s config.Subagent) config.ModelRoute { return s.OpenCode }),
+			ShellProxy:                     e.Cfg.ResolvedTooling().ShellProxy,
+			ExternalDirectoriesByAgent:     externalDirectoriesByAgent,
+			ExternalDirectoryDeniesByAgent: externalDirectoryDeniesByAgent,
+			EditDirectoryDeniesByAgent:     editDirectoryDeniesByAgent,
+			Targets:                        targets["opencode"],
 		},
-	}
+	}, nil
 }
 
 // materializeCatalog extracts the builtin skills, commands, and subagents the
@@ -437,7 +555,7 @@ func (e *Engine) materializeCatalog() error {
 			return err
 		}
 	}
-	if err := p.cl.Materialize(e.CatalogRoot, p.skills, p.shellProxy, p.codeIntel, p.tmpDir); err != nil {
+	if err := p.cl.Materialize(e.CatalogRoot, p.skills, p.shellProxy, p.codeIntel, p.tmpDir, p.workspaceRef); err != nil {
 		return err
 	}
 	if err := p.cl.MaterializeCommands(e.CommandCatalogRoot, p.commands); err != nil {
@@ -452,11 +570,21 @@ func (e *Engine) materializeCatalog() error {
 	if err := p.cl.MaterializePlugins(e.PluginCatalogRoot, p.plugins); err != nil {
 		return err
 	}
+	// Plugin directories are replaced during materialization. Publish their
+	// config-specific binding before exposing entrypoints or recording success.
+	if len(p.workflowBinding) > 0 {
+		if err := fsutil.WriteControlPlaneWithin(e.StateDir, e.workflowBindingPath(), p.workflowBinding, 0o644); err != nil {
+			return fmt.Errorf("workflow bridge binding: %w", err)
+		}
+	}
 	// GC: the Materialize* calls only ever WRITE declared names, so a renamed or
 	// de-declared resource left its old files in the catalog roots forever. That
 	// litter was live ammunition, not just clutter — the adapters prefer a
 	// <name>.<tool>.md variant when one exists, so a years-old render could win
 	// over a future same-named verbatim agent.
+	if err := e.preflightCatalogRoots(); err != nil {
+		return err
+	}
 	if err := gcCatalogRoots(e.CatalogRoot, e.CommandCatalogRoot, e.SubagentCatalogRoot, e.PluginCatalogRoot, p); err != nil {
 		return err
 	}
@@ -522,12 +650,37 @@ func (e *Engine) tmpSurfacePresent(dir string) bool {
 // materialized — the plugin side of the materialize gate.
 func allPluginDirsExist(root string, names []string) bool {
 	for _, n := range names {
-		fi, err := os.Stat(filepath.Join(root, n, "plugin.ts"))
-		if err != nil || fi.IsDir() {
+		fi, err := os.Lstat(filepath.Join(root, n, "plugin.ts"))
+		if err != nil || !fi.Mode().IsRegular() {
 			return false
 		}
 	}
 	return true
+}
+
+// All classes share one preflight: a later unsafe root must not be discovered
+// after skills staging, plugin replacement, or another class's GC has written.
+// Direct symlink entries (including staging leftovers) are foreign, not garbage
+// we may unlink. RemoveAll never follows links inside an owned real directory.
+func (e *Engine) preflightCatalogRoots() error {
+	for _, root := range []string{e.CatalogRoot, e.CommandCatalogRoot, e.SubagentCatalogRoot, e.PluginCatalogRoot} {
+		if err := fsutil.RequireRealParents(e.ProjectRoot, root); err != nil {
+			return fmt.Errorf("catalog: unsafe materialization root %q: %w", root, err)
+		}
+		entries, err := os.ReadDir(root)
+		if os.IsNotExist(err) {
+			continue
+		}
+		if err != nil {
+			return fmt.Errorf("catalog: inspecting materialization root %q: %w", root, err)
+		}
+		for _, entry := range entries {
+			if entry.Type()&os.ModeSymlink != 0 {
+				return fmt.Errorf("catalog: refusing symlinked materialization entry %q", filepath.Join(root, entry.Name()))
+			}
+		}
+	}
+	return nil
 }
 
 // gcCatalogRoots removes entries in the materialized catalog roots that no
@@ -607,9 +760,11 @@ type catalogPlan struct {
 	codeIntel  string
 	// tmpDir is the resolved [tmp] scratch directory ("" when [tmp] is not
 	// declared) rendered into the dispatchers and the shared knowledge skill.
-	tmpDir      string
-	fingerprint string
-	upToDate    bool
+	tmpDir          string
+	workspaceRef    []byte
+	workflowBinding []byte
+	fingerprint     string
+	upToDate        bool
 }
 
 // CatalogNeedsMaterialize reports whether a materialize would do real work. The
@@ -620,6 +775,9 @@ type catalogPlan struct {
 // resolving the plan counts as "needs work" so apply runs and surfaces it,
 // rather than being silently swallowed here.
 func (e *Engine) CatalogNeedsMaterialize() bool {
+	if !e.workflowBridgePresent() {
+		return true
+	}
 	// An incomplete [tmp] surface forces the apply path on its own: the CLI
 	// short-circuits a no-change apply before Engine.Apply runs, and the
 	// surface ensure lives inside Apply (same carve-out class as the
@@ -634,9 +792,135 @@ func (e *Engine) CatalogNeedsMaterialize() bool {
 	return p != nil && !p.upToDate
 }
 
+const workflowBridgePlugin = "homonto-workflow"
+
+func (e *Engine) workflowBindingPath() string {
+	return filepath.Join(e.PluginCatalogRoot, workflowBridgePlugin, "binding.json")
+}
+
+func (e *Engine) workflowBinding() ([]byte, error) {
+	if !filepath.IsAbs(e.ConfigPath) || filepath.Clean(e.ConfigPath) != e.ConfigPath || filepath.Dir(e.ConfigPath) != e.ProjectRoot {
+		return nil, fmt.Errorf("workflow bridge: invalid selected config identity %q", e.ConfigPath)
+	}
+	data, err := json.MarshalIndent(struct {
+		Version    int    `json:"version"`
+		ConfigPath string `json:"configPath"`
+		ConfigRoot string `json:"configRoot"`
+	}{1, e.ConfigPath, e.ProjectRoot}, "", "  ")
+	if err != nil {
+		return nil, err
+	}
+	return append(data, '\n'), nil
+}
+
+func (e *Engine) workflowBindingPresent(want []byte) bool {
+	if len(want) == 0 {
+		return true
+	}
+	path := e.workflowBindingPath()
+	if err := fsutil.RequireRealParents(e.StateDir, filepath.Dir(path)); err != nil {
+		return false
+	}
+	info, err := os.Lstat(path)
+	if err != nil || !info.Mode().IsRegular() {
+		return false
+	}
+	data, err := os.ReadFile(path)
+	return err == nil && bytes.Equal(data, want)
+}
+
+func (e *Engine) workflowBridgeSource() string {
+	return filepath.Join(e.PluginCatalogRoot, workflowBridgePlugin, "plugin.ts")
+}
+
+func (e *Engine) workflowBridgeDestination() string {
+	return filepath.Join(e.ProjectRoot, ".opencode", "plugins", workflowBridgePlugin+".ts")
+}
+
+// Both endpoints move with the project (ADR 0026). Keep the exact relative
+// spelling as the owned target; matching a foreign path's suffix is not proof.
+func (e *Engine) workflowBridgeTarget() (string, error) {
+	return filepath.Rel(filepath.Dir(e.workflowBridgeDestination()), e.workflowBridgeSource())
+}
+
+// workflowBridgePresent reports whether the configured bridge state has
+// converged. A foreign file deliberately remains "not present" so apply can
+// name the conflict instead of treating an untrusted replacement as managed.
+func (e *Engine) workflowBridgePresent() bool {
+	dst := e.workflowBridgeDestination()
+	if err := fsutil.RequireRealParents(e.ProjectRoot, filepath.Dir(dst)); err != nil {
+		return false
+	}
+	if !e.Cfg.WorkflowBridgeEnabled() {
+		_, err := os.Lstat(dst)
+		return os.IsNotExist(err)
+	}
+	want, err := e.workflowBridgeTarget()
+	if err != nil {
+		return false
+	}
+	target, err := os.Readlink(dst)
+	return err == nil && target == want
+}
+
+// ensureWorkflowBridge creates or removes only the exact symlink homonto owns.
+// The source remains in the generated catalog even when disabled, so toggling
+// the setting is reversible without a fetch or a copied plugin file.
+func (e *Engine) ensureWorkflowBridge() error {
+	dst := e.workflowBridgeDestination()
+	if err := fsutil.RequireRealParents(e.ProjectRoot, filepath.Dir(dst)); err != nil {
+		return fmt.Errorf("workflow bridge: unsafe plugin directory: %w", err)
+	}
+	want, err := e.workflowBridgeTarget()
+	if err != nil {
+		return fmt.Errorf("workflow bridge: relative plugin target: %w", err)
+	}
+	if !e.Cfg.WorkflowBridgeEnabled() {
+		target, err := os.Readlink(dst)
+		if os.IsNotExist(err) {
+			return nil
+		}
+		if err != nil {
+			return fmt.Errorf("workflow bridge: %s exists and is not a homonto-managed symlink; not removing", dst)
+		}
+		if target != want && target != e.workflowBridgeSource() {
+			return fmt.Errorf("workflow bridge: %s points outside homonto's catalog; not removing", dst)
+		}
+		return os.Remove(dst)
+	}
+	if _, err := os.Stat(e.workflowBridgeSource()); err != nil {
+		return fmt.Errorf("workflow bridge: catalog source missing: %w", err)
+	}
+	if target, err := os.Readlink(dst); err == nil {
+		if target == want {
+			return nil
+		}
+		if target != e.workflowBridgeSource() {
+			return fmt.Errorf("workflow bridge: %s points outside homonto's catalog; not replacing", dst)
+		}
+		// Migrate only the exact absolute target of this current project. A stale
+		// pre-move absolute target has no recorded bridge provenance to authenticate.
+		if err := os.Remove(dst); err != nil {
+			return fmt.Errorf("workflow bridge: migrate absolute link: %w", err)
+		}
+	} else if !os.IsNotExist(err) {
+		return fmt.Errorf("workflow bridge: %s exists and is not a homonto-managed symlink; not overwriting", dst)
+	}
+	if err := os.MkdirAll(filepath.Dir(dst), 0o755); err != nil {
+		return fmt.Errorf("workflow bridge: create plugin directory: %w", err)
+	}
+	if err := os.Symlink(want, dst); err != nil {
+		return fmt.Errorf("workflow bridge: link plugin: %w", err)
+	}
+	return nil
+}
+
 // planCatalog resolves the builtin content the config declares and evaluates the
 // materialize gate. It returns nil when nothing builtin is declared.
 func (e *Engine) planCatalog() (*catalogPlan, error) {
+	if err := e.preflightCatalogRoots(); err != nil {
+		return nil, err
+	}
 	skillSet := map[string]bool{}
 	cmdSet := map[string]bool{}
 	subSet := map[string]bool{}
@@ -673,13 +957,6 @@ func (e *Engine) planCatalog() (*catalogPlan, error) {
 			}
 		}
 	}
-	// Bundled plugins ride with the catalog: any catalog materialization
-	// materializes them (they are version-gated content, not per-config
-	// declarations). When the config declares no builtin content at all,
-	// there is no catalog to materialize alongside.
-	if len(skillSet) == 0 && len(cmdSet) == 0 && len(subSet) == 0 {
-		return nil, nil
-	}
 	// Build the catalog including the config's local frameworks so a
 	// local:<path> framework's resources materialize (from their own FS) into
 	// the catalog root exactly like a builtin's. With no local frameworks this
@@ -689,7 +966,22 @@ func (e *Engine) planCatalog() (*catalogPlan, error) {
 		return nil, err
 	}
 	for _, name := range cl.PluginNames() {
-		pluginSet[name] = true
+		// Framework/resource catalogs retain their bundled plugins. Explicit
+		// bundled-plugin-only configs also need content before adapter projection.
+		if len(skillSet)+len(cmdSet)+len(subSet) > 0 {
+			pluginSet[name] = true
+		}
+		for _, plugin := range e.Cfg.Plugins.OpenCode {
+			if plugin.IsEnabled() && plugin.Source == name {
+				pluginSet[name] = true
+			}
+		}
+	}
+	if e.Cfg.WorkflowBridgeEnabled() {
+		pluginSet[workflowBridgePlugin] = true
+	}
+	if len(skillSet)+len(cmdSet)+len(subSet)+len(pluginSet) == 0 {
+		return nil, nil
 	}
 	skillNames := make([]string, 0, len(skillSet))
 	for n := range skillSet {
@@ -718,7 +1010,10 @@ func (e *Engine) planCatalog() (*catalogPlan, error) {
 	//     version-only gate served the stale bytes forever, and repinning is
 	//     how a patched resource ships),
 	//   - and the presence of every file a materialize would write.
-	renderCtx := e.subagentRenderContextFor(targetedSubagents)
+	renderCtx, err := e.subagentRenderContextFor(targetedSubagents)
+	if err != nil {
+		return nil, err
+	}
 	pluginNames := make([]string, 0, len(pluginSet))
 	for n := range pluginSet {
 		pluginNames = append(pluginNames, n)
@@ -746,25 +1041,43 @@ func (e *Engine) planCatalog() (*catalogPlan, error) {
 		tmpDir = ""
 	}
 	tmpFP := catalog.TmpFingerprint(tmpEnabled, tmpDir)
+	workspaceRef := catalog.RenderWorkspace(e.WorkspaceLayout)
 	fingerprint := renderFingerprint(renderCtx) + ":" + contentFP + ":" + toolingFP + ":" + tmpFP
+	if len(workspaceRef) > 0 {
+		workspaceFP := sha256.Sum256(workspaceRef)
+		fingerprint += ":" + hex.EncodeToString(workspaceFP[:])
+	}
+	var workflowBinding []byte
+	if pluginSet[workflowBridgePlugin] {
+		workflowBinding, err = e.workflowBinding()
+		if err != nil {
+			return nil, err
+		}
+		bindingFP := sha256.Sum256(workflowBinding)
+		fingerprint += ":" + hex.EncodeToString(bindingFP[:])
+	}
 	upToDate := e.State.CatalogVersionRecorded() == cl.Version() &&
 		e.State.RenderFingerprintRecorded() == fingerprint &&
 		allSkillDirsExist(e.CatalogRoot, skillNames, cl, tmpDir) &&
+		allWorkspaceReferencesExist(e.CatalogRoot, skillNames, workspaceRef) &&
 		allCommandFilesExist(e.CommandCatalogRoot, cmdNames) &&
 		allSubagentFilesExist(e.SubagentCatalogRoot, subNames, cl, renderCtx) &&
-		allPluginDirsExist(e.PluginCatalogRoot, pluginNames)
+		allPluginDirsExist(e.PluginCatalogRoot, pluginNames) &&
+		e.workflowBindingPresent(workflowBinding)
 	return &catalogPlan{
-		cl:          cl,
-		skills:      skillNames,
-		commands:    cmdNames,
-		subagents:   subNames,
-		plugins:     pluginNames,
-		renderCtx:   renderCtx,
-		shellProxy:  tooling.ShellProxy,
-		codeIntel:   tooling.CodeIntel,
-		tmpDir:      tmpDir,
-		fingerprint: fingerprint,
-		upToDate:    upToDate,
+		cl:              cl,
+		skills:          skillNames,
+		commands:        cmdNames,
+		subagents:       subNames,
+		plugins:         pluginNames,
+		renderCtx:       renderCtx,
+		shellProxy:      tooling.ShellProxy,
+		codeIntel:       tooling.CodeIntel,
+		tmpDir:          tmpDir,
+		workspaceRef:    workspaceRef,
+		workflowBinding: workflowBinding,
+		fingerprint:     fingerprint,
+		upToDate:        upToDate,
 	}, nil
 }
 
@@ -789,6 +1102,21 @@ func allSkillDirsExist(root string, names []string, cl *catalog.Catalog, tmpDir 
 		if tmpDir != "" && (cl.IsDispatcher(n) || n == catalog.SharedKnowledgeSkill) {
 			ref := filepath.Join(root, n, filepath.FromSlash(catalog.TmpReferencePath))
 			if st, err := os.Stat(ref); err != nil || st.IsDir() {
+				return false
+			}
+		}
+	}
+	return true
+}
+
+func allWorkspaceReferencesExist(root string, names []string, ref []byte) bool {
+	if len(ref) == 0 {
+		return true
+	}
+	for _, name := range names {
+		if catalog.HasWorkspaceReference(name) {
+			fi, err := os.Stat(filepath.Join(root, name, filepath.FromSlash(catalog.WorkspaceReferencePath)))
+			if err != nil || !fi.Mode().IsRegular() {
 				return false
 			}
 		}
@@ -827,6 +1155,9 @@ func renderFingerprint(ctx map[string]agentfm.RenderContext) string {
 		for _, k := range keys {
 			s := specs[k]
 			fmt.Fprintf(h, "%s\x00%s\x00%s\x00%s\x00%s\x00%s\x00", kind, tool, k, s.Model, s.Variant, s.Effort)
+			if s.Steps != nil {
+				fmt.Fprintf(h, "steps\x00%d\x00", *s.Steps)
+			}
 			for _, add := range s.BashAllowAdd {
 				fmt.Fprintf(h, "bashadd\x00%s\x00", add)
 			}
@@ -838,17 +1169,39 @@ func renderFingerprint(ctx map[string]agentfm.RenderContext) string {
 	}
 	sort.Strings(tools)
 	for _, tool := range tools {
-		digestSpecs("override", tool, ctx[tool].Overrides)
-		agents := make([]string, 0, len(ctx[tool].ExternalDirectoriesByAgent))
-		for agent := range ctx[tool].ExternalDirectoriesByAgent {
-			agents = append(agents, agent)
+		names := make([]string, 0, len(ctx[tool].Names))
+		for source := range ctx[tool].Names {
+			names = append(names, source)
 		}
-		sort.Strings(agents)
-		for _, agent := range agents {
-			dirs := append([]string(nil), ctx[tool].ExternalDirectoriesByAgent[agent]...)
-			sort.Strings(dirs)
-			for _, dir := range dirs {
-				fmt.Fprintf(h, "external-dir\x00%s\x00%s\x00%s\x00", tool, agent, dir)
+		sort.Strings(names)
+		for _, source := range names {
+			fmt.Fprintf(h, "alias\x00%s\x00%s\x00%s\x00", tool, source, ctx[tool].Names[source])
+		}
+		digestSpecs("override", tool, ctx[tool].Overrides)
+		fmt.Fprintf(h, "shell-proxy\x00%s\x00%s\x00", tool, ctx[tool].ShellProxy)
+		for _, group := range []struct {
+			kind string
+			dirs map[string][]string
+		}{
+			{"external-dir", ctx[tool].ExternalDirectoriesByAgent},
+			{"external-dir-deny", ctx[tool].ExternalDirectoryDeniesByAgent},
+			{"edit-dir-deny", ctx[tool].EditDirectoryDeniesByAgent},
+		} {
+			agents := make([]string, 0, len(group.dirs))
+			for agent := range group.dirs {
+				agents = append(agents, agent)
+			}
+			sort.Strings(agents)
+			for _, agent := range agents {
+				fmt.Fprintf(h, "%s-managed\x00%s\x00%s\x00", group.kind, tool, agent)
+				dirs := append([]string(nil), group.dirs[agent]...)
+				sort.Strings(dirs)
+				for i, dir := range dirs {
+					if i > 0 && dir == dirs[i-1] {
+						continue
+					}
+					fmt.Fprintf(h, "%s\x00%s\x00%s\x00%s\x00", group.kind, tool, agent, dir)
+				}
 			}
 		}
 		targets := make([]string, 0, len(ctx[tool].Targets))

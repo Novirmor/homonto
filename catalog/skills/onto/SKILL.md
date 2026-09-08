@@ -25,6 +25,15 @@ through every phase. Starting or resuming onto authorizes continuation through
 close unless the user names an endpoint or asks to pause. Phase boundaries are
 checkpoints, not requests for permission to continue.
 
+This includes the shared [workspace and dirty-work policy](../homonto/references/workspace-policy.md)
+in every sub-skill, even direct entry. Read generated `references/workspace.md`
+for exact roots, inspect before writes, and resolve the preserve/isolate/cleanup
+choice once for each dirt situation. All workflow calls that accept it use
+`--dir "<configRoot>"`, including from source worktrees. Schema 2 selects every
+code alias explicitly; configRoot may be non-Git and is not an implicit source.
+Managed binary mutations checkpoint automatically; phase Markdown uses named
+`homonto workspace checkpoint --path ... --message ...` records checkpoints.
+
 ## 1. Tooling preflight (runs first, every dispatch — warns, never halts)
 
 Run these checks before anything else. A missing tool produces a WARNING
@@ -98,13 +107,18 @@ waiver. Two findings require user intent because repository evidence cannot
 repair them: a dep matching **no active and no archived change** (correct or
 drop it), and a dep chain that **reaches the current change — including a
 self-dep or an A⇄B cycle** (break the cycle). For multiple simultaneously active
-changes, recommend one git worktree per change — coupled work that can't
+changes, use registered bindings per change/repo in schema 2, or the legacy
+combined worktree protocol in schema 0/1, when isolation is chosen. Coupled work that can't
 be separated should have been one change (the split-preflight rule
 already says so). **Close them one at a time**, though: two closes running
 at once both merge into shared `<workflow-root>/specs/*` and both draw ADR numbers
 from the same `<workflow-root>/adr/` (onto-close re-scans before each move to avoid a
 clobber, but serial closes remove the race outright).
 
+Before bootstrap, inspect the workspace: in managed mode obtain authorization
+and run `homonto workspace init --yes` while the records root is still empty.
+Never create README files or directories before managed initialization, and never
+initialize configRoot or a source as repair. If authorization is absent, stop writes.
 If the repo has no `<workflow-root>/changes/` tree at all, bootstrap the
 layout: create `<workflow-root>/{adr,specs,changes/archive,guides}/`, writing
 `<workflow-root>/changes/README.md` from `references/changes-readme.md` and
@@ -168,6 +182,9 @@ between open and design.
    phase field advances only when a phase's exit decision is recorded, so a
    lagging claim means an unrecorded review: resume at the claimed phase's
    exit checklist (artifacts already prepared), record it, and advance normally.
+   For a preset with recorded `open` or `design`, route to its open-lite/setup
+   resume, even if `derived_phase` is build. Empty scaffold files do not prove
+   proposal review, isolation, task contracts, or setup gates are complete.
    **One exception: the verify→close boundary has no gate** (the
    failure path fires only on a fail). So a `phase: verify` claim beside a
    `verification.md` reading `Result: pass` is not an unrecorded decision — it
@@ -317,11 +334,17 @@ agent it is:**
   `onto-skeptic`) cannot corrupt a shared tree, so dispatch as many at once as
   the work has independent questions — one invocation per question, never a
   serial queue.
-- `onto-implementer` **edits**, so it runs one at a time unless each has its own
-  git worktree and a disjoint file set (`build_mode: subagent` plus
-  `isolation: worktree`).
-- Every `onto` binary call, commit, and user question stays with the orchestrator
-  and never runs concurrently.
+- `onto-implementer` **edits**. Schema 2 requires same-repo tasks to run one at a
+  time: one registered binding per workflow/change/repo, not per task; disjoint
+  files do not authorize raw task worktrees. Separate selected repos need
+  disjoint write scopes and validated bindings before concurrency.
+- Legacy schema 0/1 combined workflows retain parallel disjoint-file implementers
+  under the five conditions in
+  [`subagent-protocol.md`](../onto-build/references/subagent-protocol.md), with
+  coordinator-owned state and ordered joins. This is not a denial fallback.
+- Every `onto` binary call, coordinator bookkeeping commit, integration operation,
+  and user question stays with the orchestrator and never runs concurrently.
+  Assigned source-only implementer commits follow the selected mode's protocol.
 
 Each phase skill names its own fan-out — which questions split, and where
 concurrency is unsafe because the work shares a fixture, a port, or a file.

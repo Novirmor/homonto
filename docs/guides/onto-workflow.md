@@ -19,14 +19,14 @@ open → design → build → verify → close
 ```
 
 `close` is the final recorded phase; `onto close` archives the change, and
-`onto complete-integration` records the local merge or opened pull request
+`onto complete-integration` records a local merge, proven no-op, or opened-PR claim
 before the derived phase becomes `done`. Each change
 tracks its phase and gate evidence in an `onto-state.yaml` inside its
 workspace directory, always written through the binary and never by hand.
 
 This guide covers the concepts. The precise command surface and every gate:
-[onto reference](onto-reference.md). Making the gates non-skippable at the
-tool boundary: [enforcement](enforcement.md).
+[onto reference](onto-reference.md). Diagnostics at the tool boundary and the
+limits of observers: [enforcement](enforcement.md).
 
 ## Install and enable
 
@@ -55,9 +55,10 @@ scope = "project"
 # configuration reference
 ```
 
-Then `homonto apply`. The read-only commands (`status`, `state`, `gate`,
-`scale`, `graph`, `dirt`, `handoff`, `doctor`, `version`) run without any of
-this: they never read `homonto.toml` and never write.
+Then `homonto apply`. Inspection commands do not require the framework install
+gate, but resolve `homonto.toml` for the configured records root and source
+scope when needed. Legacy config-free recovery uses `docs`. `scale --set` and
+`handoff --write` explicitly write; the ordinary inspection forms do not.
 
 `homonto apply` also installs the framework's **slash commands** into each
 tool: `/onto` (the dispatcher — it derives the active change's real phase
@@ -69,7 +70,7 @@ change still goes through the binary.
 
 ## The layout
 
-`onto init` scaffolds four directories under the workspace root,
+`onto init` scaffolds four directories under `[workflow].root` (default `docs`),
 idempotently — existing content is never overwritten:
 
 ```
@@ -81,6 +82,13 @@ docs/
 ├── adr/                    # accepted / superseded decisions
 └── guides/                 # user-facing docs
 ```
+
+Schema 2 can separate a non-Git config root, records Git, and selected source
+checkouts. Run workflow commands with `--dir <config-root>` even from an
+execution worktree. `[repos]` declares all available sources; `onto new --repo`
+selects the complete change-specific set, with no implicit config source.
+Schema 0/1 retains config Git plus selected siblings. See
+[workspaces](workspaces.md) for layout, frozen bases, and managed checkpoints.
 
 ## Phase walkthrough
 
@@ -141,16 +149,27 @@ new work uses the explicit marker to avoid mistaking an issue reference for a
 trace ID.
 
 - **verify** — scale-appropriate check of every delta-spec scenario with
-  fresh command output as evidence, recorded in `verification.md`.
+  fresh command output as evidence. Finalize `verification.md` before appending
+  structured claims with `onto evidence record`, then record the overall result
+  with `onto set verify-result`. A changed report requires re-verification and
+  fresh current claims.
   `onto scale` derives the appropriate verification level from the measured
-  diff.
+  source diff; explicit mode aggregates selected execution checkouts.
 - **close** — `onto merge-deltas` merges the change's delta specs into
    `<workflow-root>/specs/` with a crash-recovery receipt, then `onto close` archives the
   workspace once all evidence gates pass. Number and accept ADRs into
-   `<workflow-root>/adr/`, update the affected guides, integrate the branch, and record
-  `merge:<commit>` or `pr:<url>` with `onto complete-integration`. State keeps
-  the immutable diff anchor in `base_ref` and the integration target in
-  `base_branch`; a commit SHA is never used as a checkout or pull-request base.
+   `<workflow-root>/adr/`, update the affected guides, integrate the pinned
+  candidate, and record `merge:<commit>`, proven `unchanged:<commit>`, or
+  `pr:<url>` with `onto complete-integration`. Explicit-source PR completion
+  requires `--head <canonical-commit>` from the publication tool; this is an
+  external assertion, not onto attesting to remote publication. Merge parents
+  must bind the exact candidate, allowing only combined-layout records-only
+  descendants, not arbitrary later source commits. State keeps immutable diff
+  and target anchors per selected repo in explicit mode, or scalar `base_ref`
+  and `base_branch` in legacy mode. Prefer allocating any registered receiver
+  early, but identity-checked terminal/archive allocation also supports
+  post-archive recovery. Optional `--state-id` disambiguates archived generations
+  without overriding existing bindings; see [workspaces](workspaces.md#allocate-an-integration-receiver).
 
 Two **presets** run a reduced path for small work: `onto new --workflow fix`
 (an existing-behavior bug) and `--workflow tweak` (copy/config/docs-scale
@@ -161,6 +180,19 @@ gated call — `onto advance <name> --to build` — instead of two ceremonial
 advances; presets are exempt from the two full-only tokens but still record
 close-plan validation. `onto abandon` is the
 unsuccessful terminal state for work that stops rather than completes.
+
+No-spec fix/tweak changes declare each `Scenario-ID: <id>` once, on a standalone
+line in **one canonical location**, either `tasks.md` or `verification.md`, not
+both for the same ID. Use plain mentions elsewhere rather than repeating the
+declaration or fabricating delta specs. Structured evidence keeps every attempt,
+but the last appended claim for each unambiguous `(repo, task, scenario)`
+supersedes earlier ones. Duplicate declarations are doctor findings with paths
+and line numbers, even without a sidecar; ambiguous IDs provide neither coverage
+nor trace supersession. Prose references and fenced examples are not declarations.
+See [ADR 0053](../adr/0053-keep-history-without-blocking-fresh-verification.md).
+Doctor also checks current claims for staleness. The failed-round counter remains
+historical: at least three failures is a doctor finding only while the current
+verification result is still `fail`, not after a later pass.
 
 ## Specialist subagents
 
@@ -227,21 +259,23 @@ every edit and commit.
 
 Uncommitted work is normal: an interrupted task, a parallel change, your own
 edits. onto classifies it rather than treating "dirty" as one condition.
-`onto dirt [change] [--json]` reports every uncommitted path in three
-classes. A change created with `onto new --repo <declared-name>` additionally
-audits those selected sibling repos and labels their entries; all external
-entries are `source` and block close. An unselected declared repo is not part
-of the change and does not block it:
+`onto dirt <change> [--json]` audits recorded sources, using registered execution
+worktrees when present. Explicit mode selects only the recorded aliases;
+legacy mode also includes config Git. An unselected repo or independent records
+repository is not an extra source gate. Only a real combined source/records
+checkout gets the following three-way classification; all paths in a separate
+source checkout are `source`, even if it happens to contain `docs/changes/`:
 
 | Class | What it is | Blocks this change's close? |
 |---|---|---|
 | `own` | the change's own `<workflow-root>/changes/<name>/` artifacts | **yes** — its evidence must be committed |
 | `change` | another change's docs, or the archive | no — that change's own close gate owns it |
-| `source` | any other path in the repo | **yes** — until it is attributed and committed |
+| `source` | any other path in the selected execution checkout | **yes** until resolved under the user's preserve/isolate/cleanup choice |
 
 That split lets two changes be in flight at once: one change's half-written
 proposal no longer blocks another change's close. When close *is* blocked,
 the refusal names the offending paths instead of a bare "dirty worktree".
+Invalid aliases, Git identities, or worktree bindings fail closed, not as clean.
 
 The division of labor is deliberate. The **binary** owns what-is-dirty and
 what-blocks-close (structure, not judgment); the **agent** owns attribution,
@@ -278,6 +312,11 @@ every artifact are committed, so `git log`/`git blame` over
 a person and a time. onto deliberately stores no identity of its own — it would
 be a second, weaker copy of what the VCS already guarantees. The archived
 workspace under `<workflow-root>/changes/archive/` is that whole record, kept.
+In managed mode, binary mutations checkpoint operation-scoped records; manual
+Markdown needs an explicit path-scoped checkpoint. Git identifies the commit
+author, not every editor whose changes share a file. See
+[records history](workspaces.md#records-history-and-source-commits) for recovery
+and that attribution limit.
 
 ## Tooling providers
 

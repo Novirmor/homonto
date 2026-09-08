@@ -16,7 +16,7 @@ summary.
 <!-- optional: `Depends-on: <change-name>[, <change-name>]` — feeds onto-state.yaml deps -->
 <!-- optional: `Closes: #N` — the issue this change closes; close reads this
      marker verbatim when assembling the PR body. Exactly one line; it is the
-     change's ONLY closing reference, never collected from prose. -->
+      change's ONLY closing reference, never collected from prose. -->
 
 ## Why
 
@@ -53,6 +53,10 @@ preflight). Design-phase grounding goes in design.md; notes.md keeps none.>
 ## Impact
 
 <files/systems/dependencies touched; risks worth naming at open time>
+
+## Acceptance Scenarios
+
+- <input/precondition, action, expected observable result; core path and key edges>
 ```
 
 ## Rules
@@ -62,4 +66,10 @@ preflight). Design-phase grounding goes in design.md; notes.md keeps none.>
   by close (PR body) the same way.
 - Capability names must match existing `<workflow-root>/specs/*.md` files or declare
   a new one.
+- Record a non-empty Grounding and concrete Acceptance Scenarios, not generic
+  promises to test. Unupgraded presets use `preset-proposal.md` instead.
+- A `Closes: #N` marker has no repository identity in the backend. Record the
+  canonical issue URL/host/repository ID separately and use the marker only for
+  publication in its confirmed origin repository. Suppress bare closing text in
+  other repos; do not invent parser syntax for qualified markers.
 - Breaking changes are marked at the bullet, not buried in prose.

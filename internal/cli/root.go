@@ -32,6 +32,7 @@ func NewRootCmd() *cobra.Command {
 			return nil
 		},
 	})
-	root.AddCommand(planCmd(), applyCmd(), updateCmd(), statusCmd(), doctorCmd(), initCmd(), cacheCmd(), explainCmd(), permissionsCmd(), snapshotCmd())
+	root.AddCommand(planCmd(), applyCmd(), updateCmd(), statusCmd(), doctorCmd(), initCmd(), cacheCmd(), explainCmd(), permissionsCmd(), snapshotCmd(), workflowCmd())
+	root.AddCommand(workspaceCmd(), worktreeCmd())
 	return root
 }

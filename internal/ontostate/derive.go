@@ -8,10 +8,10 @@ import (
 	"strings"
 )
 
-// fileHasLinePrefix reports whether any line of the file at path starts with
-// prefix (after trimming leading whitespace). A missing or unreadable file is
+// fileHasLine reports whether the file contains an exact canonical marker.
+// Template alternatives and free-form suffixes are not evidence. An unreadable file is
 // simply "no" — derivation treats it as absent evidence, never an error.
-func fileHasLinePrefix(path, prefix string) bool {
+func fileHasLine(path, marker string) bool {
 	f, err := os.Open(path)
 	if err != nil {
 		return false
@@ -19,7 +19,7 @@ func fileHasLinePrefix(path, prefix string) bool {
 	defer f.Close()
 	scanner := bufio.NewScanner(f)
 	for scanner.Scan() {
-		if strings.HasPrefix(strings.TrimSpace(scanner.Text()), prefix) {
+		if strings.TrimSpace(scanner.Text()) == marker {
 			return true
 		}
 	}
@@ -104,7 +104,7 @@ func DeriveWorkingPhase(changeDir string, st State) string {
 		return st.Phase
 	}
 	designPath := filepath.Join(changeDir, "design.md")
-	if fileHasLinePrefix(designPath, "Status: Under revision") {
+	if fileHasLine(designPath, "Status: Under revision") {
 		return "design"
 	}
 	if line, ok := VerificationResultLine(filepath.Join(changeDir, "verification.md")); st.Verify.Result == "pass" && ok && ResultLineIsPass(line) {
@@ -119,7 +119,7 @@ func DeriveWorkingPhase(changeDir string, st State) string {
 		return "verify"
 	}
 	preset := st.Workflow == "fix" || st.Workflow == "tweak"
-	if fileHasLinePrefix(designPath, "Status: Confirmed") || preset {
+	if fileHasLine(designPath, "Status: Confirmed") || preset {
 		return "build"
 	}
 	if fileExists(filepath.Join(changeDir, "tasks.md")) || fileExists(designPath) {

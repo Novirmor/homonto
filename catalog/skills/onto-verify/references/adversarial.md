@@ -26,8 +26,14 @@ commands so parallel skeptics cannot mutate the candidate. The coordinator
 runs any exact probes they request and returns the literal output for a fresh
 pass.
 
-Both get: the delta spec(s), `design.md`, repo access, and the drafted
-evidence table. Both are prompted to **REFUTE, never approve** — an
+Both get a complete worker-readable evidence pack: Repo and absolute Cwd for
+every source, frozen base and candidate OIDs, exact diff/supporting files,
+delta specs and design (or preset proposal scenarios), task/notes context,
+literal commands, exit statuses and full output, evidence table, regression
+results, and known gaps/findings. Run regression before the final skeptic
+dispatch so that it can attack the complete claim. Confirm pack consumption;
+coordinator tool output is not automatically shared. Re-dispatch after candidate
+changes or missing probes with the new complete pack. Both are prompted to **REFUTE, never approve** — an
 approving skeptic has failed its job; "I could not refute X because
 <evidence>" is the only acceptable positive form.
 

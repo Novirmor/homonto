@@ -7,6 +7,7 @@ import (
 
 	"github.com/noviopenworks/homonto/internal/bypasslog"
 	"github.com/noviopenworks/homonto/internal/tostate"
+	"github.com/noviopenworks/homonto/internal/workspace"
 	"github.com/spf13/cobra"
 )
 
@@ -43,9 +44,6 @@ func runBypass(cmd *cobra.Command, root, name, target, reason string) error {
 	if reason == "" {
 		return fmt.Errorf("to bypass: --reason must be non-empty")
 	}
-	if err := bypasslog.RequireRealParents(root, tasksDir(root)); err != nil {
-		return err
-	}
 	unlock, err := lock(root)
 	if err != nil {
 		return err
@@ -54,15 +52,6 @@ func runBypass(cmd *cobra.Command, root, name, target, reason string) error {
 
 	st, err := loadChange(root, name)
 	if err != nil {
-		return err
-	}
-	if err := st.Validate(); err != nil {
-		return fmt.Errorf("to bypass: %w", err)
-	}
-	if st.Change != name {
-		return fmt.Errorf("to bypass: state change %q does not match requested change %q", st.Change, name)
-	}
-	if err := bypasslog.RequireRealParents(changeDir(root, name), changeDir(root, name)); err != nil {
 		return err
 	}
 	record := bypasslog.Record{
@@ -99,9 +88,15 @@ func runBypass(cmd *cobra.Command, root, name, target, reason string) error {
 func bypassTerminal(cmd *cobra.Command, root string, st tostate.State, record bypasslog.Record) error {
 	change := st.Change
 	changePath := changeDir(root, change)
-	if err := bypasslog.RequireRealParents(root, archiveDir(root)); err != nil {
+	finished := st.Finished
+	if st.Phase != tostate.PhaseDone || finished == "" {
+		finished = todayFn()
+	}
+	dest, date, err := commandArchiveDest(cmd.Context(), root, change, finished)
+	if err != nil {
 		return err
 	}
+	finished = date
 	if err := bypasslog.Append(changePath, change, "to", record); err != nil {
 		return err
 	}
@@ -112,7 +107,10 @@ func bypassTerminal(cmd *cobra.Command, root string, st tostate.State, record by
 		if err := tostate.Save(statePath(root, change), st); err != nil {
 			return fmt.Errorf("to bypass: saving terminal state: %w", err)
 		}
-		dest, err := completeArchive(root, st)
+		if err := workspace.CheckArchiveTarget(cmd.Context(), changePath, dest); err != nil {
+			return err
+		}
+		dest, err := archive(root, change, dest)
 		if err != nil {
 			return fmt.Errorf("to bypass: %w", err)
 		}
@@ -122,8 +120,14 @@ func bypassTerminal(cmd *cobra.Command, root string, st tostate.State, record by
 	st.Phase = tostate.PhaseDone
 	st.Verified = false
 	st.Evidence = ""
-	st.Finished = todayFn()
-	dest, err := finishAndArchive(root, st)
+	st.Finished = finished
+	if err := tostate.Save(statePath(root, change), st); err != nil {
+		return fmt.Errorf("to bypass: saving terminal state: %w", err)
+	}
+	if err := workspace.CheckArchiveTarget(cmd.Context(), changePath, dest); err != nil {
+		return err
+	}
+	dest, err = archive(root, change, dest)
 	if err != nil {
 		return fmt.Errorf("to bypass: %w", err)
 	}

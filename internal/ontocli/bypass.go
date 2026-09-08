@@ -9,6 +9,7 @@ import (
 
 	"github.com/noviopenworks/homonto/internal/bypasslog"
 	"github.com/noviopenworks/homonto/internal/ontostate"
+	"github.com/noviopenworks/homonto/internal/workspace"
 	"github.com/spf13/cobra"
 )
 
@@ -108,7 +109,13 @@ func runBypass(cmd *cobra.Command, root, name, target, reason string) error {
 }
 
 func bypassArchive(cmd *cobra.Command, root, changeDir string, st ontostate.State) error {
-	archiveDir := filepath.Join(ontoArchiveDir(root), time.Now().Format("2006-01-02")+"-"+st.Change)
+	archiveDir, _, planned, err := workspace.ArchiveTarget(cmd.Context(), changeDir)
+	if err != nil {
+		return err
+	}
+	if !planned {
+		archiveDir = filepath.Join(ontoArchiveDir(root), time.Now().Format("2006-01-02")+"-"+st.Change)
+	}
 	if err := bypasslog.RequireRealParents(root, filepath.Dir(archiveDir)); err != nil {
 		return err
 	}
@@ -119,6 +126,9 @@ func bypassArchive(cmd *cobra.Command, root, changeDir string, st ontostate.Stat
 	}
 	if err := os.MkdirAll(filepath.Dir(archiveDir), 0o755); err != nil {
 		return fmt.Errorf("onto bypass: creating archive directory: %w", err)
+	}
+	if err := workspace.CheckArchiveTarget(cmd.Context(), changeDir, archiveDir); err != nil {
+		return err
 	}
 	if err := os.Rename(changeDir, archiveDir); err != nil {
 		return fmt.Errorf("onto bypass: moving %s to %s: %w", changeDir, archiveDir, err)

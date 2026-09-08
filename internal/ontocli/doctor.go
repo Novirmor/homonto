@@ -152,6 +152,15 @@ func runDoctor(cmd *cobra.Command, root string) error {
 			if st.Abandoned {
 				continue
 			}
+			if st.RepoMode != "" {
+				if _, err := stateSourceDirs(root, st); err != nil {
+					findings = append(findings, fmt.Sprintf("%s: source scope: %v", name, err))
+				} else if st.Verify.Result == "pass" {
+					if err := verifyHeadsIntact(root, st); err != nil {
+						findings = append(findings, fmt.Sprintf("%s: %v", name, err))
+					}
+				}
+			}
 			phase := st.Phase
 			if skErr := ontostate.ValidateSkeleton(changeDir); skErr != nil {
 				findings = append(findings, fmt.Sprintf("%s: phase %s missing artifact: %v", name, phase, skErr))
@@ -193,7 +202,7 @@ func runDoctor(cmd *cobra.Command, root string) error {
 			}
 			// A change that has failed verification 3+ times needs a decision, not
 			// another silent retry (accept the deviation or keep fixing).
-			if st.Observed.VerifyRounds >= 3 {
+			if st.Observed.VerifyRounds >= 3 && st.Verify.Result == "fail" {
 				findings = append(findings, fmt.Sprintf("%s: %d failed verify rounds — use fresh investigation before retrying", name, st.Observed.VerifyRounds))
 			}
 			// Structured evidence (ADR 0027). A missing sidecar is a note, not

@@ -94,6 +94,16 @@ func migrateLegacy(l legacyState) State {
 // in any error. Migration is ordered and idempotent.
 func parseAndMigrate(b []byte, sourceName string) (State, error) {
 	if isLegacy(b) {
+		var scope struct {
+			RepoMode  string              `yaml:"repo_mode"`
+			RepoBases map[string]RepoBase `yaml:"repo_bases"`
+		}
+		if err := yaml.Unmarshal(b, &scope); err != nil {
+			return State{}, err
+		}
+		if scope.RepoMode != "" || len(scope.RepoBases) != 0 {
+			return State{}, fmt.Errorf("onto-state: source provenance requires schema_version 3")
+		}
 		var l legacyState
 		if err := yaml.Unmarshal(b, &l); err != nil {
 			return State{}, fmt.Errorf("onto-state: %s: %w", sourceName, err)
@@ -109,6 +119,9 @@ func parseAndMigrate(b []byte, sourceName string) (State, error) {
 	}
 	if st.SchemaVersion < 2 {
 		st.IntegrationRequired = false
+	}
+	if st.SchemaVersion < 3 && (st.RepoMode != "" || len(st.RepoBases) != 0) {
+		return State{}, fmt.Errorf("onto-state: repo_mode and repo_bases require schema_version 3")
 	}
 	st.SchemaVersion = CurrentSchemaVersion
 	return st, nil

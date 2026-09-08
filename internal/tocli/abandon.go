@@ -57,11 +57,11 @@ func runAbandon(cmd *cobra.Command, root, name string, jsonMode bool) error {
 
 	var dest string
 	if completed {
-		dest, err = completeArchive(root, st)
+		dest, err = completeArchive(cmd.Context(), root, st)
 	} else {
 		st.Phase = tostate.PhaseAbandoned
 		st.Finished = todayFn()
-		dest, err = finishAndArchive(root, st)
+		dest, err = finishAndArchive(cmd.Context(), root, st)
 	}
 	if err != nil {
 		return fmt.Errorf("to abandon: %w", err)

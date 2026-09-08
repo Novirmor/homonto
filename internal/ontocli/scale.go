@@ -1,10 +1,8 @@
 package ontocli
 
 import (
-	"bufio"
 	"context"
 	"fmt"
-	"os/exec"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -30,20 +28,28 @@ const (
 // time the tree is clean and a 1000-line change scored {files:0, lines:0} →
 // "light", silently selecting the weakest verification gate on the default
 // path (nothing else requires base-ref to be recorded).
-func diffScale(root, baseRef string) (files, lines int, level string, err error) {
+func diffScale(root, baseRef string, excluded ...string) (files, lines int, level string, err error) {
 	if strings.TrimSpace(baseRef) == "" {
 		return 0, 0, "", fmt.Errorf("onto scale: no base ref recorded for this change — the committed diff cannot be measured without one; run `onto set base-ref <change> <ref>` first")
 	}
-	args := []string{"-C", root, "diff", "--numstat", baseRef + "..HEAD"}
+	if strings.HasPrefix(baseRef, "-") {
+		return 0, 0, "", fmt.Errorf("onto scale: invalid base ref %q", baseRef)
+	}
+	args := []string{"diff", "--numstat", "-z", "--no-renames", baseRef + "..HEAD", "--"}
+	if len(excluded) > 0 {
+		args = append(args, ":(top)**")
+		for _, path := range excluded {
+			args = append(args, ":(top,exclude,literal)"+path)
+		}
+	}
 	ctx, cancel := context.WithTimeout(context.Background(), gitCmdTimeout)
 	defer cancel()
-	out, err := exec.CommandContext(ctx, "git", args...).Output()
+	out, err := gitAt(ctx, root, args...).Output()
 	if err != nil {
 		return 0, 0, "", fmt.Errorf("onto scale: git diff failed (is %s a git repo, and is %q a valid ref?): %w", root, baseRef, err)
 	}
-	sc := bufio.NewScanner(strings.NewReader(string(out)))
-	for sc.Scan() {
-		cols := strings.Fields(sc.Text())
+	for _, entry := range strings.Split(string(out), "\x00") {
+		cols := strings.SplitN(entry, "\t", 3)
 		if len(cols) < 3 {
 			continue
 		}
@@ -55,6 +61,41 @@ func diffScale(root, baseRef string) (files, lines int, level string, err error)
 		if !isTestPath(path) {
 			files++
 		}
+	}
+	level = "light"
+	if files > scaleThresholdFiles || lines > scaleThresholdLines {
+		level = "full"
+	}
+	return files, lines, level, nil
+}
+
+func stateDiffScale(root string, st ontostate.State) (files, lines int, level string, err error) {
+	dirs, err := stateSourceDirs(root, st)
+	if err != nil {
+		return 0, 0, "", err
+	}
+	// Legacy state has only a config-repository diff anchor. Never reuse that
+	// scalar SHA in another object store; retain its shipped measurement.
+	if st.RepoMode != "explicit" {
+		dirs = map[string]string{"": dirs[""]}
+	}
+	for alias, dir := range dirs {
+		base := st.BaseRef
+		if st.RepoMode == "explicit" {
+			base = st.RepoBases[alias].BaseRef
+		}
+		var excluded []string
+		if prefix, combined := recordsGitPrefix(root, dir); combined {
+			for _, tree := range []string{"changes", "tasks", "specs", "adr", "guides", ".workflow"} {
+				excluded = append(excluded, filepath.ToSlash(filepath.Join(prefix, tree)))
+			}
+		}
+		f, l, _, err := diffScale(dir, base, excluded...)
+		if err != nil {
+			return 0, 0, "", fmt.Errorf("repository %s: %w", entryDisplayName(alias), err)
+		}
+		files += f
+		lines += l
 	}
 	level = "light"
 	if files > scaleThresholdFiles || lines > scaleThresholdLines {
@@ -112,7 +153,7 @@ func scaleCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			files, lines, level, err := diffScale(dir, st.BaseRef)
+			files, lines, level, err := stateDiffScale(dir, st)
 			if err != nil {
 				return err
 			}

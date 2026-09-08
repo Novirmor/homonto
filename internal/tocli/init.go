@@ -35,7 +35,7 @@ func runInit(cmd *cobra.Command, root string, jsonMode bool) error {
 	}
 
 	for _, path := range []string{tasksDir(root), archiveDir(root)} {
-		if err := workcli.ValidateWorkflowPath(root, path); err != nil {
+		if err := validateWorkflowDir(root, path); err != nil {
 			return fmt.Errorf("to init: unsafe workflow path: %w", err)
 		}
 	}

@@ -7,7 +7,6 @@ import (
 	"sort"
 
 	"github.com/noviopenworks/homonto/internal/ontostate"
-	"github.com/noviopenworks/homonto/internal/tostate"
 	"github.com/noviopenworks/homonto/internal/workcli"
 	"github.com/spf13/cobra"
 )
@@ -24,8 +23,8 @@ type statusEntry struct {
 	Error    string   `json:"error,omitempty"`
 }
 
-// statusCmd builds "to status": read-only and config-independent — it never
-// reads homonto.toml and never writes. It lists every active (non-archived)
+// statusCmd builds "to status": read-only, with config-free legacy recovery.
+// Configured roots must resolve successfully. It lists every active (non-archived)
 // change and its phase. With --all it also lists the onto workflow's active
 // changes (global inventory, ADR 0042) — JSON then emits an object with
 // "tasks" and "onto" arrays instead of the bare task array.
@@ -53,12 +52,20 @@ func statusCmd() *cobra.Command {
 					return printJSON(cmd, map[string]any{"tasks": entries, "onto": siblings})
 				}
 				for _, e := range entries {
+					if e.Error != "" {
+						cmd.Printf("%s\tinvalid\t%s\n", e.Change, e.Error)
+						continue
+					}
 					cmd.Printf("%s\t%s\n", e.Change, phaseOf(e))
 				}
 				if len(siblings) > 0 {
 					cmd.Println("onto:")
 					for _, s := range siblings {
-						cmd.Printf("%s\t%s\n", s.Change, s.Phase)
+						if s.Error != "" {
+							cmd.Printf("%s\tinvalid\t%s\n", s.Change, s.Error)
+							continue
+						}
+						cmd.Printf("%s\t%s\n", s.Change, phaseOf(s))
 					}
 				}
 				return nil
@@ -100,7 +107,10 @@ func phaseOf(e statusEntry) string {
 func collectSiblingStatus(root string) ([]statusEntry, error) {
 	wf, err := workcli.WorkflowRoot(root)
 	if err != nil {
-		return []statusEntry{}, nil
+		return nil, err
+	}
+	if err := validateWorkflowDir(root, filepath.Join(wf, "changes")); err != nil {
+		return nil, err
 	}
 	entries, err := os.ReadDir(filepath.Join(wf, "changes"))
 	if os.IsNotExist(err) {
@@ -118,6 +128,9 @@ func collectSiblingStatus(root string) ([]statusEntry, error) {
 		if err == nil {
 			err = st.Validate()
 		}
+		if err == nil && st.Change != e.Name() {
+			err = fmt.Errorf("state identity mismatch: requested %q, recorded %q", e.Name(), st.Change)
+		}
 		if err != nil {
 			out = append(out, statusEntry{Change: e.Name(), Error: err.Error()})
 			continue
@@ -132,6 +145,9 @@ func collectSiblingStatus(root string) ([]statusEntry, error) {
 // archive. A missing docs/tasks/ is an empty listing, not an error, so
 // status works in any repo.
 func collectStatus(root string) ([]statusEntry, error) {
+	if err := validateWorkflowDir(root, tasksDir(root)); err != nil {
+		return nil, err
+	}
 	dirents, err := os.ReadDir(tasksDir(root))
 	if err != nil {
 		if os.IsNotExist(err) {
@@ -146,9 +162,9 @@ func collectStatus(root string) ([]statusEntry, error) {
 			continue
 		}
 		name := d.Name()
-		st, err := tostate.Load(statePath(root, name))
-		if err == nil {
-			err = st.Validate()
+		st, err := loadChange(root, name)
+		if err == nil && st.SchemaVersion > 0 {
+			_, _, err = resolvedSources(root, st)
 		}
 		if err != nil {
 			entries = append(entries, statusEntry{Change: name, Error: err.Error()})

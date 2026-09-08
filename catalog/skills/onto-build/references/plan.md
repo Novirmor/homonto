@@ -19,7 +19,10 @@ Design: `design.md` (Status: Confirmed <date>). Completion state lives in
 
 ## Task N.M — <outcome, imperative>  <!-- add `(risk: high)` when it warrants a reviewer -->
 
-- Files: <exact paths created/modified>
+- Owner: <implementer for source tasks in subagent mode; coordinator for records>
+- Repo: <selected alias, legacy config source, or records Git owner>
+- Cwd: <absolute validated source execution root or records root>
+- Files: <exact paths created/modified, relative to Cwd>
 - Do: <what, concretely — reference design sections, don't restate them>
 - Verify: <the command(s)/check(s) that prove this task done>
 ```
@@ -41,6 +44,8 @@ Design: `design.md` (Status: Confirmed <date>). Completion state lives in
   edit, which is where its checkbox lives. Numbering only grows; never
   renumber or delete a task. A task that becomes unnecessary keeps its heading
   and gains a `SUPERSEDED: <reason>` line, matching the
-  `- [x] N.M SUPERSEDED: <reason>` entry in `tasks.md`.
-- The final task is always validation (the change proving itself). Appended
-  tasks land BEFORE it — validation stays last.
+  `- [x] N.M SUPERSEDED: <reason> [trace #K]` entry in `tasks.md`.
+- Initially end with validation. Append discovered tasks after existing tasks,
+  never insert or reorder. If an earlier validation no longer covers the final
+  candidate, retain its history and append a fresh final-validation task with
+  the next dotted number and unique trace ID.

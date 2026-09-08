@@ -1,53 +1,97 @@
-# Worktree isolation protocol (`isolation: worktree`)
+# Worktree isolation by config mode
 
-`onto set isolation <name> worktree` records the *choice*; this is the *how*.
-Worktree isolation gives a change its own working directory + branch, so parallel
-work (or a dirty current branch) never contaminates it. Prefer it over a plain
-branch when the current tree is dirty, when several changes are active at once, or
-when build dispatches parallel implementers.
+Follow the shared [workspace and dirty-work policy](../../homonto/references/workspace-policy.md).
+`onto set isolation <name> worktree --dir "<configRoot>"` records the choice,
+not a binding. Inspect dirt, present exact paths, and honor the user's existing
+preserve/isolate/cleanup decision before writes; ask once if none covers it.
 
-## 0. Detect existing isolation first
+Inspect the config schema and actual layout before choosing a protocol. The
+legacy exception below requires schema 0/1 and an existing combined workflow;
+`workflow.git: existing` or an old state file alone does not enable it in schema 2.
+In both modes the coordinator alone owns workflow state, task records, allocation,
+and integration. Workers commit only assigned source/test files. Never copy
+`.env` or untracked input automatically; the user decides required dirty-input
+transport. Honor tool permissions; no fallback around a denial or failed binding.
 
-If a native worktree/sandbox tool is available, use it — it places the directory,
-creates the branch, and cleans up, and its state is visible to the harness. Using
-raw `git worktree add` when a native tool exists creates phantom state the harness
-can't manage. Check whether you are already in a worktree (`git rev-parse
---git-common-dir` differs from `--git-dir`) before creating another.
+## Schema 2 registered allocation
 
-## 1. Create the workspace (git fallback)
+Create active state with selected source aliases first. For an alternative base,
+pass `--base <alias>=<local-branch>` to `onto new` before allocation, preserving
+the dirty original checkout. With `worktrees.dir` declared, the coordinator
+allocates from that frozen base:
 
-```sh
-git worktree add "<path>" -b "<type>/YYYYMMDD/<change-name>"
-cd "<path>"
-```
-
-Path: a sibling dir outside the repo (e.g. `../<repo>-worktrees/<name>`) or a
-project-local ignored dir. If `git worktree add` fails on a sandbox permission
-error, tell the user the sandbox blocked it and fall back to working in place on a
-branch (record `isolation: branch`).
-
-## 2. Set up and baseline
-
-Reproduce the project's environment in the new tree (install deps, copy any
-untracked but required local config/`.env` the build needs — a worktree does NOT
-inherit untracked files), then run the build + test suite once to confirm a
-**clean baseline** before the first task. Building on an already-red tree hides
-which failure you introduced.
-
-## 3. Work, then integrate
-
-Do the change's build in the worktree, one commit per task on its branch. At
-close, the `integration` choice (`merge`/`pr`) integrates the branch (see
-onto-close).
-
-## 4. Clean up
-
-After the change is closed and integrated, remove the worktree so it doesn't
-linger as phantom state:
+Do this immediately after `onto new`, before any records/source commit, not at
+build entry. In an existing combined schema-2 layout, a records commit advances
+the frozen local target and would make allocation fail. Resume validated bindings.
 
 ```sh
-git worktree remove "<path>"      # or the native tool's teardown
-git worktree prune
+homonto worktree create <name> --workflow onto --repo <alias> --base <ref> --branch <name> --json
+homonto worktree list --json
 ```
 
-Never leave an orphaned worktree pointing at a merged/deleted branch.
+Here `--base <ref>` names the recorded local target, preferably
+`refs/heads/<local-branch>`. Both the exact frozen commit and target must match;
+a different branch at the same commit or a target advanced since creation is a
+mismatch. Do not retarget setters, reset refs, or replace the target with a SHA.
+
+Run from configRoot or pass `--config "<configRoot>/homonto.toml"`. Use the
+validated binding path for source commands and implementer dispatch, while every
+workflow call keeps `--dir "<configRoot>"`. No unregistered raw/native task worktrees
+are permitted in schema 2. No permission-error fallback to
+the dirty original, no config alias rewrites, and no automatic `.env` or
+untracked-file copying. If dirty content is required input, the user decides
+its transport before setup; do not claim the committed baseline includes it.
+
+Run the project's relevant baseline checks in that source worktree. The allocator
+supports one binding per workflow/change/repo. Run same-repo tasks serially until
+task-level bindings exist. Source commits stay there; workflow records stay at workflow.root.
+Integrate the verified source branch per onto-close, not the records history.
+
+After terminal state and source integration, with removal authorized:
+
+```sh
+homonto worktree remove <name> --workflow onto --repo <alias> --yes
+```
+
+Removal keeps the branch and refuses dirty, unowned, active, or unintegrated
+worktrees. Report failures without forcing removal or pruning around the registry.
+
+## Legacy schema 0/1 combined parallel
+
+The existing combined onto workflow retains raw task worktrees for parallel
+disjoint-file tasks only under all five conditions in `subagent-protocol.md`.
+Never downgrade configuration or use this path to evade a denial or registered
+allocation failure. Schema 2 must use the registered protocol above.
+
+The coordinator keeps one authoritative combined change checkout as configRoot.
+Inspect that checkout and each planned path before writes; verify the task branch
+and destination are unused. From the coordinator checkout, create each task tree
+from an explicit committed change-branch base:
+
+```sh
+git worktree add -b "<taskBranch>" "<taskPath>" "<baseCommit>"
+git worktree list
+```
+
+Record each exact task path, branch, base, and assigned file set before dispatch.
+Run baseline checks there without copying `.env` or untracked input automatically.
+The coordinator owns creation/removal; implementers never allocate their own
+trees or edit the copied `tasks.md`, `plan.md`, or workflow state. Every workflow
+call retains `--dir "<configRoot>"`, never a task worktree as its state owner.
+
+Verify returned source commits, then join them into the coordinator's change
+branch in plan order. Perform every checkoff and bookkeeping commit serially
+after the joins; run final review only after the last join. Verify the integrated
+candidate before continuing to workflow verification and close. Partial joins
+are recorded and resumed, never reset or replayed blindly.
+
+After the task commits are integrated, remove only the exact owned task tree,
+with removal authorized and its status clean including untracked/ignored files:
+
+```sh
+git worktree remove "<taskPath>"
+```
+
+Keep branches unless their deletion is separately authorized. Never force-remove,
+prune around a refusal, clean user work automatically, or fall back to another
+tool after a denial. The change's main isolation tree stays until close/integration.

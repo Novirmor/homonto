@@ -34,13 +34,13 @@ only this file carries the checkbox.
 
 - Checkbox syntax exactly `- [ ]` / `- [x]` (the phase-derivation table
   greps it). A deliberately deferred task uses `- [x] N.N DEFERRED to
-  close: <reason>` — checked, with the deferral stated. Close is the only
+  close: <reason> [trace #K]` — checked, with the deferral stated. Close is the only
   deferral target (build's exit and verify's entry recognize nothing
   else). **Only non-runtime work may be deferred** (bookkeeping, file
   moves, doc stamps — anything whose behavior verify would need to
   demonstrate must be built before verify). When close executes a
   deferred task it rewrites the line to
-  `- [x] N.N (deferred, done at close YYYY-MM-DD): <desc>` — that rewrite
+  `- [x] N.N (deferred, done at close YYYY-MM-DD): <desc> [trace #K]` — that rewrite
   is what the pre-archive lint's "no unresolved markers" check reads.
 - Number tasks `<area>.<n>`; keep one outcome per task.
 - Every task carries one unique positive `[trace #N]` marker. The dotted ID is
@@ -48,10 +48,12 @@ only this file carries the checkbox.
   `onto evidence record --task N` to that task. Legacy `- [ ] #N …` items still
   parse, but do not add new ones.
 - **The list is live**: work discovered during build is appended as
-  `- [ ] N.M (discovered <date>): <task>` — appended BEFORE its code is
+  `- [ ] N.M (discovered <date>): <task> [trace #K]` — appended BEFORE its code is
   written, checked off when its commit lands. Never renumber, reorder, or
   delete existing tasks; a task made unnecessary is checked as
-  `- [x] N.N SUPERSEDED: <reason>`. A fresh session resumes from the first
+  `- [x] N.N SUPERSEDED: <reason> [trace #K]`. A fresh session resumes from the first
   unchecked task, so the checkboxes must describe reality at every commit.
 - Every change ends with a Validation area — a change that can't state its
   own proof isn't ready to build.
+  Never insert new work before an existing validation task. Append discovered
+  work, then append fresh final validation with new stable IDs when needed.

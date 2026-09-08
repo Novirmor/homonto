@@ -1,8 +1,8 @@
 #!/bin/sh
 # Suite: h-surface — the h GitHub-intake framework applied alone: transitive
 # onto/to installation, command and skill projection, rendered worker
-# permissions (edit/bash/web/task denied), the shared primary's network
-# denial, and both binaries' gates accepting an applied [frameworks.h].
+# permissions (edit/bash/task denied, web allowed), trusted workspace execution,
+# and both binaries' gates accepting an applied [frameworks.h].
 set -eu
 SUITE=h-surface
 . "$(dirname "$0")/lib.sh"
@@ -55,32 +55,53 @@ for c in h-spike-issue h-resolve-issue h-review-pr h-continue-pr h-review-batch;
 done
 ok "h commands project; onto and to materialize transitively"
 
-log "read-only workers render the full denial set"
-for worker in h-spike h-review; do
+log "read-only workers allow supporting web research without write or shell access"
+for worker in h-spike h-review onto-explorer onto-reviewer onto-skeptic to-explorer to-reviewer to-skeptic; do
 	RVAR="$W/.homonto/catalog/subagents/$worker.opencode.md"
 	in_file "$RVAR" '  edit: deny'
 	in_file "$RVAR" '  bash: deny'
-	in_file "$RVAR" '  webfetch: deny'
-	in_file "$RVAR" '  websearch: deny'
+	in_file "$RVAR" '  webfetch: allow'
+	in_file "$RVAR" '  websearch: allow'
 	in_file "$RVAR" '  task: deny'
 	in_file "$RVAR" '  question: deny'
 	is_link "$W/.opencode/agent/$worker.md"; is_file "$W/.opencode/agent/$worker.md"
 done
-# The coordinator renders as the shared primary and denies open-web access:
-# GitHub flows only through the approved gh surface.
+# The coordinator owns GitHub; all agents may use supporting web research.
 PVAR="$W/.homonto/catalog/subagents/homonto.opencode.md"
 in_file "$PVAR" 'mode: primary'
-in_file "$PVAR" '  webfetch: deny'
-in_file "$PVAR" '  websearch: deny'
+in_file "$PVAR" '  webfetch: allow'
+in_file "$PVAR" '  websearch: allow'
 # The primary carries a bash allowlist, so the composition guards must follow
-# its allows (compound commands re-ask, ADR 0047) and the gate-skipping
+# its allows (composition-bearing requests re-ask, ADR 0051) and the gate-skipping
 # subcommands must be denied outright. in_file regex-matches (BRE): escape
 # the literal asterisks.
 in_file "$PVAR" '"\*;\*": ask'
 in_file "$PVAR" '"onto bypass\*": deny'
 in_file "$PVAR" '"to bypass\*": deny'
 is_link "$W/.opencode/agent/homonto.md"; is_file "$W/.opencode/agent/homonto.md"
-ok "worker denials enforced; primary network denied"
+for agent in homonto onto-implementer to-implementer; do
+	RVAR="$W/.homonto/catalog/subagents/$agent.opencode.md"
+	in_file "$RVAR" '  webfetch: allow'
+	in_file "$RVAR" '  websearch: allow'
+	in_file "$RVAR" '"\*": ask'
+	in_file "$RVAR" '"\*;\*": ask'
+	for command in 'go test' 'go build' 'go vet' 'go fmt' gofmt 'npm test' 'npm run' 'pnpm run' 'yarn run' 'bun run' pytest 'python -m pytest' 'python3 -m pytest' 'cargo test' 'cargo check' 'cargo build' 'cargo fmt' 'cargo clippy' make 'cmake --build' ctest; do
+		in_file "$RVAR" "\"$command \\*\": allow"
+	done
+	if [ "$agent" != homonto ]; then
+		in_file "$RVAR" '"git diff \*": allow'
+		in_file "$RVAR" '"onto \*": deny'
+		in_file "$RVAR" '"to \*": deny'
+		in_file "$RVAR" '"homonto \*": deny'
+		in_file "$RVAR" '"gh \*": deny'
+		in_file "$RVAR" '"git push \*": deny'
+		in_file "$RVAR" '"git branch \*": deny'
+		in_file "$RVAR" '"git checkout \*": deny'
+		in_file "$RVAR" '  task: deny'
+		in_file "$RVAR" '  question: deny'
+	fi
+done
+ok "web and workspace verification allowed; worker write and publishing boundaries retained"
 
 log "an applied h satisfies both workflow gates"
 "$ONTO" init >/dev/null

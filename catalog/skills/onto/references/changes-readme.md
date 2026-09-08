@@ -16,7 +16,8 @@ Active and archived onto change workspaces.
   `archived: false`. A directory with neither artifact is not a change.
 - **Archived change**: under `<workflow-root>/changes/archive/YYYY-MM-DD-<name>/`,
   `onto-state.yaml` `archived: true`. Archives are history — never edited, with
-  the single exception of `ship.md`.
+  only sanctioned additions are neutral `ship.md` and the binary-owned one-way
+  integration receipt. Per-repo PR bodies live in session tmp, not the archive.
 - **Abandoned change**: remains directly under `<workflow-root>/changes/<name>/` with
   `abandoned: true`. Discovery excludes it, but it is not a successful archive.
 

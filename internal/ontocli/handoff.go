@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -62,7 +61,7 @@ func handoffCmd() *cobra.Command {
 			if !ontostate.ValidPhase(st.Phase) {
 				return fmt.Errorf("onto handoff: %q has an unknown phase %q; refusing to build a handoff path from it", name, st.Phase)
 			}
-			pack, err := buildHandoff(name, changeDir, st)
+			pack, err := buildHandoff(dir, name, changeDir, st)
 			if err != nil {
 				return err
 			}
@@ -126,7 +125,7 @@ type textPack struct {
 	artifactsHash string
 }
 
-func buildHandoff(name, changeDir string, st ontostate.State) (*textPack, error) {
+func buildHandoff(root, name, changeDir string, st ontostate.State) (*textPack, error) {
 	var b strings.Builder
 	fmt.Fprintf(&b, "# onto handoff: %s\n\n", name)
 	fmt.Fprintf(&b, "- **id**: %s\n- **workflow**: %s\n- **phase**: %s\n", nonEmpty(st.ID, "(none)"), nonEmpty(st.Workflow, "full"), st.Phase)
@@ -137,7 +136,11 @@ func buildHandoff(name, changeDir string, st ontostate.State) (*textPack, error)
 		fmt.Fprintf(&b, "- **base_ref**: %s\n", st.BaseRef)
 	}
 
-	root := filepath.Clean(filepath.Join(changeDir, "..", "..", ".."))
+	for _, alias := range st.Repos {
+		if base, ok := st.RepoBases[alias]; ok {
+			fmt.Fprintf(&b, "- **repo %s**: base %s, target %s\n", alias, base.BaseRef, base.BaseBranch)
+		}
+	}
 	gates := addInvalidReceiptGate(root, changeDir, name, st, pendingGates(name, st))
 	if len(gates) > 0 {
 		b.WriteString("\n## Pending decision\n\n")
@@ -179,6 +182,10 @@ func buildHandoff(name, changeDir string, st ontostate.State) (*textPack, error)
 // deps, aliases, commits, gate IDs with argv templates, artifact digests, and
 // a safe next argv. Free-form state stays out by construction.
 func buildRecovery(cmd *cobra.Command, root, name, changeDir string, st ontostate.State) (handoff.Recovery, error) {
+	root, err := filepath.Abs(root)
+	if err != nil {
+		return handoff.Recovery{}, err
+	}
 	ops := opid.New()
 	rec := handoff.Recovery{
 		SchemaVersion: handoff.SchemaVersion,
@@ -192,6 +199,25 @@ func buildRecovery(cmd *cobra.Command, root, name, changeDir string, st ontostat
 		BaseRef:       st.BaseRef,
 		HeadCommit:    headCommit(cmd, root),
 	}
+	if st.RepoMode == "explicit" {
+		dirs, err := stateSourceDirs(root, st)
+		if err != nil {
+			return handoff.Recovery{}, err
+		}
+		rec.HeadCommit = ""
+		rec.Sources = make(map[string]handoff.Source, len(dirs))
+		for alias, dir := range dirs {
+			head, err := resolveCommit(dir, "HEAD")
+			if err != nil {
+				return handoff.Recovery{}, err
+			}
+			base := st.RepoBases[alias]
+			rec.Sources[alias] = handoff.Source{Dir: dir, HeadCommit: head, BaseRef: base.BaseRef, BaseBranch: base.BaseBranch, GitCommonDir: base.GitCommonDir, VerifiedHead: st.Verify.Heads[alias]}
+			if len(dirs) == 1 {
+				rec.HeadCommit, rec.BaseRef = head, base.BaseRef
+			}
+		}
+	}
 	handoff.Stamp(&rec, ops.Now())
 	if _, err := st.DerivePhase(); err == nil {
 		derived := ontostate.DeriveWorkingPhase(changeDir, st)
@@ -199,10 +225,17 @@ func buildRecovery(cmd *cobra.Command, root, name, changeDir string, st ontostat
 		rec.PhaseMismatch = derived != st.Phase
 	}
 	for _, g := range addInvalidReceiptGate(root, changeDir, name, st, pendingGates(name, st)) {
-		rec.PendingGates = append(rec.PendingGates, handoff.GateRef{ID: g.ID, Header: g.Header, SetArgv: g.SetArgv})
+		argv := append([]string(nil), g.SetArgv...)
+		if len(argv) > 0 {
+			argv = append(argv, "--dir", root)
+		}
+		rec.PendingGates = append(rec.PendingGates, handoff.GateRef{ID: g.ID, Header: g.Header, SetArgv: argv})
 	}
 	rec.Artifacts = digestArtifacts(changeDir)
 	rec.NextArgv = nextArgv(name, st, rec.PendingGates)
+	if len(rec.PendingGates) == 0 || len(rec.PendingGates[0].SetArgv) == 0 {
+		rec.NextArgv = append(rec.NextArgv, "--dir", root)
+	}
 	return rec, nil
 }
 
@@ -265,13 +298,7 @@ func nextArgv(name string, st ontostate.State, gates []handoff.GateRef) []string
 // git is absent or the root is not a repository — the envelope omits the
 // field rather than failing the pack.
 func headCommit(cmd *cobra.Command, root string) string {
-	c := exec.Command("git", "-C", root, "rev-parse", "HEAD")
-	c.Stderr = nil
-	out, err := c.Output()
-	if err != nil {
-		return ""
-	}
-	return strings.TrimSpace(string(out))
+	return headCommitAt(cmd, root)
 }
 
 func nonEmpty(v, fallback string) string {

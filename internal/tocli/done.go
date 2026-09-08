@@ -71,22 +71,21 @@ func runDone(cmd *cobra.Command, root, name string, verified bool, evidence stri
 	default:
 		return fmt.Errorf("to done: change %q is %s, which is terminal", name, st.Phase)
 	}
-	// Cross-repo changes are terminal only when every selected worktree is
-	// determinably clean. The config repo is implicit; unscoped legacy changes
-	// preserve to's historical git-blind completion behavior.
-	if err := requireCleanScope(root, name, st.Repos); err != nil {
+	// Scoped changes audit execution checkouts, not dirty original sources or
+	// independent records. Unscoped legacy changes remain git-blind.
+	if err := requireCleanScope(root, st); err != nil {
 		return fmt.Errorf("to done: cannot finish cross-repo change %q: %w", name, err)
 	}
 
 	var dest string
 	if completed {
-		dest, err = completeArchive(root, st)
+		dest, err = completeArchive(cmd.Context(), root, st)
 	} else {
 		st.Phase = tostate.PhaseDone
 		st.Verified = true
 		st.Evidence = evidence
 		st.Finished = todayFn()
-		dest, err = finishAndArchive(root, st)
+		dest, err = finishAndArchive(cmd.Context(), root, st)
 	}
 	if err != nil {
 		return fmt.Errorf("to done: %w", err)
@@ -94,7 +93,7 @@ func runDone(cmd *cobra.Command, root, name string, verified bool, evidence stri
 
 	if jsonMode {
 		return printJSON(cmd, map[string]any{
-			"change": name, "phase": tostate.PhaseDone, "verified": true, "archived": dest,
+			"change": name, "phase": tostate.PhaseDone, "verified": st.Verified, "archived": dest,
 		})
 	}
 	if completed {

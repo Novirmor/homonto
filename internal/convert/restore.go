@@ -5,8 +5,11 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"time"
 
+	"github.com/noviopenworks/homonto/internal/fsutil"
 	"github.com/noviopenworks/homonto/internal/opid"
+	"github.com/noviopenworks/homonto/internal/workcli"
 )
 
 // tryRestore converts back to the immediately-prior workflow when nothing
@@ -52,6 +55,16 @@ func tryRestore(spec directionSpec, root, wfRoot, srcDir, tgtDir, source, target
 	} else if !os.IsNotExist(err) {
 		return false, "", err
 	}
+	if err := preconditions(spec, root, wfRoot, srcDir, tgtDir, source, target); err != nil {
+		return false, "", err
+	}
+	inverse := specs[Promote]
+	if spec.name == Promote {
+		inverse = specs[Demote]
+	}
+	if err := validateSource(inverse, snap, target); err != nil {
+		return false, "", err
+	}
 
 	// Stage the restore so every intermediate state lives under one
 	// resumable directory.
@@ -73,6 +86,7 @@ func tryRestore(spec directionSpec, root, wfRoot, srcDir, tgtDir, source, target
 		OperationID:       restoreID,
 		SourceOperationID: e.OperationID,
 		SourceDigest:      e.From.Digest,
+		At:                time.Now().UTC().Format(time.RFC3339Nano),
 	}
 	data, err := json.MarshalIndent(m, "", "  ")
 	if err != nil {
@@ -113,6 +127,13 @@ func finishRestore(spec directionSpec, stg string, m manifest, lin lineage, e ev
 		if _, err := os.Lstat(work); err == nil {
 			return "", fmt.Errorf("%s: interrupted restore staging is inconsistent; inspect %s manually", spec.name, stg)
 		}
+		if digest, err := digestActive(srcDir); err != nil || digest != e.To.Digest {
+			return "", fmt.Errorf("%s: restore source changed or its name was reused; refusing to move it", spec.name)
+		}
+		snapshot := filepath.Join(srcDir, controlDir, snapshotsDir, m.SourceOperationID, spec.to.workflow)
+		if _, digest, err := snapshotTree(snapshot); err != nil || digest != m.SourceDigest {
+			return "", fmt.Errorf("%s: restore source snapshot does not match its manifest; refusing to move it", spec.name)
+		}
 		if err := os.Rename(srcDir, work); err != nil {
 			return "", fmt.Errorf("%s: staging the source for restore: %w", spec.name, err)
 		}
@@ -132,9 +153,15 @@ func finishRestore(spec directionSpec, stg string, m manifest, lin lineage, e ev
 	if err := os.MkdirAll(restored, 0o755); err != nil {
 		return "", err
 	}
-	snap := filepath.Join(work, controlDir, snapshotsDir, m.SourceOperationID, spec.to.workflow)
-	if err := moveContents(snap, restored); err != nil {
-		return "", fmt.Errorf("%s: restoring the snapshot: %w", spec.name, err)
+	for _, holder := range []string{work, restored} {
+		snap := filepath.Join(holder, controlDir, snapshotsDir, m.SourceOperationID, spec.to.workflow)
+		if _, err := os.Lstat(snap); err == nil {
+			if err := moveContents(snap, restored); err != nil {
+				return "", fmt.Errorf("%s: restoring the snapshot: %w", spec.name, err)
+			}
+		} else if !os.IsNotExist(err) {
+			return "", err
+		}
 	}
 
 	// 3. The control plane follows, flat, with a restore event appended.
@@ -159,12 +186,18 @@ func finishRestore(spec directionSpec, stg string, m manifest, lin lineage, e ev
 		OperationID:    m.OperationID,
 		Direction:      spec.name,
 		Restored:       true,
-		At:             e.At,
+		At:             m.At,
 		From:           e.To,
 		To:             e.From,
 		Repos:          e.Repos,
 		OntoID:         e.OntoID,
 		TargetIdentity: e.TargetIdentity,
+	}
+	updated.Events = nil
+	for _, id := range lin.Events {
+		if id != re.OperationID {
+			updated.Events = append(updated.Events, id)
+		}
 	}
 	updated.Events = append(updated.Events, re.OperationID)
 	if err := writeJSON(filepath.Join(ctl, lineageFile), updated); err != nil {
@@ -185,12 +218,27 @@ func finishRestore(spec directionSpec, stg string, m manifest, lin lineage, e ev
 }
 
 func authenticateRestore(stg string, m manifest, e event) error {
+	if err := validateRealTree(stg); err != nil {
+		return err
+	}
 	if m.SourceOperationID == "" || m.SourceDigest == "" || m.SourceDigest != e.From.Digest {
 		return fmt.Errorf("convert: restore staging %s lacks the expected source digest", stg)
 	}
+	entries, err := os.ReadDir(stg)
+	if err != nil {
+		return err
+	}
+	for _, entry := range entries {
+		if entry.Name() != manifestFile && entry.Name() != "work" && entry.Name() != "restored" {
+			return fmt.Errorf("convert: restore staging %s holds unexpected entry %s", stg, entry.Name())
+		}
+	}
 	work := filepath.Join(stg, "work")
+	if digest, err := digestActive(work); err != nil || digest != e.To.Digest {
+		return fmt.Errorf("convert: restore staging %s changed its consumed source", stg)
+	}
 	snap := filepath.Join(work, controlDir, snapshotsDir, m.SourceOperationID, e.From.Workflow)
-	parts := []string{snap, filepath.Join(stg, "restored")}
+	parts := []string{snap, filepath.Join(stg, "restored"), filepath.Join(stg, "restored", controlDir, snapshotsDir, m.SourceOperationID, e.From.Workflow)}
 	combined := map[string]string{}
 	for _, part := range parts {
 		if _, err := os.Lstat(part); os.IsNotExist(err) {
@@ -229,6 +277,9 @@ func resumeRestore(spec directionSpec, root, wfRoot, srcDir, source, target stri
 	}
 	for _, ent := range entries {
 		stg := filepath.Join(base, ent.Name())
+		if err := workcli.ValidateWorkflowPath(root, stg); err != nil {
+			return false, "", err
+		}
 		m, ok, err := readManifest(spec, stg)
 		if err != nil || !ok {
 			return false, "", err
@@ -236,25 +287,43 @@ func resumeRestore(spec directionSpec, root, wfRoot, srcDir, source, target stri
 		if m.Kind != "restore" || m.Direction != spec.name || m.Source != source || m.Target != target {
 			continue
 		}
+		if err := validateRealTree(stg); err != nil {
+			return false, "", err
+		}
 		work := filepath.Join(stg, "work")
+		history := work
 		if _, err := os.Lstat(work); os.IsNotExist(err) {
 			if !onlyManifest(stg) {
 				return false, "", fmt.Errorf("%s: interrupted restore %s has no source and unexpected entries; inspect manually", spec.name, stg)
 			}
-			if err := os.RemoveAll(stg); err != nil {
-				return false, "", err
-			}
-			return false, "", nil
+			history = srcDir
 		} else if err != nil {
 			return false, "", err
 		}
-		lin, ok, err := loadLineage(work)
+		lin, ok, err := loadLineage(history)
+		if err == nil && !ok {
+			lin, ok, err = loadLineage(filepath.Join(stg, "restored"))
+		}
 		if err != nil || !ok {
 			return false, "", fmt.Errorf("%s: interrupted restore %s lost its history; inspect manually", spec.name, stg)
 		}
-		e, ok, err := eventByID(work, m.SourceOperationID)
+		e, ok, err := eventByID(history, m.SourceOperationID)
+		if err == nil && !ok {
+			e, ok, err = eventByID(filepath.Join(stg, "restored"), m.SourceOperationID)
+		}
 		if err != nil || !ok {
 			return false, "", fmt.Errorf("%s: interrupted restore %s lost its receipt; inspect manually", spec.name, stg)
+		}
+		if e.OperationID != m.SourceOperationID || e.To.Workflow != spec.from.workflow || e.To.Name != source || e.From.Workflow != spec.to.workflow || e.From.Name != target {
+			return false, "", fmt.Errorf("%s: restore receipt does not match its manifest", spec.name)
+		}
+		// Older interrupted manifests did not record restore time. Mint it once
+		// before resuming, rather than copying the original conversion time.
+		if m.At == "" {
+			m.At = time.Now().UTC().Format(time.RFC3339Nano)
+			if err := writeJSON(filepath.Join(stg, manifestFile), m); err != nil {
+				return false, "", err
+			}
 		}
 		created, err := finishRestore(spec, stg, m, lin, e, wfRoot)
 		if err != nil {
@@ -277,5 +346,5 @@ func writeJSON(path string, v any) error {
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(path, data, 0o644)
+	return fsutil.WriteControlPlane(path, data, 0o644)
 }

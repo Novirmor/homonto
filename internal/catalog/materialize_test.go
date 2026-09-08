@@ -7,10 +7,12 @@ import (
 	"path/filepath"
 	"slices"
 	"sort"
+	"strings"
 	"testing"
 	"testing/fstest"
 
 	embedded "github.com/noviopenworks/homonto/catalog"
+	"github.com/noviopenworks/homonto/internal/agentfm"
 )
 
 func matFS() fstest.MapFS {
@@ -35,7 +37,7 @@ func TestMaterializeWritesNestedContent(t *testing.T) {
 		t.Fatalf("load: %v", err)
 	}
 	dst := t.TempDir()
-	if err := c.Materialize(dst, []string{"brainstorming"}, "none", "none", ""); err != nil {
+	if err := c.Materialize(dst, []string{"brainstorming"}, "none", "none", "", nil); err != nil {
 		t.Fatalf("materialize: %v", err)
 	}
 	if b, _ := os.ReadFile(filepath.Join(dst, "brainstorming", "SKILL.md")); string(b) != "top" {
@@ -56,7 +58,7 @@ func TestMaterializeRemovesStaleOnUpgrade(t *testing.T) {
 	os.MkdirAll(filepath.Join(dst, "brainstorming"), 0o755)
 	os.WriteFile(filepath.Join(dst, "brainstorming", "STALE.md"), []byte("old"), 0o644)
 
-	if err := c.Materialize(dst, []string{"brainstorming"}, "none", "none", ""); err != nil {
+	if err := c.Materialize(dst, []string{"brainstorming"}, "none", "none", "", nil); err != nil {
 		t.Fatalf("materialize: %v", err)
 	}
 	if _, err := os.Stat(filepath.Join(dst, "brainstorming", "STALE.md")); !os.IsNotExist(err) {
@@ -66,7 +68,7 @@ func TestMaterializeRemovesStaleOnUpgrade(t *testing.T) {
 
 func TestMaterializeUnknownSkillErrors(t *testing.T) {
 	c, _ := Load(matFS())
-	if err := c.Materialize(t.TempDir(), []string{"nope"}, "none", "none", ""); err == nil {
+	if err := c.Materialize(t.TempDir(), []string{"nope"}, "none", "none", "", nil); err == nil {
 		t.Fatal("expected error for unknown skill")
 	}
 }
@@ -182,6 +184,52 @@ ready = "subagents/ready.md"
 	}
 	if _, err := os.Stat(filepath.Join(dst, "ready.md")); !os.IsNotExist(err) {
 		t.Errorf("valid earlier agent was published before later validation failed: %v", err)
+	}
+}
+
+func TestNativeCatalogExportsValidateNamesBeforePublishing(t *testing.T) {
+	for _, alias := range []string{"nav", "audit"} {
+		t.Run(alias, func(t *testing.T) {
+			m := matFS()
+			m["frameworks/sp/framework.toml"] = &fstest.MapFile{Data: []byte("name = 'sp'\nversion = '0.1.0'\n[subagents]\nnav = 'subagents/nav.md'\nready = 'subagents/ready.md'\n")}
+			original := []byte("---\r\nname: wrong-name\r\npermission:\r\n  edit: deny\r\n---\r\nauthor prompt\r\n")
+			m["subagents/nav.md"] = &fstest.MapFile{Data: original}
+			m["subagents/ready.md"] = &fstest.MapFile{Data: []byte("---\nname: ready\n---\nnew ready\n")}
+			c, err := Load(m)
+			if err != nil {
+				t.Fatal(err)
+			}
+			var contexts map[string]agentfm.RenderContext
+			if alias != "nav" {
+				contexts = map[string]agentfm.RenderContext{"opencode": {Names: map[string]string{"nav": alias}}}
+			}
+			if _, err := c.SubagentFiles("nav", contexts); err == nil || !strings.Contains(err.Error(), "frontmatter name") {
+				t.Fatalf("native export validation = %v", err)
+			}
+			dst := t.TempDir()
+			if err := os.WriteFile(filepath.Join(dst, "ready.md"), []byte("old ready\n"), 0o644); err != nil {
+				t.Fatal(err)
+			}
+			if err := c.MaterializeSubagents(dst, []string{"ready", "nav"}, contexts); err == nil || !strings.Contains(err.Error(), alias) {
+				t.Fatalf("native publication validation = %v", err)
+			}
+			if got, err := os.ReadFile(filepath.Join(dst, "ready.md")); err != nil || string(got) != "old ready\n" {
+				t.Fatalf("earlier export changed before validation: %q, %v", got, err)
+			}
+			if _, err := os.Stat(filepath.Join(dst, "nav.md")); !os.IsNotExist(err) {
+				t.Fatalf("bad native export published: %v", err)
+			}
+			if !bytes.Equal(m["subagents/nav.md"].Data, original) {
+				t.Fatal("validation mutated native source")
+			}
+			m["subagents/nav.md"].Data = []byte(strings.Replace(string(original), "wrong-name", alias, 1))
+			if err := c.MaterializeSubagents(dst, []string{"nav"}, contexts); err != nil {
+				t.Fatal(err)
+			}
+			if got, err := os.ReadFile(filepath.Join(dst, "nav.md")); err != nil || !bytes.Equal(got, m["subagents/nav.md"].Data) {
+				t.Fatalf("matching native name must remain verbatim: %q, %v", got, err)
+			}
+		})
 	}
 }
 

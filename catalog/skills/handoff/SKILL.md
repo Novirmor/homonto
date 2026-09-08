@@ -7,6 +7,19 @@ metadata:
 
 # handoff
 
+When installed, follow the shared [workspace and dirty-work policy](../homonto/references/workspace-policy.md).
+Carry exact roots and the existing dirt decision into the handoff; inspect before
+writing it, and do not re-ask an unchanged preserve/isolate/cleanup choice.
+
+Standalone fallback (the shared homonto skill is optional): use the host cwd,
+not a guessed parent repository. Read available configuration to identify roots;
+if roots cannot be established, return the handoff in conversation without writes.
+Before any authorized file write, inspect the destination and its Git status,
+staged/unstaged diffs and untracked paths. Preserve user work; ask once about
+conflicting exact paths if no existing decision covers them. Never initialize
+Git, automatically stash/reset/delete/commit dirt, or copy `.env` or secrets.
+Do not allocate isolation or mutate workflow state in this fallback.
+
 Write a handoff document so a fresh agent with no memory of this conversation
 can pick up the work and keep going. Save it under the declared workspace tmp
 directory when `references/tmp.md` names one, as

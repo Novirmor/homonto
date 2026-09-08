@@ -7,7 +7,8 @@ description: onto phase 3 — plan and build. Use when an active change has phas
 
 Turn the confirmed design into a plan, then the plan into committed code —
 one small, verified task at a time.
-Apply the dispatcher's shared autonomous workflow policy throughout.
+Apply the shared [autonomous workflow policy](../homonto/references/autonomy.md),
+including workspace roots and dirty-work decisions, even on direct entry.
 
 ## Entry check
 
@@ -30,8 +31,10 @@ Apply the dispatcher's shared autonomous workflow policy throughout.
   FIRST (falling back to `git status` on an old binary). Dirt classified
   `source` or `own` is usually an interrupted task's partial work —
   reconcile it before continuing per the dispatcher's
-  `onto/references/dirty-workspace.md`: reset it, or fold it into the
-  unchecked task explicitly (state which in the task's commit); dirt
+   `onto/references/dirty-workspace.md`: preserve it under the existing choice,
+   or ask once for preserve/isolate/cleanup with exact paths if none exists.
+   Never reset partial work automatically. Explicitly include approved task input;
+   dirt
   classified `change` belongs to another change — leave it. Never build on
   top of partial edits unknowingly — the same rule the subagent protocol
   enforces for fresh agents. Then find the first unchecked task in
@@ -68,9 +71,9 @@ configuration without asking:
 - `onto set tdd-mode <name> tdd` for testable behavior; use `direct` for
   content, configuration values, and documentation-only deliverables
 
-Isolation was chosen before entering build. If it is unset on a legacy change,
-derive it now: `worktree` for unrelated dirt or concurrent work, otherwise
-`branch`. Build work must never run unisolated.
+Isolation was chosen before entering build. If unset, resolve dirty work under
+the shared policy first; then choose worktree isolation under the applicable
+config-mode protocol, or a safe source branch. Build work must never run unisolated.
 
 Pause only when the user explicitly asks to stop after the plan. In that case,
 run `onto set build-pause <name> plan-ready` and end the invocation before
@@ -78,15 +81,17 @@ execution. Otherwise never set the pause. Record the selected config and its
 basis in `notes.md`; record any explicit directive verbatim with `onto set
 directive`.
 
-Create the isolation before the first task (for `isolation: worktree`, follow
-`references/worktree-protocol.md` — creation, env/untracked-file copying, clean
-baseline, and teardown) — but check the tree first:
-run `git status`. The workspace docs should already be committed (each
-phase commits at exit); if they aren't, commit them now. Unrelated
-uncommitted changes force `isolation: worktree`; never stash, discard, or carry
-a stranger's dirty state onto the change branch. Then `git checkout -b
-<type>/YYYYMMDD/<change-name>`
-(or the worktree equivalent). Type prefix: `feature` for full,
+Validate and reuse the isolation created during open/setup using `references/worktree-protocol.md`.
+Do not postpone schema-2 allocation until build: it must follow `new` before any
+records/source commit. If setup is incomplete, repair it without retargeting the
+frozen base; an advanced target is a blocker, not permission to recreate state.
+Use that protocol
+for schema 2 registered worktrees or legacy combined isolation. Inspect before writes; unrelated dirt requires the
+shared preserve/isolate/cleanup decision, not an automatic worktree or commit.
+Checkpoint owned Markdown records in managed mode; retain named manual records
+commits in existing mode. Never copy `.env` or untracked input automatically.
+For branch isolation, create the source branch `<type>/YYYYMMDD/<change-name>`
+only in its safe selected execution root. Type prefix: `feature` for full,
 `fix`/`tweak` for presets; an upgraded preset keeps its original branch
 (the proposal's upgrade annotation records the lifecycle, not the branch
 name).
@@ -100,16 +105,24 @@ task, coordinator verifies commits and checkoffs against the repository
 the final task. If no real dispatch capability exists, fall back to
 `build_mode: direct`, record it, announce it.
 
-> **Parallel implementers are a supported option, not a theoretical one.**
-> When the next tasks touch **disjoint file sets** and `isolation` is
-> `worktree`, run their implementers **at the same time** — one worktree per
-> implementer, coordinator merging in plan order and doing every checkoff
-> itself, serially, after the joins. This is onto's biggest available
-> speedup on a wide change and the reason worktree isolation exists.
-> It is also the one place a subagent can corrupt the tree, so it is
-> conditional: `references/subagent-protocol.md` carries the five conditions,
-> and `references/worktree-protocol.md` the mechanics. Meet every condition
-> or stay serial — the shared-file race is silent.
+Substantial workflow-record tasks (specs, ADRs, guides, proposals, plans) use an
+explicit `Owner: coordinator` lane, even in subagent mode. The coordinator
+implements and verifies those named records serially; read-only specialists may
+review them. Never dispatch records edits to a source-only implementer. Split a
+mixed source/records task into linked tasks with distinct owners and roots.
+
+**Schema 2:** same-repo implementation tasks are serial: the allocator supports
+one binding per workflow/change/repo, not task-level bindings. Disjoint files do
+not permit unregistered raw/native task worktrees, even with existing history.
+
+**Legacy schema 0/1 combined:** parallel implementers remain supported for
+disjoint-file tasks with `build_mode: subagent` and `isolation: worktree`, under
+all five conditions in `references/subagent-protocol.md`: a worktree per worker,
+no worker task/state writes, coordinator joins in plan order, serial coordinator
+bookkeeping after joins, and final review after the last join. The coordinator's
+combined change checkout remains the sole state owner. Never downgrade or use
+legacy raw worktrees around a denial or failed schema 2 binding. Neither mode
+automatically copies `.env` or dirty input. Read-only specialists may still fan out.
 
 **`build_mode: direct`** → for each task, in order:
 
@@ -119,10 +132,12 @@ the final task. If no real dispatch capability exists, fall back to
    `references/tdd-protocol.md` — the discipline is in its defenses against
    "just this once", not the one-line rule.
    **`tdd: direct`** — implement, then run the task's stated verification.
-2. After verification passes: check the task off in `tasks.md` — the only
-   file carrying completion state — then commit; one commit per task, message
-   reflects design intent. Never batch tasks into one commit; never leave
-   checked-off tasks uncommitted.
+2. After verification passes, commit the assigned source/test files in their
+   source repo and check off `tasks.md`. In managed mode checkpoint the checkoff
+   with `homonto workspace checkpoint --path changes/<name> --message "Record task completion"`.
+   Existing combined mode retains one source-plus-checkoff commit per task;
+   separate existing records get their own named commit. Never batch tasks or
+   leave completed bookkeeping unrecorded.
 
 **The task list is live state — append before doing, check off at landing.**
 The checkboxes are the change's ground truth; a fresh session resumes from
@@ -135,9 +150,15 @@ gets lost. Four rules, no exceptions:
   block in `plan.md`, in the same edit, **before** any of its code is written.
   Append-then-do, never do-then-maybe-note. A few lines inside the current
   task's stated scope belong to that task; anything more is a new task.
-- **Check off at landing, in the task's own commit.** The `tasks.md` checkoff
-  rides the commit that completes the task — never before the commit, never
-  batched afterwards. `plan.md` has no checkbox to update.
+- **Check off at landing.** In existing combined direct mode, the `tasks.md`
+  checkoff rides the task's implementation commit. In subagent mode, verify the returned source
+   commit, then check off in a separate coordinator-owned bookkeeping commit
+   before the next dispatch. In managed mode use a records checkpoint instead
+   of that manual bookkeeping commit; never put workflow records in source commits.
+   For a legacy parallel batch, joins finish first, then the coordinator records
+   every checkoff and bookkeeping commit serially before the next dispatch.
+  Never check off unverified work or defer bookkeeping past the next task.
+  `plan.md` has no checkbox to update.
 - **Never renumber, reorder, or delete tasks.** A task that becomes
   unnecessary is checked with a one-line reason
    (`- [x] N.N SUPERSEDED: <why> [trace #K]`); appended tasks take the next
@@ -165,6 +186,9 @@ task — through the Task tool; send several independent read-only tasks in one
 turn so OpenCode runs them as parallel child sessions. The reviews then
 proceed in parallel while you implement the next task. Tasks that share files
 stay serial (one commit each, in order).
+
+Legacy parallel-batch reviews wait for the last join and inspect the integrated
+candidate; the serial review timing above does not override that fifth condition.
 
 A diff worth more than one opinion gets **several reviewers at once, one per
 lens** (correctness, security, contract/scope, clarity) rather than one
@@ -221,9 +245,10 @@ cost, or another user-owned constraint.
 - [ ] Every `tasks.md` item checked (or explicitly marked deferred-to-close
       with the reason **and** a one-line statement of why it is non-runtime
       work — the close lint blocks runtime-behavior deferrals)
-- [ ] One commit per task; working tree clean — including the workspace
-      docs (tasks/plan/notes updates ride their task commits; anything
-       still uncommitted in `<workflow-root>/changes/<name>/` commits now)
+- [ ] One implementation commit per task; in subagent mode, separate
+      coordinator bookkeeping commits are complete in existing mode, or named
+      records checkpoints in managed mode. Selected source execution roots and
+      owned records satisfy their clean gates; preserved dirt is not a waiver.
 - [ ] Project build + test suite run fresh and pass (state the commands and
       results — do not rely on memory)
 - [ ] Decisions recorded via `onto set isolation|build-mode|tdd-mode <name> …`

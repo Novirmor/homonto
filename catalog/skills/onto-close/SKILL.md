@@ -7,7 +7,10 @@ description: onto phase 5 — close. Use when an active change has phase close (
 
 Land the change's knowledge where it lives permanently: living specs, the
 ADR log, and user-facing guides — then archive the workspace.
-Apply the dispatcher's shared autonomous workflow policy throughout.
+Apply the shared [autonomous workflow policy](../homonto/references/autonomy.md),
+including workspace roots and dirty-work decisions, even on direct entry.
+All workflow calls keep `--dir "<configRoot>"`; source commands use selected
+execution roots. Managed records history is never source integration.
 
 ## Entry check
 
@@ -44,7 +47,7 @@ one interruption-prone step (mv + archived flag) is a single commit.
 - Execute any `DEFERRED to close:` tasks from `tasks.md` now (they must be
   non-runtime — bookkeeping, file moves, doc stamps — because verify never
   exercised them). Rewrite each executed line to
-  `- [x] N.N (deferred, done at close YYYY-MM-DD): <desc>` and note the
+  `- [x] N.N (deferred, done at close YYYY-MM-DD): <desc> [trace #K]` and note the
   evidence. If executing one turns out to change runtime behavior, **stop**:
   it should have been built before verify. Route back to build, add a task,
   re-verify — closing unverified runtime behavior is exactly the hole the
@@ -63,15 +66,24 @@ one interruption-prone step (mv + archived flag) is a single commit.
   default to local `merge`. Run `onto set integration <name> merge|pr` now,
   while the workspace is active. Ask only if repository policy is contradictory
   or the choice changes an external commitment.
-- Resolve **the integration branch** separately from `base_ref`. Honor recorded
-  `base_branch`; for a legacy state derive the repository's intended target
-  branch, then run `onto set base-branch <name> <branch>`. `base_ref` remains the
+- Resolve **the integration branch** separately from `base_ref`. In schema 2,
+  inspect each alias's `repo_bases` and validate with
+  `onto set base-branch <name> <branch> --repo <alias> --dir "<configRoot>"`;
+  it cannot retarget an immutable anchor. Honor legacy scalar `base_branch`;
+  if missing, derive the intended source target, then use the scalar setter.
+  Each `base_ref` remains the
   immutable commit used for diff and verification and is never a checkout or PR
   base.
 - Assemble the **close plan**: each workspace delta → its target
   `<workflow-root>/specs/<capability>.md` and the operations it applies; each ADR
   draft → its next number and slug; the guides outcome; the deferred tasks
   executed. This plan is what the gate shows.
+- Identify receivers now. When integration needs a new receiving checkout,
+  prefer `homonto worktree receiver <name> --workflow onto --repo <alias> --json`
+  before archive, recording its identity and absolute path. Do not wait until
+  the active-only allocation window has closed. Already archived recovery uses
+  a validated existing receiver or the supported identity-checked terminal API,
+  never recreates active state to satisfy this preference.
 
 ### 2. Validate the close plan (before any spec or ADR mutation)
 
@@ -110,13 +122,13 @@ the plan.
    untouched. Run onto-no-slop only over *genuinely new* guide/ADR prose, never a
    merged requirement's wording.
 2. **Number and accept ADRs.** For each draft in the workspace `adr/`:
-   next free number = highest `NNNN` in `<workflow-root>/adr/` + 1; `git mv` to
+   next free number = highest `NNNN` in `<workflow-root>/adr/` + 1; move to
    `<workflow-root>/adr/NNNN-<slug>.md`; set `Status: Accepted` (and any superseded
    ADR → `Superseded by NNNN`). Assign numbers to all drafts in one pass
    before moving any, so two drafts in this change never collide.
    **Guard against a concurrent close** (the framework runs one worktree
    per active change, so two may close near the same time): re-scan
-   `<workflow-root>/adr/` for the highest number **immediately before each `git mv`**,
+   `<workflow-root>/adr/` for the highest number **immediately before each move**,
    not once up front — if a number you planned now exists on disk, another
    change took it; recompute from the current highest and continue. Never
    overwrite an existing `<workflow-root>/adr/NNNN-*.md`. If a move still collides,
@@ -124,16 +136,27 @@ the plan.
    the filesystem keeps changing and safe numbering cannot converge.
    Then rewrite the workspace's `design.md` and `notes.md` references from
    `adr/<slug>.md` to the final `<workflow-root>/adr/NNNN-<slug>.md` path — otherwise
-   the archive ships dangling ADR references.
+   the archive ships dangling ADR references. In managed mode use a filesystem
+   move and checkpoint the named old/new record paths; do not use `git mv`, which
+   stages the managed index. Existing mode retains `git mv` in the records' owner.
 3. Run lint-checklist section 3 (post-merge: no delta-only headings leaked,
    no duplicated requirements, scenario structure intact) and section 4
    (guides resolved, no dangling references). Findings block the archive.
-4. **Commit the close preparation.** Steps 1, 2, and the step-1 guides
+4. **Record the close preparation.** Steps 1, 2, and the step-1 guides
    resolution dirtied shared files (`<workflow-root>/specs/`, `<workflow-root>/adr/`,
    `<workflow-root>/guides/`) plus the workspace's own `onto-state.yaml` (merge-deltas
    set `close.merged`) and its `design.md`/`notes.md` references. `onto close`
-   refuses to archive a dirty worktree, so this preparation MUST be committed
-   before invoking it:
+   refuses blocking dirt, so record preparation before invoking it. In managed
+   mode, checkpoint manual Markdown before each following binary mutation:
+
+   ```sh
+   homonto workspace checkpoint --path changes/<name> --path <named-spec-path> --path <named-old-ADR-path> --path <named-new-ADR-path> --path <named-guide-path> --message "Record close preparation"
+   ```
+
+   Paths are workflow-relative; include only touched, owned records. Binary
+   merge/state writes checkpoint automatically. Inspect pending history and use
+   `homonto workspace recover` before further mutations if needed. In existing
+   mode retain the manual preparation commit in the records' Git owner:
 
    ```
    git add -- <named touched specs, ADRs, guides, and <workflow-root>/changes/<name> paths>
@@ -141,7 +164,7 @@ the plan.
    git commit -m "close <name>: merge specs, accept ADRs, resolve guides"
    ```
 
-   This commit is the "prepare" half of the close; the archive move below is
+   In existing mode this commit is the "prepare" half of close; the archive move below is
    the second commit. The advertised "one archive commit" covers the workspace
    move only — the shared-spec/ADR/guide landings are a separate, named commit
    because they describe global mutations, not the workspace's archival.
@@ -157,65 +180,112 @@ the plan.
      `archived: true` with a pending `.onto/integration.json`. If interruption
      lands the directory in `archive/` with `archived: false`, rerun `onto close
      <name>`; the binary completes the interrupted move. Stage only the old and new workspace
-    paths, inspect the staged names, and commit the move. `phase` stays `close`;
+    paths, inspect the staged names, and commit the move in existing mode only.
+    Managed `onto close` checkpoints the move and state automatically; never
+    manually stage its records. `phase` stays `close`;
     "done" is derived-only, never written. The
     archived workspace is history — never edited after, with two sanctioned
     exceptions: `ship.md` and the one-way integration receipt.
 
 ### 4. Integrate the branch (merge or PR)
 
-Read the recorded source commit and target branch from the archived
-`.onto/integration.json`, then integrate per the recorded choice:
+Follow [verified source publication](../homonto/references/publication.md)
+for exact candidate pinning, canonical PR identity, and origin-only closing markers.
 
-- **`merge`** — after committing the archive move, resolve and pin the current
-  change-branch `HEAD` as `<archiveCommit>`. It contains the recorded verified
-  source plus the sanctioned archive bookkeeping; do not use a moving branch
-  name or the commit-valued `base_ref`. Determine the change branch from the
-  current branch or isolation worktree. With branch isolation, check out
-  `base_branch` and run `git merge --no-ff <archiveCommit>`. With worktree isolation, locate the
+Read the recorded source commit and target branch from the archived
+`.onto/integration.json` for each selected source alias, then integrate per the
+recorded choice. Schema 2 has no implicit config entry. With separate or managed
+records, use the exact recorded verified candidate as `<sourceCommit>`; never use a
+records archive/checkpoint SHA as source. Only an existing combined checkout has
+an `<archiveCommit>` containing both source and archive bookkeeping, and it is
+eligible only after proving the intervening diff is owned records-only. Never
+take the source branch's current tip beyond the recorded candidate.
+
+Route per-repo no-op before merge/PR: when the source appears unchanged, run
+`onto complete-integration <name> --receipt "unchanged:<receivingSHA>" --repo <alias> --dir "<configRoot>"`.
+The binary proves it against the recorded source/target. On success that repo is
+complete in either integration mode; do not manufacture an empty PR or merge.
+On refusal investigate and use the actual delivery route when source changed.
+Do not pass `--head` for unchanged or merge. Remaining repos proceed independently.
+
+- **`merge`** — after recording the archive, pin the source integration candidate
+  as described above. Do not use a moving branch name or the commit-valued
+  diff base. Determine the source branch from its selected execution binding.
+  With branch isolation, check out that repo's recorded `base_branch` and run
+  `git merge --no-ff <sourceCommit>` (use `<archiveCommit>` only in existing
+  combined mode). With worktree isolation, locate the
   existing clean worktree that has `base_branch` checked out and run the
-  merge there; Git will not check out one branch in two worktrees. Resolve
+  merge there; Git will not check out one branch in two worktrees. Validate and
+  reuse the preallocated receiver's recorded path after archive. If an older
+  completed run has no safe receiving checkout, use the supported identity-checked
+  terminal `homonto worktree receiver <name> --workflow onto --repo <alias> --json`
+  per the shared policy; an occupied target, unsupported terminal API, or denial is
+  not permission to switch a dirty original or allocate a raw worktree. Resolve
   mechanical conflicts from the verified change and repository history, then
   re-run relevant checks. If a conflict requires choosing product behavior,
-  abort and ask; never guess or discard either side. On success, report the merge.
-- **`pr`** — assemble the body per `references/ship-handoff.md`, then append
-  the proposal's `Closes: #N` marker line, rendered as `Closes #N` — the
-  change's only closing reference; never scan free-form prose for closing
-  references. Write the assembled body to the
-  archived change's `ship.md` and commit that sanctioned archive addition;
-  if a committed `ship.md` already exists from an interrupted run, reuse it
-  instead of rewriting. Push the branch (`git push -u origin
-  "$CHANGE_BRANCH"`), then look for an existing PR before creating one —
+  abort and ask; never guess or discard either side. Inspect the target before
+  writes: if preserved dirt blocks this merge, do not clean it automatically or
+  treat isolation as permission to touch it. On success, report the merge.
+- **`pr`** — assemble a neutral shared base per `references/ship-handoff.md`,
+  with the canonical original issue link but no closing directive. Write only
+  that neutral base to archived `ship.md` and record the sanctioned addition with
+  `homonto workspace checkpoint --path changes/archive/YYYY-MM-DD-<name>/ship.md --message "Record PR handoff"`
+  in managed mode, or a named manual records commit in existing mode;
+  if a committed `ship.md` already exists, leave it immutable. For every repo
+  and retry regenerate a separate session-tmp body; strip any old cached closing
+  directive from the temporary rendering and add `Closes #N` only after confirming
+  the destination is the original issue's canonical origin. Never reuse an
+  origin-specific body for another repo. Validate destination ID/host, target,
+  observed headOID, body path and hash before publication/receipt, per the shared
+  contract. No new `ship/` archive subtree is authorized.
+  Pin the verified delivery OID and push only that candidate
+  with `git push "$REMOTE" "$DELIVERY_OID:refs/heads/$CHANGE_BRANCH"`, then look for an existing PR before creating one —
   reading the ref names into shell parameters and passing them quoted, since
-  Git refs can carry `$()` and quotes:
-  `gh pr list --repo OWNER/REPO --head "$CHANGE_BRANCH" --base
-  "$BASE_BRANCH" --state open --json number,url`. A single exact match is
-  the receipt — record it, never open a second PR. No match → create with
-  `gh pr create --repo OWNER/REPO --head "$CHANGE_BRANCH" --base
-  "$BASE_BRANCH" --fill --body-file <archive>/ship.md` (the explicit
+  Git refs can carry `$()` and quotes. Push from the source root, and supply an
+  absolute per-repo temporary body path for publication:
+  `gh pr list --repo HOST/OWNER/REPO --head "$CHANGE_BRANCH" --base
+  "$BASE_BRANCH" --state open --json number,url`. Paginate and fetch each
+  candidate's canonical head repository ID/host, owner/ref, delivered headRefOid,
+  and base repository/target; branch-name-only filtering is insufficient.
+  A single exact OPEN match after delivery is the receipt, never an unrelated
+  same-name fork branch. No match after complete enumeration means create with
+  `gh pr create --repo HOST/OWNER/REPO --head "$QUALIFIED_HEAD" --base
+  "$BASE_BRANCH" --fill --body-file "$REPO_BODY_FILE"` (the explicit
   `--head` matters: `gh pr create` otherwise targets the current branch,
   which may be the base).
   Several matches → stop and ask; an unrelated PR must never pass as this
   change's receipt. Report the PR URL. The branch stays open for review — it
   is merged on the platform, not locally. If `gh` or a remote is
-  unavailable, WARN and leave the ready `ship.md` for the user to open
-  manually.
+  unavailable, WARN and report the destination-specific temporary body path
+  and pending integration. Neutral `ship.md` is not itself ready to post.
 
 After a local merge succeeds, run `onto complete-integration <name> --receipt
 "merge:<merge-commit>"` — the binary verifies the receipt against real history
 (it must be a `--no-ff` merge containing the recorded source commit, reachable
 from the recorded base branch) and canonicalizes it to the full commit id.
-After a PR opens, run `onto complete-integration <name> --receipt
-"pr:<https-url>"`. A change with selected `--repo` siblings completes one
-repository at a time: run the command once without `--repo` for the config
-repository, then once per sibling with `--repo <alias>` and that repository's
-own receipt; the change derives `done` only when every repository is complete.
-Commit each sidecar update on the branch that now contains the archive and
-push it when applicable. The command is one-way and idempotent for the same
-receipt. A `ship.md` fallback remains pending because no PR exists yet.
+After a PR opens or is reused, independently verify its canonical remote head
+and target, then run `onto complete-integration <name> --receipt "pr:<https-url>" --head <observed-headOID> --repo <alias> --dir "<configRoot>"`.
+The head is the observed full remote OID, not guessed local HEAD. Onto records
+an external claim and does not verify remote publication. In schema 2 use
+`--repo <alias> --dir "<configRoot>"` for each
+selected source repo's own receipt, including merge receipts above. There is no
+implicit config receipt. Legacy combined mode retains the no-`--repo` config
+receipt plus each selected sibling's receipt. The change derives `done` only
+when every recorded repository is complete. Managed receipt writes checkpoint
+automatically; existing mode commits the sidecar in the records' Git owner and
+pushes it when applicable. The command is one-way and idempotent for the same
+receipt. Temporary-body/neutral-`ship.md` fallback remains pending because no PR
+exists yet, unless that repo was already proven unchanged.
 
-Do this **after** the archive commit (step 3.5), so the integrated branch
-includes the archived workspace. `close.merged` tracks spec-delta merging and is
+Do this **after** recording the archive (step 3.5). Only existing combined mode
+integrates archive bookkeeping with source; never merge managed workflow history
+into a source repo. For registered bindings, with removal authorized after integration, run
+`homonto worktree remove <name> --workflow onto --repo <alias> --yes` from
+configRoot. A PR merely opened may not be integrated yet, so removal can refuse;
+keep its binding and report, never force cleanup. Legacy schema 0/1 combined raw
+worktrees use the exact-path, clean-and-integrated teardown in
+`onto-build/references/worktree-protocol.md`, not the registered remove command.
+`close.merged` tracks spec-delta merging and is
 unrelated to ADR promotion or Git integration — all are separate close steps.
 
 One boundary the binary enforces for you: source commits that land after the
@@ -243,16 +313,19 @@ real fix.
 - [ ] onto-no-slop pass run over **new** guide/ADR prose only, recorded in
       `notes.md` (`no-slop: <artifact> done`); no requirement wording, `SHALL`/`MUST` line, scenario, or
       machine-read marker was rewritten
-- [ ] Close preparation committed (specs, ADRs, guides, workspace references,
-      `onto-state.yaml`) — the worktree is clean before `onto close`
-- [ ] Archive is its own commit: workspace under
+- [ ] Close preparation recorded through managed checkpoints or existing-mode
+      named commits; selected execution roots and records meet their clean gates
+- [ ] Archive is its own binary checkpoint (managed) or manual commit (existing): workspace under
        `<workflow-root>/changes/archive/YYYY-MM-DD-<name>/` **and** `archived: true`,
       committed together, everything tracked
-- [ ] Branch integrated per the `integration` choice — merged into base (clean,
-      no forced conflict resolution) or a PR opened (URL reported); the
-      committed `ship.md` doubles as the manual fallback when `gh`/remote
-      was unavailable
-- [ ] `onto complete-integration <name> [--repo <alias>] --receipt <receipt>`
-      recorded and committed for the config repository **and every selected
-      sibling**; `onto state <name> --json` derives `done`
+- [ ] Every source has a proven `unchanged:` receipt, a real merge receipt, or
+      an opened/reused PR receipt with observed `--head`; no empty PR/merge was
+      manufactured. Any unpublishable repo has a destination-specific temporary
+      body and an explicit pending-integration report, not a claim of done.
+- [ ] `onto complete-integration <name> --repo <alias> --receipt <receipt> --dir "<configRoot>"`
+      recorded for every selected source alias in schema 2, with no implicit
+      config receipt; legacy mode retains its config-plus-siblings receipts.
+       Managed writes checkpoint automatically; existing writes are committed.
+       For a PR receipt include `--head <observed-headOID>`; never for merge/unchanged.
+      `onto state <name> --json --dir "<configRoot>"` derives `done`
 - [ ] Announce completion and summarize where the knowledge landed

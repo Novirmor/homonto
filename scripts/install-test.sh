@@ -514,6 +514,38 @@ t27_model_answer_is_validated() {
   fi
 }
 
+t28_checksum_requires_stdin_operand() {
+  local s="$1" real_sum bin
+  real_sum="$(command -v sha256sum)"
+  make_release v9.9.9 darwin arm64 "$s/assets" homonto onto to
+  mkdir -p "$s/mockbin"
+  # Issue #7: macOS sha256sum can require an explicit stdin manifest operand.
+  # Keep real digest verification so this mock cannot accept corrupted assets.
+  cat >"$s/mockbin/sha256sum" <<'EOF'
+#!/usr/bin/env bash
+if [ "$#" -ne 2 ] || [ "$1" != -c ] || [ "$2" != - ]; then
+  printf 'usage: sha256sum -c -\n' >&2
+  exit 2
+fi
+exec "$MOCK_REAL_SHA256SUM" "$@"
+EOF
+  chmod +x "$s/mockbin/sha256sum"
+  run_install "$s" $'\nboth\n'"$s/bin" \
+    HOMONTO_SUM= MOCK_UNAME_S=Darwin MOCK_UNAME_M=arm64 MOCK_REAL_SHA256SUM="$real_sum"
+  expect_exit "t28: explicit-stdin checksum tool installs on Darwin" 0
+  expect_not_stderr "t28: valid archives are not reported as mismatches" "checksum mismatch"
+  for bin in homonto onto to; do
+    if [ -x "$s/bin/$bin" ]; then ok "t28: $bin installed"; else bad "t28: $bin installed"; fi
+  done
+
+  printf 'tampered\n' >>"$s/assets/homonto_v9.9.9_darwin_arm64.tar.gz"
+  run_install "$s" $'\nboth\n'"$s/rejected" \
+    HOMONTO_SUM= MOCK_UNAME_S=Darwin MOCK_UNAME_M=arm64 MOCK_REAL_SHA256SUM="$real_sum"
+  expect_exit "t28: explicit-stdin checksum tool rejects tampering" 1
+  expect_stderr "t28: tampering names the mismatch" "checksum mismatch for homonto_v9.9.9_darwin_arm64.tar.gz"
+  if [ ! -e "$s/rejected/homonto" ]; then ok "t28: corrupted archive not installed"; else bad "t28: corrupted archive not installed"; fi
+}
+
 # --- run -------------------------------------------------------------------
 
 TMP="$(mktemp -d)"
@@ -546,6 +578,7 @@ t24_h_with_onto_configures_transitive_models "$TMP/t24"
 t25_h_with_to_configures_transitive_models "$TMP/t25"
 t26_guided_tmp_directory "$TMP/t26"
 t27_model_answer_is_validated "$TMP/t27"
+t28_checksum_requires_stdin_operand "$TMP/t28"
 
 printf '\n'
 for line in "${SUMMARY[@]}"; do printf '%s\n' "$line"; done

@@ -87,7 +87,8 @@ func appendPlanSection(out, lines []string, headEnd int, heading string) []strin
 
 // handoffCmd builds "to handoff <change-name>": a compact context-recovery
 // pack (identity, phase, plan excerpt, the next skill) for continuing
-// after a context compaction. Read-only and config-independent.
+// after a context compaction. Legacy metadata-only recovery stays config-independent;
+// versioned scoped changes also validate and report their execution sources.
 //
 // --json keeps the legacy keys (change/state/plan/next) and adds the
 // versioned recovery-envelope fields (ADR 0027) so a machine consumer can
@@ -142,6 +143,13 @@ func runHandoff(cmd *cobra.Command, root, name string, jsonMode, doWrite bool) e
 	if err != nil {
 		return err
 	}
+	var sources map[string]string
+	if st.SchemaVersion > 0 {
+		_, sources, err = resolvedSources(root, st)
+		if err != nil {
+			return fmt.Errorf("to handoff: %w", err)
+		}
+	}
 
 	b, err := os.ReadFile(planPath(root, name))
 	if err != nil {
@@ -150,16 +158,35 @@ func runHandoff(cmd *cobra.Command, root, name string, jsonMode, doWrite bool) e
 	plan := string(b)
 	excerpt := excerptPlan(plan)
 	next := nextStep(name, st.Phase, plan)
+	nextArgv := toNextArgv(name, st.Phase, plan)
+	control, err := filepath.Abs(root)
+	if err != nil {
+		return err
+	}
+	nextArgv = append(nextArgv, "--dir", control)
+	sourceNames := make([]string, 0, len(sources))
+	for alias := range sources {
+		sourceNames = append(sourceNames, alias)
+	}
+	sort.Strings(sourceNames)
+	var sourceContext strings.Builder
+	for _, alias := range sourceNames {
+		fmt.Fprintf(&sourceContext, "source %q: %s\n", alias, sources[alias])
+	}
 
 	if doWrite {
 		rec := buildToRecovery(name, st, plan)
+		rec.NextArgv = nextArgv
 		rec.Artifacts = append(rec.Artifacts, toWorkflowDigests(changeDir(root, name))...)
-		jsonBytes, err := json.MarshalIndent(rec, "", "  ")
+		jsonBytes, err := json.MarshalIndent(struct {
+			handoff.Recovery
+			SourceDirs map[string]string `json:"sourceDirs,omitempty"`
+		}{rec, sources}, "", "  ")
 		if err != nil {
 			return err
 		}
 		changeDir := changeDir(root, name)
-		jp, mp, err := handoff.WritePack(changeDir, filepath.Join(changeDir, ".to", "handoff"), rec, jsonBytes, []byte(handoff.Markdown(rec)))
+		jp, mp, err := handoff.WritePack(changeDir, filepath.Join(changeDir, ".to", "handoff"), rec, jsonBytes, []byte(handoff.Markdown(rec)+sourceContext.String()))
 		if err != nil {
 			return fmt.Errorf("to handoff: %w", err)
 		}
@@ -177,8 +204,9 @@ func runHandoff(cmd *cobra.Command, root, name string, jsonMode, doWrite bool) e
 			"phase":         st.Phase,
 			"derivedPhase":  st.Phase,
 			"repoAliases":   st.Repos,
+			"sourceDirs":    sources,
 			"artifacts":     toArtifactDigests(plan),
-			"nextArgv":      toNextArgv(name, st.Phase, plan),
+			"nextArgv":      nextArgv,
 			// Legacy keys, unchanged for existing consumers.
 			"state": st,
 			"plan":  excerpt,
@@ -187,6 +215,8 @@ func runHandoff(cmd *cobra.Command, root, name string, jsonMode, doWrite bool) e
 	}
 
 	cmd.Printf("change: %s\nphase: %s\ncreated: %s\nnext: %s\n", name, st.Phase, st.Created, next)
+	cmd.Printf("next argv: %q\n", nextArgv)
+	cmd.Print(sourceContext.String())
 	if excerpt != "" {
 		cmd.Printf("\nplan.md:\n%s\n", excerpt)
 	}
@@ -248,7 +278,9 @@ func toWorkflowDigests(changeDir string) []handoff.ArtifactDigest {
 func toNextArgv(name, phase, plan string) []string {
 	switch phase {
 	case tostate.PhasePlan:
-		return []string{"to", "phase", name}
+		if len(planContractFindings(plan)) == 0 {
+			return []string{"to", "phase", name}
+		}
 	case tostate.PhaseDo:
 		if !hasUncheckedTask(plan) {
 			return []string{"to", "status", "--json"}

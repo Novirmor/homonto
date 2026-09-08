@@ -1,0 +1,14 @@
+{
+  "revision": "16747470f976aca3d362ad730bcd3fe82ecc2c9a",
+  "basis": "Offline runtime producer contract from the v1.18.29 audit, not the generated v1 SDK or a live network capture",
+  "asked": {
+    "event": "permission.asked",
+    "required": ["id", "sessionID", "permission", "patterns", "metadata", "always"],
+    "absent": ["type"]
+  },
+  "replied": {
+    "event": "permission.replied",
+    "required": ["sessionID", "requestID", "reply"],
+    "absent": ["permissionID", "response"]
+  }
+}

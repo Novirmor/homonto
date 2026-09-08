@@ -7,6 +7,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"gopkg.in/yaml.v3"
 )
 
 // opencodeSubagentTOML installs a builtin subagent for OpenCode, whose rendered
@@ -38,7 +40,11 @@ func renderedModel(t *testing.T, e *Engine, file string) string {
 	}
 	for _, ln := range strings.Split(string(data), "\n") {
 		if m, ok := strings.CutPrefix(ln, "model: "); ok {
-			return m
+			var model string
+			if err := yaml.Unmarshal([]byte(m), &model); err != nil {
+				t.Fatal(err)
+			}
+			return model
 		}
 	}
 	return ""
@@ -205,16 +211,7 @@ func TestTuneOnlyEntryOverridesFrameworkAgentModel(t *testing.T) {
 	}
 
 	modelOf := func(file string) string {
-		data, err := os.ReadFile(filepath.Join(e.SubagentDir(), file))
-		if err != nil {
-			t.Fatalf("read %s: %v", file, err)
-		}
-		for _, ln := range strings.Split(string(data), "\n") {
-			if m, ok := strings.CutPrefix(ln, "model: "); ok {
-				return m
-			}
-		}
-		return ""
+		return renderedModel(t, e, file)
 	}
 	if got := modelOf("onto-skeptic.opencode.md"); got != "openai/o4-mini" {
 		t.Errorf("tuned agent model = %q, want openai/o4-mini (the override must apply)", got)
@@ -390,12 +387,12 @@ func TestSubagentRenderFingerprintDistinguishesRoutes(t *testing.T) {
 	repo := t.TempDir()
 
 	writeConfig(t, repo, "first/model-a")
-	a := buildEngine(t, home, repo).subagentRenderContext()
+	a := mustSubagentRenderContext(t, buildEngine(t, home, repo))
 	// Built independently from the same config: the fingerprint must not depend
 	// on map iteration order, or every apply would needlessly re-materialize.
-	aAgain := buildEngine(t, home, repo).subagentRenderContext()
+	aAgain := mustSubagentRenderContext(t, buildEngine(t, home, repo))
 	writeConfig(t, repo, "second/model-b")
-	b := buildEngine(t, home, repo).subagentRenderContext()
+	b := mustSubagentRenderContext(t, buildEngine(t, home, repo))
 
 	if renderFingerprint(a) == renderFingerprint(b) {
 		t.Fatal("fingerprint collided across different overrides: an override change would not re-render")
@@ -409,6 +406,106 @@ func TestSubagentRenderFingerprintDistinguishesRoutes(t *testing.T) {
 	a["opencode"] = opencode
 	if baseFingerprint == renderFingerprint(a) {
 		t.Fatal("fingerprint ignored declared repository paths; apply would leave agent permissions stale")
+	}
+	baseFingerprint = renderFingerprint(a)
+	opencode.ShellProxy = "rtk"
+	a["opencode"] = opencode
+	if baseFingerprint == renderFingerprint(a) {
+		t.Fatal("fingerprint ignored shell proxy; apply would leave command permissions stale")
+	}
+}
+
+func TestApplyRerendersSubagentPatternsWhenShellProxyChanges(t *testing.T) {
+	home, repo := t.TempDir(), t.TempDir()
+	agents := []string{"homonto", "onto-implementer", "to-implementer", "h-review"}
+	baseline := map[string]string{}
+	fingerprints := map[string]string{}
+	// Cover enabling, stable re-apply, disabling, and omitted == explicit none.
+	for _, proxy := range []string{"", "none", "rtk", "rtk", "none", ""} {
+		doc := hFrameworkTOML
+		for _, agent := range agents[:3] {
+			header := "[subagents." + agent + ".opencode]\n"
+			doc = strings.Replace(doc, header, header+"bash_allow_add = [\"./scripts/task-check.sh\"]\n", 1)
+		}
+		if proxy != "" {
+			doc += fmt.Sprintf("\n[tooling]\nshell_proxy = %q\n", proxy)
+		}
+		if err := os.WriteFile(filepath.Join(repo, "homonto.toml"), []byte(doc), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		e := buildEngine(t, home, repo)
+		resolved := proxy
+		if resolved == "" {
+			resolved = "none"
+		}
+		renderCtx := mustSubagentRenderContext(t, e)
+		if got := renderCtx["opencode"].ShellProxy; got != resolved {
+			t.Fatalf("render shell proxy = %q, want %q", got, resolved)
+		}
+		fingerprint := renderFingerprint(renderCtx)
+		if previous, ok := fingerprints[resolved]; ok && previous != fingerprint {
+			t.Fatalf("render fingerprint unstable for %q", resolved)
+		}
+		fingerprints[resolved] = fingerprint
+		if err := e.Apply(context.Background(), mustPlan(t, e)); err != nil {
+			t.Fatalf("apply with proxy %q: %v", proxy, err)
+		}
+		for _, agent := range agents {
+			data, err := os.ReadFile(filepath.Join(e.SubagentDir(), agent+".opencode.md"))
+			if err != nil {
+				t.Fatal(err)
+			}
+			text := string(data)
+			if baseline[agent] == "" {
+				baseline[agent] = text
+			}
+			if resolved == "none" || agent == "h-review" {
+				if text != baseline[agent] {
+					t.Errorf("%s with proxy %q must match its unwrapped render", agent, proxy)
+				}
+				if strings.Contains(text, `"rtk `) {
+					t.Errorf("%s with proxy %q gained wrapped rules", agent, proxy)
+				}
+				continue
+			}
+			for _, prefix := range []string{"", "rtk ", "rtk proxy "} {
+				for _, pattern := range []string{"go test *", "npm test", "./scripts/task-check.sh"} {
+					want := fmt.Sprintf("    %q: allow", prefix+pattern)
+					if prefix == "rtk " && pattern == "./scripts/task-check.sh" {
+						if strings.Contains(text, want) {
+							t.Errorf("%s must only proxy unknown executable %s", agent, pattern)
+						}
+						continue
+					}
+					if !strings.Contains(text, want) {
+						t.Errorf("%s missing %s", agent, want)
+					}
+				}
+				denied := []string{"onto bypass*", "to bypass*"}
+				if agent != "homonto" {
+					denied = []string{"onto *", "to *", "gh *", "git push", "git push *", "git branch *"}
+				}
+				for _, pattern := range denied {
+					want := fmt.Sprintf("    %q: deny", prefix+pattern)
+					if !strings.Contains(text, want) {
+						t.Errorf("%s missing %s", agent, want)
+					}
+				}
+			}
+			for _, want := range []string{`"*": ask`, `"*;*": ask`, `"*&&*": ask`} {
+				if !strings.Contains(text, want) {
+					t.Errorf("%s missing %s", agent, want)
+				}
+			}
+			for _, forbidden := range []string{`"rtk *": allow`, `"rtk proxy *": allow`, `"rtk exec *": allow`, `"rtk unknown-command": allow`, `"rtk curl *": allow`} {
+				if strings.Contains(text, forbidden) {
+					t.Errorf("%s unexpectedly grants %s", agent, forbidden)
+				}
+			}
+		}
+	}
+	if fingerprints["none"] == fingerprints["rtk"] {
+		t.Fatal("tooling selection must change the subagent render fingerprint")
 	}
 }
 
@@ -438,7 +535,7 @@ func TestHFrameworkRendersCoordinatorAndReadonlyWorkers(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, want := range []string{"mode: primary", `"h-spike": allow`, `"h-review": allow`, "external_directory:", "webfetch: deny", "websearch: deny", `"*;*": ask`, `"onto bypass*": deny`} {
+	for _, want := range []string{"mode: primary", `"h-spike": allow`, `"h-review": allow`, "external_directory:", "webfetch: allow", "websearch: allow", `"go test *": allow`, `"npm run *": allow`, `"*;*": ask`, `"onto bypass*": deny`} {
 		if !strings.Contains(string(primary), want) {
 			t.Errorf("homonto primary (via h) missing %q:\n%s", want, primary)
 		}
@@ -457,13 +554,13 @@ func TestHFrameworkRendersCoordinatorAndReadonlyWorkers(t *testing.T) {
 		if !strings.Contains(rendered, "external_directory:") {
 			t.Errorf("%s must inherit declared-repo access under h:\n%s", implementer, data)
 		}
-		for _, want := range []string{`"*": ask`, `"onto *": deny`, `"to *": deny`, `"gh *": deny`, `"git push": deny`, `"git push *": deny`, "webfetch: deny", "websearch: deny"} {
+		for _, want := range []string{`"*": ask`, `"git diff *": allow`, `"go test *": allow`, `"npm run *": allow`, `"*;*": ask`, `"onto *": deny`, `"to *": deny`, `"gh *": deny`, `"git push": deny`, `"git push *": deny`, `"git branch *": deny`, "webfetch: allow", "websearch: allow"} {
 			if !strings.Contains(rendered, want) {
 				t.Errorf("%s must retain the delegated execution boundary %q:\n%s", implementer, want, rendered)
 			}
 		}
 	}
-	for _, worker := range []string{"h-spike", "h-review"} {
+	for _, worker := range []string{"h-spike", "h-review", "onto-explorer", "onto-reviewer", "onto-skeptic", "to-explorer", "to-reviewer", "to-skeptic"} {
 		data, err := os.ReadFile(filepath.Join(e.SubagentDir(), worker+".opencode.md"))
 		if err != nil {
 			t.Fatal(err)
@@ -472,9 +569,9 @@ func TestHFrameworkRendersCoordinatorAndReadonlyWorkers(t *testing.T) {
 		if strings.Contains(rendered, "external_directory:") {
 			t.Errorf("%s must not gain an external-directory rule:\n%s", worker, rendered)
 		}
-		for _, want := range []string{"edit: deny", "bash: deny", "webfetch: deny", "websearch: deny"} {
+		for _, want := range []string{"edit: deny", "bash: deny", "webfetch: allow", "websearch: allow"} {
 			if !strings.Contains(rendered, want) {
-				t.Errorf("%s must deny %s in its permission map:\n%s", worker, want, rendered)
+				t.Errorf("%s missing %s in its permission map:\n%s", worker, want, rendered)
 			}
 		}
 		if !strings.Contains(rendered, "task: deny") {

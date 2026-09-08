@@ -8,7 +8,8 @@ description: onto phase 2 — deep design. Use when an active full-workflow chan
 Produce a confirmed technical design before any implementation exists.
 **Design cannot be skipped in the full workflow** — this phase is the reason
 the full workflow exists.
-Apply the dispatcher's shared autonomous workflow policy throughout.
+Apply the shared [autonomous workflow policy](../homonto/references/autonomy.md),
+including workspace roots and dirty-work decisions, even on direct entry.
 
 ## Entry check
 
@@ -115,12 +116,15 @@ the canonical template; do not create new legacy leading `#K` tasks.
 
 ## Isolation decision (before leaving design)
 
-The binary refuses to advance design → build without isolation. Choose and
-record it without asking: `branch` for a clean, serial change off the base ref;
-`worktree` for parallel changes, an unrelated dirty current tree, or concurrent
-work. Run `onto set isolation <name> branch|worktree` before `onto advance`.
-Never stash, overwrite, or absorb unattributed work to make the preferred choice
-fit.
+The binary refuses to advance design → build without isolation. Inspect first;
+when dirt exists, present exact paths and use the shared preserve/isolate/cleanup
+decision, asking once if none exists. For a clean serial change choose `branch`;
+when isolation is chosen in schema 2 use registered worktrees per source alias.
+Schema 2 same-repo tasks stay serial because task-level bindings are not supported.
+Legacy schema 0/1 combined workflows retain the five-condition parallel path in
+`onto-build/references/subagent-protocol.md`. Record
+`onto set isolation <name> branch|worktree --dir "<configRoot>"` before advance.
+Never stash, overwrite, or absorb user work to make the preferred choice fit.
 
 `build-mode` and `tdd-mode` are build-phase decisions (see `onto-build`).
 
@@ -152,7 +156,10 @@ fit.
       "<evidence>"` — the binary refuses design → build without both
 - [ ] If recorded phase is design, advanced design → build via `onto advance
       <name>`; on a downward mismatch, skipped advance and returned to `/onto`
-- [ ] **Commit the workspace**: `git add <workflow-root>/changes/<name> && git commit`
-      — every phase exits with its workspace committed
+- [ ] **Record the workspace**: in managed mode, run
+      `homonto workspace checkpoint --path changes/<name> --message "Record design phase"`
+      for manual Markdown before advancing; binary mutations checkpoint
+      automatically. Existing mode keeps named manual records commits in its
+      Git owner, including the current combined-checkout pattern.
 - [ ] Load `onto-build` and continue in the same invocation unless the user
       named design as the endpoint or asked to pause

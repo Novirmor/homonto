@@ -7,13 +7,22 @@ description: to phase 1 — plan. Use when an active change has phase plan — w
 
 Turn the request into a short, executable plan. The plan is a reviewable git
 artifact — write it for the person who reads the PR, not for yourself.
-Apply the dispatcher's shared autonomous workflow policy throughout.
+Apply the shared [autonomous workflow policy](../homonto/references/autonomy.md),
+including workspace roots and dirty-work decisions, even on direct entry.
 
 ## Entry check
 
-- `to status --json` shows the change at `phase: plan`.
+- `to status --json` shows the change at `phase: plan`, or the dispatcher routes
+  a converted do change here for incomplete-contract repair. That repair preserves
+  recorded do; skip `to phase` on exit and return to `to-do` after contracts pass.
 - If `plan.md` already has content, a previous session started planning —
   read it and continue rather than starting over.
+- In schema 2, inspect `repo_bases` already frozen by the dispatcher's `to new`.
+  Alternative bases must be selected there with repeated
+  `--base <alias>=<local-branch>`, such as `--base api=main --base web=develop`,
+  not by switching a dirty original or retargeting state during planning. The
+  default freezes each source's current committed HEAD and local branch.
+  Report an existing base mismatch; never recreate the change to change anchors.
 
 ## Steps
 
@@ -22,10 +31,28 @@ Apply the dispatcher's shared autonomous workflow policy throughout.
    before planning a behavior or architecture change. For questions that span
    many files, dispatch `to-explorer` — read-only, so run one per question
    concurrently rather than serializing them — and work from its conclusions.
-2. **Choose isolation.** Follow repository policy. Reuse a suitable current
-   change branch; otherwise create a branch. If unrelated work makes that unsafe,
-   use a worktree or leave the unrelated paths untouched. Do not ask the user to
-   choose a reversible Git mechanic.
+   For converted work, carry Owner/Repo/Cwd and Files/Change/Verify from the
+   preserved snapshot when concrete, then validate against the actual records
+   owner/source binding. Do not drop ownership/root fields during translation.
+   Missing or ambiguous fields require plan repair before execution, not defaults
+   inferred from a converted phase or a doctor's partial contract check.
+2. **Validate isolation and fit.** Check bounded fit before allocation; if onto
+   obligations emerge after a binding exists, follow the dispatcher's explicit
+   conversion-blocker handoff, not an unsupported promotion attempt.
+   Schema 2 allocation belongs immediately after `new`, before any records/source
+   commit. Reuse that binding here. Inspect before writes and present exact dirty paths.
+   Honor an existing preserve/isolate/cleanup decision; ask once if none exists.
+   Reuse a safe source branch or create one. When isolation is chosen, allocate
+   `homonto worktree create <name> --workflow to --repo <alias> --base <ref> --branch <branch> --json`
+   from configRoot, after active state selects that alias. Use the recorded local
+   target as `--base` (for example `refs/heads/main` after `to new` selected
+   `--base api=main`); both its exact frozen commit and target must match.
+   A dirty feature checkout remains untouched. Validate with
+   `homonto worktree list --json`; schema 2 has no raw/native unregistered execution paths.
+   Legacy schema 0/1 serial combined isolation needs no `worktrees.dir`; use the
+   shared policy's single coordinator change checkout, never registered allocation.
+   Keep workflow calls on `--dir "<configRoot>"` even from sources. Never copy
+   `.env` or required dirty input without the user's transport decision.
 3. **Write `<workflow-root>/tasks/<name>/plan.md`:**
    - A two-or-three-sentence statement of the goal, the chosen approach, and
      the important boundary (what this change deliberately does not do).
@@ -33,8 +60,11 @@ Apply the dispatcher's shared autonomous workflow policy throughout.
      use this compact contract:
 
      ```markdown
-     - [ ] <Concrete outcome>
-       - Files: `<paths and, when useful, symbols>`
+      - [ ] <Concrete outcome>
+        - Owner: <implementer for source; coordinator for workflow records>
+        - Repo: <selected alias, legacy config source, or records Git owner>
+        - Cwd: `<absolute validated execution root or records root>`
+        - Files: `<paths and, when useful, symbols>`
        - Change: <behavior or contract to add, remove, or preserve>
        - Verify: `<exact command>` — <specific passing signal>
      ```
@@ -49,6 +79,9 @@ Apply the dispatcher's shared autonomous workflow policy throughout.
      `(discovered <date>)`, placed after the existing tasks and before
      `Final Verify:`. Plan for that by writing tasks other sessions can trust
      — a fresh session resumes from the first unchecked task.
+   - Substantial records tasks (ADRs, guides, specs, plans) remain coordinator-owned
+     and serial, not implementer work. Split mixed-root source/records work into
+     linked tasks, each with its own Owner/Repo/Cwd and verification.
    - When the implementation changes durable architecture or contradicts an
      existing guide, design document, or ADR, include the smallest required
      documentation task. Do not create design ceremony for an implementation
@@ -65,7 +98,12 @@ Apply the dispatcher's shared autonomous workflow policy throughout.
 4. **De-slop it.** Run the `to-no-slop` rules over the plan prose.
 5. **Check the scope boundary.** If the plan grew beyond what the user asked,
    ask about that product scope change. Otherwise proceed without plan approval.
-6. **Advance:** `to phase <name>`. The change is now at `do`; hand off to the
+6. **Record and advance:** in managed mode checkpoint manual Markdown first:
+   `homonto workspace checkpoint --path tasks/<name>/plan.md --message "Record plan"`.
+   Existing mode retains its named manual records commits. Run
+   `to phase <name> --dir "<configRoot>"` only at recorded plan; its managed checkpoint is automatic.
+   For converted do contract repair, skip the phase call and retain do.
+   The change is now at `do`; hand off to the
    `to-do` skill and continue in the same invocation unless the user named plan
    as the endpoint or asked to pause.
 

@@ -14,6 +14,11 @@ need the onto framework installed *by* homonto first.
 
 > Output goes to **stderr**. Redirect with `2>&1` when scripting.
 
+For schema-2 explicit sources, a non-Git control directory, separate records
+history, or worktree isolation, see [workspaces](workspaces.md). This walkthrough
+keeps the legacy combined layout; changing an existing config's schema is not
+a records migration.
+
 ## 1. Install
 
 ```bash

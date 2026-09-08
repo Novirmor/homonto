@@ -301,7 +301,7 @@ verify_asset() { # <asset> <workdir>
   line="$(awk -v a="$asset" '$NF == a || $NF == "./" a { print; exit }' "$dir/SHA256SUMS")"
   [ -n "$line" ] || die "SHA256SUMS has no entry for ${asset}"
   digest="${line%% *}"
-  (cd "$dir" && "${SUM_TOOL[@]}" -c <<<"$digest  $asset") >/dev/null 2>&1 \
+  (cd "$dir" && "${SUM_TOOL[@]}" -c - <<<"$digest  $asset") >/dev/null 2>&1 \
     || die "checksum mismatch for ${asset} — the download is not the official archive"
 }
 

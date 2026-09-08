@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/noviopenworks/homonto/internal/ontostate"
+	"github.com/noviopenworks/homonto/internal/tostate"
 )
 
 // seedPromotable creates a `to` change in the do phase with plan/evidence.
@@ -84,6 +85,31 @@ func TestPromoteCreatesOntoWorkspace(t *testing.T) {
 	// `to status` is empty.
 	if out := run(t, false, "status", "--dir", dir); !strings.Contains(out, "no active changes") {
 		t.Fatalf("to status after promote: %q", out)
+	}
+}
+
+func TestPromoteExplicitSourcesPreservesAllAnchors(t *testing.T) {
+	l := explicitScopeWorkspace(t, "managed")
+	git(t, l.Repos["api"], "branch", "-M", "main")
+	git(t, l.Repos["web"], "branch", "-M", "develop")
+	run(t, false, "new", "cross", "--repo", "api,web", "--dir", l.ConfigRoot)
+	before, err := tostate.Load(statePath(l.ConfigRoot, "cross"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	run(t, false, "promote", "cross", "--as", "grown", "--yes", "--dir", l.ConfigRoot)
+	st := loadOntoState(t, filepath.Join(l.WorkflowRoot, "changes", "grown", "onto-state.yaml"))
+	if err := st.Validate(); err != nil {
+		t.Fatal(err)
+	}
+	if st.SchemaVersion != 3 || st.ID != before.ID || st.RepoMode != "explicit" || len(st.Repos) != 2 || len(st.RepoBases) != 2 || st.BaseRef != "" || st.BaseBranch != "" {
+		t.Fatalf("promoted provenance: %+v", st)
+	}
+	for alias, branch := range map[string]string{"api": "main", "web": "develop"} {
+		base := st.RepoBases[alias]
+		if base != ontostate.RepoBase(before.RepoBases[alias]) || base.BaseBranch != branch {
+			t.Fatalf("repo %s: %+v", alias, base)
+		}
 	}
 }
 

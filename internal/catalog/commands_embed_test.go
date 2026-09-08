@@ -247,7 +247,7 @@ func TestWorkflowRecoveryAndPresetTransitionsAreExecutable(t *testing.T) {
 			t.Fatal(err)
 		}
 		text := strings.Join(strings.Fields(string(content)), " ")
-		for _, want := range []string{"advance <name>` to enter verify", "onto-verify`'s scale and risk check", "set workflow <name> full"} {
+		for _, want := range []string{"only at recorded build to enter verify", "when recorded phase is open or design", "without fake phase hops", "onto-verify`'s scale and risk check", "set workflow <name> full"} {
 			if !strings.Contains(text, want) {
 				t.Errorf("%s missing executable preset transition %q", file, want)
 			}

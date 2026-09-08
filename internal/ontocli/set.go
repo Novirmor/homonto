@@ -157,7 +157,7 @@ func verifyResultCmd() *cobra.Command {
 					// (legacy shape). Inside git, a capture failure — a
 					// missing scoped repository, an unreadable config — is a
 					// loud refusal, not a silently unbound pass.
-					if !inGitRepository(dir) {
+					if st.RepoMode != "explicit" && !inGitRepository(dir) {
 						return fmt.Errorf("onto set verify-result: %s is not a git repository; a pass cannot be bound to a commit here", dir)
 					}
 					heads, err := captureVerifyHeads(dir, *st)
@@ -205,6 +205,7 @@ func guidesCmd() *cobra.Command {
 // verification anchor, and an unresolvable value would strand scale and close.
 func baseRefCmd() *cobra.Command {
 	var dir string
+	var repo string
 	cmd := &cobra.Command{
 		Use:   "base-ref <change> <ref>",
 		Short: "Record the base git commit a change branched from",
@@ -214,6 +215,23 @@ func baseRefCmd() *cobra.Command {
 			return runTransition(cmd, dir, name, func(st *ontostate.State) error {
 				if strings.TrimSpace(ref) == "" {
 					return fmt.Errorf("onto set base-ref: ref must not be empty")
+				}
+				if st.RepoMode == "explicit" || repo != "" {
+					alias, source, err := selectedSource(dir, *st, repo)
+					if err != nil {
+						return err
+					}
+					if st.RepoMode != "explicit" {
+						return fmt.Errorf("legacy state has a scalar base_ref; --repo cannot assign it")
+					}
+					canonical, err := resolveCommit(source, ref)
+					if err != nil {
+						return err
+					}
+					if canonical != st.RepoBases[alias].BaseRef {
+						return fmt.Errorf("repository %s: base_ref is immutable once recorded", alias)
+					}
+					return nil
 				}
 				canonical, err := resolveCommit(dir, ref)
 				if err != nil {
@@ -228,6 +246,7 @@ func baseRefCmd() *cobra.Command {
 		},
 	}
 	cmd.Flags().StringVar(&dir, "dir", ".", "workspace root containing the change")
+	cmd.Flags().StringVar(&repo, "repo", "", "source repository (required when multiple explicit repositories are selected)")
 	return cmd
 }
 
@@ -235,6 +254,7 @@ func baseRefCmd() *cobra.Command {
 // remains the immutable commit used for diffs and verification.
 func baseBranchCmd() *cobra.Command {
 	var dir string
+	var repo string
 	cmd := &cobra.Command{
 		Use:   "base-branch <change> <branch>",
 		Short: "Record the branch a change will integrate into",
@@ -242,6 +262,22 @@ func baseBranchCmd() *cobra.Command {
 		RunE: func(cmd *cobra.Command, args []string) error {
 			name, branch := args[0], args[1]
 			return runTransition(cmd, dir, name, func(st *ontostate.State) error {
+				if st.RepoMode == "explicit" || repo != "" {
+					alias, source, err := selectedSource(dir, *st, repo)
+					if err != nil {
+						return err
+					}
+					if st.RepoMode != "explicit" {
+						return fmt.Errorf("legacy state has a scalar base_branch; --repo cannot assign it")
+					}
+					if err := validateBranchName(source, branch); err != nil {
+						return err
+					}
+					if branch != st.RepoBases[alias].BaseBranch {
+						return fmt.Errorf("repository %s: base_branch is immutable once recorded", alias)
+					}
+					return nil
+				}
 				if err := validateBranchName(dir, branch); err != nil {
 					return fmt.Errorf("onto set base-branch: %w", err)
 				}
@@ -254,6 +290,7 @@ func baseBranchCmd() *cobra.Command {
 		},
 	}
 	cmd.Flags().StringVar(&dir, "dir", ".", "workspace root containing the change")
+	cmd.Flags().StringVar(&repo, "repo", "", "source repository (required when multiple explicit repositories are selected)")
 	return cmd
 }
 

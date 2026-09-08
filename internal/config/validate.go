@@ -67,6 +67,13 @@ func validate(c *Config) error {
 }
 
 func validateWorkflow(c *Config) error {
+	if c.SchemaVersion >= 2 {
+		if c.Workflow.Git != "" && c.Workflow.Git != "existing" && c.Workflow.Git != "managed" {
+			return fmt.Errorf("parse config: workflow.git %q must be 'existing' or 'managed'", c.Workflow.Git)
+		}
+		// Filesystem-aware layout validation is shared with the workflow CLIs.
+		return nil
+	}
 	root := strings.TrimSpace(c.Workflow.Root)
 	if root == "" {
 		return nil
@@ -512,6 +519,9 @@ func validateSubagents(subagents map[string]Subagent) error {
 		// scope, local-name safety — are not its to satisfy. Its model blocks are
 		// still validated, by validateSubagentOverrides.
 		if s.IsTuneOnly() {
+			if s.Scope != "" || s.Repo != "" || s.Mode != "" || s.Version != "" || s.Digest != "" || len(s.Targets) > 0 {
+				return fmt.Errorf("parse config: %s is tune-only; scope, repo, mode, version, digest and targets would be ignored; remove them or declare a source", label)
+			}
 			continue
 		}
 		switch s.Scope {
@@ -638,6 +648,12 @@ func variantToken(label, variant string) error {
 // per-override walk passes false so it can flag malformed values without
 // demanding a model field that an effort-only override wouldn't have).
 func validateModelSpec(tool, label string, r ModelRoute, requireModel bool) error {
+	if strings.ContainsFunc(r.Model, func(r rune) bool { return unicode.IsControl(r) || r == '\u2028' || r == '\u2029' }) {
+		return fmt.Errorf("parse config: %s model must not contain controls or line breaks", label)
+	}
+	if r.Steps != nil && *r.Steps <= 0 {
+		return fmt.Errorf("parse config: %s steps must be positive", label)
+	}
 	model := strings.TrimSpace(r.Model)
 	variant := strings.TrimSpace(r.Variant)
 	effort := strings.TrimSpace(r.Effort)
@@ -783,6 +799,15 @@ func validateModels(c *Config) error {
 		expanded, err := c.ExpandedSubagentEntriesForTool(tool)
 		if err != nil {
 			continue
+		}
+		aliases := map[string]string{}
+		for _, entry := range expanded {
+			if cat, ok := SubagentCatalogName(entry.Resource.Source); ok {
+				if previous, exists := aliases[cat]; exists && previous != entry.Name {
+					return fmt.Errorf("parse config: subagents.%s and subagents.%s install builtin:%s under different aliases; one builtin renders one host name, so install it under only one name", previous, entry.Name, cat)
+				}
+				aliases[cat] = entry.Name
+			}
 		}
 		routeByCat := map[string]ModelRoute{}
 		declaredByCat := map[string]bool{}

@@ -22,6 +22,9 @@ h-review-pr = "commands/h-review-pr.md"
 h-continue-pr = "commands/h-continue-pr.md"
 h-review-batch = "commands/h-review-batch.md"
 
+[plugins]
+homonto-workflow = "plugins/homonto-workflow"
+
 # The coordinator is the shared homonto primary (same catalog path both
 # workflow frameworks declare; ADR 0045), so installing h, onto, or to all
 # connect the same coordinator. The two workers are read-only (ADR 0035):

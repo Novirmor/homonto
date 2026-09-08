@@ -5,11 +5,13 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/noviopenworks/homonto/internal/destlock"
 	"github.com/noviopenworks/homonto/internal/ontostate"
 	"github.com/noviopenworks/homonto/internal/workcli"
+	"github.com/noviopenworks/homonto/internal/workspace"
 	"github.com/spf13/cobra"
 )
 
@@ -23,6 +25,7 @@ func newCmd() *cobra.Command {
 		dir      string
 		workflow string
 		repos    []string
+		bases    []string
 	)
 
 	cmd := &cobra.Command{
@@ -30,12 +33,13 @@ func newCmd() *cobra.Command {
 		Short: "Create a new change-workspace skeleton, if the onto framework is installed",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return runNewWithRepos(cmd, dir, args[0], workflow, repos)
+			return runNewWithBases(cmd, dir, args[0], workflow, repos, bases)
 		},
 	}
 	cmd.Flags().StringVar(&dir, "dir", ".", "workspace root to create the change in")
 	cmd.Flags().StringVar(&workflow, "workflow", "full", "workflow for the change: full, fix, or tweak")
-	cmd.Flags().StringSliceVar(&repos, "repo", nil, "declared repository to include (repeatable)")
+	cmd.Flags().StringSliceVar(&repos, "repo", nil, "declared repository to include (repeatable; required with config schema 2)")
+	cmd.Flags().StringArrayVar(&bases, "base", nil, "schema-2 source base alias=branch (repeat per repo; default: current branch and HEAD)")
 	return cmd
 }
 
@@ -53,6 +57,14 @@ func runNew(cmd *cobra.Command, root, name, workflow string) error {
 // change. Names are validated before any scaffold write; the config repository
 // is implicit and therefore never accepted as an alias.
 func runNewWithRepos(cmd *cobra.Command, root, name, workflow string, repos []string) error {
+	return runNewWithBases(cmd, root, name, workflow, repos, nil)
+}
+
+func runNewWithBases(cmd *cobra.Command, root, name, workflow string, repos, bases []string) error {
+	root, err := filepath.Abs(root)
+	if err != nil {
+		return err
+	}
 	if err := ontoFramework.Gate(root); err != nil {
 		return err
 	}
@@ -67,6 +79,71 @@ func runNewWithRepos(cmd *cobra.Command, root, name, workflow string, repos []st
 	names, _, err := scopeDirs(root, repos)
 	if err != nil {
 		return fmt.Errorf("onto new: %w", err)
+	}
+	st := ontostate.State{
+		Change: name, ID: ontostate.NewID(), Workflow: workflow,
+		Phase: "open", Created: time.Now().Format("2006-01-02"), Repos: names,
+	}
+	layout, err := workspace.LoadScopeRoot(root, names)
+	if err != nil {
+		return err
+	}
+	if len(bases) > 0 && !layout.ExplicitRepos() {
+		return fmt.Errorf("onto new: --base requires config schema 2")
+	}
+	if layout.ExplicitRepos() {
+		if len(names) == 0 {
+			return fmt.Errorf("onto new: config schema 2 requires nonempty selected --repo")
+		}
+		selected := map[string]bool{}
+		for _, alias := range names {
+			selected[alias] = true
+		}
+		overrides := map[string]string{}
+		for _, value := range bases {
+			alias, branch, ok := strings.Cut(value, "=")
+			if !ok || !selected[alias] || overrides[alias] != "" || branch == "" {
+				return fmt.Errorf("onto new: --base %q requires a unique selected alias=branch", value)
+			}
+			if strings.HasPrefix(branch, "refs/") && !strings.HasPrefix(branch, "refs/heads/") {
+				return fmt.Errorf("onto new: --base %q must name a literal local branch", value)
+			}
+			branch = strings.TrimPrefix(branch, "refs/heads/")
+			if err := validateBranchName(layout.Repos[alias], branch); err != nil {
+				return fmt.Errorf("onto new: --base %q: %w", value, err)
+			}
+			overrides[alias] = branch
+		}
+		st.RepoMode = "explicit"
+		st.RepoBases = make(map[string]ontostate.RepoBase, len(names))
+		for _, alias := range names {
+			source := layout.Repos[alias]
+			branch := overrides[alias]
+			ref := "HEAD"
+			if branch == "" {
+				branch, err = currentBranch(source)
+				if err != nil {
+					return fmt.Errorf("repository %s: %w", alias, err)
+				}
+			} else {
+				ref = "refs/heads/" + branch
+			}
+			head, err := resolveCommit(source, ref)
+			if err != nil {
+				return fmt.Errorf("repository %s: %w", alias, err)
+			}
+			identity, err := sourceIdentity(source)
+			if err != nil {
+				return err
+			}
+			st.RepoBases[alias] = ontostate.RepoBase{BaseRef: head, BaseBranch: branch, GitCommonDir: identity}
+		}
+		if err := st.Validate(); err != nil {
+			return err
+		}
+		if err := workspace.EnsureNameAvailable(layout, "onto", name); err != nil {
+			return fmt.Errorf("onto new: %w", err)
+		}
 	}
 	changeDir := filepath.Join(changesDir(root), name)
 	if err := workcli.ValidateWorkflowPath(root, changeDir); err != nil {
@@ -115,14 +192,6 @@ func runNewWithRepos(cmd *cobra.Command, root, name, workflow string, repos []st
 		return fmt.Errorf("onto new: creating %s: %w", changeDir, err)
 	}
 
-	st := ontostate.State{
-		Change:   name,
-		ID:       ontostate.NewID(),
-		Workflow: workflow,
-		Phase:    "open",
-		Created:  time.Now().Format("2006-01-02"),
-		Repos:    names,
-	}
 	statePath := filepath.Join(changeDir, "onto-state.yaml")
 	if err := ontostate.Save(statePath, st); err != nil {
 		return fmt.Errorf("onto new: %w", err)

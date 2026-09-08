@@ -106,6 +106,29 @@ func TestLoad(t *testing.T) {
 	}
 }
 
+func TestWorkflowBridgeEnabled(t *testing.T) {
+	falseValue := false
+	for _, tc := range []struct {
+		name string
+		cfg  Config
+		want bool
+	}{
+		{"no framework", Config{}, false},
+		{"builtin workflow framework", Config{Frameworks: map[string]Resource{"onto": {Source: "builtin:onto"}}}, true},
+		{"non-builtin framework", Config{Frameworks: map[string]Resource{"onto": {Source: "local:onto"}}}, false},
+		{"explicit opt-out", Config{
+			Frameworks:   map[string]Resource{"to": {Source: "builtin:to"}},
+			Integrations: Integrations{OpenCode: OpenCodeIntegrations{WorkflowBridge: &falseValue}},
+		}, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := tc.cfg.WorkflowBridgeEnabled(); got != tc.want {
+				t.Fatalf("WorkflowBridgeEnabled() = %t, want %t", got, tc.want)
+			}
+		})
+	}
+}
+
 // TestLoadPluginEnabledSemantics covers the enabled flag: omitted defaults to
 // true (enabled), false disables.
 func TestLoadPluginEnabledSemantics(t *testing.T) {
@@ -606,11 +629,9 @@ scope = "project"
 	}
 }
 
-// TestLoadRequiresModelForFrameworkAgentOutsideExplicitAliasTargets: an
-// explicit alias's override covers only the catalog agent it names — every
-// OTHER agent the framework expands still needs its own
-// [subagents.<name>.opencode] block, and omitting one must fail at load.
-func TestLoadRequiresModelForFrameworkAgentOutsideExplicitAliasTargets(t *testing.T) {
+// A framework already installs the catalog name. A second alias cannot share
+// its rendered file without overriding one of the two installed host names.
+func TestLoadRejectsAliasDuplicatingFrameworkAgent(t *testing.T) {
 	doc := `
 [frameworks.onto]
 source = "builtin:onto"
@@ -631,8 +652,8 @@ model = "anthropic/claude-haiku-4-5"
 model = "anthropic/claude-sonnet-4"
 `
 	err := loadDoc(t, doc)
-	if err == nil || !strings.Contains(err.Error(), "subagents.onto-skeptic.opencode model is required") {
-		t.Fatalf("a framework agent not covered by the explicit alias must fail at load, got: %v", err)
+	if err == nil || !strings.Contains(err.Error(), "different aliases") {
+		t.Fatalf("alias duplicating a framework agent must fail at load, got: %v", err)
 	}
 }
 
@@ -862,10 +883,6 @@ model = "anthropic/claude-opus-4-8"
 // conflict is judged per catalog name regardless of the entries' own targets.
 func TestConflictingOverridesRejectedAcrossTargets(t *testing.T) {
 	doc := `
-[frameworks.onto]
-source = "builtin:onto"
-scope = "project"
-
 [subagents.a]
 source = "builtin:onto-skeptic"
 scope = "project"
@@ -874,14 +891,11 @@ targets = ["opencode"]
 model = "anthropic/claude-opus-4-8"
 variant = "thinking"
 
-[subagents.b]
-source = "builtin:onto-skeptic"
-scope = "project"
-[subagents.b.opencode]
+[subagents.onto-skeptic.opencode]
 model = "anthropic/claude-opus-4-8"
 variant = "fast"
 
-	` + modelsFor("homonto", "onto-explorer", "onto-reviewer", "onto-implementer")
+	`
 	err := loadDoc(t, doc)
 	if err == nil || !strings.Contains(err.Error(), "must agree") {
 		t.Fatalf("conflicting overrides for one builtin must be a deterministic load error, got: %v", err)
@@ -900,11 +914,7 @@ source = "builtin:onto-skeptic"
 model = "anthropic/claude-opus-4-8"
 variant = "thinking"
 
-[frameworks.onto]
-source = "builtin:onto"
-scope = "project"
-
-	`+modelsFor("homonto", "onto-explorer", "onto-reviewer", "onto-implementer"))
+	`)
 	if err != nil {
 		t.Fatalf("load: %v", err)
 	}

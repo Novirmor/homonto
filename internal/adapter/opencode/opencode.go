@@ -29,7 +29,7 @@ type Adapter struct {
 // catalogPluginNames are the bundled plugin names homonto materializes as
 // owned catalog content and projects by their materialized path when a
 // config declares them by bare name (ADR 0029).
-var catalogPluginNames = map[string]bool{"permission-observer": true}
+var catalogPluginNames = map[string]bool{"permission-observer": true, "homonto-workflow": true}
 
 // New builds an OpenCode adapter at user scope. home is $HOME; content holds
 // owned skills. Use WithProjectRoot to install project-scope skills.
@@ -284,10 +284,10 @@ func (a *Adapter) Plan(c *config.Config, st *state.State) (adapter.ChangeSet, er
 			entry := src
 			if a.PluginCatalogRoot != "" {
 				if _, ok := catalogPluginNames[src]; ok {
-					entry = filepath.Join(a.PluginCatalogRoot, src)
+					entry = filepath.Join(a.PluginCatalogRoot, src, "plugin.ts")
 				}
 			}
-			_, inState := st.Get("opencode", "plugin."+src)
+			previous, inState := st.Get("opencode", "plugin."+src)
 			if !pl.IsEnabled() {
 				// Disabled: ensure absent, but only ever remove a homonto-managed
 				// entry (recorded in state). A present-but-unmanaged source is left
@@ -301,6 +301,10 @@ func (a *Adapter) Plan(c *config.Config, st *state.State) (adapter.ChangeSet, er
 				if inState {
 					cs.Changes = append(cs.Changes, adapter.Change{Action: "delete", Key: "plugin." + src, Old: adapter.SecretRedaction, Cause: adapter.CauseDisable})
 				}
+				continue
+			}
+			if inState && catalogPluginNames[src] && a.PluginCatalogRoot != "" && previous.Desired != structproj.MustJSON(entry) {
+				cs.Changes = append(cs.Changes, adapter.Change{Action: "update", Key: "plugin." + src, New: structproj.MustJSON(entry), Cause: adapter.CauseDeclare})
 				continue
 			}
 			if arrayHas(doc, "plugin", entry) {
@@ -485,7 +489,7 @@ func (a *Adapter) ObserveHashes(st *state.State) (map[string]string, error) {
 			// path), so check that, not the bare state key.
 			entry := trim(key, "plugin.")
 			if a.PluginCatalogRoot != "" && catalogPluginNames[entry] {
-				entry = filepath.Join(a.PluginCatalogRoot, entry)
+				entry = filepath.Join(a.PluginCatalogRoot, entry, "plugin.ts")
 			}
 			if arrayHas(doc, "plugin", entry) {
 				if e, ok := st.Get("opencode", key); ok {
@@ -588,6 +592,17 @@ func (a *Adapter) Apply(cfg *config.Config, cs adapter.ChangeSet, res *secret.Re
 			val, err := res.ResolveJSON(c.New)
 			if err != nil {
 				return err
+			}
+			// A bundled source used to resolve to a directory. Retire only its
+			// recorded membership when the same source now resolves to plugin.ts.
+			if previous, ok := st.Get("opencode", c.Key); ok && catalogPluginNames[trim(c.Key, "plugin.")] && previous.Desired != "" && previous.Desired != c.New {
+				old, err := res.ResolveJSON(previous.Desired)
+				if err != nil {
+					return err
+				}
+				if doc, err = jsonutil.RemoveArrayElem(doc, "plugin", fmt.Sprintf("%v", old)); err != nil {
+					return err
+				}
 			}
 			// The element is the RESOLVED entry (c.New): a bundled plugin
 			// projects its materialized path, not the bare name.

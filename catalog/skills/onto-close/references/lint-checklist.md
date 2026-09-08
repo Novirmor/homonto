@@ -12,7 +12,8 @@ obligation: fix them or stop.
       A capability declared changed with no delta is a blocking finding —
       not a checkbox to wave through.
 - [ ] Diff the change against its `base_ref` (`git diff --stat
-      <base_ref>..HEAD`). If it touched product source but the workspace
+      <base_ref>..HEAD`) in every selected source execution root, using each
+      alias's `repo_bases` anchor in schema 2, never records HEAD. If it touched product source but the workspace
       has **zero** `specs/*.md` deltas, that is a finding: either the
       change has no spec-level behavior (state that explicitly, in the
       close summary, as a deliberate no-spec change) or a delta is missing.
@@ -48,8 +49,13 @@ obligation: fix them or stop.
 - [ ] Every template-based artifact **that exists** follows its
       template's section structure — proposal, design, tasks, notes,
       plan, verification — checked against their references (deviation
-      anywhere is a finding; presets legitimately lack design/plan and
-      possibly notes)
+      anywhere is a finding). Unupgraded fix/tweak proposals use
+      `onto-open/references/preset-proposal.md`, including non-empty Grounding,
+      Capability Impact and Acceptance Scenarios, not the full proposal template.
+      Presets legitimately lack design/plan and possibly notes; without plan,
+      each task has its inline Owner/Repo/Cwd/Files/Change/Verify contract.
+- [ ] Every preset Acceptance Scenario has current report evidence, even with
+      no deltas. A no-spec statement is not an exemption from behavior verification.
 - [ ] **`tasks.md` ↔ `plan.md` correspondence** — **run `onto doctor`, do not
       eyeball this.** The binary reports every task number in one file and not
       the other, and any checkbox in `plan.md` (which carries no completion

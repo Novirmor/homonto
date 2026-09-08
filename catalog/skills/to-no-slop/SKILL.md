@@ -9,6 +9,10 @@ metadata:
 
 # to-no-slop
 
+Follow the shared [workspace and dirty-work policy](../homonto/references/workspace-policy.md)
+before prose edits, even on direct entry; prose cleanup does not authorize
+overwriting user edits or bypassing managed records checkpoints.
+
 Eliminate predictable AI writing patterns from prose. This is the to
 framework's build of the **stop-slop** skill by Hardik Pandya, unchanged in its
 rules and extended with a short section on applying them inside to. (to ships

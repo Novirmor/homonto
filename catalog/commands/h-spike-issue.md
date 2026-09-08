@@ -14,3 +14,6 @@ and stop.
 
 This command is research. It never edits code, creates branches, starts
 workflow state, pushes, or posts to GitHub.
+Continue in the same invocation to a citation-checked implementation brief
+with risks and workflow fit, unless the user names an earlier endpoint or
+asks to pause. An explicitly requested closed issue needs no second approval.

@@ -1,16 +1,18 @@
 package permevent
 
 import (
+	"encoding/json"
 	"os"
+	"os/exec"
+	"strings"
 	"testing"
 )
 
 // TestParseStreamContract pins the correlated decision stream against the
 // upstream OpenCode event shapes at PinnedOpencodeRevision. The fixture is a
-// capture of the event payloads documented in the pinned revision's
-// permission service (asked carries the full request; replied carries only
-// sessionID/requestID/reply). If upstream changes a field this test fails and
-// the pin must be revisited deliberately.
+// reproduction of the pinned runtime producer's payloads, not the stale v1 SDK
+// (asked carries the full request; replied carries sessionID/requestID/reply).
+// This offline test does not detect changes in un-fetched upstream revisions.
 func TestParseStreamContract(t *testing.T) {
 	f, err := os.Open("testdata/opencode_events.jsonl")
 	if err != nil {
@@ -51,6 +53,16 @@ func TestParseStreamContract(t *testing.T) {
 	}
 }
 
+func TestPermissionPluginRuntime(t *testing.T) {
+	if _, err := exec.LookPath("node"); err != nil {
+		t.Skip("Node unavailable; TS runtime contract not run")
+	}
+	cmd := exec.Command("node", "testdata/plugin-runtime.mjs", "../../catalog/plugins/permission-observer/plugin.ts", "testdata/opencode_events.jsonl")
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("TypeScript runtime contract: %v\n%s", err, out)
+	}
+}
+
 func TestCorrelatorFailsClosed(t *testing.T) {
 	cases := []struct {
 		name  string
@@ -68,6 +80,11 @@ func TestCorrelatorFailsClosed(t *testing.T) {
 			`{"type":"permission.replied","properties":{"sessionID":"s2","requestID":"per_1","reply":"once"}}`,
 		}},
 		{"ask missing session", []string{`{"type":"permission.asked","properties":{"id":"per_1","permission":"bash","patterns":["x"]}}`}},
+		{"stale SDK ask", []string{`{"type":"permission.updated","properties":{"id":"per_1","sessionID":"s","type":"bash"}}`}},
+		{"stale SDK reply", []string{
+			`{"type":"permission.asked","properties":{"id":"per_1","sessionID":"s","permission":"bash"}}`,
+			`{"type":"permission.replied","properties":{"sessionID":"s","permissionID":"per_1","response":"once"}}`,
+		}},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -88,5 +105,50 @@ func TestCorrelatorFailsClosed(t *testing.T) {
 func TestPinnedRevisionRecorded(t *testing.T) {
 	if len(PinnedOpencodeRevision) != 40 {
 		t.Fatalf("pinned revision must be a full 40-char commit hash, got %q", PinnedOpencodeRevision)
+	}
+	data, err := os.ReadFile("testdata/opencode-producer.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	type contract struct {
+		Event            string
+		Required, Absent []string
+	}
+	var producer struct {
+		Revision       string
+		Asked, Replied contract
+	}
+	if err := json.Unmarshal(data, &producer); err != nil {
+		t.Fatal(err)
+	}
+	if producer.Revision != PinnedOpencodeRevision || producer.Asked.Event != EventAsked || producer.Replied.Event != EventReplied {
+		t.Fatalf("producer pin drift: %+v", producer)
+	}
+	data, err = os.ReadFile("testdata/opencode_events.jsonl")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, line := range strings.Split(strings.TrimSpace(string(data)), "\n") {
+		var event struct {
+			Type       string
+			Properties map[string]any
+		}
+		if err := json.Unmarshal([]byte(line), &event); err != nil {
+			t.Fatal(err)
+		}
+		c := producer.Asked
+		if event.Type == producer.Replied.Event {
+			c = producer.Replied
+		}
+		for _, key := range c.Required {
+			if _, ok := event.Properties[key]; !ok {
+				t.Errorf("%s missing producer field %s", event.Type, key)
+			}
+		}
+		for _, key := range c.Absent {
+			if _, ok := event.Properties[key]; ok {
+				t.Errorf("%s has stale SDK field %s", event.Type, key)
+			}
+		}
 	}
 }

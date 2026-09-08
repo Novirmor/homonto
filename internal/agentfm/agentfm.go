@@ -11,7 +11,7 @@
 //	homonto:
 //	  read_only: true       # deny edits/writes
 //	  bash: false           # optional; false denies bash (default: allowed)
-//	  network: false        # optional; false denies web fetch/search
+//	  network: true         # optional; explicitly allow/deny web fetch/search
 //	  dialogs: true         # allow the interactive question/dialog tool
 //	  spawn: []             # delegation topology: agents this one may dispatch
 //	  primary: true         # OpenCode primary agent
@@ -24,8 +24,8 @@
 // with no such block (and thus no model) is a load-time error, not a silent
 // default.
 //
-// OpenCode denies by exception: a `permission:` map carries the denials, and
-// every capability the intent does not deny stays at the tool's default.
+// OpenCode's `permission:` map carries explicit rules; omitted capabilities
+// stay at the tool's default. `network` renders allow/deny for web fetch/search.
 // read_only/bash/spawn:[] render fully; `dialogs` renders as
 // `question: allow|deny`; a named spawn list renders as task globs; `steps`
 // renders as `steps:`. Every non-homonto frontmatter line except `mode:` is
@@ -38,24 +38,24 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"unicode"
 
 	"gopkg.in/yaml.v3"
 )
 
 // Homonto is the neutral capability intent declared under the `homonto:` key.
-// Model selection is config-driven ([subagents.<name>.<tool>]); a legacy
-// `role:` field in the YAML, if present, is silently dropped by the YAML
-// decoder as an unknown field.
+// Model selection is config-driven ([subagents.<name>.<tool>]); unknown neutral
+// capability fields are rejected rather than silently ignored.
 type Homonto struct {
-	ReadOnly  bool      `yaml:"read_only"`  // deny edits/writes
-	Bash      *bool     `yaml:"bash"`       // nil = default (allowed); false = deny
-	Network   *bool     `yaml:"network"`    // nil = default (allowed); false = deny web fetch/search
-	BashAllow []string  `yaml:"bash_allow"` // allowlisted shell commands; all other commands ask
-	BashDeny  []string  `yaml:"bash_deny"`  // denied even inside bash_allow's reach; rendered last so it wins
-	Dialogs   bool      `yaml:"dialogs"`    // allow the question/dialog tool
-	Spawn     *[]string `yaml:"spawn"`      // nil = unrestricted; [] = none; [a,b] = only these
-	Primary   bool      `yaml:"primary"`    // OpenCode primary agent
-	Steps     int       `yaml:"steps"`      // OpenCode iteration budget
+	ReadOnly  bool      `yaml:"read_only"`       // deny edits/writes
+	Bash      *bool     `yaml:"bash"`            // nil = default (allowed); false = deny
+	Network   *bool     `yaml:"network"`         // nil = tool default; true/false = allow/deny web fetch/search
+	BashAllow []string  `yaml:"bash_allow"`      // allowlisted shell commands; all other commands ask
+	BashDeny  []string  `yaml:"bash_deny"`       // denied even inside bash_allow's reach; rendered last so it wins
+	Dialogs   bool      `yaml:"dialogs"`         // allow the question/dialog tool
+	Spawn     *[]string `yaml:"spawn"`           // nil = unrestricted; [] = none; [a,b] = only these
+	Primary   bool      `yaml:"primary"`         // OpenCode primary agent
+	Steps     int       `yaml:"steps,omitempty"` // OpenCode iteration budget
 }
 
 // ModelSpec is a fully-resolved model choice for one tool: which model, which
@@ -65,8 +65,9 @@ type ModelSpec struct {
 	Model   string
 	Variant string
 	Effort  string
+	Steps   *int
 	// BashAllowAdd appends exact commands to the agent's base bash_allow
-	// (rendered after the base list, before "*": ask ordering stays intact).
+	// before composition guards and final denies.
 	BashAllowAdd []string
 }
 
@@ -77,10 +78,21 @@ type ModelSpec struct {
 // reserved for catalog projection tests that intentionally omit model routing.
 type RenderContext struct {
 	Overrides map[string]ModelSpec
-	// ExternalDirectoriesByAgent names the resolved [repos] paths that each
+	// Names maps catalog identities to their single installed host name.
+	Names map[string]string
+	// ShellProxy is the resolved tooling provider; only "rtk" derives wrapped
+	// bash rules. Empty/"none" leave the agent's command patterns unchanged.
+	ShellProxy string
+	// ExternalDirectoriesByAgent names the resolved workspace directories that each
 	// bundled writable workflow role may access. The engine owns this map so a
 	// custom agent cannot self-grant access by declaring frontmatter.
 	ExternalDirectoriesByAgent map[string][]string
+	// ExternalDirectoryDeniesByAgent excludes coordinator-owned records even
+	// when they lie beneath an otherwise trusted source root. Denies render last.
+	ExternalDirectoryDeniesByAgent map[string][]string
+	// EditDirectoryDeniesByAgent additionally carries worktree-relative paths,
+	// which native edit/write/apply_patch use instead of absolute paths.
+	EditDirectoryDeniesByAgent map[string][]string
 	// Targets names actually projected to this tool. It lets materialization skip
 	// an unselected tool variant without weakening validation for selected agents.
 	Targets map[string]bool
@@ -93,10 +105,33 @@ type RenderContext struct {
 func NeedsTransform(content []byte) (bool, error) {
 	fm, _, ok := split(content)
 	if !ok {
+		if bytes.HasPrefix(bytes.TrimPrefix(content, []byte("\xef\xbb\xbf")), []byte("---")) {
+			return false, fmt.Errorf("agentfm: malformed frontmatter fence; use --- on separate LF or CRLF lines")
+		}
 		return false, nil
 	}
 	_, has, err := parseHomonto(fm)
 	return has, err
+}
+
+// ValidateInstalledName keeps native/verbatim agent metadata from overriding
+// the filename alias. It never rewrites content owned by the user.
+func ValidateInstalledName(name string, content []byte) error {
+	fm, _, ok := split(content)
+	if !ok {
+		_, err := NeedsTransform(content)
+		return err
+	}
+	var header struct {
+		Name string `yaml:"name"`
+	}
+	if err := yaml.Unmarshal(fm, &header); err != nil {
+		return fmt.Errorf("agentfm: malformed frontmatter: %w", err)
+	}
+	if header.Name != "" && header.Name != name {
+		return fmt.Errorf("frontmatter name %q conflicts with installed alias %q; use the matching config key or update the source name (linked content is not rewritten)", header.Name, name)
+	}
+	return nil
 }
 
 // ProjectsFor reports whether content is projected for tool at all. It is
@@ -121,6 +156,9 @@ func ProjectsFor(content []byte, tool string) (bool, error) {
 func Render(name string, content []byte, tool string, ctx *RenderContext) ([]byte, error) {
 	fm, body, ok := split(content)
 	if !ok {
+		if _, err := NeedsTransform(content); err != nil {
+			return nil, err
+		}
 		return content, nil
 	}
 	h, has, err := parseHomonto(fm)
@@ -132,6 +170,15 @@ func Render(name string, content []byte, tool string, ctx *RenderContext) ([]byt
 		return nil, fmt.Errorf("agentfm: malformed homonto block: %w", err)
 	}
 	if !has {
+		installedName := name
+		if ctx != nil && ctx.Names[name] != "" {
+			installedName = ctx.Names[name]
+		}
+		if installedName != "" {
+			if err := ValidateInstalledName(installedName, content); err != nil {
+				return nil, fmt.Errorf("agentfm: builtin %q native projection: %w", name, err)
+			}
+		}
 		return content, nil
 	}
 	// A non-nil context marks a production render after framework expansion.
@@ -139,6 +186,8 @@ func Render(name string, content []byte, tool string, ctx *RenderContext) ([]byt
 	var (
 		spec                       ModelSpec
 		externalDirectories        []string
+		externalDirectoryDenies    []string
+		editDirectoryDenies        []string
 		managesExternalDirectories bool
 	)
 	if ctx != nil {
@@ -148,12 +197,49 @@ func Render(name string, content []byte, tool string, ctx *RenderContext) ([]byt
 			return nil, fmt.Errorf("agentfm: agent %q has no model for tool %s; [subagents.%s.%s] model is required", name, tool, name, tool)
 		}
 		externalDirectories, managesExternalDirectories = ctx.ExternalDirectoriesByAgent[name]
+		externalDirectoryDenies = ctx.ExternalDirectoryDeniesByAgent[name]
+		editDirectoryDenies = append(append([]string(nil), externalDirectoryDenies...), ctx.EditDirectoryDeniesByAgent[name]...)
+		for _, dir := range editDirectoryDenies {
+			if dir == "" || strings.ContainsAny(dir, "*?") || strings.ContainsFunc(dir, unicode.IsControl) {
+				return nil, fmt.Errorf("agentfm: agent %q edit directory %q must not be empty or contain controls or wildcard characters", name, dir)
+			}
+		}
+		for _, dirs := range [][]string{externalDirectories, externalDirectoryDenies} {
+			for _, dir := range dirs {
+				if !filepath.IsAbs(dir) || strings.ContainsAny(dir, "*?") || strings.ContainsFunc(dir, unicode.IsControl) {
+					return nil, fmt.Errorf("agentfm: agent %q permission directory %q must be an absolute path without controls or wildcard characters", name, dir)
+				}
+			}
+		}
+		for _, value := range []string{spec.Model, spec.Variant} {
+			if strings.ContainsFunc(value, func(r rune) bool { return unicode.IsControl(r) || r == '\u2028' || r == '\u2029' }) {
+				return nil, fmt.Errorf("agentfm: agent %q model/variant must not contain controls or line breaks", name)
+			}
+		}
+		if spec.Steps != nil {
+			if *spec.Steps <= 0 {
+				return nil, fmt.Errorf("agentfm: agent %q steps must be positive", name)
+			}
+			h.Steps = *spec.Steps
+		}
+		if h.Spawn != nil {
+			spawn := append([]string(nil), (*h.Spawn)...)
+			for i, source := range spawn {
+				if alias := ctx.Names[source]; alias != "" {
+					spawn[i] = alias
+				}
+			}
+			h.Spawn = &spawn
+		}
 	}
 
 	// Preserve every frontmatter line except the homonto block and the mode line
 	// (re-emitted per tool below).
 	var kept []string
 	for _, ln := range stripHomontoBlock(fm) {
+		if ctx != nil && ctx.Names[name] != "" && strings.HasPrefix(ln, "name:") {
+			ln = fmt.Sprintf("name: %q", ctx.Names[name])
+		}
 		if strings.HasPrefix(strings.TrimSpace(ln), "mode:") {
 			continue
 		}
@@ -173,9 +259,9 @@ func Render(name string, content []byte, tool string, ctx *RenderContext) ([]byt
 		// There is no separate effort concept: an `effort:` value is rejected
 		// at load, not silently dropped here.
 		if spec.Model != "" {
-			extra = append(extra, "model: "+spec.Model)
+			extra = append(extra, fmt.Sprintf("model: %q", spec.Model))
 			if spec.Variant != "" {
-				extra = append(extra, "variant: "+spec.Variant)
+				extra = append(extra, fmt.Sprintf("variant: %q", spec.Variant))
 			}
 		}
 		if h.Steps > 0 {
@@ -184,7 +270,12 @@ func Render(name string, content []byte, tool string, ctx *RenderContext) ([]byt
 		if h.Bash != nil && !*h.Bash && (len(spec.BashAllowAdd) > 0 || len(h.BashDeny) > 0) {
 			return nil, fmt.Errorf("agentfm: agent %q declares bash: deny but carries bash_allow_add/bash_deny entries; a denied agent cannot gain exact allows or denies", name)
 		}
-		if perm := opencodePermission(h, spec.BashAllowAdd, externalDirectories, managesExternalDirectories); perm != "" {
+		if ctx != nil && ctx.ShellProxy == "rtk" && (h.Bash == nil || *h.Bash) {
+			h.BashAllow = rtkPatterns(h.BashAllow, false)
+			spec.BashAllowAdd = rtkPatterns(spec.BashAllowAdd, false)
+			h.BashDeny = rtkPatterns(h.BashDeny, true)
+		}
+		if perm := opencodePermission(h, spec.BashAllowAdd, externalDirectories, externalDirectoryDenies, editDirectoryDenies, managesExternalDirectories); perm != "" {
 			extra = append(extra, "permission:", perm)
 		}
 	default:
@@ -203,62 +294,112 @@ func Render(name string, content []byte, tool string, ctx *RenderContext) ([]byt
 	}
 	b.WriteString("---\n")
 	b.Write(body)
+	if ctx != nil && ctx.Names[name] != "" {
+		if err := ValidateInstalledName(ctx.Names[name], b.Bytes()); err != nil {
+			return nil, fmt.Errorf("agentfm: agent %q alias projection: %w", name, err)
+		}
+	}
 	return b.Bytes(), nil
 }
 
-// bashCompositionGuards are shell-composition patterns re-asked after every
-// bash allowlist: separators, conditional chains, pipes, command
-// substitution, backticks, redirection, and multi-line commands. Each lets an
-// allowed prefix chain a second command, which the allow glob would otherwise
-// match and run without a prompt.
+// rtkPatterns preserves originals. Allows use only known equivalent native
+// command families; other executables use literal passthrough. Denies mirror
+// both forms even for wildcard executables, since broader denials grant nothing.
+func rtkPatterns(commands []string, deny bool) []string {
+	patterns := append([]string(nil), commands...)
+	for _, command := range commands {
+		words := strings.Fields(command)
+		if len(words) == 0 || words[0] == "rtk" {
+			continue
+		}
+		// A grant must have a literal executable prefix; never derive "rtk proxy *".
+		if !deny && strings.ContainsAny(words[0][:1], "*?") {
+			continue
+		}
+		native := false
+		// Inspected RTK command families. Names such as test, run, read, and
+		// lint have different semantics in RTK and must NOT be mirrored natively.
+		switch words[0] {
+		case "git", "go", "cargo", "npm", "pnpm", "pytest", "gh":
+			native = true
+		}
+		if deny || native {
+			patterns = append(patterns, "rtk "+command)
+		}
+		patterns = append(patterns, "rtk proxy "+command)
+	}
+	return patterns
+}
+
+// bashCompositionGuards re-ask when a permission request contains shell
+// composition: separators, pipes, substitutions, redirection, or newlines.
+// The host may instead request parsed commands independently; these guards
+// do not imply that every compound shell invocation prompts.
 var bashCompositionGuards = []string{
 	"*;*", "*&&*", "*||*", "*|*", "*$(*", "*`*", "*>*", "*<*", "*\n*",
 }
 
 // opencodePermission renders the OpenCode `permission:` block body (indented
 // lines) for the neutral intent, including the delegation topology as task globs.
-func opencodePermission(h Homonto, additions, externalDirectories []string, managesExternalDirectories bool) string {
+func opencodePermission(h Homonto, additions, externalDirectories, externalDirectoryDenies, editDirectoryDenies []string, managesExternalDirectories bool) string {
 	var lines []string
 	if h.ReadOnly {
 		lines = append(lines, "  edit: deny")
+	} else if len(editDirectoryDenies) > 0 {
+		// Add only record denies; preserve inherited edit asks and restrictions.
+		lines = append(lines, "  edit:")
+		dirs := append([]string(nil), editDirectoryDenies...)
+		sort.Strings(dirs)
+		seen := map[string]bool{}
+		for _, dir := range dirs {
+			pattern := filepath.ToSlash(filepath.Join(filepath.Clean(dir), "**"))
+			if !seen[pattern] {
+				lines = append(lines, fmt.Sprintf("    %q: deny", pattern))
+				seen[pattern] = true
+			}
+		}
 	}
 	if h.Bash != nil && !*h.Bash {
 		lines = append(lines, "  bash: deny")
 	} else if len(h.BashAllow) > 0 || len(additions) > 0 || len(h.BashDeny) > 0 {
-		// OpenCode evaluates the final matching rule, so the broad prompt must
-		// precede the command-specific allows. Additions (bash_allow_add, the
-		// reviewed permission-suggestion output) append after the base list,
-		// deduplicated.
-		lines = append(lines, "  bash:", `    "*": ask`)
-		seen := map[string]bool{}
-		for _, command := range append(append([]string{}, h.BashAllow...), additions...) {
-			if strings.TrimSpace(command) == "" || seen[command] {
-				continue
+		// Construct the last-match-wins sequence before serializing unique keys.
+		type rule struct{ pattern, action string }
+		rules := []rule{{"*", "ask"}}
+		addRules := func(action string, patterns []string) {
+			for _, pattern := range patterns {
+				if strings.TrimSpace(pattern) != "" {
+					rules = append(rules, rule{pattern, action})
+				}
 			}
-			seen[command] = true
-			lines = append(lines, fmt.Sprintf("    %q: allow", command))
 		}
-		// Composition guards, emitted AFTER the allows: a prefix allow like
-		// "git status*" also matches "git status; curl …" under glob
-		// matching, and last-match-wins would run the chained command
-		// silently. Re-asking every compound form closes that hole for the
-		// whole allowlist at once.
-		for _, guard := range bashCompositionGuards {
-			lines = append(lines, fmt.Sprintf("    %q: ask", guard))
+		addRules("allow", h.BashAllow)
+		addRules("allow", additions)
+		// Guards follow allows so a request containing "git status; curl ..."
+		// re-asks despite matching "git status*". If the host requests each
+		// parsed command separately, each receives its own matching rule.
+		addRules("ask", bashCompositionGuards)
+		// Explicit denies render LAST, including after user additions: bypass
+		// requests are single commands, not shell composition guards can catch.
+		addRules("deny", h.BashDeny)
+		// Keep each key at its LAST position, not just its last action at the
+		// first position: a later overlapping glob could otherwise override it.
+		last := map[string]int{}
+		for i, r := range rules {
+			last[r.pattern] = i
 		}
-		// Explicit denies render LAST: a deny like "onto bypass*" must beat
-		// the broad "onto *" allow for last-match-wins, closing the
-		// single-command gate-skipping surface guards cannot see (no
-		// composition involved).
-		for _, command := range h.BashDeny {
-			if strings.TrimSpace(command) == "" {
-				continue
+		lines = append(lines, "  bash:")
+		for i, r := range rules {
+			if last[r.pattern] == i {
+				lines = append(lines, fmt.Sprintf("    %q: %s", r.pattern, r.action))
 			}
-			lines = append(lines, fmt.Sprintf("    %q: deny", command))
 		}
 	}
-	if h.Network != nil && !*h.Network {
-		lines = append(lines, "  webfetch: deny", "  websearch: deny")
+	if h.Network != nil {
+		action := "deny"
+		if *h.Network {
+			action = "allow"
+		}
+		lines = append(lines, "  webfetch: "+action, "  websearch: "+action)
 	}
 	if !h.ReadOnly && managesExternalDirectories {
 		lines = append(lines, "  external_directory:")
@@ -268,13 +409,25 @@ func opencodePermission(h Homonto, additions, externalDirectories []string, mana
 		dirs := append([]string(nil), externalDirectories...)
 		sort.Strings(dirs)
 		seen := map[string]bool{}
+		denied := map[string]bool{}
+		for _, dir := range externalDirectoryDenies {
+			denied[filepath.ToSlash(filepath.Join(filepath.Clean(dir), "**"))] = true
+		}
 		for _, dir := range dirs {
 			pattern := filepath.ToSlash(filepath.Join(filepath.Clean(dir), "**"))
-			if seen[pattern] {
+			if seen[pattern] || denied[pattern] {
 				continue
 			}
 			seen[pattern] = true
 			lines = append(lines, fmt.Sprintf("    %q: allow", pattern))
+		}
+		patterns := make([]string, 0, len(denied))
+		for pattern := range denied {
+			patterns = append(patterns, pattern)
+		}
+		sort.Strings(patterns)
+		for _, pattern := range patterns {
+			lines = append(lines, fmt.Sprintf("    %q: deny", pattern))
 		}
 	}
 	// dialogs is enforced both ways: an agent whose protocol is "return a
@@ -302,15 +455,22 @@ func opencodePermission(h Homonto, additions, externalDirectories []string, mana
 // split separates content into its frontmatter lines and the remaining body.
 // ok is false when content does not open with a `---` frontmatter fence.
 func split(content []byte) (fm []byte, body []byte, ok bool) {
-	if !bytes.HasPrefix(content, []byte("---\n")) {
+	first, rest, found := bytes.Cut(content, []byte("\n"))
+	if !found || string(bytes.TrimSuffix(first, []byte("\r"))) != "---" {
 		return nil, nil, false
 	}
-	rest := content[len("---\n"):]
-	fm, body, found := bytes.Cut(rest, []byte("\n---\n"))
-	if !found {
-		return nil, nil, false
+	for offset := 0; offset < len(rest); {
+		line, remaining, newline := bytes.Cut(rest[offset:], []byte("\n"))
+		if string(bytes.TrimSuffix(line, []byte("\r"))) == "---" {
+			fm = bytes.ReplaceAll(rest[:offset], []byte("\r\n"), []byte("\n"))
+			return bytes.TrimSuffix(fm, []byte("\n")), remaining, true
+		}
+		if !newline {
+			break
+		}
+		offset += len(line) + 1
 	}
-	return fm, body, true
+	return nil, nil, false
 }
 
 // parseHomonto reads the `homonto:` block from frontmatter YAML. It returns the
@@ -319,6 +479,9 @@ func split(content []byte) (fm []byte, body []byte, ok bool) {
 // "no block, project verbatim" vs "block present but unparseable, fail loudly" —
 // are surfaced as (zero, false, nil) and (zero, false, err) respectively.
 func parseHomonto(fm []byte) (Homonto, bool, error) {
+	if bytes.ContainsRune(fm, '\r') {
+		return Homonto{}, false, fmt.Errorf("frontmatter must use LF or CRLF line endings, not bare CR")
+	}
 	var raw map[string]yaml.Node
 	if err := yaml.Unmarshal(fm, &raw); err != nil {
 		return Homonto{}, false, err
@@ -352,6 +515,14 @@ func parseHomonto(fm []byte) (Homonto, bool, error) {
 	}
 	if doc.Homonto == nil {
 		return Homonto{}, false, fmt.Errorf("homonto block must be an object")
+	}
+	for i := 0; i < len(node.Content); i += 2 {
+		if node.Content[i].Value == "steps" && doc.Homonto.Steps <= 0 {
+			return Homonto{}, false, fmt.Errorf("homonto steps must be positive")
+		}
+	}
+	if h := doc.Homonto; h.Bash != nil && !*h.Bash && (len(h.BashAllow) > 0 || len(h.BashDeny) > 0) {
+		return Homonto{}, false, fmt.Errorf("homonto bash: false contradicts bash_allow/bash_deny entries")
 	}
 	return *doc.Homonto, true, nil
 }

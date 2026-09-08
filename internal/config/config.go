@@ -162,11 +162,14 @@ func (s Subagent) IsTuneOnly() bool {
 // IsSet reports whether any override field is present — the "this block
 // tunes an agent" signal for source-less subagent entries.
 func (r ModelRoute) IsSet() bool {
-	return r.Model != "" || r.Effort != "" || r.Variant != "" || len(r.BashAllowAdd) > 0
+	return r.Model != "" || r.Effort != "" || r.Variant != "" || r.Steps != nil || len(r.BashAllowAdd) > 0
 }
 
 // Equal compares two routes field-by-field (slice-safe).
 func (r ModelRoute) Equal(o ModelRoute) bool {
+	if (r.Steps == nil) != (o.Steps == nil) || (r.Steps != nil && *r.Steps != *o.Steps) {
+		return false
+	}
 	if r.Model != o.Model || r.Effort != o.Effort || r.Variant != o.Variant || len(r.BashAllowAdd) != len(o.BashAllowAdd) {
 		return false
 	}
@@ -249,6 +252,7 @@ type ModelRoute struct {
 	Model   string `toml:"model"`
 	Effort  string `toml:"effort"`
 	Variant string `toml:"variant"`
+	Steps   *int   `toml:"steps"` // optional positive host iteration budget
 	// BashAllowAdd appends exact commands to a framework agent's base
 	// bash_allow list (ADR 0029): the reviewed output of permission
 	// suggestions. Only legal on tune-only/opencode entries; pattern
@@ -292,6 +296,19 @@ type TUI struct {
 	OpenCode map[string]any `toml:"opencode"`
 }
 
+// Integrations controls opt-out runtime integrations that accompany a
+// framework. Nil preserves the framework's documented defaults.
+type Integrations struct {
+	OpenCode OpenCodeIntegrations `toml:"opencode"`
+}
+
+// OpenCodeIntegrations controls project-local OpenCode runtime integrations.
+// WorkflowBridge defaults to enabled whenever a builtin workflow framework is
+// installed; false removes only homonto's managed bridge link.
+type OpenCodeIntegrations struct {
+	WorkflowBridge *bool `toml:"workflow_bridge"`
+}
+
 // Marketplace is the post-removal detector shape for
 // [marketplaces.claude.<name>] declarations: Claude Code support was removed
 // in v0.13.0, so any non-empty value is rejected at load. The locator fields
@@ -312,26 +329,25 @@ type Marketplaces struct {
 
 // CurrentConfigSchemaVersion is the homonto.toml schema version this binary
 // supports. A config declaring a higher version is rejected fail-closed at load.
-const CurrentConfigSchemaVersion = 1
+const CurrentConfigSchemaVersion = 2
 
 // Config is the tool-agnostic desired state parsed from homonto.toml.
 type Config struct {
 	// SchemaVersion is the homonto.toml format version. Absent/0 means a legacy
-	// (pre-versioning) config and is treated as the current version; a value
+	// (pre-versioning) config and retains implicit-repository semantics; a value
 	// greater than CurrentConfigSchemaVersion is rejected fail-closed at load so
 	// an older binary never silently mis-applies a newer config.
 	SchemaVersion int                 `toml:"schema_version,omitempty"`
 	Workflow      Workflow            `toml:"workflow"`
+	Worktrees     Worktrees           `toml:"worktrees"`
 	MCPs          map[string]MCP      `toml:"mcps"`
 	Frameworks    map[string]Resource `toml:"frameworks"`
 	Skills        map[string]Resource `toml:"skills"`
 	Commands      map[string]Resource `toml:"commands"`
 	Subagents     map[string]Subagent `toml:"subagents"`
-	// Repos declares the other repositories this config operates across
-	// (ADR 0024): name -> path, resolved relative to this config file. The
-	// config repo itself is implicit and never listed. Stage 1 (this field)
-	// is declarative context only — projection and workflow changes stay in
-	// the config repo until the staged cross-repo work ships.
+	// Repos maps code repository names to paths relative to this config file.
+	// Schema 0/1 implicitly includes the config repo and forbids listing it;
+	// schema 2 uses only explicit declarations and permits path ".".
 	Repos map[string]string `toml:"repos"`
 	// Models captures any legacy [models.<tool>.<tier>] block so Load can
 	// detect and reject it. The field must be exported for pelletier/go-toml/v2
@@ -351,6 +367,7 @@ type Config struct {
 	Plugins      Plugins          `toml:"plugins"`
 	Settings     Settings         `toml:"settings"`
 	TUI          TUI              `toml:"tui"`
+	Integrations Integrations     `toml:"integrations"`
 	Marketplaces Marketplaces     `toml:"marketplaces"`
 	Agents       map[string]Agent `toml:"agents"`
 
@@ -375,14 +392,45 @@ type Config struct {
 	repoDirs map[string]string
 }
 
-// Workflow configures the one repository-local home for onto or to artifacts.
+// WorkflowBridgeEnabled reports whether the project should receive the bundled
+// runtime workflow observer. It is enabled by default for the shipped workflow
+// frameworks and can be disabled explicitly under [integrations.opencode].
+func (c *Config) WorkflowBridgeEnabled() bool {
+	if c.Integrations.OpenCode.WorkflowBridge != nil {
+		return *c.Integrations.OpenCode.WorkflowBridge
+	}
+	for _, framework := range c.Frameworks {
+		switch framework.Source {
+		case "builtin:onto", "builtin:to", "builtin:h":
+			return true
+		}
+	}
+	return false
+}
+
+// Workflow configures the shared home for onto or to artifacts.
 // The frameworks share this root; their records stay in disjoint subtrees
 // (changes/ vs tasks/, ADR 0042).
 type Workflow struct {
 	Root string `toml:"root"`
+	Git  string `toml:"git"`
 }
 
-// RootOrDefault returns the normalized workflow root relative to homonto.toml.
+// Worktrees declares a dedicated allocation parent, independent of records.
+// An empty Dir does not authorize worktree allocation.
+type Worktrees struct {
+	Dir string `toml:"dir"`
+}
+
+func (w Workflow) GitOrDefault() string {
+	if w.Git == "" {
+		return "existing"
+	}
+	return w.Git
+}
+
+// RootOrDefault returns the configured root (default docs). Schema 2 may use an
+// external path; workspace.Load resolves the filesystem location.
 func (w Workflow) RootOrDefault() string {
 	if w.Root == "" {
 		return "docs"

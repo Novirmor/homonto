@@ -48,6 +48,10 @@ func digestBytes(data []byte) string {
 }
 
 func deltaInputs(root, changeDir string) ([]deltaInput, error) {
+	root, err := filepath.Abs(root)
+	if err != nil {
+		return nil, err
+	}
 	paths, err := deltaSpecPaths(filepath.Join(changeDir, "specs"))
 	if err != nil {
 		return nil, err

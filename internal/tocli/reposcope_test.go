@@ -6,6 +6,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/noviopenworks/homonto/internal/tostate"
 )
 
 func git(t *testing.T, dir string, args ...string) {
@@ -47,13 +49,13 @@ func TestRequireCleanScopeOnlyAuditsSelectedRepos(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(web, "dirty"), []byte("x"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if err := requireCleanScope(root, "demo", []string{"api"}); err != nil {
+	if err := requireCleanScope(root, tostate.State{Change: "demo", Phase: tostate.PhaseDo, Repos: []string{"api"}}); err != nil {
 		t.Fatalf("unselected dirty repo blocked terminal gate: %v", err)
 	}
 	if err := os.WriteFile(filepath.Join(api, "dirty"), []byte("x"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if err := requireCleanScope(root, "demo", []string{"api"}); err == nil || !strings.Contains(err.Error(), "api") {
+	if err := requireCleanScope(root, tostate.State{Change: "demo", Phase: tostate.PhaseDo, Repos: []string{"api"}}); err == nil || !strings.Contains(err.Error(), "api") {
 		t.Fatalf("selected dirty repo gate = %v, want api dirt error", err)
 	}
 }
@@ -77,13 +79,13 @@ func TestRequireCleanScopeAllowsCurrentVerificationRecord(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if err := requireCleanScope(root, "demo", []string{"api"}); err != nil {
+	if err := requireCleanScope(root, tostate.State{Change: "demo", Phase: tostate.PhaseDo, Repos: []string{"api"}}); err != nil {
 		t.Fatalf("current change verification record blocked done: %v", err)
 	}
 	if err := os.WriteFile(filepath.Join(root, "unrelated"), []byte("dirty"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if err := requireCleanScope(root, "demo", []string{"api"}); err == nil || !strings.Contains(err.Error(), "config repo") {
+	if err := requireCleanScope(root, tostate.State{Change: "demo", Phase: tostate.PhaseDo, Repos: []string{"api"}}); err == nil || !strings.Contains(err.Error(), "config repo") {
 		t.Fatalf("unrelated config dirt must still block done, got %v", err)
 	}
 }
@@ -107,7 +109,7 @@ func TestRequireCleanScopeRejectsRenameIntoCurrentWorkspace(t *testing.T) {
 	}
 	git(t, root, "mv", "source.txt", "docs/tasks/demo/evidence.txt")
 
-	if err := requireCleanScope(root, "demo", []string{"api"}); err == nil || !strings.Contains(err.Error(), "config repo") {
+	if err := requireCleanScope(root, tostate.State{Change: "demo", Phase: tostate.PhaseDo, Repos: []string{"api"}}); err == nil || !strings.Contains(err.Error(), "config repo") {
 		t.Fatalf("rename from outside into ignored workspace must block done, got %v", err)
 	}
 }
@@ -132,7 +134,7 @@ func TestRequireCleanScopeAllowsRenameWithinCurrentWorkspace(t *testing.T) {
 	git(t, root, "commit", "-m", "workspace")
 	git(t, root, "mv", "docs/tasks/demo/before.txt", "docs/tasks/demo/after.txt")
 
-	if err := requireCleanScope(root, "demo", []string{"api"}); err != nil {
+	if err := requireCleanScope(root, tostate.State{Change: "demo", Phase: tostate.PhaseDo, Repos: []string{"api"}}); err != nil {
 		t.Fatalf("rename wholly within current workspace should remain allowed: %v", err)
 	}
 }

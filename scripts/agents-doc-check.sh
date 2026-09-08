@@ -72,9 +72,9 @@ done
 # Skills and subagents are agent-facing docs too, and cross-skill references
 # are the same failure mode as the /graphify one: a skill telling an agent to
 # read a file that ships nowhere. `references/tooling.md` and
-# `references/tmp.md` are the two legitimate dangling names — `homonto apply`
-# generates them per install from `[tooling]` and `[tmp]`.
-GENERATED='references/tooling.md references/tmp.md'
+# `references/tmp.md` and `references/workspace.md` are generated names —
+# `homonto apply` renders them from tooling, tmp, and schema-2 workspace config.
+GENERATED='references/tooling.md references/tmp.md references/workspace.md'
 
 CATALOG_DOCS=()
 while IFS= read -r f; do CATALOG_DOCS+=("$f"); done < <(find catalog -name '*.md' | sort)

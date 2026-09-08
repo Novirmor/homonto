@@ -119,6 +119,8 @@ type targetIdentity struct {
 	Phase   string `json:"phase"`
 	OntoID  string `json:"ontoId,omitempty"`
 	Created string `json:"created"`
+	// Promotion carries recorded source anchors through staging and resume.
+	RepoBases map[string]ontostate.RepoBase `json:"repoBases,omitempty"`
 }
 
 // lineage is the neutral identity record carried by the active workspace.
@@ -159,18 +161,43 @@ func Run(direction, root, source, target string, ops opid.Supplier) (created str
 	if !ok {
 		return "", fmt.Errorf("convert: unknown direction %q", direction)
 	}
+	for _, name := range []string{source, target} {
+		if err := (workcli.Framework{NamePrefix: direction, ReservedNames: []string{"archive"}}).ValidChangeName(name); err != nil {
+			return "", err
+		}
+	}
 	wfRoot, err := workcli.WorkflowRoot(root)
 	if err != nil {
 		return "", fmt.Errorf("%s: resolving workflow root: %w", direction, err)
 	}
 	srcDir := filepath.Join(wfRoot, spec.from.dir, source)
 	tgtDir := filepath.Join(wfRoot, spec.to.dir, target)
+	unlockNames, err := workcli.LockChangeNames(root)
+	if err != nil {
+		return "", err
+	}
+	defer unlockNames()
+	if source != target {
+		other := filepath.Join(wfRoot, spec.from.dir, target)
+		if _, err := os.Lstat(other); err == nil {
+			return "", fmt.Errorf("%s: target name %q already exists at %s", direction, target, other)
+		} else if !os.IsNotExist(err) {
+			return "", err
+		}
+	}
+	if err := refuseBoundWorktrees(spec, root, source, target); err != nil {
+		return "", err
+	}
 
 	// Idempotent completion: receipt-verified only.
-	if done, err := completedFromReceipt(spec, tgtDir, source, target); err != nil {
+	if _, err := os.Lstat(srcDir); os.IsNotExist(err) {
+		if done, err := completedFromReceipt(spec, tgtDir, source, target); err != nil {
+			return "", err
+		} else if done {
+			return tgtDir, nil
+		}
+	} else if err != nil {
 		return "", err
-	} else if done {
-		return tgtDir, nil
 	}
 
 	// An interrupted restore resumes before anything else: its source may
@@ -393,6 +420,9 @@ func latestConversionEvent(dir string) (event, bool, error) {
 }
 
 func loadEvent(dir, id string) (event, bool, error) {
+	if id == "" || id == "." || id == ".." || strings.ContainsAny(id, `/\`) {
+		return event{}, false, fmt.Errorf("convert: unsafe event id %q", id)
+	}
 	p := filepath.Join(dir, controlDir, eventsDir, id+".json")
 	fi, err := os.Lstat(p)
 	if os.IsNotExist(err) {
@@ -411,6 +441,9 @@ func loadEvent(dir, id string) (event, bool, error) {
 	var e event
 	if err := json.Unmarshal(data, &e); err != nil {
 		return event{}, false, fmt.Errorf("convert: malformed event %s: %w", p, err)
+	}
+	if e.OperationID != id {
+		return event{}, false, fmt.Errorf("convert: event %s does not match its operation id", p)
 	}
 	return e, true, nil
 }
@@ -487,6 +520,11 @@ func resumeConversion(spec directionSpec, wfRoot, srcDir, tgtDir, source, target
 		} else if err != nil {
 			return false, "", err
 		}
+		if _, err := os.Lstat(srcDir); err == nil {
+			return false, "", fmt.Errorf("%s: source name %q was reused while its prior operation remains staged; refusing to consume a different generation", spec.name, source)
+		} else if !os.IsNotExist(err) {
+			return false, "", err
+		}
 		if err := authenticate(spec, stg, m); err != nil {
 			return false, "", err
 		}
@@ -548,11 +586,8 @@ func stagingRoot(spec directionSpec, wfRoot string) string {
 // conversion, resuming a matching interrupted one.
 func findOrStage(spec directionSpec, root, wfRoot, srcDir, source, target string, ops opid.Supplier) (string, manifest, bool, error) {
 	base := stagingRoot(spec, wfRoot)
-	if err := os.MkdirAll(base, 0o755); err != nil {
-		return "", manifest{}, false, err
-	}
 	entries, err := os.ReadDir(base)
-	if err != nil {
+	if err != nil && !os.IsNotExist(err) {
 		return "", manifest{}, false, err
 	}
 	for _, e := range entries {
@@ -602,10 +637,15 @@ func findOrStage(spec directionSpec, root, wfRoot, srcDir, source, target string
 		Phase:   targetPhase(spec, srcPhase, srcDir),
 		Created: now.Format("2006-01-02"),
 	}
+	tid.OntoID = srcOntoID
 	if spec.name == Promote {
-		tid.OntoID = ontostate.NewID()
-	} else if srcOntoID != "" {
-		tid.OntoID = srcOntoID
+		if tid.OntoID == "" {
+			tid.OntoID = ontostate.NewID()
+		}
+		tid.RepoBases, err = promotionBases(root, srcDir)
+		if err != nil {
+			return "", manifest{}, false, err
+		}
 	}
 	hashes, digest, err := snapshotTree(srcDir, legacyImportDir(spec))
 	if err != nil {
@@ -626,6 +666,9 @@ func findOrStage(spec directionSpec, root, wfRoot, srcDir, source, target string
 		SourceHashes:  hashes,
 	}
 	stg := filepath.Join(base, opID)
+	if err := os.MkdirAll(base, 0o755); err != nil {
+		return "", manifest{}, false, err
+	}
 	if err := os.Mkdir(stg, 0o700); err != nil {
 		return "", manifest{}, false, fmt.Errorf("%s: staging: %w", spec.name, err)
 	}
@@ -639,8 +682,7 @@ func findOrStage(spec directionSpec, root, wfRoot, srcDir, source, target string
 	return stg, m, false, nil
 }
 
-// sourceFacts extracts the phase, selected repos, and (for demote) the
-// native onto id of the source.
+// sourceFacts extracts the phase, selected repos, and stable workflow id.
 func sourceFacts(spec directionSpec, srcDir string) (phase string, repos []string, ontoID string, err error) {
 	switch spec.name {
 	case Promote:
@@ -648,7 +690,15 @@ func sourceFacts(spec directionSpec, srcDir string) (phase string, repos []strin
 		if err != nil {
 			return "", nil, "", err
 		}
-		return st.Phase, st.Repos, "", nil
+		if st.ID == "" {
+			// Shipped demotions kept the onto identity in the receipt only.
+			if e, ok, err := latestEvent(srcDir); err != nil {
+				return "", nil, "", err
+			} else if ok && e.Direction == Demote && e.To.Name == st.Change {
+				st.ID = e.OntoID
+			}
+		}
+		return st.Phase, st.Repos, st.ID, nil
 	case Demote:
 		st, err := ontostate.LoadChange(srcDir)
 		if err != nil {
@@ -793,6 +843,9 @@ func validateRealTree(root string) error {
 // manifest.
 func generate(spec directionSpec, work string, m manifest) error {
 	snap := filepath.Join(work, controlDir, snapshotsDir, m.OperationID, spec.from.workflow)
+	if err := validateSource(spec, snap, m.Source); err != nil {
+		return err
+	}
 	// The event receipt is written before the framework files so an
 	// interrupted generate is regenerated wholesale anyway.
 	switch spec.name {
@@ -806,12 +859,24 @@ func generate(spec directionSpec, work string, m manifest) error {
 			plan = string(b)
 		}
 		ost := ontostate.State{
-			Change:   m.Target,
-			ID:       m.TargetIdent.OntoID,
-			Workflow: "full",
-			Phase:    m.TargetIdent.Phase,
-			Created:  m.TargetIdent.Created,
-			Repos:    st.Repos,
+			SchemaVersion: ontostate.CurrentSchemaVersion,
+			Change:        m.Target,
+			ID:            m.TargetIdent.OntoID,
+			Workflow:      "full",
+			Phase:         m.TargetIdent.Phase,
+			Created:       m.TargetIdent.Created,
+			Repos:         st.Repos,
+		}
+		if st.RepoMode == tostate.SourceExplicit || len(st.RepoBases) != 0 {
+			ost.RepoMode = st.RepoMode
+			ost.RepoBases = m.TargetIdent.RepoBases
+			if ost.RepoMode == tostate.SourceLegacy {
+				ost.BaseRef = ost.RepoBases[""].BaseRef
+				ost.BaseBranch = ost.RepoBases[""].BaseBranch
+			}
+		}
+		if err := ost.Validate(); err != nil {
+			return fmt.Errorf("promote: invalid target state: %w", err)
 		}
 		if err := ontostate.Save(filepath.Join(work, "onto-state.yaml"), ost); err != nil {
 			return err
@@ -825,11 +890,36 @@ func generate(spec directionSpec, work string, m manifest) error {
 		if err != nil {
 			return fmt.Errorf("demote: regenerating to state: %w", err)
 		}
+		// A shipped interrupted manifest may have chosen do from task titles
+		// alone. Never install that phase without executable contracts.
+		if m.TargetIdent.Phase == tostate.PhaseDo && !planTranslatable(snap) {
+			m.TargetIdent.Phase = tostate.PhasePlan
+		}
 		tst := tostate.State{
+			ID:      st.ID,
 			Change:  m.Target,
 			Phase:   m.TargetIdent.Phase,
 			Created: m.TargetIdent.Created,
 			Repos:   st.Repos,
+		}
+		if st.RepoMode != "" {
+			tst.SchemaVersion = tostate.CurrentSchemaVersion
+			tst.RepoMode = st.RepoMode
+			tst.RepoBases = make(map[string]tostate.RepoBase, len(st.RepoBases))
+			for alias, base := range st.RepoBases {
+				if st.RepoMode == tostate.SourceLegacy && alias == "" {
+					if st.BaseRef != "" {
+						base.BaseRef = st.BaseRef
+					}
+					if st.BaseBranch != "" {
+						base.BaseBranch = st.BaseBranch
+					}
+				}
+				tst.RepoBases[alias] = tostate.RepoBase(base)
+			}
+		}
+		if err := tst.Validate(); err != nil {
+			return fmt.Errorf("demote: invalid target state: %w", err)
 		}
 		if err := tostate.Save(filepath.Join(work, "to-state.yaml"), tst); err != nil {
 			return err
@@ -928,11 +1018,15 @@ func authenticate(spec directionSpec, stg string, m manifest) error {
 	}
 	// The snapshot must hold the source's state file at all — an empty or
 	// gutted tree with an empty manifest hash set must not authenticate.
+	hasState := false
 	for _, state := range sourceStateFiles(spec) {
 		if _, ok := got[state]; ok {
+			hasState = true
 			break
 		}
-		return fmt.Errorf("%s: staged snapshot has no %s; refusing tampered staging", spec.name, state)
+	}
+	if !hasState {
+		return fmt.Errorf("%s: staged snapshot has no supported source state; refusing tampered staging", spec.name)
 	}
 	for path, want := range m.SourceHashes {
 		if got[path] != want {

@@ -4,6 +4,8 @@ Every review workflow presents findings in this shape — one finding per
 line, severity first, so a reader can stop reading when the severity drops.
 
 ```markdown
+Reviewed: <canonical PR URL>, base <OID>, head <OID>
+
 Findings
 
 - <Severity>: `path/to/file.ext:123` — <the defect and its impact>.
@@ -38,3 +40,7 @@ Rules:
   with no local verification says `Not run: review only`.
 - The draft is the only thing a publication decision approves. Changing the
   findings after approval reopens the approval.
+- Approval applies to the shown base/head OIDs. Recheck identity, state, and
+  refs before posting; changed refs require a new review and approval. Formal
+  reviews bind `commit_id` to the reviewed head, as specified in the shared
+  [context-pack contract](context-pack.md#publication-freshness).

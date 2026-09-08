@@ -23,10 +23,12 @@ import (
 // framework — additionally receives a generated ToolingReferencePath describing
 // exactly those providers. When tmpDir is non-empty ([tmp] declared, ADR
 // 0048), dispatchers and the shared knowledge skill also receive a generated
-// TmpReferencePath naming the workspace scratch directory. Both writes land in
+// TmpReferencePath naming the workspace scratch directory. A non-empty workspaceRef
+// adds WorkspaceReferencePath to the shared homonto and onto/to entry points.
+// These writes land in
 // the staging directory before the atomic swap, so a crash never leaves a
 // half-written reference in place.
-func (c *Catalog) Materialize(dstRoot string, skillNames []string, shellProxy, codeIntel, tmpDir string) error {
+func (c *Catalog) Materialize(dstRoot string, skillNames []string, shellProxy, codeIntel, tmpDir string, workspaceRef []byte) error {
 	for _, name := range skillNames {
 		sp, ok := c.skills[name]
 		if !ok {
@@ -105,6 +107,17 @@ func (c *Catalog) Materialize(dstRoot string, skillNames []string, shellProxy, c
 				return werr
 			}
 		}
+		if len(workspaceRef) > 0 && HasWorkspaceReference(name) {
+			target := filepath.Join(staging, filepath.FromSlash(WorkspaceReferencePath))
+			if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
+				_ = os.RemoveAll(staging)
+				return err
+			}
+			if err := fsutil.WriteControlPlane(target, workspaceRef, 0o644); err != nil {
+				_ = os.RemoveAll(staging)
+				return err
+			}
+		}
 		// Swap: remove the old dir, then rename staging into place. A crash in
 		// this window leaves dstDir absent (not partial), so the next run
 		// re-materializes rather than trusting a half-written directory.
@@ -148,6 +161,28 @@ func (c *Catalog) MaterializeCommands(dstRoot string, names []string) error {
 // embedded FS to dstRoot/<name>/ — owned catalog content (ADR 0029), replaced
 // byte-for-byte on upgrade, never executed by homonto itself.
 func (c *Catalog) MaterializePlugins(dstRoot string, names []string) error {
+	if len(names) == 0 {
+		return nil
+	}
+	root, err := filepath.Abs(dstRoot)
+	if err != nil {
+		return err
+	}
+	// Standalone callers have no project anchor. Check the entire existing
+	// parent chain, including the root and every selected plugin directory,
+	// before removing even the first plugin in this batch.
+	anchor := filepath.VolumeName(root) + string(os.PathSeparator)
+	if err := fsutil.RequireRealParents(anchor, root); err != nil {
+		return fmt.Errorf("catalog: unsafe plugin root: %w", err)
+	}
+	for _, name := range names {
+		if _, ok := c.plugins[name]; !ok {
+			return fmt.Errorf("catalog: unknown plugin %q", name)
+		}
+		if err := fsutil.RequireRealParents(anchor, filepath.Join(root, name)); err != nil {
+			return fmt.Errorf("catalog: unsafe plugin destination %q: %w", name, err)
+		}
+	}
 	for _, name := range names {
 		pp, ok := c.plugins[name]
 		if !ok {
@@ -157,7 +192,10 @@ func (c *Catalog) MaterializePlugins(dstRoot string, names []string) error {
 		if err != nil {
 			return fmt.Errorf("catalog: sub %q: %w", pp, err)
 		}
-		dst := filepath.Join(dstRoot, name)
+		dst := filepath.Join(root, name)
+		if err := fsutil.RequireRealParents(anchor, dst); err != nil {
+			return fmt.Errorf("catalog: unsafe plugin destination %q: %w", name, err)
+		}
 		if err := os.RemoveAll(dst); err != nil {
 			return err
 		}
@@ -302,9 +340,6 @@ func (c *Catalog) SubagentFiles(name string, renderCtx map[string]agentfm.Render
 	if err != nil {
 		return nil, fmt.Errorf("catalog: parse subagent %q: %w", name, err)
 	}
-	if !needsTransform {
-		return files, nil
-	}
 	for _, tool := range []string{"opencode"} {
 		ctx, targeted := renderContextForTool(renderCtx, tool, name)
 		if !targeted {
@@ -313,7 +348,9 @@ func (c *Catalog) SubagentFiles(name string, renderCtx map[string]agentfm.Render
 		if _, rerr := agentfm.Render(name, data, tool, ctx); rerr != nil {
 			return nil, fmt.Errorf("catalog: render subagent %q for %s: %w", name, tool, rerr)
 		}
-		files = append(files, name+"."+tool+".md")
+		if needsTransform {
+			files = append(files, name+"."+tool+".md")
+		}
 	}
 	return files, nil
 }
@@ -333,29 +370,8 @@ func (c *Catalog) MaterializeSubagents(dstRoot string, names []string, renderCtx
 	// Parse and render every requested agent before changing the catalog root.
 	// A malformed later agent must not publish a partial catalog.
 	for _, name := range names {
-		sp, ok := c.subagents[name]
-		if !ok {
-			return fmt.Errorf("catalog: unknown subagent %q", name)
-		}
-		data, err := fs.ReadFile(c.subagentFS[name], sp)
-		if err != nil {
-			return fmt.Errorf("catalog: read %q: %w", sp, err)
-		}
-		needsTransform, err := agentfm.NeedsTransform(data)
-		if err != nil {
-			return fmt.Errorf("catalog: parse subagent %q: %w", name, err)
-		}
-		if !needsTransform {
-			continue
-		}
-		for _, tool := range []string{"opencode"} {
-			ctx, targeted := renderContextForTool(renderCtx, tool, name)
-			if !targeted {
-				continue
-			}
-			if _, err := agentfm.Render(name, data, tool, ctx); err != nil {
-				return fmt.Errorf("catalog: render subagent %q for %s: %w", name, tool, err)
-			}
+		if _, err := c.SubagentFiles(name, renderCtx); err != nil {
+			return err
 		}
 	}
 	for _, name := range names {

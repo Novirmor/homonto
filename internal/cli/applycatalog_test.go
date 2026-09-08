@@ -65,7 +65,7 @@ func TestApplyRematerializesCatalogWhenProjectionPlanIsEmpty(t *testing.T) {
 		if out, err := runCmd(t, home, "", "apply", "--yes", "--config", cfg); err != nil {
 			t.Fatalf("first apply: %v\n%s", err, out)
 		}
-		if got := renderedVariant(t, repo); !strings.Contains(got, "model: first/model-a") {
+		if got := renderedVariant(t, repo); !strings.Contains(got, `model: "first/model-a"`) {
 			t.Fatalf("first apply did not stamp the override:\n%s", got)
 		}
 
@@ -81,7 +81,7 @@ func TestApplyRematerializesCatalogWhenProjectionPlanIsEmpty(t *testing.T) {
 		if strings.Contains(out, "setting.model") {
 			t.Fatalf("precondition broken: the plan was not empty, so this no longer tests the empty-plan path:\n%s", out)
 		}
-		if got := renderedVariant(t, repo); !strings.Contains(got, "model: second/model-b") {
+		if got := renderedVariant(t, repo); !strings.Contains(got, `model: "second/model-b"`) {
 			t.Fatalf("override change did not re-render the agent (CLI skipped apply on an empty plan):\n%s", got)
 		}
 	})

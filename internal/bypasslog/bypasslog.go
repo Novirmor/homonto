@@ -57,6 +57,11 @@ func Append(changeDir, change, framework string, record Record) error {
 }
 
 func Load(path, change, framework string) (*Sidecar, bool, error) {
+	if fi, err := os.Lstat(path); err == nil && !fi.Mode().IsRegular() {
+		return nil, false, fmt.Errorf("bypass: %s is not a regular file (symlinks are refused)", path)
+	} else if err != nil && !os.IsNotExist(err) {
+		return nil, false, err
+	}
 	b, err := os.ReadFile(path)
 	if os.IsNotExist(err) {
 		return nil, false, nil
@@ -109,42 +114,14 @@ func validateRecord(record Record) error {
 // directory. It confines a sidecar or archive path to its workspace rather than
 // following a planted parent symlink outside it.
 func RequireRealParents(root, dir string) error {
-	rel, err := filepath.Rel(root, dir)
-	if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(os.PathSeparator)) {
-		return fmt.Errorf("bypass: %s is outside workspace %s", dir, root)
-	}
-	cur := root
-	if err := requireRealDir(cur); err != nil {
-		return err
-	}
-	for _, component := range strings.Split(filepath.ToSlash(rel), "/") {
-		if component == "" || component == "." {
-			continue
-		}
-		cur = filepath.Join(cur, component)
-		fi, err := os.Lstat(cur)
-		if os.IsNotExist(err) {
-			return nil // MkdirAll will create the remaining real directories.
-		}
-		if err != nil {
-			return err
-		}
-		if !fi.IsDir() || fi.Mode()&os.ModeSymlink != 0 {
-			return fmt.Errorf("bypass: %s is not a real directory (symlinked parents are refused)", cur)
-		}
-	}
-	return nil
-}
-
-func requireRealDir(path string) error {
-	fi, err := os.Lstat(path)
+	root, err := filepath.Abs(root)
 	if err != nil {
 		return err
 	}
-	if !fi.IsDir() || fi.Mode()&os.ModeSymlink != 0 {
-		return fmt.Errorf("bypass: %s is not a real directory (symlinked parents are refused)", path)
+	if err := fsutil.RequireRealParents(filepath.VolumeName(root)+string(filepath.Separator), root); err != nil {
+		return err
 	}
-	return nil
+	return fsutil.RequireRealParents(root, dir)
 }
 
 func save(path string, sc *Sidecar) error {
@@ -157,8 +134,9 @@ func save(path string, sc *Sidecar) error {
 	if err != nil {
 		return err
 	}
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+	path, err = filepath.Abs(path)
+	if err != nil {
 		return err
 	}
-	return fsutil.WriteControlPlane(path, b, 0o644)
+	return fsutil.WriteControlPlaneWithin(filepath.VolumeName(path)+string(filepath.Separator), path, b, 0o644)
 }

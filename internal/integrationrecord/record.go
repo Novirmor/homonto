@@ -18,6 +18,7 @@ import (
 )
 
 const SchemaVersion = 2
+const ExplicitSchemaVersion = 3
 
 const (
 	StatusPending  = "pending"
@@ -33,6 +34,9 @@ type Entry struct {
 	SourceBranch string `json:"sourceBranch"`
 	SourceCommit string `json:"sourceCommit"`
 	Receipt      string `json:"receipt,omitempty"`
+	// PublicationHead is a locally validated candidate reported by the caller;
+	// it is not a network attestation that a PR actually publishes that head.
+	PublicationHead string `json:"publicationHead,omitempty"`
 }
 
 // Record is the versioned sidecar saved at close and completed per repository.
@@ -44,6 +48,7 @@ type Record struct {
 	BaseBranch    string  `json:"baseBranch"`
 	Status        string  `json:"status"`
 	Repositories  []Entry `json:"repositories"`
+	RepoMode      string  `json:"repoMode,omitempty"`
 }
 
 func Path(changeDir string) string {
@@ -60,8 +65,15 @@ func NewPending(change, mode, baseBranch string, entries []Entry) Record {
 	}
 }
 
+func NewExplicitPending(change, mode string, entries []Entry) Record {
+	r := NewPending(change, mode, "", entries)
+	r.SchemaVersion = ExplicitSchemaVersion
+	r.RepoMode = "explicit"
+	return r
+}
+
 func (r Record) Validate(change string) error {
-	if r.SchemaVersion != SchemaVersion {
+	if r.SchemaVersion != SchemaVersion && r.SchemaVersion != ExplicitSchemaVersion {
 		return fmt.Errorf("integration record schemaVersion %d is unsupported", r.SchemaVersion)
 	}
 	if r.Change != change {
@@ -70,7 +82,14 @@ func (r Record) Validate(change string) error {
 	if r.Mode != "merge" && r.Mode != "pr" {
 		return fmt.Errorf("integration record mode %q is not merge|pr", r.Mode)
 	}
-	if strings.TrimSpace(r.BaseBranch) == "" {
+	if r.SchemaVersion == ExplicitSchemaVersion {
+		if r.RepoMode != "explicit" || r.BaseBranch != "" {
+			return fmt.Errorf("explicit integration record requires repoMode explicit and per-repository base branches")
+		}
+	} else if r.RepoMode != "" {
+		return fmt.Errorf("integration record repoMode requires schemaVersion 3")
+	}
+	if r.RepoMode == "" && strings.TrimSpace(r.BaseBranch) == "" {
 		return fmt.Errorf("integration record requires baseBranch")
 	}
 	if len(r.Repositories) == 0 {
@@ -78,11 +97,14 @@ func (r Record) Validate(change string) error {
 	}
 	seen := map[string]bool{}
 	for _, e := range r.Repositories {
-		if e.Alias != "" && seen[e.Alias] {
+		if seen[e.Alias] {
 			return fmt.Errorf("integration record has duplicate repository entry %q", e.Alias)
 		}
 		seen[e.Alias] = true
-		if e.BaseBranch != r.BaseBranch {
+		if r.RepoMode == "explicit" && strings.TrimSpace(e.Alias) == "" {
+			return fmt.Errorf("explicit integration record cannot contain implicit config repository")
+		}
+		if r.RepoMode == "" && e.BaseBranch != r.BaseBranch {
 			return fmt.Errorf("integration record entry %q base branch %q does not match record base branch %q", e.Alias, e.BaseBranch, r.BaseBranch)
 		}
 		if strings.TrimSpace(e.BaseBranch) == "" || strings.TrimSpace(e.SourceBranch) == "" || strings.TrimSpace(e.BaseCommit) == "" || strings.TrimSpace(e.SourceCommit) == "" {
@@ -92,6 +114,9 @@ func (r Record) Validate(change string) error {
 			if err := validateReceipt(r.Mode, e.Receipt); err != nil {
 				return fmt.Errorf("integration record entry %q: %w", e.Alias, err)
 			}
+		}
+		if e.PublicationHead != "" && (!canonicalHead.MatchString(e.PublicationHead) || !strings.HasPrefix(e.Receipt, "pr:")) {
+			return fmt.Errorf("integration record entry %q publicationHead requires a PR receipt and canonical commit id", e.Alias)
 		}
 	}
 	if r.Status != StatusPending && r.Status != StatusComplete {
@@ -187,7 +212,9 @@ func Load(changeDir, change string) (Record, bool, error) {
 }
 
 func Save(changeDir string, record Record) error {
-	record.SchemaVersion = SchemaVersion
+	if record.SchemaVersion == 0 {
+		record.SchemaVersion = SchemaVersion
+	}
 	if err := record.Validate(record.Change); err != nil {
 		return err
 	}
@@ -203,8 +230,13 @@ func Save(changeDir string, record Record) error {
 }
 
 var mergeReceipt = regexp.MustCompile(`^merge:[0-9a-fA-F]{7,64}$`)
+var unchangedReceipt = regexp.MustCompile(`^unchanged:[0-9a-fA-F]{7,64}$`)
+var canonicalHead = regexp.MustCompile(`^[0-9a-f]{40}$|^[0-9a-f]{64}$`)
 
 func validateReceipt(mode, receipt string) error {
+	if (mode == "merge" || mode == "pr") && unchangedReceipt.MatchString(receipt) {
+		return nil
+	}
 	switch mode {
 	case "merge":
 		if !mergeReceipt.MatchString(receipt) {

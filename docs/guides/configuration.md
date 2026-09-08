@@ -11,7 +11,9 @@ Quick map of every table:
 | Table | Declares | Reference |
 |---|---|---|
 | `schema_version` | The config format version (top-level key, not a table) | [Schema version](#schema-version) |
-| `[workflow]` | Shared onto/to workflow artifact root | [Workflow root](#workflow-root--workflow) |
+| `[workflow]` | Shared onto/to records root and Git mode | [Workflow root](#workflow-root--workflow) |
+| `[repos]` | Source repository aliases | [Repos](#repos--repos) |
+| `[worktrees]` | Optional execution-checkout allocation parent | [Worktrees](#worktrees) |
 | `[mcps.<name>]` | MCP servers | [MCP servers](#mcp-servers--mcpsname) |
 | `[skills.<name>]` | Skills (symlinked) | [Skills](#skills--skillsname) |
 | `[commands.<name>]` | Slash commands | [Commands](#commands--commandsname) |
@@ -26,18 +28,23 @@ Quick map of every table:
 ## Schema version
 
 `schema_version` is an optional top-level key (not a table) naming the
-`homonto.toml` format version. The current version is **1**.
+`homonto.toml` format version. The current version is **2**.
 
 ```toml
-schema_version = 1
+schema_version = 2
 ```
 
-Omitting it, or setting `0`, means a legacy pre-versioning config and is
-treated as the current version — so existing files keep working untouched. A
-value **greater** than the binary supports is **rejected fail-closed at
-load**, rather than partially applied: an older `homonto` never silently
-mis-projects a config written for a newer one. Upgrade the binary, or lower
-the declared version.
+Omitting it, setting `0`, or retaining `1` preserves legacy implicit-config-repo
+semantics. Existing files do not opt into schema 2 on load. Schema 2 makes
+`[repos]` the complete source declaration, permits external records roots,
+and enables `workflow.git` and `[worktrees]`. Those last two declarations
+require an explicit `schema_version = 2`.
+
+Negative versions and versions newer than the binary supports fail at load.
+Upgrade the binary for a newer config; lowering the number is not a migration.
+Schema/layout and Git-mode changes while workflow state exists are guarded,
+not automatically migrated. There is no workspace migration command yet.
+See [workspaces](workspaces.md) before changing an existing layout.
 
 ## Common concepts
 
@@ -65,30 +72,88 @@ without a `digest`, a legacy `[models.<tool>.<tier>]` block (tiers were
 removed), and names that would corrupt a JSON file (empty, or index-like such
 as `"0"`/`"-1"`).
 
+Unknown fields in typed configuration sections are errors, not ignored tuning:
+`workflow.rooot`, `subagents.audit.opencode.varaint`, or
+`subagents.audit.step` fails at load. Diagnostics identify the selected absolute
+config filename; strict unknown-field errors include the offending TOML location.
+Arbitrary OpenCode settings/TUI maps remain passthrough, subject to reserved-key
+and supported-tool validation.
+
 **Config root and bootstrap.** The directory containing `homonto.toml` is the
 configuration root. Run `homonto init [dir]` to scaffold that configuration;
 it never runs `git init` and never installs a framework by itself. Add a
 `[frameworks.onto]` or `[frameworks.to]` table, inspect `homonto plan`, then
-run `homonto apply` to install the selected workflow. A Git worktree is needed
-only when a later workflow gate requires Git evidence or integration.
+run `homonto apply` to install the selected workflow. The config root need not
+be Git. Schema 2 source declarations must already be Git checkouts, and managed
+records require a separate explicit `homonto workspace init --yes` before
+workflow mutations. `apply` never initializes that repository.
 
 ## Workflow root — `[workflow]`
 
-`[workflow]` selects the one repository-relative root for workflow artifacts.
-It is shared by the `onto` and `to` frameworks. Omit it to
-preserve the default `docs` layout.
+`[workflow]` selects the shared records root for onto and to. Omit `root` to
+use `docs` relative to the config file. This schema-2 example uses a separate
+records repository:
 
 ```toml
 [workflow]
-root = "workflow-records"
+root = "../workflow-records"
+git = "managed"
 ```
 
-The root must remain below the directory containing `homonto.toml`; absolute
-paths and `..` escapes fail at load. In documentation, `<workflow-root>` means
-this configured directory: onto uses `<workflow-root>/changes`,
-`specs`, `adr`, and `guides`; to uses `<workflow-root>/tasks`. Changing `root`
-while workflow state exists fails closed. Homonto never moves workspaces,
-archives, locks, receipts, or recovery packs automatically.
+| Field | Default | Contract |
+|---|---|---|
+| `root` | `docs` | In schema 2, a dedicated directory relative to the config file or an explicit absolute path, including outside the config root. |
+| `git` | `existing` | Schema 2 only: `existing` uses the records' existing Git owner and manual commit policy; `managed` uses an explicitly initialized, homonto-owned standalone records repository. |
+
+In schema 0/1, `root` must remain below the config directory; absolute paths
+and `..` escapes, including through symlinks, fail at load. These legacy rules
+remain unchanged.
+
+In schema 2, records cannot contain or equal the config root, overlap its
+Git/tool control paths, or overlap `worktrees.dir`. In `existing` mode they
+may live in a dedicated subdirectory of a declared source, outside its control
+paths. In `managed` mode they cannot overlap sources or sit inside another Git
+repository. Managed initialization refuses populated or unowned repositories;
+it requires your configured Git identity and runs your commit hooks without
+pushing. Managed workflow mutations checkpoint their own record changes;
+manual Markdown edits need a path-scoped `homonto workspace checkpoint`.
+
+In documentation, `<workflow-root>` means this configured directory: onto uses
+`changes`, `specs`, `adr`, and `guides`; to uses `tasks`. Archives remain under
+the same root. Changing schema, root, or Git mode while state exists fails
+closed rather than moving records, archives, locks, receipts, or recovery
+packs. Ownership metadata also guards rebinding. See
+[workspaces](workspaces.md) for setup, checkpoints, recovery, and current limits.
+
+## Worktrees
+
+Optional, schema 2 only. Declare an allocation parent before using registered
+worktrees:
+
+```toml
+[worktrees]
+dir = "../execution"
+```
+
+`dir` accepts a config-relative or absolute path. Omitted or empty means no
+allocation parent, not a default directory. It must not contain/equal the
+config root or overlap source repositories, workflow records, or reserved
+control paths. Paths containing permission wildcards (`*`, `?`), backslashes,
+or control characters are rejected for both `worktrees.dir` and schema-2
+`workflow.root`.
+
+`apply` renders this declaration into workspace instructions and bounded
+per-alias permissions; it does not create execution checkouts. Use
+`homonto worktree create` after selecting the source aliases in active workflow
+state. A binding changes that change's execution path, not its `[repos]`
+declaration. Changing `dir` does not retarget existing bindings.
+
+`homonto worktree receiver` allocates a separate integration-target checkout.
+Prefer early allocation, but matching terminal/archive state is supported too.
+Its optional `--state-id` disambiguates archived generations from inspected
+native IDs or registered `stateID` values; it cannot override existing
+generation/binding evidence. Only execution `worktree create` is active-only.
+See [workspaces](workspaces.md#allocate-an-integration-receiver).
 
 ## MCP servers — `[mcps.<name>]`
 
@@ -228,51 +293,70 @@ each expanded agent. Review the generated values before `homonto apply`.
 
 ## Repos — `[repos]`
 
-Declares the other repositories this config operates across
-([ADR 0024](../adr/0024-multi-repo-designated-state-cross-repo-effect.md)):
-`name = "<path>"`, paths relative to the config file (absolute honored). The
-config repository itself is implicit and never listed. Every entry must exist
-and be a git worktree; two names may not resolve to one repository — all
-checked at load, fail-closed.
+Declares source aliases as `name = "<path>"`, with paths relative to the config
+file or absolute. In **schema 2**, this is the complete set of available source
+repositories: the config directory is not implicit. Declare it as `app = "."`
+if it contains source. Each entry must exist at an exact Git worktree top-level;
+two aliases may not share the same canonical Git common directory, including
+through symlinks or linked worktrees. Validation fails at load.
 
 ```toml
 [repos]
+app = "."                  # schema 2: explicitly include the config checkout
 service-a = "../service-a"
 service-b = "../libs/service-b"
 ```
 
-The config repository remains the designated state home: `.homonto/`,
-onto's `<workflow-root>/changes/`, and to's `<workflow-root>/tasks/` stay there. `homonto plan`
-names every declared repo and `homonto doctor` reports each one's health.
+In **schema 0/1**, entries name only additional repositories; the config repo
+remains implicit and cannot appear in `[repos]`. Existing unversioned and
+version-1 files retain that behavior.
+
+Projection state in `.homonto/` stays at the config root. Workflow state lives
+at `workflow.root`, which can be external in schema 2. `homonto plan` names
+the declared repos and `homonto doctor` reports their health. `onto new` and
+`to new` select the complete change-specific source set with repeatable
+`--repo <alias>` flags in schema 2; at least one is required. They do not
+automatically select all declarations or infer source from the current directory.
+
+Both `new` commands also accept repeatable `--base <alias>=<branch>` in schema 2
+only. Without an override, each source contributes its current HEAD and local
+branch. Select another local integration branch before record creation to leave
+a dirty checkout untouched. The commit and target are frozen; subsequent
+worktree creation must match both. See [workspaces](workspaces.md).
 
 ### Workflow access to declared repositories
 
-`[repos]` is also the trust boundary for the bundled workflow teams. When an
-`onto` or `to` framework is installed, `homonto apply` renders each resolved
-repository path as an OpenCode `external_directory` allow rule for that
-framework's builtin writable primary and implementer. They can read, edit, and
-run their existing approved commands there without a per-directory prompt.
-Homonto emits a deny rule before the declared paths, so a global OpenCode allow
-does not broaden these roles. Read-only specialists and custom agents receive no
-rule. Paths containing `*` or `?` are rejected because OpenCode treats them as
-permission wildcards.
+For builtin `onto`, `to`, and `h`, `homonto apply` renders OpenCode
+`external_directory` rules for the shared coordinator and implementers. Grants
+cover declared sources and, in schema 2, each alias's namespace under
+`worktrees.dir`, not the whole allocation parent. Only the coordinator receives
+the external records-root grant; implementer denies keep external records out
+even when nested in an allowed source. The coordinator owns records/checkpoints,
+and implementers work on assigned source paths.
+
+A deny rule precedes these path allows so inherited global directory permission
+does not broaden the grants. Read-only specialists and custom agents receive
+no such grants. Paths containing `*` or `?` are rejected because OpenCode treats
+them as permission wildcards.
 
 OpenCode authorizes external paths lexically rather than resolving symlinks.
 Treat a declared repository and its links as trusted; a symlink within it can
 lead outside the declared root. `[repos]` constrains agent workspace selection,
-not filesystem containment against a hostile repository.
+not filesystem containment against a hostile repository. Allowed scripts run
+with the process's privileges; these grants and shell rules are not a sandbox
+or a guarantee that every host prompt is enforced.
 
-Changing a declared path and re-running `homonto apply` re-renders the affected
-agent files. The config repository is already the active workspace, so it is
-implicit and cannot appear in `[repos]`.
+Changing a declared path and re-running `homonto apply` re-renders affected
+agent files, but it does not migrate recorded source identities or registered
+worktree ownership. Those checks can refuse a different clone or moved layout.
 
 For a project-scoped skill, command, subagent, or MCP, `repo = "<name>"`
 projects that one resource into the named declared repo. A repo-tagged skill,
 command, or subagent links under that repo's `.opencode/`; a repo-tagged MCP
-writes that repo's `opencode.jsonc`. The config repo receives untagged
+writes that repo's `opencode.jsonc`. The config root receives untagged
 project-scoped resources. User-scoped resources, settings, TUI configuration,
 plugins, and frameworks cannot target another repo. Each declared repo has a
-separate `.homonto/state.<name>.json` partition in the config repo, so prune,
+separate `.homonto/state.<name>.json` partition at the config root, so prune,
 adoption, and drift remain isolated; `status` labels findings as
 `opencode@<name>`.
 
@@ -303,6 +387,25 @@ variant = "thinking"      # optional
 |---|---|---|
 | `model` | **yes** | the tool's model identifier (`provider/model`) |
 | `variant` | no | which variant of the model |
+| `steps` | no | Positive integer overriding this agent's OpenCode iteration budget; zero and negative values are invalid. |
+| `bash_allow_add` | no | Reviewed exact-command additions; see [Settings](#settings--settingsopencode). |
+
+Builtin defaults are finite: **1200** steps for the shared coordinator, **300**
+for implementers, and **120** for read-only specialists (including h workers).
+Override in the same model block, not the declaration table:
+
+```toml
+[subagents.onto-reviewer.opencode]
+model = "provider/model"
+variant = "1"  # a string, if this variant exists in your provider
+steps = 180
+```
+
+Rendered model and variant values are quoted YAML strings, so values such as
+`"1"` stay strings rather than YAML numbers. Model identifiers reject controls
+and line breaks (including escaped tabs/newlines) and `#variant` suffixes;
+variants use a plain letter/digit/dot/underscore/hyphen token. Homonto checks
+shape and host expressibility, not whether your provider offers that model.
 
 Each value is validated against what OpenCode can actually express, so a
 setting the tool would silently ignore becomes a load error naming the
@@ -342,6 +445,28 @@ variant = "thinking"      # optional tune on top of the model
 
 For a subagent you declare yourself, add the block under your own
 `[subagents.<name>]` entry the same way.
+
+A tune-only entry cannot set declaration fields (`scope`, `repo`, `mode`,
+`targets`, `version`, or `digest`) without a `source`; they are rejected rather
+than silently ignored. For example, tune `steps` under
+`[subagents.onto-reviewer.opencode]`, not `step` or `steps` under
+`[subagents.onto-reviewer]`.
+
+One builtin definition can have only one host identity. Installing
+`builtin:onto-reviewer` as both `audit` and `review` is unsupported, as is
+declaring an alias for it alongside an onto framework that already installs
+`onto-reviewer`. Tune the framework's existing name instead. A standalone alias
+is valid when that builtin is not otherwise installed:
+
+```toml
+# Standalone, not alongside a framework that installs onto-reviewer.
+[subagents.audit]
+source = "builtin:onto-reviewer"
+scope = "project"
+[subagents.audit.opencode]
+model = "provider/model"
+steps = 180
+```
 
 ### Legacy `[models.<tool>.<tier>]` blocks are rejected
 
@@ -487,6 +612,42 @@ projects the materialized plugin path. homonto never executes it; it observes
 explicit Bash approvals in memory and suggests allowlist additions exactly
 once per candidate.
 
+It reads the runtime producer's `permission.asked` request (`id`, `sessionID`,
+`permission = "bash"`, `metadata.command`) and correlates `permission.replied`
+by `sessionID` and `requestID`. Replies `once` and `always` count as explicit
+approvals; `reject` disqualifies the command for that session. Two approvals
+trigger one suggestion through `homonto permissions suggest`, whose stdin is
+implicit (no `--stdin` flag). No execution event is treated as an approval.
+
+## OpenCode integrations — `[integrations.opencode]`
+
+The shipped `onto`, `to`, and `h` frameworks install a project-local,
+homonto-managed `.opencode/plugins/homonto-workflow.ts` link by default. The
+plugin resolves the config from its materialized catalog and binding metadata,
+not the session's launch directory, then reads
+`homonto workflow snapshot --json --config <path>` on idle, debounced file-watcher
+updates, and compaction. Reads share one in-flight request with a trailing
+refresh when needed. It shows phase/task/lifecycle and health toasts; disappearance
+alone is not completion. Transient subprocess, binding-discovery, or output
+failures are reported separately
+without discarding the last successful comparison, and a later success clears
+the error. Compaction awaits a fresh result and includes pending status/findings,
+or the observation error rather than stale success. This is not enforcement:
+it never runs doctor, blocks completion, advances a phase, records evidence,
+writes workflow state, or sends workflow data to a remote service.
+
+Disable only that managed bridge when a project needs no runtime workflow
+status:
+
+```toml
+[integrations.opencode]
+workflow_bridge = false
+```
+
+The opt-out removes homonto's link but never replaces a non-homonto file at
+that path. Remove or rename a hand-managed file yourself before enabling the
+bridge.
+
 Keys that collide with structures homonto manages fail at load:
 `settings.opencode.mcp`, `settings.opencode.plugin`. `[settings.claude]` was
 removed with the Claude Code adapter in v0.13.0; a config naming it fails at
@@ -532,11 +693,6 @@ scope = "project"
 source = "builtin:onto"
 scope = "project"
 
-[subagents.review]
-source = "builtin:onto-reviewer"
-scope = "project"
-mode = "copy"
-
 [plugins.opencode.opencode-quota]
 source = "@slkiser/opencode-quota"
 
@@ -560,9 +716,5 @@ model = "anthropic/claude-opus-4-8"
 model = "anthropic/claude-sonnet-5"
 
 [subagents.onto-skeptic.opencode]
-model = "anthropic/claude-opus-4-8"
-
-# review is explicitly declared above, so it carries its own model block too.
-[subagents.review.opencode]
 model = "anthropic/claude-opus-4-8"
 ```

@@ -56,6 +56,9 @@ func TestRepoContextLines(t *testing.T) {
 	if !strings.Contains(lines[0], "designated home") {
 		t.Errorf("header must state the designated-home scope:\n%s", joined)
 	}
+	if !strings.Contains(lines[0], "select source repositories with --repo") || strings.Contains(lines[0], "later stage") {
+		t.Errorf("header must describe available source selection:\n%s", joined)
+	}
 	// Name order, not map order or declaration order.
 	if !(strings.Contains(lines[1], "service-a") && strings.Contains(lines[2], "zz")) {
 		t.Errorf("repos must list in name order (service-a before zz):\n%s", joined)

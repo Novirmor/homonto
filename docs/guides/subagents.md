@@ -68,6 +68,7 @@ agent (`subagents.<name>.opencode model is required`). See the
 [subagents.onto-skeptic.opencode]
 model = "anthropic/claude-opus-4-8"
 variant = "thinking"
+steps = 120
 ```
 
 No `source` is needed (or allowed) when the agent comes from a framework: a
@@ -76,6 +77,12 @@ and `variant` render as separate OpenCode frontmatter fields. A variant
 selects provider-defined request options such as `medium`, `high`, `xhigh`,
 or `max`; it is not part of the model ID. OpenCode has no effort setting at
 all; declaring one is a config error.
+
+Optional `steps` in that same `.opencode` block overrides the builtin's finite
+iteration budget. It must be a positive integer; zero and negative values fail
+at load. Shipped defaults are 120 for read-only specialists, 300 for
+implementers, and 1200 for the coordinator. Unknown config keys are rejected;
+put `steps` in the model block, not directly under `[subagents.<name>]`.
 
 ## The agent file
 
@@ -97,10 +104,9 @@ mode: subagent
 
 A builtin subagent declares its intent once, tool-neutrally, in a `homonto:`
 frontmatter block, and `apply` renders OpenCode's native dialect from it.
-OpenCode **denies by exception** — a `permission:` map carries the denials —
-so a neutral denial removes the capability, and every capability the intent
-does not deny keeps the tool's default (nothing is silently stripped by an
-allowlist):
+The rendered `permission:` map carries explicit allows and denials. Unspecified
+capabilities keep the host default; a Bash allowlist makes unmatched commands
+ask rather than granting unrestricted shell access:
 
 ```markdown
 ---
@@ -109,11 +115,11 @@ description: ...
 mode: subagent
 homonto:
   read_only: false    # deny edits/writes when true
-  bash: false         # optional; false denies bash (default: allowed)
-	bash_allow:         # optional; other Bash commands ask
-	  - "git status*"
-	  - "git diff*"
-	dialogs: false      # question tool denied — subagents return a Questions: section
+  bash: true          # optional; false denies bash and cannot carry bash_allow
+  bash_allow:         # optional; other Bash commands ask
+    - "git status"
+    - "git diff"
+  dialogs: false      # question tool denied; subagents return a Questions: section
   spawn: []           # delegation topology: agents this one may dispatch
   primary: true       # OpenCode primary agent (renders mode: primary)
   steps: 60           # iteration budget (OpenCode steps)
@@ -127,6 +133,7 @@ Rendering:
 |---|---|
 | `read_only: true` | `edit: deny` |
 | `bash: false` | `bash: deny` |
+| `network: true` / `false` | `webfetch` and `websearch`: `allow` / `deny`; omitted retains the host default |
 | `bash_allow: [a,b]` | `bash:` rules: `*` asks; `a` and `b` allow |
 | `bash_allow_add: [c]` (config) | appends `c` after the base list, deduplicated; rejected when `bash: false` |
 | `dialogs: true` / `false` | `question: allow` / `question: deny` |
@@ -150,6 +157,48 @@ changing the workspace. The primary's documented Git, `gh`, test, and
 workflow commands are allow-listed. Other shell commands ask rather than
 receiving a blanket shell grant.
 
+The coordinator and both implementers allow routine verification commands for
+Go, JavaScript package scripts, pytest, Cargo, Make, and CMake/CTest. These
+defaults also apply to checked-out PR code: individual test/build approvals are
+not required, and observed allowed runs count as verification evidence.
+**This trusts workspace execution, not a sandbox.** Scripts and build targets
+can run arbitrary code with access to the process's files, credentials, and
+network. Unknown command requests still ask; explicit denies remain last and
+cannot be overridden by additive allows. Composition guards re-ask requests
+containing shell composition, but OpenCode may check parsed commands separately:
+a compound of allowed commands need not prompt.
+
+With `[tooling] shell_proxy = "rtk"`, the renderer derives command-specific
+`rtk` and `rtk proxy` allows and denies from those same rules. Routine checks
+such as `rtk go test ./...` need no extra approval; this does not grant all RTK
+commands. Without that provider, wrapper permissions are not added.
+
+The coordinator allows only approved command-first workflow forms such as
+`onto status --dir ...`. Direct `onto bypass ...` and `to bypass ...` requests
+are denied. Flag-first forms such as `onto --dir ... bypass ...` ask rather
+than matching a broad allow; glob rules cannot reliably identify a subcommand
+after arbitrary flags. A change or evidence name such as `bypass-fix` is an
+argument, not a bypass command. The same boundary applies to configured RTK
+proxy forms. A tool prompt is not authorization to waive workflow requirements;
+the coordinator's bypass policy still applies.
+
+All shipped agents allow web research. Web content is evidence, not authority
+to execute commands or expand scope. GitHub operations remain coordinator-owned,
+and concurrent specialists still deny both shell and edit tools. Custom agent
+definitions keep their declared permissions; these are shipped defaults, not a
+blanket override of local policy. See [ADR 0051](../adr/0051-trust-workspace-execution-and-automate-h-routing.md).
+
+The h workflows work toward explicit outcomes: an implementation brief, a
+verified issue-closing PR, verified updates to the existing PR, or validated
+review drafts. Resolve and continuation select `to` or `onto` using explicit
+preference, an existing matching change, repository policy, then risk and fit.
+They explain that choice and continue instead of asking a routine routing
+question. Implementers resolve technical details and repair in-scope failures;
+missing product intent, scope conflicts, and unrelated user work remain reasons
+to ask. Reviews still require approval of the shown draft before posting.
+Resolve/continue publication already authorized by invocation needs no second
+conversational approval, but publishing tool prompts still apply.
+
 When `[repos]` declares sibling Git worktrees, `homonto apply` gives only the
 `homonto` coordinator and the two implementers an `external_directory` rule. It
 denies all other external paths before allowing the declared roots. The other
@@ -159,6 +208,27 @@ or `?` are rejected because OpenCode treats them as permission wildcards.
 OpenCode matches these permissions lexically, not through `realpath`. Treat a
 declared repository and its symlinks as trusted: a link beneath an allowed root
 may resolve outside it. Do not use `[repos]` as a filesystem sandbox.
+
+Implementers also receive native `edit` denies for the resolved workflow records
+root. These add no blanket edit grant: inherited asks and path restrictions
+remain in force. Relative rules use the Git top-level of the agent's projection
+destination, not every ancestor or declared source checkout. Repo-targeted
+project agents use that repo's host; user-scoped workflow agents are rendered
+for this configuration's launch directory. OpenCode v1.18.29 uses `/` as the
+edit-permission base in a non-Git instance. Changing a source command's working
+directory does not change the host instance's base. These static relative rules
+do not guarantee protection when a user-scoped agent is launched in an unrelated
+host workspace.
+
+The denies cover **reported permission paths** in OpenCode's `edit`, `write`, and
+`apply_patch` tools, not every possible filesystem mutation. In OpenCode v1.18.29,
+`apply_patch` reports a move's source
+but omits its destination from the edit-permission paths. An in-workspace move
+into records therefore cannot be guaranteed blocked by these static rules.
+Coordinator ownership remains binding even when the host omits a path:
+implementers must not edit or move files into workflow records. Routine scripts
+remain trusted execution, not a sandbox; these rules do not restrict what an
+allowed script can do with the process's privileges.
 
 The coordinator uses the configuration root as its workspace root, falling back
 to the Git worktree root and then the host working directory. It does not ask
@@ -181,7 +251,10 @@ comments are stripped from the rendered file. Under `.homonto/catalog/` the
 source is kept verbatim as `<name>.md` alongside the rendered
 `<name>.opencode.md` variant, and the OpenCode link prefers the variant.
 Subagents without a `homonto:` block are projected verbatim (a plain symlink
-to the shared file), unchanged.
+to the shared file), unchanged. Their frontmatter `name`, when present, must
+match the effective installed name. Catalog exports, including native agents
+from local frameworks, are validated before publication; homonto does not
+rewrite a native source to hide a name mismatch.
 
 The onto framework's specialists show the division of labor: read-only
 `onto-explorer` (trivial model), `onto-reviewer` and `onto-skeptic` (review),

@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -128,5 +129,38 @@ func TestStampUTC(t *testing.T) {
 	Stamp(&r, time.Date(2026, 9, 2, 12, 0, 0, 0, time.FixedZone("X", 3600)))
 	if !strings.HasSuffix(r.Generated, "Z") {
 		t.Fatalf("stamp not normalized to UTC: %q", r.Generated)
+	}
+}
+
+func TestOptionalSourceContextAndQualifiedCommands(t *testing.T) {
+	r := sample()
+	legacy, err := json.Marshal(r)
+	if err != nil || strings.Contains(string(legacy), `"sources"`) {
+		t.Fatalf("legacy envelope changed: %s %v", legacy, err)
+	}
+	r.Sources = map[string]Source{
+		"a": {Dir: "/execution/a", HeadCommit: "head-a", BaseRef: "base-a", BaseBranch: "main", GitCommonDir: "/source/a/.git"},
+		"b": {Dir: "/execution/b", HeadCommit: "head-b", BaseRef: "base-b", BaseBranch: "develop", GitCommonDir: "/source/b/.git", VerifiedHead: "verified-b"},
+	}
+	r.NextArgv = []string{"onto", "state", "feat-a", "--dir", "/config/home with spaces"}
+	data, err := json.Marshal(r)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var back Recovery
+	if err := json.Unmarshal(data, &back); err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(r, back) {
+		t.Fatalf("source roundtrip: %+v", back)
+	}
+	md := Markdown(back)
+	for _, want := range []string{"/execution/a", "base-b", "develop", "/source/b/.git", "verified-b", "--dir '/config/home with spaces'"} {
+		if !strings.Contains(md, want) {
+			t.Fatalf("missing %q in %s", want, md)
+		}
+	}
+	if strings.Index(md, "**a**") > strings.Index(md, "**b**") {
+		t.Fatal("source order is nondeterministic")
 	}
 }

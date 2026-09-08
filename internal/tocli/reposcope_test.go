@@ -24,6 +24,9 @@ func initRepo(t *testing.T, dir string) {
 		t.Fatal(err)
 	}
 	git(t, dir, "init")
+	// Fixture commits must not leave background writers racing snapshots or cleanup.
+	git(t, dir, "config", "gc.auto", "0")
+	git(t, dir, "config", "maintenance.auto", "false")
 	git(t, dir, "config", "user.email", "test@example.com")
 	git(t, dir, "config", "user.name", "Test")
 	if err := os.WriteFile(filepath.Join(dir, "tracked"), []byte("ok\n"), 0o644); err != nil {

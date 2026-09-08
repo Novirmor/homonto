@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"sort"
 	"strings"
 	"testing"
 
@@ -54,6 +55,58 @@ func auditSnapshot(t *testing.T, root string) map[string]string {
 	return out
 }
 
+func auditChangedPaths(before, after map[string]string) []string {
+	var paths []string
+	for path, value := range before {
+		if other, ok := after[path]; !ok || value != other {
+			paths = append(paths, path)
+		}
+	}
+	for path := range after {
+		if _, ok := before[path]; !ok {
+			paths = append(paths, path)
+		}
+	}
+	sort.Strings(paths)
+	return paths
+}
+
+func TestAuditChangedPaths(t *testing.T) {
+	before := map[string]string{"same": "secret", "removed": "", ".git/config": "old secret", "link": "old target", "mode": "-rw-------"}
+	after := map[string]string{"same": "secret", "added": "", ".git/config": "new secret", "link": "new target", "mode": "-rw-r--r--"}
+	want := []string{".git/config", "added", "link", "mode", "removed"}
+	if got := auditChangedPaths(before, after); !reflect.DeepEqual(got, want) {
+		t.Fatalf("changed paths = %q, want %q", got, want)
+	}
+	if got := auditChangedPaths(before, before); len(got) != 0 {
+		t.Fatalf("unchanged snapshot reported paths: %q", got)
+	}
+}
+
+func TestAuditFixtureDisablesAutomaticMaintenance(t *testing.T) {
+	base := t.TempDir()
+	config := filepath.Join(base, "gitconfig")
+	writeFile(t, config, "[gc]\nauto = 1\nautoDetach = true\n[maintenance]\nauto = true\nautoDetach = true\n[maintenance \"commit-graph\"]\nenabled = true\nauto = -1\n[maintenance \"loose-objects\"]\nenabled = true\nauto = 1\n")
+	t.Setenv("GIT_CONFIG_GLOBAL", config)
+	t.Setenv("GIT_CONFIG_NOSYSTEM", "1")
+	trace := filepath.Join(base, "git-trace")
+	t.Setenv("GIT_TRACE", trace)
+	repo := filepath.Join(base, "repo")
+	initRepo(t, repo)
+	git(t, repo, "config", "--local", "--get", "gc.auto", "^0$")
+	git(t, repo, "config", "--local", "--get", "maintenance.auto", "^false$")
+	data, err := os.ReadFile(trace)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(data), "commit -m init") {
+		t.Fatal("Git trace did not capture the fixture commit")
+	}
+	if strings.Contains(string(data), "maintenance run") || strings.Contains(string(data), "gc --auto") {
+		t.Fatal("fixture commit launched automatic maintenance")
+	}
+}
+
 func TestAuditIdentityMismatchPreservesBothChanges(t *testing.T) {
 	for _, tc := range []struct {
 		phase string
@@ -79,8 +132,8 @@ func TestAuditIdentityMismatchPreservesBothChanges(t *testing.T) {
 			if !strings.Contains(out, "identity mismatch") {
 				t.Fatalf("wrong refusal: %s", out)
 			}
-			if after := auditSnapshot(t, root); !reflect.DeepEqual(before, after) {
-				t.Fatalf("identity failure changed files: before=%v after=%v", before, after)
+			if changed := auditChangedPaths(before, auditSnapshot(t, root)); len(changed) != 0 {
+				t.Fatalf("identity failure changed paths: %q", changed)
 			}
 		})
 	}
@@ -303,6 +356,9 @@ func TestAuditDiagnosticsRejectConfiguredFailures(t *testing.T) {
 	for _, failure := range []string{"corrupt", "future", "invalid-root", "missing-source", "non-git-source", "dangling-root", "non-directory-root", "dangling-config"} {
 		t.Run(failure, func(t *testing.T) {
 			l := explicitScopeWorkspace(t, "existing")
+			if err := toFramework.Gate(l.ConfigRoot); err != nil {
+				t.Fatalf("valid fixture failed gate before corruption: %v", err)
+			}
 			data, err := os.ReadFile(l.ConfigPath)
 			if err != nil {
 				t.Fatal(err)
@@ -348,8 +404,8 @@ func TestAuditDiagnosticsRejectConfiguredFailures(t *testing.T) {
 			if err := runJSON(t, "doctor", "--quiet", "--dir", l.ConfigRoot); !errors.Is(err, ErrQuietFindings) {
 				t.Fatalf("quiet doctor error = %v", err)
 			}
-			if !reflect.DeepEqual(before, auditSnapshot(t, filepath.Dir(l.ConfigRoot))) {
-				t.Fatal("diagnostics changed workspace")
+			if changed := auditChangedPaths(before, auditSnapshot(t, filepath.Dir(l.ConfigRoot))); len(changed) != 0 {
+				t.Fatalf("diagnostics changed workspace paths: %q", changed)
 			}
 		})
 	}

@@ -1140,6 +1140,9 @@ func historyGitCommand(l Layout, args ...string) *exec.Cmd {
 }
 
 func historyCommand(dir string, args ...string) *exec.Cmd {
+	// Keep automatic maintenance inside the history operation's lifetime and
+	// lock, without disabling maintenance or changing the user's Git config.
+	args = append([]string{"-c", "maintenance.autoDetach=false", "-c", "gc.autoDetach=false"}, args...)
 	cmd := exec.Command("git", args...)
 	cmd.Dir = dir
 	// Never let a caller's Git plumbing environment redirect writes to source

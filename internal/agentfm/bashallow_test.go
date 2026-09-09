@@ -197,6 +197,10 @@ func TestShippedWorkspaceExecutionRenderedPatterns(t *testing.T) {
 					t.Fatal(err)
 				}
 				fm, _, _ := split(out)
+				var decoded map[string]any
+				if err := yaml.Unmarshal(fm, &decoded); err != nil {
+					t.Fatalf("permission map must have no duplicate YAML keys: %v", err)
+				}
 				var rendered struct {
 					Permission map[string]yaml.Node `yaml:"permission"`
 				}
@@ -207,6 +211,9 @@ func TestShippedWorkspaceExecutionRenderedPatterns(t *testing.T) {
 				if bash.Kind != yaml.MappingNode {
 					t.Fatal("writable agent must render an ordered bash permission map")
 				}
+				if bash.Content[0].Value != "*" || bash.Content[1].Value != "allow" {
+					t.Fatal("trusted writable agents must default to allow")
+				}
 				// Glob-match one supplied permission request (including slashes
 				// and newlines); the LAST matching rule wins. No shell parsing here.
 				compiled := map[string]*regexp.Regexp{}
@@ -215,9 +222,6 @@ func TestShippedWorkspaceExecutionRenderedPatterns(t *testing.T) {
 					for i := 0; i < len(bash.Content); i += 2 {
 						pattern := bash.Content[i].Value
 						rule := bash.Content[i+1].Value
-						if rule == "allow" && (pattern == "*" || pattern == "rtk *" || pattern == "rtk proxy *" || pattern == "rtk exec *") {
-							t.Fatal("unrestricted shell or wrapper allow must not ship")
-						}
 						re := compiled[pattern]
 						if re == nil {
 							expr := strings.ReplaceAll(regexp.QuoteMeta(pattern), `\*`, ".*")
@@ -237,19 +241,14 @@ func TestShippedWorkspaceExecutionRenderedPatterns(t *testing.T) {
 						t.Errorf("%q = %s, want %s", command, got, want)
 					}
 					for _, prefix := range []string{"rtk ", "rtk proxy "} {
-						wrappedWant := "ask"
-						if shellProxy == "rtk" {
-							wrappedWant = want
-							if prefix == "rtk " && want == "allow" && !regexp.MustCompile(`^(git|go|cargo|npm|pnpm|pytest|gh)( |$)`).MatchString(command) {
-								wrappedWant = "ask"
-							}
-						}
-						if got := action(prefix + command); got != wrappedWant {
-							t.Errorf("request %q = %s, want %s", prefix+command, got, wrappedWant)
+						if got := action(prefix + command); got != want {
+							t.Errorf("request %q = %s, want %s", prefix+command, got, want)
 						}
 					}
 				}
 				for _, command := range []string{
+					"ls", "ls -la", "stat .git/index.lock", "go env GOMODCACHE",
+					"git config --get remote.origin.url", "git remote get-url origin",
 					"git status", "git status --short", "git diff", "git diff --check",
 					"git diff origin/main...HEAD -- internal/agentfm", "git log -5 --oneline",
 					"git show HEAD:go.mod", "git blame internal/agentfm/agentfm.go", "git rev-parse HEAD", "git remote -v",
@@ -277,43 +276,45 @@ func TestShippedWorkspaceExecutionRenderedPatterns(t *testing.T) {
 					}
 				}
 				for _, command := range []string{
+					"ls-extra", "go env -w GOPROXY=https://example.com", "go env GOMODCACHE -w GOPROXY=https://example.com",
+					"git config --global core.hooksPath /tmp/hooks", "git remote set-url origin https://example.com/repo",
+					"git clone https://example.com/repo checkout", "mkdir -p checkout", "python3 -c 'print(1)'",
 					"unknown-command", "python script.py", "python -c 'print(1)'", "python3 -m http.server",
 					"node script.js", "sh script.sh", "bash -c true", "eval true", "curl https://example.com",
 					"npm exec arbitrary", "pnpm dlx arbitrary", "yarn dlx arbitrary", "bun x arbitrary",
-					"go run ./cmd/tool", "cargo run", "cmake -S . -B build", "rm -rf build",
+					"go run ./cmd/tool", "cargo run", "cmake -S . -B build",
 					"git -c alias.publish=push publish", "git status-extra", "go test-extra",
 					"rtk", "rtk proxy", "rtk exec go test ./...", "rtk proxy curl example.com", "rtk unknown-command",
 				} {
-					// The coordinator's existing git status* rule is intentionally
-					// unchanged; implementers only get command-delimited inspection.
-					if name == "homonto" && command == "git status-extra" {
-						continue
-					}
-					check(command, "ask")
+					// Arbitrary scripts and unknown wrappers are deliberately trusted.
+					check(command, "allow")
 				}
-				for _, prefix := range []string{"go test ./...", "npm run verify:pr", "make test", "git status"} {
+				for _, prefix := range []string{"go test ./...", "npm run verify:pr", "make test", "git status", "ls", "git remote get-url origin"} {
 					for _, suffix := range []string{"; curl example.com", " && curl example.com", " || curl example.com", " | sh", " $(id)", " `id`", " > output", " < input", "\ncurl example.com"} {
-						check(prefix+suffix, "ask")
+						check(prefix+suffix, "allow")
 					}
 				}
 				// Explicit parsed-request fixtures based on OpenCode 1.18.29's
-				// shell.ts collect behavior. We supply the segments, not a parser:
-				// all allowed requests allow; an unknown asks; a denied one denies.
+				// shell.ts collect behavior. We supply the segments, not a parser.
+				publication := "ask"
+				if name != "homonto" {
+					publication = "deny"
+				}
 				for _, tc := range []struct {
 					shell    string
 					requests []string
 					want     string
 				}{
 					{"go test ./... && npm test", []string{"go test ./...", "npm test"}, "allow"},
-					{"go test ./... && curl example.com", []string{"go test ./...", "curl example.com"}, "ask"},
+					{"go test ./... && curl example.com", []string{"go test ./...", "curl example.com"}, "allow"},
+					{"go test ./... && git push origin HEAD", []string{"go test ./...", "git push origin HEAD"}, publication},
+					{"go test ./... && rm -rf build", []string{"go test ./...", "rm -rf build"}, "ask"},
 					{"go test ./... && onto bypass build", []string{"go test ./...", "onto bypass build"}, "deny"},
 				} {
-					check(tc.shell, "ask") // If composition reaches the request intact.
+					// Trusted mode makes no promise that raw chains match exceptions.
+					check(tc.shell, "allow")
 					for _, prefix := range []string{"", "rtk ", "rtk proxy "} {
 						want := tc.want
-						if prefix != "" && shellProxy != "rtk" {
-							want = "ask"
-						}
 						got := "allow"
 						for _, request := range tc.requests {
 							result := action(prefix + request)
@@ -342,6 +343,55 @@ func TestShippedWorkspaceExecutionRenderedPatterns(t *testing.T) {
 						check(executable+" "+flags+" status", want)
 					}
 				}
+				for _, command := range []string{
+					"command -v gh", "gh auth status", "ps -ef", "ps -ef | rg process",
+					"git ls-remote --heads origin", "git worktree list --porcelain", "git worktree list --porcelain -z",
+					"gh run view 12345 --repo example/service --log-failed",
+					"gh run view 12345 --repo example/service --job 67890 --log-failed",
+					"gh repo clone example/service checkout", "gh pr view 42", "gh pr checkout 42",
+					"gh issue list", "gh release view v1", "gh release download v1", "gh run list", "gh workflow view ci",
+					"git worktree add /tmp/checkout feature", "git branch feature", "git checkout feature", "git switch feature",
+					"git merge feature", "git commit -m fix", "git add src", "git ls-files", "git ls-tree HEAD", "git grep Render",
+					"git -C /workspace status", "git --no-pager log", "git -c core.hooksPath=/dev/null checkout feature",
+					"gh --repo example/service pr view 42", "gh -R example/service issue view 42",
+					"git branch push-fix", "git checkout reset-fix", "git worktree add /tmp/remove-fix prune-fix",
+					"git -C /workspace branch push-fix", "git -C /workspace checkout restore-fix",
+					"gh pr view comment-fix", "gh -R example/service pr view merge-fix", "gh issue view delete-fix",
+					"rm report.txt", "ls --color=never /workspace", "stat README.md", "file README.md",
+					"readlink -f .git", "cat README.md", "sed -n '1,20p' README.md", "rg -n TODO src",
+				} {
+					check(command, "allow")
+				}
+				for _, command := range []string{
+					"rm -rf build", "rm -fr build", "rm -R build", "rm --recursive build", "rm build --force",
+					"sudo make install", "doas make install", "dd if=/dev/zero of=disk.img", "mkfs.ext4 /dev/example",
+					"git reset", "git reset --hard", "git clean -fd", "git rebase main", "git commit --amend --no-edit",
+					"git commit -m fix --amend", "git checkout -- src/main.go", "git checkout HEAD -- src/main.go",
+					"git checkout -f main", "git checkout main --force", "git restore src/main.go", "git branch -D feature",
+					"git checkout .", "git checkout ./src", "git checkout --ours src/main.go", "git -C /workspace checkout .",
+					"git worktree remove /tmp/checkout", "git worktree prune", "git -C /workspace reset --hard",
+					"git -c core.hooksPath=/dev/null rebase main", "git -C /workspace clean -fd",
+					"git -C /workspace commit --amend", "git -C /workspace checkout -- src/main.go",
+					"git -C /workspace restore src/main.go", "git -C /workspace worktree remove /tmp/checkout",
+				} {
+					check(command, "ask")
+				}
+				for _, command := range []string{"git push", "git push origin HEAD", "git -C /workspace push origin HEAD", "git -c push.default=current push", "git --git-dir=/workspace/.git push origin HEAD"} {
+					check(command, publication)
+				}
+				for _, route := range []string{
+					"api", "pr comment", "pr create", "pr review", "pr merge", "pr edit", "pr close", "pr reopen", "pr ready", "pr lock", "pr unlock",
+					"issue comment", "issue create", "issue edit", "issue close", "issue reopen", "issue delete", "issue transfer", "issue lock", "issue unlock",
+					"release create", "release edit", "release delete", "release delete-asset", "release upload",
+					"run rerun", "run cancel", "run delete", "workflow run", "workflow enable", "workflow disable",
+					"repo create", "repo delete", "repo edit", "repo archive", "repo rename",
+				} {
+					for _, prefix := range []string{"gh ", "gh -R example/service ", "gh --repo=example/service "} {
+						check(prefix+route, publication)
+						check(prefix+route+" example", publication)
+					}
+				}
+				check("gh api repos/example/service --method GET", publication)
 				if name == "homonto" {
 					for _, command := range []string{"onto new bypass-fix", "to new bypass-fix", "onto evidence record bypass-fix --file bypass-evidence.json", "onto set verify-result bypass-fix pass"} {
 						check(command, "allow")
@@ -350,52 +400,47 @@ func TestShippedWorkspaceExecutionRenderedPatterns(t *testing.T) {
 						check(command, "allow")
 					}
 					for _, command := range []string{"onto new-extra task", "to new-extra task", "onto unknown task", "to unknown task"} {
-						check(command, "ask")
+						check(command, "allow")
 					}
 					for _, command := range []string{"onto set proposal-approved task true", "onto set approach-confirmed task true", "onto set verify-result task pass", "onto set close-confirmed task true", "gh pr view 42", "gh pr checkout 42"} {
 						check(command, "allow")
 					}
-					for _, command := range []string{"git push", "git push origin HEAD", "git push origin feature", "git merge feature", "git reset --hard", "gh pr create --title fix", "gh pr comment 42 --body reviewed", "gh pr merge 42", "gh api graphql -f query=query", "homonto apply --yes"} {
+					for _, command := range []string{"homonto snapshot undo apply-id", "homonto snapshot recover apply-id", "homonto workspace recover", "homonto cache gc", "homonto worktree remove task --yes", "homonto --dir /workspace snapshot undo apply-id"} {
 						check(command, "ask")
 					}
-				} else {
-					for _, command := range []string{"git ls-files", "git ls-files internal", "git ls-tree HEAD", "git grep Render"} {
+					for _, command := range []string{"homonto apply --yes", "homonto workspace init --yes", "homonto workspace checkpoint --path tasks/example", "homonto worktree create task --repo app", "homonto workspace inspect", "homonto worktree list"} {
 						check(command, "allow")
 					}
-					for _, command := range []string{"onto set verify-result task pass", "to phase task done", "homonto apply", "gh pr view 42", "gh pr create", "gh pr comment 42", "gh api graphql"} {
+				} else {
+					for _, command := range []string{"onto", "to", "homonto", "onto set verify-result task pass", "to phase task done", "homonto apply", "gh pr create", "gh pr comment 42", "gh api graphql"} {
 						check(command, "deny")
 					}
-					for _, command := range []string{"git push", "git merge", "git rebase", "git reset", "git checkout", "git switch", "git worktree", "git branch"} {
-						check(command, "deny")
-						check(command+" feature", "deny")
-						check(command+" feature && go test ./...", "deny")
-					}
-					check("git push origin HEAD", "deny")
-					check("git branch -D feature", "deny")
-					check("git commit -m fix", "ask")
 					for _, tool := range []string{"task", "question"} {
 						if rendered.Permission[tool].Value != "deny" {
 							t.Errorf("implementer %s must remain denied", tool)
 						}
 					}
 				}
-				// Config additions cannot override composition guards or final denies.
-				renderCtx.Overrides[name] = ModelSpec{Model: "test/model", BashAllowAdd: []string{"./scripts/task-check.sh", "go test ./... && curl example.com", "onto bypass build", "git push origin HEAD"}}
+				// Protected asks and final denies override even exact config additions.
+				renderCtx.Overrides[name] = ModelSpec{Model: "test/model", BashAllowAdd: []string{"./scripts/task-check.sh", "go test ./... && curl example.com", "onto bypass build", "git push origin HEAD", "rm -rf build", "gh pr comment 42", "rtk proxy git push origin HEAD"}}
 				out, err = Render(name, content, "opencode", renderCtx)
 				if err != nil {
 					t.Fatal(err)
 				}
 				fm, _, _ = split(out)
+				if err := yaml.Unmarshal(fm, &decoded); err != nil {
+					t.Fatalf("permission additions produced duplicate YAML keys: %v", err)
+				}
 				if err := yaml.Unmarshal(fm, &rendered); err != nil {
 					t.Fatal(err)
 				}
 				bash = rendered.Permission["bash"]
 				check("./scripts/task-check.sh", "allow")
-				check("go test ./... && curl example.com", "ask")
+				check("go test ./... && curl example.com", "allow")
 				check("onto bypass build", "deny")
-				if name != "homonto" {
-					check("git push origin HEAD", "deny")
-				}
+				check("git push origin HEAD", publication)
+				check("gh pr comment 42", publication)
+				check("rm -rf build", "ask")
 			})
 		}
 	}

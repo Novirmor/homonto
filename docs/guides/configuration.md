@@ -390,6 +390,32 @@ variant = "thinking"      # optional
 | `steps` | no | Positive integer overriding this agent's OpenCode iteration budget; zero and negative values are invalid. |
 | `bash_allow_add` | no | Reviewed exact-command additions; see [Settings](#settings--settingsopencode). |
 
+The shipped coordinator and implementers use a trusted-workspace shell baseline:
+inspection, setup, cloning, scripts (including Python/Node), chains, and pipes
+are allowed without generic command/composition prompts. Known `git push`, GitHub
+publication, and raw `gh api` patterns ask for the coordinator but are denied for
+implementers, including read-only API payloads. Destructive patterns ask for both
+writable roles; direct workflow bypasses remain denied. Protected asks
+and denies follow exact additions, so `bash_allow_add` cannot override them.
+This Bash baseline deliberately overrides inherited Bash asks/denies, not edit
+permissions, declared directory grants, delegation, or task write scope. Read-only
+specialists remain shell- and edit-denied.
+
+For stricter execution, use guarded custom agent definitions. `bash_default`
+(`allow` or `ask`) and `bash_ask` are neutral `homonto:` frontmatter fields only,
+not `homonto.toml` model-route settings; adding either to this table is an error.
+An omitted baseline retains custom profiles' old guarded behavior rather than
+opting them into general shell trust. See the
+[neutral profile reference](subagents.md#rendered-frontmatter-the-homonto-block).
+
+Shell permission is not publication authority. Implementers may perform
+task-authorized Git/gh setup and reads within their scope; authoritative GitHub
+intake, workflow state, and publication stay coordinator-owned. Verified-candidate
+and shown-review-draft approval rules still bind operations inside scripts.
+A tool prompt cannot override role ownership or publication approval.
+Command patterns cover finite recognizable exceptions, not every risky tool;
+they cannot sandbox scripts/wrappers or contain arbitrary shell directory access.
+
 Builtin defaults are finite: **1200** steps for the shared coordinator, **300**
 for implementers, and **120** for read-only specialists (including h workers).
 Override in the same model block, not the declaration table:
@@ -604,7 +630,12 @@ specific agent with `[subagents.<name>.opencode]`; `model_variant` and a
 commands to the agent's allowlist — the reviewed output of `homonto
 permissions suggest` (ADR 0029). Exact commands only; entries with pattern
 metacharacters, shell composition, environment assignments, or destructive
-content fail at load.
+content fail at load. Protected `bash_ask` and `bash_deny` rules in the agent's
+neutral profile take precedence over these additions. A private history of
+executed or accepted commands is not a permission grant, and redacted placeholders
+are not valid exact additions. Review real arguments locally; do not publish
+private command values as examples. Even an explicitly accepted command does
+not authorize posting an unapproved review draft or expanding workflow scope.
 
 Bundled plugins (`permission-observer`) are owned catalog content: declaring
 `[plugins.opencode.permission-observer]` with `source = "permission-observer"`

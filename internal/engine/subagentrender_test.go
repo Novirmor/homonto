@@ -463,15 +463,17 @@ func TestApplyRerendersSubagentPatternsWhenShellProxyChanges(t *testing.T) {
 				if text != baseline[agent] {
 					t.Errorf("%s with proxy %q must match its unwrapped render", agent, proxy)
 				}
+			}
+			if agent == "h-review" {
 				if strings.Contains(text, `"rtk `) {
 					t.Errorf("%s with proxy %q gained wrapped rules", agent, proxy)
 				}
 				continue
 			}
 			for _, prefix := range []string{"", "rtk ", "rtk proxy "} {
-				for _, pattern := range []string{"go test *", "npm test", "./scripts/task-check.sh"} {
+				for _, pattern := range []string{"./scripts/task-check.sh"} {
 					want := fmt.Sprintf("    %q: allow", prefix+pattern)
-					if prefix == "rtk " && pattern == "./scripts/task-check.sh" {
+					if prefix == "rtk " || (prefix != "" && resolved != "rtk") {
 						if strings.Contains(text, want) {
 							t.Errorf("%s must only proxy unknown executable %s", agent, pattern)
 						}
@@ -483,7 +485,7 @@ func TestApplyRerendersSubagentPatternsWhenShellProxyChanges(t *testing.T) {
 				}
 				denied := []string{"onto bypass*", "to bypass*"}
 				if agent != "homonto" {
-					denied = []string{"onto *", "to *", "gh *", "git push", "git push *", "git branch *"}
+					denied = []string{"onto *", "to *", "homonto *", "git push", "git push *", "gh pr comment*", "gh api*"}
 				}
 				for _, pattern := range denied {
 					want := fmt.Sprintf("    %q: deny", prefix+pattern)
@@ -491,13 +493,19 @@ func TestApplyRerendersSubagentPatternsWhenShellProxyChanges(t *testing.T) {
 						t.Errorf("%s missing %s", agent, want)
 					}
 				}
+				for _, pattern := range []string{"rm -r*", "git reset *", "git worktree remove*"} {
+					want := fmt.Sprintf("    %q: ask", prefix+pattern)
+					if !strings.Contains(text, want) {
+						t.Errorf("%s missing protected exception %s with proxy %q", agent, want, proxy)
+					}
+				}
 			}
-			for _, want := range []string{`"*": ask`, `"*;*": ask`, `"*&&*": ask`} {
+			for _, want := range []string{`"*": allow`} {
 				if !strings.Contains(text, want) {
 					t.Errorf("%s missing %s", agent, want)
 				}
 			}
-			for _, forbidden := range []string{`"rtk *": allow`, `"rtk proxy *": allow`, `"rtk exec *": allow`, `"rtk unknown-command": allow`, `"rtk curl *": allow`} {
+			for _, forbidden := range []string{`"*;*": ask`, `"*&&*": ask`, `"gh *": deny`, `"git branch *": deny`, `"git checkout *": deny`} {
 				if strings.Contains(text, forbidden) {
 					t.Errorf("%s unexpectedly grants %s", agent, forbidden)
 				}
@@ -535,7 +543,7 @@ func TestHFrameworkRendersCoordinatorAndReadonlyWorkers(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, want := range []string{"mode: primary", `"h-spike": allow`, `"h-review": allow`, "external_directory:", "webfetch: allow", "websearch: allow", `"go test *": allow`, `"npm run *": allow`, `"*;*": ask`, `"onto bypass*": deny`} {
+	for _, want := range []string{"mode: primary", `"h-spike": allow`, `"h-review": allow`, "external_directory:", "webfetch: allow", "websearch: allow", `"*": allow`, `"git push *": ask`, `"gh pr comment*": ask`, `"onto bypass*": deny`} {
 		if !strings.Contains(string(primary), want) {
 			t.Errorf("homonto primary (via h) missing %q:\n%s", want, primary)
 		}
@@ -554,7 +562,7 @@ func TestHFrameworkRendersCoordinatorAndReadonlyWorkers(t *testing.T) {
 		if !strings.Contains(rendered, "external_directory:") {
 			t.Errorf("%s must inherit declared-repo access under h:\n%s", implementer, data)
 		}
-		for _, want := range []string{`"*": ask`, `"git diff *": allow`, `"go test *": allow`, `"npm run *": allow`, `"*;*": ask`, `"onto *": deny`, `"to *": deny`, `"gh *": deny`, `"git push": deny`, `"git push *": deny`, `"git branch *": deny`, "webfetch: allow", "websearch: allow"} {
+		for _, want := range []string{`"*": allow`, `"rm -r*": ask`, `"onto *": deny`, `"to *": deny`, `"gh api*": deny`, `"gh pr comment*": deny`, `"git push": deny`, `"git push *": deny`, "webfetch: allow", "websearch: allow"} {
 			if !strings.Contains(rendered, want) {
 				t.Errorf("%s must retain the delegated execution boundary %q:\n%s", implementer, want, rendered)
 			}

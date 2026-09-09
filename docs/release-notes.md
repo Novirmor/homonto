@@ -15,6 +15,42 @@ bookkeeper) — for every supported OS/arch as separate archives under one
 `SHA256SUMS`. `onto` and `to` each require `homonto` to have installed their
 framework first (`[frameworks.onto]` / `[frameworks.to]` + `homonto apply`).
 
+### Unreleased
+
+- The coordinator and implementers now default to trusted-workspace shell
+  execution, including inspection, setup, cloning, Python/Node and repository
+  scripts, chains, and pipes. This deliberately overrides inherited Bash
+  asks/denies; it does not change edit behavior, directory grants, delegation,
+  or task write scope. Reviewers and other read-only specialists still deny
+  shell and edits.
+- Neutral agent profiles gain `bash_default: allow|ask` and `bash_ask`.
+  `allow` omits generic composition asks; omitted baselines retain guarded
+  custom-profile behavior. Known `git push`, GitHub publication, and raw `gh api`
+  patterns ask for the coordinator but are denied for implementers. Destructive
+  patterns ask for both writable roles. Protected asks/denies follow exact
+  additions and cannot be overridden by `bash_allow_add`.
+  Strict users can use guarded custom agent definitions; there is no new
+  model-route configuration knob. See [subagents](guides/subagents.md).
+- Implementers may perform task-authorized Git/gh setup and reads within their
+  write scope. The coordinator still owns authoritative GitHub intake, workflow
+  state, integration, and publication. Default-allow shell does not authorize
+  publishing: invocation scope, verification, and approval of the shown review
+  draft still bind operations inside scripts. Past accepted commands are not
+  publication consent; a tool prompt cannot override role ownership or approval.
+- Onto/to preflight investigates missing, broken, or incompatible binaries before
+  handing off: inspect PATH and known compatible installations, then repair only
+  already-authorized setup from a trusted source/version into a workspace-local
+  destination. No silent global-binary overwrite, shell-profile edit, or arbitrary
+  untrusted installation. Unresolved failures name the setup blocker or decision;
+  workflow mutations wait for version checks and the framework-install gate.
+- Registered worktree lifecycle and dirty-work decisions remain required.
+  Isolated, authorized task-local Git fixtures cannot replace live bindings or
+  recreate the control plane. Finite command patterns cannot cover every risky
+  tool, sandbox scripts/wrappers, or contain arbitrary shell directory access;
+  code runs with the process's files, credentials, and network privileges.
+  This accepted tradeoff replaces the finite default allowlist in v0.24.0, not
+  workflow authorization. See [ADR 0054](adr/0054-default-to-trusted-workspace-shell.md).
+
 ### New in v0.24.0 — separate workspaces and autonomous workflows
 
 - Schema 2 separates config, records history, and explicit source scope, with

@@ -42,8 +42,12 @@ exception below; if the mode or ownership is uncertain, stay serial.
 Follow the shared [workspace and dirty-work policy](../../homonto/references/workspace-policy.md).
 The coordinator supplies configRoot, records root, selected alias, validated
 execution binding (or the assigned legacy task worktree), and the existing dirt
-decision. Workers never allocate or remove worktrees, transport dirty input,
-or checkpoint records themselves.
+decision. Workers never allocate or remove workflow execution/receiver worktrees,
+transport dirty input, or checkpoint records themselves. Task-authorized Git/gh
+setup and reads are allowed within their assigned write scope, including isolated
+Git fixtures under the shared policy, not authoritative GitHub intake or
+publication. Trusted shell scripts, Python/Node, chains, and pipes do not change
+these ownership or delegation boundaries.
 
 Dispatch ONE `onto-implementer` per task (a fresh context each time), whose
 prompt contains:
@@ -73,8 +77,8 @@ prompt contains:
 
 The allocator supports one binding per workflow/change/repo. Task-level bindings
 are not supported. Run same-repo tasks serially, even for disjoint files.
-No unregistered raw/native task worktrees are permitted in schema 2, in either
-existing or managed history mode. Read-only workers may fan out. Separate selected
+No unregistered raw/native workflow execution worktrees are permitted in schema 2,
+in either existing or managed history mode. Read-only workers may fan out. Separate selected
 repos need disjoint write scopes and validated bindings, with coordinator
 bookkeeping serialized after verifying each return.
 

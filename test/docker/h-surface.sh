@@ -66,16 +66,15 @@ for worker in h-spike h-review onto-explorer onto-reviewer onto-skeptic to-explo
 	in_file "$RVAR" '  question: deny'
 	is_link "$W/.opencode/agent/$worker.md"; is_file "$W/.opencode/agent/$worker.md"
 done
-# The coordinator owns GitHub; all agents may use supporting web research.
+# The coordinator owns GitHub intake/publication; supporting research is allowed.
 PVAR="$W/.homonto/catalog/subagents/homonto.opencode.md"
 in_file "$PVAR" 'mode: primary'
 in_file "$PVAR" '  webfetch: allow'
 in_file "$PVAR" '  websearch: allow'
-# The primary carries a bash allowlist, so the composition guards must follow
-# its allows (composition-bearing requests re-ask, ADR 0051) and the gate-skipping
-# subcommands must be denied outright. in_file regex-matches (BRE): escape
-# the literal asterisks.
-in_file "$PVAR" '"\*;\*": ask'
+# Trusted shell has finite publication/destruction exceptions, not composition
+# guards. in_file regex-matches (BRE): escape the literal asterisks.
+in_file "$PVAR" '"git push \*": ask'
+in_file "$PVAR" '"gh pr comment\*": ask'
 in_file "$PVAR" '"onto bypass\*": deny'
 in_file "$PVAR" '"to bypass\*": deny'
 is_link "$W/.opencode/agent/homonto.md"; is_file "$W/.opencode/agent/homonto.md"
@@ -83,25 +82,23 @@ for agent in homonto onto-implementer to-implementer; do
 	RVAR="$W/.homonto/catalog/subagents/$agent.opencode.md"
 	in_file "$RVAR" '  webfetch: allow'
 	in_file "$RVAR" '  websearch: allow'
-	in_file "$RVAR" '"\*": ask'
-	in_file "$RVAR" '"\*;\*": ask'
-	for command in 'go test' 'go build' 'go vet' 'go fmt' gofmt 'npm test' 'npm run' 'pnpm run' 'yarn run' 'bun run' pytest 'python -m pytest' 'python3 -m pytest' 'cargo test' 'cargo check' 'cargo build' 'cargo fmt' 'cargo clippy' make 'cmake --build' ctest; do
-		in_file "$RVAR" "\"$command \\*\": allow"
-	done
+	in_file "$RVAR" '"\*": allow'
+	in_file "$RVAR" '"rm -r\*": ask'
+	in_file "$RVAR" '"rtk proxy rm -r\*": ask'
+	if grep -q '"\*;\*": ask' "$RVAR"; then fail "trusted shell must not retain composition guards"; fi
 	if [ "$agent" != homonto ]; then
-		in_file "$RVAR" '"git diff \*": allow'
 		in_file "$RVAR" '"onto \*": deny'
 		in_file "$RVAR" '"to \*": deny'
 		in_file "$RVAR" '"homonto \*": deny'
-		in_file "$RVAR" '"gh \*": deny'
+		in_file "$RVAR" '"gh pr comment\*": deny'
+		in_file "$RVAR" '"gh api\*": deny'
 		in_file "$RVAR" '"git push \*": deny'
-		in_file "$RVAR" '"git branch \*": deny'
-		in_file "$RVAR" '"git checkout \*": deny'
+		in_file "$RVAR" '"rtk proxy git push \*": deny'
 		in_file "$RVAR" '  task: deny'
 		in_file "$RVAR" '  question: deny'
 	fi
 done
-ok "web and workspace verification allowed; worker write and publishing boundaries retained"
+ok "trusted general shell allowed; worker write and publishing boundaries retained"
 
 log "an applied h satisfies both workflow gates"
 "$ONTO" init >/dev/null

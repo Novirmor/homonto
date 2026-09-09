@@ -3,6 +3,28 @@
 Publication authorization does not expand the verified candidate. Apply this
 contract to h resolve/continue and onto/to integration, including retries.
 
+## Authority before execution
+
+Default-allow shell execution is not automatic publishing permission. It permits
+task-local execution, not a new external commitment. The coordinator alone owns
+publication and authoritative GitHub intake; implementer Git/gh setup or reads
+do not transfer that authority. Follow the invocation's exact publication scope
+and the workflow's verification gates, even for publication inside a script,
+interpreter, wrapper, or API payload. Known `git push`, GitHub publication, and
+raw `gh api` patterns ask for the coordinator but are denied for implementers.
+Destructive patterns ask for both writable roles. These protected rules follow
+exact allow additions, but cannot detect every hidden operation. A tool prompt
+cannot override role ownership or publication approval.
+
+Resolve authorizes its verified push and PR creation; continue authorizes its
+verified push, summary comment, and demonstrably addressed thread resolutions.
+Those actions need no second conversational approval. Review posting still
+requires explicit approval of the shown draft; changed findings require renewed
+approval. Other workflows use their own publication authorization, not h's by
+analogy. An allowed command, a tool approval, or a private history of accepted
+commands does not establish draft approval or expand the authorized scope.
+Honor tool prompts and denials; never route around them through another tool.
+
 ## Pin and reconcile
 
 For onto, read each source commit, target, mode, and receipt from the archived

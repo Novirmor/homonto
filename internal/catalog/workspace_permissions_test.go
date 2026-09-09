@@ -22,7 +22,7 @@ func TestWorkspaceCommandsMatchCoordinatorPermissions(t *testing.T) {
 	if err != nil || !known {
 		t.Fatalf("coordinator content: known=%t, %v", known, err)
 	}
-	for _, proxy := range []string{"none", "rtk"} {
+	for _, proxy := range []string{"", "none", "rtk"} {
 		rendered, err := agentfm.Render("homonto", content, "opencode", &agentfm.RenderContext{
 			ShellProxy: proxy, Overrides: map[string]agentfm.ModelSpec{"homonto": {Model: "provider/model"}},
 		})
@@ -61,12 +61,8 @@ func TestWorkspaceCommandsMatchCoordinatorPermissions(t *testing.T) {
 			}
 			found++
 			check(line, "allow")
-			wrapped := "ask"
-			if proxy == "rtk" {
-				wrapped = "allow"
-			}
-			check("rtk proxy "+line, wrapped)
-			check("rtk "+line, "ask") // onto/to are passthrough, not native RTK families.
+			check("rtk proxy "+line, "allow")
+			check("rtk "+line, "allow") // Unknown wrappers inherit trusted shell execution.
 		}
 		if found != 2 {
 			t.Fatalf("expected both generated status commands, got %d", found)
@@ -79,12 +75,12 @@ func TestWorkspaceCommandsMatchCoordinatorPermissions(t *testing.T) {
 				{[]string{"status", "--dir", "/workspace"}, "status", "allow"},
 				{[]string{"--dir", "/workspace", "status"}, "status", "ask"},
 				{[]string{"status", "--help"}, "status", "allow"},
-				{[]string{"help", "status"}, "help", "ask"},
+				{[]string{"help", "status"}, "help", "allow"},
 				{[]string{"--dir", "/workspace", "bypass", "change"}, "bypass", "ask"},
 				{[]string{"--dir=/workspace", "bypass", "change"}, "bypass", "ask"},
 				{[]string{"--help", "bypass", "change"}, "bypass", "ask"},
 				{[]string{"bypass", "--help"}, "bypass", "deny"},
-				{[]string{"help", "bypass"}, "help", "ask"},
+				{[]string{"help", "bypass"}, "help", "allow"},
 				{[]string{"new", "bypass-fix", "--dir", "/workspace"}, "new", "allow"},
 			} {
 				root := ontocli.NewRootCmd()
@@ -100,11 +96,8 @@ func TestWorkspaceCommandsMatchCoordinatorPermissions(t *testing.T) {
 				}
 				request := executable + " " + strings.Join(tc.args, " ")
 				check(request, tc.want)
-				wrapped := "ask"
-				if proxy == "rtk" {
-					wrapped = tc.want
-				}
-				check("rtk proxy "+request, wrapped)
+				check("rtk proxy "+request, tc.want)
+				check("rtk "+request, tc.want)
 			}
 		}
 	}

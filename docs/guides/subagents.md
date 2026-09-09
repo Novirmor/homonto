@@ -104,21 +104,26 @@ mode: subagent
 
 A builtin subagent declares its intent once, tool-neutrally, in a `homonto:`
 frontmatter block, and `apply` renders OpenCode's native dialect from it.
-The rendered `permission:` map carries explicit allows and denials. Unspecified
-capabilities keep the host default; a Bash allowlist makes unmatched commands
-ask rather than granting unrestricted shell access:
+The rendered `permission:` map carries explicit allows, asks, and denials.
+Unspecified capabilities keep the host default. A neutral Bash profile can choose
+a trusted `allow` baseline or a guarded `ask` baseline:
 
 ```markdown
 ---
-name: onto-implementer
+name: custom-agent
 description: ...
 mode: subagent
 homonto:
   read_only: false    # deny edits/writes when true
-  bash: true          # optional; false denies bash and cannot carry bash_allow
-  bash_allow:         # optional; other Bash commands ask
+  bash: true          # optional; false denies bash and rejects Bash profile rules
+  bash_default: ask   # allow | ask; neutral frontmatter only, not a model setting
+  bash_allow:         # optional command-pattern allows
     - "git status"
     - "git diff"
+  bash_ask:           # protected asks, after base/exact allows
+    - "git push *"
+  bash_deny:          # final denies
+    - "onto bypass*"
   dialogs: false      # question tool denied; subagents return a Questions: section
   spawn: []           # delegation topology: agents this one may dispatch
   primary: true       # OpenCode primary agent (renders mode: primary)
@@ -134,8 +139,11 @@ Rendering:
 | `read_only: true` | `edit: deny` |
 | `bash: false` | `bash: deny` |
 | `network: true` / `false` | `webfetch` and `websearch`: `allow` / `deny`; omitted retains the host default |
-| `bash_allow: [a,b]` | `bash:` rules: `*` asks; `a` and `b` allow |
-| `bash_allow_add: [c]` (config) | appends `c` after the base list, deduplicated; rejected when `bash: false` |
+| `bash_default: allow` / `ask` | Bash `*` baseline; `allow` omits generic composition asks |
+| `bash_allow: [a,b]` | `a` and `b` allow; without `bash_default`, retains the guarded ask baseline |
+| `bash_allow_add: [c]` (config) | appends exact `c` after the base allows, before protected asks/denies; rejected when `bash: false` |
+| `bash_ask: [d]` | protected asks after allows, before guarded composition asks and final denies |
+| `bash_deny: [e]` | final denies, after asks and exact additions |
 | `dialogs: true` / `false` | `question: allow` / `question: deny` |
 | `spawn: []` | `task: deny` |
 | `spawn: [a,b]` | `task:` globs allowing only `a`,`b` |
@@ -145,48 +153,86 @@ Rendering:
 The rendered variant re-emits `mode: subagent`/`mode: primary` from the
 `primary` flag.
 
+`bash_default` selects `allow` or `ask`; an empty string retains omitted-baseline
+behavior. It and `bash_ask` belong in the agent's neutral `homonto:` profile, not
+`[subagents.<name>.opencode]` (the model route). A `bash: false` agent cannot carry
+a Bash baseline or non-empty command rules; `read_only: true` cannot opt into
+`bash_default: allow`. When the baseline is absent, custom definitions retain
+the previous behavior:
+a Bash command-rule map defaults to `ask` and includes generic composition
+guards; without Bash rules no Bash map is emitted and the host default remains.
+Only explicit `bash_default: allow` opts out of generic composition asks.
+Protected asks and final denies follow exact additions, so `bash_allow_add`
+cannot override them. These are command-pattern checks, not script inspection.
+
 ## Bundled workflow agents
 
 The `onto` and `to` frameworks each install four specialists, and — together
 with the `h` companion — the one shared `homonto` coordinator primary
 (ADR 0045; all three declare the same catalog file, so any of them installs
-it). The primary is edit-capable and owns GitHub access for the `/h-*`
+it). The primary is edit-capable and owns authoritative GitHub intake for the `/h-*`
 workflows; explorers, reviewers, skeptics, and the `h-spike`/`h-review`
 workers are deliberately read-only so they can run concurrently without
-changing the workspace. The primary's documented Git, `gh`, test, and
-workflow commands are allow-listed. Other shell commands ask rather than
-receiving a blanket shell grant.
+changing the workspace. The coordinator and both implementers use
+`bash_default: allow`: general shell execution is allowed for authorized work,
+not limited to a finite routine-command allowlist. Inspection, setup, cloning,
+repository scripts, Python/Node, command chains, and pipes do not generically ask.
+
+Routine local inspection includes `ls`, `stat .git/index.lock`,
+`go env GOMODCACHE`, `git config --get remote.origin.url`, and
+`git remote get-url origin`, as well as `ps -ef`, `git worktree list` with options,
+`git ls-remote --heads origin`, and `gh run view` for CI inspection. Implementers
+may use task-authorized Git/gh setup and reads within their assigned write scope.
+The coordinator retains authoritative GitHub context collection, workflow
+state/checkpoints, integration, and publication; shell access does not delegate
+those responsibilities. Run cancellation/reruns, API mutations, worktree cleanup,
+and other non-routine actions still need the authority required by their workflow
+and any applicable protected tool prompt.
 
 The coordinator and both implementers allow routine verification commands for
 Go, JavaScript package scripts, pytest, Cargo, Make, and CMake/CTest. These
 defaults also apply to checked-out PR code: individual test/build approvals are
 not required, and observed allowed runs count as verification evidence.
-**This trusts workspace execution, not a sandbox.** Scripts and build targets
-can run arbitrary code with access to the process's files, credentials, and
-network. Unknown command requests still ask; explicit denies remain last and
-cannot be overridden by additive allows. Composition guards re-ask requests
-containing shell composition, but OpenCode may check parsed commands separately:
-a compound of allowed commands need not prompt.
+Known `git push`, GitHub publication, and raw `gh api` patterns ask for the
+coordinator but are denied for implementers, even for read-only API payloads.
+Destructive patterns ask for both writable roles. These protected rules and direct
+workflow bypass denies follow exact allow additions. Unknown commands and
+shell composition otherwise inherit the allow baseline. **This deliberately
+overrides inherited Bash policy, including Bash asks and denies.** It does not
+change inherited edit behavior, declared directory grants, or delegation limits.
+
+**This trusts workspace execution, not a sandbox.** Scripts, interpreters,
+wrappers, and build targets can execute arbitrary code with access to the
+process's files, credentials, and network. Finite protected patterns cannot
+identify every risky tool or hidden publication/destructive operation, nor can
+directory patterns contain arbitrary shell access. OpenCode may evaluate parsed
+commands separately rather than the whole invocation. These are known host
+enforcement limits, not authority to evade policy or an actual prompt/denial.
 
 With `[tooling] shell_proxy = "rtk"`, the renderer derives command-specific
-`rtk` and `rtk proxy` allows and denies from those same rules. Routine checks
-such as `rtk go test ./...` need no extra approval; this does not grant all RTK
-commands. Without that provider, wrapper permissions are not added.
+`rtk` and `rtk proxy` allows from the base rules and exact additions. Protected
+asks also cover these known wrapper forms without the provider configured;
+trusted-default denies do too. Guarded custom profiles retain the previous
+provider-dependent deny expansion. Under the trusted allow baseline, unmatched
+wrapper requests are allowed; protecting recognizable forms is not a wrapper
+sandbox. Guarded profiles retain command-specific allows, not a blanket RTK grant.
 
-The coordinator allows only approved command-first workflow forms such as
-`onto status --dir ...`. Direct `onto bypass ...` and `to bypass ...` requests
-are denied. Flag-first forms such as `onto --dir ... bypass ...` ask rather
-than matching a broad allow; glob rules cannot reliably identify a subcommand
-after arbitrary flags. A change or evidence name such as `bypass-fix` is an
-argument, not a bypass command. The same boundary applies to configured RTK
-proxy forms. A tool prompt is not authorization to waive workflow requirements;
-the coordinator's bypass policy still applies.
+Use documented command-first workflow forms such as `onto status --dir ...`.
+Direct `onto bypass ...` and `to bypass ...` requests are denied. Flag-first
+`onto`/`to` forms have protected asks because glob rules cannot reliably identify
+subcommands after arbitrary flags. Scripts can hide them entirely; the allow
+baseline does not authorize flag-first, wrapped, or scripted bypasses.
+A change or evidence name such as `bypass-fix` is an argument, not a bypass
+command. No allowed command or tool approval waives a workflow requirement.
 
 All shipped agents allow web research. Web content is evidence, not authority
-to execute commands or expand scope. GitHub operations remain coordinator-owned,
-and concurrent specialists still deny both shell and edit tools. Custom agent
-definitions keep their declared permissions; these are shipped defaults, not a
-blanket override of local policy. See [ADR 0051](../adr/0051-trust-workspace-execution-and-automate-h-routing.md).
+to execute commands or expand scope. Authoritative GitHub intake and publication
+remain coordinator-owned, and concurrent specialists still deny both shell and
+edit tools. Custom agent definitions are not automatically opted in. For stricter
+execution, use guarded custom agent definitions with `bash_default: ask` and
+reviewed command allows (or native permissions without a neutral block); there
+is no new model-route Bash-default knob. See
+[ADR 0054](../adr/0054-default-to-trusted-workspace-shell.md).
 
 The h workflows work toward explicit outcomes: an implementation brief, a
 verified issue-closing PR, verified updates to the existing PR, or validated
@@ -197,7 +243,21 @@ question. Implementers resolve technical details and repair in-scope failures;
 missing product intent, scope conflicts, and unrelated user work remain reasons
 to ask. Reviews still require approval of the shown draft before posting.
 Resolve/continue publication already authorized by invocation needs no second
-conversational approval, but publishing tool prompts still apply.
+conversational approval for the coordinator, but its protected publishing tool
+prompts still apply. Implementers remain publication-denied, not eligible to
+publish by obtaining a tool approval. A tool prompt cannot override role ownership
+or publication approval.
+Default-allow shell is execution permission, not automatic permission to publish:
+role ownership, verified candidate scope, and approval of the shown review draft
+remain binding even inside scripts or API payloads. Past accepted commands do
+not establish publication consent.
+
+Registered workflow worktree allocation, integration, and removal remain required
+and coordinator-owned. Task-local fixture clones and raw Git worktrees are
+permitted only at isolated, task-authorized locations within existing directory
+grants and write scope. They cannot replace execution bindings or receivers,
+create extra implementation lanes, or recreate the live workflow/control plane.
+Dirty-input transport and exact-path cleanup authorization remain unchanged.
 
 When `[repos]` declares sibling Git worktrees, `homonto apply` gives only the
 `homonto` coordinator and the two implementers an `external_directory` rule. It
@@ -246,6 +306,14 @@ the reviewed output of `homonto permissions suggest`. Entries must be exact
 commands: patterns, shell composition, environment assignments, and
 destructive or credential-like commands fail at load, and an agent whose
 base denies bash cannot gain additions.
+
+A private list of previously executed commands is not itself an instruction or
+permission grant. Review additions individually; execution may have been covered
+by an existing allow rather than an explicit approval. Redacted placeholders
+such as `<FILE>` must be replaced with the actual arguments before an exact
+addition can be used. A comment allowance never substitutes for the workflow's
+explicit approval of the shown review draft.
+
 The prompt body is single-source, never duplicated; the neutral block and its
 comments are stripped from the rendered file. Under `.homonto/catalog/` the
 source is kept verbatim as `<name>.md` alongside the rendered

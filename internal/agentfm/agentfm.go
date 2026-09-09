@@ -47,15 +47,17 @@ import (
 // Model selection is config-driven ([subagents.<name>.<tool>]); unknown neutral
 // capability fields are rejected rather than silently ignored.
 type Homonto struct {
-	ReadOnly  bool      `yaml:"read_only"`       // deny edits/writes
-	Bash      *bool     `yaml:"bash"`            // nil = default (allowed); false = deny
-	Network   *bool     `yaml:"network"`         // nil = tool default; true/false = allow/deny web fetch/search
-	BashAllow []string  `yaml:"bash_allow"`      // allowlisted shell commands; all other commands ask
-	BashDeny  []string  `yaml:"bash_deny"`       // denied even inside bash_allow's reach; rendered last so it wins
-	Dialogs   bool      `yaml:"dialogs"`         // allow the question/dialog tool
-	Spawn     *[]string `yaml:"spawn"`           // nil = unrestricted; [] = none; [a,b] = only these
-	Primary   bool      `yaml:"primary"`         // OpenCode primary agent
-	Steps     int       `yaml:"steps,omitempty"` // OpenCode iteration budget
+	ReadOnly    bool      `yaml:"read_only"`              // deny edits/writes
+	Bash        *bool     `yaml:"bash"`                   // nil = default (allowed); false = deny
+	Network     *bool     `yaml:"network"`                // nil = tool default; true/false = allow/deny web fetch/search
+	BashDefault string    `yaml:"bash_default,omitempty"` // empty/ask = guarded; allow = trusted shell execution
+	BashAllow   []string  `yaml:"bash_allow"`             // allowed shell commands above the baseline
+	BashAsk     []string  `yaml:"bash_ask,omitempty"`     // protected prompts, including after config additions
+	BashDeny    []string  `yaml:"bash_deny"`              // denied even inside bash_allow's reach; rendered last so it wins
+	Dialogs     bool      `yaml:"dialogs"`                // allow the question/dialog tool
+	Spawn       *[]string `yaml:"spawn"`                  // nil = unrestricted; [] = none; [a,b] = only these
+	Primary     bool      `yaml:"primary"`                // OpenCode primary agent
+	Steps       int       `yaml:"steps,omitempty"`        // OpenCode iteration budget
 }
 
 // ModelSpec is a fully-resolved model choice for one tool: which model, which
@@ -67,7 +69,7 @@ type ModelSpec struct {
 	Effort  string
 	Steps   *int
 	// BashAllowAdd appends exact commands to the agent's base bash_allow
-	// before composition guards and final denies.
+	// before protected asks, composition guards, and final denies.
 	BashAllowAdd []string
 }
 
@@ -81,7 +83,7 @@ type RenderContext struct {
 	// Names maps catalog identities to their single installed host name.
 	Names map[string]string
 	// ShellProxy is the resolved tooling provider; only "rtk" derives wrapped
-	// bash rules. Empty/"none" leave the agent's command patterns unchanged.
+	// allows. Protected asks and trusted-shell denies also cover RTK without it.
 	ShellProxy string
 	// ExternalDirectoriesByAgent names the resolved workspace directories that each
 	// bundled writable workflow role may access. The engine owns this map so a
@@ -273,6 +275,11 @@ func Render(name string, content []byte, tool string, ctx *RenderContext) ([]byt
 		if ctx != nil && ctx.ShellProxy == "rtk" && (h.Bash == nil || *h.Bash) {
 			h.BashAllow = rtkPatterns(h.BashAllow, false)
 			spec.BashAllowAdd = rtkPatterns(spec.BashAllowAdd, false)
+		}
+		// Known wrappers must not evade protected prompts or a trusted-shell
+		// deny just because RTK is not configured as the shell proxy.
+		h.BashAsk = rtkPatterns(h.BashAsk, true)
+		if h.BashDefault == "allow" || (ctx != nil && ctx.ShellProxy == "rtk") {
 			h.BashDeny = rtkPatterns(h.BashDeny, true)
 		}
 		if perm := opencodePermission(h, spec.BashAllowAdd, externalDirectories, externalDirectoryDenies, editDirectoryDenies, managesExternalDirectories); perm != "" {
@@ -303,9 +310,9 @@ func Render(name string, content []byte, tool string, ctx *RenderContext) ([]byt
 }
 
 // rtkPatterns preserves originals. Allows use only known equivalent native
-// command families; other executables use literal passthrough. Denies mirror
-// both forms even for wildcard executables, since broader denials grant nothing.
-func rtkPatterns(commands []string, deny bool) []string {
+// command families; other executables use literal passthrough. Restrictions
+// mirror both forms even for wildcard executables, since they grant nothing.
+func rtkPatterns(commands []string, restrict bool) []string {
 	patterns := append([]string(nil), commands...)
 	for _, command := range commands {
 		words := strings.Fields(command)
@@ -313,17 +320,17 @@ func rtkPatterns(commands []string, deny bool) []string {
 			continue
 		}
 		// A grant must have a literal executable prefix; never derive "rtk proxy *".
-		if !deny && strings.ContainsAny(words[0][:1], "*?") {
+		if !restrict && strings.ContainsAny(words[0][:1], "*?") {
 			continue
 		}
 		native := false
 		// Inspected RTK command families. Names such as test, run, read, and
 		// lint have different semantics in RTK and must NOT be mirrored natively.
 		switch words[0] {
-		case "git", "go", "cargo", "npm", "pnpm", "pytest", "gh":
+		case "git", "go", "cargo", "npm", "pnpm", "pytest", "gh", "ls":
 			native = true
 		}
-		if deny || native {
+		if restrict || native {
 			patterns = append(patterns, "rtk "+command)
 		}
 		patterns = append(patterns, "rtk proxy "+command)
@@ -361,10 +368,14 @@ func opencodePermission(h Homonto, additions, externalDirectories, externalDirec
 	}
 	if h.Bash != nil && !*h.Bash {
 		lines = append(lines, "  bash: deny")
-	} else if len(h.BashAllow) > 0 || len(additions) > 0 || len(h.BashDeny) > 0 {
+	} else if h.BashDefault != "" || len(h.BashAllow) > 0 || len(additions) > 0 || len(h.BashAsk) > 0 || len(h.BashDeny) > 0 {
 		// Construct the last-match-wins sequence before serializing unique keys.
 		type rule struct{ pattern, action string }
-		rules := []rule{{"*", "ask"}}
+		baseline := "ask"
+		if h.BashDefault == "allow" {
+			baseline = "allow"
+		}
+		rules := []rule{{"*", baseline}}
 		addRules := func(action string, patterns []string) {
 			for _, pattern := range patterns {
 				if strings.TrimSpace(pattern) != "" {
@@ -374,10 +385,13 @@ func opencodePermission(h Homonto, additions, externalDirectories, externalDirec
 		}
 		addRules("allow", h.BashAllow)
 		addRules("allow", additions)
+		addRules("ask", h.BashAsk)
 		// Guards follow allows so a request containing "git status; curl ..."
 		// re-asks despite matching "git status*". If the host requests each
 		// parsed command separately, each receives its own matching rule.
-		addRules("ask", bashCompositionGuards)
+		if h.BashDefault != "allow" {
+			addRules("ask", bashCompositionGuards)
+		}
 		// Explicit denies render LAST, including after user additions: bypass
 		// requests are single commands, not shell composition guards can catch.
 		addRules("deny", h.BashDeny)
@@ -473,6 +487,20 @@ func split(content []byte) (fm []byte, body []byte, ok bool) {
 	return nil, nil, false
 }
 
+// resolveYAMLAlias follows references without rewriting the syntax tree. Invalid
+// alias chains return nil; the caller still validates the target's kind and tag.
+func resolveYAMLAlias(node *yaml.Node) *yaml.Node {
+	seen := map[*yaml.Node]bool{}
+	for node != nil && node.Kind == yaml.AliasNode {
+		if seen[node] {
+			return nil
+		}
+		seen[node] = true
+		node = node.Alias
+	}
+	return node
+}
+
 // parseHomonto reads the `homonto:` block from frontmatter YAML. It returns the
 // parsed block, whether a block was present at all, and a parse error if the
 // block exists but is malformed. The two outcomes a caller must distinguish —
@@ -498,13 +526,36 @@ func parseHomonto(fm []byte) (Homonto, bool, error) {
 	}
 	allowed := map[string]bool{
 		"read_only": true, "bash": true, "network": true, "bash_allow": true,
-		"bash_deny": true, "dialogs": true, "spawn": true, "primary": true,
+		"bash_default": true, "bash_ask": true, "bash_deny": true, "dialogs": true, "spawn": true, "primary": true,
 		"steps": true,
 	}
+	hasBashDefault := false
 	for i := 0; i < len(node.Content); i += 2 {
 		key := node.Content[i].Value
 		if !allowed[key] {
 			return Homonto{}, false, fmt.Errorf("homonto block has unknown capability %q", key)
+		}
+		value := node.Content[i+1]
+		// yaml.v3 coerces scalar numbers/bools into strings and accepts null.
+		// Check shell policy nodes before decoding so malformed rules fail closed.
+		switch key {
+		case "bash_default":
+			hasBashDefault = true
+			value = resolveYAMLAlias(value)
+			if value == nil || value.Kind != yaml.ScalarNode || value.Tag != "!!str" || (value.Value != "" && value.Value != "allow" && value.Value != "ask") {
+				return Homonto{}, false, fmt.Errorf("homonto bash_default must be a string: allow or ask (or empty for guarded behavior)")
+			}
+		case "bash_allow", "bash_ask", "bash_deny":
+			value = resolveYAMLAlias(value)
+			if value == nil || value.Kind != yaml.SequenceNode {
+				return Homonto{}, false, fmt.Errorf("homonto %s must be a list of command strings", key)
+			}
+			for _, item := range value.Content {
+				item = resolveYAMLAlias(item)
+				if item == nil || item.Kind != yaml.ScalarNode || item.Tag != "!!str" || strings.TrimSpace(item.Value) == "" {
+					return Homonto{}, false, fmt.Errorf("homonto %s entries must be non-empty command strings", key)
+				}
+			}
 		}
 	}
 	var doc struct {
@@ -521,8 +572,11 @@ func parseHomonto(fm []byte) (Homonto, bool, error) {
 			return Homonto{}, false, fmt.Errorf("homonto steps must be positive")
 		}
 	}
-	if h := doc.Homonto; h.Bash != nil && !*h.Bash && (len(h.BashAllow) > 0 || len(h.BashDeny) > 0) {
-		return Homonto{}, false, fmt.Errorf("homonto bash: false contradicts bash_allow/bash_deny entries")
+	if h := doc.Homonto; h.Bash != nil && !*h.Bash && (hasBashDefault || len(h.BashAllow) > 0 || len(h.BashAsk) > 0 || len(h.BashDeny) > 0) {
+		return Homonto{}, false, fmt.Errorf("homonto bash: false contradicts bash_default or bash_allow/bash_ask/bash_deny entries")
+	}
+	if doc.Homonto.ReadOnly && doc.Homonto.BashDefault == "allow" {
+		return Homonto{}, false, fmt.Errorf("homonto read_only: true contradicts bash_default: allow")
 	}
 	return *doc.Homonto, true, nil
 }

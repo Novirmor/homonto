@@ -8,8 +8,8 @@ preserve/isolate/cleanup decision before writes; ask once if none covers it.
 Inspect the config schema and actual layout before choosing a protocol. The
 legacy exception below requires schema 0/1 and an existing combined workflow;
 `workflow.git: existing` or an old state file alone does not enable it in schema 2.
-In both modes the coordinator alone owns workflow state, task records, allocation,
-and integration. Workers commit only assigned source/test files. Never copy
+In both modes the coordinator alone owns workflow state, task records, workflow
+allocation, and integration. Workers commit only assigned source/test files. Never copy
 `.env` or untracked input automatically; the user decides required dirty-input
 transport. Honor tool permissions; no fallback around a denial or failed binding.
 
@@ -36,9 +36,12 @@ mismatch. Do not retarget setters, reset refs, or replace the target with a SHA.
 
 Run from configRoot or pass `--config "<configRoot>/homonto.toml"`. Use the
 validated binding path for source commands and implementer dispatch, while every
-workflow call keeps `--dir "<configRoot>"`. No unregistered raw/native task worktrees
-are permitted in schema 2. No permission-error fallback to
-the dirty original, no config alias rewrites, and no automatic `.env` or
+workflow call keeps `--dir "<configRoot>"`. No unregistered raw/native workflow
+execution worktrees are permitted in schema 2. Isolated task-local Git fixtures
+are allowed only under the shared workspace policy's fixture exception; they
+cannot become execution bindings or recreate the live control plane.
+No permission-error fallback to the dirty original, no config alias rewrites,
+and no automatic `.env` or
 untracked-file copying. If dirty content is required input, the user decides
 its transport before setup; do not claim the committed baseline includes it.
 
@@ -76,8 +79,9 @@ git worktree list
 Record each exact task path, branch, base, and assigned file set before dispatch.
 Run baseline checks there without copying `.env` or untracked input automatically.
 The coordinator owns creation/removal; implementers never allocate their own
-trees or edit the copied `tasks.md`, `plan.md`, or workflow state. Every workflow
-call retains `--dir "<configRoot>"`, never a task worktree as its state owner.
+workflow execution trees or edit the copied `tasks.md`, `plan.md`, or workflow
+state. Every workflow call retains `--dir "<configRoot>"`, never a task worktree
+as its state owner.
 
 Verify returned source commits, then join them into the coordinator's change
 branch in plan order. Perform every checkoff and bookkeeping commit serially

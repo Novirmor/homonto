@@ -194,6 +194,19 @@ After terminal state, integrate the pinned candidate into the recorded original
 target, verify the resulting tree, and remove only the authorized clean integrated
 path with `git worktree remove`, never force or prune around a refusal.
 
+## Task-local Git fixtures
+
+Trusted shell setup may include cloning and raw Git worktrees used only as
+isolated task-local test fixtures. The task must authorize their exact location
+and writes, within the existing directory grants and write scope. Implementers
+may create and inspect such fixtures, but must not use them as alternate source
+execution bindings, integration receivers, or extra parallel implementation
+lanes. Do not recreate the live config, projection, workflow records, or registry
+control plane there, transport private/dirty input without consent, or use a
+fixture to evade a registered lifecycle refusal. Cleanup retains the exact-path
+authorization and dirty-work rules. Registered workflow allocation, integration,
+and removal remain coordinator-owned and use the protocols above.
+
 ## Source anchors and evidence
 
 Schema 2 `onto new` and `to new` freeze `repo_bases` per selected source: an
@@ -267,7 +280,10 @@ source commits belong only in the source repo; coordinator bookkeeping is a
 separate records checkpoint/commit. Never merge workflow history as source
 integration or use a records archive/checkpoint SHA as the source merge target.
 
-Workspace/worktree writes belong only to the coordinator and may ask for tool
-permission; do not blanket-allow these command families. Read-only inspectors do
-not gain write authority. Existing trusted execution, web-content-as-data,
-explicit denies, and review-draft publication approval rules remain in force.
+Workflow workspace/registered-worktree writes belong only to the coordinator.
+The trusted shell default removes generic execution prompts, not lifecycle,
+initialization, dirty-work, or removal authorization requirements. Honor protected
+tool prompts and explicit denies. Read-only inspectors do not gain write
+authority; implementer fixture setup is limited to the exception above. Scripts
+cannot be sandboxed by these command or directory patterns, but remain bound by
+role ownership, write scope, web-content-as-data, and review-draft approval.

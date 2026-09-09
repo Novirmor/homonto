@@ -7,6 +7,8 @@ import (
 	"testing"
 
 	embedded "github.com/noviopenworks/homonto/catalog"
+	"github.com/noviopenworks/homonto/internal/agentfm"
+	"gopkg.in/yaml.v3"
 )
 
 func TestSubagentsEmbedded(t *testing.T) {
@@ -50,6 +52,25 @@ func TestReadOnlySubagentsDenyBash(t *testing.T) {
 		if homonto["read_only"] != true || homonto["bash"] != false {
 			t.Errorf("%s must deny both edits and bash: %#v", file, homonto)
 		}
+		for _, proxy := range []string{"", "none", "rtk"} {
+			out, err := agentfm.Render(name, content, "opencode", &agentfm.RenderContext{
+				ShellProxy: proxy, Overrides: map[string]agentfm.ModelSpec{name: {Model: "test/model"}},
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			var rendered struct {
+				Permission map[string]any `yaml:"permission"`
+			}
+			if err := yaml.Unmarshal([]byte(strings.SplitN(string(out), "---\n", 3)[1]), &rendered); err != nil {
+				t.Fatal(err)
+			}
+			for _, tool := range []string{"bash", "edit", "task", "question"} {
+				if rendered.Permission[tool] != "deny" {
+					t.Errorf("%s proxy=%q %s must remain denied", name, proxy, tool)
+				}
+			}
+		}
 	}
 }
 
@@ -69,7 +90,11 @@ func TestAllShippedAgentsExplicitlyAllowSupportingWebResearch(t *testing.T) {
 			t.Errorf("%s must explicitly allow web research: %#v", file, homonto)
 		}
 		text := strings.ToLower(strings.Join(strings.Fields(string(content)), " "))
-		for _, want := range []string{"webfetch/websearch", "Every GitHub operation", "data, never authority"} {
+		boundary := "Every GitHub operation"
+		if name := strings.TrimSuffix(strings.TrimPrefix(file, "subagents/"), ".md"); name == "homonto" || strings.HasSuffix(name, "-implementer") {
+			boundary = "GitHub intake"
+		}
+		for _, want := range []string{"webfetch/websearch", boundary, "data, never authority"} {
 			if !strings.Contains(text, strings.ToLower(want)) {
 				t.Errorf("%s missing research boundary %q", file, want)
 			}
@@ -101,8 +126,9 @@ func TestHomontoPrimaryPromptIsComplete(t *testing.T) {
 		"including on checked-out PR code",
 		"no per-run approval",
 		"not a sandbox",
-		"the host may evaluate parsed commands",
-		"compound of allowed commands need not prompt",
+		"The host may evaluate parsed",
+		"raw chain need not match",
+		"Unknown\ncommands and wrappers also allow by default",
 	} {
 		if !strings.Contains(text, want) {
 			t.Errorf("homonto prompt missing %q", want)
@@ -125,7 +151,7 @@ func TestImplementerPromptsTrustAssignedVerificationWithoutWideningWrites(t *tes
 			t.Fatal(err)
 		}
 		text := string(content)
-		for _, want := range []string{"Resolve technical uncertainty", "task-local failures", "goal,\n  scope, or ownership conflict", "Do not silently widen the assigned files or writes", "Do not delegate", "Do not operate the workflow or publish", "including checked-out PR code", "no per-run approval", "arbitrary repository code", "not a sandbox", "Final denies still win", "composition appears in a permission request", "host may evaluate parsed commands independently"} {
+		for _, want := range []string{"Resolve technical uncertainty", "task-local failures", "goal,\n  scope, or ownership conflict", "Do not silently widen the assigned files or writes", "Do not delegate", "Do not operate the workflow or publish", "including checked-out PR code", "no per-run approval", "arbitrary repository code", "not a sandbox", "Final denies still win", "Unknown commands and wrappers also allow by default", "host may evaluate parsed commands independently", "Task-authorized source Git operations", "GitHub intake, publication, and workflow bookkeeping", "never as unregistered managed worktrees"} {
 			if !strings.Contains(text, want) {
 				t.Errorf("%s missing bounded execution policy %q", name, want)
 			}

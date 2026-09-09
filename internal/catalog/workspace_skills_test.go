@@ -138,7 +138,7 @@ func TestWorkspaceSkillsAllocationModes(t *testing.T) {
 			if !ok {
 				t.Fatal("missing legacy combined protocol")
 			}
-			for _, want := range []string{"one binding per workflow/change/repo", "same-repo tasks serially", "No unregistered raw/native task worktrees"} {
+			for _, want := range []string{"one binding per workflow/change/repo", "same-repo tasks serially", "No unregistered raw/native workflow execution worktrees"} {
 				if !strings.Contains(registered, want) {
 					t.Errorf("schema 2 missing %q", want)
 				}
@@ -266,20 +266,16 @@ func TestWorkspaceSkillsCoordinatorPermissions(t *testing.T) {
 	}
 	fm := parseEmbeddedFrontmatter(t, "subagents/homonto.md", content)
 	capabilities := fm["homonto"].(map[string]any)
-	allowed := map[string]bool{}
-	for _, entry := range capabilities["bash_allow"].([]any) {
-		allowed[entry.(string)] = true
+	if capabilities["bash_default"] != "allow" || capabilities["bash_allow"] != nil {
+		t.Fatal("coordinator must trust general shell rather than enumerate routine allowances")
 	}
-	for _, read := range []string{"homonto workspace inspect", "homonto workspace inspect *", "homonto worktree list", "homonto worktree list *"} {
-		if !allowed[read] {
-			t.Errorf("missing read allowance %q", read)
-		}
+	asks := map[string]bool{}
+	for _, entry := range capabilities["bash_ask"].([]any) {
+		asks[entry.(string)] = true
 	}
-	for command := range allowed {
-		if command == "homonto *" ||
-			(strings.HasPrefix(command, "homonto workspace") && command != "homonto workspace inspect" && command != "homonto workspace inspect *") ||
-			(strings.HasPrefix(command, "homonto worktree") && command != "homonto worktree list" && command != "homonto worktree list *") {
-			t.Errorf("workspace mutation must retain tool permission boundary: %q", command)
+	for _, command := range []string{"homonto workspace recover*", "homonto worktree remove*", "homonto snapshot undo*", "homonto snapshot recover*", "homonto cache gc*"} {
+		if !asks[command] {
+			t.Errorf("missing destructive-operation exception %q", command)
 		}
 	}
 }

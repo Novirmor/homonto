@@ -15,7 +15,7 @@ bookkeeper) — for every supported OS/arch as separate archives under one
 `SHA256SUMS`. `onto` and `to` each require `homonto` to have installed their
 framework first (`[frameworks.onto]` / `[frameworks.to]` + `homonto apply`).
 
-### Unreleased
+### New in v0.25.0 — trusted workspace shell by default
 
 - The coordinator and implementers now default to trusted-workspace shell
   execution, including inspection, setup, cloning, Python/Node and repository
@@ -50,6 +50,24 @@ framework first (`[frameworks.onto]` / `[frameworks.to]` + `homonto apply`).
   code runs with the process's files, credentials, and network privileges.
   This accepted tradeoff replaces the finite default allowlist in v0.24.0, not
   workflow authorization. See [ADR 0054](adr/0054-default-to-trusted-workspace-shell.md).
+
+### Upgrading to v0.25.0
+
+Install all three binaries at v0.25.0, run `homonto update` (or `homonto apply`)
+in each configured project, and restart OpenCode to load the new agent profiles.
+
+**Reapplying existing onto/to/h installations enables the loose shell default,
+including schema-0/1 configurations.** Schema 2 is not required for this policy
+change. The coordinator and implementers can execute arbitrary task-scoped
+commands, scripts, and shell composition without a generic approval prompt.
+Their Bash baseline overrides inherited Bash asks and denies; finite protected
+exceptions are not a sandbox. If you need the former guarded policy, select
+guarded custom agent definitions before reapplying. Custom profiles that omit
+`bash_default` retain their existing behavior.
+
+Read-only specialists remain shell- and edit-denied. Publication authorization,
+explicit review-draft approval, workflow-state ownership, and dirty-work cleanup
+decisions remain required. No workflow records are migrated by this upgrade.
 
 ### New in v0.24.0 — separate workspaces and autonomous workflows
 

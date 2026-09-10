@@ -256,6 +256,37 @@ func TestValidateLayoutLegacySameRootIsNotUpgrade(t *testing.T) {
 	}
 }
 
+func TestValidateLegacyMigrationReadRejectsAlternativeLegacyRoots(t *testing.T) {
+	for _, name := range []string{"changes", "tasks", ".to-promote", ".onto-demote"} {
+		t.Run(name, func(t *testing.T) {
+			repo := t.TempDir()
+			workflowRoot := filepath.Join(repo, ".homonto-local")
+			writeMarker(t, repo, ".homonto-local")
+			path := filepath.Join(repo, "docs", name)
+			if err := os.MkdirAll(path, 0o755); err != nil {
+				t.Fatal(err)
+			}
+
+			err := ValidateLegacyMigrationRead(filepath.Join(repo, "homonto.toml"), workflowRoot, "existing", 2)
+			if err == nil || LegacyMigrationReadCode(err) != "legacy_alternative_state_present" || !strings.Contains(err.Error(), fmt.Sprintf("%q", path)) {
+				t.Fatalf("ValidateLegacyMigrationRead = %v", err)
+			}
+		})
+	}
+}
+
+func TestValidateLegacyMigrationReadAllowsSelectedLegacyRoot(t *testing.T) {
+	repo := t.TempDir()
+	workflowRoot := filepath.Join(repo, ".homonto-local")
+	writeMarker(t, repo, ".homonto-local")
+	if err := os.MkdirAll(filepath.Join(workflowRoot, "changes"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := ValidateLegacyMigrationRead(filepath.Join(repo, "homonto.toml"), workflowRoot, "existing", 2); err != nil {
+		t.Fatalf("ValidateLegacyMigrationRead = %v", err)
+	}
+}
+
 func writeMarker(t *testing.T, repo, root string) string {
 	t.Helper()
 	marker := filepath.Join(repo, ".homonto", "workflow-root")

@@ -7,6 +7,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"reflect"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -202,6 +203,54 @@ func TestLayoutGitIdentity(t *testing.T) {
 	write(t, path, "schema_version=2\n[repos]\napp='.'\n")
 	if _, err := workspace.Load(path); err == nil {
 		t.Fatal("Git environment spoofed a valid source")
+	}
+}
+
+func TestReadGitDisablesConfiguredFSMonitor(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("synthetic fsmonitor hook uses a POSIX shell")
+	}
+	repo := t.TempDir()
+	git(t, "init", "-q", repo)
+	write(t, filepath.Join(repo, "tracked"), "tracked\n")
+	git(t, "-C", repo, "add", "tracked")
+	git(t, "-C", repo, "-c", "user.name=Test", "-c", "user.email=test@example.invalid", "commit", "-q", "-m", "initial")
+
+	sentinel := filepath.Join(t.TempDir(), "fsmonitor-ran")
+	hook := filepath.Join(t.TempDir(), "fsmonitor-hook")
+	write(t, hook, fmt.Sprintf("#!/bin/sh\n: > %q\nprintf '0000000000000000000000000000000000000000\\n'\n", sentinel))
+	if err := os.Chmod(hook, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	git(t, "-C", repo, "config", "--local", "core.fsmonitor", hook)
+
+	if out, err := exec.Command("git", "-C", repo, "status", "--porcelain=v1").CombinedOutput(); err != nil {
+		t.Fatalf("configured fsmonitor probe: %v\n%s", err, out)
+	}
+	if _, err := os.Lstat(sentinel); err != nil {
+		t.Fatalf("configured fsmonitor hook did not run: %v", err)
+	}
+	if err := os.Remove(sentinel); err != nil {
+		t.Fatal(err)
+	}
+	index := filepath.Join(repo, ".git", "index")
+	before, err := os.ReadFile(index)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := workspace.ReadGit(repo, "status", "--porcelain=v1", "-z", "--untracked-files=all"); err != nil {
+		t.Fatalf("ReadGit: %v", err)
+	}
+	if _, _, err := workspace.GitIdentity(repo); err != nil {
+		t.Fatalf("GitIdentity: %v", err)
+	}
+	if _, err := os.Lstat(sentinel); !os.IsNotExist(err) {
+		t.Fatalf("fsmonitor hook ran during read-only probe: %v", err)
+	}
+	after, err := os.ReadFile(index)
+	if err != nil || !reflect.DeepEqual(before, after) {
+		t.Fatalf("read-only probe changed index: %v", err)
 	}
 }
 

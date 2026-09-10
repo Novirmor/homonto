@@ -79,6 +79,160 @@ func TestBuildInventoriesRetiredRecordWithoutReactivatingIt(t *testing.T) {
 	}
 }
 
+func TestBuildPreparesExplicitTransformsAndPreservesRetiredBytes(t *testing.T) {
+	f := newMigrationFixture(t, true, false)
+	aliases := []string{"app"}
+	for i := 1; i < 15; i++ {
+		alias := fmt.Sprintf("source-%02d", i)
+		repo := newGitRepo(t, filepath.Join(filepath.Dir(f.root), "sources", alias), "main")
+		f.repos[alias] = repo
+		f.bases[alias] = gitTextTest(t, repo, "rev-parse", "HEAD")
+		aliases = append(aliases, alias)
+	}
+	sort.Strings(aliases)
+
+	var config strings.Builder
+	config.WriteString("schema_version = 2\n[workflow]\nroot = \".homonto-local\"\ngit = \"existing\"\n[worktrees]\ndir = \"../execution\"\n[repos]\n")
+	for _, alias := range aliases {
+		fmt.Fprintf(&config, "%q = %q\n", alias, f.repos[alias])
+	}
+	writeFile(t, f.config, config.String())
+
+	var state strings.Builder
+	state.WriteString("schema_version: 2\nchange: active\nid: active-id\nworkflow: full\nphase: build\n")
+	fmt.Fprintf(&state, "base_ref: %s\nbase_branch: main\n", f.bases["app"])
+	state.WriteString("directive: operator-only-directive\ndeviates_from: [decision-17]\nrepos:\n")
+	for _, alias := range aliases {
+		fmt.Fprintf(&state, "  - %q\n", alias)
+	}
+	activePath := filepath.Join(f.records, "changes", "active", "onto-state.yaml")
+	writeFile(t, activePath, state.String())
+	f.input.Records[0].Sources = f.input.Records[0].Sources[:0]
+	for _, alias := range aliases {
+		f.input.Records[0].Sources = append(f.input.Records[0].Sources, ManifestSource{
+			Alias:        alias,
+			BaseRef:      f.bases[alias],
+			BaseBranch:   "main",
+			GitCommonDir: filepath.Join(f.repos[alias], ".git"),
+		})
+	}
+	writeManifest(t, f)
+
+	taskPath := filepath.Join(f.records, "changes", "active", "tasks.md")
+	evidencePath := filepath.Join(f.records, "changes", "active", ".onto", "handoff.md")
+	writeFile(t, taskPath, "# unchanged task markdown\n")
+	writeFile(t, evidencePath, "private handoff evidence\n")
+	retiredPath := filepath.Join(f.records, "changes", "active-retired", "onto-state.yaml")
+	retiredBefore := []byte(readFile(t, retiredPath))
+	before := migrationSnapshot(t, f)
+
+	plan, err := Build(f.config, f.manifest)
+	if err != nil {
+		t.Fatalf("Build: %v\nblockers: %+v", err, plan.Blockers)
+	}
+	if plan.Status != "ready" || len(plan.RecordWrites) != 2 {
+		t.Fatalf("plan writes = %+v", plan.RecordWrites)
+	}
+	activeWrite := findRecordWrite(t, plan, activePath)
+	if activeWrite.Action != RecordWriteTransformActive || activeWrite.PreSHA256 == activeWrite.PostSHA256 || !reflect.DeepEqual(activeWrite.ChangedFields, []string{"base_branch", "base_ref", "repo_bases", "repo_mode", "schema_version"}) {
+		t.Fatalf("active record write = %+v", activeWrite)
+	}
+	if !reflect.DeepEqual(activeWrite.LegacyConfig, &ontostate.LegacyConfig{
+		BaseRef: f.bases["app"], BaseBranch: "main", Provenance: ontostate.LegacyConfigProvenance,
+	}) {
+		t.Fatalf("active legacy config receipt = %+v", activeWrite.LegacyConfig)
+	}
+	retiredWrite := findRecordWrite(t, plan, retiredPath)
+	if retiredWrite.Action != RecordWritePreserveRetired || retiredWrite.PreSHA256 != retiredWrite.PostSHA256 || len(retiredWrite.ChangedFields) != 0 || retiredWrite.LegacyConfig != nil {
+		t.Fatalf("retired record write = %+v", retiredWrite)
+	}
+
+	activePrepared := findPreparedRecordWrite(t, plan, activePath)
+	postPath := filepath.Join(t.TempDir(), "onto-state.yaml")
+	if err := os.WriteFile(postPath, activePrepared.postimage, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	post, err := ontostate.Load(postPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := post.Validate(); err != nil {
+		t.Fatal(err)
+	}
+	if post.SchemaVersion != ontostate.CurrentSchemaVersion || post.ID != "active-id" || post.Phase != "build" || post.RepoMode != "explicit" || post.BaseRef != "" || post.BaseBranch != "" || post.Directive != "operator-only-directive" || !reflect.DeepEqual(post.DeviatesFrom, []string{"decision-17"}) {
+		t.Fatalf("postimage state = %+v", post)
+	}
+	record := findRecord(t, plan, "active-id")
+	if record.ScalarBaseRef != f.bases["app"] || record.ScalarBaseBranch != "main" {
+		t.Fatalf("preimage scalar inventory = %+v", record)
+	}
+	if len(post.RepoBases) != len(aliases) {
+		t.Fatalf("postimage anchors = %+v", post.RepoBases)
+	}
+	for _, alias := range aliases {
+		if got := post.RepoBases[alias]; got.BaseRef != f.bases[alias] || got.BaseBranch != "main" || got.GitCommonDir != filepath.Join(f.repos[alias], ".git") {
+			t.Fatalf("postimage anchor %q = %+v", alias, got)
+		}
+	}
+	retiredPrepared := findPreparedRecordWrite(t, plan, retiredPath)
+	if !reflect.DeepEqual(retiredPrepared.preimage, retiredBefore) || !reflect.DeepEqual(retiredPrepared.postimage, retiredBefore) || readFile(t, retiredPath) != string(retiredBefore) {
+		t.Fatal("retired state was not held byte-identical")
+	}
+
+	encoded, err := json.Marshal(plan)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, private := range []string{"operator-only-directive", "unchanged task markdown", "private handoff evidence"} {
+		if strings.Contains(string(encoded), private) {
+			t.Fatalf("plan exposed raw record content %q: %s", private, encoded)
+		}
+	}
+	if after := migrationSnapshot(t, f); !reflect.DeepEqual(before, after) {
+		t.Fatalf("planning changed fixture\nbefore: %#v\nafter:  %#v", before, after)
+	}
+	again, err := Build(f.config, f.manifest)
+	if err != nil || !reflect.DeepEqual(plan, again) {
+		t.Fatalf("prepared plan is not deterministic\nfirst: %+v\nsecond: %+v\nerror: %v", plan, again, err)
+	}
+}
+
+func TestBuildRefusesCoResidentActiveStateTransformation(t *testing.T) {
+	f := newMigrationFixture(t, false, false)
+	ontoPath := filepath.Join(f.records, "changes", "active", "onto-state.yaml")
+	writeFile(t, filepath.Join(f.records, "changes", "active", "state.yaml"), readFile(t, ontoPath))
+	before := migrationSnapshot(t, f)
+
+	plan, err := Build(f.config, f.manifest)
+	if !errors.Is(err, ErrBlocked) || !hasBlocker(plan, "co_resident_state_transform_unsupported") {
+		t.Fatalf("Build = %v, blockers=%+v", err, plan.Blockers)
+	}
+	if len(plan.RecordWrites) != 0 {
+		t.Fatalf("co-resident transform prepared writes: %+v", plan.RecordWrites)
+	}
+	if after := migrationSnapshot(t, f); !reflect.DeepEqual(before, after) {
+		t.Fatalf("co-resident refusal changed fixture\nbefore: %#v\nafter:  %#v", before, after)
+	}
+}
+
+func TestBuildRefusesSchemaOneIntegrationRequirementTransformation(t *testing.T) {
+	f := newMigrationFixture(t, false)
+	activePath := filepath.Join(f.records, "changes", "active", "onto-state.yaml")
+	writeFile(t, activePath, fmt.Sprintf("schema_version: 1\nchange: active\nid: active-id\nphase: build\nbase_ref: %s\nintegration_required: true\nrepos: [app]\n", f.bases["app"]))
+	before := migrationSnapshot(t, f)
+
+	plan, err := Build(f.config, f.manifest)
+	if !errors.Is(err, ErrBlocked) || !hasBlocker(plan, "state_transform_unsupported") {
+		t.Fatalf("Build = %v, blockers=%+v", err, plan.Blockers)
+	}
+	if len(plan.RecordWrites) != 0 || len(plan.preparedRecordWrites) != 0 {
+		t.Fatalf("schema-1 integration requirement prepared writes: summaries=%+v prepared=%+v", plan.RecordWrites, plan.preparedRecordWrites)
+	}
+	if after := migrationSnapshot(t, f); !reflect.DeepEqual(before, after) {
+		t.Fatalf("schema-1 integration requirement refusal changed fixture\nbefore: %#v\nafter:  %#v", before, after)
+	}
+}
+
 func TestLoadMigrationRefusesSymlinkConfigBeforeParsing(t *testing.T) {
 	target := filepath.Join(t.TempDir(), "target.toml")
 	writeFile(t, target, "not a migration config\n")
@@ -705,6 +859,31 @@ func TestPlanHashBindsConfigBaseAndRecordBytes(t *testing.T) {
 	}
 }
 
+func TestPlanHashBindsRecordWriteSummary(t *testing.T) {
+	plan := newPlan()
+	plan.Status = "ready"
+	plan.RecordWrites = []RecordWrite{{
+		Path:          "/records/changes/active/onto-state.yaml",
+		Action:        RecordWriteTransformActive,
+		PreSHA256:     strings.Repeat("a", 64),
+		PostSHA256:    strings.Repeat("b", 64),
+		ChangedFields: []string{"repo_bases", "repo_mode", "schema_version"},
+		LegacyConfig: &ontostate.LegacyConfig{
+			BaseRef: "legacy-ref", BaseBranch: "legacy-branch", Provenance: ontostate.LegacyConfigProvenance,
+		},
+	}}
+	initial := planHash(plan)
+	plan.RecordWrites[0].PostSHA256 = strings.Repeat("c", 64)
+	if changed := planHash(plan); changed == initial {
+		t.Fatal("record-write postimage digest did not affect plan hash")
+	}
+	plan.RecordWrites[0].PostSHA256 = strings.Repeat("b", 64)
+	plan.RecordWrites[0].LegacyConfig.BaseRef = "different-legacy-ref"
+	if changed := planHash(plan); changed == initial {
+		t.Fatal("legacy config receipt did not affect plan hash")
+	}
+}
+
 func newMigrationFixture(t *testing.T, retired bool, stateSchema3 ...bool) *migrationFixture {
 	t.Helper()
 	if _, err := exec.LookPath("git"); err != nil {
@@ -851,6 +1030,28 @@ func findRecord(t *testing.T, plan Plan, id string) Record {
 	}
 	t.Fatalf("record %q not found in %+v", id, plan.Records)
 	return Record{}
+}
+
+func findRecordWrite(t *testing.T, plan Plan, path string) RecordWrite {
+	t.Helper()
+	for _, write := range plan.RecordWrites {
+		if write.Path == path {
+			return write
+		}
+	}
+	t.Fatalf("record write %q not found in %+v", path, plan.RecordWrites)
+	return RecordWrite{}
+}
+
+func findPreparedRecordWrite(t *testing.T, plan Plan, path string) preparedRecordWrite {
+	t.Helper()
+	for _, write := range plan.preparedRecordWrites {
+		if write.summary.Path == path {
+			return write
+		}
+	}
+	t.Fatalf("prepared record write %q not found", path)
+	return preparedRecordWrite{}
 }
 
 func hasFingerprint(files []FileFingerprint, path, classification string) bool {

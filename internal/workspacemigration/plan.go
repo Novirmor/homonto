@@ -101,6 +101,7 @@ func Build(configPath, manifestPath string) (Plan, error) {
 	discovered := discoverRecords(&p, l.WorkflowRoot)
 	if validManifest {
 		bindManifest(&p, l, manifestRecords, discovered)
+		prepareRecordWrites(&p, l.WorkflowRoot, discovered)
 	}
 	return p.finish()
 }
@@ -1075,6 +1076,97 @@ func bindRecordSources(p *Plan, l workspace.Layout, discovered discoveredRecord,
 			record.Sources = append(record.Sources, planned)
 		}
 	}
+}
+
+func prepareRecordWrites(p *Plan, root string, discovered []discoveredRecord) {
+	for _, found := range discovered {
+		if found.state == nil {
+			continue
+		}
+		record := &p.Records[found.index]
+		switch record.Lifecycle {
+		case "retired":
+			for _, path := range record.StateFiles {
+				preparePreservedRecordWrite(p, root, path, RecordWritePreserveRetired)
+			}
+		case "active":
+			if len(record.StateFiles) != 1 {
+				p.block("co_resident_state_transform_unsupported", record.Path, "M2 refuses to transform co-resident state files without an atomic dual-state conversion")
+				continue
+			}
+			anchors, complete := recordTransformAnchors(record, found.state)
+			if !complete {
+				// bindManifest has already recorded the concrete missing, extra, or
+				// invalid source-anchor blocker. Do not invent a partial postimage.
+				continue
+			}
+			path := record.StateFiles[0]
+			raw, exists, err := readRegularWithin(root, path)
+			if err != nil || !exists {
+				p.block("state_transform_unreadable", path, "active state must remain a real regular file while planning its transform")
+				continue
+			}
+			transformed, err := ontostate.TransformActiveForExplicitRepos(raw, record.ID, anchors)
+			if err != nil {
+				p.block("state_transform_unsupported", path, "active state cannot be transformed without losing semantics or guessing provenance")
+				continue
+			}
+			action := RecordWritePreserveActive
+			if len(transformed.ChangedFields) != 0 {
+				action = RecordWriteTransformActive
+			}
+			p.addPreparedRecordWrite(path, action, raw, transformed.Bytes, transformed.ChangedFields, transformed.LegacyConfig)
+		}
+	}
+}
+
+func preparePreservedRecordWrite(p *Plan, root, path, action string) {
+	raw, exists, err := readRegularWithin(root, path)
+	if err != nil || !exists {
+		p.block("state_transform_unreadable", path, "state must remain a real regular file while planning its preservation")
+		return
+	}
+	p.addPreparedRecordWrite(path, action, raw, raw, nil, nil)
+}
+
+func recordTransformAnchors(record *Record, state *ontostate.RawInspection) ([]ontostate.ValidatedRepoAnchor, bool) {
+	if len(record.Sources) != len(state.Repos) {
+		return nil, false
+	}
+	provided := make([]string, 0, len(record.Sources))
+	anchors := make([]ontostate.ValidatedRepoAnchor, 0, len(record.Sources))
+	for _, source := range record.Sources {
+		provided = append(provided, source.Alias)
+		anchors = append(anchors, ontostate.ValidatedRepoAnchor{
+			Alias:        source.Alias,
+			BaseRef:      source.BaseRef,
+			BaseBranch:   source.BaseBranch,
+			GitCommonDir: source.GitCommonDir,
+		})
+	}
+	if !sameStrings(sortedStrings(state.Repos), sortedStrings(provided)) {
+		return nil, false
+	}
+	return anchors, true
+}
+
+func (p *Plan) addPreparedRecordWrite(path, action string, preimage, postimage []byte, changedFields []string, legacyConfig *ontostate.LegacyConfig) {
+	pre := fingerprint(path, "state_preimage", preimage).SHA256
+	post := fingerprint(path, "state_postimage", postimage).SHA256
+	summary := RecordWrite{
+		Path:          filepath.Clean(path),
+		Action:        action,
+		PreSHA256:     pre,
+		PostSHA256:    post,
+		ChangedFields: append([]string{}, changedFields...),
+		LegacyConfig:  legacyConfig,
+	}
+	p.RecordWrites = append(p.RecordWrites, summary)
+	p.preparedRecordWrites = append(p.preparedRecordWrites, preparedRecordWrite{
+		summary:   summary,
+		preimage:  append([]byte(nil), preimage...),
+		postimage: append([]byte(nil), postimage...),
+	})
 }
 
 func sameStrings(a, b []string) bool {

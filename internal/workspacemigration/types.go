@@ -9,6 +9,8 @@ import (
 	"io"
 	"sort"
 	"strings"
+
+	"github.com/noviopenworks/homonto/internal/ontostate"
 )
 
 const (
@@ -132,8 +134,38 @@ type Blocker struct {
 	Detail string `json:"detail"`
 }
 
-// Plan is an inventory only. M1 has no transform, write set, journal, apply,
-// verification, or recovery behavior.
+const (
+	// RecordWriteTransformActive describes the one state postimage M2 may
+	// prepare for a later, locked M3 apply.
+	RecordWriteTransformActive = "transform_active"
+	// RecordWritePreserveActive records an already-current active state whose
+	// bytes need no migration write.
+	RecordWritePreserveActive = "preserve_active"
+	// RecordWritePreserveRetired records a retired state that must remain
+	// byte-identical, even when its directory and change name differ.
+	RecordWritePreserveRetired = "preserve_retired"
+)
+
+// RecordWrite is a content-free proposed state-file action. It binds the
+// before and after bytes by digest without exposing record content in plan JSON.
+// LegacyConfig is safe receipt metadata, not selected-source provenance.
+type RecordWrite struct {
+	Path          string                  `json:"path"`
+	Action        string                  `json:"action"`
+	PreSHA256     string                  `json:"pre_sha256"`
+	PostSHA256    string                  `json:"post_sha256"`
+	ChangedFields []string                `json:"changed_fields"`
+	LegacyConfig  *ontostate.LegacyConfig `json:"legacy_config,omitempty"`
+}
+
+type preparedRecordWrite struct {
+	summary   RecordWrite
+	preimage  []byte
+	postimage []byte
+}
+
+// Plan is read-only. RecordWrites describe pure prospective transformations;
+// M2 has no apply, verification, recovery, journal, or filesystem mutation.
 type Plan struct {
 	Version  int    `json:"version"`
 	ReadOnly bool   `json:"read_only"`
@@ -149,7 +181,14 @@ type Plan struct {
 	ControlFiles         []FileFingerprint    `json:"control_files"`
 	Files                []FileFingerprint    `json:"files"`
 	Records              []Record             `json:"records"`
+	RecordWrites         []RecordWrite        `json:"record_writes"`
 	Blockers             []Blocker            `json:"blockers"`
+
+	// preparedRecordWrites carries exact bytes only within this package for a
+	// future M3 journal. M3 must preserve an active preimage with its exact
+	// LegacyConfig receipt before writing its postimage. It is deliberately
+	// unexported, so JSON plans never expose state contents.
+	preparedRecordWrites []preparedRecordWrite
 }
 
 // ErrBlocked is returned after a complete enough read-only inventory is
@@ -170,6 +209,7 @@ func newPlan() Plan {
 		ControlFiles: []FileFingerprint{},
 		Files:        []FileFingerprint{},
 		Records:      []Record{},
+		RecordWrites: []RecordWrite{},
 		Blockers:     []Blocker{},
 	}
 }
@@ -182,6 +222,10 @@ func (p *Plan) finish() (Plan, error) {
 	sort.Slice(p.ControlFiles, func(i, j int) bool { return p.ControlFiles[i].Path < p.ControlFiles[j].Path })
 	sort.Slice(p.Files, func(i, j int) bool { return p.Files[i].Path < p.Files[j].Path })
 	sort.Slice(p.Records, func(i, j int) bool { return p.Records[i].Path < p.Records[j].Path })
+	sort.Slice(p.RecordWrites, func(i, j int) bool { return p.RecordWrites[i].Path < p.RecordWrites[j].Path })
+	sort.Slice(p.preparedRecordWrites, func(i, j int) bool {
+		return p.preparedRecordWrites[i].summary.Path < p.preparedRecordWrites[j].summary.Path
+	})
 	for i := range p.Records {
 		sort.Strings(p.Records[i].StateFiles)
 		sort.Strings(p.Records[i].SourceAliases)
@@ -189,6 +233,9 @@ func (p *Plan) finish() (Plan, error) {
 		sort.Slice(p.Records[i].Sources, func(a, b int) bool {
 			return p.Records[i].Sources[a].Alias < p.Records[i].Sources[b].Alias
 		})
+	}
+	for i := range p.RecordWrites {
+		sort.Strings(p.RecordWrites[i].ChangedFields)
 	}
 	sort.Slice(p.Blockers, func(i, j int) bool {
 		a, b := p.Blockers[i], p.Blockers[j]

@@ -3,6 +3,7 @@
 package workspace
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -11,6 +12,7 @@ import (
 	"strings"
 	"unicode"
 
+	"github.com/noviopenworks/homonto/internal/fsutil"
 	"github.com/noviopenworks/homonto/internal/schema"
 	"github.com/noviopenworks/homonto/internal/workflowroot"
 	"github.com/pelletier/go-toml/v2"
@@ -22,14 +24,87 @@ type Layout struct {
 	Repos                                                       map[string]string
 }
 
+// MigrationLayoutError carries a safe diagnostic code for the dedicated
+// read-only migration loader. Its wrapped error remains useful to direct API
+// callers but must not be rendered into a migration plan.
+type MigrationLayoutError struct {
+	Code string
+	err  error
+}
+
+func (e *MigrationLayoutError) Error() string { return e.err.Error() }
+func (e *MigrationLayoutError) Unwrap() error { return e.err }
+
+func migrationLayoutError(code string, err error) error {
+	return &MigrationLayoutError{Code: code, err: err}
+}
+
+// MigrationLayoutCode returns the safe structured reason for a failed
+// LoadMigration call without exposing arbitrary config or parser text.
+func MigrationLayoutCode(err error) string {
+	var diagnostic *MigrationLayoutError
+	if errors.As(err, &diagnostic) && diagnostic.Code != "" {
+		return diagnostic.Code
+	}
+	return "unknown"
+}
+
 func (l Layout) ExplicitRepos() bool { return l.SchemaVersion >= 2 }
 
 // LoadRoot opens homonto.toml in root; it does not discover parents or initialize anything.
 func LoadRoot(root string) (Layout, error) { return Load(filepath.Join(root, "homonto.toml")) }
 
+// LoadMigration opens only the deliberately narrow schema-2 legacy layout that
+// the read-only migration planner understands. It does not weaken Load's
+// ownership guard, write a marker, initialize history, or adopt records.
+func LoadMigration(configPath string) (Layout, error) {
+	if err := requireRealRegularFile(configPath); err != nil {
+		return Layout{}, migrationLayoutError("config_not_regular", fmt.Errorf("workspace migration requires a real regular config file: %w", err))
+	}
+	l, err := loadPaths(configPath)
+	if err != nil {
+		return l, migrationLayoutError("config_validation_failed", err)
+	}
+	if l.SchemaVersion != 2 || !l.ExplicitRepos() {
+		return l, migrationLayoutError("schema_not_two", fmt.Errorf("config %q: workspace migration requires schema_version = 2", l.ConfigPath))
+	}
+	if l.GitMode != "existing" {
+		return l, migrationLayoutError("git_mode_not_existing", fmt.Errorf("config %q: workspace migration requires workflow.git = \"existing\"", l.ConfigPath))
+	}
+	// Schema-2 migration separates a non-Git control directory from records.
+	// A Git configuration root remains an ordinary schema-2 layout, not this
+	// legacy-ownership transition. Inspect control files directly rather than
+	// treating every failed Git probe as proof that the directory is non-Git.
+	insideGit, err := hasGitControlAncestor(l.ConfigRoot)
+	if err != nil {
+		return l, migrationLayoutError("config_root_uninspectable", fmt.Errorf("config %q: inspecting configuration Git ancestry: %w", l.ConfigPath, err))
+	}
+	if insideGit {
+		return l, migrationLayoutError("config_root_is_git", fmt.Errorf("config %q: workspace migration requires a non-Git configuration root", l.ConfigPath))
+	}
+	if err := workflowroot.ValidateLegacyMigrationRead(l.ConfigPath, l.WorkflowRoot, l.GitMode, l.SchemaVersion); err != nil {
+		return l, migrationLayoutError(workflowroot.LegacyMigrationReadCode(err), fmt.Errorf("config %q: %w", l.ConfigPath, err))
+	}
+	return l, nil
+}
+
 // Load resolves paths relative to the config file, not the process directory.
 // An omitted worktrees.dir stays empty: allocation must require an explicit parent.
-func Load(configPath string) (l Layout, err error) {
+func Load(configPath string) (Layout, error) {
+	l, err := loadPaths(configPath)
+	if err != nil {
+		return l, err
+	}
+	if err := workflowroot.ValidateLayout(l.ConfigPath, l.WorkflowRoot, l.GitMode, l.SchemaVersion); err != nil {
+		return l, fmt.Errorf("config %q: %w", l.ConfigPath, err)
+	}
+	return l, nil
+}
+
+// loadPaths shares schema, path, and repository identity validation between
+// normal loading and the migration planner. Ownership validation intentionally
+// remains at the two explicit callers above.
+func loadPaths(configPath string) (l Layout, err error) {
 	l.ConfigPath, err = filepath.Abs(configPath)
 	if err != nil {
 		return l, err
@@ -174,8 +249,7 @@ func Load(configPath string) (l Layout, err error) {
 		l.Repos[name] = p
 	}
 	if !l.ExplicitRepos() {
-		err = workflowroot.ValidateLayout(l.ConfigPath, root, l.GitMode, l.SchemaVersion)
-		return l, err
+		return l, nil
 	}
 	if c.Worktrees != nil && c.Worktrees.Dir != "" {
 		l.WorktreesDir, err = layoutPath(l.ConfigRoot, c.Worktrees.Dir)
@@ -266,8 +340,41 @@ func Load(configPath string) (l Layout, err error) {
 			return l, err
 		}
 	}
-	err = workflowroot.ValidateLayout(l.ConfigPath, l.WorkflowRoot, l.GitMode, l.SchemaVersion)
-	return l, err
+	return l, nil
+}
+
+func requireRealRegularFile(path string) error {
+	abs, err := filepath.Abs(path)
+	if err != nil {
+		return err
+	}
+	root := filepath.VolumeName(abs) + string(os.PathSeparator)
+	if err := fsutil.RequireRealParents(root, filepath.Dir(abs)); err != nil {
+		return err
+	}
+	info, err := os.Lstat(abs)
+	if err != nil {
+		return err
+	}
+	if !info.Mode().IsRegular() {
+		return fmt.Errorf("%q must be a regular file (symlinks are refused)", abs)
+	}
+	return nil
+}
+
+func hasGitControlAncestor(dir string) (bool, error) {
+	for dir = filepath.Clean(dir); ; dir = filepath.Dir(dir) {
+		_, err := os.Lstat(filepath.Join(dir, ".git"))
+		if err == nil {
+			return true, nil
+		}
+		if !os.IsNotExist(err) {
+			return false, err
+		}
+		if filepath.Dir(dir) == dir {
+			return false, nil
+		}
+	}
 }
 
 func layoutPath(base, p string) (string, error) {
@@ -324,13 +431,14 @@ func overlaps(a, b string) bool { return within(a, b) || within(b, a) }
 
 func gitRoots(dir string) (string, string, error) {
 	probe := func(arg string) (string, error) {
-		cmd := exec.Command("git", "-C", dir, "rev-parse", "--path-format=absolute", arg)
+		cmd := exec.Command("git", "-c", "core.fsmonitor=false", "-C", dir, "rev-parse", "--path-format=absolute", arg)
 		// Git environment overrides must not make a bogus source pass validation.
 		for _, entry := range os.Environ() {
 			if !strings.HasPrefix(entry, "GIT_") {
 				cmd.Env = append(cmd.Env, entry)
 			}
 		}
+		cmd.Env = append(cmd.Env, "GIT_OPTIONAL_LOCKS=0", "GIT_TERMINAL_PROMPT=0")
 		out, err := cmd.Output()
 		if err != nil {
 			return "", fmt.Errorf("%q is not a git worktree (%s): %w", dir, arg, err)
@@ -343,4 +451,30 @@ func gitRoots(dir string) (string, string, error) {
 	}
 	common, err := probe("--git-common-dir")
 	return top, common, err
+}
+
+// GitIdentity returns the canonical top-level and common Git directory for an
+// exact worktree. It is a read-only identity check shared by migration planning.
+func GitIdentity(dir string) (string, string, error) { return gitRoots(dir) }
+
+// ReadGit runs a read-only Git probe with caller-controlled plumbing removed.
+// GIT_OPTIONAL_LOCKS=0 and command-local core.fsmonitor=false keep inspection
+// from refreshing an index or invoking a configured fsmonitor hook. Callers
+// must not use it for mutation commands.
+func ReadGit(dir string, args ...string) ([]byte, error) {
+	if _, _, err := gitRoots(dir); err != nil {
+		return nil, err
+	}
+	cmd := exec.Command("git", append([]string{"-c", "core.fsmonitor=false", "-C", dir}, args...)...)
+	for _, entry := range os.Environ() {
+		if !strings.HasPrefix(entry, "GIT_") {
+			cmd.Env = append(cmd.Env, entry)
+		}
+	}
+	cmd.Env = append(cmd.Env, "GIT_OPTIONAL_LOCKS=0", "GIT_TERMINAL_PROMPT=0")
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		return nil, fmt.Errorf("git %s in %q: %w", strings.Join(args, " "), dir, err)
+	}
+	return out, nil
 }

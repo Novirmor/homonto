@@ -276,6 +276,63 @@ func TestLayoutManagedStructuralValidationOnly(t *testing.T) {
 	}
 }
 
+func TestLoadMigrationRecoveryRevalidatesLayoutTopology(t *testing.T) {
+	newFixture := func(t *testing.T) (base, control, config, records, source string) {
+		t.Helper()
+		base = t.TempDir()
+		control = filepath.Join(base, "control")
+		records = filepath.Join(base, "records")
+		source = filepath.Join(base, "source")
+		git(t, "init", "-q", source)
+		config = filepath.Join(control, "homonto.toml")
+		write(t, config, fmt.Sprintf("schema_version=2\n[workflow]\nroot='../records'\ngit='existing'\n[worktrees]\ndir='../execution'\n[repos]\napp=%q\n", source))
+		write(t, filepath.Join(control, ".homonto", "workflow-root"), "../records\n")
+		return base, control, config, records, source
+	}
+
+	t.Run("legacy marker", func(t *testing.T) {
+		_, _, config, _, _ := newFixture(t)
+		if _, err := workspace.LoadMigrationRecovery(config); err != nil {
+			t.Fatalf("LoadMigrationRecovery: %v", err)
+		}
+	})
+	t.Run("unavailable declared repository", func(t *testing.T) {
+		_, _, config, _, source := newFixture(t)
+		write(t, config, fmt.Sprintf("schema_version=2\n[workflow]\nroot='../records'\ngit='existing'\n[worktrees]\ndir='../execution'\n[repos]\napp=%q\nmissing='../missing'\n", source))
+		if _, err := workspace.LoadMigrationRecovery(config); err == nil || !strings.Contains(err.Error(), "does not exist") {
+			t.Fatalf("LoadMigrationRecovery unavailable repo = %v", err)
+		}
+	})
+	t.Run("overlapping allocation root", func(t *testing.T) {
+		_, _, config, _, source := newFixture(t)
+		write(t, config, fmt.Sprintf("schema_version=2\n[workflow]\nroot='../records'\ngit='existing'\n[worktrees]\ndir='../records'\n[repos]\napp=%q\n", source))
+		if _, err := workspace.LoadMigrationRecovery(config); err == nil || !strings.Contains(err.Error(), "overlaps workflow.root") {
+			t.Fatalf("LoadMigrationRecovery overlap = %v", err)
+		}
+	})
+	t.Run("mismatched schema-two marker", func(t *testing.T) {
+		_, control, config, records, _ := newFixture(t)
+		write(t, filepath.Join(control, ".homonto", "workflow-layout.json"), fmt.Sprintf("{\"schema_version\":2,\"config_path\":%q,\"workflow_root\":%q,\"git_mode\":\"existing\"}\n", config, filepath.Join(filepath.Dir(records), "other-records")))
+		if _, err := workspace.LoadMigrationRecovery(config); err == nil || !strings.Contains(err.Error(), "does not match") {
+			t.Fatalf("LoadMigrationRecovery marker mismatch = %v", err)
+		}
+	})
+	t.Run("symlink workflow root", func(t *testing.T) {
+		base, _, config, records, source := newFixture(t)
+		if err := os.MkdirAll(records, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.Symlink(records, filepath.Join(base, "records-link")); err != nil {
+			t.Skipf("symlinks unavailable: %v", err)
+		}
+		write(t, config, fmt.Sprintf("schema_version=2\n[workflow]\nroot='../records-link'\ngit='existing'\n[worktrees]\ndir='../execution'\n[repos]\napp=%q\n", source))
+		write(t, filepath.Join(filepath.Dir(config), ".homonto", "workflow-root"), "../records-link\n")
+		if _, err := workspace.LoadMigrationRecovery(config); err == nil {
+			t.Fatal("LoadMigrationRecovery accepted a symlink workflow root")
+		}
+	})
+}
+
 func TestLayoutSymlinkAndFileBoundaries(t *testing.T) {
 	base := t.TempDir()
 	root := filepath.Join(base, "control")

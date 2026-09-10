@@ -88,6 +88,34 @@ func LoadMigration(configPath string) (Layout, error) {
 	return l, nil
 }
 
+// LoadMigrationRecovery performs the full schema-2 path and declared-repository
+// validation needed before recovery writes, while accepting only the two marker
+// states an interrupted migration can legitimately leave behind. It never
+// suppresses normal loader failures or reinterprets an arbitrary layout.
+func LoadMigrationRecovery(configPath string) (Layout, error) {
+	if err := requireRealRegularFile(configPath); err != nil {
+		return Layout{}, fmt.Errorf("workspace migration recovery requires a real regular config file: %w", err)
+	}
+	l, err := loadPaths(configPath)
+	if err != nil {
+		return l, err
+	}
+	if l.SchemaVersion != 2 || !l.ExplicitRepos() || l.GitMode != "existing" {
+		return l, fmt.Errorf("workspace migration recovery requires schema_version = 2 and workflow.git = %q", "existing")
+	}
+	insideGit, err := hasGitControlAncestor(l.ConfigRoot)
+	if err != nil {
+		return l, fmt.Errorf("workspace migration recovery: inspecting configuration Git ancestry: %w", err)
+	}
+	if insideGit {
+		return l, fmt.Errorf("workspace migration recovery requires a non-Git configuration root")
+	}
+	if err := workflowroot.ValidateLegacyMigrationRecovery(l.ConfigPath, l.WorkflowRoot, l.GitMode, l.SchemaVersion); err != nil {
+		return l, err
+	}
+	return l, nil
+}
+
 // Load resolves paths relative to the config file, not the process directory.
 // An omitted worktrees.dir stays empty: allocation must require an explicit parent.
 func Load(configPath string) (Layout, error) {

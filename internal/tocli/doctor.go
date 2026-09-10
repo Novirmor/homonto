@@ -7,6 +7,8 @@ import (
 	"sort"
 
 	"github.com/noviopenworks/homonto/internal/buildinfo"
+	"github.com/noviopenworks/homonto/internal/migrationrecord"
+	"github.com/noviopenworks/homonto/internal/ontostate"
 	"github.com/noviopenworks/homonto/internal/tostate"
 	"github.com/noviopenworks/homonto/internal/workcli"
 	"github.com/spf13/cobra"
@@ -75,7 +77,7 @@ func siblingDuplicates(root, siblingDir string) ([]string, error) {
 	if err := validateWorkflowDir(root, filepath.Join(wf, siblingDir)); err != nil {
 		return nil, err
 	}
-	theirs, err := activeNames(filepath.Join(wf, siblingDir))
+	theirs, err := activeOntoNames(wf, filepath.Join(wf, siblingDir))
 	if err != nil {
 		return nil, err
 	}
@@ -102,6 +104,37 @@ func activeNames(dir string) (map[string]bool, error) {
 	for _, e := range entries {
 		if !e.IsDir() || e.Name() == "archive" {
 			continue
+		}
+		names[e.Name()] = true
+	}
+	return names, nil
+}
+
+// activeOntoNames excludes receipt-listed retired records while retaining
+// malformed records as active names so a broken state cannot silently release a
+// duplicate-name reservation.
+func activeOntoNames(workflowRoot, dir string) (map[string]bool, error) {
+	entries, err := os.ReadDir(dir)
+	if os.IsNotExist(err) {
+		return map[string]bool{}, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	names := map[string]bool{}
+	for _, e := range entries {
+		if !e.IsDir() || e.Name() == "archive" {
+			continue
+		}
+		changeDir := filepath.Join(dir, e.Name())
+		if state, class, _ := ontostate.Classify(changeDir); class == "valid" {
+			retired, err := migrationrecord.IsRetired(workflowRoot, changeDir, state.ID)
+			if err != nil {
+				return nil, err
+			}
+			if retired {
+				continue
+			}
 		}
 		names[e.Name()] = true
 	}

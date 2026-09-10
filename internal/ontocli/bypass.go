@@ -74,6 +74,9 @@ func runBypass(cmd *cobra.Command, root, name, target, reason string) error {
 	if st.Change != name {
 		return fmt.Errorf("onto bypass: state change %q does not match requested change %q", st.Change, name)
 	}
+	if err := rejectRetiredMigrationState(root, changeDir, st); err != nil {
+		return fmt.Errorf("onto bypass: %w", err)
+	}
 	if err := bypasslog.RequireRealParents(changeDir, changeDir); err != nil {
 		return err
 	}

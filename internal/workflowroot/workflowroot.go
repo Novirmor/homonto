@@ -11,6 +11,7 @@ import (
 	"strings"
 
 	"github.com/noviopenworks/homonto/internal/fsutil"
+	"github.com/noviopenworks/homonto/internal/migrationrecord"
 )
 
 // LayoutMarkerFile is separate from the legacy text workflow-root marker.
@@ -79,6 +80,57 @@ func WriteLayoutMarker(marker LayoutMarker) error {
 	return nil
 }
 
+// TransitionLegacyMigrationLayout is the one write path that can activate
+// schema-2 ownership over the supported legacy-records shape. Ordinary marker
+// writes still go through WriteLayoutMarker and ValidateLayout, which continue
+// to reject reinterpretation while records exist. The migration executor calls
+// this only after its records commits have succeeded; the pending private
+// journal, public receipt, and backward-looking commit proof are mandatory
+// preconditions rather than a force flag.
+func TransitionLegacyMigrationLayout(marker LayoutMarker, runID string) error {
+	if marker.SchemaVersion != 2 || marker.GitMode != "existing" || !filepath.IsAbs(marker.ConfigPath) || filepath.Clean(marker.ConfigPath) != marker.ConfigPath || !filepath.IsAbs(marker.WorkflowRoot) || filepath.Clean(marker.WorkflowRoot) != marker.WorkflowRoot {
+		return fmt.Errorf("invalid legacy migration layout transition")
+	}
+	if !migrationrecord.SafeRunID(runID) {
+		return fmt.Errorf("invalid legacy migration run ID")
+	}
+	repo := filepath.Dir(marker.ConfigPath)
+	if err := fsutil.RequireRealParents(repo, filepath.Dir(marker.ConfigPath)); err != nil {
+		return fmt.Errorf("legacy migration layout transition: unsafe config path: %w", err)
+	}
+	info, err := os.Lstat(marker.ConfigPath)
+	if err != nil || !info.Mode().IsRegular() || info.Mode()&os.ModeSymlink != 0 {
+		return fmt.Errorf("legacy migration layout transition: config must remain a real regular file")
+	}
+	if _, exists, err := readLayoutMarker(repo); err != nil {
+		return err
+	} else if exists {
+		return fmt.Errorf("legacy migration layout transition: layout marker already exists")
+	}
+	if err := ValidateLegacyMigrationRead(marker.ConfigPath, marker.WorkflowRoot, marker.GitMode, marker.SchemaVersion); err != nil {
+		return fmt.Errorf("legacy migration layout transition: %w", err)
+	}
+	status, err := migrationrecord.LoadJournalStatus(marker.WorkflowRoot, runID)
+	if err != nil || status.Phase != "pending-finalization" {
+		return fmt.Errorf("legacy migration layout transition: migration is not ready for finalization")
+	}
+	if _, err := migrationrecord.LoadReceipt(marker.WorkflowRoot, runID); err != nil {
+		return fmt.Errorf("legacy migration layout transition: public receipt is invalid: %w", err)
+	}
+	if _, err := migrationrecord.LoadCommitProof(marker.WorkflowRoot, runID); err != nil {
+		return fmt.Errorf("legacy migration layout transition: commit proof is invalid: %w", err)
+	}
+	data, err := json.MarshalIndent(marker, "", "  ")
+	if err != nil {
+		return err
+	}
+	path := filepath.Join(repo, ".homonto", LayoutMarkerFile)
+	if err := fsutil.WriteControlPlaneWithin(repo, path, append(data, '\n'), 0o644); err != nil {
+		return &inspectionError{"writing legacy migration layout marker", path, err}
+	}
+	return nil
+}
+
 // Absence is decided only by Lstat, never by a read through a dangling link.
 func readLayoutMarker(repo string) (marker LayoutMarker, exists bool, err error) {
 	path := filepath.Join(repo, ".homonto", LayoutMarkerFile)
@@ -131,6 +183,9 @@ func ValidateLayout(configPath, workflowRoot, gitMode string, schemaVersion int)
 			return fmt.Errorf("workflow layout marker %q belongs to config %q, not %q", marker, old.ConfigPath, configPath)
 		}
 		if schemaVersion >= 2 && old.WorkflowRoot == want && old.GitMode == gitMode {
+			if err := migrationrecord.ValidateBarrier(want); err != nil {
+				return err
+			}
 			return ValidateChange(repo, wantRel)
 		}
 	} else if schemaVersion < 2 {
@@ -210,6 +265,43 @@ func ValidateLegacyMigrationRead(configPath, workflowRoot, gitMode string, schem
 		return legacyMigrationReadError("legacy_alternative_state_present", err)
 	}
 	return nil
+}
+
+// ValidateLegacyMigrationRecovery validates the current ownership markers for
+// an interrupted legacy migration without treating a pending journal as a
+// reason to skip schema, root, or marker checks. It is intentionally narrower
+// than normal loading, whose barrier must continue rejecting pending work.
+func ValidateLegacyMigrationRecovery(configPath, workflowRoot, gitMode string, schemaVersion int) error {
+	configPath, err := filepath.Abs(configPath)
+	if err != nil {
+		return err
+	}
+	if schemaVersion != 2 || gitMode != "existing" || !filepath.IsAbs(workflowRoot) || filepath.Clean(workflowRoot) != workflowRoot {
+		return fmt.Errorf("workspace migration recovery requires schema-2 existing-Git ownership")
+	}
+	repo := filepath.Dir(configPath)
+	marker, exists, err := readLayoutMarker(repo)
+	if err != nil {
+		return err
+	}
+	if exists {
+		if marker.SchemaVersion != 2 || marker.ConfigPath != configPath || marker.WorkflowRoot != workflowRoot || marker.GitMode != gitMode {
+			return fmt.Errorf("workspace migration recovery layout marker does not match the configured workspace")
+		}
+		return nil
+	}
+	legacy, exists, err := readLegacyRootMarker(repo)
+	if err != nil {
+		return err
+	}
+	if !exists || filepath.Clean(resolveRoot(repo, legacy)) != filepath.Clean(workflowRoot) {
+		return fmt.Errorf("workspace migration recovery legacy root marker does not match the configured workflow root")
+	}
+	wantRel, err := filepath.Rel(repo, workflowRoot)
+	if err != nil {
+		return err
+	}
+	return validateChange(repo, filepath.ToSlash(wantRel), false)
 }
 
 func readLegacyRootMarker(repo string) (root string, exists bool, err error) {

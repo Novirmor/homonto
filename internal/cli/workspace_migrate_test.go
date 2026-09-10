@@ -14,6 +14,10 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/noviopenworks/homonto/internal/migrationrecord"
+	"github.com/noviopenworks/homonto/internal/ontostate"
+	"github.com/noviopenworks/homonto/internal/workflowstatus"
+	"github.com/noviopenworks/homonto/internal/workspace"
 	"github.com/noviopenworks/homonto/internal/workspacemigration"
 )
 
@@ -37,13 +41,14 @@ var migrationAliases = []string{
 var migrationConfigAliases = append([]string{"service-user"}, migrationAliases...)
 
 type migrationCLIFixture struct {
-	root     string
-	config   string
-	records  string
-	manifest string
-	repos    map[string]string
-	bases    map[string]string
-	input    workspacemigration.Manifest
+	root       string
+	config     string
+	records    string
+	manifest   string
+	repos      map[string]string
+	bases      map[string]string
+	executions map[string]string
+	input      workspacemigration.Manifest
 }
 
 func TestWorkspaceMigratePlanCLIInventoriesThreeLegacyRecordsReadOnly(t *testing.T) {
@@ -135,6 +140,147 @@ func TestWorkspaceMigratePlanCLIRequiresJSON(t *testing.T) {
 	}
 }
 
+func TestWorkspaceMigrateFourteenLegacyCheckoutsPreservation(t *testing.T) {
+	f := newMigrationCLIFixture(t)
+	beforeSources := migrationCLISourceFingerprints(t, f)
+	beforeExecutions := migrationCLIExecutionFingerprints(t, f)
+	beforeGitMetadata := migrationCLIGitMetadata(t, f)
+	retiredPath := filepath.Join(f.records, "changes", "standardize-ci-ecr-pipelines-abandoned-006ff3b4", "onto-state.yaml")
+	retiredBefore, err := os.ReadFile(retiredPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	output, err := runMigrationCLI(f, "workspace", "migrate", "plan", "--manifest", f.manifest, "--json")
+	if err != nil {
+		t.Fatalf("workspace migrate plan: %v\n%s", err, output)
+	}
+	var plan workspacemigration.Plan
+	if err := json.Unmarshal([]byte(output), &plan); err != nil {
+		t.Fatalf("plan JSON: %v\n%s", err, output)
+	}
+
+	output, err = runMigrationCLI(f, "workspace", "migrate", "apply", "--manifest", f.manifest, "--plan-hash", plan.PlanHash)
+	if err == nil || !strings.Contains(err.Error(), "requires --yes") || output != "" {
+		t.Fatalf("apply without --yes = output %q, error %v", output, err)
+	}
+	if _, err := os.Lstat(filepath.Join(f.root, ".homonto", "workflow-layout.json")); !os.IsNotExist(err) {
+		t.Fatalf("unconfirmed apply created layout marker: %v", err)
+	}
+
+	output, err = runMigrationCLI(f, "workspace", "migrate", "apply", "--manifest", f.manifest, "--plan-hash", plan.PlanHash, "--yes")
+	if err != nil {
+		t.Fatalf("workspace migrate apply: %v\n%s", err, output)
+	}
+	parts := strings.Fields(output)
+	if len(parts) != 2 || !strings.HasPrefix(parts[0], "migration-") || parts[1] != "complete" {
+		t.Fatalf("apply output = %q", output)
+	}
+	runID := parts[0]
+	if got := migrationCLIGitText(t, f.records, "rev-list", "--count", "HEAD"); got != "3" {
+		t.Fatalf("records history has %s commits, want legacy plus migration and proof", got)
+	}
+
+	output, err = runMigrationCLI(f, "workspace", "migrate", "verify", "--run-id", runID)
+	if err == nil || !strings.Contains(err.Error(), "requires --json") || output != "" {
+		t.Fatalf("verify without --json = output %q, error %v", output, err)
+	}
+	output, err = runMigrationCLI(f, "workspace", "migrate", "verify", "--run-id", runID, "--json")
+	if err != nil {
+		t.Fatalf("workspace migrate verify: %v\n%s", err, output)
+	}
+	var verification workspacemigration.Verification
+	if err := json.Unmarshal([]byte(output), &verification); err != nil {
+		t.Fatalf("verification JSON: %v\n%s", err, output)
+	}
+	if verification.RunID != runID || verification.PlanHash != plan.PlanHash || verification.Status != "complete" || verification.RecordWrites != 3 || verification.RetiredRecords != 1 || verification.Bindings != len(migrationAliases) {
+		t.Fatalf("verification = %+v", verification)
+	}
+	receipt, err := migrationrecord.LoadReceipt(f.records, runID)
+	if err != nil {
+		t.Fatalf("load migration receipt: %v", err)
+	}
+	ciStatePath := filepath.Join(f.records, "changes", "standardize-ci-ecr-pipelines", "onto-state.yaml")
+	legacyConfigFound := false
+	for _, write := range receipt.RecordWrites {
+		if write.Path != ciStatePath {
+			continue
+		}
+		wantBaseRef := f.bases[migrationAliases[0]]
+		if write.Action != workspacemigration.RecordWriteTransformActive || write.LegacyConfig == nil || write.LegacyConfig.BaseRef != wantBaseRef || write.LegacyConfig.BaseBranch != "main" || write.LegacyConfig.Provenance != migrationrecord.LegacyConfigProvenance {
+			t.Fatalf("CI legacy config receipt = %+v", write)
+		}
+		legacyConfigFound = true
+		break
+	}
+	if !legacyConfigFound {
+		t.Fatalf("receipt omitted CI record write %s", ciStatePath)
+	}
+	retiredAfter, err := os.ReadFile(retiredPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(retiredAfter, retiredBefore) {
+		t.Fatalf("retired state bytes changed\nwant: %q\n got: %q", retiredBefore, retiredAfter)
+	}
+	retiredState, err := ontostate.InspectRaw(retiredAfter, retiredPath)
+	if err != nil || retiredState.ID != "006ff3b4" || retiredState.Phase != "build" || !retiredState.Abandoned {
+		t.Fatalf("retired state identity = %+v, %v", retiredState, err)
+	}
+	if afterSources := migrationCLISourceFingerprints(t, f); !reflect.DeepEqual(afterSources, beforeSources) {
+		t.Fatalf("migration changed source head/index/ref/file fingerprints\nbefore: %#v\nafter: %#v", beforeSources, afterSources)
+	}
+	if afterExecutions := migrationCLIExecutionFingerprints(t, f); !reflect.DeepEqual(afterExecutions, beforeExecutions) {
+		t.Fatalf("migration changed execution head/index/ref/file fingerprints\nbefore: %#v\nafter: %#v", beforeExecutions, afterExecutions)
+	}
+	assertMigrationCLITokensOnly(t, f, beforeGitMetadata, migrationCLIGitMetadata(t, f))
+
+	output, err = runMigrationCLI(f, "worktree", "list", "--json")
+	if err != nil {
+		t.Fatalf("worktree list: %v\n%s", err, output)
+	}
+	var entries []workspace.Worktree
+	if err := json.Unmarshal([]byte(output), &entries); err != nil {
+		t.Fatalf("worktree list JSON: %v\n%s", err, output)
+	}
+	if len(entries) != len(migrationAliases) {
+		t.Fatalf("worktree list entries = %d, want %d: %+v", len(entries), len(migrationAliases), entries)
+	}
+	for _, entry := range entries {
+		if entry.Origin != "legacy-migration" || entry.MigrationRunID != runID || entry.Workflow != "onto" || entry.Change != "standardize-ci-ecr-pipelines" || entry.StateID != "id:eab6ef3d" || entry.Path != f.executions[entry.Repo] {
+			t.Fatalf("worktree list entry = %+v", entry)
+		}
+	}
+	status := workflowstatus.ReadConfig(f.config)
+	if len(status.Findings) != 0 || len(status.Changes) != 2 {
+		t.Fatalf("normal status = %+v", status)
+	}
+	for _, change := range status.Changes {
+		if change.Identity == "006ff3b4" || change.Name == "standardize-ci-ecr-pipelines-abandoned-006ff3b4" {
+			t.Fatalf("retired record appeared in normal status: %+v", status)
+		}
+	}
+	output, err = runMigrationCLI(f, "workspace", "migrate", "recover", "--run-id", runID, "--action", "resume", "--yes")
+	if err == nil || !strings.Contains(err.Error(), "plan-hash") {
+		t.Fatalf("recover without --plan-hash = output %q, error %v", output, err)
+	}
+	output, err = runMigrationCLI(f, "workspace", "migrate", "recover", "--run-id", runID, "--action", "resume", "--plan-hash", plan.PlanHash, "--yes")
+	if err != nil || strings.TrimSpace(output) != runID+"\tcomplete" {
+		t.Fatalf("completed recover = output %q, error %v", output, err)
+	}
+
+	output, err = runMigrationCLI(f, "workspace", "migrate", "apply", "--manifest", f.manifest, "--plan-hash", plan.PlanHash, "--yes")
+	if err != nil || strings.TrimSpace(output) != runID+"\tcomplete" {
+		t.Fatalf("repeated apply = output %q, error %v", output, err)
+	}
+	if afterSources := migrationCLISourceFingerprints(t, f); !reflect.DeepEqual(afterSources, beforeSources) {
+		t.Fatalf("recover or repeated apply changed source head/index/ref/file fingerprints\nbefore: %#v\nafter: %#v", beforeSources, afterSources)
+	}
+	if afterExecutions := migrationCLIExecutionFingerprints(t, f); !reflect.DeepEqual(afterExecutions, beforeExecutions) {
+		t.Fatalf("recover or repeated apply changed execution head/index/ref/file fingerprints\nbefore: %#v\nafter: %#v", beforeExecutions, afterExecutions)
+	}
+	assertMigrationCLITokensOnly(t, f, beforeGitMetadata, migrationCLIGitMetadata(t, f))
+}
+
 func newMigrationCLIFixture(t *testing.T) *migrationCLIFixture {
 	t.Helper()
 	if _, err := exec.LookPath("git"); err != nil {
@@ -158,6 +304,12 @@ func newMigrationCLIFixture(t *testing.T) *migrationCLIFixture {
 		repos[alias] = repo
 		bases[alias] = migrationCLIGitText(t, repo, "rev-parse", "HEAD")
 	}
+	executions := make(map[string]string, len(migrationAliases))
+	for _, alias := range migrationAliases {
+		execution := filepath.Join(root, ".legacy-worktrees", alias)
+		migrationCLIGit(t, repos[alias], "worktree", "add", "-b", "migration-"+alias, execution, bases[alias])
+		executions[alias] = execution
+	}
 	config := filepath.Join(root, "homonto.toml")
 	var configText strings.Builder
 	configText.WriteString("schema_version = 2\n[workflow]\nroot = \".homonto-local\"\ngit = \"existing\"\n[worktrees]\ndir = \"../execution\"\n[repos]\n")
@@ -173,7 +325,9 @@ func newMigrationCLIFixture(t *testing.T) *migrationCLIFixture {
 
 	migrationCLIWrite(t, filepath.Join(records, "changes", "issue-52-server-password-length", "onto-state.yaml"), fmt.Sprintf("schema_version: 3\nchange: issue-52-server-password-length\nid: 1dd2f21e\nworkflow: full\nphase: open\nrepos: [service-user]\nrepo_mode: explicit\nrepo_bases:\n  service-user:\n    base_ref: %s\n    base_branch: main\n    git_common_dir: %q\n", bases["service-user"], filepath.Join(repos["service-user"], ".git")))
 	var ciState strings.Builder
-	ciState.WriteString("schema_version: 2\nchange: standardize-ci-ecr-pipelines\nid: eab6ef3d\nworkflow: full\nphase: build\nrepos:\n")
+	ciState.WriteString("schema_version: 2\nchange: standardize-ci-ecr-pipelines\nid: eab6ef3d\nworkflow: full\nphase: build\n")
+	fmt.Fprintf(&ciState, "base_ref: %s\nbase_branch: main\n", bases[migrationAliases[0]])
+	ciState.WriteString("repos:\n")
 	for _, alias := range migrationAliases {
 		fmt.Fprintf(&ciState, "  - %q\n", alias)
 	}
@@ -200,7 +354,7 @@ func newMigrationCLIFixture(t *testing.T) *migrationCLIFixture {
 			{
 				Path:    "changes/standardize-ci-ecr-pipelines",
 				ID:      "eab6ef3d",
-				Sources: migrationCLISources(repos, bases),
+				Sources: migrationCLISources(repos, bases, executions),
 			},
 			{
 				Path:    "changes/standardize-ci-ecr-pipelines-abandoned-006ff3b4",
@@ -210,26 +364,28 @@ func newMigrationCLIFixture(t *testing.T) *migrationCLIFixture {
 		},
 	}
 	fixture := &migrationCLIFixture{
-		root:     root,
-		config:   config,
-		records:  records,
-		manifest: filepath.Join(base, "migration-manifest.json"),
-		repos:    repos,
-		bases:    bases,
-		input:    input,
+		root:       root,
+		config:     config,
+		records:    records,
+		manifest:   filepath.Join(base, "migration-manifest.json"),
+		repos:      repos,
+		bases:      bases,
+		executions: executions,
+		input:      input,
 	}
 	writeMigrationCLIManifest(t, fixture)
 	return fixture
 }
 
-func migrationCLISources(repos, bases map[string]string) []workspacemigration.ManifestSource {
+func migrationCLISources(repos, bases, executions map[string]string) []workspacemigration.ManifestSource {
 	sources := make([]workspacemigration.ManifestSource, 0, len(migrationAliases))
 	for _, alias := range migrationAliases {
 		sources = append(sources, workspacemigration.ManifestSource{
-			Alias:        alias,
-			BaseRef:      bases[alias],
-			BaseBranch:   "main",
-			GitCommonDir: filepath.Join(repos[alias], ".git"),
+			Alias:         alias,
+			BaseRef:       bases[alias],
+			BaseBranch:    "main",
+			GitCommonDir:  filepath.Join(repos[alias], ".git"),
+			ExecutionPath: executions[alias],
 		})
 	}
 	return sources
@@ -342,4 +498,183 @@ func migrationCLISnapshot(t *testing.T, f *migrationCLIFixture) map[string]strin
 		snapshot[path] = hex.EncodeToString(sum[:])
 	}
 	return snapshot
+}
+
+type migrationCLISourceFingerprint struct {
+	Head  string
+	Index string
+	Refs  map[string]string
+	Files map[string]string
+}
+
+func migrationCLISourceFingerprints(t *testing.T, f *migrationCLIFixture) map[string]migrationCLISourceFingerprint {
+	t.Helper()
+	return migrationCLICheckoutFingerprints(t, f.repos)
+}
+
+func migrationCLIExecutionFingerprints(t *testing.T, f *migrationCLIFixture) map[string]migrationCLISourceFingerprint {
+	t.Helper()
+	return migrationCLICheckoutFingerprints(t, f.executions)
+}
+
+func migrationCLICheckoutFingerprints(t *testing.T, fRoots map[string]string) map[string]migrationCLISourceFingerprint {
+	t.Helper()
+	result := make(map[string]migrationCLISourceFingerprint, len(fRoots))
+	for alias, root := range fRoots {
+		indexPath := migrationCLIGitText(t, root, "rev-parse", "--path-format=absolute", "--git-path", "index")
+		index, err := os.ReadFile(indexPath)
+		if err != nil {
+			t.Fatal(err)
+		}
+		refs := map[string]string{}
+		for _, line := range strings.Split(migrationCLIGitText(t, root, "for-each-ref", "--format=%(refname) %(objectname)", "refs"), "\n") {
+			if line == "" {
+				continue
+			}
+			fields := strings.Fields(line)
+			if len(fields) != 2 {
+				t.Fatalf("source refs for %s = %q", alias, line)
+			}
+			refs[fields[0]] = fields[1]
+		}
+		result[alias] = migrationCLISourceFingerprint{
+			Head:  migrationCLIGitText(t, root, "rev-parse", "HEAD"),
+			Index: migrationCLIHash(index),
+			Refs:  refs,
+			Files: migrationCLICheckoutFiles(t, root),
+		}
+	}
+	return result
+}
+
+func migrationCLICheckoutFiles(t *testing.T, root string) map[string]string {
+	t.Helper()
+	files := map[string]string{}
+	err := filepath.WalkDir(root, func(path string, entry os.DirEntry, walkErr error) error {
+		if walkErr != nil {
+			return walkErr
+		}
+		rel, err := filepath.Rel(root, path)
+		if err != nil {
+			return err
+		}
+		if rel == "." {
+			return nil
+		}
+		rel = filepath.ToSlash(rel)
+		if rel == ".git" {
+			if entry.IsDir() {
+				return filepath.SkipDir
+			}
+			return nil
+		}
+		info, err := os.Lstat(path)
+		if err != nil {
+			return err
+		}
+		switch {
+		case info.Mode().IsRegular():
+			data, err := os.ReadFile(path)
+			if err != nil {
+				return err
+			}
+			files[rel] = fmt.Sprintf("regular:%04o:%s", info.Mode().Perm(), migrationCLIHash(data))
+		case info.Mode()&os.ModeSymlink != 0:
+			target, err := os.Readlink(path)
+			if err != nil {
+				return err
+			}
+			files[rel] = fmt.Sprintf("symlink:%04o:%s", info.Mode().Perm(), migrationCLIHash([]byte(target)))
+		case info.IsDir():
+			return nil
+		default:
+			return fmt.Errorf("unsupported checkout file %s", rel)
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return files
+}
+
+func migrationCLIGitMetadata(t *testing.T, f *migrationCLIFixture) map[string]map[string]string {
+	t.Helper()
+	result := make(map[string]map[string]string, len(f.executions))
+	for alias, execution := range f.executions {
+		gitDir := migrationCLIGitText(t, execution, "rev-parse", "--absolute-git-dir")
+		metadata := map[string]string{}
+		err := filepath.WalkDir(gitDir, func(path string, entry os.DirEntry, walkErr error) error {
+			if walkErr != nil {
+				return walkErr
+			}
+			rel, err := filepath.Rel(gitDir, path)
+			if err != nil {
+				return err
+			}
+			if rel == "." || entry.IsDir() {
+				return nil
+			}
+			info, err := os.Lstat(path)
+			if err != nil {
+				return err
+			}
+			if info.Mode().IsRegular() {
+				data, err := os.ReadFile(path)
+				if err != nil {
+					return err
+				}
+				metadata[filepath.ToSlash(rel)] = fmt.Sprintf("regular:%04o:%s", info.Mode().Perm(), migrationCLIHash(data))
+				return nil
+			}
+			if info.Mode()&os.ModeSymlink != 0 {
+				target, err := os.Readlink(path)
+				if err != nil {
+					return err
+				}
+				metadata[filepath.ToSlash(rel)] = fmt.Sprintf("symlink:%04o:%s", info.Mode().Perm(), migrationCLIHash([]byte(target)))
+				return nil
+			}
+			return fmt.Errorf("unsupported Git metadata file %s", rel)
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		result[alias] = metadata
+	}
+	return result
+}
+
+func assertMigrationCLITokensOnly(t *testing.T, f *migrationCLIFixture, before, after map[string]map[string]string) {
+	t.Helper()
+	for alias, execution := range f.executions {
+		beforeMetadata, ok := before[alias]
+		if !ok {
+			t.Fatalf("missing pre-migration Git metadata for %s", alias)
+		}
+		afterMetadata, ok := after[alias]
+		if !ok {
+			t.Fatalf("missing post-migration Git metadata for %s", alias)
+		}
+		for path, fingerprint := range beforeMetadata {
+			if afterMetadata[path] != fingerprint {
+				t.Fatalf("Git metadata changed for %s at %s", alias, path)
+			}
+		}
+		for path := range afterMetadata {
+			if _, existed := beforeMetadata[path]; !existed && path != "homonto-owner" {
+				t.Fatalf("unexpected Git metadata created for %s at %s", alias, path)
+			}
+		}
+		gitDir := migrationCLIGitText(t, execution, "rev-parse", "--absolute-git-dir")
+		owner, err := os.Lstat(filepath.Join(gitDir, "homonto-owner"))
+		if err != nil || !owner.Mode().IsRegular() || owner.Mode().Perm() != 0o600 {
+			t.Fatalf("migration owner token for %s = %v, %v", alias, owner, err)
+		}
+	}
+}
+
+func migrationCLIHash(data []byte) string {
+	sum := sha256.Sum256(data)
+	return hex.EncodeToString(sum[:])
 }

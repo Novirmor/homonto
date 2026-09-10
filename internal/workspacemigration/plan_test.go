@@ -828,6 +828,52 @@ func TestBuildRefusesToFingerprintPotentialSecretRecordFiles(t *testing.T) {
 	}
 }
 
+func TestBuildBlocksDirtySensitiveSourceWithoutExposingItsContents(t *testing.T) {
+	f := newMigrationFixture(t, false)
+	secret := filepath.Join(f.repos["app"], ".env")
+	writeFile(t, secret, "TOKEN=must-not-enter-the-plan\n")
+
+	plan, err := Build(f.config, f.manifest)
+	if !errors.Is(err, ErrBlocked) || !hasBlocker(plan, "sensitive_source_file") {
+		t.Fatalf("Build = %v, blockers=%+v", err, plan.Blockers)
+	}
+	for _, blocker := range plan.Blockers {
+		if blocker.Code == "sensitive_source_file" && blocker.Path != secret {
+			t.Fatalf("sensitive source blocker path = %q, want %q", blocker.Path, secret)
+		}
+	}
+	encoded, marshalErr := json.Marshal(plan)
+	if marshalErr != nil || strings.Contains(string(encoded), "must-not-enter-the-plan") {
+		t.Fatalf("plan exposed source secret: %v %s", marshalErr, encoded)
+	}
+}
+
+func TestBuildPreservesSourceMetadataWithoutSourcePayloads(t *testing.T) {
+	f := newMigrationFixture(t, false)
+	const payload = "source-content-must-not-enter-the-plan"
+	writeFile(t, filepath.Join(f.repos["app"], "notes.txt"), payload+"\n")
+
+	plan, err := Build(f.config, f.manifest)
+	if err != nil {
+		t.Fatalf("Build: %v", err)
+	}
+	source := findRecord(t, plan, "active-id").Sources[0]
+	var note *PreservedFile
+	for i := range source.Preservation.Files {
+		if source.Preservation.Files[i].Path == "notes.txt" {
+			note = &source.Preservation.Files[i]
+			break
+		}
+	}
+	if note == nil || note.Status != sourceStatusUntracked || note.Type != "regular" || note.Mode != 0o644 || note.SHA256 == "" {
+		t.Fatalf("untracked source preservation = %+v", note)
+	}
+	encoded, marshalErr := json.Marshal(plan)
+	if marshalErr != nil || strings.Contains(string(encoded), payload) {
+		t.Fatalf("plan exposed source payload: %v %s", marshalErr, encoded)
+	}
+}
+
 func TestPlanHashBindsConfigBaseAndRecordBytes(t *testing.T) {
 	f := newMigrationFixture(t, false, false)
 	initial, err := Build(f.config, f.manifest)

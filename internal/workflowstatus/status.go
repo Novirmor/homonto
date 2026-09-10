@@ -15,6 +15,7 @@ import (
 	"github.com/noviopenworks/homonto/internal/bypasslog"
 	"github.com/noviopenworks/homonto/internal/fsutil"
 	"github.com/noviopenworks/homonto/internal/integrationrecord"
+	"github.com/noviopenworks/homonto/internal/migrationrecord"
 	"github.com/noviopenworks/homonto/internal/ontostate"
 	"github.com/noviopenworks/homonto/internal/tostate"
 	"github.com/noviopenworks/homonto/internal/workspace"
@@ -134,6 +135,16 @@ func readOnto(dir string, archived bool, out *Snapshot) {
 		}
 		changeDir := filepath.Join(dir, entry.Name())
 		state, class, classErr := ontostate.Classify(changeDir)
+		if class == "valid" && !archived {
+			retired, err := migrationrecord.IsRetired(out.WorkflowRoot, changeDir, state.ID)
+			if err != nil {
+				out.Findings = append(out.Findings, Finding{Workflow: "onto", Change: entry.Name(), Message: "retired migration record: " + err.Error()})
+				continue
+			}
+			if retired {
+				continue
+			}
+		}
 		if class == "valid" && !archived && state.Change != entry.Name() {
 			class, classErr = "invalid", fmt.Errorf("state identity does not match directory")
 		}

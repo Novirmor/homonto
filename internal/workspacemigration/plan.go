@@ -1,6 +1,7 @@
 package workspacemigration
 
 import (
+	"bytes"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -10,6 +11,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 	"unicode"
 
@@ -28,6 +30,23 @@ var (
 // state normalization is performed. A blocked result is returned with
 // ErrBlocked so CLI callers can emit its JSON inventory before exiting nonzero.
 func Build(configPath, manifestPath string) (Plan, error) {
+	return build(configPath, manifestPath, nil)
+}
+
+// buildLocked repeats the read-only inventory while the migration's own
+// process/lifecycle/registry locks exist. Only those exact lock paths are
+// excluded; all other control files and pending operations remain blockers.
+func buildLocked(configPath, manifestPath string) (Plan, error) {
+	return build(configPath, manifestPath, map[string]bool{
+		".homonto/apply.lock":     true,
+		".homonto/worktrees.lock": true,
+		".change-names.lock":      true,
+		"changes/.onto.lock":      true,
+		"tasks/.to.lock":          true,
+	})
+}
+
+func build(configPath, manifestPath string, ignoredLocks map[string]bool) (Plan, error) {
 	p := newPlan()
 	configPath, err := absolutePath(configPath)
 	if err != nil {
@@ -80,13 +99,13 @@ func Build(configPath, manifestPath string) (Plan, error) {
 		manifestRecords, validManifest = validateManifest(&p, manifest, manifestPath)
 	}
 
-	inspectControlFiles(&p, l)
-	if records, ok := inspectRecordsGit(&p, l); ok {
+	inspectControlFiles(&p, l, ignoredLocks)
+	if records, ok := inspectRecordsGit(&p, l, ignoredLocks != nil, ignoredLocks); ok {
 		p.RecordsGit = records
 	} else {
 		return p.finish()
 	}
-	files, err := snapshotRecordFiles(l.WorkflowRoot)
+	files, err := snapshotRecordFiles(l.WorkflowRoot, ignoredLocks)
 	if err != nil {
 		var sensitive *sensitiveRecordFileError
 		if errors.As(err, &sensitive) {
@@ -98,7 +117,7 @@ func Build(configPath, manifestPath string) (Plan, error) {
 	}
 	p.Files = files
 
-	discovered := discoverRecords(&p, l.WorkflowRoot)
+	discovered := discoverRecords(&p, l.WorkflowRoot, ignoredLocks)
 	if validManifest {
 		bindManifest(&p, l, manifestRecords, discovered)
 		prepareRecordWrites(&p, l.WorkflowRoot, discovered)
@@ -165,6 +184,17 @@ func absolutePath(path string) (string, error) {
 func pathWithin(parent, child string) bool {
 	rel, err := filepath.Rel(parent, child)
 	return err == nil && rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator))
+}
+
+func ignoredPath(root, path string, ignored map[string]bool) bool {
+	if len(ignored) == 0 {
+		return false
+	}
+	rel, err := filepath.Rel(root, path)
+	if err != nil {
+		return false
+	}
+	return ignored[filepath.ToSlash(rel)]
 }
 
 func readRealRegularFile(path string) ([]byte, error) {
@@ -254,7 +284,7 @@ func inventoryLayout(l workspace.Layout) (Layout, error) {
 	return result, nil
 }
 
-func inspectControlFiles(p *Plan, l workspace.Layout) {
+func inspectControlFiles(p *Plan, l workspace.Layout, ignoredLocks map[string]bool) {
 	controlRoot := filepath.Join(l.ConfigRoot, ".homonto")
 	legacy := filepath.Join(controlRoot, "workflow-root")
 	if data, exists, err := readRegularWithin(l.ConfigRoot, legacy); err != nil {
@@ -273,6 +303,9 @@ func inspectControlFiles(p *Plan, l workspace.Layout) {
 		{"worktrees.lock", "worktree_registry_pending"},
 	} {
 		path := filepath.Join(controlRoot, entry.name)
+		if ignoredPath(l.ConfigRoot, path, ignoredLocks) {
+			continue
+		}
 		data, exists, err := readRegularWithin(l.ConfigRoot, path)
 		if err != nil {
 			p.block("control_file_unsafe", path, "control file must be absent or a real regular file")
@@ -284,10 +317,10 @@ func inspectControlFiles(p *Plan, l workspace.Layout) {
 		p.ControlFiles = append(p.ControlFiles, fingerprint(path, "control_file", data))
 		p.block(entry.code, path, "M1 supports only legacy records without existing schema-2 control state")
 	}
-	inspectUnexpectedControlFiles(p, l.ConfigRoot, controlRoot)
+	inspectUnexpectedControlFiles(p, l.ConfigRoot, controlRoot, ignoredLocks)
 }
 
-func inspectUnexpectedControlFiles(p *Plan, configRoot, controlRoot string) {
+func inspectUnexpectedControlFiles(p *Plan, configRoot, controlRoot string, ignoredLocks map[string]bool) {
 	entries, exists, err := realDirectoryEntries(controlRoot)
 	if err != nil || !exists {
 		return // workflow-root inspection above reports a missing or unsafe root.
@@ -303,6 +336,9 @@ func inspectUnexpectedControlFiles(p *Plan, configRoot, controlRoot string) {
 			continue
 		}
 		path := filepath.Join(controlRoot, entry.Name())
+		if ignoredPath(configRoot, path, ignoredLocks) {
+			continue
+		}
 		if entry.Name() == "catalog" {
 			inspectProjectionCatalog(p, path)
 			continue
@@ -350,7 +386,7 @@ func projectionStatePartitionName(name string) bool {
 	return validAlias(alias)
 }
 
-func inspectRecordsGit(p *Plan, l workspace.Layout) (RecordsGit, bool) {
+func inspectRecordsGit(p *Plan, l workspace.Layout, requireClean bool, ignoredLocks map[string]bool) (RecordsGit, bool) {
 	root, err := realDirectory(l.WorkflowRoot)
 	if err != nil {
 		p.block("records_root_invalid", l.WorkflowRoot, "records root must be a real directory")
@@ -378,7 +414,7 @@ func inspectRecordsGit(p *Plan, l workspace.Layout) (RecordsGit, bool) {
 		p.block("records_index_invalid", indexPath, "records Git index must be a real regular file")
 		return RecordsGit{}, false
 	}
-	dirt, err := gitDirt(root)
+	dirt, err := gitDirtIgnoring(root, root, ignoredLocks)
 	if err != nil {
 		p.block("records_status_unavailable", root, "records Git dirt cannot be inspected without changing the index")
 		return RecordsGit{}, false
@@ -390,6 +426,9 @@ func inspectRecordsGit(p *Plan, l workspace.Layout) (RecordsGit, bool) {
 	}
 	if len(remotes) != 0 {
 		p.block("records_remote_present", root, "M1 supports only the documented local records Git without remotes")
+	}
+	if requireClean && (dirt.Tracked != 0 || dirt.Untracked != 0 || dirt.Ignored != 0) {
+		p.block("records_dirty", root, "migration apply requires a clean records Git worktree outside its own lifecycle locks")
 	}
 	for _, state := range []string{"MERGE_HEAD", "CHERRY_PICK_HEAD", "REVERT_HEAD", "rebase-merge", "rebase-apply", "sequencer", "index.lock", "homonto-history/pending.json"} {
 		path := filepath.Join(gitDir, state)
@@ -431,17 +470,32 @@ func gitLines(dir string, args ...string) ([]string, error) {
 }
 
 func gitDirt(dir string) (Dirt, error) {
+	return gitDirtIgnoring(dir, "", nil)
+}
+
+func gitDirtIgnoring(dir, root string, ignored map[string]bool) (Dirt, error) {
 	data, err := workspace.ReadGit(dir, "status", "--porcelain=v1", "-z", "--untracked-files=all", "--ignored", "--ignore-submodules=none")
 	if err != nil {
 		return Dirt{}, err
 	}
 	entries := bytesSplitNUL(data)
 	var dirt Dirt
+	var normalized []string
 	for i := 0; i < len(entries); i++ {
 		entry := entries[i]
-		if len(entry) < 2 {
+		if len(entry) < 3 {
 			continue
 		}
+		path := string(entry[3:])
+		isRename := entry[0] == 'R' || entry[0] == 'C' || entry[1] == 'R' || entry[1] == 'C'
+		ignoredEntry := (entry[0] == '?' || entry[0] == '!') && root != "" && ignoredGitPath(root, path, ignored)
+		if isRename {
+			i++ // porcelain -z follows a rename/copy record with its old path.
+		}
+		if ignoredEntry {
+			continue
+		}
+		normalized = append(normalized, string(entry))
 		switch entry[0] {
 		case '?':
 			dirt.Untracked++
@@ -449,12 +503,338 @@ func gitDirt(dir string) (Dirt, error) {
 			dirt.Ignored++
 		default:
 			dirt.Tracked++
-			if entry[0] == 'R' || entry[0] == 'C' || entry[1] == 'R' || entry[1] == 'C' {
-				i++ // porcelain -z follows a rename/copy record with its old path.
-			}
 		}
 	}
+	digest := sha256.Sum256([]byte(strings.Join(normalized, "\x00")))
+	dirt.SHA256 = hex.EncodeToString(digest[:])
 	return dirt, nil
+}
+
+const (
+	sourceStatusTrackedClean = "tracked_clean"
+	sourceStatusTrackedDirty = "tracked_dirty"
+	sourceStatusUntracked    = "untracked"
+	sourceStatusIgnored      = "ignored"
+)
+
+type sourceIndexEntry struct {
+	Blob string
+}
+
+type sensitiveSourceFileError struct{ path string }
+
+func (e *sensitiveSourceFileError) Error() string {
+	return "potentially secret-bearing source file cannot be content-preserved"
+}
+
+// snapshotSourceWorktree binds every source file that Git observes, including
+// clean index entries and files below ignored/untracked directories. It never
+// retains source content: regular files and link targets are reduced to hashes.
+func snapshotSourceWorktree(root string) (WorktreePreservation, error) {
+	index, err := sourceIndexEntries(root)
+	if err != nil {
+		return WorktreePreservation{}, err
+	}
+	statuses, err := sourceStatuses(root)
+	if err != nil {
+		return WorktreePreservation{}, err
+	}
+	files, err := sourceWorktreeFiles(root)
+	if err != nil {
+		return WorktreePreservation{}, err
+	}
+	changed, err := sourceUnstagedDiffPaths(root)
+	if err != nil {
+		return WorktreePreservation{}, err
+	}
+
+	type candidate struct {
+		status string
+		blob   string
+	}
+	candidates := make(map[string]candidate, len(index)+len(statuses)+len(files))
+	for path, entry := range index {
+		candidates[path] = candidate{status: sourceStatusTrackedClean, blob: entry.Blob}
+	}
+	for path, status := range statuses {
+		if current, ok := candidates[path]; ok {
+			current.status = status
+			candidates[path] = current
+			continue
+		}
+		candidates[path] = candidate{status: status}
+	}
+	for path := range files {
+		if _, ok := candidates[path]; ok {
+			continue
+		}
+		status, ok := sourceInheritedStatus(path, statuses)
+		if !ok {
+			return WorktreePreservation{}, fmt.Errorf("source file is not classified by Git: %s", path)
+		}
+		candidates[path] = candidate{status: status}
+	}
+
+	preservation := WorktreePreservation{Files: make([]PreservedFile, 0, len(candidates))}
+	for path, candidate := range candidates {
+		if _, exists := files[path]; !exists && candidate.blob == "" {
+			info, err := os.Lstat(filepath.Join(root, filepath.FromSlash(path)))
+			if err == nil && info.IsDir() && info.Mode()&os.ModeSymlink == 0 {
+				continue // Child files inherit this ignored/untracked directory status.
+			}
+			if err == nil {
+				return WorktreePreservation{}, fmt.Errorf("source file was not discovered: %s", path)
+			}
+			if !errors.Is(err, os.ErrNotExist) {
+				return WorktreePreservation{}, err
+			}
+		}
+		file, err := fingerprintSourceWorktreePath(root, path, candidate.status, candidate.blob)
+		if err != nil {
+			return WorktreePreservation{}, err
+		}
+		if file.Status == sourceStatusTrackedClean && changed[path] {
+			return WorktreePreservation{}, fmt.Errorf("clean tracked source path differs from its index: %s", path)
+		}
+		preservation.Files = append(preservation.Files, file)
+	}
+	sort.Slice(preservation.Files, func(i, j int) bool {
+		return preservation.Files[i].Path < preservation.Files[j].Path
+	})
+	return preservation, nil
+}
+
+func sourceIndexEntries(root string) (map[string]sourceIndexEntry, error) {
+	data, err := workspace.ReadGit(root, "ls-files", "-s", "-z")
+	if err != nil {
+		return nil, err
+	}
+	entries := make(map[string]sourceIndexEntry)
+	for _, record := range bytesSplitNUL(data) {
+		before, path, ok := bytes.Cut(record, []byte{'\t'})
+		if !ok || !safeSourceRelativePath(string(path)) {
+			return nil, fmt.Errorf("invalid source index entry")
+		}
+		parts := strings.Fields(string(before))
+		if len(parts) != 3 || parts[2] != "0" || !canonicalCommit.MatchString(parts[1]) {
+			return nil, fmt.Errorf("source index has an unmerged or invalid entry")
+		}
+		if _, err := strconv.ParseUint(parts[0], 8, 32); err != nil {
+			return nil, fmt.Errorf("source index has an invalid file mode")
+		}
+		name := string(path)
+		if _, exists := entries[name]; exists {
+			return nil, fmt.Errorf("source index has a duplicate path")
+		}
+		entries[name] = sourceIndexEntry{Blob: parts[1]}
+	}
+	return entries, nil
+}
+
+func sourceStatuses(root string) (map[string]string, error) {
+	data, err := workspace.ReadGit(root, "status", "--porcelain=v1", "-z", "--no-renames", "--untracked-files=all", "--ignored", "--ignore-submodules=none")
+	if err != nil {
+		return nil, err
+	}
+	statuses := map[string]string{}
+	for _, entry := range bytesSplitNUL(data) {
+		if len(entry) < 4 || entry[2] != ' ' {
+			return nil, fmt.Errorf("source Git status is malformed")
+		}
+		path := strings.TrimSuffix(string(entry[3:]), "/")
+		if !safeSourceRelativePath(path) {
+			return nil, fmt.Errorf("source Git status has an unsafe path")
+		}
+		status := sourceStatusTrackedDirty
+		switch entry[0] {
+		case '?':
+			status = sourceStatusUntracked
+		case '!':
+			status = sourceStatusIgnored
+		}
+		if existing, exists := statuses[path]; exists && existing != status {
+			return nil, fmt.Errorf("source Git status has a duplicate path")
+		}
+		statuses[path] = status
+	}
+	return statuses, nil
+}
+
+func sourceWorktreeFiles(root string) (map[string]bool, error) {
+	files := map[string]bool{}
+	var walk func(string) error
+	walk = func(dir string) error {
+		entries, err := os.ReadDir(dir)
+		if err != nil {
+			return err
+		}
+		for _, entry := range entries {
+			path := filepath.Join(dir, entry.Name())
+			rel, err := filepath.Rel(root, path)
+			if err != nil {
+				return err
+			}
+			rel = filepath.ToSlash(rel)
+			if rel == ".git" {
+				continue
+			}
+			if !safeSourceRelativePath(rel) {
+				return fmt.Errorf("source worktree has an unsafe path")
+			}
+			info, err := os.Lstat(path)
+			if err != nil {
+				return err
+			}
+			if info.Mode()&os.ModeSymlink != 0 || info.Mode().IsRegular() {
+				files[rel] = true
+				continue
+			}
+			if !info.IsDir() {
+				return fmt.Errorf("source worktree has an unsupported filesystem object: %s", rel)
+			}
+			if err := walk(path); err != nil {
+				return err
+			}
+		}
+		return nil
+	}
+	if err := walk(root); err != nil {
+		return nil, err
+	}
+	return files, nil
+}
+
+func sourceUnstagedDiffPaths(root string) (map[string]bool, error) {
+	data, err := workspace.ReadGit(root, "diff", "--no-ext-diff", "--no-textconv", "--name-only", "-z", "--")
+	if err != nil {
+		return nil, err
+	}
+	paths := map[string]bool{}
+	for _, raw := range bytesSplitNUL(data) {
+		path := string(raw)
+		if !safeSourceRelativePath(path) {
+			return nil, fmt.Errorf("source Git diff has an unsafe path")
+		}
+		paths[path] = true
+	}
+	return paths, nil
+}
+
+func sourceInheritedStatus(path string, statuses map[string]string) (string, bool) {
+	for parent := filepath.ToSlash(filepath.Dir(filepath.FromSlash(path))); parent != "." && parent != "/"; parent = filepath.ToSlash(filepath.Dir(filepath.FromSlash(parent))) {
+		if status, ok := statuses[parent]; ok && (status == sourceStatusUntracked || status == sourceStatusIgnored) {
+			return status, true
+		}
+	}
+	return "", false
+}
+
+func safeSourceRelativePath(path string) bool {
+	return path != "" && !filepath.IsAbs(path) && !strings.ContainsAny(path, "\\\x00") && filepath.ToSlash(filepath.Clean(path)) == path && path != "." && path != ".." && !strings.HasPrefix(path, "../")
+}
+
+func fingerprintSourceWorktreePath(root, rel, status, blob string) (PreservedFile, error) {
+	if !safeSourceRelativePath(rel) {
+		return PreservedFile{}, fmt.Errorf("unsafe source path")
+	}
+	path := filepath.Join(root, filepath.FromSlash(rel))
+	if !pathWithin(root, path) || fsutil.RequireRealParents(root, filepath.Dir(path)) != nil {
+		return PreservedFile{}, fmt.Errorf("unsafe source path")
+	}
+	sensitive := sensitiveSourcePath(rel)
+	if sensitive && status != sourceStatusTrackedClean {
+		return PreservedFile{}, &sensitiveSourceFileError{path: path}
+	}
+	info, err := os.Lstat(path)
+	if errors.Is(err, os.ErrNotExist) {
+		if sensitive {
+			return PreservedFile{}, &sensitiveSourceFileError{path: path}
+		}
+		return PreservedFile{Path: rel, Status: status, Type: "missing", GitBlob: blob}, nil
+	}
+	if err != nil {
+		return PreservedFile{}, err
+	}
+	result := PreservedFile{Path: rel, Status: status, Mode: uint32(info.Mode().Perm()), GitBlob: blob}
+	switch {
+	case info.Mode().IsRegular():
+		result.Type = "regular"
+		if sensitive {
+			if blob == "" {
+				return PreservedFile{}, &sensitiveSourceFileError{path: path}
+			}
+			return result, nil
+		}
+		data, err := os.ReadFile(path)
+		if err != nil {
+			return PreservedFile{}, err
+		}
+		result.SHA256 = migrationDigest(data)
+		return result, nil
+	case info.Mode()&os.ModeSymlink != 0:
+		result.Type = "symlink"
+		if sensitive {
+			if blob == "" {
+				return PreservedFile{}, &sensitiveSourceFileError{path: path}
+			}
+		}
+		target, err := os.Readlink(path)
+		if err != nil {
+			return PreservedFile{}, err
+		}
+		result.SHA256 = migrationDigest([]byte(target))
+		return result, nil
+	default:
+		return PreservedFile{}, fmt.Errorf("source path has an unsupported filesystem object: %s", rel)
+	}
+}
+
+func sensitiveSourcePath(path string) bool {
+	parts := strings.Split(filepath.ToSlash(path), "/")
+	name := strings.ToLower(parts[len(parts)-1])
+	if sensitiveRecordFile(name) || name == "key" || strings.Contains(name, "kubeconfig") {
+		return true
+	}
+	for i := 0; i+1 < len(parts); i++ {
+		if strings.EqualFold(parts[i], ".kube") && strings.EqualFold(parts[i+1], "config") {
+			return true
+		}
+	}
+	return false
+}
+
+func ignoredGitPath(root, path string, ignored map[string]bool) bool {
+	if len(ignored) == 0 || filepath.IsAbs(path) || strings.ContainsAny(path, "\\\x00") {
+		return false
+	}
+	rel := filepath.ToSlash(filepath.Clean(path))
+	if rel == "." || rel == ".." || strings.HasPrefix(rel, "../") {
+		return false
+	}
+	if ignored[rel] {
+		return true
+	}
+	for prefix := range ignored {
+		if strings.HasSuffix(prefix, "/") && strings.HasPrefix(rel, prefix) {
+			return true
+		}
+	}
+	return false
+}
+
+// gitIndexSHA256 binds the exact index selected by this worktree without
+// refreshing it. Linked execution worktrees have their own private index, so
+// using the common directory's index would miss a concurrent writer.
+func gitIndexSHA256(dir string) (string, error) {
+	path, err := gitText(dir, "rev-parse", "--path-format=absolute", "--git-path", "index")
+	if err != nil || !filepath.IsAbs(path) || filepath.Clean(path) != path {
+		return "", fmt.Errorf("cannot identify Git index")
+	}
+	data, err := readRealRegularFile(path)
+	if err != nil {
+		return "", err
+	}
+	return fingerprint(path, "git_index", data).SHA256, nil
 }
 
 func bytesSplitNUL(data []byte) [][]byte {
@@ -475,13 +855,13 @@ func bytesSplitNUL(data []byte) [][]byte {
 	return parts
 }
 
-func snapshotRecordFiles(root string) ([]FileFingerprint, error) {
+func snapshotRecordFiles(root string, ignoredLocks map[string]bool) ([]FileFingerprint, error) {
 	root, err := realDirectory(root)
 	if err != nil {
 		return nil, err
 	}
 	var files []FileFingerprint
-	if err := walkRecordDirectory(root, root, &files); err != nil {
+	if err := walkRecordDirectory(root, root, &files, ignoredLocks); err != nil {
 		return nil, err
 	}
 	sort.Slice(files, func(i, j int) bool { return files[i].Path < files[j].Path })
@@ -492,13 +872,16 @@ type sensitiveRecordFileError struct{ path string }
 
 func (e *sensitiveRecordFileError) Error() string { return "potentially secret-bearing record file" }
 
-func walkRecordDirectory(root, dir string, files *[]FileFingerprint) error {
+func walkRecordDirectory(root, dir string, files *[]FileFingerprint, ignoredLocks map[string]bool) error {
 	entries, err := os.ReadDir(dir)
 	if err != nil {
 		return err
 	}
 	for _, entry := range entries {
 		path := filepath.Join(dir, entry.Name())
+		if ignoredPath(root, path, ignoredLocks) {
+			continue
+		}
 		info, err := os.Lstat(path)
 		if err != nil {
 			return err
@@ -521,7 +904,7 @@ func walkRecordDirectory(root, dir string, files *[]FileFingerprint) error {
 			if entry.Name() == ".git" {
 				return fmt.Errorf("nested Git directory at %s", path)
 			}
-			if err := walkRecordDirectory(root, path, files); err != nil {
+			if err := walkRecordDirectory(root, path, files, ignoredLocks); err != nil {
 				return err
 			}
 			continue
@@ -575,7 +958,7 @@ type discoveredRecord struct {
 	supported bool
 }
 
-func discoverRecords(p *Plan, root string) []discoveredRecord {
+func discoverRecords(p *Plan, root string, ignoredLocks map[string]bool) []discoveredRecord {
 	var discovered []discoveredRecord
 	changes := filepath.Join(root, "changes")
 	if entries, exists, err := realDirectoryEntries(changes); err != nil {
@@ -583,6 +966,9 @@ func discoverRecords(p *Plan, root string) []discoveredRecord {
 	} else if exists {
 		for _, entry := range entries {
 			path := filepath.Join(changes, entry.Name())
+			if ignoredPath(root, path, ignoredLocks) {
+				continue
+			}
 			if entry.Name() == "archive" {
 				discovered = append(discovered, discoverArchiveRecords(p, root, path)...)
 				continue
@@ -617,11 +1003,13 @@ func discoverRecords(p *Plan, root string) []discoveredRecord {
 	if entries, exists, err := realDirectoryEntries(tasks); err != nil {
 		p.block("tasks_tree_unsafe", tasks, "tasks must be a real directory")
 	} else if exists {
-		if len(entries) != 0 {
-			p.block("tasks_unsupported", tasks, "M1 does not support nonempty to task records")
-		}
+		nonLockEntries := 0
 		for _, entry := range entries {
 			path := filepath.Join(tasks, entry.Name())
+			if ignoredPath(root, path, ignoredLocks) {
+				continue
+			}
+			nonLockEntries++
 			if entry.Name() == "archive" {
 				discovered = append(discovered, discoverUnsupportedTaskArchive(p, root, path)...)
 				continue
@@ -631,6 +1019,9 @@ func discoverRecords(p *Plan, root string) []discoveredRecord {
 				continue
 			}
 			discovered = append(discovered, discoverUnsupportedTask(p, root, path))
+		}
+		if nonLockEntries != 0 {
+			p.block("tasks_unsupported", tasks, "M1 does not support nonempty to task records")
 		}
 	}
 
@@ -649,6 +1040,9 @@ func discoverRecords(p *Plan, root string) []discoveredRecord {
 		{filepath.Join(root, "tasks", ".to.lock"), "workflow_lifecycle_pending"},
 		{filepath.Join(root, ".homonto-workflow.json"), "managed_history_owner_present"},
 	} {
+		if ignoredPath(root, entry.path, ignoredLocks) {
+			continue
+		}
 		if exists, err := pathExists(root, entry.path); err != nil {
 			p.block("records_control_unsafe", entry.path, "records control path cannot be safely inspected")
 		} else if exists {
@@ -1228,6 +1622,26 @@ func validateSource(p *Plan, l workspace.Layout, recordPath string, state *ontos
 		p.block("source_head_invalid", repo, "declared source HEAD cannot be read as a canonical commit")
 		return planned, false
 	}
+	indexSHA256, err := gitIndexSHA256(repo)
+	if err != nil {
+		p.block("source_index_unavailable", repo, "declared source Git index cannot be fingerprinted without changing it")
+		return planned, false
+	}
+	dirt, err := gitDirt(repo)
+	if err != nil {
+		p.block("source_dirt_unavailable", repo, "declared source Git dirt cannot be inspected without changing the index")
+		return planned, false
+	}
+	preservation, err := snapshotSourceWorktree(repo)
+	if err != nil {
+		var sensitive *sensitiveSourceFileError
+		if errors.As(err, &sensitive) {
+			p.block("sensitive_source_file", sensitive.path, "migration will not read a dirty, untracked, or ignored potential source secret")
+		} else {
+			p.block("source_preservation_unavailable", repo, "declared source files cannot be content-preserved without changing the worktree")
+		}
+		return planned, false
+	}
 	if recorded, ok := state.RepoBases[input.Alias]; ok {
 		if (recorded.BaseRef != "" && recorded.BaseRef != input.BaseRef) ||
 			(recorded.BaseBranch != "" && recorded.BaseBranch != input.BaseBranch) ||
@@ -1238,6 +1652,9 @@ func validateSource(p *Plan, l workspace.Layout, recordPath string, state *ontos
 	}
 	planned.BaseBranchHead = branchHead
 	planned.Head = head
+	planned.IndexSHA256 = indexSHA256
+	planned.Dirt = dirt
+	planned.Preservation = preservation
 	if input.ExecutionPath != "" {
 		execution, ok := inspectExecution(p, input.ExecutionPath, common)
 		if !ok {
@@ -1280,10 +1697,34 @@ func inspectExecution(p *Plan, path, expectedCommon string) (*Execution, bool) {
 		p.block("execution_branch_unavailable", path, "execution checkout branch cannot be inspected")
 		return nil, false
 	}
+	if branch == "" {
+		p.block("execution_branch_unavailable", path, "execution checkout must retain an attached branch")
+		return nil, false
+	}
+	gitDir, err := gitText(path, "rev-parse", "--absolute-git-dir")
+	if err != nil || !filepath.IsAbs(gitDir) || filepath.Clean(gitDir) != gitDir {
+		p.block("execution_git_dir_unavailable", path, "execution checkout Git directory cannot be inspected as a canonical absolute path")
+		return nil, false
+	}
+	indexSHA256, err := gitIndexSHA256(path)
+	if err != nil {
+		p.block("execution_index_unavailable", path, "execution checkout index cannot be fingerprinted without changing it")
+		return nil, false
+	}
 	dirt, err := gitDirt(path)
 	if err != nil {
 		p.block("execution_dirt_unavailable", path, "execution checkout dirt cannot be inspected without changing the index")
 		return nil, false
 	}
-	return &Execution{Path: path, GitCommonDir: common, Head: head, Branch: branch, Dirt: dirt}, true
+	preservation, err := snapshotSourceWorktree(path)
+	if err != nil {
+		var sensitive *sensitiveSourceFileError
+		if errors.As(err, &sensitive) {
+			p.block("sensitive_source_file", sensitive.path, "migration will not read a dirty, untracked, or ignored potential source secret")
+		} else {
+			p.block("execution_preservation_unavailable", path, "execution checkout files cannot be content-preserved without changing the worktree")
+		}
+		return nil, false
+	}
+	return &Execution{Path: path, GitCommonDir: common, GitDir: gitDir, Head: head, Branch: branch, IndexSHA256: indexSHA256, Dirt: dirt, Preservation: preservation}, true
 }

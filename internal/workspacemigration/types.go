@@ -14,6 +14,10 @@ import (
 )
 
 const (
+	// PlanVersion is the only exported migration-plan schema accepted by the
+	// M3 executor. Version 3 adds content-free source-worktree preservation
+	// evidence; an older inventory cannot authorize recovery.
+	PlanVersion = 3
 	// ManifestVersion is the only input manifest format accepted by M1.
 	ManifestVersion = 1
 	// ControlOnlyAttestation is the explicit operator statement required before
@@ -75,9 +79,10 @@ type Repository struct {
 }
 
 type Dirt struct {
-	Tracked   int `json:"tracked"`
-	Untracked int `json:"untracked"`
-	Ignored   int `json:"ignored"`
+	Tracked   int    `json:"tracked"`
+	Untracked int    `json:"untracked"`
+	Ignored   int    `json:"ignored"`
+	SHA256    string `json:"sha256"`
 }
 
 type RecordsGit struct {
@@ -90,22 +95,47 @@ type RecordsGit struct {
 }
 
 type Execution struct {
-	Path         string `json:"path"`
-	GitCommonDir string `json:"git_common_dir"`
-	Head         string `json:"head"`
-	Branch       string `json:"branch"`
-	Dirt         Dirt   `json:"dirt"`
+	Path         string               `json:"path"`
+	GitCommonDir string               `json:"git_common_dir"`
+	GitDir       string               `json:"git_dir"`
+	Head         string               `json:"head"`
+	Branch       string               `json:"branch"`
+	IndexSHA256  string               `json:"index_sha256"`
+	Dirt         Dirt                 `json:"dirt"`
+	Preservation WorktreePreservation `json:"preservation"`
+}
+
+// PreservedFile fingerprints a source-worktree path without retaining its
+// contents. Clean tracked sensitive paths retain only their index object ID;
+// all other supported paths retain a raw content or link-target digest.
+type PreservedFile struct {
+	Path    string `json:"path"`
+	Status  string `json:"status"`
+	Type    string `json:"type"`
+	Mode    uint32 `json:"mode"`
+	SHA256  string `json:"sha256,omitempty"`
+	GitBlob string `json:"git_blob,omitempty"`
+}
+
+// WorktreePreservation binds every observed tracked, dirty, untracked, and
+// ignored source path to content-free metadata. It is public plan evidence,
+// never a source-file backup.
+type WorktreePreservation struct {
+	Files []PreservedFile `json:"files"`
 }
 
 type Source struct {
-	Alias          string     `json:"alias"`
-	Path           string     `json:"path"`
-	BaseRef        string     `json:"base_ref"`
-	BaseBranch     string     `json:"base_branch"`
-	BaseBranchHead string     `json:"base_branch_head"`
-	GitCommonDir   string     `json:"git_common_dir"`
-	Head           string     `json:"head"`
-	Execution      *Execution `json:"execution,omitempty"`
+	Alias          string               `json:"alias"`
+	Path           string               `json:"path"`
+	BaseRef        string               `json:"base_ref"`
+	BaseBranch     string               `json:"base_branch"`
+	BaseBranchHead string               `json:"base_branch_head"`
+	GitCommonDir   string               `json:"git_common_dir"`
+	Head           string               `json:"head"`
+	IndexSHA256    string               `json:"index_sha256"`
+	Dirt           Dirt                 `json:"dirt"`
+	Preservation   WorktreePreservation `json:"preservation"`
+	Execution      *Execution           `json:"execution,omitempty"`
 }
 
 type Record struct {
@@ -158,6 +188,44 @@ type RecordWrite struct {
 	LegacyConfig  *ontostate.LegacyConfig `json:"legacy_config,omitempty"`
 }
 
+// ProspectiveOperation is one content-free write authority reviewed in a
+// ready plan. DynamicRule names the narrow, deterministic value derivation
+// where a digest cannot exist until a run ID, fresh owner token, or Git commit
+// exists. It never carries raw state, config, journal, or token bytes.
+type ProspectiveOperation struct {
+	Scope       string `json:"scope"`
+	Kind        string `json:"kind"`
+	Path        string `json:"path"`
+	Intent      string `json:"intent"`
+	PreExists   bool   `json:"pre_exists"`
+	PreSHA256   string `json:"pre_sha256,omitempty"`
+	PreMode     uint32 `json:"pre_mode"`
+	PostExists  bool   `json:"post_exists"`
+	PostSHA256  string `json:"post_sha256,omitempty"`
+	PostMode    uint32 `json:"post_mode"`
+	DynamicRule string `json:"dynamic_rule,omitempty"`
+}
+
+// ProspectiveCommitBoundary binds one records-Git commit to its exact path
+// set and parent rule before the executor stages anything.
+type ProspectiveCommitBoundary struct {
+	Kind            string   `json:"kind"`
+	Parent          string   `json:"parent"`
+	ParentRule      string   `json:"parent_rule"`
+	Paths           []string `json:"paths"`
+	MessageTemplate string   `json:"message_template"`
+	TreeRule        string   `json:"tree_rule"`
+}
+
+// ProspectiveManifest is the public authority for all mutation classes that a
+// migration can perform. The private journal must be a concrete realization of
+// this manifest, not an independent write plan.
+type ProspectiveManifest struct {
+	Version    int                         `json:"version"`
+	Operations []ProspectiveOperation      `json:"operations"`
+	Commits    []ProspectiveCommitBoundary `json:"commits"`
+}
+
 type preparedRecordWrite struct {
 	summary   RecordWrite
 	preimage  []byte
@@ -182,6 +250,7 @@ type Plan struct {
 	Files                []FileFingerprint    `json:"files"`
 	Records              []Record             `json:"records"`
 	RecordWrites         []RecordWrite        `json:"record_writes"`
+	Prospective          ProspectiveManifest  `json:"prospective_operations"`
 	Blockers             []Blocker            `json:"blockers"`
 
 	// preparedRecordWrites carries exact bytes only within this package for a
@@ -197,7 +266,7 @@ var ErrBlocked = fmt.Errorf("workspace migration plan blocked")
 
 func newPlan() Plan {
 	return Plan{
-		Version:  1,
+		Version:  PlanVersion,
 		ReadOnly: true,
 		Status:   "blocked",
 		ManifestRequirements: ManifestRequirements{
@@ -210,7 +279,12 @@ func newPlan() Plan {
 		Files:        []FileFingerprint{},
 		Records:      []Record{},
 		RecordWrites: []RecordWrite{},
-		Blockers:     []Blocker{},
+		Prospective: ProspectiveManifest{
+			Version:    1,
+			Operations: []ProspectiveOperation{},
+			Commits:    []ProspectiveCommitBoundary{},
+		},
+		Blockers: []Blocker{},
 	}
 }
 
@@ -233,6 +307,16 @@ func (p *Plan) finish() (Plan, error) {
 		sort.Slice(p.Records[i].Sources, func(a, b int) bool {
 			return p.Records[i].Sources[a].Alias < p.Records[i].Sources[b].Alias
 		})
+		for j := range p.Records[i].Sources {
+			sort.Slice(p.Records[i].Sources[j].Preservation.Files, func(a, b int) bool {
+				return p.Records[i].Sources[j].Preservation.Files[a].Path < p.Records[i].Sources[j].Preservation.Files[b].Path
+			})
+			if p.Records[i].Sources[j].Execution != nil {
+				sort.Slice(p.Records[i].Sources[j].Execution.Preservation.Files, func(a, b int) bool {
+					return p.Records[i].Sources[j].Execution.Preservation.Files[a].Path < p.Records[i].Sources[j].Execution.Preservation.Files[b].Path
+				})
+			}
+		}
 	}
 	for i := range p.RecordWrites {
 		sort.Strings(p.RecordWrites[i].ChangedFields)
@@ -252,6 +336,24 @@ func (p *Plan) finish() (Plan, error) {
 		p.PlanHash = planHash(*p)
 		return *p, ErrBlocked
 	}
+	prospective, err := buildProspectiveManifest(*p)
+	if err != nil {
+		p.block("prospective_operations_invalid", p.Layout.WorkflowRoot, "the ready inventory cannot derive a complete prospective mutation authority")
+		sort.Slice(p.Blockers, func(i, j int) bool {
+			a, b := p.Blockers[i], p.Blockers[j]
+			if a.Code != b.Code {
+				return a.Code < b.Code
+			}
+			if a.Path != b.Path {
+				return a.Path < b.Path
+			}
+			return a.Detail < b.Detail
+		})
+		p.Status = "blocked"
+		p.PlanHash = planHash(*p)
+		return *p, ErrBlocked
+	}
+	p.Prospective = prospective
 	p.Status = "ready"
 	p.PlanHash = planHash(*p)
 	return *p, nil

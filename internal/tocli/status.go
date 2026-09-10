@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"sort"
 
+	"github.com/noviopenworks/homonto/internal/migrationrecord"
 	"github.com/noviopenworks/homonto/internal/ontostate"
 	"github.com/noviopenworks/homonto/internal/workcli"
 	"github.com/spf13/cobra"
@@ -128,11 +129,19 @@ func collectSiblingStatus(root string) ([]statusEntry, error) {
 		if err == nil {
 			err = st.Validate()
 		}
-		if err == nil && st.Change != e.Name() {
-			err = fmt.Errorf("state identity mismatch: requested %q, recorded %q", e.Name(), st.Change)
-		}
 		if err != nil {
 			out = append(out, statusEntry{Change: e.Name(), Error: err.Error()})
+			continue
+		}
+		retired, err := migrationrecord.IsRetired(wf, filepath.Join(wf, "changes", e.Name()), st.ID)
+		if err != nil {
+			return nil, fmt.Errorf("to status: retired migration record: %w", err)
+		}
+		if retired {
+			continue
+		}
+		if st.Change != e.Name() {
+			out = append(out, statusEntry{Change: e.Name(), Error: fmt.Sprintf("state identity mismatch: requested %q, recorded %q", e.Name(), st.Change)})
 			continue
 		}
 		out = append(out, statusEntry{Change: e.Name(), Phase: st.Phase, Created: st.Created, Repos: st.Repos})

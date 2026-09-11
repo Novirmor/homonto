@@ -838,6 +838,129 @@ func recoverPendingRecoveryDescriptorStages(identity recoveryIdentity) error {
 	return nil
 }
 
+// discardPendingRecoveryDescriptorStages removes only the exact staging links
+// and blob temporaries that a preparation restore can prove belong to this run.
+// A partial blob requires exact payload replay from the revalidated plan;
+// altered or unreconstructible bytes remain a recovery conflict.
+func discardPendingRecoveryDescriptorStages(identity recoveryIdentity, replay func(recoveryPayloadDescriptor) ([]byte, error)) error {
+	dir, err := recoveryDescriptorDirectory(identity.Workflow, identity.RunID)
+	if err != nil {
+		return err
+	}
+	entries, err := recoveryDirectoryEntries(identity.Workflow, dir, 0o700)
+	if errors.Is(err, os.ErrNotExist) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	for _, entry := range entries {
+		if !strings.HasPrefix(entry.Name(), recoveryDescriptorStagePrefix) {
+			continue
+		}
+		if entry.Type()&os.ModeSymlink == 0 {
+			return fmt.Errorf("workspace migration: durable recovery descriptor staging entry is unsafe")
+		}
+		path := filepath.Join(dir, entry.Name())
+		link, exists, err := readMigrationOpaqueSymlink(identity.Workflow, path)
+		if err != nil || !exists {
+			return fmt.Errorf("workspace migration: durable recovery descriptor staging entry is invalid")
+		}
+		descriptor, err := parseRecoveryPayloadDescriptorLinkTarget(link)
+		if err != nil || descriptor.validate(identity, descriptor.Purpose, descriptor.Target) != nil {
+			return fmt.Errorf("workspace migration: durable recovery descriptor staging entry is invalid")
+		}
+		name, err := recoveryDescriptorStageName(descriptor)
+		if err != nil || name != entry.Name() {
+			return fmt.Errorf("workspace migration: durable recovery descriptor staging entry is invalid")
+		}
+		if _, err := loadRecoveryPayloadBlob(identity, descriptor); err == nil {
+			if err := promoteRecoveryPayloadDescriptor(identity, descriptor); err != nil {
+				return err
+			}
+			continue
+		}
+		blobPath, err := recoveryPayloadBlobPath(identity, descriptor.SHA256)
+		if err != nil {
+			return err
+		}
+		_, _, blobExists, readErr := readMigrationOptionalRegular(identity.Workflow, blobPath)
+		if readErr != nil || blobExists {
+			if readErr != nil {
+				return readErr
+			}
+			return fmt.Errorf("workspace migration: immutable private recovery payload blob differs from its descriptor")
+		}
+		authority, err := recoveryPayloadBlobTemporaryAuthority(identity, descriptor)
+		if err != nil {
+			return err
+		}
+		temporaryName, err := authority.name()
+		if err != nil {
+			return err
+		}
+		temporaryPath := filepath.Join(filepath.Dir(blobPath), temporaryName)
+		temporary, mode, temporaryExists, err := readMigrationOptionalRegular(identity.Workflow, temporaryPath)
+		if err != nil {
+			return err
+		}
+		if temporaryExists {
+			exact := mode.Perm() == recoveryBlobMode && int64(len(temporary)) == descriptor.Size && migrationDigest(temporary) == descriptor.SHA256
+			if !exact {
+				if replay == nil {
+					return fmt.Errorf("workspace migration: durable recovery blob temporary is not an exact immutable payload")
+				}
+				expected, err := replay(descriptor)
+				if err != nil || int64(len(expected)) != descriptor.Size || migrationDigest(expected) != descriptor.SHA256 {
+					return fmt.Errorf("workspace migration: durable recovery blob temporary is not an exact immutable payload")
+				}
+				authority, err := recoveryPayloadBlobTempAuthority(identity, descriptor, expected)
+				if err != nil || !authority.matchesPartial(temporary, mode) {
+					return fmt.Errorf("workspace migration: durable recovery blob temporary is not an exact immutable payload")
+				}
+			}
+			if err := removeMigrationOptionalRegularExpected(identity.Workflow, temporaryPath, &migrationRegularExpectation{exists: true, data: temporary, mode: mode}); err != nil {
+				return err
+			}
+		}
+		if err := removeRecoveryPayloadDescriptorStage(identity, descriptor); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func removeRecoveryPayloadDescriptorStage(identity recoveryIdentity, descriptor recoveryPayloadDescriptor) error {
+	path, err := recoveryDescriptorStagePath(identity, descriptor)
+	if err != nil {
+		return err
+	}
+	wantTarget, err := recoveryPayloadDescriptorLinkTarget(descriptor)
+	if err != nil {
+		return err
+	}
+	parent, name, parentPath, err := openPinnedMigrationParent(identity.Workflow, path)
+	if err != nil {
+		return err
+	}
+	defer parent.Close()
+	info, err := parent.Lstat(name)
+	if err != nil || info.Mode()&os.ModeSymlink == 0 {
+		return fmt.Errorf("workspace migration: durable recovery descriptor staging entry is invalid")
+	}
+	target, err := parent.Readlink(name)
+	if err != nil || target != wantTarget {
+		return fmt.Errorf("workspace migration: durable recovery descriptor staging entry is invalid")
+	}
+	if err := migrationPinnedParentStillCurrent(identity.Workflow, parentPath, parent); err != nil {
+		return err
+	}
+	if err := migrationFS.remove(parent, name); err != nil {
+		return err
+	}
+	return syncPinnedMigrationDirectoryKind(parent, parentPath, "recovery-descriptor")
+}
+
 func loadRecoveryPayloadBlob(identity recoveryIdentity, descriptor recoveryPayloadDescriptor) ([]byte, error) {
 	path, err := recoveryPayloadBlobPath(identity, descriptor.SHA256)
 	if err != nil {
@@ -1268,6 +1391,9 @@ func recoveryDirectoryEntries(root, path string, mode os.FileMode) ([]os.DirEntr
 	}
 	defer parent.Close()
 	info, err := parent.Lstat(name)
+	if errors.Is(err, os.ErrNotExist) {
+		return nil, os.ErrNotExist
+	}
 	if err != nil || !migrationRealDirectory(info) || info.Mode().Perm() != mode.Perm() {
 		return nil, fmt.Errorf("workspace migration: durable recovery directory is not a real directory with the required mode")
 	}
@@ -1356,18 +1482,35 @@ func validateRecoveryPayloadStore(identity recoveryIdentity, allowAbsent bool) e
 	if err != nil {
 		return err
 	}
-	if len(storeEntries) != 2 {
-		return fmt.Errorf("workspace migration: durable recovery payload store has an unexpected entry")
-	}
 	storeNames := map[string]os.DirEntry{}
+	storeChildren := map[string][]os.DirEntry{}
 	for _, entry := range storeEntries {
-		storeNames[entry.Name()] = entry
-	}
-	for _, name := range []string{recoveryBlobDirectoryName, recoveryDescriptorDirectoryName} {
-		entry, ok := storeNames[name]
-		if !ok || !entry.IsDir() || entry.Type()&os.ModeSymlink != 0 {
+		if entry.Name() != recoveryBlobDirectoryName && entry.Name() != recoveryDescriptorDirectoryName {
+			return fmt.Errorf("workspace migration: durable recovery payload store has an unexpected entry")
+		}
+		if !entry.IsDir() || entry.Type()&os.ModeSymlink != 0 {
 			return fmt.Errorf("workspace migration: durable recovery payload store is unsafe")
 		}
+		children, err := recoveryDirectoryEntries(identity.Workflow, filepath.Join(store, entry.Name()), 0o700)
+		if err != nil {
+			return err
+		}
+		storeNames[entry.Name()] = entry
+		storeChildren[entry.Name()] = children
+	}
+	_, blobsPresent := storeNames[recoveryBlobDirectoryName]
+	_, descriptorsPresent := storeNames[recoveryDescriptorDirectoryName]
+	if descriptorsPresent && !blobsPresent {
+		return fmt.Errorf("workspace migration: durable recovery payload store is unsafe")
+	}
+	if !blobsPresent || !descriptorsPresent {
+		if !allowAbsent {
+			return fmt.Errorf("workspace migration: durable recovery payload store has an unexpected entry")
+		}
+		if blobsPresent && len(storeChildren[recoveryBlobDirectoryName]) != 0 {
+			return fmt.Errorf("workspace migration: durable recovery payload store has an unexpected entry")
+		}
+		return ensureNoUnexpectedPrivateRecoveryTemporary(identity)
 	}
 
 	descriptorDir, err := recoveryDescriptorDirectory(identity.Workflow, identity.RunID)

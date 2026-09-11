@@ -369,6 +369,22 @@ func (p *Plan) finish() (Plan, error) {
 		return a.Detail < b.Detail
 	})
 	if len(p.Blockers) != 0 {
+		onlyRecordsDirt := true
+		for _, blocker := range p.Blockers {
+			if blocker.Code != "records_dirty" {
+				onlyRecordsDirt = false
+				break
+			}
+		}
+		if onlyRecordsDirt {
+			// Records dirt makes the plan ineligible for apply, but it does not
+			// make the already completed read-only mutation inventory unsafe to
+			// report. Keep that inventory actionable without treating the plan as
+			// ready or adding authority for any other blocked input.
+			if prospective, err := buildProspectiveManifest(*p); err == nil {
+				p.Prospective = prospective
+			}
+		}
 		p.Status = "blocked"
 		p.PlanHash = planHash(*p)
 		return *p, ErrBlocked

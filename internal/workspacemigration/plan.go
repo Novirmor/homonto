@@ -56,7 +56,7 @@ func buildLockedIgnoring(configPath, manifestPath string, ignored map[string]boo
 }
 
 func build(configPath, manifestPath string, ignoredLocks map[string]bool) (Plan, error) {
-	requireCleanRecords := ignoredLocks != nil
+	requireCleanRecords := true
 	ignoredLocks = mergeMigrationIgnoredArtifacts(ignoredLocks)
 	p := newPlan()
 	configPath, err := absolutePath(configPath)

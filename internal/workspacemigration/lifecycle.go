@@ -652,7 +652,14 @@ func newPreparationIntent(layout workspace.Layout, plan Plan) (preparationIntent
 
 func preparationIntentFromStatus(root, runID string) (preparationIntent, error) {
 	status, err := migrationrecord.LoadJournalStatus(root, runID)
-	if err != nil || status.Phase != "preparing" || status.Preparation == nil {
+	if err != nil {
+		return preparationIntent{}, os.ErrNotExist
+	}
+	return preparationIntentFromJournalStatus(status, root, runID)
+}
+
+func preparationIntentFromJournalStatus(status migrationrecord.JournalStatus, root, runID string) (preparationIntent, error) {
+	if status.Phase != "preparing" || status.Preparation == nil {
 		return preparationIntent{}, os.ErrNotExist
 	}
 	preparation := status.Preparation
@@ -730,6 +737,23 @@ func preparationStatusTempAuthority(intent preparationIntent, data []byte) (migr
 	}, nil
 }
 
+func bootstrapPreparationStatusTempAuthority(root, runID string) (migrationTempAuthority, error) {
+	path, err := journalStatusPath(root, runID)
+	if err != nil {
+		return migrationTempAuthority{}, err
+	}
+	return migrationTempAuthority{
+		root:      root,
+		runID:     runID,
+		scope:     journalScopeRecovery,
+		kind:      journalKindRecoveryStatus,
+		target:    path,
+		direction: "publish",
+		mode:      0o600,
+		bootstrap: true,
+	}, nil
+}
+
 func cleanupPreparationStatusTemporaryArtifact(intent preparationIntent) error {
 	data, err := journalStatusData(intent)
 	if err != nil {
@@ -742,26 +766,43 @@ func cleanupPreparationStatusTemporaryArtifact(intent preparationIntent) error {
 	return removeMigrationAuthorizedTemp(authority)
 }
 
-func cleanupBootstrapPreparationStatusTemporaryArtifact(root, runID string) error {
-	path, err := journalStatusPath(root, runID)
+func loadBootstrapPreparationStatusTemporaryArtifact(root, runID string) (bootstrapPreparationStatusTemporary, bool, error) {
+	authority, err := bootstrapPreparationStatusTempAuthority(root, runID)
 	if err != nil {
-		return err
+		return bootstrapPreparationStatusTemporary{}, false, err
 	}
-	err = removeMigrationAuthorizedTemp(migrationTempAuthority{
-		root:        root,
-		runID:       runID,
-		scope:       journalScopeRecovery,
-		kind:        journalKindRecoveryStatus,
-		target:      path,
-		direction:   "publish",
-		mode:        0o600,
-		privateSlot: true,
-		bootstrap:   true,
-	})
-	if errors.Is(err, os.ErrNotExist) {
-		return nil
+	name, err := authority.name()
+	if err != nil {
+		return bootstrapPreparationStatusTemporary{}, false, err
 	}
-	return err
+	data, mode, exists, err := readMigrationOptionalRegular(root, filepath.Join(filepath.Dir(authority.target), name))
+	if err != nil || !exists {
+		return bootstrapPreparationStatusTemporary{}, exists, err
+	}
+	return bootstrapPreparationStatusTemporary{data: data, mode: mode}, true, nil
+}
+
+func bootstrapPreparationStatusTemporaryConflict() error {
+	return fmt.Errorf("workspace migration: recovery conflict: bootstrap preparation status temporary is not recognized")
+}
+
+func cleanupBootstrapPreparationStatusTemporaryArtifact(layout workspace.Layout, runID, expectedPlanHash string, temporary bootstrapPreparationStatusTemporary) error {
+	if temporary.mode.Perm() != 0o600 {
+		return bootstrapPreparationStatusTemporaryConflict()
+	}
+	status, err := migrationrecord.ParseJournalStatus(temporary.data, layout.WorkflowRoot, runID)
+	if err != nil {
+		return bootstrapPreparationStatusTemporaryConflict()
+	}
+	intent, err := preparationIntentFromJournalStatus(status, layout.WorkflowRoot, runID)
+	if err != nil || validatePreparationIntentLayout(intent, layout) != nil || intent.PlanHash != expectedPlanHash {
+		return bootstrapPreparationStatusTemporaryConflict()
+	}
+	data, err := journalStatusData(intent)
+	if err != nil || !bytes.Equal(temporary.data, data) {
+		return bootstrapPreparationStatusTemporaryConflict()
+	}
+	return cleanupPreparationStatusTemporaryArtifact(intent)
 }
 
 func journalPreparationIntent(j privateJournal) (preparationIntent, error) {
@@ -2037,49 +2078,30 @@ func withInitialMigrationLocks(configPath string, fn func(workspace.Layout) erro
 	return fn(l)
 }
 
+type bootstrapPreparationStatusTemporary struct {
+	data []byte
+	mode os.FileMode
+}
+
 type recoveryMaterial struct {
-	journal *privateJournal
-	intent  *preparationIntent
-	orphan  bool
+	journal   *privateJournal
+	intent    *preparationIntent
+	bootstrap *bootstrapPreparationStatusTemporary
+	orphan    bool
 }
 
 func loadRecoveryMaterial(root, runID string) (recoveryMaterial, error) {
 	journal, journalErr := loadJournal(root, runID)
 	if journalErr == nil {
-		intent, err := journalPreparationIntent(journal)
-		if err != nil {
-			return recoveryMaterial{}, err
-		}
-		if err := cleanupPreparationStatusTemporaryArtifact(intent); err != nil {
-			return recoveryMaterial{}, err
-		}
-		if err := cleanupPrivateRecoveryTemporaryArtifacts(intent); err != nil {
-			return recoveryMaterial{}, err
-		}
-		if err := cleanupJournalTemporaryArtifacts(journal); err != nil {
-			return recoveryMaterial{}, err
-		}
 		return recoveryMaterial{journal: &journal}, nil
 	}
 	intent, intentErr := loadPreparationIntent(root, runID)
 	if intentErr == nil {
-		if err := cleanupPreparationStatusTemporaryArtifact(intent); err != nil {
-			return recoveryMaterial{}, err
-		}
-		if err := cleanupPrivateRecoveryTemporaryArtifacts(intent); err != nil {
-			return recoveryMaterial{}, err
-		}
 		return recoveryMaterial{intent: &intent}, nil
 	}
 	if errors.Is(intentErr, os.ErrNotExist) {
 		statusIntent, statusErr := preparationIntentFromStatus(root, runID)
 		if statusErr == nil {
-			if err := cleanupPreparationStatusTemporaryArtifact(statusIntent); err != nil {
-				return recoveryMaterial{}, err
-			}
-			if err := cleanupPrivateRecoveryTemporaryArtifacts(statusIntent); err != nil {
-				return recoveryMaterial{}, err
-			}
 			return recoveryMaterial{intent: &statusIntent}, nil
 		}
 		if !errors.Is(statusErr, os.ErrNotExist) {
@@ -2087,8 +2109,12 @@ func loadRecoveryMaterial(root, runID string) (recoveryMaterial, error) {
 		}
 	}
 	if errors.Is(journalErr, os.ErrNotExist) && errors.Is(intentErr, os.ErrNotExist) {
-		if err := cleanupBootstrapPreparationStatusTemporaryArtifact(root, runID); err != nil {
+		temporary, exists, err := loadBootstrapPreparationStatusTemporaryArtifact(root, runID)
+		if err != nil {
 			return recoveryMaterial{}, err
+		}
+		if exists {
+			return recoveryMaterial{bootstrap: &temporary}, nil
 		}
 		orphan, orphanErr := migrationrecord.IsPreparationOrphan(root, runID)
 		if orphanErr != nil {
@@ -2105,6 +2131,35 @@ func loadRecoveryMaterial(root, runID string) (recoveryMaterial, error) {
 		return recoveryMaterial{}, journalErr
 	}
 	return recoveryMaterial{}, intentErr
+}
+
+func cleanupRecoveryMaterial(layout workspace.Layout, runID, expectedPlanHash string, material *recoveryMaterial) error {
+	if material.journal != nil {
+		intent, err := journalPreparationIntent(*material.journal)
+		if err != nil {
+			return err
+		}
+		if err := cleanupPreparationStatusTemporaryArtifact(intent); err != nil {
+			return err
+		}
+		if err := cleanupPrivateRecoveryTemporaryArtifacts(intent); err != nil {
+			return err
+		}
+		return cleanupJournalTemporaryArtifacts(*material.journal)
+	}
+	if material.intent != nil {
+		if err := cleanupPreparationStatusTemporaryArtifact(*material.intent); err != nil {
+			return err
+		}
+		return cleanupPrivateRecoveryTemporaryArtifacts(*material.intent)
+	}
+	if material.bootstrap != nil {
+		if err := cleanupBootstrapPreparationStatusTemporaryArtifact(layout, runID, expectedPlanHash, *material.bootstrap); err != nil {
+			return err
+		}
+		material.orphan = true
+	}
+	return nil
 }
 
 func withRecoveryMigrationLocks(configPath, runID, expectedPlanHash string, fn func(workspace.Layout, recoveryMaterial) error) error {
@@ -2167,6 +2222,9 @@ func withRecoveryMigrationLocks(configPath, runID, expectedPlanHash string, fn f
 		if material.intent.PlanHash != expectedPlanHash {
 			return fmt.Errorf("workspace migration: recovery preparation intent does not match the reviewed plan hash")
 		}
+	}
+	if err := cleanupRecoveryMaterial(l, runID, expectedPlanHash, &material); err != nil {
+		return err
 	}
 	return fn(l, material)
 }

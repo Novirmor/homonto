@@ -1240,10 +1240,12 @@ func TestMigrationRobustness_ProcessKillCrashHelper(t *testing.T) {
 	previous := migrationAfterPreparation
 	previousWrite := migrationAfterWrite
 	previousFS := migrationFS
+	previousTemporaryCreate := migrationAfterTemporaryCreate
 	defer func() {
 		migrationAfterPreparation = previous
 		migrationAfterWrite = previousWrite
 		migrationFS = previousFS
+		migrationAfterTemporaryCreate = previousTemporaryCreate
 	}()
 	switch stage {
 	case "intent":
@@ -1286,6 +1288,21 @@ func TestMigrationRobustness_ProcessKillCrashHelper(t *testing.T) {
 			}
 			select {}
 		}
+	case "state-create":
+		layout, err := workspace.LoadMigration(config)
+		if err != nil {
+			t.Fatal(err)
+		}
+		state := filepath.Join(layout.WorkflowRoot, "changes", "active", "onto-state.yaml")
+		migrationAfterTemporaryCreate = func(path string) error {
+			if path != state {
+				return nil
+			}
+			if _, err := fmt.Fprintln(os.Stdout, "state-create-opened"); err != nil {
+				return err
+			}
+			select {}
+		}
 	default:
 		t.Fatalf("unsupported crash-helper stage %q", stage)
 	}
@@ -1315,6 +1332,9 @@ func killMigrationProcess(t *testing.T, fixture *migrationFixture, plan Plan, st
 	}
 	line, err := bufio.NewReader(stdout).ReadString('\n')
 	want := stage + "-durable\n"
+	if stage == "state-create" {
+		want = "state-create-opened\n"
+	}
 	if err != nil || line != want {
 		_ = cmd.Process.Kill()
 		rest, _ := io.ReadAll(stdout)
@@ -1448,11 +1468,88 @@ func TestMigrationRecovery_KillDuringStateReplacement(t *testing.T) {
 	}
 }
 
+func TestMigrationRecovery_KillDuringStateTemporaryCreation(t *testing.T) {
+	for _, action := range []string{"resume", "restore"} {
+		t.Run(action, func(t *testing.T) {
+			fixture := newMigrationFixture(t, false, false)
+			plan, err := Build(fixture.config, fixture.manifest)
+			if err != nil {
+				t.Fatal(err)
+			}
+			state := filepath.Join(fixture.records, "changes", "active", "onto-state.yaml")
+			stateBefore := readFile(t, state)
+
+			killMigrationProcess(t, fixture, plan, "state-create")
+			stateDir := filepath.Dir(state)
+			entries, err := os.ReadDir(stateDir)
+			if err != nil {
+				t.Fatal(err)
+			}
+			temporary := ""
+			for _, entry := range entries {
+				if migrationTemporaryFileName(entry.Name()) {
+					temporary = filepath.Join(stateDir, entry.Name())
+					break
+				}
+			}
+			if temporary == "" {
+				t.Fatal("SIGKILL did not leave the creation-stage state temporary")
+			}
+			if data, err := os.ReadFile(temporary); err != nil || len(data) != 0 {
+				t.Fatalf("creation-stage temporary = %q, %v", data, err)
+			}
+			if info, err := os.Lstat(temporary); err != nil || info.Mode().Perm() != 0o600 {
+				t.Fatalf("creation-stage temporary mode = %v, %v", info, err)
+			}
+
+			runID := interruptedRunID(t, fixture.records)
+			result, err := Recover(fixture.config, runID, action, plan.PlanHash)
+			if err != nil {
+				t.Fatalf("Recover after creation-stage SIGKILL: %v", err)
+			}
+			if _, err := os.Lstat(temporary); !errors.Is(err, os.ErrNotExist) {
+				t.Fatalf("creation-stage temporary remains after recovery: %v", err)
+			}
+			if action == "resume" {
+				if result.Status != "complete" {
+					t.Fatalf("resume result = %+v", result)
+				}
+				if _, err := Verify(fixture.config, runID); err != nil {
+					t.Fatalf("Verify after creation-stage SIGKILL resume: %v", err)
+				}
+				return
+			}
+			if result.Status != "restored" {
+				t.Fatalf("restore result = %+v", result)
+			}
+			if got := readFile(t, state); got != stateBefore {
+				t.Fatalf("restored state = %q, want %q", got, stateBefore)
+			}
+		})
+	}
+}
+
+func TestMigrationTempAuthorityPrivateSlotRequiresExpectedPayload(t *testing.T) {
+	authority := migrationTempAuthority{privateSlot: true, mode: 0o600}
+	if authority.matchesPartial(nil, 0o600) || authority.matchesPartial([]byte("arbitrary private bytes"), 0o600) {
+		t.Fatal("private slot without an expected payload accepted arbitrary temporary data")
+	}
+	authority.data = []byte("expected private payload")
+	if !authority.matchesPartial(nil, 0o600) || !authority.matchesPartial([]byte("expected private"), 0o600) {
+		t.Fatal("private slot rejected the empty creation image or expected payload prefix")
+	}
+	if authority.matchesPartial([]byte("altered private payload"), 0o600) || authority.matchesPartial([]byte("expected private"), 0o640) {
+		t.Fatal("private slot accepted altered temporary data or mode")
+	}
+}
+
 func TestMigrationRecovery_StateTemporaryArtifactsAreAuthenticated(t *testing.T) {
 	for _, scenario := range []struct {
-		name    string
-		mutate  func(t *testing.T, stateDir, owned string)
-		wantErr string
+		name         string
+		mutate       func(t *testing.T, stateDir, owned string)
+		wantErr      string
+		wantContents string
+		wantMode     os.FileMode
 	}{
 		{
 			name: "foreign similar name is preserved and blocks recovery",
@@ -1466,11 +1563,42 @@ func TestMigrationRecovery_StateTemporaryArtifactsAreAuthenticated(t *testing.T)
 			name: "altered owned temporary is preserved and blocks recovery",
 			mutate: func(t *testing.T, _ string, owned string) {
 				t.Helper()
-				if err := os.WriteFile(owned, []byte("altered temporary\n"), 0o644); err != nil {
+				if err := os.WriteFile(owned, []byte("altered temporary\n"), 0o600); err != nil {
+					t.Fatal(err)
+				}
+				if err := os.Chmod(owned, 0o600); err != nil {
 					t.Fatal(err)
 				}
 			},
-			wantErr: "foreign or altered temporary file",
+			wantErr:      "foreign or altered temporary file",
+			wantContents: "altered temporary\n",
+			wantMode:     0o600,
+		},
+		{
+			name: "empty creation-stage temporary is retired before resume",
+			mutate: func(t *testing.T, _ string, owned string) {
+				t.Helper()
+				if err := os.Truncate(owned, 0); err != nil {
+					t.Fatal(err)
+				}
+				if err := os.Chmod(owned, 0o600); err != nil {
+					t.Fatal(err)
+				}
+			},
+		},
+		{
+			name: "empty temporary with an altered mode is preserved and blocks recovery",
+			mutate: func(t *testing.T, _ string, owned string) {
+				t.Helper()
+				if err := os.Truncate(owned, 0); err != nil {
+					t.Fatal(err)
+				}
+				if err := os.Chmod(owned, 0o640); err != nil {
+					t.Fatal(err)
+				}
+			},
+			wantErr:  "foreign or altered temporary file",
+			wantMode: 0o640,
 		},
 		{
 			name: "owned partial temporary is retired before resume",
@@ -1519,9 +1647,14 @@ func TestMigrationRecovery_StateTemporaryArtifactsAreAuthenticated(t *testing.T)
 				if err == nil || !strings.Contains(err.Error(), scenario.wantErr) {
 					t.Fatalf("Recover error = %v, want %q", err, scenario.wantErr)
 				}
-				if scenario.wantErr == "foreign or altered temporary file" {
-					if got := readFile(t, owned); got != "altered temporary\n" {
+				if scenario.wantContents != "" {
+					if got := readFile(t, owned); got != scenario.wantContents {
 						t.Fatalf("altered owned temporary was changed: %q", got)
+					}
+				}
+				if scenario.wantMode != 0 {
+					if info, err := os.Lstat(owned); err != nil || info.Mode().Perm() != scenario.wantMode {
+						t.Fatalf("altered owned temporary mode = %v, %v", info, err)
 					}
 				} else if _, err := os.Lstat(filepath.Join(stateDir, ".homonto-migration-ffffffffffffffffffffffffffffffff")); err != nil {
 					t.Fatalf("foreign similar temporary was removed: %v", err)
@@ -1748,6 +1881,98 @@ func TestMigrationRobustness_InterruptedPreparationRecovery(t *testing.T) {
 	}
 }
 
+func TestMigrationRecovery_BootstrapPreparationStatusTemporaryArtifacts(t *testing.T) {
+	prepare := func(t *testing.T) (*migrationFixture, Plan, string, preparationIntent, string, []byte) {
+		t.Helper()
+		fixture := newMigrationFixture(t, false, false)
+		plan, err := Build(fixture.config, fixture.manifest)
+		if err != nil {
+			t.Fatal(err)
+		}
+		layout, err := workspace.LoadMigration(fixture.config)
+		if err != nil {
+			t.Fatal(err)
+		}
+		const runID = "migration-12345678"
+		intent := preparationIntent{
+			Version:      migrationPreparationIntentVersion,
+			RunID:        runID,
+			Phase:        "preparing",
+			PlanHash:     plan.PlanHash,
+			ConfigPath:   layout.ConfigPath,
+			ConfigRoot:   layout.ConfigRoot,
+			Workflow:     layout.WorkflowRoot,
+			ManifestPath: plan.Manifest.Path,
+			Owner:        strings.Repeat("a", 32),
+			Guardian:     migrationGuardianIdentity,
+		}
+		if err := intent.validate(); err != nil {
+			t.Fatal(err)
+		}
+		statusPath, err := ensurePrivateJournalDirectory(fixture.records, runID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		data, err := journalStatusData(intent)
+		if err != nil {
+			t.Fatal(err)
+		}
+		authority, err := preparationStatusTempAuthority(intent, data)
+		if err != nil {
+			t.Fatal(err)
+		}
+		name, err := authority.name()
+		if err != nil {
+			t.Fatal(err)
+		}
+		return fixture, plan, runID, intent, filepath.Join(filepath.Dir(statusPath), name), data
+	}
+
+	t.Run("foreign exact name remains and blocks recovery", func(t *testing.T) {
+		fixture, plan, runID, _, temporary, _ := prepare(t)
+		foreign := []byte("foreign bootstrap temporary\n")
+		if err := os.WriteFile(temporary, foreign, 0o600); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := Recover(fixture.config, runID, "resume", plan.PlanHash); err == nil || !strings.Contains(err.Error(), "recovery conflict") {
+			t.Fatalf("Recover with foreign bootstrap temporary = %v", err)
+		}
+		if data, err := os.ReadFile(temporary); err != nil || !bytes.Equal(data, foreign) {
+			t.Fatalf("foreign bootstrap temporary changed: %q, %v", data, err)
+		}
+	})
+
+	t.Run("partial exact name remains and blocks recovery", func(t *testing.T) {
+		fixture, plan, runID, _, temporary, _ := prepare(t)
+		if err := os.WriteFile(temporary, nil, 0o600); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := Recover(fixture.config, runID, "restore", plan.PlanHash); err == nil || !strings.Contains(err.Error(), "recovery conflict") {
+			t.Fatalf("Recover with partial bootstrap temporary = %v", err)
+		}
+		if data, err := os.ReadFile(temporary); err != nil || len(data) != 0 {
+			t.Fatalf("partial bootstrap temporary changed: %q, %v", data, err)
+		}
+	})
+
+	t.Run("canonical status temporary is recovered", func(t *testing.T) {
+		fixture, plan, runID, _, temporary, data := prepare(t)
+		if err := os.WriteFile(temporary, data, 0o600); err != nil {
+			t.Fatal(err)
+		}
+		result, err := Recover(fixture.config, runID, "restore", plan.PlanHash)
+		if err != nil || result.Status != "preparation-cleared" {
+			t.Fatalf("Recover canonical bootstrap temporary = %+v, %v", result, err)
+		}
+		if _, err := os.Lstat(temporary); !errors.Is(err, os.ErrNotExist) {
+			t.Fatalf("canonical bootstrap temporary remains: %v", err)
+		}
+		if err := migrationrecord.ValidateBarrier(fixture.records); err != nil {
+			t.Fatalf("migration barrier after bootstrap recovery: %v", err)
+		}
+	})
+}
+
 func TestMigrationRobustness_PreparationTempRecovery(t *testing.T) {
 	prepare := func(t *testing.T) (*migrationFixture, Plan, string, preparationIntent, string) {
 		t.Helper()
@@ -1780,7 +2005,7 @@ func TestMigrationRobustness_PreparationTempRecovery(t *testing.T) {
 		return fixture, plan, runID, intent, bundlePath
 	}
 
-	t.Run("authenticated temporary is removed before resume", func(t *testing.T) {
+	t.Run("arbitrary private-slot data is preserved and blocks recovery", func(t *testing.T) {
 		fixture, plan, runID, intent, bundlePath := prepare(t)
 		authority := privateRecoveryTempAuthority(intent, journalKindRecoveryBundle, bundlePath, "publish", nil)
 		name, err := authority.name()
@@ -1792,14 +2017,14 @@ func TestMigrationRobustness_PreparationTempRecovery(t *testing.T) {
 			t.Fatal(err)
 		}
 		result, err := Recover(fixture.config, runID, "resume", plan.PlanHash)
-		if err != nil || result.Status != "complete" {
-			t.Fatalf("Recover after preparation temp = %+v, %v", result, err)
+		if err == nil || result.Status != "" {
+			t.Fatalf("Recover with arbitrary private-slot temp = %+v, %v", result, err)
 		}
-		if _, err := os.Lstat(temp); !os.IsNotExist(err) {
-			t.Fatalf("authenticated preparation temp remains after recovery: %v", err)
+		if got := readFile(t, temp); got != "partial private write\n" {
+			t.Fatalf("arbitrary private-slot temp was changed: %q", got)
 		}
-		if _, err := Verify(fixture.config, runID); err != nil {
-			t.Fatalf("Verify after preparation temp recovery: %v", err)
+		if err := migrationrecord.ValidateBarrier(fixture.records); err == nil || !strings.Contains(err.Error(), "workspace migration pending (preparing)") {
+			t.Fatalf("migration barrier after arbitrary private-slot temp = %v", err)
 		}
 	})
 
@@ -1819,6 +2044,52 @@ func TestMigrationRobustness_PreparationTempRecovery(t *testing.T) {
 			t.Fatalf("migration barrier after unrecognized preparation temp = %v", err)
 		}
 	})
+}
+
+func TestMigrationRecovery_RejectsWrongPlanHashBeforeTemporaryCleanup(t *testing.T) {
+	fixture := newMigrationFixture(t, false, false)
+	plan, err := Build(fixture.config, fixture.manifest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	stateDir := filepath.Join(fixture.records, "changes", "active")
+	killMigrationProcess(t, fixture, plan, "state")
+	temporary := ""
+	entries, err := os.ReadDir(stateDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, entry := range entries {
+		if migrationTemporaryFileName(entry.Name()) {
+			temporary = filepath.Join(stateDir, entry.Name())
+			break
+		}
+	}
+	if temporary == "" {
+		t.Fatal("SIGKILL did not leave a synced state temporary")
+	}
+	before, err := os.ReadFile(temporary)
+	if err != nil {
+		t.Fatal(err)
+	}
+	info, err := os.Lstat(temporary)
+	if err != nil {
+		t.Fatal(err)
+	}
+	wrongPlanHash := strings.Repeat("f", 64)
+	if wrongPlanHash == plan.PlanHash {
+		wrongPlanHash = strings.Repeat("e", 64)
+	}
+	runID := interruptedRunID(t, fixture.records)
+	if _, err := Recover(fixture.config, runID, "resume", wrongPlanHash); err == nil || !strings.Contains(err.Error(), "reviewed plan hash") {
+		t.Fatalf("Recover with wrong plan hash = %v", err)
+	}
+	if data, err := os.ReadFile(temporary); err != nil || !bytes.Equal(data, before) {
+		t.Fatalf("synced temporary changed after rejected recovery: %q, %v", data, err)
+	}
+	if after, err := os.Lstat(temporary); err != nil || after.Mode().Perm() != info.Mode().Perm() {
+		t.Fatalf("synced temporary mode after rejected recovery = %v, %v", after, err)
+	}
 }
 
 func TestRecordsIndexMatchesWorktreeRejectsStagedModeConflict(t *testing.T) {

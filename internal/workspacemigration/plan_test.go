@@ -173,6 +173,8 @@ func TestBuildPreparesExplicitTransformsAndPreservesRetiredBytes(t *testing.T) {
 	evidencePath := filepath.Join(f.records, "changes", "active", ".onto", "handoff.md")
 	writeFile(t, taskPath, "# unchanged task markdown\n")
 	writeFile(t, evidencePath, "private handoff evidence\n")
+	runGit(t, f.records, "add", "changes/active/onto-state.yaml", "changes/active/tasks.md", "changes/active/.onto/handoff.md")
+	runGit(t, f.records, "commit", "-m", "prepare records inventory")
 	retiredPath := filepath.Join(f.records, "changes", "active-retired", "onto-state.yaml")
 	retiredBefore := []byte(readFile(t, retiredPath))
 	before := migrationSnapshot(t, f)
@@ -314,6 +316,8 @@ func TestBuildAcceptsInstalledProjectionAndNormalChangeDocuments(t *testing.T) {
 	}
 	writeFile(t, filepath.Join(f.records, "changes", "README.md"), "# Changes\n")
 	writeFile(t, filepath.Join(f.records, "changes", "templates", "README.md"), "# Template\n")
+	runGit(t, f.records, "add", "changes/README.md", "changes/templates/README.md")
+	runGit(t, f.records, "commit", "-m", "add record documents")
 	before := migrationSnapshot(t, f)
 
 	if _, err := workspace.Load(f.config); err == nil {
@@ -590,6 +594,8 @@ func TestBuildRetainsUnknownStateFieldMetadata(t *testing.T) {
 	f := newMigrationFixture(t, false, false)
 	state := filepath.Join(f.records, "changes", "active", "onto-state.yaml")
 	writeFile(t, state, readFile(t, state)+"future_metadata:\n  retained: true\n")
+	runGit(t, f.records, "add", "changes/active/onto-state.yaml")
+	runGit(t, f.records, "commit", "-m", "add unknown state metadata")
 	plan, err := Build(f.config, f.manifest)
 	if err != nil {
 		t.Fatalf("Build: %v\nblockers: %+v", err, plan.Blockers)
@@ -606,6 +612,8 @@ func TestBuildRetainsLegacyScalarBasesWithoutTreatingThemAsSourceAnchors(t *test
 	f := newMigrationFixture(t, false, false)
 	state := filepath.Join(f.records, "changes", "active", "onto-state.yaml")
 	writeFile(t, state, readFile(t, state)+fmt.Sprintf("base_ref: %s\nbase_branch: main\n", f.bases["app"]))
+	runGit(t, f.records, "add", "changes/active/onto-state.yaml")
+	runGit(t, f.records, "commit", "-m", "add legacy scalar bases")
 
 	plan, err := Build(f.config, f.manifest)
 	if err != nil {
@@ -755,6 +763,62 @@ func TestBuildInventoriesOptionalExecutionDirtWithoutChangingItsIndex(t *testing
 	}
 	if after := migrationSnapshot(t, f); !reflect.DeepEqual(before, after) {
 		t.Fatalf("execution inspection changed fixture\nbefore: %#v\nafter:  %#v", before, after)
+	}
+}
+
+func TestBuildBlocksDirtyRecordsAndRetainsInventory(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		mutate func(*testing.T, *migrationFixture)
+		dirt   Dirt
+	}{
+		{
+			name: "tracked",
+			mutate: func(t *testing.T, f *migrationFixture) {
+				t.Helper()
+				replaceFile(t, filepath.Join(f.records, "changes", "active", "onto-state.yaml"), "phase: open", "phase: build")
+			},
+			dirt: Dirt{Tracked: 1},
+		},
+		{
+			name: "untracked",
+			mutate: func(t *testing.T, f *migrationFixture) {
+				t.Helper()
+				writeFile(t, filepath.Join(f.records, "changes", "active", "operator-note.md"), "untracked operator note\n")
+			},
+			dirt: Dirt{Untracked: 1},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			f := newMigrationFixture(t, false)
+			tc.mutate(t, f)
+			before := migrationSnapshot(t, f)
+
+			plan, err := Build(f.config, f.manifest)
+			if !errors.Is(err, ErrBlocked) || plan.Status != "blocked" || !hasBlocker(plan, "records_dirty") {
+				t.Fatalf("Build dirty records = %v, status=%q blockers=%+v", err, plan.Status, plan.Blockers)
+			}
+			if plan.RecordsGit.Path != f.records || plan.RecordsGit.Head == "" || plan.RecordsGit.Dirt.Tracked != tc.dirt.Tracked || plan.RecordsGit.Dirt.Untracked != tc.dirt.Untracked || len(plan.Files) == 0 || len(plan.Records) == 0 || len(plan.Prospective.Operations) == 0 {
+				t.Fatalf("blocked dirty-record inventory = %+v", plan)
+			}
+			if after := migrationSnapshot(t, f); !reflect.DeepEqual(before, after) {
+				t.Fatalf("dirty-record planning changed fixture\nbefore: %#v\nafter: %#v", before, after)
+			}
+		})
+	}
+}
+
+func TestBuildDoesNotRetainProspectiveForMixedBlockers(t *testing.T) {
+	f := newMigrationFixture(t, false)
+	replaceFile(t, filepath.Join(f.records, "changes", "active", "onto-state.yaml"), "phase: open", "phase: build")
+	writeFile(t, f.manifest, "{}\n")
+
+	plan, err := Build(f.config, f.manifest)
+	if !errors.Is(err, ErrBlocked) || !hasBlocker(plan, "records_dirty") || !hasBlocker(plan, "manifest_invalid") {
+		t.Fatalf("Build mixed blockers = %v, blockers=%+v", err, plan.Blockers)
+	}
+	if len(plan.Prospective.Operations) != 0 || len(plan.Prospective.Commits) != 0 {
+		t.Fatalf("mixed-blocker plan exposed prospective authority: %+v", plan.Prospective)
 	}
 }
 
@@ -950,9 +1014,26 @@ func TestPlanHashBindsConfigBaseAndRecordBytes(t *testing.T) {
 
 	state := filepath.Join(f.records, "changes", "active", "onto-state.yaml")
 	replaceFile(t, state, "phase: build", "phase: design")
+	runGit(t, f.records, "add", "changes/active/onto-state.yaml")
+	runGit(t, f.records, "commit", "-m", "change records state")
 	afterRecord, err := Build(f.config, f.manifest)
 	if err != nil || afterRecord.PlanHash == afterBase.PlanHash {
 		t.Fatalf("record update did not change plan hash: %q / %q (%v)", afterBase.PlanHash, afterRecord.PlanHash, err)
+	}
+	withoutStateBytes := afterRecord
+	withoutStateBytes.Files = append([]FileFingerprint(nil), afterRecord.Files...)
+	for i := range withoutStateBytes.Files {
+		if withoutStateBytes.Files[i].Path != state {
+			continue
+		}
+		withoutStateBytes.Files[i].SHA256 = strings.Repeat("0", 64)
+		if withoutStateBytes.Files[i].SHA256 == afterRecord.Files[i].SHA256 {
+			withoutStateBytes.Files[i].SHA256 = strings.Repeat("f", 64)
+		}
+		break
+	}
+	if planHash(withoutStateBytes) == afterRecord.PlanHash {
+		t.Fatal("state file fingerprint does not bind the plan hash")
 	}
 }
 

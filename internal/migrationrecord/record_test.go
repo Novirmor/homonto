@@ -94,6 +94,22 @@ func TestPreparationJournalStatusBlocksOrdinaryLoaders(t *testing.T) {
 	}
 }
 
+func TestParseJournalStatusValidatesUnpublishedStatusImages(t *testing.T) {
+	root := t.TempDir()
+	const runID = "migration-12345678"
+	data, err := json.Marshal(preparationJournalStatus(root, runID))
+	if err != nil {
+		t.Fatal(err)
+	}
+	status, err := ParseJournalStatus(append(data, '\n'), root, runID)
+	if err != nil || status.Phase != "preparing" || status.Preparation == nil || status.Preparation.WorkflowRoot != root {
+		t.Fatalf("ParseJournalStatus = %+v, %v", status, err)
+	}
+	if _, err := ParseJournalStatus([]byte(`{"version":2,"version":2}`), root, runID); err == nil || !strings.Contains(err.Error(), "malformed") {
+		t.Fatalf("ParseJournalStatus accepted duplicate fields: %v", err)
+	}
+}
+
 func TestIsPreparationOrphanRejectsPreparingStatusAndTemporaryFile(t *testing.T) {
 	root := t.TempDir()
 	const runID = "migration-12345678"

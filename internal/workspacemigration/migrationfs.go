@@ -48,6 +48,11 @@ const migrationTempPrefix = ".homonto-migration-"
 // Production leaves it as a no-op.
 var migrationAfterParentPin = func(string, string) error { return nil }
 
+// migrationAfterTemporaryCreate is a deterministic test seam for the interval
+// after a temporary file is created at its private creation mode and before it
+// is chmodded or populated. Production leaves it as a no-op.
+var migrationAfterTemporaryCreate = func(string) error { return nil }
+
 // migrationRegularExpectation is the pre/post image already classified by the
 // journal executor. It is passed back into the descriptor-pinned mutation so a
 // same-inode, in-place edit cannot be overwritten merely because its pathname
@@ -133,12 +138,23 @@ func (authority migrationTempAuthority) matchesWrite(path string, data []byte, m
 }
 
 func (authority migrationTempAuthority) matchesPartial(data []byte, mode os.FileMode) bool {
-	if authority.privateSlot {
-		// Private recovery slots are reserved by the durable run/owner identity
-		// before creation. A complete candidate is validated by its caller; a
-		// partial candidate has no independently parseable image yet and is
-		// recoverable only under the migration's locked-writer quiescence.
-		return mode.Perm() == 0o600
+	if authority.bootstrap {
+		// The bootstrap name does not include an owner or image digest. Until a
+		// full canonical status image proves the run identity, partial bytes
+		// cannot authorize cleanup.
+		return bytes.Equal(data, authority.data) && mode.Perm() == authority.mode.Perm()
+	}
+	if authority.privateSlot && len(authority.data) == 0 {
+		// A durable run/owner identity names the slot, but does not authenticate
+		// arbitrary bytes inside it. Cleanup callers without the expected payload
+		// must preserve the artifact for operator review rather than treating a
+		// private 0600 mode as sufficient proof of ownership.
+		return false
+	}
+	// An authority with expected replacement bytes may reclaim only the empty
+	// 0600 creation image or a prefix at the expected mode.
+	if len(data) == 0 && mode.Perm() == 0o600 {
+		return true
 	}
 	if len(data) > len(authority.data) || !bytes.Equal(data, authority.data[:len(data)]) {
 		return false
@@ -629,6 +645,9 @@ func writeMigrationRegularWithAuthority(root, path string, data []byte, mode os.
 			_ = migrationFS.remove(parent, tempName)
 		}
 	}()
+	if err := migrationAfterTemporaryCreate(path); err != nil {
+		return err
+	}
 	chmodErr := temp.Chmod(mode)
 	writeErr := error(nil)
 	if chmodErr == nil {

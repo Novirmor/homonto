@@ -210,6 +210,12 @@ func LoadJournalStatus(root, runID string) (JournalStatus, error) {
 	if err != nil {
 		return JournalStatus{}, fmt.Errorf("migration record: reading journal status: %w", err)
 	}
+	return ParseJournalStatus(data, root, runID)
+}
+
+// ParseJournalStatus validates an in-memory private-journal envelope before
+// recovery uses a status image that has not yet been published at journal.json.
+func ParseJournalStatus(data []byte, root, runID string) (JournalStatus, error) {
 	if err := rejectDuplicateJSONKeys(data); err != nil {
 		return JournalStatus{}, fmt.Errorf("migration record: journal status is malformed or unsupported")
 	}

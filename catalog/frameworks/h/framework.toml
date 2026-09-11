@@ -1,5 +1,5 @@
 name = "h"
-version = "0.3.0"
+version = "0.4.0"
 description = "GitHub intake workflows over onto and to — spike, resolve, review, continue"
 
 # The h bundle drives both workflow frameworks, so it hard-depends on them:

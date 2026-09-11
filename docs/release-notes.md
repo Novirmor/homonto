@@ -15,6 +15,26 @@ bookkeeper) — for every supported OS/arch as separate archives under one
 `SHA256SUMS`. `onto` and `to` each require `homonto` to have installed their
 framework first (`[frameworks.onto]` / `[frameworks.to]` + `homonto apply`).
 
+### New in v0.26.0 — autonomous coordinator permissions
+
+- The dedicated `/onto-bypass` and `/to-bypass` commands now prompt the
+  coordinator for confirmation instead of being unconditionally denied. They
+  remain unavailable to implementers and undiscoverable to ordinary workflow
+  skills.
+- The coordinator can perform all local Git operations without a tool prompt;
+  `git push` still asks. Implementers retain destructive-command prompts.
+- When `[tooling] shell_proxy = "rtk"`, the coordinator receives an explicit
+  `rtk *` permission. Recognized publication, workflow-bypass, and destructive
+  non-Git commands still prompt. See [ADR 0055](adr/0055-require-confirmation-for-explicit-workflow-bypasses.md),
+  [ADR 0056](adr/0056-allow-coordinator-local-git-operations.md), and
+  [ADR 0057](adr/0057-allow-coordinator-rtk-commands.md).
+
+### Upgrading to v0.26.0
+
+Install all three binaries at v0.26.0, then run `homonto update` (or `homonto
+apply`) and restart OpenCode. Reapplying updates the coordinator's rendered
+permission map; no workflow records migrate.
+
 ### New in v0.25.0 — trusted workspace shell by default
 
 - The coordinator and implementers now default to trusted-workspace shell

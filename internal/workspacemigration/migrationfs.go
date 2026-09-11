@@ -24,6 +24,7 @@ import (
 type migrationFSOps struct {
 	mkdir    func(*os.Root, string, os.FileMode) error
 	openFile func(*os.Root, string, int, os.FileMode) (*os.File, error)
+	symlink  func(*os.Root, string, string) error
 	rename   func(*os.Root, string, string) error
 	remove   func(*os.Root, string) error
 	sync     func(string, string, *os.File) error
@@ -34,9 +35,10 @@ var defaultMigrationFSOps = migrationFSOps{
 	openFile: func(root *os.Root, name string, flag int, mode os.FileMode) (*os.File, error) {
 		return root.OpenFile(name, flag, mode)
 	},
-	rename: func(root *os.Root, oldName, newName string) error { return root.Rename(oldName, newName) },
-	remove: func(root *os.Root, name string) error { return root.Remove(name) },
-	sync:   func(_ string, _ string, file *os.File) error { return file.Sync() },
+	symlink: func(root *os.Root, target, name string) error { return root.Symlink(target, name) },
+	rename:  func(root *os.Root, oldName, newName string) error { return root.Rename(oldName, newName) },
+	remove:  func(root *os.Root, name string) error { return root.Remove(name) },
+	sync:    func(_ string, _ string, file *os.File) error { return file.Sync() },
 }
 
 var migrationFS = defaultMigrationFSOps
@@ -87,6 +89,9 @@ type migrationTempAuthority struct {
 	mode        os.FileMode
 	privateSlot bool
 	bootstrap   bool
+
+	recoveryDescriptor string
+	syncKind           string
 }
 
 func (authority migrationTempAuthority) name() (string, error) {
@@ -103,7 +108,10 @@ func (authority migrationTempAuthority) name() (string, error) {
 		return "", fmt.Errorf("workspace migration: invalid temporary-file authority")
 	}
 	if authority.privateSlot {
-		return migrationTempPrefix + migrationTempToken("private-slot", authority.runID, authority.owner, authority.scope, authority.kind, authority.target, authority.direction), nil
+		if !validDigest(authority.recoveryDescriptor) {
+			return "", fmt.Errorf("workspace migration: invalid private recovery payload authority")
+		}
+		return migrationTempPrefix + migrationTempToken("private-payload-v3", authority.runID, authority.owner, authority.scope, authority.kind, authority.target, authority.direction, authority.recoveryDescriptor), nil
 	}
 	return migrationTempPrefix + migrationTempToken(
 		"exact-image",
@@ -409,11 +417,15 @@ func migrationPinnedParentStillCurrent(root, parentPath string, pinned *os.Root)
 }
 
 func syncPinnedMigrationDirectory(parent *os.Root, path string) error {
+	return syncPinnedMigrationDirectoryKind(parent, path, "directory")
+}
+
+func syncPinnedMigrationDirectoryKind(parent *os.Root, path, kind string) error {
 	dir, err := parent.Open(".")
 	if err != nil {
 		return err
 	}
-	syncErr := migrationFS.sync("directory", path, dir)
+	syncErr := migrationFS.sync(kind, path, dir)
 	closeErr := dir.Close()
 	return errors.Join(syncErr, closeErr)
 }
@@ -655,7 +667,11 @@ func writeMigrationRegularWithAuthority(root, path string, data []byte, mode os.
 	}
 	syncErr := error(nil)
 	if chmodErr == nil && writeErr == nil {
-		syncErr = migrationFS.sync("file", path, temp)
+		syncKind := "file"
+		if authority != nil && authority.syncKind != "" {
+			syncKind = authority.syncKind
+		}
+		syncErr = migrationFS.sync(syncKind, path, temp)
 	}
 	closeErr := temp.Close()
 	if err := errors.Join(chmodErr, writeErr, syncErr, closeErr); err != nil {

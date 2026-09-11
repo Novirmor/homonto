@@ -50,10 +50,18 @@ const (
 	journalKindCompletion               = "completion"
 	journalKindRecoveryRunDirectory     = "recovery_run_directory"
 	journalKindRecoveryPrivateDirectory = "recovery_private_directory"
+	journalKindRecoveryIdentity         = "recovery_identity"
+	journalKindRecoveryStoreDirectory   = "recovery_store_directory"
+	journalKindRecoveryBlobDirectory    = "recovery_blob_directory"
+	journalKindRecoveryDescriptorDir    = "recovery_descriptor_directory"
+	journalKindRecoveryDescriptor       = "recovery_payload_descriptor"
+	journalKindRecoveryBlob             = "recovery_payload_blob"
+	journalKindRecoveryRetired          = "recovery_retired"
 	journalKindRecoveryStatus           = "recovery_status"
 	journalKindRecoveryJournal          = "recovery_journal"
 	journalKindRecoveryIntent           = "recovery_intent"
 	journalKindRecoveryBundle           = "recovery_bundle"
+	journalKindRecoveryCompletion       = "recovery_completion"
 	journalKindIndexRestore             = "restore_logical_index"
 )
 
@@ -398,6 +406,10 @@ func captureRecordsGitBackup(root string, intent preparationIntent, planned Reco
 	if _, err := ensurePrivateJournalDirectory(root, intent.RunID); err != nil {
 		return recordsGitBackup{}, err
 	}
+	identity, err := loadRecoveryIdentity(root, intent.RunID)
+	if err != nil || !recoveryIdentityMatchesIntent(identity, intent) {
+		return recordsGitBackup{}, fmt.Errorf("workspace migration: durable recovery identity is missing or differs from private backup")
+	}
 	bundle, bundleMode, exists, err := readMigrationOptionalRegular(root, backup.BundlePath)
 	if err != nil {
 		return recordsGitBackup{}, err
@@ -405,6 +417,10 @@ func captureRecordsGitBackup(root string, intent preparationIntent, planned Reco
 	if exists {
 		if bundleMode.Perm() != 0o600 {
 			return recordsGitBackup{}, fmt.Errorf("workspace migration: private records Git backup is not a 0600 regular file")
+		}
+		descriptor, expected, found, err := loadPrivateRecoveryPayload(identity, journalKindRecoveryBundle, backup.BundlePath)
+		if err != nil || !found || descriptor.Target != backup.BundlePath || !bytes.Equal(bundle, expected) || bundleMode.Perm() != os.FileMode(descriptor.Mode).Perm() {
+			return recordsGitBackup{}, fmt.Errorf("workspace migration: private records Git backup differs from durable recovery payload")
 		}
 		backup.BundleSHA256 = migrationDigest(bundle)
 		if err := verifyRecordsGitBackup(root, backup); err != nil {
@@ -416,7 +432,7 @@ func captureRecordsGitBackup(root string, intent preparationIntent, planned Reco
 	if err != nil {
 		return recordsGitBackup{}, fmt.Errorf("workspace migration: create records Git backup: %w", err)
 	}
-	if err := writeMigrationRegularAuthorized(root, backup.BundlePath, bundle, 0o600, nil, privateRecoveryTempAuthority(intent, journalKindRecoveryBundle, backup.BundlePath, "publish", bundle)); err != nil {
+	if err := writePrivateRecoveryPayload(identity, journalKindRecoveryBundle, backup.BundlePath, bundle); err != nil {
 		return recordsGitBackup{}, err
 	}
 	backup.BundleSHA256 = migrationDigest(bundle)
@@ -453,13 +469,29 @@ func verifyRecordsGitBackup(root string, backup recordsGitBackup) error {
 	if err != nil || !exists || mode.Perm() != 0o600 {
 		return fmt.Errorf("workspace migration: private records Git backup is not a 0600 regular file")
 	}
-	if migrationDigest(data) != backup.BundleSHA256 || migrationDigest(backup.IndexData) != backup.IndexSHA256 {
+	runID := filepath.Base(filepath.Dir(filepath.Dir(backup.BundlePath)))
+	if migrationrecord.SafeRunID(runID) {
+		identity, identityErr := loadRecoveryIdentity(root, runID)
+		if identityErr == nil {
+			descriptor, expected, found, err := loadPrivateRecoveryPayload(identity, journalKindRecoveryBundle, backup.BundlePath)
+			if err != nil || !found || descriptor.Target != backup.BundlePath || mode.Perm() != os.FileMode(descriptor.Mode).Perm() || !bytes.Equal(data, expected) {
+				return fmt.Errorf("workspace migration: private records Git backup differs from durable recovery payload")
+			}
+		} else if !errors.Is(identityErr, os.ErrNotExist) {
+			return identityErr
+		}
+	}
+	return verifyRecordsGitBackupData(root, backup, data)
+}
+
+func verifyRecordsGitBackupData(root string, backup recordsGitBackup, bundle []byte) error {
+	if migrationDigest(bundle) != backup.BundleSHA256 || migrationDigest(backup.IndexData) != backup.IndexSHA256 {
 		return fmt.Errorf("workspace migration: private records Git backup digest differs")
 	}
-	if _, err := migrationGitInput(root, data, "bundle", "verify", "-"); err != nil {
+	if _, err := migrationGitInput(root, bundle, "bundle", "verify", "-"); err != nil {
 		return fmt.Errorf("workspace migration: private records Git backup verification failed: %w", err)
 	}
-	data, err = migrationGitInput(root, data, "bundle", "list-heads", "-")
+	data, err := migrationGitInput(root, bundle, "bundle", "list-heads", "-")
 	if err != nil {
 		return fmt.Errorf("workspace migration: private records Git backup heads are unreadable: %w", err)
 	}
@@ -512,7 +544,11 @@ func saveJournal(j privateJournal) error {
 	if err != nil {
 		return err
 	}
-	if err := writeMigrationRegularAuthorized(j.Workflow, path, data, 0o600, nil, privateRecoveryTempAuthority(intent, journalKindRecoveryJournal, path, "publish", data)); err != nil {
+	identity, err := loadRecoveryIdentity(j.Workflow, j.RunID)
+	if err != nil || !recoveryIdentityMatchesIntent(identity, intent) {
+		return fmt.Errorf("workspace migration: durable recovery identity is missing or differs from private journal")
+	}
+	if err := writePrivateRecoveryPayload(identity, journalKindRecoveryJournal, path, data); err != nil {
 		return fmt.Errorf("workspace migration: write private journal: %w", err)
 	}
 	intentPath, err := preparationIntentPath(j.Workflow, j.RunID)
@@ -542,6 +578,15 @@ func loadJournal(root, runID string) (privateJournal, error) {
 	}
 	if status, err := migrationrecord.LoadJournalStatus(root, runID); err == nil && status.Phase == "preparing" {
 		return privateJournal{}, os.ErrNotExist
+	}
+	identity, identityErr := loadRecoveryIdentity(root, runID)
+	if identityErr == nil {
+		authorized, err := recoveryPayloadAuthorizesData(identity, journalKindRecoveryJournal, path, data, mode)
+		if err != nil || !authorized {
+			return privateJournal{}, fmt.Errorf("workspace migration: private journal differs from durable recovery payload")
+		}
+	} else if !errors.Is(identityErr, os.ErrNotExist) {
+		return privateJournal{}, identityErr
 	}
 	return parsePrivateJournal(root, runID, path, data, mode)
 }
@@ -616,9 +661,6 @@ func saveJournalStatus(intent preparationIntent) error {
 	if err := intent.validate(); err != nil {
 		return fmt.Errorf("workspace migration: invalid journal status identity")
 	}
-	if _, err := ensurePrivateJournalDirectory(intent.Workflow, intent.RunID); err != nil {
-		return err
-	}
 	data, err := journalStatusData(intent)
 	if err != nil {
 		return err
@@ -627,11 +669,11 @@ func saveJournalStatus(intent preparationIntent) error {
 	if err != nil {
 		return err
 	}
-	authority, err := preparationStatusTempAuthority(intent, data)
-	if err != nil {
-		return err
+	identity, err := loadRecoveryIdentity(intent.Workflow, intent.RunID)
+	if err != nil || !recoveryIdentityMatchesIntent(identity, intent) {
+		return fmt.Errorf("workspace migration: durable recovery identity is missing or differs from preparation status")
 	}
-	return writeMigrationRegularAuthorized(intent.Workflow, path, data, 0o600, nil, authority)
+	return writePrivateRecoveryPayload(identity, journalKindRecoveryStatus, path, data)
 }
 
 func newPreparationIntent(layout workspace.Layout, plan Plan) (preparationIntent, error) {
@@ -669,7 +711,26 @@ func preparationIntentFromStatus(root, runID string) (preparationIntent, error) 
 	if err != nil {
 		return preparationIntent{}, os.ErrNotExist
 	}
-	return preparationIntentFromJournalStatus(status, root, runID)
+	intent, err := preparationIntentFromJournalStatus(status, root, runID)
+	if err != nil {
+		return preparationIntent{}, err
+	}
+	identity, identityErr := loadRecoveryIdentity(root, runID)
+	if identityErr == nil {
+		path, err := journalStatusPath(root, runID)
+		if err != nil {
+			return preparationIntent{}, err
+		}
+		descriptor, expected, found, err := loadPrivateRecoveryPayload(identity, journalKindRecoveryStatus, path)
+		data, dataErr := journalStatusData(intent)
+		actual, mode, exists, actualErr := readMigrationOptionalRegular(root, path)
+		if err != nil || dataErr != nil || actualErr != nil || !found || !exists || descriptor.Target != path || !bytes.Equal(expected, data) || mode.Perm() != os.FileMode(descriptor.Mode).Perm() || !bytes.Equal(actual, expected) {
+			return preparationIntent{}, fmt.Errorf("workspace migration: preparation status differs from durable recovery payload")
+		}
+	} else if !errors.Is(identityErr, os.ErrNotExist) {
+		return preparationIntent{}, identityErr
+	}
+	return intent, nil
 }
 
 func preparationIntentFromJournalStatus(status migrationrecord.JournalStatus, root, runID string) (preparationIntent, error) {
@@ -716,21 +777,6 @@ func preparationIntentData(intent preparationIntent) ([]byte, error) {
 		return nil, err
 	}
 	return append(data, '\n'), nil
-}
-
-func privateRecoveryTempAuthority(intent preparationIntent, kind, target, direction string, data []byte) migrationTempAuthority {
-	return migrationTempAuthority{
-		root:        intent.Workflow,
-		runID:       intent.RunID,
-		owner:       intent.Owner,
-		scope:       journalScopeRecovery,
-		kind:        kind,
-		target:      target,
-		direction:   direction,
-		data:        append([]byte(nil), data...),
-		mode:        0o600,
-		privateSlot: true,
-	}
 }
 
 func preparationStatusTempAuthority(intent preparationIntent, data []byte) (migrationTempAuthority, error) {
@@ -839,93 +885,150 @@ func journalPreparationIntent(j privateJournal) (preparationIntent, error) {
 }
 
 func cleanupPrivateRecoveryTemporaryArtifacts(layout workspace.Layout, intent preparationIntent, current *privateJournal) error {
-	journalPath, err := journalPath(intent.Workflow, intent.RunID)
-	if err != nil {
+	identity, err := loadRecoveryIdentity(intent.Workflow, intent.RunID)
+	if err != nil || !recoveryIdentityMatchesIntent(identity, intent) {
+		return fmt.Errorf("workspace migration: durable recovery identity is missing or differs from preparation state")
+	}
+	if err := validateRecoveryIdentityLayout(identity, layout); err != nil {
 		return err
 	}
-	intentPath, err := preparationIntentPath(intent.Workflow, intent.RunID)
-	if err != nil {
+	if err := recoverPendingRecoveryDescriptorStages(identity); err != nil {
 		return err
 	}
-	bundlePath, err := recordsGitBackupPath(intent.Workflow, intent.RunID)
-	if err != nil {
+	if err := validateRecoveryPayloadStore(identity, true); err != nil {
 		return err
 	}
-	bundle, err := privateRecoveryBundleTemporaryData(intent, current, bundlePath)
-	if err != nil {
+	if err := ensureNoUnexpectedPrivateRecoveryTemporary(identity); err != nil {
 		return err
 	}
-	if err := cleanupPrivateJournalTemporaryArtifact(layout, intent, current, journalPath); err != nil {
+	if err := reconcilePreparationStatusPayload(identity, intent, current == nil); err != nil {
 		return err
 	}
-	if err := recoverPreparationIntentTemporaryArtifact(intent, intentPath); err != nil {
+	if err := reconcilePreparationIntentPayload(identity, intent, current == nil); err != nil {
 		return err
 	}
-	return removeMigrationAuthorizedTemp(privateRecoveryTempAuthority(intent, journalKindRecoveryBundle, bundlePath, "publish", bundle))
+	if err := cleanupPrivateRecoveryBundleTemporaryArtifact(layout, identity, intent, current); err != nil {
+		return err
+	}
+	if err := cleanupPrivateJournalTemporaryArtifact(layout, identity, intent, current); err != nil {
+		return err
+	}
+	return cleanupPrivateRecoveryCompletionPayload(identity, current)
 }
 
-func recoverPreparationIntentTemporaryArtifact(intent preparationIntent, intentPath string) error {
+func privateRecoveryPayloadConflict(purpose string) error {
+	return fmt.Errorf("workspace migration: recovery conflict: private %s payload is not recognized", purpose)
+}
+
+func reconcilePrivateRecoveryPayload(identity recoveryIdentity, purpose, target string, expected []byte, publish bool) error {
+	descriptor, data, exists, err := loadPrivateRecoveryPayload(identity, purpose, target)
+	if err != nil {
+		return privateRecoveryPayloadConflict(purpose)
+	}
+	if !exists {
+		if !publish {
+			return nil
+		}
+		return writePrivateRecoveryPayload(identity, purpose, target, expected)
+	}
+	if !bytes.Equal(data, expected) {
+		return privateRecoveryPayloadConflict(purpose)
+	}
+	authority, err := privateRecoveryPayloadTempAuthority(identity, descriptor, data)
+	if err != nil {
+		return privateRecoveryPayloadConflict(purpose)
+	}
+	if !publish {
+		return removeMigrationAuthorizedTemp(authority)
+	}
+	actual, mode, targetExists, err := readMigrationOptionalRegular(identity.Workflow, target)
+	if err != nil {
+		return err
+	}
+	if targetExists {
+		if mode.Perm() != 0o600 || !bytes.Equal(actual, expected) {
+			return privateRecoveryPayloadConflict(purpose)
+		}
+		return removeMigrationAuthorizedTemp(authority)
+	}
+	return writeMigrationRegularAuthorized(identity.Workflow, target, data, 0o600, nil, authority)
+}
+
+func reconcilePreparationStatusPayload(identity recoveryIdentity, intent preparationIntent, publish bool) error {
+	data, err := journalStatusData(intent)
+	if err != nil {
+		return err
+	}
+	path, err := journalStatusPath(intent.Workflow, intent.RunID)
+	if err != nil {
+		return err
+	}
+	return reconcilePrivateRecoveryPayload(identity, journalKindRecoveryStatus, path, data, publish)
+}
+
+func reconcilePreparationIntentPayload(identity recoveryIdentity, intent preparationIntent, publish bool) error {
 	data, err := preparationIntentData(intent)
 	if err != nil {
 		return err
 	}
-	authority := privateRecoveryTempAuthority(intent, journalKindRecoveryIntent, intentPath, "publish", data)
-	name, err := authority.name()
+	path, err := preparationIntentPath(intent.Workflow, intent.RunID)
 	if err != nil {
 		return err
 	}
-	temporaryPath := filepath.Join(filepath.Dir(intentPath), name)
-	_, _, temporaryExists, err := readMigrationOptionalRegular(intent.Workflow, temporaryPath)
-	if err != nil || !temporaryExists {
-		return err
-	}
-	actual, mode, exists, err := readMigrationOptionalRegular(intent.Workflow, intentPath)
+	return reconcilePrivateRecoveryPayload(identity, journalKindRecoveryIntent, path, data, publish)
+}
+
+func cleanupPrivateRecoveryBundleTemporaryArtifact(layout workspace.Layout, identity recoveryIdentity, intent preparationIntent, current *privateJournal) error {
+	path, err := recordsGitBackupPath(intent.Workflow, intent.RunID)
 	if err != nil {
 		return err
 	}
-	if exists {
-		if mode.Perm() != 0o600 || !bytes.Equal(actual, data) {
-			return fmt.Errorf("workspace migration: preparation intent differs from durable status identity")
+	descriptor, data, exists, err := loadPrivateRecoveryPayload(identity, journalKindRecoveryBundle, path)
+	if err != nil {
+		return privateRecoveryPayloadConflict(journalKindRecoveryBundle)
+	}
+	if !exists {
+		return nil
+	}
+	if current != nil {
+		if migrationDigest(data) != current.RecordsBackup.BundleSHA256 || int64(len(data)) != descriptor.Size || descriptor.Mode != 0o600 {
+			return privateRecoveryPayloadConflict(journalKindRecoveryBundle)
 		}
-		return removeMigrationAuthorizedTemp(authority)
+		if err := verifyRecordsGitBackupData(intent.Workflow, current.RecordsBackup, data); err != nil {
+			return privateRecoveryPayloadConflict(journalKindRecoveryBundle)
+		}
+	} else if err := validatePreparationBundleData(layout, intent, data); err != nil {
+		return privateRecoveryPayloadConflict(journalKindRecoveryBundle)
 	}
-	return writeMigrationRegularAuthorized(intent.Workflow, intentPath, data, 0o600, nil, authority)
-}
-
-func privateRecoveryBundleTemporaryData(intent preparationIntent, current *privateJournal, bundlePath string) ([]byte, error) {
-	if current == nil {
-		// A preparation intent does not carry the backup digest. Without the
-		// durable private journal, an existing bundle temporary remains a conflict
-		// rather than being reconstructed from a mutable records worktree.
-		return nil, nil
-	}
-	data, mode, exists, err := readMigrationOptionalRegular(intent.Workflow, bundlePath)
+	authority, err := privateRecoveryPayloadTempAuthority(identity, descriptor, data)
 	if err != nil {
-		return nil, err
+		return privateRecoveryPayloadConflict(journalKindRecoveryBundle)
 	}
-	if !exists || mode.Perm() != 0o600 || migrationDigest(data) != current.RecordsBackup.BundleSHA256 {
-		return nil, fmt.Errorf("workspace migration: private records Git backup differs from the durable journal")
-	}
-	if err := verifyRecordsGitBackup(intent.Workflow, current.RecordsBackup); err != nil {
-		return nil, err
-	}
-	return data, nil
-}
-
-func cleanupPrivateJournalTemporaryArtifact(layout workspace.Layout, intent preparationIntent, current *privateJournal, journalPath string) error {
-	unnamed := privateRecoveryTempAuthority(intent, journalKindRecoveryJournal, journalPath, "publish", nil)
-	name, err := unnamed.name()
+	targetExists, err := validatePrivateRecoveryPayloadTarget(identity, descriptor, data)
 	if err != nil {
 		return err
 	}
-	temporaryPath := filepath.Join(filepath.Dir(journalPath), name)
-	data, mode, exists, err := readMigrationOptionalRegular(intent.Workflow, temporaryPath)
-	if err != nil || !exists {
+	if !targetExists {
+		if err := writeMigrationRegularAuthorized(identity.Workflow, path, data, os.FileMode(descriptor.Mode), &migrationRegularExpectation{}, authority); err != nil {
+			return err
+		}
+	}
+	return removeMigrationAuthorizedTemp(authority)
+}
+
+func cleanupPrivateJournalTemporaryArtifact(layout workspace.Layout, identity recoveryIdentity, intent preparationIntent, current *privateJournal) error {
+	journalPath, err := journalPath(intent.Workflow, intent.RunID)
+	if err != nil {
 		return err
 	}
-	if mode.Perm() != 0o600 {
+	descriptor, data, exists, err := loadPrivateRecoveryPayload(identity, journalKindRecoveryJournal, journalPath)
+	if err != nil {
 		return privateJournalTemporaryConflict()
 	}
+	if !exists {
+		return nil
+	}
+	mode := os.FileMode(descriptor.Mode)
 	candidate, err := parsePrivateJournal(intent.Workflow, intent.RunID, journalPath, data, mode)
 	if err != nil {
 		return privateJournalTemporaryConflict()
@@ -934,10 +1037,59 @@ func cleanupPrivateJournalTemporaryArtifact(layout workspace.Layout, intent prep
 	if err != nil || !bytes.Equal(data, canonical) {
 		return privateJournalTemporaryConflict()
 	}
+	authority, err := privateRecoveryPayloadTempAuthority(identity, descriptor, data)
+	if err != nil {
+		return privateJournalTemporaryConflict()
+	}
+	actual, mode, targetExists, err := readMigrationOptionalRegular(identity.Workflow, journalPath)
+	if err != nil {
+		return err
+	}
+	if targetExists && mode.Perm() == os.FileMode(descriptor.Mode).Perm() && bytes.Equal(actual, data) {
+		return removeMigrationAuthorizedTemp(authority)
+	}
 	if err := validatePrivateJournalTemporary(layout, intent, current, candidate); err != nil {
 		return privateJournalTemporaryConflict()
 	}
-	return removeMigrationAuthorizedTemp(privateRecoveryTempAuthority(intent, journalKindRecoveryJournal, journalPath, "publish", canonical))
+	expected := &migrationRegularExpectation{}
+	if current == nil {
+		statusData, err := journalStatusData(intent)
+		if err != nil {
+			return err
+		}
+		if targetExists && (mode.Perm() != 0o600 || !bytes.Equal(actual, statusData)) {
+			return privateJournalTemporaryConflict()
+		}
+		expected = &migrationRegularExpectation{exists: targetExists, data: actual, mode: mode}
+	} else {
+		currentData, err := journalData(*current)
+		if err != nil {
+			return err
+		}
+		if !targetExists || mode.Perm() != 0o600 || !bytes.Equal(actual, currentData) {
+			return privateJournalTemporaryConflict()
+		}
+		expected = &migrationRegularExpectation{exists: true, data: actual, mode: mode}
+	}
+	if err := writeMigrationRegularAuthorized(identity.Workflow, journalPath, data, os.FileMode(descriptor.Mode), expected, authority); err != nil {
+		return err
+	}
+	return removeMigrationAuthorizedTemp(authority)
+}
+
+func cleanupPrivateRecoveryCompletionPayload(identity recoveryIdentity, current *privateJournal) error {
+	if current == nil {
+		return nil
+	}
+	write, ok := journalWrite(*current, journalKindCompletion)
+	if !ok || !write.PostExists || len(write.Postimage) == 0 {
+		return nil
+	}
+	path, err := migrationrecord.CompletionWitnessPath(identity.Workflow, identity.RunID)
+	if err != nil || write.Path != path {
+		return fmt.Errorf("workspace migration: completion witness is outside durable recovery authority")
+	}
+	return reconcilePrivateRecoveryPayload(identity, journalKindRecoveryCompletion, path, write.Postimage, true)
 }
 
 func privateJournalTemporaryConflict() error {
@@ -1121,7 +1273,11 @@ func savePreparationIntent(intent preparationIntent) error {
 	if err != nil {
 		return err
 	}
-	return writeMigrationRegularAuthorized(intent.Workflow, intentPath, data, 0o600, nil, privateRecoveryTempAuthority(intent, journalKindRecoveryIntent, intentPath, "publish", data))
+	identity, err := loadRecoveryIdentity(intent.Workflow, intent.RunID)
+	if err != nil || !recoveryIdentityMatchesIntent(identity, intent) {
+		return fmt.Errorf("workspace migration: durable recovery identity is missing or differs from preparation intent")
+	}
+	return writePrivateRecoveryPayload(identity, journalKindRecoveryIntent, intentPath, data)
 }
 
 func loadPreparationIntent(root, runID string) (preparationIntent, error) {
@@ -1154,6 +1310,15 @@ func loadPreparationIntent(root, runID string) (preparationIntent, error) {
 	}
 	if expected, err := preparationIntentPath(intent.Workflow, intent.RunID); err != nil || expected != path {
 		return preparationIntent{}, fmt.Errorf("workspace migration: preparation intent path does not match its identity")
+	}
+	identity, identityErr := loadRecoveryIdentity(root, runID)
+	if identityErr == nil {
+		descriptor, expected, found, err := loadPrivateRecoveryPayload(identity, journalKindRecoveryIntent, path)
+		if err != nil || !found || descriptor.Target != path || !bytes.Equal(data, expected) || mode.Perm() != os.FileMode(descriptor.Mode).Perm() || !recoveryIdentityMatchesIntent(identity, intent) {
+			return preparationIntent{}, fmt.Errorf("workspace migration: preparation intent differs from durable recovery payload")
+		}
+	} else if !errors.Is(identityErr, os.ErrNotExist) {
+		return preparationIntent{}, identityErr
 	}
 	statusIntent, err := preparationIntentFromStatus(root, runID)
 	if err != nil || statusIntent != intent {
@@ -1769,9 +1934,41 @@ func validatePrivateRecoveryOperationAuthority(journal privateJournal) error {
 	if err != nil {
 		return err
 	}
+	identityPath, err := recoveryIdentityPath(journal.Workflow, journal.RunID)
+	if err != nil {
+		return err
+	}
+	storePath, err := recoveryStorePath(journal.Workflow, journal.RunID)
+	if err != nil {
+		return err
+	}
+	blobPath, err := recoveryBlobDirectory(journal.Workflow, journal.RunID)
+	if err != nil {
+		return err
+	}
+	descriptorPath, err := recoveryDescriptorDirectory(journal.Workflow, journal.RunID)
+	if err != nil {
+		return err
+	}
+	retiredPath, err := recoveryRetiredPath(journal.Workflow, journal.RunID)
+	if err != nil {
+		return err
+	}
+	completionPath, err := migrationrecord.CompletionWitnessPath(journal.Workflow, journal.RunID)
+	if err != nil {
+		return err
+	}
 	want := map[string]string{
 		journalKindRecoveryRunDirectory:     runDir,
 		journalKindRecoveryPrivateDirectory: filepath.Dir(journalPath),
+		journalKindRecoveryIdentity:         identityPath,
+		journalKindRecoveryStoreDirectory:   storePath,
+		journalKindRecoveryBlobDirectory:    blobPath,
+		journalKindRecoveryDescriptorDir:    descriptorPath,
+		journalKindRecoveryDescriptor:       descriptorPath,
+		journalKindRecoveryBlob:             blobPath,
+		journalKindRecoveryRetired:          retiredPath,
+		journalKindRecoveryCompletion:       completionPath,
 		journalKindRecoveryStatus:           journalPath,
 		journalKindRecoveryJournal:          journalPath,
 		journalKindRecoveryIntent:           intentPath,
@@ -2197,6 +2394,20 @@ func applyJournalWrite(j privateJournal, write privateWrite, post bool) (bool, e
 		wantExists, wantData, wantMode = write.PreExists, write.Preimage, os.FileMode(write.PreMode)
 	}
 	if wantExists {
+		if post && write.Scope == journalScopeRecords && write.Kind == journalKindCompletion {
+			identity, err := loadRecoveryIdentity(j.Workflow, j.RunID)
+			intent, intentErr := journalPreparationIntent(j)
+			if err != nil || intentErr != nil || !recoveryIdentityMatchesIntent(identity, intent) {
+				return false, fmt.Errorf("workspace migration: completion witness lacks durable recovery identity")
+			}
+			if err := writePrivateRecoveryPayloadExpected(identity, journalKindRecoveryCompletion, write.Path, wantData, expected); err != nil {
+				return false, err
+			}
+			if err := migrationAfterWrite(write.Path); err != nil {
+				return true, err
+			}
+			return true, nil
+		}
 		authority, err := journalWriteTempAuthority(j, write, root, wantData, wantMode, post)
 		if err != nil {
 			return false, err
@@ -2324,23 +2535,36 @@ type bootstrapPreparationStatusTemporary struct {
 type recoveryMaterial struct {
 	journal   *privateJournal
 	intent    *preparationIntent
+	identity  *recoveryIdentity
 	bootstrap *bootstrapPreparationStatusTemporary
 	orphan    bool
+	retired   bool
 }
 
 func loadRecoveryMaterial(root, runID string) (recoveryMaterial, error) {
+	identity, identityErr := loadRecoveryIdentity(root, runID)
+	if identityErr != nil && !errors.Is(identityErr, os.ErrNotExist) {
+		return recoveryMaterial{}, identityErr
+	}
+	retired, err := recoveryPreparationRetired(root, runID)
+	if err != nil {
+		return recoveryMaterial{}, err
+	}
+	if retired {
+		return recoveryMaterial{retired: true}, nil
+	}
 	journal, journalErr := loadJournal(root, runID)
 	if journalErr == nil {
-		return recoveryMaterial{journal: &journal}, nil
+		return recoveryMaterial{journal: &journal, identity: recoveryIdentityPointer(identity, identityErr)}, nil
 	}
 	intent, intentErr := loadPreparationIntent(root, runID)
 	if intentErr == nil {
-		return recoveryMaterial{intent: &intent}, nil
+		return recoveryMaterial{intent: &intent, identity: recoveryIdentityPointer(identity, identityErr)}, nil
 	}
 	if errors.Is(intentErr, os.ErrNotExist) {
 		statusIntent, statusErr := preparationIntentFromStatus(root, runID)
 		if statusErr == nil {
-			return recoveryMaterial{intent: &statusIntent}, nil
+			return recoveryMaterial{intent: &statusIntent, identity: recoveryIdentityPointer(identity, identityErr)}, nil
 		}
 		if !errors.Is(statusErr, os.ErrNotExist) {
 			return recoveryMaterial{}, statusErr
@@ -2368,7 +2592,24 @@ func loadRecoveryMaterial(root, runID string) (recoveryMaterial, error) {
 	if !errors.Is(journalErr, os.ErrNotExist) {
 		return recoveryMaterial{}, journalErr
 	}
+	if !errors.Is(intentErr, os.ErrNotExist) {
+		return recoveryMaterial{}, intentErr
+	}
+	if identityErr == nil {
+		intent, err := identity.preparationIntent()
+		if err != nil {
+			return recoveryMaterial{}, err
+		}
+		return recoveryMaterial{intent: &intent, identity: &identity}, nil
+	}
 	return recoveryMaterial{}, intentErr
+}
+
+func recoveryIdentityPointer(identity recoveryIdentity, err error) *recoveryIdentity {
+	if err != nil {
+		return nil
+	}
+	return &identity
 }
 
 func cleanupRecoveryMaterial(layout workspace.Layout, runID, expectedPlanHash string, material *recoveryMaterial) error {
@@ -2445,6 +2686,22 @@ func withRecoveryMigrationLocks(configPath, runID, expectedPlanHash string, fn f
 	if err != nil {
 		return err
 	}
+	if material.identity != nil {
+		if err := validateRecoveryIdentityLayout(*material.identity, l); err != nil {
+			return err
+		}
+		if material.identity.PlanHash != expectedPlanHash {
+			return fmt.Errorf("workspace migration: durable recovery identity does not match the reviewed plan hash")
+		}
+		// Once a full journal exists, it contains the immutable manifest snapshot
+		// used by resume and restore. Requiring the external manifest to remain
+		// present would make a valid interrupted migration unrecoverable.
+		if material.journal == nil {
+			if err := validateRecoveryIdentityInputs(*material.identity); err != nil {
+				return err
+			}
+		}
+	}
 	if material.journal != nil {
 		if err := validateJournalLayout(*material.journal, l); err != nil {
 			return err
@@ -2463,6 +2720,21 @@ func withRecoveryMigrationLocks(configPath, runID, expectedPlanHash string, fn f
 	}
 	if err := cleanupRecoveryMaterial(l, runID, expectedPlanHash, &material); err != nil {
 		return err
+	}
+	// Descriptor publication can legitimately precede a target replacement. Load
+	// the material again after cleanup so a recovered journal descriptor becomes
+	// the sole authority used by resume or restore.
+	material, err = loadRecoveryMaterial(l.WorkflowRoot, runID)
+	if err != nil {
+		return err
+	}
+	if material.identity != nil {
+		if err := validateRecoveryIdentityLayout(*material.identity, l); err != nil || material.identity.PlanHash != expectedPlanHash {
+			if err != nil {
+				return err
+			}
+			return fmt.Errorf("workspace migration: durable recovery identity does not match the reviewed plan hash")
+		}
 	}
 	return fn(l, material)
 }
@@ -3026,6 +3298,13 @@ func Apply(configPath, manifestPath, expectedPlanHash string) (ApplyResult, erro
 		if err != nil {
 			return err
 		}
+		identity, err := newRecoveryIdentity(intent, plan)
+		if err != nil {
+			return err
+		}
+		if err := publishRecoveryIdentity(identity); err != nil {
+			return err
+		}
 		if err := savePreparationIntent(intent); err != nil {
 			return err
 		}
@@ -3190,15 +3469,28 @@ func resumePreparationLocked(layout workspace.Layout, intent preparationIntent) 
 	return &journal, nil
 }
 
-func preparationBundleExpectation(layout workspace.Layout, intent preparationIntent) (*migrationRegularExpectation, error) {
+func preparationRecordsGitBackup(layout workspace.Layout, intent preparationIntent) (recordsGitBackup, error) {
 	plan, err := buildLockedIgnoring(layout.ConfigPath, intent.ManifestPath, migrationPreparationIgnored(layout, intent.RunID))
 	if err != nil {
-		return nil, fmt.Errorf("workspace migration: preparation intent cannot be replanned for cleanup: %w", err)
+		return recordsGitBackup{}, fmt.Errorf("workspace migration: preparation intent cannot be replanned for cleanup: %w", err)
 	}
 	if plan.Status != "ready" || plan.PlanHash != intent.PlanHash {
-		return nil, fmt.Errorf("workspace migration: preparation intent no longer matches the reviewed plan hash")
+		return recordsGitBackup{}, fmt.Errorf("workspace migration: preparation intent no longer matches the reviewed plan hash")
 	}
-	backup, err := plannedRecordsGitBackup(layout.WorkflowRoot, intent.RunID, plan.RecordsGit)
+	return plannedRecordsGitBackup(layout.WorkflowRoot, intent.RunID, plan.RecordsGit)
+}
+
+func validatePreparationBundleData(layout workspace.Layout, intent preparationIntent, data []byte) error {
+	backup, err := preparationRecordsGitBackup(layout, intent)
+	if err != nil {
+		return err
+	}
+	backup.BundleSHA256 = migrationDigest(data)
+	return verifyRecordsGitBackupData(layout.WorkflowRoot, backup, data)
+}
+
+func preparationBundleExpectation(layout workspace.Layout, intent preparationIntent) (*migrationRegularExpectation, error) {
+	backup, err := preparationRecordsGitBackup(layout, intent)
 	if err != nil {
 		return nil, err
 	}
@@ -3227,9 +3519,14 @@ func discardPreparationLocked(layout workspace.Layout, runID string, intent *pre
 	if err != nil {
 		return err
 	}
+	var identity recoveryIdentity
 	if intent != nil {
 		if intent.RunID != runID {
 			return fmt.Errorf("workspace migration: preparation intent does not match the requested cleanup run")
+		}
+		identity, err = loadRecoveryIdentity(layout.WorkflowRoot, runID)
+		if err != nil || !recoveryIdentityMatchesIntent(identity, *intent) || validateRecoveryIdentityLayout(identity, layout) != nil {
+			return fmt.Errorf("workspace migration: durable recovery identity is missing or differs from preparation cleanup")
 		}
 		expectedBundle, err := preparationBundleExpectation(layout, *intent)
 		if err != nil {
@@ -3273,8 +3570,8 @@ func discardPreparationLocked(layout workspace.Layout, runID string, intent *pre
 	if err != nil {
 		return err
 	}
-	privateDir := filepath.Dir(statusPath)
 	if intent == nil {
+		privateDir := filepath.Dir(statusPath)
 		// IsPreparationOrphan established that this run contains only empty
 		// scaffolding. Empty-directory removal rechecks that claim through pinned
 		// parents, so a raced status or temporary file remains in place.
@@ -3293,13 +3590,10 @@ func discardPreparationLocked(layout workspace.Layout, runID string, intent *pre
 	if err := removeMigrationOptionalRegularExpected(layout.WorkflowRoot, statusPath, &migrationRegularExpectation{exists: true, data: statusData, mode: 0o600}); err != nil {
 		return err
 	}
-	if err := removeMigrationEmptyDirectory(layout.WorkflowRoot, privateDir); err != nil {
-		return err
-	}
-	if err := removeMigrationEmptyDirectory(layout.WorkflowRoot, filepath.Dir(privateDir)); err != nil {
-		return err
-	}
-	return removeMigrationEmptyDirectory(layout.WorkflowRoot, filepath.Dir(filepath.Dir(privateDir)))
+	// The identity, immutable payload blobs, and descriptors remain as durable
+	// evidence. A small atomic retirement marker is published only after every
+	// preparation target is gone, so a kill before it remains safely resumable.
+	return publishRecoveryRetired(identity)
 }
 
 func verifyJournalInputs(layout workspace.Layout, journal privateJournal) error {
@@ -4311,6 +4605,10 @@ func Recover(configPath, runID, action, expectedPlanHash string) (RecoveryResult
 	}
 	result := RecoveryResult{RunID: runID, Action: action}
 	err := withRecoveryMigrationLocks(configPath, runID, expectedPlanHash, func(layout workspace.Layout, material recoveryMaterial) error {
+		if material.retired {
+			result.Status = "preparation-cleared"
+			return nil
+		}
 		if material.orphan {
 			if err := discardPreparationLocked(layout, runID, nil); err != nil {
 				return err

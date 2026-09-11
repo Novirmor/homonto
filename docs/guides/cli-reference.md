@@ -272,6 +272,11 @@ same hash to `migrate apply --yes`. An interrupted run reports its run ID; pass
 both that run ID and the original reviewed hash to `migrate recover --yes`.
 Recovery revalidates the configured schema-2 layout, all declared repositories,
 and the journal's exact Plan-derived write authority before it writes anything.
+Private migration recovery payloads are additionally bound to a durable run
+identity, descriptor, immutable blob, target, mode, and digest. Missing,
+malformed, foreign, or altered recovery material fails closed before recovery
+writes an authoritative file; `restore` never resets source branches or accepts
+a different reviewed plan hash.
 
 ## `homonto worktree`
 

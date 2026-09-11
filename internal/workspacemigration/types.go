@@ -15,9 +15,9 @@ import (
 
 const (
 	// PlanVersion is the only exported migration-plan schema accepted by the
-	// M3 executor. Version 6 adds the reviewed temporary-artifact destination
-	// and generation rules used by interruption recovery.
-	PlanVersion = 6
+	// M3 executor. Version 7 adds durable private-recovery artifact authority
+	// and descriptor-bound temporary generation rules.
+	PlanVersion = 7
 	// ManifestVersion is the only input manifest format accepted by M1.
 	ManifestVersion = 1
 	// ControlOnlyAttestation is the explicit operator statement required before
@@ -231,6 +231,7 @@ type ProspectiveOperation struct {
 	PostSHA256   string   `json:"post_sha256,omitempty"`
 	PostMode     uint32   `json:"post_mode"`
 	DataClass    string   `json:"data_class,omitempty"`
+	ArtifactType string   `json:"artifact_type,omitempty"`
 	Mutation     string   `json:"mutation,omitempty"`
 	DynamicRule  string   `json:"dynamic_rule,omitempty"`
 	TempParent   string   `json:"temp_parent,omitempty"`

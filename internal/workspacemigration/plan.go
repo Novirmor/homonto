@@ -187,10 +187,6 @@ func preparationJournalOnly(root, runID string) bool {
 	if !migrationrecord.SafeRunID(runID) {
 		return false
 	}
-	status, err := migrationrecord.LoadJournalStatus(root, runID)
-	if err != nil || status.Phase != "preparing" {
-		return false
-	}
 	base := filepath.Join(root, ".workflow", "migrations")
 	entries, exists, err := realDirectoryEntries(base)
 	if err != nil || !exists || len(entries) != 1 || entries[0].Name() != runID || !entries[0].IsDir() {
@@ -200,23 +196,7 @@ func preparationJournalOnly(root, runID string) bool {
 	if err != nil || !exists || len(runEntries) != 1 || runEntries[0].Name() != "private" || !runEntries[0].IsDir() {
 		return false
 	}
-	privateEntries, exists, err := realDirectoryEntries(filepath.Join(base, runID, "private"))
-	if err != nil || !exists || len(privateEntries) < 2 || len(privateEntries) > 3 {
-		return false
-	}
-	allowed := map[string]bool{"journal.json": true, "intent.json": true, "records.git.bundle": true}
-	seen := map[string]bool{}
-	for _, entry := range privateEntries {
-		if !allowed[entry.Name()] || entry.IsDir() || seen[entry.Name()] {
-			return false
-		}
-		info, err := os.Lstat(filepath.Join(base, runID, "private", entry.Name()))
-		if err != nil || !info.Mode().IsRegular() || info.Mode()&os.ModeSymlink != 0 {
-			return false
-		}
-		seen[entry.Name()] = true
-	}
-	return seen["journal.json"] && seen["intent.json"]
+	return preparationRecoveryStoreReady(root, runID)
 }
 
 func legacyLayoutDetail(code string) string {

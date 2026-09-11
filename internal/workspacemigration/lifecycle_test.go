@@ -10,6 +10,8 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"reflect"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -755,7 +757,7 @@ func TestRecoverRefusesJournalWriteOutsideTheReviewedPlan(t *testing.T) {
 		PostMode:   0o644,
 		Postimage:  []byte("rogue\n"),
 	})
-	overwriteJournalForTest(t, fixture.records, runID, journal)
+	overwriteJournalPayloadForTest(t, fixture.records, runID, journal)
 
 	if _, err := Recover(fixture.config, runID, "resume", plan.PlanHash); err == nil {
 		t.Fatal("Recover accepted a journal write outside the reviewed plan")
@@ -772,8 +774,29 @@ func TestRecoverRequiresTheJournalPlanHash(t *testing.T) {
 		t.Fatalf("Build: %v", err)
 	}
 	runID := interruptAtRegistryWrite(t, fixture, plan)
+	before := migrationSnapshot(t, fixture)
+	source := fixture.repos["app"]
+	sourceHead := gitTextTest(t, source, "rev-parse", "HEAD^{commit}")
+	sourceIndex := gitTextTest(t, source, "write-tree")
+	sourceRefs, err := sourceReferenceSnapshot(source)
+	if err != nil {
+		t.Fatal(err)
+	}
 	if _, err := Recover(fixture.config, runID, "resume", strings.Repeat("0", 64)); err == nil || !strings.Contains(err.Error(), "does not match the reviewed plan hash") {
 		t.Fatalf("Recover with a different plan hash = %v", err)
+	}
+	if after := migrationSnapshot(t, fixture); !bytes.Equal(mustJSON(t, before), mustJSON(t, after)) {
+		t.Fatalf("wrong plan hash changed authoritative files\nbefore: %#v\nafter: %#v", before, after)
+	}
+	if got := gitTextTest(t, source, "rev-parse", "HEAD^{commit}"); got != sourceHead {
+		t.Fatalf("wrong plan hash changed source HEAD = %s, want %s", got, sourceHead)
+	}
+	if got := gitTextTest(t, source, "write-tree"); got != sourceIndex {
+		t.Fatalf("wrong plan hash changed source index = %s, want %s", got, sourceIndex)
+	}
+	afterRefs, err := sourceReferenceSnapshot(source)
+	if err != nil || !reflect.DeepEqual(afterRefs, sourceRefs) {
+		t.Fatalf("wrong plan hash changed source refs = %+v, %v", afterRefs, err)
 	}
 }
 
@@ -859,7 +882,7 @@ func TestRecoverRefusesAlteredDynamicJournalOutputs(t *testing.T) {
 				t.Fatalf("load journal: %v", err)
 			}
 			tc.mutate(t, &journal)
-			overwriteJournalForTest(t, fixture.records, runID, journal)
+			overwriteJournalPayloadForTest(t, fixture.records, runID, journal)
 			if _, err := Recover(fixture.config, runID, "resume", plan.PlanHash); err == nil {
 				t.Fatal("Recover accepted an altered dynamic journal output")
 			}
@@ -938,7 +961,7 @@ func TestRecoverRejectsRetiredReceiptDrift(t *testing.T) {
 				journal.Writes[i].Postimage = append(data, '\n')
 				break
 			}
-			overwriteJournalForTest(t, fixture.records, runID, journal)
+			overwriteJournalPayloadForTest(t, fixture.records, runID, journal)
 			before := migrationSnapshot(t, fixture)
 			retiredPath := filepath.Join(fixture.records, "changes", "active-retired", "onto-state.yaml")
 			retiredBefore := readFile(t, retiredPath)
@@ -1122,7 +1145,7 @@ func TestMigrationVerifyRejectsModifiedManifestBackup(t *testing.T) {
 			break
 		}
 	}
-	overwriteJournalForTest(t, fixture.records, result.RunID, journal)
+	overwriteJournalPayloadForTest(t, fixture.records, result.RunID, journal)
 	if err := os.Remove(fixture.manifest); err != nil {
 		t.Fatal(err)
 	}
@@ -1317,6 +1340,21 @@ func TestMigrationRobustness_ProcessKillCrashHelper(t *testing.T) {
 			}
 			select {}
 		}
+	case "recovery-identity-sync", "recovery-descriptor-sync", "recovery-blob-sync":
+		kind := strings.TrimSuffix(stage, "-sync")
+		migrationFS = defaultMigrationFSOps
+		migrationFS.sync = func(actualKind, path string, file *os.File) error {
+			if err := file.Sync(); err != nil {
+				return err
+			}
+			if actualKind != kind {
+				return nil
+			}
+			if _, err := fmt.Fprintln(os.Stdout, stage+"-durable"); err != nil {
+				return err
+			}
+			select {}
+		}
 	case "journal-pending-sync":
 		migrationFS = defaultMigrationFSOps
 		migrationFS.sync = func(kind, path string, file *os.File) error {
@@ -1350,12 +1388,47 @@ func TestMigrationRobustness_ProcessKillCrashHelper(t *testing.T) {
 			return nil
 		}
 	default:
-		t.Fatalf("unsupported crash-helper stage %q", stage)
+		kind, occurrence, ok := recoveryPayloadSyncStage(stage)
+		if !ok {
+			t.Fatalf("unsupported crash-helper stage %q", stage)
+		}
+		migrationFS = defaultMigrationFSOps
+		seen := 0
+		migrationFS.sync = func(actualKind, path string, file *os.File) error {
+			if err := file.Sync(); err != nil {
+				return err
+			}
+			if actualKind != kind {
+				return nil
+			}
+			seen++
+			if seen != occurrence {
+				return nil
+			}
+			if _, err := fmt.Fprintln(os.Stdout, stage+"-durable"); err != nil {
+				return err
+			}
+			select {}
+		}
 	}
 	if _, err := Apply(config, manifest, planHash); err != nil {
 		t.Fatalf("crash helper Apply: %v", err)
 	}
 	t.Fatal("crash helper unexpectedly completed")
+}
+
+func recoveryPayloadSyncStage(stage string) (string, int, bool) {
+	for _, kind := range []string{"recovery-descriptor", "recovery-blob"} {
+		prefix := kind + "-"
+		if !strings.HasPrefix(stage, prefix) || !strings.HasSuffix(stage, "-sync") {
+			continue
+		}
+		occurrence, err := strconv.Atoi(strings.TrimSuffix(strings.TrimPrefix(stage, prefix), "-sync"))
+		if err == nil && occurrence > 0 {
+			return kind, occurrence, true
+		}
+	}
+	return "", 0, false
 }
 
 func killMigrationProcess(t *testing.T, fixture *migrationFixture, plan Plan, stage string) {
@@ -1400,12 +1473,19 @@ func killMigrationProcess(t *testing.T, fixture *migrationFixture, plan Plan, st
 
 func privateRecoveryTemporaryPath(t *testing.T, intent preparationIntent, kind, target string) string {
 	t.Helper()
-	authority := privateRecoveryTempAuthority(intent, kind, target, "publish", nil)
-	name, err := authority.name()
+	identity, err := loadRecoveryIdentity(intent.Workflow, intent.RunID)
+	if err != nil || !recoveryIdentityMatchesIntent(identity, intent) {
+		t.Fatalf("load durable recovery identity: %v", err)
+	}
+	descriptor, data, exists, err := loadPrivateRecoveryPayload(identity, kind, target)
+	if err != nil || !exists {
+		t.Fatalf("load durable recovery payload %s: %v", kind, err)
+	}
+	path, err := recoveryPayloadTemporaryPath(identity, descriptor, data)
 	if err != nil {
 		t.Fatal(err)
 	}
-	return filepath.Join(filepath.Dir(target), name)
+	return path
 }
 
 func TestMigrationRobustness_ProcessKillRecovery(t *testing.T) {
@@ -1484,6 +1564,82 @@ func TestMigrationRecovery_KillDuringIntentTemporarySync(t *testing.T) {
 			}
 			if err := migrationrecord.ValidateBarrier(fixture.records); err != nil {
 				t.Fatalf("migration barrier after intent temporary restore: %v", err)
+			}
+		})
+	}
+}
+
+func TestMigrationRecovery_DurablePayloadBootstrapProcessKills(t *testing.T) {
+	for _, stage := range []string{"recovery-identity-sync", "recovery-descriptor-sync", "recovery-blob-sync"} {
+		t.Run(stage, func(t *testing.T) {
+			fixture := newMigrationFixture(t, false, false)
+			plan, err := Build(fixture.config, fixture.manifest)
+			if err != nil {
+				t.Fatal(err)
+			}
+			killMigrationProcess(t, fixture, plan, stage)
+			runID := interruptedRunID(t, fixture.records)
+			result, err := Recover(fixture.config, runID, "resume", plan.PlanHash)
+			if err != nil || result.Status != "complete" {
+				t.Fatalf("Recover after %s SIGKILL = %+v, %v", stage, result, err)
+			}
+			if _, err := Verify(fixture.config, runID); err != nil {
+				t.Fatalf("Verify after %s SIGKILL: %v", stage, err)
+			}
+		})
+	}
+}
+
+func TestMigrationRecovery_DurablePayloadStagesProcessKills(t *testing.T) {
+	stages := []string{
+		"recovery-descriptor-2-sync", "recovery-blob-2-sync",
+		"recovery-descriptor-3-sync", "recovery-blob-3-sync",
+		"recovery-descriptor-4-sync", "recovery-blob-4-sync",
+		"recovery-descriptor-5-sync", "recovery-blob-5-sync",
+		"recovery-descriptor-6-sync", "recovery-blob-6-sync",
+	}
+	for _, stage := range stages {
+		t.Run(stage, func(t *testing.T) {
+			fixture := newMigrationFixture(t, false, false)
+			plan, err := Build(fixture.config, fixture.manifest)
+			if err != nil {
+				t.Fatal(err)
+			}
+			killMigrationProcess(t, fixture, plan, stage)
+			runID := interruptedRunID(t, fixture.records)
+			result, err := Recover(fixture.config, runID, "resume", plan.PlanHash)
+			if err != nil || result.Status != "complete" {
+				t.Fatalf("Recover after %s SIGKILL = %+v, %v", stage, result, err)
+			}
+			if _, err := Verify(fixture.config, runID); err != nil {
+				t.Fatalf("Verify after %s SIGKILL: %v", stage, err)
+			}
+		})
+	}
+}
+
+func TestMigrationRecovery_DurablePayloadPromotedJournalAndCompletionProcessKills(t *testing.T) {
+	for _, stage := range []string{
+		// The promoted applying-journal descriptor retains the initial journal as
+		// history until its target replacement is complete.
+		"recovery-descriptor-13-sync",
+		// The separate completion witness is also private recovery payload.
+		"recovery-blob-13-sync",
+	} {
+		t.Run(stage, func(t *testing.T) {
+			fixture := newMigrationFixture(t, false, false)
+			plan, err := Build(fixture.config, fixture.manifest)
+			if err != nil {
+				t.Fatal(err)
+			}
+			killMigrationProcess(t, fixture, plan, stage)
+			runID := interruptedRunID(t, fixture.records)
+			result, err := Recover(fixture.config, runID, "resume", plan.PlanHash)
+			if err != nil || result.Status != "complete" {
+				t.Fatalf("Recover after %s SIGKILL = %+v, %v", stage, result, err)
+			}
+			if _, err := Verify(fixture.config, runID); err != nil {
+				t.Fatalf("Verify after %s SIGKILL: %v", stage, err)
 			}
 		})
 	}
@@ -1623,7 +1779,7 @@ func TestMigrationRecovery_RefusesInvalidCompletePrivateJournalTemporary(t *test
 	if err := os.Chmod(temporary, 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := Recover(fixture.config, runID, "resume", plan.PlanHash); err == nil || !strings.Contains(err.Error(), "private journal temporary is not recognized") {
+	if _, err := Recover(fixture.config, runID, "resume", plan.PlanHash); err == nil || !strings.Contains(err.Error(), "foreign or altered temporary file") {
 		t.Fatalf("Recover with invalid complete journal temporary = %v", err)
 	}
 	if data, err := os.ReadFile(temporary); err != nil || !bytes.Equal(data, tampered) {
@@ -2072,6 +2228,17 @@ func TestMigrationRecovery_PreparationRestoreInterrupted(t *testing.T) {
 				t.Fatalf("preparation artifact remains at %s: %v", path, err)
 			}
 		}
+		retired, err := migrationrecord.IsRetiredPreparation(fixture.records, runID)
+		if err != nil || !retired {
+			t.Fatalf("IsRetiredPreparation after restore = %t, %v", retired, err)
+		}
+		if err := migrationrecord.ValidateBarrier(fixture.records); err != nil {
+			t.Fatalf("migration barrier after retired preparation = %v", err)
+		}
+		result, err = Recover(fixture.config, runID, "restore", plan.PlanHash)
+		if err != nil || result.Status != "preparation-cleared" {
+			t.Fatalf("idempotent preparation restore = %+v, %v", result, err)
+		}
 	})
 
 	t.Run("bundle removed before intent remains recoverable", func(t *testing.T) {
@@ -2106,6 +2273,41 @@ func TestMigrationRecovery_PreparationRestoreInterrupted(t *testing.T) {
 		}
 		if _, err := os.Lstat(intentPath); !errors.Is(err, os.ErrNotExist) {
 			t.Fatalf("intent remains after retry: %v", err)
+		}
+		retired, err := migrationrecord.IsRetiredPreparation(fixture.records, runID)
+		if err != nil || !retired {
+			t.Fatalf("IsRetiredPreparation after retry = %t, %v", retired, err)
+		}
+		if err := migrationrecord.ValidateBarrier(fixture.records); err != nil {
+			t.Fatalf("migration barrier after retired preparation retry = %v", err)
+		}
+	})
+
+	t.Run("retired evidence tampering remains blocked", func(t *testing.T) {
+		fixture, plan, runID, _, _ := prepare(t)
+		result, err := Recover(fixture.config, runID, "restore", plan.PlanHash)
+		if err != nil || result.Status != "preparation-cleared" {
+			t.Fatalf("preparation restore = %+v, %v", result, err)
+		}
+		identity, err := loadRecoveryIdentity(fixture.records, runID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		descriptor, err := recoveryPayloadDescriptorPath(identity, journalKindRecoveryStatus)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := os.Remove(descriptor); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.Symlink("tampered-descriptor", descriptor); err != nil {
+			t.Fatal(err)
+		}
+		if err := migrationrecord.ValidateBarrier(fixture.records); err == nil {
+			t.Fatal("migration barrier accepted tampered retired recovery evidence")
+		}
+		if _, err := Recover(fixture.config, runID, "restore", plan.PlanHash); err == nil {
+			t.Fatal("Recover accepted tampered retired recovery evidence")
 		}
 	})
 }
@@ -2265,12 +2467,7 @@ func TestMigrationRobustness_PreparationTempRecovery(t *testing.T) {
 
 	t.Run("arbitrary private-slot data is preserved and blocks recovery", func(t *testing.T) {
 		fixture, plan, runID, intent, bundlePath := prepare(t)
-		authority := privateRecoveryTempAuthority(intent, journalKindRecoveryBundle, bundlePath, "publish", nil)
-		name, err := authority.name()
-		if err != nil {
-			t.Fatal(err)
-		}
-		temp := filepath.Join(filepath.Dir(bundlePath), name)
+		temp := privateRecoveryTemporaryPath(t, intent, journalKindRecoveryBundle, bundlePath)
 		if err := os.WriteFile(temp, []byte("partial private write\n"), 0o600); err != nil {
 			t.Fatal(err)
 		}
@@ -2475,6 +2672,45 @@ func TestMigrationJournalWriteRejectsInPlaceDriftAfterClassification(t *testing.
 	}
 }
 
+func TestMigrationCompletionPayloadRejectsTargetRace(t *testing.T) {
+	fixture := newMigrationFixture(t, false, false)
+	plan, err := Build(fixture.config, fixture.manifest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	previousMarker := migrationAfterMarker
+	migrationAfterMarker = func() error { return errors.New("interrupt after marker") }
+	_, err = Apply(fixture.config, fixture.manifest, plan.PlanHash)
+	migrationAfterMarker = previousMarker
+	if err == nil || !strings.Contains(err.Error(), "interrupt after marker") {
+		t.Fatalf("Apply = %v", err)
+	}
+	runID := interruptedRunID(t, fixture.records)
+	completion, err := migrationrecord.CompletionWitnessPath(fixture.records, runID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	previous := migrationAfterParentPin
+	wrote := false
+	migrationAfterParentPin = func(_, path string) error {
+		if wrote || path != completion {
+			return nil
+		}
+		wrote = true
+		return os.WriteFile(completion, []byte("foreign completion\n"), 0o600)
+	}
+	t.Cleanup(func() { migrationAfterParentPin = previous })
+	if _, err := Recover(fixture.config, runID, "resume", plan.PlanHash); err == nil || !strings.Contains(err.Error(), "target appeared after classification") {
+		t.Fatalf("Recover after completion target race = %v", err)
+	}
+	if !wrote {
+		t.Fatal("completion target race seam did not run")
+	}
+	if got := readFile(t, completion); got != "foreign completion\n" {
+		t.Fatalf("foreign completion was overwritten: %q", got)
+	}
+}
+
 func journalWriteWithTemporaryAuthority(root, path string) (privateJournal, privateWrite) {
 	write := privateWrite{
 		Scope:      journalScopeConfig,
@@ -2657,6 +2893,13 @@ func TestMigrationRecoveryRejectsSwappedRecoveryPayloads(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
+		identity, err := newRecoveryIdentity(intent, plan)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := publishRecoveryIdentity(identity); err != nil {
+			t.Fatal(err)
+		}
 		if err := savePreparationIntent(intent); err != nil {
 			t.Fatal(err)
 		}
@@ -2683,6 +2926,110 @@ func TestMigrationRecoveryRejectsSwappedRecoveryPayloads(t *testing.T) {
 			t.Fatalf("load swapped intent = %v", err)
 		}
 	})
+}
+
+func TestMigrationRecoveryRejectsTamperedDurablePayloadsBeforeWrites(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		mutate func(*testing.T, recoveryIdentity, string)
+	}{
+		{
+			name: "journal target",
+			mutate: func(t *testing.T, _ recoveryIdentity, path string) {
+				t.Helper()
+				if err := os.WriteFile(path, []byte("tampered journal\n"), 0o600); err != nil {
+					t.Fatal(err)
+				}
+			},
+		},
+		{
+			name: "journal descriptor",
+			mutate: func(t *testing.T, identity recoveryIdentity, _ string) {
+				t.Helper()
+				path, err := recoveryPayloadDescriptorPath(identity, journalKindRecoveryJournal)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if err := os.Remove(path); err != nil {
+					t.Fatal(err)
+				}
+				if err := os.Symlink("tampered-descriptor", path); err != nil {
+					t.Fatal(err)
+				}
+			},
+		},
+		{
+			name: "journal blob",
+			mutate: func(t *testing.T, identity recoveryIdentity, path string) {
+				t.Helper()
+				descriptor, _, exists, err := loadPrivateRecoveryPayload(identity, journalKindRecoveryJournal, path)
+				if err != nil || !exists {
+					t.Fatalf("load journal descriptor = %+v, %t, %v", descriptor, exists, err)
+				}
+				blob, err := recoveryPayloadBlobPath(identity, descriptor.SHA256)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if err := os.Chmod(blob, 0o600); err != nil {
+					t.Fatal(err)
+				}
+				if err := os.WriteFile(blob, []byte("tampered blob\n"), recoveryBlobMode); err != nil {
+					t.Fatal(err)
+				}
+				if err := os.Chmod(blob, recoveryBlobMode); err != nil {
+					t.Fatal(err)
+				}
+			},
+		},
+		{
+			name: "extra blob",
+			mutate: func(t *testing.T, identity recoveryIdentity, _ string) {
+				t.Helper()
+				blob, err := recoveryPayloadBlobPath(identity, strings.Repeat("0", 64))
+				if err != nil {
+					t.Fatal(err)
+				}
+				if err := os.WriteFile(blob, []byte("foreign blob\n"), recoveryBlobMode); err != nil {
+					t.Fatal(err)
+				}
+			},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			fixture := newMigrationFixture(t, false, false)
+			plan, err := Build(fixture.config, fixture.manifest)
+			if err != nil {
+				t.Fatal(err)
+			}
+			runID := interruptAtRegistryWrite(t, fixture, plan)
+			identity, err := loadRecoveryIdentity(fixture.records, runID)
+			if err != nil {
+				t.Fatal(err)
+			}
+			journalPath, err := journalPath(fixture.records, runID)
+			if err != nil {
+				t.Fatal(err)
+			}
+			tc.mutate(t, identity, journalPath)
+			before := migrationSnapshot(t, fixture)
+			previous := migrationAfterWrite
+			writes := 0
+			migrationAfterWrite = func(string) error {
+				writes++
+				return nil
+			}
+			t.Cleanup(func() { migrationAfterWrite = previous })
+			if _, err := Recover(fixture.config, runID, "resume", plan.PlanHash); err == nil {
+				t.Fatal("Recover accepted a tampered durable payload")
+			}
+			if writes != 0 {
+				t.Fatalf("tampered payload reached %d recovery writes", writes)
+			}
+			if after := migrationSnapshot(t, fixture); !bytes.Equal(mustJSON(t, before), mustJSON(t, after)) {
+				t.Fatalf("tampered payload refusal changed authoritative files\nbefore: %#v\nafter: %#v", before, after)
+			}
+		})
+	}
 }
 
 func TestMigrationFinalMarkerRejectsParentSubstitution(t *testing.T) {
@@ -2809,7 +3156,7 @@ func testMigrationRecoveryRerunIndexAuthorityTamper(t *testing.T, interrupt func
 	if err != nil {
 		t.Fatal(err)
 	}
-	overwriteJournalForTest(t, fixture.records, runID, journal)
+	overwriteJournalPayloadForTest(t, fixture.records, runID, journal)
 	journalFile, err := journalPath(fixture.records, runID)
 	if err != nil {
 		t.Fatal(err)
@@ -3194,6 +3541,25 @@ func overwriteJournalForTest(t *testing.T, records, runID string, journal privat
 		t.Fatal(err)
 	}
 	if err := os.Chmod(path, 0o600); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func overwriteJournalPayloadForTest(t *testing.T, records, runID string, journal privateJournal) {
+	t.Helper()
+	identity, err := loadRecoveryIdentity(records, runID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	path, err := journalPath(records, runID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	data, err := journalData(journal)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := writePrivateRecoveryPayload(identity, journalKindRecoveryJournal, path, data); err != nil {
 		t.Fatal(err)
 	}
 }

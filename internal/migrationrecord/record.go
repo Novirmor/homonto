@@ -30,6 +30,11 @@ const (
 	// CompletionWitnessVersion is the independent authorization record normal
 	// loaders require before a completed migration can unblock the workspace.
 	CompletionWitnessVersion = 1
+	// RecoveryRetiredLinkPrefix marks a preparation-only recovery directory
+	// whose private evidence was deliberately retained after restore. The link
+	// target is the digest of the sibling immutable identity link target; it
+	// contains no payload bytes and can be checked without following either link.
+	RecoveryRetiredLinkPrefix = "homonto-recovery-retired-v1:"
 )
 
 var runIDPattern = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{7,127}$`)
@@ -282,6 +287,119 @@ func IsPreparationOrphan(root, runID string) (bool, error) {
 		return false, err
 	}
 	return len(privateEntries) == 0, nil
+}
+
+// IsRetiredPreparation recognizes the narrowly shaped evidence left after a
+// preparation-only restore. Unlike an orphan, it is intentionally retained so
+// a later operator can inspect durable recovery material without making normal
+// workspace loading fail closed forever.
+func IsRetiredPreparation(root, runID string) (bool, error) {
+	if !SafeRunID(runID) {
+		return false, fmt.Errorf("migration record: invalid run ID")
+	}
+	runPath := filepath.Join(migrationRoot(root), runID)
+	privatePath := filepath.Join(runPath, "private")
+	if err := fsutil.RequireRealParents(root, filepath.Dir(runPath)); err != nil {
+		return false, err
+	}
+	for _, path := range []string{runPath, privatePath} {
+		info, err := os.Lstat(path)
+		if errors.Is(err, os.ErrNotExist) {
+			return false, nil
+		}
+		if err != nil {
+			return false, err
+		}
+		if !info.IsDir() || info.Mode()&os.ModeSymlink != 0 || info.Mode().Perm() != 0o700 {
+			return false, nil
+		}
+	}
+	entries, err := os.ReadDir(privatePath)
+	if err != nil {
+		return false, err
+	}
+	allowed := map[string]bool{"recovery-identity": true, "recovery-retired": true, "recovery-store": true}
+	seen := map[string]bool{}
+	for _, entry := range entries {
+		if !allowed[entry.Name()] || seen[entry.Name()] {
+			return false, nil
+		}
+		seen[entry.Name()] = true
+	}
+	if !seen["recovery-identity"] || !seen["recovery-retired"] || !seen["recovery-store"] {
+		return false, nil
+	}
+	identityPath := filepath.Join(privatePath, "recovery-identity")
+	retiredPath := filepath.Join(privatePath, "recovery-retired")
+	identityInfo, err := os.Lstat(identityPath)
+	if err != nil || identityInfo.Mode()&os.ModeSymlink == 0 {
+		return false, err
+	}
+	retiredInfo, err := os.Lstat(retiredPath)
+	if err != nil || retiredInfo.Mode()&os.ModeSymlink == 0 {
+		return false, err
+	}
+	identityTarget, err := os.Readlink(identityPath)
+	if err != nil {
+		return false, err
+	}
+	if !strings.HasPrefix(identityTarget, "homonto-recovery-identity-v1:") || len(identityTarget) > 960 {
+		return false, nil
+	}
+	retiredTarget, err := os.Readlink(retiredPath)
+	if err != nil || retiredTarget != RecoveryRetiredLinkPrefix+digest([]byte(identityTarget)) {
+		return false, nil
+	}
+	storePath := filepath.Join(privatePath, "recovery-store")
+	storeInfo, err := os.Lstat(storePath)
+	if err != nil || !storeInfo.IsDir() || storeInfo.Mode()&os.ModeSymlink != 0 || storeInfo.Mode().Perm() != 0o700 {
+		return false, err
+	}
+	storeEntries, err := os.ReadDir(storePath)
+	if err != nil {
+		return false, err
+	}
+	if len(storeEntries) != 2 {
+		return false, nil
+	}
+	for _, entry := range storeEntries {
+		if entry.Name() != "blobs" && entry.Name() != "descriptors" {
+			return false, nil
+		}
+		path := filepath.Join(storePath, entry.Name())
+		info, err := os.Lstat(path)
+		if err != nil || !info.IsDir() || info.Mode()&os.ModeSymlink != 0 || info.Mode().Perm() != 0o700 {
+			return false, err
+		}
+	}
+	descriptorEntries, err := os.ReadDir(filepath.Join(storePath, "descriptors"))
+	if err != nil {
+		return false, err
+	}
+	for _, entry := range descriptorEntries {
+		name := entry.Name()
+		valid := name == "status" || name == "intent" || name == "bundle" || name == "journal" || name == "completion" ||
+			(strings.HasPrefix(name, "history-") && digestPattern.MatchString(strings.TrimPrefix(name, "history-")))
+		info, err := os.Lstat(filepath.Join(storePath, "descriptors", name))
+		if !valid || err != nil || info.Mode()&os.ModeSymlink == 0 {
+			return false, nil
+		}
+		target, err := os.Readlink(filepath.Join(storePath, "descriptors", name))
+		if err != nil || !strings.HasPrefix(target, "homonto-recovery-descriptor-v1:") || len(target) > 960 {
+			return false, nil
+		}
+	}
+	blobEntries, err := os.ReadDir(filepath.Join(storePath, "blobs"))
+	if err != nil {
+		return false, err
+	}
+	for _, entry := range blobEntries {
+		info, err := os.Lstat(filepath.Join(storePath, "blobs", entry.Name()))
+		if err != nil || !digestPattern.MatchString(entry.Name()) || !info.Mode().IsRegular() || info.Mode()&os.ModeSymlink != 0 || info.Mode().Perm() != 0o400 {
+			return false, nil
+		}
+	}
+	return true, nil
 }
 
 // LoadReceipt reads only a real, regular public receipt and validates its
@@ -639,6 +757,13 @@ func ValidateBarrier(root string) error {
 		runID := entry.Name()
 		status, err := LoadJournalStatus(root, runID)
 		if err != nil {
+			retired, retiredErr := IsRetiredPreparation(root, runID)
+			if retiredErr != nil {
+				return fmt.Errorf("workspace migration barrier: inspect retired preparation artifact: %w", retiredErr)
+			}
+			if retired {
+				continue
+			}
 			orphan, orphanErr := IsPreparationOrphan(root, runID)
 			if orphanErr != nil {
 				return fmt.Errorf("workspace migration barrier: inspect preparation artifact: %w", orphanErr)

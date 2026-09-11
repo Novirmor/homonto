@@ -451,6 +451,15 @@ guess a new one:
 homonto workspace migrate recover --config /work/control/homonto.toml --run-id <run-id> --action resume --plan-hash <reviewed-plan-hash> --yes
 ```
 
+Before any private recovery status, intent, backup, journal, or completion
+target is replaced, migration durably records an identity-bound descriptor and
+an immutable payload blob. Recovery accepts only the descriptor's exact target,
+mode, and digest; a missing, malformed, foreign, or altered private artifact
+stops before an authoritative migration write. A preparation-only `restore`
+retains that private evidence behind a retirement marker, so a repeated recovery
+is safe and normal workspace loading can distinguish deliberate cleanup from an
+unrecognized pending run.
+
 Use `--action restore` only to restore the captured preimages of an incomplete
 run. Neither recovery action resets source branches, deletes unknown worktrees,
 or accepts a different layout or plan hash. There remains no general

@@ -15,7 +15,7 @@ import (
 )
 
 const (
-	prospectiveManifestVersion = 2
+	prospectiveManifestVersion = 3
 	runIDPlaceholder           = "{run_id}"
 
 	dynamicReceiptRule     = "receipt-v1(run_id, reviewed_plan, registry, binding_token_hashes)"
@@ -24,13 +24,17 @@ const (
 	dynamicProofRule       = "commit_proof-v1(migration_commit, migration_parent, migration_tree)"
 	dynamicCompletionRule  = "completion_witness-v1(receipt, commit_proof)"
 	dynamicTempNameRule    = "migration_temp-v2(run_id, private_owner, operation, destination, preimage, postimage, modes, direction)"
-	dynamicPrivateTempRule = "migration_private_temp-v2(run_id, private_owner, operation, destination, reserved_private_slot)"
+	dynamicPrivateTempRule = "migration_private_temp-v3(run_id, private_owner, payload_descriptor, operation, destination, exact_payload)"
 
-	dynamicPreparationStatusRule = "preparation_status-v2(run_id, reviewed_plan_hash, layout, manifest, fresh_owner, guardian)"
-	dynamicPreparationIntentRule = "preparation_intent-v1(run_id, reviewed_plan_hash, layout, fresh_owner)"
-	dynamicPrivateJournalRule    = "private_journal-v2(preparing_status_or_authenticated_recovery_journal)"
-	dynamicRecordsBundleRule     = "records_git_bundle-v1(exact_records_head_and_refs)"
-	dynamicIndexRestoreRule      = "logical_index_restore-v1(reviewed_preindex, selected_paths, no_migration_commit)"
+	dynamicPreparationStatusRule  = "preparation_status-v2(run_id, reviewed_plan_hash, layout, manifest, fresh_owner, guardian)"
+	dynamicPreparationIntentRule  = "preparation_intent-v1(run_id, reviewed_plan_hash, layout, fresh_owner)"
+	dynamicPrivateJournalRule     = "private_journal-v2(preparing_status_or_authenticated_recovery_journal)"
+	dynamicRecordsBundleRule      = "records_git_bundle-v1(exact_records_head_and_refs)"
+	dynamicIndexRestoreRule       = "logical_index_restore-v1(reviewed_preindex, selected_paths, no_migration_commit)"
+	dynamicRecoveryIdentityRule   = "recovery_identity-v1(run_id, fresh_private_owner, reviewed_plan_hash, config_and_manifest_fingerprints, layout)"
+	dynamicRecoveryDescriptorRule = "recovery_descriptor-v1(recovery_identity, purpose, exact_target, mode, payload_size, payload_sha256)"
+	dynamicRecoveryBlobRule       = "recovery_blob-v1(recovery_descriptor, immutable_content_addressed_payload)"
+	dynamicRecoveryRetiredRule    = "recovery_retired-v1(recovery_identity_link_digest, preparation_targets_removed)"
 )
 
 // buildProspectiveManifest derives all mutation authority from a ready plan.
@@ -312,6 +316,9 @@ func plannedJournalIndexPaths(plan Plan) ([]string, error) {
 func plannedPrivateRecoveryOperations(plan Plan) []ProspectiveOperation {
 	run := plannedRunPath(plan.Layout.WorkflowRoot)
 	private := plannedRunPath(plan.Layout.WorkflowRoot, "private")
+	store := plannedRunPath(plan.Layout.WorkflowRoot, "private", recoveryStoreName)
+	blobs := plannedRunPath(plan.Layout.WorkflowRoot, "private", recoveryStoreName, recoveryBlobDirectoryName)
+	descriptors := plannedRunPath(plan.Layout.WorkflowRoot, "private", recoveryStoreName, recoveryDescriptorDirectoryName)
 	return []ProspectiveOperation{
 		{
 			Scope:      journalScopeRecovery,
@@ -324,14 +331,83 @@ func plannedPrivateRecoveryOperations(plan Plan) []ProspectiveOperation {
 			Mutation:   "create_or_validate",
 		},
 		{
-			Scope:      journalScopeRecovery,
-			Kind:       journalKindRecoveryPrivateDirectory,
-			Path:       private,
-			Intent:     "create_private_recovery_directory",
-			PostExists: true,
-			PostMode:   0o700,
-			DataClass:  "private_recovery_directory",
-			Mutation:   "create_or_validate",
+			Scope:        journalScopeRecovery,
+			Kind:         journalKindRecoveryPrivateDirectory,
+			Path:         private,
+			Intent:       "create_private_recovery_directory",
+			PostExists:   true,
+			PostMode:     0o700,
+			DataClass:    "private_recovery_directory",
+			Mutation:     "create_or_validate",
+			ArtifactType: "directory",
+		},
+		{
+			Scope:        journalScopeRecovery,
+			Kind:         journalKindRecoveryIdentity,
+			Path:         plannedRunPath(plan.Layout.WorkflowRoot, "private", recoveryIdentityName),
+			Intent:       "publish_atomic_recovery_identity_before_payload_preparation",
+			PostExists:   true,
+			DataClass:    "private_recovery_identity",
+			ArtifactType: "opaque_symlink",
+			Mutation:     "create_or_validate",
+			DynamicRule:  dynamicRecoveryIdentityRule,
+		},
+		{
+			Scope:        journalScopeRecovery,
+			Kind:         journalKindRecoveryStoreDirectory,
+			Path:         store,
+			Intent:       "create_private_content_addressed_recovery_store",
+			PostExists:   true,
+			PostMode:     0o700,
+			DataClass:    "private_recovery_store",
+			ArtifactType: "directory",
+			Mutation:     "create_or_validate",
+		},
+		{
+			Scope:        journalScopeRecovery,
+			Kind:         journalKindRecoveryBlobDirectory,
+			Path:         blobs,
+			Intent:       "create_private_immutable_payload_blob_directory",
+			PostExists:   true,
+			PostMode:     0o700,
+			DataClass:    "private_recovery_store",
+			ArtifactType: "directory",
+			Mutation:     "create_or_validate",
+		},
+		{
+			Scope:        journalScopeRecovery,
+			Kind:         journalKindRecoveryDescriptorDir,
+			Path:         descriptors,
+			Intent:       "create_private_payload_descriptor_directory",
+			PostExists:   true,
+			PostMode:     0o700,
+			DataClass:    "private_recovery_store",
+			ArtifactType: "directory",
+			Mutation:     "create_or_validate",
+		},
+		{
+			Scope:        journalScopeRecovery,
+			Kind:         journalKindRecoveryDescriptor,
+			Path:         descriptors,
+			Paths:        []string{"status", "intent", "bundle", "journal", "completion"},
+			Intent:       "publish_payload_descriptor_before_private_target_replacement",
+			PostExists:   true,
+			DataClass:    "private_recovery_payload_descriptor",
+			ArtifactType: "opaque_symlink",
+			Mutation:     "create_or_update",
+			DynamicRule:  dynamicRecoveryDescriptorRule,
+		},
+		{
+			Scope:        journalScopeRecovery,
+			Kind:         journalKindRecoveryBlob,
+			Path:         blobs,
+			Intent:       "persist_immutable_content_addressed_private_payload",
+			PostExists:   true,
+			PostMode:     recoveryBlobMode,
+			DataClass:    "private_recovery_payload_blob",
+			ArtifactType: "regular_file",
+			Mutation:     "create_or_validate",
+			DynamicRule:  dynamicRecoveryBlobRule,
 		},
 		{
 			Scope:        journalScopeRecovery,
@@ -341,6 +417,7 @@ func plannedPrivateRecoveryOperations(plan Plan) []ProspectiveOperation {
 			PostExists:   true,
 			PostMode:     0o600,
 			DataClass:    "private_preparation_status",
+			ArtifactType: "regular_file",
 			Mutation:     "create_or_update",
 			DynamicRule:  dynamicPreparationStatusRule,
 			TempParent:   private,
@@ -354,6 +431,7 @@ func plannedPrivateRecoveryOperations(plan Plan) []ProspectiveOperation {
 			PostExists:   true,
 			PostMode:     0o600,
 			DataClass:    "private_recovery_journal",
+			ArtifactType: "regular_file",
 			Mutation:     "create_or_update",
 			DynamicRule:  dynamicPrivateJournalRule,
 			TempParent:   private,
@@ -367,6 +445,7 @@ func plannedPrivateRecoveryOperations(plan Plan) []ProspectiveOperation {
 			PostExists:   true,
 			PostMode:     0o600,
 			DataClass:    "private_preparation_intent",
+			ArtifactType: "regular_file",
 			Mutation:     "create_then_remove",
 			DynamicRule:  dynamicPreparationIntentRule,
 			TempParent:   private,
@@ -380,10 +459,36 @@ func plannedPrivateRecoveryOperations(plan Plan) []ProspectiveOperation {
 			PostExists:   true,
 			PostMode:     0o600,
 			DataClass:    "private_records_git_bundle",
+			ArtifactType: "regular_file",
 			Mutation:     "create_or_validate",
 			DynamicRule:  dynamicRecordsBundleRule,
 			TempParent:   private,
 			TempNameRule: dynamicPrivateTempRule,
+		},
+		{
+			Scope:        journalScopeRecovery,
+			Kind:         journalKindRecoveryCompletion,
+			Path:         plannedRunPath(plan.Layout.WorkflowRoot, "private", "completion.json"),
+			Intent:       "publish_private_completion_witness_with_durable_payload_authority",
+			PostExists:   true,
+			PostMode:     0o600,
+			DataClass:    "private_completion_witness",
+			ArtifactType: "regular_file",
+			Mutation:     "create_or_update",
+			DynamicRule:  dynamicCompletionRule,
+			TempParent:   private,
+			TempNameRule: dynamicPrivateTempRule,
+		},
+		{
+			Scope:        journalScopeRecovery,
+			Kind:         journalKindRecoveryRetired,
+			Path:         plannedRunPath(plan.Layout.WorkflowRoot, "private", recoveryRetiredName),
+			Intent:       "retain_recovery_evidence_after_preparation_restore",
+			PostExists:   true,
+			DataClass:    "private_recovery_retirement_marker",
+			ArtifactType: "opaque_symlink",
+			Mutation:     "create_or_validate",
+			DynamicRule:  dynamicRecoveryRetiredRule,
 		},
 	}
 }

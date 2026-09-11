@@ -16,6 +16,7 @@ homonto:
   bash_default: allow
   bash_ask: [
     "onto -*", "to -*",
+    "onto bypass*", "to bypass*",
     "git push", "git push *", "git -* push", "git -* push *",
     "gh api*", "gh -* api*",
     "gh pr comment*", "gh pr create*", "gh pr review*", "gh pr merge*",
@@ -35,28 +36,10 @@ homonto:
     "rm -r*", "rm -R*", "rm -f*", "rm --recursive*", "rm --force*",
     "rm * -r*", "rm * -R*", "rm * -f*", "rm * --recursive*", "rm * --force*",
     "sudo", "sudo *", "doas", "doas *", "dd", "dd *", "mkfs", "mkfs *", "mkfs.*",
-    "git reset", "git reset *", "git clean", "git clean *", "git rebase", "git rebase *",
-    "git -* reset", "git -* reset *", "git -* clean", "git -* clean *", "git -* rebase", "git -* rebase *",
-    "git commit --amend*", "git commit * --amend*", "git -* commit --amend*", "git -* commit * --amend*",
-    "git checkout -- *", "git checkout * -- *", "git checkout -f*", "git checkout * -f*",
-    "git checkout --force*", "git checkout * --force*",
-    "git checkout .", "git checkout . *", "git checkout ./*", "git checkout --ours*", "git checkout --theirs*",
-    "git -* checkout -- *", "git -* checkout * -- *", "git -* checkout -f*", "git -* checkout * -f*",
-    "git -* checkout --force*", "git -* checkout * --force*",
-    "git -* checkout .", "git -* checkout . *", "git -* checkout ./*", "git -* checkout --ours*", "git -* checkout --theirs*",
-    "git restore", "git restore *", "git -* restore", "git -* restore *",
-    "git branch -d*", "git branch -D*", "git branch --delete*", "git branch * -d*", "git branch * -D*", "git branch * --delete*",
-    "git -* branch -d*", "git -* branch -D*", "git -* branch --delete*",
-    "git worktree remove*", "git worktree prune*", "git -* worktree remove*", "git -* worktree prune*",
     "homonto snapshot undo*", "homonto -* snapshot undo*", "homonto snapshot recover*", "homonto -* snapshot recover*",
     "homonto workspace recover*", "homonto -* workspace recover*",
     "homonto cache gc*", "homonto -* cache gc*", "homonto worktree remove*", "homonto -* worktree remove*"
   ]
-  bash_deny:
-    # Direct bypass commands are denied; flag-first requests ask above. Argument names
-    # such as bypass-fix must not be mistaken for a bypass subcommand.
-    - "onto bypass*"
-    - "to bypass*"
 ---
 
 You are the **homonto coordinator**. You drive development through both of
@@ -202,11 +185,10 @@ Run only commands serving the assigned goal, and give implementers enough
 discretion to investigate technical uncertainty and repair task-local failures.
 Never silently widen their write scope.
 
-Finite publication and destructive-command exceptions ask; direct workflow bypass
-commands deny, and flag-first `onto`/`to` requests ask. The host may evaluate parsed
-commands independently. These exceptions match permission requests, not arbitrary
-script effects; a raw chain need not match its constituent commands' exceptions.
-Final denies still win. Do not work around a denied permission. Publication,
+Finite publication, non-Git destructive-command, and direct workflow-bypass
+exceptions ask; local Git commands allow except where a later protected ask matches,
+including `git push`. Flag-first `onto`/`to` requests also ask. The host may evaluate parsed commands independently. These exceptions match permission requests, not arbitrary
+script effects; a raw chain need not match its constituent commands' exceptions. Do not work around a denied permission. Publication,
 destructive operations, workflow state, and ownership boundaries remain in
 force; an allowed script is not authorization for crossing them. Keep concurrent
 specialists read-only with both bash and edit denied.

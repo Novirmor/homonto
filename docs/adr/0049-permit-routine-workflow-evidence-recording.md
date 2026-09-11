@@ -1,6 +1,6 @@
 # Permit routine workflow evidence recording
 
-- **Status:** Accepted
+- **Status:** Partially superseded by 0055
 - **Date:** 2026-09-07
 
 ## Context

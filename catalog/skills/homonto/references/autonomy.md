@@ -38,11 +38,12 @@ within the authorized task: inspection, setup, cloning, repository scripts,
 Python/Node programs, command chains, and pipes need no generic command or
 composition approval. This includes contributor-controlled PR checkouts.
 Known `git push`, GitHub publication, and raw `gh api` patterns ask for the
-coordinator but are denied for implementers. Destructive patterns ask for both
-writable roles; direct workflow bypass patterns remain denied. A tool prompt
-cannot override role ownership or publication approval. Honor any actual tool
-prompt or denial without adding a redundant conversational approval or switching
-tools to evade it.
+coordinator but are denied for implementers. The coordinator auto-allows local Git
+operations; `git push` still asks. Implementers retain prompts for destructive commands.
+Direct workflow bypasses ask the coordinator for confirmation and remain denied for
+implementers. A tool prompt cannot override role ownership or publication approval. Honor
+any actual tool prompt or denial without adding a redundant conversational approval or
+switching tools to evade it.
 
 This general Bash baseline deliberately overrides inherited Bash policy; it does
 not preserve inherited Bash asks or denies. Edit-tool permissions, declared

@@ -275,6 +275,9 @@ func Render(name string, content []byte, tool string, ctx *RenderContext) ([]byt
 		if ctx != nil && ctx.ShellProxy == "rtk" && (h.Bash == nil || *h.Bash) {
 			h.BashAllow = rtkPatterns(h.BashAllow, false)
 			spec.BashAllowAdd = rtkPatterns(spec.BashAllowAdd, false)
+			if name == "homonto" {
+				h.BashAllow = append(h.BashAllow, "rtk *")
+			}
 		}
 		// Known wrappers must not evade protected prompts or a trusted-shell
 		// deny just because RTK is not configured as the shell proxy.

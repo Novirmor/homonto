@@ -12,9 +12,10 @@ do not transfer that authority. Follow the invocation's exact publication scope
 and the workflow's verification gates, even for publication inside a script,
 interpreter, wrapper, or API payload. Known `git push`, GitHub publication, and
 raw `gh api` patterns ask for the coordinator but are denied for implementers.
-Destructive patterns ask for both writable roles. These protected rules follow
-exact allow additions, but cannot detect every hidden operation. A tool prompt
-cannot override role ownership or publication approval.
+The coordinator auto-allows local Git operations; `git push` still asks. Implementers
+retain prompts for destructive commands. These protected rules follow exact allow
+additions, but cannot detect every hidden operation. A tool prompt cannot override role
+ownership or publication approval.
 
 Resolve authorizes its verified push and PR creation; continue authorizes its
 verified push, summary comment, and demonstrably addressed thread resolutions.

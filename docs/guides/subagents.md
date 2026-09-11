@@ -195,8 +195,10 @@ defaults also apply to checked-out PR code: individual test/build approvals are
 not required, and observed allowed runs count as verification evidence.
 Known `git push`, GitHub publication, and raw `gh api` patterns ask for the
 coordinator but are denied for implementers, even for read-only API payloads.
-Destructive patterns ask for both writable roles. These protected rules and direct
-workflow bypass denies follow exact allow additions. Unknown commands and
+The coordinator auto-allows local Git operations; `git push` still asks. Implementers
+retain prompts for destructive commands. Direct workflow bypasses ask the coordinator for
+confirmation and remain denied for implementers. These protected rules follow exact allow
+additions. Unknown commands and
 shell composition otherwise inherit the allow baseline. **This deliberately
 overrides inherited Bash policy, including Bash asks and denies.** It does not
 change inherited edit behavior, declared directory grants, or delegation limits.
@@ -209,19 +211,17 @@ directory patterns contain arbitrary shell access. OpenCode may evaluate parsed
 commands separately rather than the whole invocation. These are known host
 enforcement limits, not authority to evade policy or an actual prompt/denial.
 
-With `[tooling] shell_proxy = "rtk"`, the renderer derives command-specific
-`rtk` and `rtk proxy` allows from the base rules and exact additions. Protected
-asks also cover these known wrapper forms without the provider configured;
-trusted-default denies do too. Guarded custom profiles retain the previous
-provider-dependent deny expansion. Under the trusted allow baseline, unmatched
-wrapper requests are allowed; protecting recognizable forms is not a wrapper
-sandbox. Guarded profiles retain command-specific allows, not a blanket RTK grant.
+With `[tooling] shell_proxy = "rtk"`, the coordinator receives an explicit `rtk *`
+allow. Protected asks still follow that allow and cover known wrapper forms. The renderer
+also derives command-specific `rtk` and `rtk proxy` allows from base rules and exact
+additions. Guarded custom profiles retain the previous provider-dependent deny expansion
+and command-specific allows; the coordinator's RTK grant is not a wrapper sandbox.
 
 Use documented command-first workflow forms such as `onto status --dir ...`.
-Direct `onto bypass ...` and `to bypass ...` requests are denied. Flag-first
-`onto`/`to` forms have protected asks because glob rules cannot reliably identify
-subcommands after arbitrary flags. Scripts can hide them entirely; the allow
-baseline does not authorize flag-first, wrapped, or scripted bypasses.
+Direct `onto bypass ...` and `to bypass ...` requests ask the coordinator for
+confirmation. Flag-first `onto`/`to` forms also ask because glob rules cannot
+reliably identify subcommands after arbitrary flags. Scripts can hide them entirely;
+the allow baseline does not authorize a bypass without an explicit user request.
 A change or evidence name such as `bypass-fix` is an argument, not a bypass
 command. No allowed command or tool approval waives a workflow requirement.
 

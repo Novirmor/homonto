@@ -73,7 +73,8 @@ func TestLooseShellPublicationRoleText(t *testing.T) {
 			text := hPromptText(t, file)
 			for _, want := range []string{
 				"`git push`, GitHub publication, and raw `gh api` patterns ask for the coordinator but are denied for implementers",
-				"Destructive patterns ask for both writable roles",
+				"The coordinator auto-allows local Git operations; `git push` still asks",
+				"Implementers retain prompts for destructive commands",
 				"A tool prompt cannot override role ownership or publication approval",
 			} {
 				if !strings.Contains(text, want) {

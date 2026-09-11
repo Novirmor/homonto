@@ -394,9 +394,12 @@ The shipped coordinator and implementers use a trusted-workspace shell baseline:
 inspection, setup, cloning, scripts (including Python/Node), chains, and pipes
 are allowed without generic command/composition prompts. Known `git push`, GitHub
 publication, and raw `gh api` patterns ask for the coordinator but are denied for
-implementers, including read-only API payloads. Destructive patterns ask for both
-writable roles; direct workflow bypasses remain denied. Protected asks
-and denies follow exact additions, so `bash_allow_add` cannot override them.
+implementers, including read-only API payloads. The coordinator auto-allows local Git
+operations; `git push` still asks. When `[tooling] shell_proxy = "rtk"`, it also receives
+an explicit `rtk *` allow. Implementers retain prompts for destructive commands. Direct
+workflow bypasses ask the coordinator for confirmation; bypasses remain denied for
+implementers. Protected asks and denies follow exact additions, so `bash_allow_add`
+cannot override them.
 This Bash baseline deliberately overrides inherited Bash asks/denies, not edit
 permissions, declared directory grants, delegation, or task write scope. Read-only
 specialists remain shell- and edit-denied.

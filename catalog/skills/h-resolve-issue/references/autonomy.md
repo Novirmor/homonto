@@ -67,10 +67,10 @@ The coordinator and implementers default to allowing task-relevant inspection,
 setup, cloning, tests/builds, Python/Node scripts, command chains, and pipes.
 Unknown commands and composition do not generically ask in this trusted profile;
 known `git push`, GitHub publication, and raw `gh api` patterns ask for the
-coordinator but are denied for implementers. Destructive patterns ask for both
-writable roles; direct-bypass denies remain. A tool prompt cannot override role
-ownership or publication approval. This Bash
-baseline overrides inherited Bash policy, not edit permissions, directory grants,
+coordinator but are denied for implementers. The coordinator auto-allows local Git
+operations; `git push` still asks. Implementers retain prompts for destructive commands.
+Direct workflow bypasses ask the coordinator for confirmation and remain denied for
+implementers. A tool prompt cannot override role ownership or publication approval. This Bash baseline overrides inherited Bash policy, not edit permissions, directory grants,
 delegation, or assigned write scope. Inspect commands and scripts for relevance;
 routine execution does not require an additional user dialog. Observed allowed
 runs are valid evidence under the workflow's normal verification rules.

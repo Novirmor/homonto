@@ -123,12 +123,10 @@ func TestBypassResourcesAreDedicatedCommands(t *testing.T) {
 			if err != nil {
 				return err
 			}
-			// A homonto capability block's bash_deny entries may name the
-			// bypass commands in order to DENY them (rendered verbatim by
-			// agentfm); that enforces this test's contract rather than
-			// weakening it. Only the deny block is exempt — an allow entry
-			// naming bypass still fails below.
-			lower := strings.ToLower(stripBashDenyBlock(string(content)))
+			// A homonto capability block's bash_ask/bash_deny entries may name
+			// the bypass commands as permission enforcement (rendered verbatim
+			// by agentfm). An allow entry still fails this scan.
+			lower := strings.ToLower(stripBashProtectionBlocks(string(content)))
 			for _, prohibited := range []string{"/onto-bypass", "/to-bypass", "onto-bypass", "to-bypass", "onto bypass", "to bypass"} {
 				if strings.Contains(lower, prohibited) {
 					t.Errorf("ordinary resource %s must not reference %q", path, prohibited)
@@ -142,22 +140,24 @@ func TestBypassResourcesAreDedicatedCommands(t *testing.T) {
 	}
 }
 
-// stripBashDenyBlock removes the child list items of a `bash_deny:` key (the
-// key itself stays) so capability-denial declarations can be exempted from a
-// prose scan without exempting anything else in the resource.
-func stripBashDenyBlock(content string) string {
+// stripBashProtectionBlocks removes the child list items of `bash_ask:` and
+// `bash_deny:` keys (the keys themselves stay) so capability-enforcement
+// declarations can be exempted from a prose scan without exempting anything
+// else in the resource.
+func stripBashProtectionBlocks(content string) string {
 	var out []string
-	inDeny := false
+	inProtection := false
 	for _, ln := range strings.Split(content, "\n") {
-		if inDeny {
+		if inProtection {
 			if ln == "" || ln[0] == ' ' || ln[0] == '\t' {
 				continue
 			}
-			inDeny = false
+			inProtection = false
 		}
-		if strings.HasPrefix(strings.TrimSpace(ln), "bash_deny:") {
+		key := strings.TrimSpace(ln)
+		if strings.HasPrefix(key, "bash_ask:") || strings.HasPrefix(key, "bash_deny:") {
 			out = append(out, ln)
-			inDeny = true
+			inProtection = true
 			continue
 		}
 		out = append(out, ln)
@@ -165,20 +165,20 @@ func stripBashDenyBlock(content string) string {
 	return strings.Join(out, "\n")
 }
 
-// The exemption must be surgical: deny children vanish, but an ALLOW entry
-// naming a bypass command survives the strip and would still fail the walk.
-func TestStripBashDenyBlockKeepsAllows(t *testing.T) {
-	content := "homonto:\n  bash_allow:\n    - \"onto bypass*\"\n  bash_deny:\n    - \"onto bypass*\"\n  spawn: []\n"
-	stripped := stripBashDenyBlock(content)
+// The exemption must be surgical: protection children vanish, but an ALLOW
+// entry naming a bypass command survives the strip and would still fail the walk.
+func TestStripBashProtectionBlocksKeepsAllows(t *testing.T) {
+	content := "homonto:\n  bash_allow:\n    - \"onto bypass*\"\n  bash_ask:\n    - \"onto bypass*\"\n  bash_deny:\n    - \"to bypass*\"\n  spawn: []\n"
+	stripped := stripBashProtectionBlocks(content)
 	if !strings.Contains(stripped, `- "onto bypass*"`) {
 		t.Fatalf("allow entries must survive the strip:\n%s", stripped)
 	}
-	if strings.Contains(stripped, `- "onto bypass*"\n  spawn`) {
-		t.Fatalf("strip must not reorder survivors:\n%s", stripped)
+	if strings.Contains(stripped, `- "to bypass*"`) {
+		t.Fatalf("protection entries must not survive the strip:\n%s", stripped)
 	}
-	stripped = stripBashDenyBlock("bash_allow:\n  - \"onto bypass*\"\nbash_deny:\n  - \"to bypass*\"\nnext: 1\n")
+	stripped = stripBashProtectionBlocks("bash_allow:\n  - \"onto bypass*\"\nbash_ask:\n  - \"onto bypass*\"\nbash_deny:\n  - \"to bypass*\"\nnext: 1\n")
 	if strings.Count(stripped, "bypass") != 1 {
-		t.Fatalf("only the deny child may vanish:\n%s", stripped)
+		t.Fatalf("only protection children may vanish:\n%s", stripped)
 	}
 }
 

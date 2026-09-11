@@ -1,6 +1,7 @@
 package workspacemigration
 
 import (
+	"bytes"
 	"crypto/rand"
 	"encoding/hex"
 	"errors"
@@ -43,6 +44,16 @@ const migrationTempPrefix = ".homonto-migration-"
 // a target's real parent is descriptor-pinned and before any target mutation.
 // Production leaves it as a no-op.
 var migrationAfterParentPin = func(string, string) error { return nil }
+
+// migrationRegularExpectation is the pre/post image already classified by the
+// journal executor. It is passed back into the descriptor-pinned mutation so a
+// same-inode, in-place edit cannot be overwritten merely because its pathname
+// and inode still match the first classification.
+type migrationRegularExpectation struct {
+	exists bool
+	data   []byte
+	mode   os.FileMode
+}
 
 // requireMigrationFilesystemSupport refuses platforms where the guarantees this
 // transaction relies on are unavailable before it creates an intent, backup, or
@@ -350,6 +361,56 @@ func migrationTargetStillExpected(parent *os.Root, name string, expected os.File
 	return nil
 }
 
+// migrationPinnedOptionalRegular reads a target through its already-pinned
+// parent and checks that the name still names the same regular file throughout
+// the read. It intentionally gives callers one final content check immediately
+// before their mutation. POSIX does not provide a byte-level compare-and-swap
+// against an editor that writes after that check, so the migration requires the
+// documented writer quiescence; it does detect edits present at this final
+// descriptor-pinned check and keeps the directory capability pinned.
+func migrationPinnedOptionalRegular(parent *os.Root, name string) ([]byte, os.FileMode, bool, error) {
+	before, err := parent.Lstat(name)
+	if errors.Is(err, os.ErrNotExist) {
+		return nil, 0, false, nil
+	}
+	if err != nil {
+		return nil, 0, false, err
+	}
+	if !migrationRealRegular(before) {
+		return nil, 0, false, fmt.Errorf("workspace migration: expected a real regular file")
+	}
+	file, err := parent.Open(name)
+	if err != nil {
+		return nil, 0, false, err
+	}
+	opened, statErr := file.Stat()
+	if statErr != nil || !migrationRealRegular(opened) || !os.SameFile(before, opened) || opened.Mode().Perm() != before.Mode().Perm() {
+		_ = file.Close()
+		return nil, 0, false, fmt.Errorf("workspace migration: file changed while being read")
+	}
+	data, readErr := io.ReadAll(file)
+	closeErr := file.Close()
+	if err := errors.Join(readErr, closeErr); err != nil {
+		return nil, 0, false, err
+	}
+	after, err := parent.Lstat(name)
+	if err != nil || !migrationRealRegular(after) || !os.SameFile(before, after) || after.Mode().Perm() != before.Mode().Perm() {
+		return nil, 0, false, fmt.Errorf("workspace migration: target changed while being read")
+	}
+	return data, before.Mode().Perm(), true, nil
+}
+
+func migrationTargetMatchesExpectation(parent *os.Root, name, path string, expected *migrationRegularExpectation) error {
+	if expected == nil {
+		return nil
+	}
+	data, mode, exists, err := migrationPinnedOptionalRegular(parent, name)
+	if err != nil || exists != expected.exists || exists && (!bytes.Equal(data, expected.data) || mode.Perm() != expected.mode.Perm()) {
+		return fmt.Errorf("workspace migration: recovery conflict at %s", path)
+	}
+	return nil
+}
+
 func migrationDirectoryStillExpected(parent *os.Root, name string, expected os.FileInfo) error {
 	info, err := parent.Lstat(name)
 	if err != nil || !migrationRealDirectory(info) || !os.SameFile(expected, info) {
@@ -362,6 +423,10 @@ func migrationDirectoryStillExpected(parent *os.Root, name string, expected os.F
 // It preserves an existing mode, writes and syncs the temp through its file
 // descriptor, renames through the pinned parent, then syncs that same parent.
 func writeMigrationRegular(root, path string, data []byte, mode os.FileMode) error {
+	return writeMigrationRegularExpected(root, path, data, mode, nil)
+}
+
+func writeMigrationRegularExpected(root, path string, data []byte, mode os.FileMode, expected *migrationRegularExpectation) error {
 	if err := ensureMigrationDirectory(root, filepath.Dir(path), 0o755); err != nil {
 		return err
 	}
@@ -411,7 +476,13 @@ func writeMigrationRegular(root, path string, data []byte, mode os.FileMode) err
 	if err := errors.Join(chmodErr, writeErr, syncErr, closeErr); err != nil {
 		return err
 	}
+	if err := migrationPinnedParentStillCurrent(root, parentPath, parent); err != nil {
+		return err
+	}
 	if err := migrationTargetStillExpected(parent, name, existing, exists); err != nil {
+		return err
+	}
+	if err := migrationTargetMatchesExpectation(parent, name, path, expected); err != nil {
 		return err
 	}
 	if err := migrationFS.rename(parent, tempName, name); err != nil {
@@ -469,8 +540,15 @@ func readMigrationRegular(root, path string) ([]byte, error) {
 }
 
 func removeMigrationOptionalRegular(root, path string) error {
+	return removeMigrationOptionalRegularExpected(root, path, nil)
+}
+
+func removeMigrationOptionalRegularExpected(root, path string, expected *migrationRegularExpectation) error {
 	parent, name, parentPath, err := openPinnedMigrationParent(root, path)
 	if errors.Is(err, os.ErrNotExist) {
+		if expected != nil && expected.exists {
+			return fmt.Errorf("workspace migration: recovery conflict at %s", path)
+		}
 		return nil
 	}
 	if err != nil {
@@ -479,6 +557,9 @@ func removeMigrationOptionalRegular(root, path string) error {
 	defer parent.Close()
 	before, err := parent.Lstat(name)
 	if errors.Is(err, os.ErrNotExist) {
+		if expected != nil && expected.exists {
+			return fmt.Errorf("workspace migration: recovery conflict at %s", path)
+		}
 		return nil
 	}
 	if err != nil {
@@ -494,6 +575,9 @@ func removeMigrationOptionalRegular(root, path string) error {
 		return err
 	}
 	if err := migrationTargetStillExpected(parent, name, before, true); err != nil {
+		return err
+	}
+	if err := migrationTargetMatchesExpectation(parent, name, path, expected); err != nil {
 		return err
 	}
 	if err := migrationFS.remove(parent, name); err != nil {

@@ -132,6 +132,9 @@ func build(configPath, manifestPath string, ignoredLocks map[string]bool) (Plan,
 	if validManifest {
 		bindManifest(&p, l, manifestRecords, discovered)
 		prepareRecordWrites(&p, l.WorkflowRoot, discovered)
+		if err := capturePlanLogicalRecordsIndex(&p, l.WorkflowRoot); err != nil {
+			p.block("records_logical_index_unavailable", l.WorkflowRoot, "migration-owned records index entries cannot be captured without changing the index")
+		}
 	}
 	return p.finish()
 }
@@ -517,6 +520,10 @@ func inspectRecordsGit(p *Plan, l workspace.Layout, requireClean bool, ignoredLo
 		p.block("records_git_identity_mismatch", root, "records must retain an exact standalone Git identity")
 		return RecordsGit{}, false
 	}
+	if err := requireSupportedGitIndexFlags(root, safeGitRelativePath); err != nil {
+		p.block("records_index_flags_unsupported", root, "records Git uses assume-unchanged, skip-worktree, or another unsupported index flag")
+		return RecordsGit{}, false
+	}
 	head, err := gitText(root, "rev-parse", "--verify", "HEAD^{commit}")
 	if err != nil || !canonicalCommit.MatchString(head) {
 		p.block("records_head_invalid", root, "records Git HEAD must resolve to a canonical commit")
@@ -557,6 +564,7 @@ func inspectRecordsGit(p *Plan, l workspace.Layout, requireClean bool, ignoredLo
 		GitCommonDir: common,
 		Head:         head,
 		IndexSHA256:  fingerprint(indexPath, "records_git_index", index).SHA256,
+		LogicalIndex: []RecordsIndexEntry{},
 		Dirt:         dirt,
 		RemoteNames:  remotes,
 	}, true
@@ -663,6 +671,33 @@ func gitDirtIgnoring(dir, root string, ignored map[string]bool) (Dirt, error) {
 	return dirt, nil
 }
 
+// requireSupportedGitIndexFlags rejects index bits whose status output can hide
+// worktree content from Git's ordinary dirt probes. The migration intentionally
+// has no secret-byte fallback for a clean tracked sensitive path: unsupported
+// flags block planning and every later source/index verification instead.
+func requireSupportedGitIndexFlags(root string, safePath func(string) bool) error {
+	data, err := workspace.ReadGit(root, "ls-files", "-v", "-z")
+	if err != nil {
+		return err
+	}
+	for _, record := range bytesSplitNUL(data) {
+		if len(record) < 3 || record[1] != ' ' {
+			return fmt.Errorf("Git index flags are malformed")
+		}
+		path := string(record[2:])
+		if !safePath(path) {
+			return fmt.Errorf("Git index flag path is unsafe")
+		}
+		// `git ls-files -v` reports normal cached entries as H, skip-worktree
+		// as S, and assume-unchanged entries with a lower-case tag. Refuse any
+		// other tag too rather than relying on a Git-version-specific fallback.
+		if record[0] != 'H' {
+			return fmt.Errorf("Git index has an unsupported flag at %s", path)
+		}
+	}
+	return nil
+}
+
 const (
 	sourceStatusTrackedClean = "tracked_clean"
 	sourceStatusTrackedDirty = "tracked_dirty"
@@ -758,6 +793,9 @@ func snapshotSourceWorktree(root string) (WorktreePreservation, error) {
 }
 
 func sourceIndexEntries(root string) (map[string]sourceIndexEntry, error) {
+	if err := requireSupportedGitIndexFlags(root, safeSourceRelativePath); err != nil {
+		return nil, err
+	}
 	data, err := workspace.ReadGit(root, "ls-files", "-s", "-z")
 	if err != nil {
 		return nil, err
@@ -782,6 +820,10 @@ func sourceIndexEntries(root string) (map[string]sourceIndexEntry, error) {
 		entries[name] = sourceIndexEntry{Blob: parts[1]}
 	}
 	return entries, nil
+}
+
+func sourceIndexFlags(root string) error {
+	return requireSupportedGitIndexFlags(root, safeSourceRelativePath)
 }
 
 func sourceStatuses(root string) (map[string]string, error) {
@@ -1781,6 +1823,10 @@ func validateSource(p *Plan, l workspace.Layout, recordPath string, state *ontos
 		p.block("source_refs_unavailable", repo, "declared source refs cannot be snapshotted without changing them")
 		return planned, false
 	}
+	if err := sourceIndexFlags(repo); err != nil {
+		p.block("source_index_flags_unsupported", repo, "declared source uses assume-unchanged, skip-worktree, or another unsupported index flag")
+		return planned, false
+	}
 	indexSHA256, err := gitIndexSHA256(repo)
 	if err != nil {
 		p.block("source_index_unavailable", repo, "declared source Git index cannot be fingerprinted without changing it")
@@ -1862,6 +1908,10 @@ func inspectExecution(p *Plan, path, expectedCommon string) (*Execution, bool) {
 	refs, err := sourceReferenceSnapshot(path)
 	if err != nil {
 		p.block("execution_refs_unavailable", path, "execution checkout refs cannot be snapshotted without changing them")
+		return nil, false
+	}
+	if err := sourceIndexFlags(path); err != nil {
+		p.block("execution_index_flags_unsupported", path, "execution checkout uses assume-unchanged, skip-worktree, or another unsupported index flag")
 		return nil, false
 	}
 	branch, err := gitText(path, "branch", "--show-current")

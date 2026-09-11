@@ -79,6 +79,57 @@ func TestBuildInventoriesRetiredRecordWithoutReactivatingIt(t *testing.T) {
 	}
 }
 
+func TestMigrationRejectsHiddenSensitiveContentDrift(t *testing.T) {
+	fixture := newMigrationFixture(t, false)
+	secret := filepath.Join(fixture.repos["app"], ".env")
+	writeFile(t, secret, "migration-secret-before\n")
+	runGit(t, fixture.repos["app"], "add", "-f", ".env")
+	runGit(t, fixture.repos["app"], "commit", "-m", "add tracked environment")
+	runGit(t, fixture.repos["app"], "update-index", "--assume-unchanged", ".env")
+	writeFile(t, secret, "migration-secret-after\n")
+
+	plan, err := Build(fixture.config, fixture.manifest)
+	if !errors.Is(err, ErrBlocked) || !hasBlocker(plan, "source_index_flags_unsupported") {
+		t.Fatalf("Build with hidden sensitive drift = %v, blockers=%+v", err, plan.Blockers)
+	}
+	encoded, marshalErr := json.Marshal(plan)
+	if marshalErr != nil {
+		t.Fatal(marshalErr)
+	}
+	for _, value := range []string{"migration-secret-before", "migration-secret-after"} {
+		if strings.Contains(string(encoded), value) {
+			t.Fatalf("plan exposed sensitive source bytes %q", value)
+		}
+	}
+}
+
+func TestMigrationPlanEnumeratesRecoveryMaterial(t *testing.T) {
+	fixture := newMigrationFixture(t, false)
+	plan, err := Build(fixture.config, fixture.manifest)
+	if err != nil {
+		t.Fatalf("Build: %v", err)
+	}
+	for _, want := range []struct {
+		kind, path, dataClass, mutation, dynamic string
+		mode                                     uint32
+	}{
+		{journalKindRecoveryRunDirectory, plannedRunPath(fixture.records), "private_recovery_directory", "create_or_validate", "", 0o700},
+		{journalKindRecoveryPrivateDirectory, plannedRunPath(fixture.records, "private"), "private_recovery_directory", "create_or_validate", "", 0o700},
+		{journalKindRecoveryJournal, plannedRunPath(fixture.records, "private", "journal.json"), "private_recovery_journal", "create_or_update", dynamicPrivateJournalRule, 0o600},
+		{journalKindRecoveryIntent, plannedRunPath(fixture.records, "private", "intent.json"), "private_preparation_intent", "create_then_remove", dynamicPreparationIntentRule, 0o600},
+		{journalKindRecoveryBundle, plannedRunPath(fixture.records, "private", "records.git.bundle"), "private_records_git_bundle", "create_or_validate", dynamicRecordsBundleRule, 0o600},
+	} {
+		operation, found := prospectiveOperation(plan, want.kind)
+		if !found || operation.Scope != journalScopeRecovery || operation.Path != want.path || !operation.PostExists || operation.PostMode != want.mode || operation.DataClass != want.dataClass || operation.Mutation != want.mutation || operation.DynamicRule != want.dynamic {
+			t.Fatalf("recovery operation %q = %+v, found=%t", want.kind, operation, found)
+		}
+	}
+	completion, found := prospectiveOperation(plan, journalKindCompletion)
+	if !found || completion.DataClass != "private_completion_witness" || completion.Mutation != "create_or_update" || completion.PostMode != 0o600 {
+		t.Fatalf("completion witness operation = %+v, found=%t", completion, found)
+	}
+}
+
 func TestBuildPreparesExplicitTransformsAndPreservesRetiredBytes(t *testing.T) {
 	f := newMigrationFixture(t, true, false)
 	aliases := []string{"app"}
@@ -1116,6 +1167,15 @@ func hasBlocker(plan Plan, code string) bool {
 		}
 	}
 	return false
+}
+
+func prospectiveOperation(plan Plan, kind string) (ProspectiveOperation, bool) {
+	for _, operation := range plan.Prospective.Operations {
+		if operation.Kind == kind {
+			return operation, true
+		}
+	}
+	return ProspectiveOperation{}, false
 }
 
 func migrationSnapshot(t *testing.T, f *migrationFixture) map[string]string {

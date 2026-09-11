@@ -559,7 +559,7 @@ func TestMigrationFinalizationChecksSourcePreimages(t *testing.T) {
 		}
 	})
 
-	t.Run("verify rejects post-migration source and preserved-record drift", func(t *testing.T) {
+	t.Run("verify rejects post-migration source drift and unsupported records index flags", func(t *testing.T) {
 		fixture := newMigrationFixture(t, false, false)
 		sourcePath := filepath.Join(fixture.repos["app"], "tracked")
 		writeFile(t, sourcePath, "dirty before plan\n")
@@ -580,7 +580,7 @@ func TestMigrationFinalizationChecksSourcePreimages(t *testing.T) {
 		handoff := filepath.Join(fixture.records, "changes", "active", ".onto", "handoff.md")
 		writeFile(t, handoff, "historic evidence changed\n")
 		runGit(t, fixture.records, "update-index", "--assume-unchanged", "changes/active/.onto/handoff.md")
-		if _, err := Verify(fixture.config, result.RunID); err == nil || !strings.Contains(err.Error(), "input changed after journal creation") {
+		if _, err := Verify(fixture.config, result.RunID); err == nil || !strings.Contains(err.Error(), "records index flags are unsupported") {
 			t.Fatalf("Verify after preserved record drift = %v", err)
 		}
 	})
@@ -1591,6 +1591,690 @@ func TestMigrationRobustness_ForgedCompleteBarrier(t *testing.T) {
 	overwriteJournalForTest(t, fixture.records, runID, journal)
 	if _, err := workspace.Load(fixture.config); err == nil || !strings.Contains(err.Error(), "authorization") {
 		t.Fatalf("ordinary load accepted forged completion phase: %v", err)
+	}
+}
+
+func TestMigrationJournalWriteRejectsInPlaceDriftAfterClassification(t *testing.T) {
+	if err := requireMigrationFilesystemSupport(); err != nil {
+		t.Skip(err)
+	}
+	root := t.TempDir()
+	path := filepath.Join(root, "control.json")
+	writeFile(t, path, "before\n")
+	previous := migrationAfterParentPin
+	migrationAfterParentPin = func(_, pinnedPath string) error {
+		if pinnedPath != path {
+			return nil
+		}
+		return os.WriteFile(path, []byte("raced\n"), 0o644)
+	}
+	t.Cleanup(func() { migrationAfterParentPin = previous })
+
+	journal := privateJournal{ConfigRoot: root}
+	write := privateWrite{
+		Scope:      journalScopeConfig,
+		Kind:       journalKindRegistry,
+		Path:       path,
+		PreExists:  true,
+		PreMode:    0o644,
+		Preimage:   []byte("before\n"),
+		PostExists: true,
+		PostMode:   0o644,
+		Postimage:  []byte("after\n"),
+	}
+	if _, err := applyJournalWrite(journal, write, true); err == nil || !strings.Contains(err.Error(), "recovery conflict") {
+		t.Fatalf("apply journal write after in-place drift = %v", err)
+	}
+	if got := readFile(t, path); got != "raced\n" {
+		t.Fatalf("raced content was overwritten: %q", got)
+	}
+}
+
+func TestMigrationRecoveryRerunBeforePostIndexSave(t *testing.T) {
+	fixture := newMigrationFixture(t, false, false)
+	plan, err := Build(fixture.config, fixture.manifest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	previous := migrationBeforePostIndexSave
+	migrationBeforePostIndexSave = func(stage string) error {
+		if stage == "migration" {
+			return errors.New("interrupted before migration index journal save")
+		}
+		return nil
+	}
+	_, err = Apply(fixture.config, fixture.manifest, plan.PlanHash)
+	migrationBeforePostIndexSave = previous
+	if err == nil || !strings.Contains(err.Error(), "before migration index journal save") {
+		t.Fatalf("Apply = %v", err)
+	}
+	runID := interruptedRunID(t, fixture.records)
+	journal, err := loadJournal(fixture.records, runID)
+	if err != nil || journal.MigrationIndexPost != nil {
+		t.Fatalf("journal before postindex save = %+v, error=%v", journal, err)
+	}
+	result, err := Recover(fixture.config, runID, "resume", plan.PlanHash)
+	if err != nil || result.Status != "complete" {
+		t.Fatalf("Recover resume = %+v, %v", result, err)
+	}
+	if _, err := Verify(fixture.config, runID); err != nil {
+		t.Fatalf("Verify after postindex rerun: %v", err)
+	}
+}
+
+func TestMigrationRecoveryRerunAfterPostIndexSave(t *testing.T) {
+	fixture := newMigrationFixture(t, false, false)
+	plan, err := Build(fixture.config, fixture.manifest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	previous := migrationAfterPostIndexSave
+	migrationAfterPostIndexSave = func(stage string) error {
+		if stage == "migration" {
+			return errors.New("interrupted after migration index journal save")
+		}
+		return nil
+	}
+	_, err = Apply(fixture.config, fixture.manifest, plan.PlanHash)
+	migrationAfterPostIndexSave = previous
+	if err == nil || !strings.Contains(err.Error(), "after migration index journal save") {
+		t.Fatalf("Apply = %v", err)
+	}
+	runID := interruptedRunID(t, fixture.records)
+	journal, err := loadJournal(fixture.records, runID)
+	if err != nil || journal.MigrationIndexPost == nil {
+		t.Fatalf("journal after postindex save = %+v, error=%v", journal, err)
+	}
+	result, err := Recover(fixture.config, runID, "resume", plan.PlanHash)
+	if err != nil || result.Status != "complete" {
+		t.Fatalf("Recover resume = %+v, %v", result, err)
+	}
+	if _, err := Verify(fixture.config, runID); err != nil {
+		t.Fatalf("Verify after postindex rerun: %v", err)
+	}
+}
+
+func TestMigrationRestoreReinstatesLogicalIndexWithoutCommit(t *testing.T) {
+	fixture := newMigrationFixture(t, false, false)
+	plan, err := Build(fixture.config, fixture.manifest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	previous := migrationBeforePostIndexSave
+	migrationBeforePostIndexSave = func(stage string) error {
+		if stage == "migration" {
+			return errors.New("interrupted before migration index journal save")
+		}
+		return nil
+	}
+	_, err = Apply(fixture.config, fixture.manifest, plan.PlanHash)
+	migrationBeforePostIndexSave = previous
+	if err == nil || !strings.Contains(err.Error(), "before migration index journal save") {
+		t.Fatalf("Apply = %v", err)
+	}
+	runID := interruptedRunID(t, fixture.records)
+	journal, err := loadJournal(fixture.records, runID)
+	if err != nil || journal.MigrationCommit != "" {
+		t.Fatalf("uncommitted journal = %+v, error=%v", journal, err)
+	}
+	result, err := Recover(fixture.config, runID, "restore", plan.PlanHash)
+	if err != nil || result.Status != "restored" {
+		t.Fatalf("Recover restore = %+v, %v", result, err)
+	}
+	paths, err := plannedLogicalRecordsIndexPaths(plan)
+	if err != nil {
+		t.Fatal(err)
+	}
+	actual, err := captureRecordsIndex(fixture.records, paths)
+	if err != nil || !sameRecordsIndex(actual, plan.RecordsGit.LogicalIndex) {
+		t.Fatalf("restored logical index = %+v, error=%v, want=%+v", actual, err, plan.RecordsGit.LogicalIndex)
+	}
+	if staged := gitTextTest(t, fixture.records, "diff", "--cached", "--name-only"); staged != "" {
+		t.Fatalf("restore retained staged records paths: %q", staged)
+	}
+}
+
+func TestMigrationRecoveryRejectsSwappedRecoveryPayloads(t *testing.T) {
+	t.Run("journal", func(t *testing.T) {
+		fixture := newMigrationFixture(t, false, false)
+		plan, err := Build(fixture.config, fixture.manifest)
+		if err != nil {
+			t.Fatal(err)
+		}
+		runID := interruptAtRegistryWrite(t, fixture, plan)
+		original, err := journalPath(fixture.records, runID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		data, err := os.ReadFile(original)
+		if err != nil {
+			t.Fatal(err)
+		}
+		other := "migration-0123456789abcdef0123456789abcdef"
+		copyPath, err := ensurePrivateJournalDirectory(fixture.records, other)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(copyPath, data, 0o600); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := Recover(fixture.config, other, "resume", plan.PlanHash); err == nil || !strings.Contains(err.Error(), "does not match its requested recovery directory") {
+			t.Fatalf("Recover with swapped journal = %v", err)
+		}
+	})
+
+	t.Run("intent", func(t *testing.T) {
+		fixture := newMigrationFixture(t, false, false)
+		plan, err := Build(fixture.config, fixture.manifest)
+		if err != nil {
+			t.Fatal(err)
+		}
+		layout, err := workspace.LoadMigration(fixture.config)
+		if err != nil {
+			t.Fatal(err)
+		}
+		intent, err := newPreparationIntent(layout, plan)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := savePreparationIntent(intent); err != nil {
+			t.Fatal(err)
+		}
+		original, err := preparationIntentPath(fixture.records, intent.RunID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		data, err := os.ReadFile(original)
+		if err != nil {
+			t.Fatal(err)
+		}
+		other := "migration-fedcba9876543210fedcba9876543210"
+		if _, err := ensurePrivateJournalDirectory(fixture.records, other); err != nil {
+			t.Fatal(err)
+		}
+		copyPath, err := preparationIntentPath(fixture.records, other)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(copyPath, data, 0o600); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := loadPreparationIntent(fixture.records, other); err == nil || !strings.Contains(err.Error(), "does not match its requested recovery directory") {
+			t.Fatalf("load swapped intent = %v", err)
+		}
+	})
+}
+
+func TestMigrationFinalMarkerRejectsParentSubstitution(t *testing.T) {
+	if err := requireMigrationFilesystemSupport(); err != nil {
+		t.Skip(err)
+	}
+	fixture := newMigrationFixture(t, false, false)
+	plan, err := Build(fixture.config, fixture.manifest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	marker := filepath.Join(fixture.root, ".homonto", "workflow-layout.json")
+	control := filepath.Dir(marker)
+	replaced := control + "-replaced"
+	previous := migrationAfterParentPin
+	migrationAfterParentPin = func(_, pinnedPath string) error {
+		if pinnedPath != marker {
+			return nil
+		}
+		if err := os.Rename(control, replaced); err != nil {
+			return err
+		}
+		return os.Mkdir(control, 0o755)
+	}
+	t.Cleanup(func() { migrationAfterParentPin = previous })
+	if _, err := Apply(fixture.config, fixture.manifest, plan.PlanHash); err == nil || !strings.Contains(err.Error(), "parent directory changed") {
+		t.Fatalf("Apply after marker parent substitution = %v", err)
+	}
+	for _, path := range []string{marker, filepath.Join(replaced, "workflow-layout.json")} {
+		if _, err := os.Lstat(path); !os.IsNotExist(err) {
+			t.Fatalf("marker was written through substituted parent at %s: %v", path, err)
+		}
+	}
+}
+
+func TestMigrationRecoveryRerunRejectsPreCommitHookSourceMutation(t *testing.T) {
+	fixture := newMigrationFixture(t, false, false)
+	plan, err := Build(fixture.config, fixture.manifest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	source := fixture.repos["app"]
+	hook := filepath.Join(fixture.records, ".git", "hooks", "pre-commit")
+	writeFile(t, hook, "#!/bin/sh\nprintf 'hook source mutation\\n' > "+filepath.Join(source, "tracked")+"\ngit -C "+source+" branch migration-hook-ref\nexit 1\n")
+	if err := os.Chmod(hook, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Apply(fixture.config, fixture.manifest, plan.PlanHash); err == nil || !strings.Contains(err.Error(), "records migration commit remains pending") {
+		t.Fatalf("Apply with rejecting hook = %v", err)
+	}
+	runID := interruptedRunID(t, fixture.records)
+	if _, err := Recover(fixture.config, runID, "resume", plan.PlanHash); err == nil || !strings.Contains(err.Error(), "source refs changed") {
+		t.Fatalf("Recover after hook source mutation = %v", err)
+	}
+	journal, err := loadJournal(fixture.records, runID)
+	if err != nil || journal.Phase != "applying" || journal.MigrationCommit != "" {
+		t.Fatalf("journal after rejected hook rerun = %+v, error=%v", journal, err)
+	}
+	if got := readFile(t, filepath.Join(source, "tracked")); got != "hook source mutation\n" {
+		t.Fatalf("hook source worktree mutation missing: %q", got)
+	}
+}
+
+func TestMigrationRecoveryRerun_IndexAuthorityTamper(t *testing.T) {
+	for _, tc := range []struct {
+		name      string
+		interrupt func(*testing.T, *migrationFixture, Plan) string
+	}{
+		{"receipt", interruptAtReceiptWrite},
+		{"registry", interruptAtRegistryWrite},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			testMigrationRecoveryRerunIndexAuthorityTamper(t, tc.interrupt)
+		})
+	}
+}
+
+func testMigrationRecoveryRerunIndexAuthorityTamper(t *testing.T, interrupt func(*testing.T, *migrationFixture, Plan) string) {
+	t.Helper()
+	fixture := newMigrationFixture(t, false, false)
+	plan, err := Build(fixture.config, fixture.manifest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	runID := interrupt(t, fixture, plan)
+	journal, err := loadJournal(fixture.records, runID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	state, ok := journalWrite(journal, journalKindState)
+	if !ok {
+		t.Fatal("journal state write is absent")
+	}
+	statePath, err := filepath.Rel(fixture.records, state.Path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	statePath = filepath.ToSlash(statePath)
+	if err := os.WriteFile(state.Path, []byte("operator third staged blob\n"), os.FileMode(state.PostMode)); err != nil {
+		t.Fatal(err)
+	}
+	runGit(t, fixture.records, "add", "--", statePath)
+	operatorIndex, err := captureRecordsIndex(fixture.records, []string{statePath})
+	if err != nil || len(operatorIndex) != 1 {
+		t.Fatalf("capture operator index = %+v, %v", operatorIndex, err)
+	}
+	if err := os.WriteFile(state.Path, state.Preimage, os.FileMode(state.PreMode)); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(state.Path, os.FileMode(state.PreMode)); err != nil {
+		t.Fatal(err)
+	}
+	found := false
+	for i := range journal.RecordsIndexPre {
+		if journal.RecordsIndexPre[i].Path == statePath {
+			journal.RecordsIndexPre[i].Object = operatorIndex[0].Object
+			found = true
+		}
+	}
+	if !found || journal.PlanHash != plan.PlanHash {
+		t.Fatalf("tampered journal authority = %+v", journal.RecordsIndexPre)
+	}
+	backupBefore, err := os.ReadFile(journal.RecordsBackup.BundlePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	overwriteJournalForTest(t, fixture.records, runID, journal)
+	journalFile, err := journalPath(fixture.records, runID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	journalBefore, err := os.ReadFile(journalFile)
+	if err != nil {
+		t.Fatal(err)
+	}
+	stateBefore, err := os.ReadFile(state.Path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	headBefore := gitTextTest(t, fixture.records, "rev-parse", "HEAD^{commit}")
+
+	for _, action := range []string{"resume", "restore"} {
+		if _, err := Recover(fixture.config, runID, action, plan.PlanHash); err == nil || !strings.Contains(err.Error(), "records preindex differs from the reviewed logical index") {
+			t.Fatalf("Recover %s with tampered index authority = %v", action, err)
+		}
+		if actual, err := captureRecordsIndex(fixture.records, []string{statePath}); err != nil || !sameRecordsIndex(actual, operatorIndex) {
+			t.Fatalf("operator index after rejected %s = %+v, %v", action, actual, err)
+		}
+		if actual, err := os.ReadFile(state.Path); err != nil || !bytes.Equal(actual, stateBefore) {
+			t.Fatalf("state worktree after rejected %s = %q, %v", action, actual, err)
+		}
+		if actual, err := os.ReadFile(journalFile); err != nil || !bytes.Equal(actual, journalBefore) {
+			t.Fatalf("journal after rejected %s changed: %v", action, err)
+		}
+		if actual, err := os.ReadFile(journal.RecordsBackup.BundlePath); err != nil || !bytes.Equal(actual, backupBefore) {
+			t.Fatalf("records backup after rejected %s changed: %v", action, err)
+		}
+		if head := gitTextTest(t, fixture.records, "rev-parse", "HEAD^{commit}"); head != headBefore {
+			t.Fatalf("records head after rejected %s = %q, want %q", action, head, headBefore)
+		}
+	}
+}
+
+func TestMigrationRecoveryRerun_PreCommitRestore(t *testing.T) {
+	t.Run("after migration index save before migration tree", func(t *testing.T) {
+		fixture := newMigrationFixture(t, false, false)
+		plan, err := Build(fixture.config, fixture.manifest)
+		if err != nil {
+			t.Fatal(err)
+		}
+		previous := migrationAfterPostIndexSave
+		migrationAfterPostIndexSave = func(stage string) error {
+			if stage == "migration" {
+				return errors.New("interrupted after migration index journal save")
+			}
+			return nil
+		}
+		_, err = Apply(fixture.config, fixture.manifest, plan.PlanHash)
+		migrationAfterPostIndexSave = previous
+		if err == nil || !strings.Contains(err.Error(), "after migration index journal save") {
+			t.Fatalf("Apply = %v", err)
+		}
+		runID := interruptedRunID(t, fixture.records)
+		journal, err := loadJournal(fixture.records, runID)
+		if err != nil || journal.MigrationIndexPost == nil || journal.ExpectedMigrationTree != "" || journal.MigrationCommit != "" {
+			t.Fatalf("pre-tree journal = %+v, error=%v", journal, err)
+		}
+		assertUncommittedMigrationRestored(t, fixture, plan, runID, journal.RecordsParent)
+	})
+
+	t.Run("rejecting first commit hook", func(t *testing.T) {
+		fixture := newMigrationFixture(t, false, false)
+		plan, err := Build(fixture.config, fixture.manifest)
+		if err != nil {
+			t.Fatal(err)
+		}
+		hook := filepath.Join(fixture.records, ".git", "hooks", "pre-commit")
+		writeFile(t, hook, "#!/bin/sh\nexit 1\n")
+		if err := os.Chmod(hook, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		_, err = Apply(fixture.config, fixture.manifest, plan.PlanHash)
+		if err == nil || !strings.Contains(err.Error(), "records migration commit remains pending") {
+			t.Fatalf("Apply with rejecting hook = %v", err)
+		}
+		runID := interruptedRunID(t, fixture.records)
+		journal, err := loadJournal(fixture.records, runID)
+		if err != nil || journal.MigrationIndexPost == nil || journal.ExpectedMigrationTree == "" || journal.MigrationCommit != "" {
+			t.Fatalf("hook-rejected journal = %+v, error=%v", journal, err)
+		}
+		hookSentinel := filepath.Join(t.TempDir(), "restore-hook-ran")
+		writeFile(t, hook, fmt.Sprintf("#!/bin/sh\n: > %q\nexit 1\n", hookSentinel))
+		if err := os.Chmod(hook, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		assertUncommittedMigrationRestored(t, fixture, plan, runID, journal.RecordsParent)
+		if _, err := os.Lstat(hookSentinel); !os.IsNotExist(err) {
+			t.Fatalf("restore invoked the rejecting commit hook: %v", err)
+		}
+	})
+}
+
+func TestMigrationRecoveryRerun_WitnessPublicationFailure(t *testing.T) {
+	fixture := newMigrationFixture(t, false, false)
+	plan, err := Build(fixture.config, fixture.manifest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	previous := migrationAfterParentPin
+	fired := false
+	migrationAfterParentPin = func(_, pinnedPath string) error {
+		if !fired && filepath.Base(pinnedPath) == "completion.json" {
+			fired = true
+			return errors.New("interrupted completion witness publication")
+		}
+		return nil
+	}
+	_, err = Apply(fixture.config, fixture.manifest, plan.PlanHash)
+	migrationAfterParentPin = previous
+	if err == nil || !strings.Contains(err.Error(), "interrupted completion witness publication") || !fired {
+		t.Fatalf("Apply during completion witness publication = %v, fired=%t", err, fired)
+	}
+	runID := interruptedRunID(t, fixture.records)
+	journal, err := loadJournal(fixture.records, runID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	completion, ok := journalWrite(journal, journalKindCompletion)
+	if !ok || journal.Phase != "pending-finalization" || len(completion.Postimage) == 0 {
+		t.Fatalf("journal before completion recovery = %+v", journal)
+	}
+	if _, err := os.Lstat(completion.Path); !os.IsNotExist(err) {
+		t.Fatalf("completion witness exists after interrupted publication: %v", err)
+	}
+	if _, err := workspace.Load(fixture.config); err == nil {
+		t.Fatal("ordinary workspace load crossed the incomplete completion barrier")
+	}
+	headBefore := gitTextTest(t, fixture.records, "rev-parse", "HEAD^{commit}")
+	migrationCommit, proofCommit := journal.MigrationCommit, journal.ProofCommit
+	result, err := Recover(fixture.config, runID, "resume", plan.PlanHash)
+	if err != nil || result.Status != "complete" {
+		t.Fatalf("Recover witness publication = %+v, %v", result, err)
+	}
+	completed, err := loadJournal(fixture.records, runID)
+	if err != nil || completed.MigrationCommit != migrationCommit || completed.ProofCommit != proofCommit {
+		t.Fatalf("completion recovery commits = %+v, error=%v", completed, err)
+	}
+	if head := gitTextTest(t, fixture.records, "rev-parse", "HEAD^{commit}"); head != headBefore {
+		t.Fatalf("completion recovery created another records commit: %q != %q", head, headBefore)
+	}
+	if _, err := workspace.Load(fixture.config); err != nil {
+		t.Fatalf("ordinary workspace load after completion recovery: %v", err)
+	}
+	if _, err := Verify(fixture.config, runID); err != nil {
+		t.Fatalf("Verify after completion recovery: %v", err)
+	}
+}
+
+func TestMigrationRecoveryRerun_IntentRunIDMismatch(t *testing.T) {
+	fixture := newMigrationFixture(t, false, false)
+	plan, err := Build(fixture.config, fixture.manifest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	previous := migrationAfterPreparation
+	migrationAfterPreparation = func(stage string) error {
+		if stage == "intent" {
+			return errors.New("interrupted after durable intent")
+		}
+		return nil
+	}
+	_, err = Apply(fixture.config, fixture.manifest, plan.PlanHash)
+	migrationAfterPreparation = previous
+	if err == nil || !strings.Contains(err.Error(), "interrupted after durable intent") {
+		t.Fatalf("Apply = %v", err)
+	}
+	runA := interruptedRunID(t, fixture.records)
+	intent, err := loadPreparationIntent(fixture.records, runA)
+	if err != nil {
+		t.Fatal(err)
+	}
+	runB := "migration-0123456789abcdef0123456789abcdef"
+	bJournal, err := ensurePrivateJournalDirectory(fixture.records, runB)
+	if err != nil {
+		t.Fatal(err)
+	}
+	bBackup, err := recordsGitBackupPath(fixture.records, runB)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(bJournal, []byte("sentinel B journal\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(bBackup, []byte("sentinel B backup\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	bJournalBefore, err := os.ReadFile(bJournal)
+	if err != nil {
+		t.Fatal(err)
+	}
+	bBackupBefore, err := os.ReadFile(bBackup)
+	if err != nil {
+		t.Fatal(err)
+	}
+	intent.RunID = runB
+	if intent.PlanHash != plan.PlanHash {
+		t.Fatalf("intent plan hash = %q, want %q", intent.PlanHash, plan.PlanHash)
+	}
+	intentData, err := json.MarshalIndent(intent, "", "  ")
+	if err != nil {
+		t.Fatal(err)
+	}
+	intentPath, err := preparationIntentPath(fixture.records, runA)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(intentPath, append(intentData, '\n'), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	aIntentBefore, err := os.ReadFile(intentPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	aStatusPath, err := journalStatusPath(fixture.records, runA)
+	if err != nil {
+		t.Fatal(err)
+	}
+	aStatusBefore, err := os.ReadFile(aStatusPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Recover(fixture.config, runA, "restore", plan.PlanHash); err == nil || !strings.Contains(err.Error(), "preparation intent does not match its requested recovery directory") {
+		t.Fatalf("Recover A restore with mismatched intent run ID = %v", err)
+	}
+	for _, check := range []struct {
+		name string
+		path string
+		want []byte
+	}{
+		{"A intent", intentPath, aIntentBefore},
+		{"A status", aStatusPath, aStatusBefore},
+		{"B journal", bJournal, bJournalBefore},
+		{"B backup", bBackup, bBackupBefore},
+	} {
+		actual, err := os.ReadFile(check.path)
+		if err != nil || !bytes.Equal(actual, check.want) {
+			t.Fatalf("%s changed after rejected recovery: %v", check.name, err)
+		}
+	}
+}
+
+func TestMigrationJournalRestoreWriteRejectsInPlaceDriftAfterClassification(t *testing.T) {
+	if err := requireMigrationFilesystemSupport(); err != nil {
+		t.Skip(err)
+	}
+	root := t.TempDir()
+	path := filepath.Join(root, "control.json")
+	writeFile(t, path, "after\n")
+	previous := migrationAfterParentPin
+	migrationAfterParentPin = func(_, pinnedPath string) error {
+		if pinnedPath != path {
+			return nil
+		}
+		return os.WriteFile(path, []byte("raced restore\n"), 0o644)
+	}
+	t.Cleanup(func() { migrationAfterParentPin = previous })
+
+	journal := privateJournal{ConfigRoot: root}
+	write := privateWrite{
+		Scope:      journalScopeConfig,
+		Kind:       journalKindRegistry,
+		Path:       path,
+		PreExists:  true,
+		PreMode:    0o644,
+		Preimage:   []byte("before\n"),
+		PostExists: true,
+		PostMode:   0o644,
+		Postimage:  []byte("after\n"),
+	}
+	if _, err := applyJournalWrite(journal, write, false); err == nil || !strings.Contains(err.Error(), "recovery conflict") {
+		t.Fatalf("restore journal write after in-place drift = %v", err)
+	}
+	if got := readFile(t, path); got != "raced restore\n" {
+		t.Fatalf("raced restore content was overwritten: %q", got)
+	}
+}
+
+func TestMigrationFinalMarkerRejectsOutsideSymlinkSubstitution(t *testing.T) {
+	if err := requireMigrationFilesystemSupport(); err != nil {
+		t.Skip(err)
+	}
+	fixture := newMigrationFixture(t, false, false)
+	plan, err := Build(fixture.config, fixture.manifest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	marker := filepath.Join(fixture.root, ".homonto", "workflow-layout.json")
+	control := filepath.Dir(marker)
+	replaced := control + "-replaced"
+	outside := filepath.Join(t.TempDir(), "outside-control")
+	if err := os.MkdirAll(outside, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	sentinel := filepath.Join(outside, "sentinel")
+	writeFile(t, sentinel, "outside sentinel\n")
+	previous := migrationAfterParentPin
+	migrationAfterParentPin = func(_, pinnedPath string) error {
+		if pinnedPath != marker {
+			return nil
+		}
+		if err := os.Rename(control, replaced); err != nil {
+			return err
+		}
+		return os.Symlink(outside, control)
+	}
+	t.Cleanup(func() { migrationAfterParentPin = previous })
+	if _, err := Apply(fixture.config, fixture.manifest, plan.PlanHash); err == nil || !strings.Contains(err.Error(), "parent directory changed") && !strings.Contains(err.Error(), "parent component is not a real directory") {
+		t.Fatalf("Apply after marker outside symlink substitution = %v", err)
+	}
+	if got := readFile(t, sentinel); got != "outside sentinel\n" {
+		t.Fatalf("outside sentinel changed: %q", got)
+	}
+	for _, path := range []string{filepath.Join(outside, "workflow-layout.json"), filepath.Join(replaced, "workflow-layout.json")} {
+		if _, err := os.Lstat(path); !os.IsNotExist(err) {
+			t.Fatalf("marker was written through substituted parent at %s: %v", path, err)
+		}
+	}
+}
+
+func assertUncommittedMigrationRestored(t *testing.T, fixture *migrationFixture, plan Plan, runID, parent string) {
+	t.Helper()
+	result, err := Recover(fixture.config, runID, "restore", plan.PlanHash)
+	if err != nil || result.Status != "restored" {
+		t.Fatalf("Recover restore = %+v, %v", result, err)
+	}
+	journal, err := loadJournal(fixture.records, runID)
+	if err != nil || journal.MigrationCommit != "" || journal.ProofCommit != "" || journal.RestoreCommit != "" {
+		t.Fatalf("restored uncommitted journal = %+v, error=%v", journal, err)
+	}
+	if head := gitTextTest(t, fixture.records, "rev-parse", "HEAD^{commit}"); head != parent {
+		t.Fatalf("restore created a records commit: %q != %q", head, parent)
+	}
+	if err := verifyJournalWrites(journal, false); err != nil {
+		t.Fatalf("restored worktree differs from journal preimages: %v", err)
+	}
+	paths, err := plannedLogicalRecordsIndexPaths(plan)
+	if err != nil {
+		t.Fatal(err)
+	}
+	actual, err := captureRecordsIndex(fixture.records, paths)
+	if err != nil || !sameRecordsIndex(actual, plan.RecordsGit.LogicalIndex) {
+		t.Fatalf("restored logical index = %+v, error=%v, want=%+v", actual, err, plan.RecordsGit.LogicalIndex)
 	}
 }
 

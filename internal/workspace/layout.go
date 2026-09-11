@@ -493,7 +493,7 @@ func ReadGit(dir string, args ...string) ([]byte, error) {
 	if _, _, err := gitRoots(dir); err != nil {
 		return nil, err
 	}
-	cmd := exec.Command("git", append([]string{"-c", "core.fsmonitor=false", "-C", dir}, args...)...)
+	cmd := exec.Command("git", append([]string{"-c", "core.fsmonitor=false", "-c", "core.ignorestat=false", "-C", dir}, args...)...)
 	for _, entry := range os.Environ() {
 		if !strings.HasPrefix(entry, "GIT_") {
 			cmd.Env = append(cmd.Env, entry)

@@ -15,9 +15,9 @@ import (
 
 const (
 	// PlanVersion is the only exported migration-plan schema accepted by the
-	// M3 executor. Version 4 adds the source reference and HEAD-attachment
-	// proof needed to detect same-commit branch switches and tag changes.
-	PlanVersion = 4
+	// M3 executor. Version 5 adds the authenticated logical records-index
+	// snapshot and the complete private-recovery operation declarations.
+	PlanVersion = 5
 	// ManifestVersion is the only input manifest format accepted by M1.
 	ManifestVersion = 1
 	// ControlOnlyAttestation is the explicit operator statement required before
@@ -86,12 +86,24 @@ type Dirt struct {
 }
 
 type RecordsGit struct {
-	Path         string   `json:"path"`
-	GitCommonDir string   `json:"git_common_dir"`
-	Head         string   `json:"head"`
-	IndexSHA256  string   `json:"index_sha256"`
-	Dirt         Dirt     `json:"dirt"`
-	RemoteNames  []string `json:"remote_names"`
+	Path               string              `json:"path"`
+	GitCommonDir       string              `json:"git_common_dir"`
+	Head               string              `json:"head"`
+	IndexSHA256        string              `json:"index_sha256"`
+	LogicalIndex       []RecordsIndexEntry `json:"logical_index"`
+	LogicalIndexSHA256 string              `json:"logical_index_sha256"`
+	Dirt               Dirt                `json:"dirt"`
+	RemoteNames        []string            `json:"remote_names"`
+}
+
+// RecordsIndexEntry is one migration-owned stage-zero records index entry.
+// Object IDs are content-free Git metadata. The public plan binds these exact
+// entries so a private recovery journal cannot substitute a staged third blob.
+type RecordsIndexEntry struct {
+	Path   string `json:"path"`
+	Mode   uint32 `json:"mode"`
+	Object string `json:"object"`
+	Stage  int    `json:"stage"`
 }
 
 // GitReference is one name-to-object binding observed in a source repository.
@@ -207,17 +219,20 @@ type RecordWrite struct {
 // where a digest cannot exist until a run ID, fresh owner token, or Git commit
 // exists. It never carries raw state, config, journal, or token bytes.
 type ProspectiveOperation struct {
-	Scope       string `json:"scope"`
-	Kind        string `json:"kind"`
-	Path        string `json:"path"`
-	Intent      string `json:"intent"`
-	PreExists   bool   `json:"pre_exists"`
-	PreSHA256   string `json:"pre_sha256,omitempty"`
-	PreMode     uint32 `json:"pre_mode"`
-	PostExists  bool   `json:"post_exists"`
-	PostSHA256  string `json:"post_sha256,omitempty"`
-	PostMode    uint32 `json:"post_mode"`
-	DynamicRule string `json:"dynamic_rule,omitempty"`
+	Scope       string   `json:"scope"`
+	Kind        string   `json:"kind"`
+	Path        string   `json:"path"`
+	Paths       []string `json:"paths,omitempty"`
+	Intent      string   `json:"intent"`
+	PreExists   bool     `json:"pre_exists"`
+	PreSHA256   string   `json:"pre_sha256,omitempty"`
+	PreMode     uint32   `json:"pre_mode"`
+	PostExists  bool     `json:"post_exists"`
+	PostSHA256  string   `json:"post_sha256,omitempty"`
+	PostMode    uint32   `json:"post_mode"`
+	DataClass   string   `json:"data_class,omitempty"`
+	Mutation    string   `json:"mutation,omitempty"`
+	DynamicRule string   `json:"dynamic_rule,omitempty"`
 }
 
 // ProspectiveCommitBoundary binds one records-Git commit to its exact path

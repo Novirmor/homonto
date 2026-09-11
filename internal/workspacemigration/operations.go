@@ -23,6 +23,11 @@ const (
 	dynamicOwnerRule      = "fresh_128_bit_owner_token"
 	dynamicProofRule      = "commit_proof-v1(migration_commit, migration_parent, migration_tree)"
 	dynamicCompletionRule = "completion_witness-v1(receipt, commit_proof)"
+
+	dynamicPreparationIntentRule = "preparation_intent-v1(run_id, reviewed_plan_hash, layout, fresh_owner)"
+	dynamicPrivateJournalRule    = "private_journal-v2(preparing_status_or_authenticated_recovery_journal)"
+	dynamicRecordsBundleRule     = "records_git_bundle-v1(exact_records_head_and_refs)"
+	dynamicIndexRestoreRule      = "logical_index_restore-v1(reviewed_preindex, selected_paths, no_migration_commit)"
 )
 
 // buildProspectiveManifest derives all mutation authority from a ready plan.
@@ -32,7 +37,7 @@ func buildProspectiveManifest(plan Plan) (ProspectiveManifest, error) {
 	if plan.Layout.ConfigRoot == "" || plan.Layout.WorkflowRoot == "" || !canonicalCommit.MatchString(plan.RecordsGit.Head) {
 		return ProspectiveManifest{}, fmt.Errorf("workspace migration: prospective operations require a complete layout and records head")
 	}
-	operations := make([]ProspectiveOperation, 0, len(plan.RecordWrites)+5)
+	operations := make([]ProspectiveOperation, 0, len(plan.RecordWrites)+11)
 	for _, write := range plan.RecordWrites {
 		if !filepath.IsAbs(write.Path) || filepath.Clean(write.Path) != write.Path || !pathWithin(plan.Layout.WorkflowRoot, write.Path) || !validDigest(write.PreSHA256) || !validDigest(write.PostSHA256) {
 			return ProspectiveManifest{}, fmt.Errorf("workspace migration: invalid planned record operation")
@@ -92,6 +97,8 @@ func buildProspectiveManifest(plan Plan) (ProspectiveManifest, error) {
 			Intent:      "create_completion_witness",
 			PostExists:  true,
 			PostMode:    0o600,
+			DataClass:   "private_completion_witness",
+			Mutation:    "create_or_update",
 			DynamicRule: dynamicCompletionRule,
 		},
 		ProspectiveOperation{
@@ -104,6 +111,7 @@ func buildProspectiveManifest(plan Plan) (ProspectiveManifest, error) {
 			DynamicRule: dynamicRegistryRule,
 		},
 	)
+	operations = append(operations, plannedPrivateRecoveryOperations(plan)...)
 
 	marker, err := plannedMarkerData(plan.Layout)
 	if err != nil {
@@ -134,6 +142,24 @@ func buildProspectiveManifest(plan Plan) (ProspectiveManifest, error) {
 			DynamicRule: dynamicOwnerRule,
 		})
 	}
+	indexPaths, err := plannedJournalIndexPaths(plan)
+	if err != nil {
+		return ProspectiveManifest{}, err
+	}
+	operations = append(operations, ProspectiveOperation{
+		Scope:       journalScopeRecordsIndex,
+		Kind:        journalKindIndexRestore,
+		Path:        filepath.Join(plan.RecordsGit.GitCommonDir, "index"),
+		Paths:       indexPaths,
+		Intent:      "restore_authenticated_original_logical_index",
+		PreExists:   true,
+		PreSHA256:   plan.RecordsGit.LogicalIndexSHA256,
+		PostExists:  true,
+		PostSHA256:  plan.RecordsGit.LogicalIndexSHA256,
+		DataClass:   "records_logical_index",
+		Mutation:    "restore_selected_preimage_if_uncommitted",
+		DynamicRule: dynamicIndexRestoreRule,
+	})
 	sort.Slice(operations, func(i, j int) bool {
 		if operations[i].Scope != operations[j].Scope {
 			return operations[i].Scope < operations[j].Scope
@@ -228,6 +254,102 @@ func plannedMigrationCommitPaths(plan Plan) ([]string, error) {
 	return paths, nil
 }
 
+// plannedLogicalRecordsIndexPaths is the fixed pre-migration subset of the
+// records index. Dynamic migration files are necessarily absent before a fresh
+// run ID is allocated, so they are not part of this plan-bound logical snapshot.
+func plannedLogicalRecordsIndexPaths(plan Plan) ([]string, error) {
+	paths := make([]string, 0, len(plan.RecordWrites))
+	seen := map[string]bool{}
+	for _, write := range plan.RecordWrites {
+		rel, err := filepath.Rel(plan.Layout.WorkflowRoot, write.Path)
+		if err != nil || !safeGitRelativePath(filepath.ToSlash(rel)) || seen[filepath.ToSlash(rel)] {
+			return nil, fmt.Errorf("workspace migration: unsafe planned records index path")
+		}
+		seen[filepath.ToSlash(rel)] = true
+		paths = append(paths, filepath.ToSlash(rel))
+	}
+	sort.Strings(paths)
+	return paths, nil
+}
+
+// plannedJournalIndexPaths includes the generated records paths that can be
+// staged during the transaction as well as the static state paths. It is used
+// by the typed index-recovery declaration; its run ID is resolved only by the
+// journal authority.
+func plannedJournalIndexPaths(plan Plan) ([]string, error) {
+	paths, err := plannedLogicalRecordsIndexPaths(plan)
+	if err != nil {
+		return nil, err
+	}
+	paths = append(paths,
+		".workflow/migrations/.gitignore",
+		plannedRunRelativePath("receipt.json"),
+		plannedRunRelativePath("commit-proof.json"),
+	)
+	sort.Strings(paths)
+	return paths, nil
+}
+
+func plannedPrivateRecoveryOperations(plan Plan) []ProspectiveOperation {
+	run := plannedRunPath(plan.Layout.WorkflowRoot)
+	private := plannedRunPath(plan.Layout.WorkflowRoot, "private")
+	return []ProspectiveOperation{
+		{
+			Scope:      journalScopeRecovery,
+			Kind:       journalKindRecoveryRunDirectory,
+			Path:       run,
+			Intent:     "create_private_recovery_run_directory",
+			PostExists: true,
+			PostMode:   0o700,
+			DataClass:  "private_recovery_directory",
+			Mutation:   "create_or_validate",
+		},
+		{
+			Scope:      journalScopeRecovery,
+			Kind:       journalKindRecoveryPrivateDirectory,
+			Path:       private,
+			Intent:     "create_private_recovery_directory",
+			PostExists: true,
+			PostMode:   0o700,
+			DataClass:  "private_recovery_directory",
+			Mutation:   "create_or_validate",
+		},
+		{
+			Scope:       journalScopeRecovery,
+			Kind:        journalKindRecoveryJournal,
+			Path:        plannedRunPath(plan.Layout.WorkflowRoot, "private", "journal.json"),
+			Intent:      "publish_private_recovery_journal",
+			PostExists:  true,
+			PostMode:    0o600,
+			DataClass:   "private_recovery_journal",
+			Mutation:    "create_or_update",
+			DynamicRule: dynamicPrivateJournalRule,
+		},
+		{
+			Scope:       journalScopeRecovery,
+			Kind:        journalKindRecoveryIntent,
+			Path:        plannedRunPath(plan.Layout.WorkflowRoot, "private", "intent.json"),
+			Intent:      "publish_then_retire_preparation_intent",
+			PostExists:  true,
+			PostMode:    0o600,
+			DataClass:   "private_preparation_intent",
+			Mutation:    "create_then_remove",
+			DynamicRule: dynamicPreparationIntentRule,
+		},
+		{
+			Scope:       journalScopeRecovery,
+			Kind:        journalKindRecoveryBundle,
+			Path:        plannedRunPath(plan.Layout.WorkflowRoot, "private", "records.git.bundle"),
+			Intent:      "create_private_records_git_backup",
+			PostExists:  true,
+			PostMode:    0o600,
+			DataClass:   "private_records_git_bundle",
+			Mutation:    "create_or_validate",
+			DynamicRule: dynamicRecordsBundleRule,
+		},
+	}
+}
+
 // plannedBindingTemplates identifies only execution checkouts selected by a
 // reviewed active onto record. Ownership tokens are deliberately absent here;
 // they are fresh private values generated only after this exact set is fixed.
@@ -280,6 +402,9 @@ func validateReadyPlan(plan Plan) error {
 	if plan.Version != PlanVersion || !plan.ReadOnly || plan.Status != "ready" || !validDigest(plan.PlanHash) || plan.PlanHash != planHash(plan) {
 		return fmt.Errorf("workspace migration: invalid ready plan authority")
 	}
+	if err := validatePlanLogicalIndex(plan); err != nil {
+		return err
+	}
 	expected, err := buildProspectiveManifest(plan)
 	if err != nil {
 		return err
@@ -288,6 +413,17 @@ func validateReadyPlan(plan Plan) error {
 		return fmt.Errorf("workspace migration: prospective operation authority differs from the reviewed plan")
 	}
 	return nil
+}
+
+func validatePlanLogicalIndex(plan Plan) error {
+	paths, err := plannedLogicalRecordsIndexPaths(plan)
+	if err != nil {
+		return err
+	}
+	if !validDigest(plan.RecordsGit.LogicalIndexSHA256) || plan.RecordsGit.LogicalIndexSHA256 != logicalRecordsIndexDigest(plan.RecordsGit.LogicalIndex) {
+		return fmt.Errorf("workspace migration: plan logical records index digest is invalid")
+	}
+	return validateJournalIndexSnapshot(paths, plan.RecordsGit.LogicalIndex, true)
 }
 
 func plannedSnapshotRefs(plan Plan) []FileFingerprint {

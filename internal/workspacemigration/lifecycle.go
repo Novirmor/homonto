@@ -488,6 +488,14 @@ func verifyRecordsGitBackup(root string, backup recordsGitBackup) error {
 	return nil
 }
 
+func journalData(j privateJournal) ([]byte, error) {
+	data, err := json.MarshalIndent(j, "", "  ")
+	if err != nil {
+		return nil, err
+	}
+	return append(data, '\n'), nil
+}
+
 func saveJournal(j privateJournal) error {
 	if err := j.validate(); err != nil {
 		return err
@@ -496,11 +504,10 @@ func saveJournal(j privateJournal) error {
 	if err != nil {
 		return fmt.Errorf("workspace migration: prepare private journal: %w", err)
 	}
-	data, err := json.MarshalIndent(j, "", "  ")
+	data, err := journalData(j)
 	if err != nil {
 		return err
 	}
-	data = append(data, '\n')
 	intent, err := journalPreparationIntent(j)
 	if err != nil {
 		return err
@@ -535,6 +542,13 @@ func loadJournal(root, runID string) (privateJournal, error) {
 	}
 	if status, err := migrationrecord.LoadJournalStatus(root, runID); err == nil && status.Phase == "preparing" {
 		return privateJournal{}, os.ErrNotExist
+	}
+	return parsePrivateJournal(root, runID, path, data, mode)
+}
+
+func parsePrivateJournal(root, runID, path string, data []byte, mode os.FileMode) (privateJournal, error) {
+	if err := requirePrivateRecoveryDirectories(root, runID); err != nil {
+		return privateJournal{}, err
 	}
 	if mode.Perm()&0o077 != 0 {
 		return privateJournal{}, fmt.Errorf("workspace migration: private journal is not a 0600 regular file")
@@ -824,7 +838,7 @@ func journalPreparationIntent(j privateJournal) (preparationIntent, error) {
 	return intent, nil
 }
 
-func cleanupPrivateRecoveryTemporaryArtifacts(intent preparationIntent) error {
+func cleanupPrivateRecoveryTemporaryArtifacts(layout workspace.Layout, intent preparationIntent, current *privateJournal) error {
 	journalPath, err := journalPath(intent.Workflow, intent.RunID)
 	if err != nil {
 		return err
@@ -837,14 +851,238 @@ func cleanupPrivateRecoveryTemporaryArtifacts(intent preparationIntent) error {
 	if err != nil {
 		return err
 	}
-	for _, authority := range []migrationTempAuthority{
-		privateRecoveryTempAuthority(intent, journalKindRecoveryJournal, journalPath, "publish", nil),
-		privateRecoveryTempAuthority(intent, journalKindRecoveryIntent, intentPath, "publish", nil),
-		privateRecoveryTempAuthority(intent, journalKindRecoveryBundle, bundlePath, "publish", nil),
+	bundle, err := privateRecoveryBundleTemporaryData(intent, current, bundlePath)
+	if err != nil {
+		return err
+	}
+	if err := cleanupPrivateJournalTemporaryArtifact(layout, intent, current, journalPath); err != nil {
+		return err
+	}
+	if err := recoverPreparationIntentTemporaryArtifact(intent, intentPath); err != nil {
+		return err
+	}
+	return removeMigrationAuthorizedTemp(privateRecoveryTempAuthority(intent, journalKindRecoveryBundle, bundlePath, "publish", bundle))
+}
+
+func recoverPreparationIntentTemporaryArtifact(intent preparationIntent, intentPath string) error {
+	data, err := preparationIntentData(intent)
+	if err != nil {
+		return err
+	}
+	authority := privateRecoveryTempAuthority(intent, journalKindRecoveryIntent, intentPath, "publish", data)
+	name, err := authority.name()
+	if err != nil {
+		return err
+	}
+	temporaryPath := filepath.Join(filepath.Dir(intentPath), name)
+	_, _, temporaryExists, err := readMigrationOptionalRegular(intent.Workflow, temporaryPath)
+	if err != nil || !temporaryExists {
+		return err
+	}
+	actual, mode, exists, err := readMigrationOptionalRegular(intent.Workflow, intentPath)
+	if err != nil {
+		return err
+	}
+	if exists {
+		if mode.Perm() != 0o600 || !bytes.Equal(actual, data) {
+			return fmt.Errorf("workspace migration: preparation intent differs from durable status identity")
+		}
+		return removeMigrationAuthorizedTemp(authority)
+	}
+	return writeMigrationRegularAuthorized(intent.Workflow, intentPath, data, 0o600, nil, authority)
+}
+
+func privateRecoveryBundleTemporaryData(intent preparationIntent, current *privateJournal, bundlePath string) ([]byte, error) {
+	if current == nil {
+		// A preparation intent does not carry the backup digest. Without the
+		// durable private journal, an existing bundle temporary remains a conflict
+		// rather than being reconstructed from a mutable records worktree.
+		return nil, nil
+	}
+	data, mode, exists, err := readMigrationOptionalRegular(intent.Workflow, bundlePath)
+	if err != nil {
+		return nil, err
+	}
+	if !exists || mode.Perm() != 0o600 || migrationDigest(data) != current.RecordsBackup.BundleSHA256 {
+		return nil, fmt.Errorf("workspace migration: private records Git backup differs from the durable journal")
+	}
+	if err := verifyRecordsGitBackup(intent.Workflow, current.RecordsBackup); err != nil {
+		return nil, err
+	}
+	return data, nil
+}
+
+func cleanupPrivateJournalTemporaryArtifact(layout workspace.Layout, intent preparationIntent, current *privateJournal, journalPath string) error {
+	unnamed := privateRecoveryTempAuthority(intent, journalKindRecoveryJournal, journalPath, "publish", nil)
+	name, err := unnamed.name()
+	if err != nil {
+		return err
+	}
+	temporaryPath := filepath.Join(filepath.Dir(journalPath), name)
+	data, mode, exists, err := readMigrationOptionalRegular(intent.Workflow, temporaryPath)
+	if err != nil || !exists {
+		return err
+	}
+	if mode.Perm() != 0o600 {
+		return privateJournalTemporaryConflict()
+	}
+	candidate, err := parsePrivateJournal(intent.Workflow, intent.RunID, journalPath, data, mode)
+	if err != nil {
+		return privateJournalTemporaryConflict()
+	}
+	canonical, err := journalData(candidate)
+	if err != nil || !bytes.Equal(data, canonical) {
+		return privateJournalTemporaryConflict()
+	}
+	if err := validatePrivateJournalTemporary(layout, intent, current, candidate); err != nil {
+		return privateJournalTemporaryConflict()
+	}
+	return removeMigrationAuthorizedTemp(privateRecoveryTempAuthority(intent, journalKindRecoveryJournal, journalPath, "publish", canonical))
+}
+
+func privateJournalTemporaryConflict() error {
+	return fmt.Errorf("workspace migration: recovery conflict: private journal temporary is not recognized")
+}
+
+func validatePrivateJournalTemporary(layout workspace.Layout, intent preparationIntent, current *privateJournal, candidate privateJournal) error {
+	candidateIntent, err := journalPreparationIntent(candidate)
+	if err != nil || candidateIntent != intent {
+		return fmt.Errorf("private journal temporary identity differs from the durable preparation intent")
+	}
+	if err := validateJournalLayout(candidate, layout); err != nil {
+		return err
+	}
+	if current == nil {
+		if !privateJournalInitialTemporary(candidate) {
+			return fmt.Errorf("private journal temporary has progress without a durable journal")
+		}
+	} else if !privateJournalTemporaryExtends(*current, candidate) {
+		return fmt.Errorf("private journal temporary does not extend the durable journal")
+	}
+	return verifyPrivateJournalTemporaryProgress(layout, candidate)
+}
+
+func privateJournalInitialTemporary(journal privateJournal) bool {
+	if journal.Phase != "prepared" || journal.ExpectedMigrationTree != "" || journal.MigrationCommit != "" || journal.ExpectedProofTree != "" || journal.ProofCommit != "" || journal.RestoreParent != "" || journal.ExpectedRestoreTree != "" || journal.RestoreCommit != "" || journal.MigrationIndexPost != nil || journal.ProofIndexPost != nil || journal.RestoreIndexPost != nil {
+		return false
+	}
+	for _, write := range journal.Writes {
+		if (write.Kind == journalKindProof || write.Kind == journalKindCompletion) && len(write.Postimage) != 0 {
+			return false
+		}
+	}
+	return true
+}
+
+func privateJournalTemporaryExtends(current, candidate privateJournal) bool {
+	if current.Version != candidate.Version || current.RunID != candidate.RunID || current.PlanHash != candidate.PlanHash || current.ConfigPath != candidate.ConfigPath || current.ConfigRoot != candidate.ConfigRoot || current.Workflow != candidate.Workflow || current.IntentOwner != candidate.IntentOwner || current.RecordsParent != candidate.RecordsParent || current.RecordsIndexSHA256 != candidate.RecordsIndexSHA256 || current.MigrationMessage != candidate.MigrationMessage || current.MigrationMessageSHA256 != candidate.MigrationMessageSHA256 || current.ProofMessage != candidate.ProofMessage || current.RestoreMessage != candidate.RestoreMessage || current.RestoreMessageSHA256 != candidate.RestoreMessageSHA256 || !reflect.DeepEqual(current.Plan, candidate.Plan) || !reflect.DeepEqual(current.Snapshots, candidate.Snapshots) || !reflect.DeepEqual(current.Bindings, candidate.Bindings) || !reflect.DeepEqual(current.RecordsBackup, candidate.RecordsBackup) || !reflect.DeepEqual(current.RecordsIndexPre, candidate.RecordsIndexPre) || !privateJournalPhaseCanAdvance(current.Phase, candidate.Phase) || !privateJournalWritesExtend(current.Writes, candidate.Writes) {
+		return false
+	}
+	for _, fields := range [][2]string{
+		{current.ExpectedMigrationTree, candidate.ExpectedMigrationTree},
+		{current.MigrationCommit, candidate.MigrationCommit},
+		{current.ExpectedProofTree, candidate.ExpectedProofTree},
+		{current.ProofCommit, candidate.ProofCommit},
+		{current.RestoreParent, candidate.RestoreParent},
+		{current.ExpectedRestoreTree, candidate.ExpectedRestoreTree},
+		{current.RestoreCommit, candidate.RestoreCommit},
 	} {
-		if err := removeMigrationAuthorizedTemp(authority); err != nil {
+		if fields[0] != "" && fields[0] != fields[1] {
+			return false
+		}
+	}
+	for _, entries := range []struct {
+		current   []recordsIndexEntry
+		candidate []recordsIndexEntry
+	}{
+		{current.MigrationIndexPost, candidate.MigrationIndexPost},
+		{current.ProofIndexPost, candidate.ProofIndexPost},
+		{current.RestoreIndexPost, candidate.RestoreIndexPost},
+	} {
+		if entries.current != nil && !reflect.DeepEqual(entries.current, entries.candidate) {
+			return false
+		}
+	}
+	return true
+}
+
+func privateJournalPhaseCanAdvance(current, candidate string) bool {
+	if current == candidate {
+		return true
+	}
+	switch current {
+	case "prepared":
+		return candidate == "applying" || candidate == "restoring"
+	case "applying":
+		return candidate == "pending-finalization" || candidate == "restoring"
+	case "pending-finalization":
+		return candidate == "complete" || candidate == "restoring"
+	case "restoring":
+		return candidate == "restored"
+	default:
+		return false
+	}
+}
+
+func privateJournalWritesExtend(current, candidate []privateWrite) bool {
+	if len(current) != len(candidate) {
+		return false
+	}
+	byKey := make(map[string]privateWrite, len(current))
+	for _, write := range current {
+		byKey[journalWriteKey(write.Scope, write.Kind, write.Path)] = write
+	}
+	for _, write := range candidate {
+		previous, ok := byKey[journalWriteKey(write.Scope, write.Kind, write.Path)]
+		if !ok || previous.PreExists != write.PreExists || previous.PreMode != write.PreMode || !bytes.Equal(previous.Preimage, write.Preimage) || previous.PostExists != write.PostExists || previous.PostMode != write.PostMode || (len(previous.Postimage) != 0 && !bytes.Equal(previous.Postimage, write.Postimage)) {
+			return false
+		}
+	}
+	return true
+}
+
+func verifyPrivateJournalTemporaryProgress(layout workspace.Layout, journal privateJournal) error {
+	if err := verifyJournalInputsLocked(layout, journal); err != nil {
+		return err
+	}
+	if journal.MigrationCommit != "" {
+		if err := verifyMigrationCommit(layout.WorkflowRoot, journal); err != nil {
 			return err
 		}
+	} else if journal.ExpectedMigrationTree != "" {
+		if err := verifyPrivateJournalStagedTree(layout.WorkflowRoot, journal.RecordsParent, journal.ExpectedMigrationTree); err != nil {
+			return err
+		}
+	}
+	if journal.ProofCommit != "" {
+		if err := verifyProofCommit(layout.WorkflowRoot, journal); err != nil {
+			return err
+		}
+	} else if journal.ExpectedProofTree != "" {
+		if err := verifyPrivateJournalStagedTree(layout.WorkflowRoot, journal.MigrationCommit, journal.ExpectedProofTree); err != nil {
+			return err
+		}
+	}
+	if journal.RestoreCommit != "" {
+		return verifyRestoreCommit(layout.WorkflowRoot, journal)
+	}
+	if journal.ExpectedRestoreTree != "" {
+		return verifyPrivateJournalStagedTree(layout.WorkflowRoot, journal.RestoreParent, journal.ExpectedRestoreTree)
+	}
+	return nil
+}
+
+func verifyPrivateJournalStagedTree(root, parent, expected string) error {
+	if !canonicalCommit.MatchString(parent) || !canonicalCommit.MatchString(expected) {
+		return fmt.Errorf("private journal staged tree identity is invalid")
+	}
+	head, err := migrationGitText(root, "rev-parse", "--verify", "HEAD^{commit}")
+	if err != nil || head != parent {
+		return fmt.Errorf("private journal staged tree parent differs from records HEAD")
+	}
+	tree, err := migrationGitText(root, "write-tree")
+	if err != nil || tree != expected {
+		return fmt.Errorf("private journal staged tree differs from the authenticated temporary")
 	}
 	return nil
 }
@@ -2142,7 +2380,7 @@ func cleanupRecoveryMaterial(layout workspace.Layout, runID, expectedPlanHash st
 		if err := cleanupPreparationStatusTemporaryArtifact(intent); err != nil {
 			return err
 		}
-		if err := cleanupPrivateRecoveryTemporaryArtifacts(intent); err != nil {
+		if err := cleanupPrivateRecoveryTemporaryArtifacts(layout, intent, material.journal); err != nil {
 			return err
 		}
 		return cleanupJournalTemporaryArtifacts(*material.journal)
@@ -2151,7 +2389,7 @@ func cleanupRecoveryMaterial(layout workspace.Layout, runID, expectedPlanHash st
 		if err := cleanupPreparationStatusTemporaryArtifact(*material.intent); err != nil {
 			return err
 		}
-		return cleanupPrivateRecoveryTemporaryArtifacts(*material.intent)
+		return cleanupPrivateRecoveryTemporaryArtifacts(layout, *material.intent, nil)
 	}
 	if material.bootstrap != nil {
 		if err := cleanupBootstrapPreparationStatusTemporaryArtifact(layout, runID, expectedPlanHash, *material.bootstrap); err != nil {

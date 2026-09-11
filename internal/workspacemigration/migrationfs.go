@@ -144,7 +144,7 @@ func (authority migrationTempAuthority) matchesPartial(data []byte, mode os.File
 		// cannot authorize cleanup.
 		return bytes.Equal(data, authority.data) && mode.Perm() == authority.mode.Perm()
 	}
-	if authority.privateSlot && len(authority.data) == 0 {
+	if authority.privateSlot && authority.data == nil {
 		// A durable run/owner identity names the slot, but does not authenticate
 		// arbitrary bytes inside it. Cleanup callers without the expected payload
 		// must preserve the artifact for operator review rather than treating a

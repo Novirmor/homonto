@@ -1303,6 +1303,52 @@ func TestMigrationRobustness_ProcessKillCrashHelper(t *testing.T) {
 			}
 			select {}
 		}
+	case "intent-sync":
+		migrationFS = defaultMigrationFSOps
+		migrationFS.sync = func(kind, path string, file *os.File) error {
+			if err := file.Sync(); err != nil {
+				return err
+			}
+			if kind != "file" || filepath.Base(path) != "intent.json" {
+				return nil
+			}
+			if _, err := fmt.Fprintln(os.Stdout, "intent-sync"); err != nil {
+				return err
+			}
+			select {}
+		}
+	case "journal-pending-sync":
+		migrationFS = defaultMigrationFSOps
+		migrationFS.sync = func(kind, path string, file *os.File) error {
+			if err := file.Sync(); err != nil {
+				return err
+			}
+			if kind != "file" || filepath.Base(path) != "journal.json" {
+				return nil
+			}
+			entries, err := os.ReadDir(filepath.Dir(path))
+			if err != nil {
+				return err
+			}
+			for _, entry := range entries {
+				if !migrationTemporaryFileName(entry.Name()) {
+					continue
+				}
+				data, err := os.ReadFile(filepath.Join(filepath.Dir(path), entry.Name()))
+				if err != nil {
+					return err
+				}
+				var journal privateJournal
+				if err := decodePrivateJSON(data, &journal); err != nil || journal.Phase != "pending-finalization" {
+					continue
+				}
+				if _, err := fmt.Fprintln(os.Stdout, "journal-pending-sync"); err != nil {
+					return err
+				}
+				select {}
+			}
+			return nil
+		}
 	default:
 		t.Fatalf("unsupported crash-helper stage %q", stage)
 	}
@@ -1332,8 +1378,11 @@ func killMigrationProcess(t *testing.T, fixture *migrationFixture, plan Plan, st
 	}
 	line, err := bufio.NewReader(stdout).ReadString('\n')
 	want := stage + "-durable\n"
-	if stage == "state-create" {
-		want = "state-create-opened\n"
+	if stage == "state-create" || stage == "intent-sync" || stage == "journal-pending-sync" {
+		want = stage + "\n"
+		if stage == "state-create" {
+			want = "state-create-opened\n"
+		}
 	}
 	if err != nil || line != want {
 		_ = cmd.Process.Kill()
@@ -1347,6 +1396,16 @@ func killMigrationProcess(t *testing.T, fixture *migrationFixture, plan Plan, st
 	if err := cmd.Wait(); err == nil {
 		t.Fatal("crash helper exited successfully after SIGKILL")
 	}
+}
+
+func privateRecoveryTemporaryPath(t *testing.T, intent preparationIntent, kind, target string) string {
+	t.Helper()
+	authority := privateRecoveryTempAuthority(intent, kind, target, "publish", nil)
+	name, err := authority.name()
+	if err != nil {
+		t.Fatal(err)
+	}
+	return filepath.Join(filepath.Dir(target), name)
 }
 
 func TestMigrationRobustness_ProcessKillRecovery(t *testing.T) {
@@ -1370,6 +1429,205 @@ func TestMigrationRobustness_ProcessKillRecovery(t *testing.T) {
 	}
 	if _, err := Verify(fixture.config, runID); err != nil {
 		t.Fatalf("Verify after SIGKILL: %v", err)
+	}
+}
+
+func TestMigrationRecovery_KillDuringIntentTemporarySync(t *testing.T) {
+	for _, action := range []string{"resume", "restore"} {
+		t.Run(action, func(t *testing.T) {
+			fixture := newMigrationFixture(t, false, false)
+			plan, err := Build(fixture.config, fixture.manifest)
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			killMigrationProcess(t, fixture, plan, "intent-sync")
+			runID := interruptedRunID(t, fixture.records)
+			intent, err := preparationIntentFromStatus(fixture.records, runID)
+			if err != nil {
+				t.Fatal(err)
+			}
+			intentPath, err := preparationIntentPath(fixture.records, runID)
+			if err != nil {
+				t.Fatal(err)
+			}
+			temporary := privateRecoveryTemporaryPath(t, intent, journalKindRecoveryIntent, intentPath)
+			want, err := preparationIntentData(intent)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if data, err := os.ReadFile(temporary); err != nil || !bytes.Equal(data, want) {
+				t.Fatalf("synced intent temporary = %q, %v", data, err)
+			}
+			if info, err := os.Lstat(temporary); err != nil || info.Mode().Perm() != 0o600 {
+				t.Fatalf("synced intent temporary mode = %v, %v", info, err)
+			}
+
+			result, err := Recover(fixture.config, runID, action, plan.PlanHash)
+			if err != nil {
+				t.Fatalf("Recover after intent temporary SIGKILL: %v", err)
+			}
+			if _, err := os.Lstat(temporary); !errors.Is(err, os.ErrNotExist) {
+				t.Fatalf("intent temporary remains after recovery: %v", err)
+			}
+			if action == "resume" {
+				if result.Status != "complete" {
+					t.Fatalf("resume result = %+v", result)
+				}
+				if _, err := Verify(fixture.config, runID); err != nil {
+					t.Fatalf("Verify after intent temporary SIGKILL resume: %v", err)
+				}
+				return
+			}
+			if result.Status != "preparation-cleared" {
+				t.Fatalf("restore result = %+v", result)
+			}
+			if err := migrationrecord.ValidateBarrier(fixture.records); err != nil {
+				t.Fatalf("migration barrier after intent temporary restore: %v", err)
+			}
+		})
+	}
+}
+
+func TestMigrationRecovery_RefusesAlteredIntentTemporary(t *testing.T) {
+	fixture := newMigrationFixture(t, false, false)
+	plan, err := Build(fixture.config, fixture.manifest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	killMigrationProcess(t, fixture, plan, "intent-sync")
+	runID := interruptedRunID(t, fixture.records)
+	intent, err := preparationIntentFromStatus(fixture.records, runID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	intentPath, err := preparationIntentPath(fixture.records, runID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	temporary := privateRecoveryTemporaryPath(t, intent, journalKindRecoveryIntent, intentPath)
+	altered := []byte("altered intent temporary\n")
+	if err := os.WriteFile(temporary, altered, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(temporary, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Recover(fixture.config, runID, "resume", plan.PlanHash); err == nil || !strings.Contains(err.Error(), "foreign or altered temporary file") {
+		t.Fatalf("Recover with altered intent temporary = %v", err)
+	}
+	if data, err := os.ReadFile(temporary); err != nil || !bytes.Equal(data, altered) {
+		t.Fatalf("altered intent temporary changed: %q, %v", data, err)
+	}
+}
+
+func TestMigrationRecovery_KillDuringPendingJournalTemporarySync(t *testing.T) {
+	for _, action := range []string{"resume", "restore"} {
+		t.Run(action, func(t *testing.T) {
+			fixture := newMigrationFixture(t, false, false)
+			plan, err := Build(fixture.config, fixture.manifest)
+			if err != nil {
+				t.Fatal(err)
+			}
+			state := filepath.Join(fixture.records, "changes", "active", "onto-state.yaml")
+			stateBefore := readFile(t, state)
+
+			killMigrationProcess(t, fixture, plan, "journal-pending-sync")
+			runID := interruptedRunID(t, fixture.records)
+			journal, err := loadJournal(fixture.records, runID)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if journal.Phase != "applying" || journal.MigrationCommit == "" || journal.ProofCommit == "" {
+				t.Fatalf("durable journal before pending replacement = %+v", journal)
+			}
+			intent, err := journalPreparationIntent(journal)
+			if err != nil {
+				t.Fatal(err)
+			}
+			journalPath, err := journalPath(fixture.records, runID)
+			if err != nil {
+				t.Fatal(err)
+			}
+			temporary := privateRecoveryTemporaryPath(t, intent, journalKindRecoveryJournal, journalPath)
+			data, mode, exists, err := readMigrationOptionalRegular(fixture.records, temporary)
+			if err != nil || !exists || mode.Perm() != 0o600 {
+				t.Fatalf("synced journal temporary = exists:%v mode:%v err:%v", exists, mode, err)
+			}
+			candidate, err := parsePrivateJournal(fixture.records, runID, journalPath, data, mode)
+			if err != nil || candidate.Phase != "pending-finalization" {
+				t.Fatalf("pending journal temporary = %+v, %v", candidate, err)
+			}
+
+			result, err := Recover(fixture.config, runID, action, plan.PlanHash)
+			if err != nil {
+				t.Fatalf("Recover after pending journal temporary SIGKILL: %v", err)
+			}
+			if _, err := os.Lstat(temporary); !errors.Is(err, os.ErrNotExist) {
+				t.Fatalf("journal temporary remains after recovery: %v", err)
+			}
+			if action == "resume" {
+				if result.Status != "complete" {
+					t.Fatalf("resume result = %+v", result)
+				}
+				if _, err := Verify(fixture.config, runID); err != nil {
+					t.Fatalf("Verify after pending journal temporary SIGKILL resume: %v", err)
+				}
+				return
+			}
+			if result.Status != "restored" {
+				t.Fatalf("restore result = %+v", result)
+			}
+			if got := readFile(t, state); got != stateBefore {
+				t.Fatalf("restored state = %q, want %q", got, stateBefore)
+			}
+		})
+	}
+}
+
+func TestMigrationRecovery_RefusesInvalidCompletePrivateJournalTemporary(t *testing.T) {
+	fixture := newMigrationFixture(t, false, false)
+	plan, err := Build(fixture.config, fixture.manifest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	previous := migrationAfterMarker
+	migrationAfterMarker = func() error { return errors.New("interrupt after marker") }
+	_, err = Apply(fixture.config, fixture.manifest, plan.PlanHash)
+	migrationAfterMarker = previous
+	if err == nil || !strings.Contains(err.Error(), "interrupt after marker") {
+		t.Fatalf("Apply = %v", err)
+	}
+	runID := interruptedRunID(t, fixture.records)
+	journal, err := loadJournal(fixture.records, runID)
+	if err != nil || journal.Phase != "pending-finalization" {
+		t.Fatalf("pending journal = %+v, %v", journal, err)
+	}
+	intent, err := journalPreparationIntent(journal)
+	if err != nil {
+		t.Fatal(err)
+	}
+	journalPath, err := journalPath(fixture.records, runID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	temporary := privateRecoveryTemporaryPath(t, intent, journalKindRecoveryJournal, journalPath)
+	journal.Phase = "complete"
+	tampered, err := journalData(journal)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(temporary, tampered, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(temporary, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Recover(fixture.config, runID, "resume", plan.PlanHash); err == nil || !strings.Contains(err.Error(), "private journal temporary is not recognized") {
+		t.Fatalf("Recover with invalid complete journal temporary = %v", err)
+	}
+	if data, err := os.ReadFile(temporary); err != nil || !bytes.Equal(data, tampered) {
+		t.Fatalf("invalid complete journal temporary changed: %q, %v", data, err)
 	}
 }
 

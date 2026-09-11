@@ -50,6 +50,7 @@ const (
 	journalKindCompletion               = "completion"
 	journalKindRecoveryRunDirectory     = "recovery_run_directory"
 	journalKindRecoveryPrivateDirectory = "recovery_private_directory"
+	journalKindRecoveryStatus           = "recovery_status"
 	journalKindRecoveryJournal          = "recovery_journal"
 	journalKindRecoveryIntent           = "recovery_intent"
 	journalKindRecoveryBundle           = "recovery_bundle"
@@ -349,11 +350,7 @@ func requirePrivateRecoveryDirectory(root, path string) error {
 	return migrationPinnedParentStillCurrent(root, parentPath, parent)
 }
 
-// captureRecordsGitBackup creates the complete records-Git disaster-recovery
-// bundle before any registry, state, receipt, proof, marker, or owner-token
-// write. It deliberately does not modify the records index, refs, hooks, or
-// checkout files.
-func captureRecordsGitBackup(root, runID string, planned RecordsGit) (recordsGitBackup, error) {
+func plannedRecordsGitBackup(root, runID string, planned RecordsGit) (recordsGitBackup, error) {
 	head, err := migrationGitText(root, "rev-parse", "--verify", "HEAD^{commit}")
 	if err != nil || head != planned.Head {
 		return recordsGitBackup{}, fmt.Errorf("workspace migration: records HEAD changed before private backup")
@@ -378,27 +375,38 @@ func captureRecordsGitBackup(root, runID string, planned RecordsGit) (recordsGit
 	if err != nil {
 		return recordsGitBackup{}, err
 	}
-	if _, err := ensurePrivateJournalDirectory(root, runID); err != nil {
-		return recordsGitBackup{}, err
-	}
-	bundle, bundleMode, exists, err := readMigrationOptionalRegular(root, bundlePath)
+	return recordsGitBackup{
+		BundlePath:  bundlePath,
+		IndexPath:   indexPath,
+		IndexSHA256: migrationDigest(indexData),
+		IndexMode:   uint32(indexInfo.Mode().Perm()),
+		IndexData:   append([]byte(nil), indexData...),
+		Head:        head,
+		Refs:        refs,
+	}, nil
+}
+
+// captureRecordsGitBackup creates the complete records-Git disaster-recovery
+// bundle before any registry, state, receipt, proof, marker, or owner-token
+// write. It deliberately does not modify the records index, refs, hooks, or
+// checkout files.
+func captureRecordsGitBackup(root string, intent preparationIntent, planned RecordsGit) (recordsGitBackup, error) {
+	backup, err := plannedRecordsGitBackup(root, intent.RunID, planned)
 	if err != nil {
 		return recordsGitBackup{}, err
 	}
-	backup := recordsGitBackup{
-		BundlePath:   bundlePath,
-		BundleSHA256: migrationDigest(bundle),
-		IndexPath:    indexPath,
-		IndexSHA256:  migrationDigest(indexData),
-		IndexMode:    uint32(indexInfo.Mode().Perm()),
-		IndexData:    append([]byte(nil), indexData...),
-		Head:         head,
-		Refs:         refs,
+	if _, err := ensurePrivateJournalDirectory(root, intent.RunID); err != nil {
+		return recordsGitBackup{}, err
+	}
+	bundle, bundleMode, exists, err := readMigrationOptionalRegular(root, backup.BundlePath)
+	if err != nil {
+		return recordsGitBackup{}, err
 	}
 	if exists {
 		if bundleMode.Perm() != 0o600 {
 			return recordsGitBackup{}, fmt.Errorf("workspace migration: private records Git backup is not a 0600 regular file")
 		}
+		backup.BundleSHA256 = migrationDigest(bundle)
 		if err := verifyRecordsGitBackup(root, backup); err != nil {
 			return recordsGitBackup{}, err
 		}
@@ -408,7 +416,7 @@ func captureRecordsGitBackup(root, runID string, planned RecordsGit) (recordsGit
 	if err != nil {
 		return recordsGitBackup{}, fmt.Errorf("workspace migration: create records Git backup: %w", err)
 	}
-	if err := writeMigrationRegular(root, bundlePath, bundle, 0o600); err != nil {
+	if err := writeMigrationRegularAuthorized(root, backup.BundlePath, bundle, 0o600, nil, privateRecoveryTempAuthority(intent, journalKindRecoveryBundle, backup.BundlePath, "publish", bundle)); err != nil {
 		return recordsGitBackup{}, err
 	}
 	backup.BundleSHA256 = migrationDigest(bundle)
@@ -492,7 +500,12 @@ func saveJournal(j privateJournal) error {
 	if err != nil {
 		return err
 	}
-	if err := writeMigrationRegular(j.Workflow, path, append(data, '\n'), 0o600); err != nil {
+	data = append(data, '\n')
+	intent, err := journalPreparationIntent(j)
+	if err != nil {
+		return err
+	}
+	if err := writeMigrationRegularAuthorized(j.Workflow, path, data, 0o600, nil, privateRecoveryTempAuthority(intent, journalKindRecoveryJournal, path, "publish", data)); err != nil {
 		return fmt.Errorf("workspace migration: write private journal: %w", err)
 	}
 	intentPath, err := preparationIntentPath(j.Workflow, j.RunID)
@@ -564,23 +577,47 @@ func decodePrivateJSON(data []byte, target any) error {
 	return nil
 }
 
-func saveJournalStatus(root, runID, phase string) error {
-	if !migrationrecord.SafeRunID(runID) || phase == "" {
-		return fmt.Errorf("workspace migration: invalid journal status identity")
+func preparationStatus(intent preparationIntent) *migrationrecord.PreparationStatus {
+	return &migrationrecord.PreparationStatus{
+		PlanHash:     intent.PlanHash,
+		ConfigPath:   intent.ConfigPath,
+		ConfigRoot:   intent.ConfigRoot,
+		WorkflowRoot: intent.Workflow,
+		ManifestPath: intent.ManifestPath,
+		Owner:        intent.Owner,
+		Guardian:     intent.Guardian,
 	}
-	if _, err := ensurePrivateJournalDirectory(root, runID); err != nil {
-		return err
-	}
-	status := migrationrecord.JournalStatus{Version: migrationJournalVersion, RunID: runID, Phase: phase}
+}
+
+func journalStatusData(intent preparationIntent) ([]byte, error) {
+	status := migrationrecord.JournalStatus{Version: migrationJournalVersion, RunID: intent.RunID, Phase: intent.Phase, Preparation: preparationStatus(intent)}
 	data, err := json.Marshal(status)
 	if err != nil {
+		return nil, err
+	}
+	return append(data, '\n'), nil
+}
+
+func saveJournalStatus(intent preparationIntent) error {
+	if err := intent.validate(); err != nil {
+		return fmt.Errorf("workspace migration: invalid journal status identity")
+	}
+	if _, err := ensurePrivateJournalDirectory(intent.Workflow, intent.RunID); err != nil {
 		return err
 	}
-	path, err := journalStatusPath(root, runID)
+	data, err := journalStatusData(intent)
 	if err != nil {
 		return err
 	}
-	return writeMigrationRegular(root, path, append(data, '\n'), 0o600)
+	path, err := journalStatusPath(intent.Workflow, intent.RunID)
+	if err != nil {
+		return err
+	}
+	authority, err := preparationStatusTempAuthority(intent, data)
+	if err != nil {
+		return err
+	}
+	return writeMigrationRegularAuthorized(intent.Workflow, path, data, 0o600, nil, authority)
 }
 
 func newPreparationIntent(layout workspace.Layout, plan Plan) (preparationIntent, error) {
@@ -613,6 +650,30 @@ func newPreparationIntent(layout workspace.Layout, plan Plan) (preparationIntent
 	return intent, nil
 }
 
+func preparationIntentFromStatus(root, runID string) (preparationIntent, error) {
+	status, err := migrationrecord.LoadJournalStatus(root, runID)
+	if err != nil || status.Phase != "preparing" || status.Preparation == nil {
+		return preparationIntent{}, os.ErrNotExist
+	}
+	preparation := status.Preparation
+	intent := preparationIntent{
+		Version:      migrationPreparationIntentVersion,
+		RunID:        runID,
+		Phase:        "preparing",
+		PlanHash:     preparation.PlanHash,
+		ConfigPath:   preparation.ConfigPath,
+		ConfigRoot:   preparation.ConfigRoot,
+		Workflow:     preparation.WorkflowRoot,
+		ManifestPath: preparation.ManifestPath,
+		Owner:        preparation.Owner,
+		Guardian:     preparation.Guardian,
+	}
+	if err := intent.validate(); err != nil {
+		return preparationIntent{}, err
+	}
+	return intent, nil
+}
+
 func (intent preparationIntent) validate() error {
 	if intent.Version != migrationPreparationIntentVersion || intent.Phase != "preparing" || !migrationrecord.SafeRunID(intent.RunID) || !validDigest(intent.PlanHash) || !validMigrationOwner(intent.Owner) || intent.Guardian != migrationGuardianIdentity {
 		return fmt.Errorf("workspace migration: invalid preparation intent identity")
@@ -624,6 +685,125 @@ func (intent preparationIntent) validate() error {
 	}
 	if filepath.Dir(intent.ConfigPath) != intent.ConfigRoot {
 		return fmt.Errorf("workspace migration: invalid preparation intent layout")
+	}
+	return nil
+}
+
+func preparationIntentData(intent preparationIntent) ([]byte, error) {
+	data, err := json.MarshalIndent(intent, "", "  ")
+	if err != nil {
+		return nil, err
+	}
+	return append(data, '\n'), nil
+}
+
+func privateRecoveryTempAuthority(intent preparationIntent, kind, target, direction string, data []byte) migrationTempAuthority {
+	return migrationTempAuthority{
+		root:        intent.Workflow,
+		runID:       intent.RunID,
+		owner:       intent.Owner,
+		scope:       journalScopeRecovery,
+		kind:        kind,
+		target:      target,
+		direction:   direction,
+		data:        append([]byte(nil), data...),
+		mode:        0o600,
+		privateSlot: true,
+	}
+}
+
+func preparationStatusTempAuthority(intent preparationIntent, data []byte) (migrationTempAuthority, error) {
+	path, err := journalStatusPath(intent.Workflow, intent.RunID)
+	if err != nil {
+		return migrationTempAuthority{}, err
+	}
+	return migrationTempAuthority{
+		root:      intent.Workflow,
+		runID:     intent.RunID,
+		scope:     journalScopeRecovery,
+		kind:      journalKindRecoveryStatus,
+		target:    path,
+		direction: "publish",
+		data:      append([]byte(nil), data...),
+		mode:      0o600,
+		bootstrap: true,
+	}, nil
+}
+
+func cleanupPreparationStatusTemporaryArtifact(intent preparationIntent) error {
+	data, err := journalStatusData(intent)
+	if err != nil {
+		return err
+	}
+	authority, err := preparationStatusTempAuthority(intent, data)
+	if err != nil {
+		return err
+	}
+	return removeMigrationAuthorizedTemp(authority)
+}
+
+func cleanupBootstrapPreparationStatusTemporaryArtifact(root, runID string) error {
+	path, err := journalStatusPath(root, runID)
+	if err != nil {
+		return err
+	}
+	err = removeMigrationAuthorizedTemp(migrationTempAuthority{
+		root:        root,
+		runID:       runID,
+		scope:       journalScopeRecovery,
+		kind:        journalKindRecoveryStatus,
+		target:      path,
+		direction:   "publish",
+		mode:        0o600,
+		privateSlot: true,
+		bootstrap:   true,
+	})
+	if errors.Is(err, os.ErrNotExist) {
+		return nil
+	}
+	return err
+}
+
+func journalPreparationIntent(j privateJournal) (preparationIntent, error) {
+	intent := preparationIntent{
+		Version:      migrationPreparationIntentVersion,
+		RunID:        j.RunID,
+		Phase:        "preparing",
+		PlanHash:     j.PlanHash,
+		ConfigPath:   j.ConfigPath,
+		ConfigRoot:   j.ConfigRoot,
+		Workflow:     j.Workflow,
+		ManifestPath: j.Plan.Manifest.Path,
+		Owner:        j.IntentOwner,
+		Guardian:     migrationGuardianIdentity,
+	}
+	if err := intent.validate(); err != nil {
+		return preparationIntent{}, err
+	}
+	return intent, nil
+}
+
+func cleanupPrivateRecoveryTemporaryArtifacts(intent preparationIntent) error {
+	journalPath, err := journalPath(intent.Workflow, intent.RunID)
+	if err != nil {
+		return err
+	}
+	intentPath, err := preparationIntentPath(intent.Workflow, intent.RunID)
+	if err != nil {
+		return err
+	}
+	bundlePath, err := recordsGitBackupPath(intent.Workflow, intent.RunID)
+	if err != nil {
+		return err
+	}
+	for _, authority := range []migrationTempAuthority{
+		privateRecoveryTempAuthority(intent, journalKindRecoveryJournal, journalPath, "publish", nil),
+		privateRecoveryTempAuthority(intent, journalKindRecoveryIntent, intentPath, "publish", nil),
+		privateRecoveryTempAuthority(intent, journalKindRecoveryBundle, bundlePath, "publish", nil),
+	} {
+		if err := removeMigrationAuthorizedTemp(authority); err != nil {
+			return err
+		}
 	}
 	return nil
 }
@@ -644,7 +824,7 @@ func savePreparationIntent(intent preparationIntent) error {
 	}
 	// Publish the content-free pending status first so an interrupted intent is
 	// discoverable by ordinary loaders before any backup work can begin.
-	if err := saveJournalStatus(intent.Workflow, intent.RunID, intent.Phase); err != nil {
+	if err := saveJournalStatus(intent); err != nil {
 		return err
 	}
 	path, err := ensurePrivateJournalDirectory(intent.Workflow, intent.RunID)
@@ -658,11 +838,11 @@ func savePreparationIntent(intent preparationIntent) error {
 	if filepath.Dir(path) != filepath.Dir(intentPath) {
 		return fmt.Errorf("workspace migration: preparation intent directory differs from journal directory")
 	}
-	data, err := json.MarshalIndent(intent, "", "  ")
+	data, err := preparationIntentData(intent)
 	if err != nil {
 		return err
 	}
-	return writeMigrationRegular(intent.Workflow, intentPath, append(data, '\n'), 0o600)
+	return writeMigrationRegularAuthorized(intent.Workflow, intentPath, data, 0o600, nil, privateRecoveryTempAuthority(intent, journalKindRecoveryIntent, intentPath, "publish", data))
 }
 
 func loadPreparationIntent(root, runID string) (preparationIntent, error) {
@@ -696,8 +876,8 @@ func loadPreparationIntent(root, runID string) (preparationIntent, error) {
 	if expected, err := preparationIntentPath(intent.Workflow, intent.RunID); err != nil || expected != path {
 		return preparationIntent{}, fmt.Errorf("workspace migration: preparation intent path does not match its identity")
 	}
-	status, err := migrationrecord.LoadJournalStatus(root, runID)
-	if err != nil || status.RunID != runID || status.Phase != "preparing" {
+	statusIntent, err := preparationIntentFromStatus(root, runID)
+	if err != nil || statusIntent != intent {
 		return preparationIntent{}, fmt.Errorf("workspace migration: preparation intent status is missing or invalid")
 	}
 	return intent, nil
@@ -1313,6 +1493,7 @@ func validatePrivateRecoveryOperationAuthority(journal privateJournal) error {
 	want := map[string]string{
 		journalKindRecoveryRunDirectory:     runDir,
 		journalKindRecoveryPrivateDirectory: filepath.Dir(journalPath),
+		journalKindRecoveryStatus:           journalPath,
 		journalKindRecoveryJournal:          journalPath,
 		journalKindRecoveryIntent:           intentPath,
 		journalKindRecoveryBundle:           bundlePath,
@@ -1618,6 +1799,88 @@ func journalWriteRoot(j privateJournal, write privateWrite) (string, error) {
 	return "", fmt.Errorf("workspace migration: unknown journal write root")
 }
 
+func journalWriteTempAuthority(j privateJournal, write privateWrite, root string, data []byte, mode os.FileMode, post bool) (migrationTempAuthority, error) {
+	var operation *ProspectiveOperation
+	for index := range j.Plan.Prospective.Operations {
+		candidate := &j.Plan.Prospective.Operations[index]
+		path, err := resolvePlannedOperationPath(candidate.Path, j.RunID)
+		if err != nil {
+			return migrationTempAuthority{}, err
+		}
+		if candidate.Scope == write.Scope && candidate.Kind == write.Kind && path == write.Path {
+			operation = candidate
+			break
+		}
+	}
+	if operation == nil || operation.TempNameRule != dynamicTempNameRule {
+		return migrationTempAuthority{}, fmt.Errorf("workspace migration: journal write lacks planned temporary-file authority at %s", write.Path)
+	}
+	tempParent, err := resolvePlannedOperationPath(operation.TempParent, j.RunID)
+	if err != nil || tempParent != filepath.Dir(write.Path) {
+		return migrationTempAuthority{}, fmt.Errorf("workspace migration: journal write temporary parent differs at %s", write.Path)
+	}
+	if operation.DynamicRule == "" && (operation.PreExists != write.PreExists || operation.PreExists && operation.PreSHA256 != migrationDigest(write.Preimage) || operation.PreMode != write.PreMode || operation.PostExists != write.PostExists || operation.PostExists && operation.PostSHA256 != migrationDigest(write.Postimage) || operation.PostMode != write.PostMode) {
+		return migrationTempAuthority{}, fmt.Errorf("workspace migration: journal write differs from planned temporary-file authority at %s", write.Path)
+	}
+	direction := "apply-post"
+	if !post {
+		direction = "restore-pre"
+	}
+	return migrationTempAuthority{
+		root:       root,
+		runID:      j.RunID,
+		owner:      j.IntentOwner,
+		scope:      write.Scope,
+		kind:       write.Kind,
+		target:     write.Path,
+		direction:  direction,
+		preExists:  write.PreExists,
+		preimage:   append([]byte(nil), write.Preimage...),
+		preMode:    os.FileMode(write.PreMode),
+		postExists: write.PostExists,
+		postimage:  append([]byte(nil), write.Postimage...),
+		postMode:   os.FileMode(write.PostMode),
+		data:       append([]byte(nil), data...),
+		mode:       mode,
+	}, nil
+}
+
+func cleanupJournalTemporaryArtifacts(j privateJournal) error {
+	seen := map[string]bool{}
+	for _, write := range j.Writes {
+		root, err := journalWriteRoot(j, write)
+		if err != nil {
+			return err
+		}
+		for _, post := range []bool{true, false} {
+			exists, data, mode := write.PostExists, write.Postimage, os.FileMode(write.PostMode)
+			if !post {
+				exists, data, mode = write.PreExists, write.Preimage, os.FileMode(write.PreMode)
+			}
+			if !exists {
+				continue
+			}
+			authority, err := journalWriteTempAuthority(j, write, root, data, mode, post)
+			if err != nil {
+				return err
+			}
+			name, err := authority.name()
+			if err != nil {
+				return err
+			}
+			key := root + "\x00" + filepath.Dir(write.Path) + "\x00" + name
+			if seen[key] {
+				continue
+			}
+			seen[key] = true
+			if err := removeMigrationAuthorizedTemp(authority); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
 func readOptionalRegular(root, path string) ([]byte, os.FileMode, bool, error) {
 	return readMigrationOptionalRegular(root, path)
 }
@@ -1655,7 +1918,11 @@ func applyJournalWrite(j privateJournal, write privateWrite, post bool) (bool, e
 		wantExists, wantData, wantMode = write.PreExists, write.Preimage, os.FileMode(write.PreMode)
 	}
 	if wantExists {
-		if err := writeMigrationRegularExpected(root, write.Path, wantData, wantMode, expected); err != nil {
+		authority, err := journalWriteTempAuthority(j, write, root, wantData, wantMode, post)
+		if err != nil {
+			return false, err
+		}
+		if err := writeMigrationRegularAuthorized(root, write.Path, wantData, wantMode, expected, authority); err != nil {
 			return false, err
 		}
 	} else {
@@ -1777,33 +2044,57 @@ type recoveryMaterial struct {
 }
 
 func loadRecoveryMaterial(root, runID string) (recoveryMaterial, error) {
-	path, err := journalPath(root, runID)
-	if err != nil {
-		return recoveryMaterial{}, err
-	}
 	journal, journalErr := loadJournal(root, runID)
 	if journalErr == nil {
-		if err := removeMigrationTemporaryFiles(root, filepath.Dir(path)); err != nil {
+		intent, err := journalPreparationIntent(journal)
+		if err != nil {
+			return recoveryMaterial{}, err
+		}
+		if err := cleanupPreparationStatusTemporaryArtifact(intent); err != nil {
+			return recoveryMaterial{}, err
+		}
+		if err := cleanupPrivateRecoveryTemporaryArtifacts(intent); err != nil {
+			return recoveryMaterial{}, err
+		}
+		if err := cleanupJournalTemporaryArtifacts(journal); err != nil {
 			return recoveryMaterial{}, err
 		}
 		return recoveryMaterial{journal: &journal}, nil
 	}
 	intent, intentErr := loadPreparationIntent(root, runID)
 	if intentErr == nil {
-		if err := removeMigrationTemporaryFiles(root, filepath.Dir(path)); err != nil {
+		if err := cleanupPreparationStatusTemporaryArtifact(intent); err != nil {
+			return recoveryMaterial{}, err
+		}
+		if err := cleanupPrivateRecoveryTemporaryArtifacts(intent); err != nil {
 			return recoveryMaterial{}, err
 		}
 		return recoveryMaterial{intent: &intent}, nil
 	}
+	if errors.Is(intentErr, os.ErrNotExist) {
+		statusIntent, statusErr := preparationIntentFromStatus(root, runID)
+		if statusErr == nil {
+			if err := cleanupPreparationStatusTemporaryArtifact(statusIntent); err != nil {
+				return recoveryMaterial{}, err
+			}
+			if err := cleanupPrivateRecoveryTemporaryArtifacts(statusIntent); err != nil {
+				return recoveryMaterial{}, err
+			}
+			return recoveryMaterial{intent: &statusIntent}, nil
+		}
+		if !errors.Is(statusErr, os.ErrNotExist) {
+			return recoveryMaterial{}, statusErr
+		}
+	}
 	if errors.Is(journalErr, os.ErrNotExist) && errors.Is(intentErr, os.ErrNotExist) {
+		if err := cleanupBootstrapPreparationStatusTemporaryArtifact(root, runID); err != nil {
+			return recoveryMaterial{}, err
+		}
 		orphan, orphanErr := migrationrecord.IsPreparationOrphan(root, runID)
 		if orphanErr != nil {
 			return recoveryMaterial{}, fmt.Errorf("workspace migration: inspect preparation artifact: %w", orphanErr)
 		}
 		if orphan {
-			if err := removeMigrationTemporaryFiles(root, filepath.Dir(path)); err != nil {
-				return recoveryMaterial{}, err
-			}
 			return recoveryMaterial{orphan: true}, nil
 		}
 		if status, statusErr := migrationrecord.LoadJournalStatus(root, runID); statusErr == nil && status.Phase == "preparing" {
@@ -2034,7 +2325,7 @@ func prepareJournal(l workspace.Layout, plan Plan, intent preparationIntent) (pr
 	if err := verifyPlanInputsWithIgnored(l, plan, true, migrationPreparationIgnored(l, intent.RunID)); err != nil {
 		return privateJournal{}, err
 	}
-	journal.RecordsBackup, err = captureRecordsGitBackup(l.WorkflowRoot, runID, plan.RecordsGit)
+	journal.RecordsBackup, err = captureRecordsGitBackup(l.WorkflowRoot, intent, plan.RecordsGit)
 	if err != nil {
 		return privateJournal{}, err
 	}
@@ -2603,27 +2894,109 @@ func resumePreparationLocked(layout workspace.Layout, intent preparationIntent) 
 	return &journal, nil
 }
 
-func discardPreparationLocked(layout workspace.Layout, runID string) error {
+func preparationBundleExpectation(layout workspace.Layout, intent preparationIntent) (*migrationRegularExpectation, error) {
+	plan, err := buildLockedIgnoring(layout.ConfigPath, intent.ManifestPath, migrationPreparationIgnored(layout, intent.RunID))
+	if err != nil {
+		return nil, fmt.Errorf("workspace migration: preparation intent cannot be replanned for cleanup: %w", err)
+	}
+	if plan.Status != "ready" || plan.PlanHash != intent.PlanHash {
+		return nil, fmt.Errorf("workspace migration: preparation intent no longer matches the reviewed plan hash")
+	}
+	backup, err := plannedRecordsGitBackup(layout.WorkflowRoot, intent.RunID, plan.RecordsGit)
+	if err != nil {
+		return nil, err
+	}
+	data, mode, exists, err := readMigrationOptionalRegular(layout.WorkflowRoot, backup.BundlePath)
+	if err != nil {
+		return nil, err
+	}
+	if !exists {
+		return &migrationRegularExpectation{}, nil
+	}
+	if mode.Perm() != 0o600 {
+		return nil, fmt.Errorf("workspace migration: private records Git backup is not a 0600 regular file")
+	}
+	backup.BundleSHA256 = migrationDigest(data)
+	if err := verifyRecordsGitBackup(layout.WorkflowRoot, backup); err != nil {
+		return nil, err
+	}
+	return &migrationRegularExpectation{exists: true, data: data, mode: mode}, nil
+}
+
+func discardPreparationLocked(layout workspace.Layout, runID string, intent *preparationIntent) error {
 	if !migrationrecord.SafeRunID(runID) {
 		return fmt.Errorf("workspace migration: invalid preparation run ID")
 	}
-	for _, pathFn := range []func(string, string) (string, error){preparationIntentPath, recordsGitBackupPath} {
-		path, err := pathFn(layout.WorkflowRoot, runID)
+	bundlePath, err := recordsGitBackupPath(layout.WorkflowRoot, runID)
+	if err != nil {
+		return err
+	}
+	if intent != nil {
+		if intent.RunID != runID {
+			return fmt.Errorf("workspace migration: preparation intent does not match the requested cleanup run")
+		}
+		expectedBundle, err := preparationBundleExpectation(layout, *intent)
 		if err != nil {
 			return err
 		}
-		if err := removeMigrationOptionalRegular(layout.WorkflowRoot, path); err != nil {
+		// The intent remains durable until its dependent backup is gone. A failed
+		// unlink can therefore be retried without losing the only preparation
+		// identity that authorizes the backup's removal.
+		if err := removeMigrationOptionalRegularExpected(layout.WorkflowRoot, bundlePath, expectedBundle); err != nil {
 			return err
+		}
+		intentPath, err := preparationIntentPath(layout.WorkflowRoot, runID)
+		if err != nil {
+			return err
+		}
+		intentData, err := preparationIntentData(*intent)
+		if err != nil {
+			return err
+		}
+		actualIntent, actualMode, actualExists, err := readMigrationOptionalRegular(layout.WorkflowRoot, intentPath)
+		if err != nil {
+			return err
+		}
+		if actualExists && (!bytes.Equal(actualIntent, intentData) || actualMode.Perm() != 0o600) {
+			return fmt.Errorf("workspace migration: preparation intent differs from durable status identity")
+		}
+		if err := removeMigrationOptionalRegularExpected(layout.WorkflowRoot, intentPath, &migrationRegularExpectation{exists: actualExists, data: actualIntent, mode: actualMode}); err != nil {
+			return err
+		}
+	} else {
+		// IsPreparationOrphan has already established that an orphan has no
+		// backup. Do not reinterpret a newly appeared bundle as ours.
+		if _, _, exists, err := readMigrationOptionalRegular(layout.WorkflowRoot, bundlePath); err != nil || exists {
+			if err != nil {
+				return err
+			}
+			return fmt.Errorf("workspace migration: preparation backup is not recognized; refusing automatic cleanup")
 		}
 	}
 	statusPath, err := journalStatusPath(layout.WorkflowRoot, runID)
 	if err != nil {
 		return err
 	}
-	if err := removeMigrationOptionalRegular(layout.WorkflowRoot, statusPath); err != nil {
+	privateDir := filepath.Dir(statusPath)
+	if intent == nil {
+		// IsPreparationOrphan established that this run contains only empty
+		// scaffolding. Empty-directory removal rechecks that claim through pinned
+		// parents, so a raced status or temporary file remains in place.
+		if err := removeMigrationEmptyDirectory(layout.WorkflowRoot, privateDir); err != nil {
+			return err
+		}
+		if err := removeMigrationEmptyDirectory(layout.WorkflowRoot, filepath.Dir(privateDir)); err != nil {
+			return err
+		}
+		return removeMigrationEmptyDirectory(layout.WorkflowRoot, filepath.Dir(filepath.Dir(privateDir)))
+	}
+	statusData, err := journalStatusData(*intent)
+	if err != nil {
 		return err
 	}
-	privateDir := filepath.Dir(statusPath)
+	if err := removeMigrationOptionalRegularExpected(layout.WorkflowRoot, statusPath, &migrationRegularExpectation{exists: true, data: statusData, mode: 0o600}); err != nil {
+		return err
+	}
 	if err := removeMigrationEmptyDirectory(layout.WorkflowRoot, privateDir); err != nil {
 		return err
 	}
@@ -3643,7 +4016,7 @@ func Recover(configPath, runID, action, expectedPlanHash string) (RecoveryResult
 	result := RecoveryResult{RunID: runID, Action: action}
 	err := withRecoveryMigrationLocks(configPath, runID, expectedPlanHash, func(layout workspace.Layout, material recoveryMaterial) error {
 		if material.orphan {
-			if err := discardPreparationLocked(layout, runID); err != nil {
+			if err := discardPreparationLocked(layout, runID, nil); err != nil {
 				return err
 			}
 			result.Status = "preparation-cleared"
@@ -3651,7 +4024,7 @@ func Recover(configPath, runID, action, expectedPlanHash string) (RecoveryResult
 		}
 		if material.intent != nil {
 			if action == "restore" {
-				if err := discardPreparationLocked(layout, material.intent.RunID); err != nil {
+				if err := discardPreparationLocked(layout, material.intent.RunID, material.intent); err != nil {
 					return err
 				}
 				result.Status = "preparation-cleared"

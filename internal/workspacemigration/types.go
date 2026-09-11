@@ -15,9 +15,9 @@ import (
 
 const (
 	// PlanVersion is the only exported migration-plan schema accepted by the
-	// M3 executor. Version 5 adds the authenticated logical records-index
-	// snapshot and the complete private-recovery operation declarations.
-	PlanVersion = 5
+	// M3 executor. Version 6 adds the reviewed temporary-artifact destination
+	// and generation rules used by interruption recovery.
+	PlanVersion = 6
 	// ManifestVersion is the only input manifest format accepted by M1.
 	ManifestVersion = 1
 	// ControlOnlyAttestation is the explicit operator statement required before
@@ -219,20 +219,22 @@ type RecordWrite struct {
 // where a digest cannot exist until a run ID, fresh owner token, or Git commit
 // exists. It never carries raw state, config, journal, or token bytes.
 type ProspectiveOperation struct {
-	Scope       string   `json:"scope"`
-	Kind        string   `json:"kind"`
-	Path        string   `json:"path"`
-	Paths       []string `json:"paths,omitempty"`
-	Intent      string   `json:"intent"`
-	PreExists   bool     `json:"pre_exists"`
-	PreSHA256   string   `json:"pre_sha256,omitempty"`
-	PreMode     uint32   `json:"pre_mode"`
-	PostExists  bool     `json:"post_exists"`
-	PostSHA256  string   `json:"post_sha256,omitempty"`
-	PostMode    uint32   `json:"post_mode"`
-	DataClass   string   `json:"data_class,omitempty"`
-	Mutation    string   `json:"mutation,omitempty"`
-	DynamicRule string   `json:"dynamic_rule,omitempty"`
+	Scope        string   `json:"scope"`
+	Kind         string   `json:"kind"`
+	Path         string   `json:"path"`
+	Paths        []string `json:"paths,omitempty"`
+	Intent       string   `json:"intent"`
+	PreExists    bool     `json:"pre_exists"`
+	PreSHA256    string   `json:"pre_sha256,omitempty"`
+	PreMode      uint32   `json:"pre_mode"`
+	PostExists   bool     `json:"post_exists"`
+	PostSHA256   string   `json:"post_sha256,omitempty"`
+	PostMode     uint32   `json:"post_mode"`
+	DataClass    string   `json:"data_class,omitempty"`
+	Mutation     string   `json:"mutation,omitempty"`
+	DynamicRule  string   `json:"dynamic_rule,omitempty"`
+	TempParent   string   `json:"temp_parent,omitempty"`
+	TempNameRule string   `json:"temp_name_rule,omitempty"`
 }
 
 // ProspectiveCommitBoundary binds one records-Git commit to its exact path

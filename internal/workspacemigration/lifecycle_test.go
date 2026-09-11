@@ -1239,9 +1239,11 @@ func TestMigrationRobustness_ProcessKillCrashHelper(t *testing.T) {
 	}
 	previous := migrationAfterPreparation
 	previousWrite := migrationAfterWrite
+	previousFS := migrationFS
 	defer func() {
 		migrationAfterPreparation = previous
 		migrationAfterWrite = previousWrite
+		migrationFS = previousFS
 	}()
 	switch stage {
 	case "intent":
@@ -1261,6 +1263,25 @@ func TestMigrationRobustness_ProcessKillCrashHelper(t *testing.T) {
 				return nil
 			}
 			if _, err := fmt.Fprintln(os.Stdout, "registry-durable"); err != nil {
+				return err
+			}
+			select {}
+		}
+	case "state":
+		layout, err := workspace.LoadMigration(config)
+		if err != nil {
+			t.Fatal(err)
+		}
+		state := filepath.Join(layout.WorkflowRoot, "changes", "active", "onto-state.yaml")
+		migrationFS = defaultMigrationFSOps
+		migrationFS.sync = func(kind, path string, file *os.File) error {
+			if err := file.Sync(); err != nil {
+				return err
+			}
+			if kind != "file" || path != state {
+				return nil
+			}
+			if _, err := fmt.Fprintln(os.Stdout, "state-durable"); err != nil {
 				return err
 			}
 			select {}
@@ -1372,6 +1393,154 @@ func TestMigrationRobustness_ProcessKillAfterRegistryWriteRecovery(t *testing.T)
 	}
 }
 
+func TestMigrationRecovery_KillDuringStateReplacement(t *testing.T) {
+	for _, action := range []string{"resume", "restore"} {
+		t.Run(action, func(t *testing.T) {
+			fixture := newMigrationFixture(t, false, false)
+			unrelated := filepath.Join(fixture.records, "unrelated.md")
+			writeFile(t, unrelated, "unrelated records file\n")
+			runGit(t, fixture.records, "add", "unrelated.md")
+			runGit(t, fixture.records, "commit", "-m", "retain unrelated record")
+			plan, err := Build(fixture.config, fixture.manifest)
+			if err != nil {
+				t.Fatal(err)
+			}
+			state := filepath.Join(fixture.records, "changes", "active", "onto-state.yaml")
+			stateBefore := readFile(t, state)
+
+			killMigrationProcess(t, fixture, plan, "state")
+			foundTemp := false
+			entries, err := os.ReadDir(filepath.Dir(state))
+			if err != nil {
+				t.Fatal(err)
+			}
+			for _, entry := range entries {
+				if migrationTemporaryFileName(entry.Name()) {
+					foundTemp = true
+					break
+				}
+			}
+			if !foundTemp {
+				t.Fatal("SIGKILL did not leave the synced state replacement temporary")
+			}
+
+			runID := interruptedRunID(t, fixture.records)
+			result, err := Recover(fixture.config, runID, action, plan.PlanHash)
+			if err != nil {
+				t.Fatalf("Recover after state replacement SIGKILL: %v", err)
+			}
+			if action == "resume" {
+				if result.Status != "complete" {
+					t.Fatalf("resume result = %+v", result)
+				}
+				if _, err := Verify(fixture.config, runID); err != nil {
+					t.Fatalf("Verify after state replacement resume: %v", err)
+				}
+			} else if result.Status != "restored" {
+				t.Fatalf("restore result = %+v", result)
+			} else if got := readFile(t, state); got != stateBefore {
+				t.Fatalf("restored state = %q, want %q", got, stateBefore)
+			}
+			if got := readFile(t, unrelated); got != "unrelated records file\n" {
+				t.Fatalf("unrelated records file changed: %q", got)
+			}
+		})
+	}
+}
+
+func TestMigrationRecovery_StateTemporaryArtifactsAreAuthenticated(t *testing.T) {
+	for _, scenario := range []struct {
+		name    string
+		mutate  func(t *testing.T, stateDir, owned string)
+		wantErr string
+	}{
+		{
+			name: "foreign similar name is preserved and blocks recovery",
+			mutate: func(t *testing.T, stateDir, _ string) {
+				t.Helper()
+				writeFile(t, filepath.Join(stateDir, ".homonto-migration-ffffffffffffffffffffffffffffffff"), "foreign temporary\n")
+			},
+			wantErr: "unrelated changed path",
+		},
+		{
+			name: "altered owned temporary is preserved and blocks recovery",
+			mutate: func(t *testing.T, _ string, owned string) {
+				t.Helper()
+				if err := os.WriteFile(owned, []byte("altered temporary\n"), 0o644); err != nil {
+					t.Fatal(err)
+				}
+			},
+			wantErr: "foreign or altered temporary file",
+		},
+		{
+			name: "owned partial temporary is retired before resume",
+			mutate: func(t *testing.T, _ string, owned string) {
+				t.Helper()
+				data, err := os.ReadFile(owned)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if len(data) < 2 {
+					t.Fatalf("temporary data too short: %q", data)
+				}
+				if err := os.WriteFile(owned, data[:len(data)/2], 0o644); err != nil {
+					t.Fatal(err)
+				}
+			},
+		},
+	} {
+		t.Run(scenario.name, func(t *testing.T) {
+			fixture := newMigrationFixture(t, false, false)
+			plan, err := Build(fixture.config, fixture.manifest)
+			if err != nil {
+				t.Fatal(err)
+			}
+			stateDir := filepath.Join(fixture.records, "changes", "active")
+			killMigrationProcess(t, fixture, plan, "state")
+			entries, err := os.ReadDir(stateDir)
+			if err != nil {
+				t.Fatal(err)
+			}
+			owned := ""
+			for _, entry := range entries {
+				if migrationTemporaryFileName(entry.Name()) {
+					owned = filepath.Join(stateDir, entry.Name())
+					break
+				}
+			}
+			if owned == "" {
+				t.Fatal("SIGKILL did not leave the owned state temporary")
+			}
+			scenario.mutate(t, stateDir, owned)
+
+			runID := interruptedRunID(t, fixture.records)
+			result, err := Recover(fixture.config, runID, "resume", plan.PlanHash)
+			if scenario.wantErr != "" {
+				if err == nil || !strings.Contains(err.Error(), scenario.wantErr) {
+					t.Fatalf("Recover error = %v, want %q", err, scenario.wantErr)
+				}
+				if scenario.wantErr == "foreign or altered temporary file" {
+					if got := readFile(t, owned); got != "altered temporary\n" {
+						t.Fatalf("altered owned temporary was changed: %q", got)
+					}
+				} else if _, err := os.Lstat(filepath.Join(stateDir, ".homonto-migration-ffffffffffffffffffffffffffffffff")); err != nil {
+					t.Fatalf("foreign similar temporary was removed: %v", err)
+				}
+				return
+			}
+			if err != nil || result.Status != "complete" {
+				t.Fatalf("Recover partial temporary = %+v, %v", result, err)
+			}
+			if _, err := os.Lstat(owned); !errors.Is(err, os.ErrNotExist) {
+				t.Fatalf("owned partial temporary remains: %v", err)
+			}
+			if _, err := Verify(fixture.config, runID); err != nil {
+				t.Fatalf("Verify after partial temporary resume: %v", err)
+			}
+		})
+	}
+}
+
 func TestMigrationRobustness_BackupPreparationFailure(t *testing.T) {
 	fixture := newMigrationFixture(t, false, false)
 	plan, err := Build(fixture.config, fixture.manifest)
@@ -1422,6 +1591,134 @@ func TestMigrationRobustness_BackupPreparationFailure(t *testing.T) {
 	}
 }
 
+func TestMigrationRecovery_PreparationRestoreInterrupted(t *testing.T) {
+	prepare := func(t *testing.T) (*migrationFixture, Plan, string, string, string) {
+		t.Helper()
+		fixture := newMigrationFixture(t, false, false)
+		plan, err := Build(fixture.config, fixture.manifest)
+		if err != nil {
+			t.Fatal(err)
+		}
+		previous := migrationAfterPreparation
+		migrationAfterPreparation = func(stage string) error {
+			if stage == "backup" {
+				return errors.New("interrupted after durable backup")
+			}
+			return nil
+		}
+		_, err = Apply(fixture.config, fixture.manifest, plan.PlanHash)
+		migrationAfterPreparation = previous
+		if err == nil || !strings.Contains(err.Error(), "interrupted after durable backup") {
+			t.Fatalf("Apply after backup interruption = %v", err)
+		}
+		runID := interruptedRunID(t, fixture.records)
+		intentPath, err := preparationIntentPath(fixture.records, runID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		bundlePath, err := recordsGitBackupPath(fixture.records, runID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return fixture, plan, runID, intentPath, bundlePath
+	}
+
+	t.Run("bundle removal keeps intent recoverable", func(t *testing.T) {
+		fixture, plan, runID, intentPath, bundlePath := prepare(t)
+		intentBefore, err := os.ReadFile(intentPath)
+		if err != nil {
+			t.Fatal(err)
+		}
+		bundleBefore, err := os.ReadFile(bundlePath)
+		if err != nil {
+			t.Fatal(err)
+		}
+		statePath := filepath.Join(fixture.records, "changes", "active", "onto-state.yaml")
+		stateBefore := readFile(t, statePath)
+		sourceHead := gitTextTest(t, fixture.repos["app"], "rev-parse", "HEAD")
+		sourceIndex := gitTextTest(t, fixture.repos["app"], "write-tree")
+
+		previous := migrationFS
+		migrationFS = defaultMigrationFSOps
+		failed := false
+		migrationFS.remove = func(parent *os.Root, name string) error {
+			if !failed && name == "records.git.bundle" {
+				failed = true
+				return errors.New("interrupted bundle removal")
+			}
+			return defaultMigrationFSOps.remove(parent, name)
+		}
+		t.Cleanup(func() { migrationFS = previous })
+
+		if _, err := Recover(fixture.config, runID, "restore", plan.PlanHash); err == nil || !strings.Contains(err.Error(), "interrupted bundle removal") {
+			t.Fatalf("first recovery restore = %v", err)
+		}
+		if !failed {
+			t.Fatal("bundle-removal seam did not run")
+		}
+		if actual, err := os.ReadFile(intentPath); err != nil || !bytes.Equal(actual, intentBefore) {
+			t.Fatalf("intent changed after failed bundle removal: %v", err)
+		}
+		if actual, err := os.ReadFile(bundlePath); err != nil || !bytes.Equal(actual, bundleBefore) {
+			t.Fatalf("bundle changed after failed removal: %v", err)
+		}
+		if got := readFile(t, statePath); got != stateBefore {
+			t.Fatalf("state changed during preparation restore: %q", got)
+		}
+		if got := gitTextTest(t, fixture.repos["app"], "rev-parse", "HEAD"); got != sourceHead {
+			t.Fatalf("source HEAD changed during preparation restore: %s", got)
+		}
+		if got := gitTextTest(t, fixture.repos["app"], "write-tree"); got != sourceIndex {
+			t.Fatalf("source index changed during preparation restore: %s", got)
+		}
+
+		result, err := Recover(fixture.config, runID, "restore", plan.PlanHash)
+		if err != nil || result.Status != "preparation-cleared" {
+			t.Fatalf("retry recovery restore = %+v, %v", result, err)
+		}
+		for _, path := range []string{intentPath, bundlePath} {
+			if _, err := os.Lstat(path); !errors.Is(err, os.ErrNotExist) {
+				t.Fatalf("preparation artifact remains at %s: %v", path, err)
+			}
+		}
+	})
+
+	t.Run("bundle removed before intent remains recoverable", func(t *testing.T) {
+		fixture, plan, runID, intentPath, bundlePath := prepare(t)
+		previous := migrationFS
+		migrationFS = defaultMigrationFSOps
+		failed := false
+		migrationFS.remove = func(parent *os.Root, name string) error {
+			if !failed && name == "intent.json" {
+				failed = true
+				return errors.New("interrupted intent removal")
+			}
+			return defaultMigrationFSOps.remove(parent, name)
+		}
+		t.Cleanup(func() { migrationFS = previous })
+
+		if _, err := Recover(fixture.config, runID, "restore", plan.PlanHash); err == nil || !strings.Contains(err.Error(), "interrupted intent removal") {
+			t.Fatalf("first recovery restore = %v", err)
+		}
+		if !failed {
+			t.Fatal("intent-removal seam did not run")
+		}
+		if _, err := os.Lstat(bundlePath); !errors.Is(err, os.ErrNotExist) {
+			t.Fatalf("bundle remained after its successful removal: %v", err)
+		}
+		if _, err := loadPreparationIntent(fixture.records, runID); err != nil {
+			t.Fatalf("intent was not retained after bundle removal: %v", err)
+		}
+		result, err := Recover(fixture.config, runID, "restore", plan.PlanHash)
+		if err != nil || result.Status != "preparation-cleared" {
+			t.Fatalf("retry recovery restore = %+v, %v", result, err)
+		}
+		if _, err := os.Lstat(intentPath); !errors.Is(err, os.ErrNotExist) {
+			t.Fatalf("intent remains after retry: %v", err)
+		}
+	})
+}
+
 func TestMigrationRobustness_InterruptedPreparationRecovery(t *testing.T) {
 	fixture := newMigrationFixture(t, false, false)
 	plan, err := Build(fixture.config, fixture.manifest)
@@ -1431,10 +1728,6 @@ func TestMigrationRobustness_InterruptedPreparationRecovery(t *testing.T) {
 	const runID = "migration-12345678"
 	private := filepath.Join(fixture.records, ".workflow", "migrations", runID, "private")
 	if err := os.MkdirAll(private, 0o700); err != nil {
-		t.Fatal(err)
-	}
-	temp := filepath.Join(private, ".homonto-migration-0123456789abcdef0123456789abcdef")
-	if err := os.WriteFile(temp, []byte("partial\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	if err := migrationrecord.ValidateBarrier(fixture.records); err == nil || !strings.Contains(err.Error(), "workspace migration pending (preparing)") {
@@ -1447,8 +1740,8 @@ func TestMigrationRobustness_InterruptedPreparationRecovery(t *testing.T) {
 	if err := migrationrecord.ValidateBarrier(fixture.records); err != nil {
 		t.Fatalf("migration barrier after interrupted preparation recovery: %v", err)
 	}
-	if _, err := os.Lstat(temp); !os.IsNotExist(err) {
-		t.Fatalf("partial preparation temp remains after recovery: %v", err)
+	if _, err := os.Lstat(private); !os.IsNotExist(err) {
+		t.Fatalf("orphan preparation scaffolding remains after recovery: %v", err)
 	}
 	if rebuilt, err := Build(fixture.config, fixture.manifest); err != nil {
 		t.Fatalf("Build after interrupted preparation recovery: %v; blockers=%+v", err, rebuilt.Blockers)
@@ -1456,42 +1749,76 @@ func TestMigrationRobustness_InterruptedPreparationRecovery(t *testing.T) {
 }
 
 func TestMigrationRobustness_PreparationTempRecovery(t *testing.T) {
-	fixture := newMigrationFixture(t, false, false)
-	plan, err := Build(fixture.config, fixture.manifest)
-	if err != nil {
-		t.Fatal(err)
-	}
-	previous := migrationAfterPreparation
-	migrationAfterPreparation = func(stage string) error {
-		if stage == "backup" {
-			return errors.New("interrupted after durable backup")
+	prepare := func(t *testing.T) (*migrationFixture, Plan, string, preparationIntent, string) {
+		t.Helper()
+		fixture := newMigrationFixture(t, false, false)
+		plan, err := Build(fixture.config, fixture.manifest)
+		if err != nil {
+			t.Fatal(err)
 		}
-		return nil
+		previous := migrationAfterPreparation
+		migrationAfterPreparation = func(stage string) error {
+			if stage == "backup" {
+				return errors.New("interrupted after durable backup")
+			}
+			return nil
+		}
+		_, err = Apply(fixture.config, fixture.manifest, plan.PlanHash)
+		migrationAfterPreparation = previous
+		if err == nil || !strings.Contains(err.Error(), "interrupted after durable backup") {
+			t.Fatalf("Apply after backup interruption = %v", err)
+		}
+		runID := interruptedRunID(t, fixture.records)
+		intent, err := loadPreparationIntent(fixture.records, runID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		bundlePath, err := recordsGitBackupPath(fixture.records, runID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return fixture, plan, runID, intent, bundlePath
 	}
-	_, err = Apply(fixture.config, fixture.manifest, plan.PlanHash)
-	migrationAfterPreparation = previous
-	if err == nil || !strings.Contains(err.Error(), "interrupted after durable backup") {
-		t.Fatalf("Apply after backup interruption = %v", err)
-	}
-	runID := interruptedRunID(t, fixture.records)
-	journalFile, err := journalPath(fixture.records, runID)
-	if err != nil {
-		t.Fatal(err)
-	}
-	temp := filepath.Join(filepath.Dir(journalFile), ".homonto-migration-0123456789abcdef0123456789abcdef")
-	if err := os.WriteFile(temp, []byte("partial private write\n"), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	result, err := Recover(fixture.config, runID, "resume", plan.PlanHash)
-	if err != nil || result.Status != "complete" {
-		t.Fatalf("Recover after preparation temp = %+v, %v", result, err)
-	}
-	if _, err := os.Lstat(temp); !os.IsNotExist(err) {
-		t.Fatalf("preparation temp remains after recovery: %v", err)
-	}
-	if _, err := Verify(fixture.config, runID); err != nil {
-		t.Fatalf("Verify after preparation temp recovery: %v", err)
-	}
+
+	t.Run("authenticated temporary is removed before resume", func(t *testing.T) {
+		fixture, plan, runID, intent, bundlePath := prepare(t)
+		authority := privateRecoveryTempAuthority(intent, journalKindRecoveryBundle, bundlePath, "publish", nil)
+		name, err := authority.name()
+		if err != nil {
+			t.Fatal(err)
+		}
+		temp := filepath.Join(filepath.Dir(bundlePath), name)
+		if err := os.WriteFile(temp, []byte("partial private write\n"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		result, err := Recover(fixture.config, runID, "resume", plan.PlanHash)
+		if err != nil || result.Status != "complete" {
+			t.Fatalf("Recover after preparation temp = %+v, %v", result, err)
+		}
+		if _, err := os.Lstat(temp); !os.IsNotExist(err) {
+			t.Fatalf("authenticated preparation temp remains after recovery: %v", err)
+		}
+		if _, err := Verify(fixture.config, runID); err != nil {
+			t.Fatalf("Verify after preparation temp recovery: %v", err)
+		}
+	})
+
+	t.Run("unrecognized temporary is preserved and blocks recovery", func(t *testing.T) {
+		fixture, plan, runID, _, bundlePath := prepare(t)
+		temp := filepath.Join(filepath.Dir(bundlePath), ".homonto-migration-0123456789abcdef0123456789abcdef")
+		if err := os.WriteFile(temp, []byte("foreign private write\n"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		if result, err := Recover(fixture.config, runID, "resume", plan.PlanHash); err == nil || result.Status != "" {
+			t.Fatalf("Recover with unrecognized preparation temp = %+v, %v", result, err)
+		}
+		if got := readFile(t, temp); got != "foreign private write\n" {
+			t.Fatalf("unrecognized preparation temp was changed: %q", got)
+		}
+		if err := migrationrecord.ValidateBarrier(fixture.records); err == nil || !strings.Contains(err.Error(), "workspace migration pending (preparing)") {
+			t.Fatalf("migration barrier after unrecognized preparation temp = %v", err)
+		}
+	})
 }
 
 func TestRecordsIndexMatchesWorktreeRejectsStagedModeConflict(t *testing.T) {
@@ -1610,7 +1937,16 @@ func TestMigrationJournalWriteRejectsInPlaceDriftAfterClassification(t *testing.
 	}
 	t.Cleanup(func() { migrationAfterParentPin = previous })
 
-	journal := privateJournal{ConfigRoot: root}
+	journal, write := journalWriteWithTemporaryAuthority(root, path)
+	if _, err := applyJournalWrite(journal, write, true); err == nil || !strings.Contains(err.Error(), "recovery conflict") {
+		t.Fatalf("apply journal write after in-place drift = %v", err)
+	}
+	if got := readFile(t, path); got != "raced\n" {
+		t.Fatalf("raced content was overwritten: %q", got)
+	}
+}
+
+func journalWriteWithTemporaryAuthority(root, path string) (privateJournal, privateWrite) {
 	write := privateWrite{
 		Scope:      journalScopeConfig,
 		Kind:       journalKindRegistry,
@@ -1622,12 +1958,27 @@ func TestMigrationJournalWriteRejectsInPlaceDriftAfterClassification(t *testing.
 		PostMode:   0o644,
 		Postimage:  []byte("after\n"),
 	}
-	if _, err := applyJournalWrite(journal, write, true); err == nil || !strings.Contains(err.Error(), "recovery conflict") {
-		t.Fatalf("apply journal write after in-place drift = %v", err)
-	}
-	if got := readFile(t, path); got != "raced\n" {
-		t.Fatalf("raced content was overwritten: %q", got)
-	}
+	return privateJournal{
+		RunID:       "migration-12345678",
+		ConfigRoot:  root,
+		IntentOwner: strings.Repeat("a", 32),
+		Plan: Plan{Prospective: ProspectiveManifest{
+			Version: prospectiveManifestVersion,
+			Operations: []ProspectiveOperation{{
+				Scope:        write.Scope,
+				Kind:         write.Kind,
+				Path:         write.Path,
+				PreExists:    write.PreExists,
+				PreSHA256:    migrationDigest(write.Preimage),
+				PreMode:      write.PreMode,
+				PostExists:   write.PostExists,
+				PostSHA256:   migrationDigest(write.Postimage),
+				PostMode:     write.PostMode,
+				TempParent:   filepath.Dir(write.Path),
+				TempNameRule: dynamicTempNameRule,
+			}},
+		}},
+	}, write
 }
 
 func TestMigrationRecoveryRerunBeforePostIndexSave(t *testing.T) {
@@ -2190,18 +2541,7 @@ func TestMigrationJournalRestoreWriteRejectsInPlaceDriftAfterClassification(t *t
 	}
 	t.Cleanup(func() { migrationAfterParentPin = previous })
 
-	journal := privateJournal{ConfigRoot: root}
-	write := privateWrite{
-		Scope:      journalScopeConfig,
-		Kind:       journalKindRegistry,
-		Path:       path,
-		PreExists:  true,
-		PreMode:    0o644,
-		Preimage:   []byte("before\n"),
-		PostExists: true,
-		PostMode:   0o644,
-		Postimage:  []byte("after\n"),
-	}
+	journal, write := journalWriteWithTemporaryAuthority(root, path)
 	if _, err := applyJournalWrite(journal, write, false); err == nil || !strings.Contains(err.Error(), "recovery conflict") {
 		t.Fatalf("restore journal write after in-place drift = %v", err)
 	}

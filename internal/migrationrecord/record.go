@@ -140,9 +140,22 @@ type CompletionWitness struct {
 // keep pending migration operations fail-closed. Its full private payload is
 // validated by the executor before any recovery operation.
 type JournalStatus struct {
-	Version int    `json:"version"`
-	RunID   string `json:"run_id"`
-	Phase   string `json:"phase"`
+	Version     int                `json:"version"`
+	RunID       string             `json:"run_id"`
+	Phase       string             `json:"phase"`
+	Preparation *PreparationStatus `json:"preparation,omitempty"`
+}
+
+// PreparationStatus is the content-free identity that makes the private
+// preparation staging slots recoverable before a full journal exists.
+type PreparationStatus struct {
+	PlanHash     string `json:"plan_hash"`
+	ConfigPath   string `json:"config_path"`
+	ConfigRoot   string `json:"config_root"`
+	WorkflowRoot string `json:"workflow_root"`
+	ManifestPath string `json:"manifest_path"`
+	Owner        string `json:"owner"`
+	Guardian     string `json:"guardian"`
 }
 
 func SafeRunID(runID string) bool { return runIDPattern.MatchString(runID) }
@@ -201,17 +214,27 @@ func LoadJournalStatus(root, runID string) (JournalStatus, error) {
 		return JournalStatus{}, fmt.Errorf("migration record: journal status is malformed or unsupported")
 	}
 	var status JournalStatus
-	if err := json.Unmarshal(data, &status); err != nil || status.Version != JournalVersion || status.RunID != runID || !validJournalPhase(status.Phase) {
+	if err := json.Unmarshal(data, &status); err != nil || status.Version != JournalVersion || status.RunID != runID || !validJournalPhase(status.Phase) || !validPreparationStatus(root, status) {
 		return JournalStatus{}, fmt.Errorf("migration record: journal status is malformed or unsupported")
 	}
 	return status, nil
 }
 
-// IsPreparationOrphan recognizes only the empty directory scaffolding that can
-// survive a crash while publishing the first preparation status. A valid
-// preparing status may appear beside interrupted atomic-write temporaries. It
-// is not a general recovery escape hatch: any other file, symlink, or unexpected
-// entry remains an invalid migration record and must not be removed automatically.
+func validPreparationStatus(root string, status JournalStatus) bool {
+	if status.Phase != "preparing" {
+		return status.Preparation == nil
+	}
+	preparation := status.Preparation
+	if preparation == nil || !digestPattern.MatchString(preparation.PlanHash) || !filepath.IsAbs(preparation.ConfigPath) || filepath.Clean(preparation.ConfigPath) != preparation.ConfigPath || !filepath.IsAbs(preparation.ConfigRoot) || filepath.Clean(preparation.ConfigRoot) != preparation.ConfigRoot || filepath.Dir(preparation.ConfigPath) != preparation.ConfigRoot || preparation.WorkflowRoot != root || !filepath.IsAbs(preparation.ManifestPath) || filepath.Clean(preparation.ManifestPath) != preparation.ManifestPath || len(preparation.Owner) != 32 || preparation.Owner != strings.ToLower(preparation.Owner) || strings.TrimSpace(preparation.Guardian) == "" {
+		return false
+	}
+	_, err := hex.DecodeString(preparation.Owner)
+	return err == nil
+}
+
+// IsPreparationOrphan recognizes only empty preparation directory scaffolding.
+// Temporary artifacts have an executor-owned, run-bound authority and are
+// handled there; a prefix-shaped file is never enough to authorize deletion.
 func IsPreparationOrphan(root, runID string) (bool, error) {
 	if !SafeRunID(runID) {
 		return false, fmt.Errorf("migration record: invalid run ID")
@@ -252,39 +275,7 @@ func IsPreparationOrphan(root, runID string) (bool, error) {
 	if err != nil {
 		return false, err
 	}
-	statusSeen := false
-	for _, entry := range privateEntries {
-		if entry.Name() == "journal.json" {
-			info, err := os.Lstat(filepath.Join(privatePath, entry.Name()))
-			if err != nil || !info.Mode().IsRegular() || info.Mode()&os.ModeSymlink != 0 || info.Mode().Perm() != 0o600 {
-				return false, nil
-			}
-			status, err := LoadJournalStatus(root, runID)
-			if err != nil || status.Phase != "preparing" || statusSeen {
-				return false, nil
-			}
-			statusSeen = true
-			continue
-		}
-		if !preparationTempName(entry.Name()) {
-			return false, nil
-		}
-		info, err := os.Lstat(filepath.Join(privatePath, entry.Name()))
-		if err != nil || !info.Mode().IsRegular() || info.Mode()&os.ModeSymlink != 0 || info.Mode().Perm() != 0o600 {
-			return false, nil
-		}
-	}
-	return true, nil
-}
-
-func preparationTempName(name string) bool {
-	const prefix = ".homonto-migration-"
-	token := strings.TrimPrefix(name, prefix)
-	if token == name || len(token) != 32 || token != strings.ToLower(token) {
-		return false
-	}
-	_, err := hex.DecodeString(token)
-	return err == nil
+	return len(privateEntries) == 0, nil
 }
 
 // LoadReceipt reads only a real, regular public receipt and validates its

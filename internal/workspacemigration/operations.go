@@ -15,15 +15,18 @@ import (
 )
 
 const (
-	prospectiveManifestVersion = 1
+	prospectiveManifestVersion = 2
 	runIDPlaceholder           = "{run_id}"
 
-	dynamicReceiptRule    = "receipt-v1(run_id, reviewed_plan, registry, binding_token_hashes)"
-	dynamicRegistryRule   = "registry-v1(reviewed_binding_identities, fresh_128_bit_owner_tokens)"
-	dynamicOwnerRule      = "fresh_128_bit_owner_token"
-	dynamicProofRule      = "commit_proof-v1(migration_commit, migration_parent, migration_tree)"
-	dynamicCompletionRule = "completion_witness-v1(receipt, commit_proof)"
+	dynamicReceiptRule     = "receipt-v1(run_id, reviewed_plan, registry, binding_token_hashes)"
+	dynamicRegistryRule    = "registry-v1(reviewed_binding_identities, fresh_128_bit_owner_tokens)"
+	dynamicOwnerRule       = "fresh_128_bit_owner_token"
+	dynamicProofRule       = "commit_proof-v1(migration_commit, migration_parent, migration_tree)"
+	dynamicCompletionRule  = "completion_witness-v1(receipt, commit_proof)"
+	dynamicTempNameRule    = "migration_temp-v2(run_id, private_owner, operation, destination, preimage, postimage, modes, direction)"
+	dynamicPrivateTempRule = "migration_private_temp-v2(run_id, private_owner, operation, destination, reserved_private_slot)"
 
+	dynamicPreparationStatusRule = "preparation_status-v2(run_id, reviewed_plan_hash, layout, manifest, fresh_owner, guardian)"
 	dynamicPreparationIntentRule = "preparation_intent-v1(run_id, reviewed_plan_hash, layout, fresh_owner)"
 	dynamicPrivateJournalRule    = "private_journal-v2(preparing_status_or_authenticated_recovery_journal)"
 	dynamicRecordsBundleRule     = "records_git_bundle-v1(exact_records_head_and_refs)"
@@ -47,68 +50,80 @@ func buildProspectiveManifest(plan Plan) (ProspectiveManifest, error) {
 			return ProspectiveManifest{}, err
 		}
 		operations = append(operations, ProspectiveOperation{
-			Scope:      journalScopeRecords,
-			Kind:       journalKindState,
-			Path:       write.Path,
-			Intent:     write.Action,
-			PreExists:  true,
-			PreSHA256:  write.PreSHA256,
-			PreMode:    mode,
-			PostExists: true,
-			PostSHA256: write.PostSHA256,
-			PostMode:   mode,
+			Scope:        journalScopeRecords,
+			Kind:         journalKindState,
+			Path:         write.Path,
+			Intent:       write.Action,
+			PreExists:    true,
+			PreSHA256:    write.PreSHA256,
+			PreMode:      mode,
+			PostExists:   true,
+			PostSHA256:   write.PostSHA256,
+			PostMode:     mode,
+			TempParent:   filepath.Dir(write.Path),
+			TempNameRule: dynamicTempNameRule,
 		})
 	}
 
 	ignorePath := filepath.Join(plan.Layout.WorkflowRoot, ".workflow", "migrations", ".gitignore")
 	operations = append(operations, ProspectiveOperation{
-		Scope:      journalScopeRecords,
-		Kind:       journalKindIgnore,
-		Path:       ignorePath,
-		Intent:     "create_migration_ignore",
-		PostExists: true,
-		PostSHA256: migrationDigest([]byte(migrationIgnore)),
-		PostMode:   0o644,
+		Scope:        journalScopeRecords,
+		Kind:         journalKindIgnore,
+		Path:         ignorePath,
+		Intent:       "create_migration_ignore",
+		PostExists:   true,
+		PostSHA256:   migrationDigest([]byte(migrationIgnore)),
+		PostMode:     0o644,
+		TempParent:   filepath.Dir(ignorePath),
+		TempNameRule: dynamicTempNameRule,
 	})
 
 	operations = append(operations,
 		ProspectiveOperation{
-			Scope:       journalScopeRecords,
-			Kind:        journalKindReceipt,
-			Path:        plannedRunPath(plan.Layout.WorkflowRoot, "receipt.json"),
-			Intent:      "create_public_receipt",
-			PostExists:  true,
-			PostMode:    0o644,
-			DynamicRule: dynamicReceiptRule,
+			Scope:        journalScopeRecords,
+			Kind:         journalKindReceipt,
+			Path:         plannedRunPath(plan.Layout.WorkflowRoot, "receipt.json"),
+			Intent:       "create_public_receipt",
+			PostExists:   true,
+			PostMode:     0o644,
+			DynamicRule:  dynamicReceiptRule,
+			TempParent:   plannedRunPath(plan.Layout.WorkflowRoot),
+			TempNameRule: dynamicTempNameRule,
 		},
 		ProspectiveOperation{
-			Scope:       journalScopeRecords,
-			Kind:        journalKindProof,
-			Path:        plannedRunPath(plan.Layout.WorkflowRoot, "commit-proof.json"),
-			Intent:      "create_commit_proof",
-			PostExists:  true,
-			PostMode:    0o644,
-			DynamicRule: dynamicProofRule,
+			Scope:        journalScopeRecords,
+			Kind:         journalKindProof,
+			Path:         plannedRunPath(plan.Layout.WorkflowRoot, "commit-proof.json"),
+			Intent:       "create_commit_proof",
+			PostExists:   true,
+			PostMode:     0o644,
+			DynamicRule:  dynamicProofRule,
+			TempParent:   plannedRunPath(plan.Layout.WorkflowRoot),
+			TempNameRule: dynamicTempNameRule,
 		},
 		ProspectiveOperation{
-			Scope:       journalScopeRecords,
-			Kind:        journalKindCompletion,
-			Path:        plannedRunPath(plan.Layout.WorkflowRoot, "private", "completion.json"),
-			Intent:      "create_completion_witness",
-			PostExists:  true,
-			PostMode:    0o600,
-			DataClass:   "private_completion_witness",
-			Mutation:    "create_or_update",
-			DynamicRule: dynamicCompletionRule,
+			Scope:        journalScopeRecords,
+			Kind:         journalKindCompletion,
+			Path:         plannedRunPath(plan.Layout.WorkflowRoot, "private", "completion.json"),
+			Intent:       "create_completion_witness",
+			PostExists:   true,
+			PostMode:     0o600,
+			DataClass:    "private_completion_witness",
+			Mutation:     "create_or_update",
+			DynamicRule:  dynamicCompletionRule,
+			TempParent:   plannedRunPath(plan.Layout.WorkflowRoot, "private"),
+			TempNameRule: dynamicTempNameRule,
 		},
 		ProspectiveOperation{
-			Scope:       journalScopeConfig,
-			Kind:        journalKindRegistry,
-			Path:        filepath.Join(plan.Layout.ConfigRoot, ".homonto", "worktrees.json"),
-			Intent:      "create_migration_registry",
-			PostExists:  true,
-			PostMode:    0o600,
-			DynamicRule: dynamicRegistryRule,
+			Scope:        journalScopeConfig,
+			Kind:         journalKindRegistry,
+			Path:         filepath.Join(plan.Layout.ConfigRoot, ".homonto", "worktrees.json"),
+			Intent:       "create_migration_registry",
+			PostExists:   true,
+			PostMode:     0o600,
+			DynamicRule:  dynamicRegistryRule,
+			TempParent:   filepath.Join(plan.Layout.ConfigRoot, ".homonto"),
+			TempNameRule: dynamicTempNameRule,
 		},
 	)
 	operations = append(operations, plannedPrivateRecoveryOperations(plan)...)
@@ -118,13 +133,15 @@ func buildProspectiveManifest(plan Plan) (ProspectiveManifest, error) {
 		return ProspectiveManifest{}, err
 	}
 	operations = append(operations, ProspectiveOperation{
-		Scope:      journalScopeConfig,
-		Kind:       journalKindMarker,
-		Path:       filepath.Join(plan.Layout.ConfigRoot, ".homonto", workflowroot.LayoutMarkerFile),
-		Intent:     "activate_schema_2_layout_last",
-		PostExists: true,
-		PostSHA256: migrationDigest(marker),
-		PostMode:   0o644,
+		Scope:        journalScopeConfig,
+		Kind:         journalKindMarker,
+		Path:         filepath.Join(plan.Layout.ConfigRoot, ".homonto", workflowroot.LayoutMarkerFile),
+		Intent:       "activate_schema_2_layout_last",
+		PostExists:   true,
+		PostSHA256:   migrationDigest(marker),
+		PostMode:     0o644,
+		TempParent:   filepath.Join(plan.Layout.ConfigRoot, ".homonto"),
+		TempNameRule: dynamicTempNameRule,
 	})
 
 	bindings, err := plannedBindingTemplates(plan)
@@ -133,13 +150,15 @@ func buildProspectiveManifest(plan Plan) (ProspectiveManifest, error) {
 	}
 	for _, binding := range bindings {
 		operations = append(operations, ProspectiveOperation{
-			Scope:       journalScopeOwner,
-			Kind:        journalKindOwner,
-			Path:        filepath.Join(binding.GitDir, "homonto-owner"),
-			Intent:      "create_legacy_execution_owner_token",
-			PostExists:  true,
-			PostMode:    0o600,
-			DynamicRule: dynamicOwnerRule,
+			Scope:        journalScopeOwner,
+			Kind:         journalKindOwner,
+			Path:         filepath.Join(binding.GitDir, "homonto-owner"),
+			Intent:       "create_legacy_execution_owner_token",
+			PostExists:   true,
+			PostMode:     0o600,
+			DynamicRule:  dynamicOwnerRule,
+			TempParent:   binding.GitDir,
+			TempNameRule: dynamicTempNameRule,
 		})
 	}
 	indexPaths, err := plannedJournalIndexPaths(plan)
@@ -315,37 +334,56 @@ func plannedPrivateRecoveryOperations(plan Plan) []ProspectiveOperation {
 			Mutation:   "create_or_validate",
 		},
 		{
-			Scope:       journalScopeRecovery,
-			Kind:        journalKindRecoveryJournal,
-			Path:        plannedRunPath(plan.Layout.WorkflowRoot, "private", "journal.json"),
-			Intent:      "publish_private_recovery_journal",
-			PostExists:  true,
-			PostMode:    0o600,
-			DataClass:   "private_recovery_journal",
-			Mutation:    "create_or_update",
-			DynamicRule: dynamicPrivateJournalRule,
+			Scope:        journalScopeRecovery,
+			Kind:         journalKindRecoveryStatus,
+			Path:         plannedRunPath(plan.Layout.WorkflowRoot, "private", "journal.json"),
+			Intent:       "publish_preparation_status",
+			PostExists:   true,
+			PostMode:     0o600,
+			DataClass:    "private_preparation_status",
+			Mutation:     "create_or_update",
+			DynamicRule:  dynamicPreparationStatusRule,
+			TempParent:   private,
+			TempNameRule: dynamicPrivateTempRule,
 		},
 		{
-			Scope:       journalScopeRecovery,
-			Kind:        journalKindRecoveryIntent,
-			Path:        plannedRunPath(plan.Layout.WorkflowRoot, "private", "intent.json"),
-			Intent:      "publish_then_retire_preparation_intent",
-			PostExists:  true,
-			PostMode:    0o600,
-			DataClass:   "private_preparation_intent",
-			Mutation:    "create_then_remove",
-			DynamicRule: dynamicPreparationIntentRule,
+			Scope:        journalScopeRecovery,
+			Kind:         journalKindRecoveryJournal,
+			Path:         plannedRunPath(plan.Layout.WorkflowRoot, "private", "journal.json"),
+			Intent:       "publish_private_recovery_journal",
+			PostExists:   true,
+			PostMode:     0o600,
+			DataClass:    "private_recovery_journal",
+			Mutation:     "create_or_update",
+			DynamicRule:  dynamicPrivateJournalRule,
+			TempParent:   private,
+			TempNameRule: dynamicPrivateTempRule,
 		},
 		{
-			Scope:       journalScopeRecovery,
-			Kind:        journalKindRecoveryBundle,
-			Path:        plannedRunPath(plan.Layout.WorkflowRoot, "private", "records.git.bundle"),
-			Intent:      "create_private_records_git_backup",
-			PostExists:  true,
-			PostMode:    0o600,
-			DataClass:   "private_records_git_bundle",
-			Mutation:    "create_or_validate",
-			DynamicRule: dynamicRecordsBundleRule,
+			Scope:        journalScopeRecovery,
+			Kind:         journalKindRecoveryIntent,
+			Path:         plannedRunPath(plan.Layout.WorkflowRoot, "private", "intent.json"),
+			Intent:       "publish_then_retire_preparation_intent",
+			PostExists:   true,
+			PostMode:     0o600,
+			DataClass:    "private_preparation_intent",
+			Mutation:     "create_then_remove",
+			DynamicRule:  dynamicPreparationIntentRule,
+			TempParent:   private,
+			TempNameRule: dynamicPrivateTempRule,
+		},
+		{
+			Scope:        journalScopeRecovery,
+			Kind:         journalKindRecoveryBundle,
+			Path:         plannedRunPath(plan.Layout.WorkflowRoot, "private", "records.git.bundle"),
+			Intent:       "create_private_records_git_backup",
+			PostExists:   true,
+			PostMode:     0o600,
+			DataClass:    "private_records_git_bundle",
+			Mutation:     "create_or_validate",
+			DynamicRule:  dynamicRecordsBundleRule,
+			TempParent:   private,
+			TempNameRule: dynamicPrivateTempRule,
 		},
 	}
 }

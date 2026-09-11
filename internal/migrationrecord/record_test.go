@@ -84,7 +84,7 @@ func TestPreparationJournalStatusBlocksOrdinaryLoaders(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	writeTestJSON(t, path, JournalStatus{Version: JournalVersion, RunID: runID, Phase: "preparing"}, 0o600)
+	writeTestJSON(t, path, preparationJournalStatus(root, runID), 0o600)
 	status, err := LoadJournalStatus(root, runID)
 	if err != nil || status.Phase != "preparing" {
 		t.Fatalf("LoadJournalStatus = %+v, %v", status, err)
@@ -94,19 +94,37 @@ func TestPreparationJournalStatusBlocksOrdinaryLoaders(t *testing.T) {
 	}
 }
 
-func TestIsPreparationOrphanAcceptsPreparingStatusAndTemporaryFile(t *testing.T) {
+func TestIsPreparationOrphanRejectsPreparingStatusAndTemporaryFile(t *testing.T) {
 	root := t.TempDir()
 	const runID = "migration-12345678"
 	path, err := JournalPath(root, runID)
 	if err != nil {
 		t.Fatal(err)
 	}
-	writeTestJSON(t, path, JournalStatus{Version: JournalVersion, RunID: runID, Phase: "preparing"}, 0o600)
+	writeTestJSON(t, path, preparationJournalStatus(root, runID), 0o600)
 	writeTestFile(t, filepath.Join(filepath.Dir(path), ".homonto-migration-0123456789abcdef0123456789abcdef"), []byte("partial\n"), 0o600)
 
 	orphan, err := IsPreparationOrphan(root, runID)
-	if err != nil || !orphan {
-		t.Fatalf("IsPreparationOrphan = %t, %v", orphan, err)
+	if err != nil || orphan {
+		t.Fatalf("IsPreparationOrphan = %t, %v, want false", orphan, err)
+	}
+}
+
+func preparationJournalStatus(root, runID string) JournalStatus {
+	configRoot := filepath.Join(root, "config")
+	return JournalStatus{
+		Version: JournalVersion,
+		RunID:   runID,
+		Phase:   "preparing",
+		Preparation: &PreparationStatus{
+			PlanHash:     strings.Repeat("a", 64),
+			ConfigPath:   filepath.Join(configRoot, "homonto.toml"),
+			ConfigRoot:   configRoot,
+			WorkflowRoot: root,
+			ManifestPath: filepath.Join(configRoot, "migration.yaml"),
+			Owner:        strings.Repeat("b", 32),
+			Guardian:     "process-guardian-v1",
+		},
 	}
 }
 
@@ -117,11 +135,35 @@ func TestPreparationDirectoryWithoutStatusBlocksOrdinaryLoaders(t *testing.T) {
 	if err := os.MkdirAll(private, 0o700); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(private, ".homonto-migration-0123456789abcdef0123456789abcdef"), []byte("partial\n"), 0o600); err != nil {
-		t.Fatal(err)
+	orphan, err := IsPreparationOrphan(root, runID)
+	if err != nil || !orphan {
+		t.Fatalf("IsPreparationOrphan = %t, %v, want true", orphan, err)
 	}
 	if err := ValidateBarrier(root); err == nil || !strings.Contains(err.Error(), "workspace migration pending (preparing)") {
 		t.Fatalf("ValidateBarrier partial preparation directory = %v", err)
+	}
+}
+
+func TestPreparationDirectoryWithUnrecognizedTemporaryFileRemainsBlocked(t *testing.T) {
+	root := t.TempDir()
+	const runID = "migration-12345678"
+	private := filepath.Join(root, ".workflow", "migrations", runID, "private")
+	if err := os.MkdirAll(private, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	temporary := filepath.Join(private, ".homonto-migration-0123456789abcdef0123456789abcdef")
+	if err := os.WriteFile(temporary, []byte("foreign\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	orphan, err := IsPreparationOrphan(root, runID)
+	if err != nil || orphan {
+		t.Fatalf("IsPreparationOrphan = %t, %v, want false", orphan, err)
+	}
+	if err := ValidateBarrier(root); err == nil || !strings.Contains(err.Error(), "migration journal is missing, malformed, or unsupported") {
+		t.Fatalf("ValidateBarrier unrecognized preparation temporary = %v", err)
+	}
+	if data, err := os.ReadFile(temporary); err != nil || string(data) != "foreign\n" {
+		t.Fatalf("unrecognized temporary changed: %q, %v", data, err)
 	}
 }
 

@@ -3,6 +3,7 @@ package workspacemigration
 import (
 	"bytes"
 	"crypto/rand"
+	"crypto/sha256"
 	"encoding/hex"
 	"errors"
 	"fmt"
@@ -10,9 +11,11 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strconv"
 	"strings"
 
 	"github.com/noviopenworks/homonto/internal/fsutil"
+	"github.com/noviopenworks/homonto/internal/migrationrecord"
 )
 
 // migrationFSOps is deliberately limited to the operations whose ordering is
@@ -53,6 +56,94 @@ type migrationRegularExpectation struct {
 	exists bool
 	data   []byte
 	mode   os.FileMode
+}
+
+// migrationTempAuthority is private journal authority for exactly one atomic
+// replacement image. The plan declares the destination and generation rule;
+// this concrete binding adds the run owner, both journaled images, and the
+// selected direction before a temporary pathname is created.
+type migrationTempAuthority struct {
+	root      string
+	runID     string
+	owner     string
+	scope     string
+	kind      string
+	target    string
+	direction string
+
+	preExists  bool
+	preimage   []byte
+	preMode    os.FileMode
+	postExists bool
+	postimage  []byte
+	postMode   os.FileMode
+
+	data        []byte
+	mode        os.FileMode
+	privateSlot bool
+	bootstrap   bool
+}
+
+func (authority migrationTempAuthority) name() (string, error) {
+	if !migrationrecord.SafeRunID(authority.runID) || authority.scope == "" || authority.kind == "" || authority.direction == "" || !filepath.IsAbs(authority.root) || filepath.Clean(authority.root) != authority.root || !filepath.IsAbs(authority.target) || filepath.Clean(authority.target) != authority.target || !pathWithin(authority.root, authority.target) || authority.mode.Perm() == 0 {
+		return "", fmt.Errorf("workspace migration: invalid temporary-file authority")
+	}
+	if authority.bootstrap {
+		if authority.scope != journalScopeRecovery || authority.kind != journalKindRecoveryStatus || authority.target != filepath.Join(authority.root, ".workflow", "migrations", authority.runID, "private", "journal.json") {
+			return "", fmt.Errorf("workspace migration: invalid bootstrap temporary-file authority")
+		}
+		return migrationTempPrefix + migrationTempToken("preparation-status-bootstrap", authority.runID, authority.target, authority.direction), nil
+	}
+	if !validMigrationOwner(authority.owner) {
+		return "", fmt.Errorf("workspace migration: invalid temporary-file authority")
+	}
+	if authority.privateSlot {
+		return migrationTempPrefix + migrationTempToken("private-slot", authority.runID, authority.owner, authority.scope, authority.kind, authority.target, authority.direction), nil
+	}
+	return migrationTempPrefix + migrationTempToken(
+		"exact-image",
+		authority.runID,
+		authority.owner,
+		authority.scope,
+		authority.kind,
+		authority.target,
+		authority.direction,
+		strconv.FormatBool(authority.preExists),
+		migrationDigest(authority.preimage),
+		strconv.FormatUint(uint64(authority.preMode.Perm()), 8),
+		strconv.FormatBool(authority.postExists),
+		migrationDigest(authority.postimage),
+		strconv.FormatUint(uint64(authority.postMode.Perm()), 8),
+		migrationDigest(authority.data),
+		strconv.FormatUint(uint64(authority.mode.Perm()), 8),
+	), nil
+}
+
+func migrationTempToken(parts ...string) string {
+	hash := sha256.New()
+	for _, part := range parts {
+		_, _ = hash.Write([]byte(part))
+		_, _ = hash.Write([]byte{0})
+	}
+	return hex.EncodeToString(hash.Sum(nil)[:16])
+}
+
+func (authority migrationTempAuthority) matchesWrite(path string, data []byte, mode os.FileMode) bool {
+	return authority.target == path && bytes.Equal(authority.data, data) && authority.mode.Perm() == mode.Perm()
+}
+
+func (authority migrationTempAuthority) matchesPartial(data []byte, mode os.FileMode) bool {
+	if authority.privateSlot {
+		// Private recovery slots are reserved by the durable run/owner identity
+		// before creation. A complete candidate is validated by its caller; a
+		// partial candidate has no independently parseable image yet and is
+		// recoverable only under the migration's locked-writer quiescence.
+		return mode.Perm() == 0o600
+	}
+	if len(data) > len(authority.data) || !bytes.Equal(data, authority.data[:len(data)]) {
+		return false
+	}
+	return mode.Perm() == authority.mode.Perm()
 }
 
 // requireMigrationFilesystemSupport refuses platforms where the guarantees this
@@ -344,6 +435,59 @@ func migrationTempFile(parent *os.Root) (*os.File, string, error) {
 	return nil, "", fmt.Errorf("workspace migration: cannot allocate a unique temporary file")
 }
 
+func migrationAuthorizedTempFile(parent *os.Root, authority migrationTempAuthority) (*os.File, string, error) {
+	name, err := authority.name()
+	if err != nil {
+		return nil, "", err
+	}
+	data, mode, exists, err := migrationPinnedOptionalRegular(parent, name)
+	if err != nil {
+		return nil, "", err
+	}
+	if exists {
+		if !authority.matchesPartial(data, mode) {
+			return nil, "", fmt.Errorf("workspace migration: foreign or altered temporary file %q", name)
+		}
+		if err := migrationFS.remove(parent, name); err != nil {
+			return nil, "", err
+		}
+		if err := syncPinnedMigrationDirectory(parent, filepath.Dir(authority.target)); err != nil {
+			return nil, "", err
+		}
+	}
+	file, err := migrationFS.openFile(parent, name, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
+	if err != nil {
+		return nil, "", err
+	}
+	return file, name, nil
+}
+
+func removeMigrationAuthorizedTemp(authority migrationTempAuthority) error {
+	name, err := authority.name()
+	if err != nil {
+		return err
+	}
+	parent, _, parentPath, err := openPinnedMigrationParent(authority.root, authority.target)
+	if err != nil {
+		return err
+	}
+	defer parent.Close()
+	data, mode, exists, err := migrationPinnedOptionalRegular(parent, name)
+	if err != nil {
+		return err
+	}
+	if !exists {
+		return nil
+	}
+	if !authority.matchesPartial(data, mode) {
+		return fmt.Errorf("workspace migration: foreign or altered temporary file %q", name)
+	}
+	if err := migrationFS.remove(parent, name); err != nil {
+		return err
+	}
+	return syncPinnedMigrationDirectory(parent, parentPath)
+}
+
 func migrationTargetStillExpected(parent *os.Root, name string, expected os.FileInfo, exists bool) error {
 	info, err := parent.Lstat(name)
 	if !exists {
@@ -427,6 +571,14 @@ func writeMigrationRegular(root, path string, data []byte, mode os.FileMode) err
 }
 
 func writeMigrationRegularExpected(root, path string, data []byte, mode os.FileMode, expected *migrationRegularExpectation) error {
+	return writeMigrationRegularWithAuthority(root, path, data, mode, expected, nil)
+}
+
+func writeMigrationRegularAuthorized(root, path string, data []byte, mode os.FileMode, expected *migrationRegularExpectation, authority migrationTempAuthority) error {
+	return writeMigrationRegularWithAuthority(root, path, data, mode, expected, &authority)
+}
+
+func writeMigrationRegularWithAuthority(root, path string, data []byte, mode os.FileMode, expected *migrationRegularExpectation, authority *migrationTempAuthority) error {
 	if err := ensureMigrationDirectory(root, filepath.Dir(path), 0o755); err != nil {
 		return err
 	}
@@ -446,13 +598,27 @@ func writeMigrationRegularExpected(root, path string, data []byte, mode os.FileM
 	if exists {
 		mode = existing.Mode().Perm()
 	}
+	if authority != nil {
+		if !authority.matchesWrite(path, data, mode) {
+			return fmt.Errorf("workspace migration: temporary-file authority does not match write target")
+		}
+		if _, err := authority.name(); err != nil {
+			return err
+		}
+	}
 	if err := migrationAfterParentPin(root, path); err != nil {
 		return err
 	}
 	if err := migrationPinnedParentStillCurrent(root, parentPath, parent); err != nil {
 		return err
 	}
-	temp, tempName, err := migrationTempFile(parent)
+	var temp *os.File
+	var tempName string
+	if authority == nil {
+		temp, tempName, err = migrationTempFile(parent)
+	} else {
+		temp, tempName, err = migrationAuthorizedTempFile(parent, *authority)
+	}
 	if err != nil {
 		return err
 	}
@@ -586,33 +752,6 @@ func removeMigrationOptionalRegularExpected(root, path string, expected *migrati
 	return syncPinnedMigrationDirectory(parent, parentPath)
 }
 
-func migrationDirectoryEntries(root, path string) ([]os.DirEntry, error) {
-	parent, name, _, err := openPinnedMigrationParent(root, path)
-	if err != nil {
-		return nil, err
-	}
-	defer parent.Close()
-	before, err := parent.Lstat(name)
-	if err != nil || !migrationRealDirectory(before) {
-		return nil, fmt.Errorf("workspace migration: expected a real migration directory")
-	}
-	dir, err := parent.Open(name)
-	if err != nil {
-		return nil, err
-	}
-	opened, statErr := dir.Stat()
-	if statErr != nil || !migrationRealDirectory(opened) || !os.SameFile(before, opened) {
-		_ = dir.Close()
-		return nil, fmt.Errorf("workspace migration: directory changed while being read")
-	}
-	entries, readErr := dir.ReadDir(-1)
-	closeErr := dir.Close()
-	if err := errors.Join(readErr, closeErr); err != nil {
-		return nil, err
-	}
-	return entries, nil
-}
-
 func migrationTemporaryFileName(name string) bool {
 	token := strings.TrimPrefix(name, migrationTempPrefix)
 	if token == name || len(token) != 32 || token != strings.ToLower(token) {
@@ -620,28 +759,6 @@ func migrationTemporaryFileName(name string) bool {
 	}
 	_, err := hex.DecodeString(token)
 	return err == nil
-}
-
-// removeMigrationTemporaryFiles clears only interrupted atomic-write temporaries
-// from a run's private directory. It is called under recovery locks before the
-// journal or intent is interpreted; any other entry remains a hard blocker.
-func removeMigrationTemporaryFiles(root, dir string) error {
-	entries, err := migrationDirectoryEntries(root, dir)
-	if errors.Is(err, os.ErrNotExist) {
-		return nil
-	}
-	if err != nil {
-		return err
-	}
-	for _, entry := range entries {
-		if !migrationTemporaryFileName(entry.Name()) {
-			continue
-		}
-		if err := removeMigrationOptionalRegular(root, filepath.Join(dir, entry.Name())); err != nil {
-			return fmt.Errorf("workspace migration: remove interrupted temporary file: %w", err)
-		}
-	}
-	return nil
 }
 
 func removeMigrationEmptyDirectory(root, path string) error {

@@ -17,9 +17,12 @@ Global behavior:
 
 ## `homonto init [dir]`
 
-Scaffold a starter repo: `homonto.toml`, `.gitignore` (excluding `.homonto/`),
-`.env.example`, and `homonto/skills/`. Writes into `dir` (default: the current
-directory) and **never overwrites** an existing file.
+Scaffold a starter config: `homonto.toml`, `.gitignore` (excluding `.homonto/`
+and `.env`), and `.env.example`. Writes into `dir` (default: the current
+directory), preserves existing config and content, and appends missing ignore
+entries to an existing `.gitignore`. It does not create `homonto/skills/` or a
+`.gitkeep`. For a local skill, create `homonto/skills/<name>/SKILL.md` yourself
+and declare `source = "local:<name>"` under `[skills.<name>]` with a scope.
 
 This scaffolds configuration, not Git history. For an empty managed records
 repository, use `homonto workspace init --yes` after configuring its layout.

@@ -13,6 +13,43 @@ import (
 	"github.com/noviopenworks/homonto/internal/workflowroot"
 )
 
+func TestWorkflowRootRejectsConfigRootAliases(t *testing.T) {
+	for _, prefix := range []string{"", "schema_version=1\n", "schema_version=2\n"} {
+		for _, root := range []string{".", "./", "docs/..", " ./ ", "work/records/../.."} {
+			t.Run(prefix+root, func(t *testing.T) {
+				dir := t.TempDir()
+				body := fmt.Sprintf("%s[workflow]\nroot = %q\n", prefix, root)
+				if err := os.WriteFile(filepath.Join(dir, "homonto.toml"), []byte(body), 0o644); err != nil {
+					t.Fatal(err)
+				}
+				if got, err := WorkflowRoot(dir); err == nil || !strings.Contains(err.Error(), "workflow.root") {
+					t.Fatalf("WorkflowRoot = %q, %v, want workflow.root rejection", got, err)
+				}
+			})
+		}
+	}
+}
+
+func TestWorkflowRootDefaultsAndNormalizes(t *testing.T) {
+	for _, tc := range []struct{ root, want string }{
+		{"", "docs"},
+		{"work/./records", "work/records"},
+		{"work/discard/../records", "work/records"},
+		{"docs/../records", "records"},
+	} {
+		t.Run(tc.root, func(t *testing.T) {
+			dir := t.TempDir()
+			body := fmt.Sprintf("[workflow]\nroot = %q\n", tc.root)
+			if err := os.WriteFile(filepath.Join(dir, "homonto.toml"), []byte(body), 0o644); err != nil {
+				t.Fatal(err)
+			}
+			if got, err := WorkflowRoot(dir); err != nil || got != filepath.Join(dir, tc.want) {
+				t.Fatalf("WorkflowRoot = %q, %v, want %q", got, err, filepath.Join(dir, tc.want))
+			}
+		})
+	}
+}
+
 func TestSchemaTwoMarkerRejectsSymlinks(t *testing.T) {
 	for _, kind := range []string{"dangling leaf", "existing leaf", "parent"} {
 		t.Run(kind, func(t *testing.T) {

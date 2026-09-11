@@ -78,10 +78,10 @@ func validateWorkflow(c *Config) error {
 	if root == "" {
 		return nil
 	}
-	if filepath.IsAbs(root) || root == "." || root == string(filepath.Separator) || strings.Contains(root, `\`) {
+	clean := filepath.Clean(root)
+	if filepath.IsAbs(root) || clean == "." || root == string(filepath.Separator) || strings.Contains(root, `\`) {
 		return fmt.Errorf("parse config: workflow.root %q must be a relative path below the configuration repository", c.Workflow.Root)
 	}
-	clean := filepath.Clean(root)
 	if clean == ".." || strings.HasPrefix(clean, ".."+string(filepath.Separator)) {
 		return fmt.Errorf("parse config: workflow.root %q must remain below the configuration repository", c.Workflow.Root)
 	}

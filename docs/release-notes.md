@@ -15,6 +15,36 @@ bookkeeper) — for every supported OS/arch as separate archives under one
 `SHA256SUMS`. `onto` and `to` each require `homonto` to have installed their
 framework first (`[frameworks.onto]` / `[frameworks.to]` + `homonto apply`).
 
+### New in v0.27.0 — cleaner setup and GitHub skill naming
+
+- `homonto init` now creates only `homonto.toml`, `.gitignore`, and
+  `.env.example`. It no longer creates an unused `homonto/skills/.gitkeep`.
+  Existing local content is preserved; create and declare local skills when
+  needed.
+- The installer, catalog, and current guides describe `h` as a **GitHub skill
+  bundle**, not a third lifecycle workflow. `[frameworks.h]`, the five `/h-*`
+  entry points, and its dependencies on onto and to are unchanged.
+- Guided setup rejects invalid repository selections, numeric-only repository
+  names, model `#variant` suffixes, workflow-root aliases of the config root,
+  and records/tmp collisions. The config loader and workflow resolver also
+  reject root aliases such as `./` and `docs/..`.
+- Installation refuses directory targets for executables. Retry loops stop
+  cleanly at EOF, invalid detected model defaults can be replaced, and path
+  validation ignores inherited `CDPATH`. Empty-array handling and version
+  validation work with Bash 3.2 as well as current Bash.
+- Next steps reflect selected configuration and installed binaries. The model
+  prompt discloses its global OpenCode scope. Current documentation corrects
+  coordinator naming, local-skill setup, repository relocation, and the limits
+  of workflow diagnostics.
+
+### Upgrading to v0.27.0
+
+Install all three binaries at v0.27.0, then run `homonto update` (or
+`homonto apply`) in each configured project and restart OpenCode. Existing
+local-skill directories are not deleted, and workflow records are not migrated.
+If an old `workflow.root` resolves to the config directory itself, choose a
+dedicated records directory before applying; these aliases are now rejected.
+
 ### New in v0.26.0 — autonomous coordinator permissions
 
 - The dedicated `/onto-bypass` and `/to-bypass` commands now prompt the

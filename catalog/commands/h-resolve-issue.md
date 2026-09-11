@@ -5,8 +5,9 @@ agent: homonto
 
 # /h-resolve-issue
 
-Load and follow the `h-resolve-issue` skill. If it is not installed, say the
-`h` framework is missing (declare `[frameworks.h]` and run `homonto apply`)
+Load and follow the `h-resolve-issue` skill. If it is unavailable, say the
+required skill is unavailable, direct the user to install or reapply the `h`
+GitHub skill bundle (declare `[frameworks.h]` if needed and run `homonto apply`),
 and stop.
 
 `$ARGUMENTS` is the GitHub issue to resolve: one issue URL

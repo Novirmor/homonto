@@ -111,7 +111,8 @@ IWORK="$(mktemp -d)"
 homonto init "$IWORK"
 [ -f "$IWORK/homonto.toml" ]                 || fail "init did not create homonto.toml"
 [ -f "$IWORK/.gitignore" ]                   || fail "init did not create .gitignore"
-[ -f "$IWORK/homonto/skills/.gitkeep" ]      || fail "init did not create homonto/skills"
+[ -f "$IWORK/.env.example" ]                || fail "init did not create .env.example"
+[ ! -e "$IWORK/homonto" ]                   || fail "init created unused local content directory"
 
 # ----------------------------------------------- conflict smoke (skill dirs)
 # A real file or a foreign symlink where a skill link would go is user-owned:

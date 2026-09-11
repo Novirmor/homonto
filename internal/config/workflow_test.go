@@ -19,6 +19,7 @@ func TestWorkflowLayoutParserParity(t *testing.T) {
 		valid bool
 	}{
 		{"schema_version=2\n", true},
+		{"schema_version=2\n[workflow]\nroot='work/./discard/../records'\n", true},
 		{"schema_version=2\n[workflow]\nroot='../external records'\ngit='existing'\n[worktrees]\ndir='../trees'\n", true},
 		{"schema_version=2\n[workflow]\nroot='.'\n", false},
 		{"schema_version=2\n[workflow]\nroot='/'\n", false},
@@ -107,6 +108,19 @@ func TestWorkflowRootRejectsOutsideConfigRepo(t *testing.T) {
 		err := loadDoc(t, "[workflow]\nroot = \""+root+"\"\n")
 		if err == nil || !strings.Contains(err.Error(), "workflow.root") {
 			t.Errorf("root %q error = %v, want workflow.root rejection", root, err)
+		}
+	}
+}
+
+func TestWorkflowRootRejectsConfigRootAliases(t *testing.T) {
+	for _, prefix := range []string{"", "schema_version=1\n", "schema_version=2\n"} {
+		for _, root := range []string{".", "./", "docs/..", " ./ ", "work/records/../.."} {
+			t.Run(prefix+root, func(t *testing.T) {
+				err := loadDoc(t, prefix+"[workflow]\nroot = "+strconv.Quote(root)+"\n")
+				if err == nil || !strings.Contains(err.Error(), "workflow.root") {
+					t.Fatalf("root %q error = %v, want workflow.root rejection", root, err)
+				}
+			})
 		}
 	}
 }

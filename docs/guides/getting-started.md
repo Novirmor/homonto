@@ -8,7 +8,8 @@ through `open → design → build → verify → close`. onto's mutating comman
 need the onto framework installed *by* homonto first.
 
 > A third binary, `to`, is the lightweight alternative to onto (`plan → do →
-> done`, no gates). See the [to workflow guide](to-workflow.md) and the
+> done`, self-asserted verification). It checks installation, phase/state, and
+> applicable source cleanliness. See the [to workflow guide](to-workflow.md) and the
 > [to reference](to-reference.md). onto and `to` are complementary — declare
 > either or both and pick per change; this walkthrough uses onto.
 
@@ -31,9 +32,13 @@ binaries you want, verifies the release archives against `SHA256SUMS`, and
 prints PATH instructions without editing your shell configuration. It also
 offers to run the non-destructive `homonto init` in the current directory. For
 a newly created config, it asks for the workflow-record directory, an optional
-workspace tmp directory (`[tmp]`), sibling Git repositories, frameworks, and
-one model for OpenCode plus each selected
-framework agent. The installer leaves an existing `homonto.toml` unchanged;
+workspace tmp directory (`[tmp]`), sibling Git repositories, and onto/to
+lifecycle workflows. With both workflow binaries installed, it also offers the
+`h` GitHub skill bundle. One model is written to `[settings.opencode]` and each
+selected agent's model block: applying it updates **global OpenCode settings**,
+affecting other projects. The printed next steps name the configured, installed
+lifecycle workflows and, if selected, the `/h-*` skills.
+The installer leaves an existing `homonto.toml` unchanged;
 it uses Gum when available, then dialog, then text prompts. Decline to
 initialize elsewhere later:
 
@@ -42,9 +47,9 @@ curl -fsSL -o install.sh https://raw.githubusercontent.com/noviopenworks/homonto
 ```
 
 Or grab the prebuilt binaries and `SHA256SUMS` from the GitHub release
-(Linux/macOS/Windows, amd64/arm64). From a checked-out repo use
-`go install .`, not a bare `go build .`: the output name collides with the
-`homonto/` content directory (see [troubleshooting](troubleshooting.md)).
+(Linux/macOS/Windows, amd64/arm64). From a checked-out repo use `go install .`.
+If a local `homonto/` content directory exists, a bare `go build .` conflicts
+with it; use an explicit output path (see [troubleshooting](troubleshooting.md)).
 
 Verify:
 
@@ -95,6 +100,15 @@ model = "anthropic/claude-opus-4-8"
 `[subagents.<name>.opencode]` block. OpenCode keeps the model ID and variant
 as separate fields.
 
+Before planning this example, create its optional local skill. `homonto init`
+creates only `homonto.toml`, `.gitignore`, and `.env.example`; local skill
+directories and their contents are user-created:
+
+```console
+$ mkdir -p homonto/skills/my-notes
+$ printf -- '---\nname: my-notes\ndescription: My note conventions\n---\n' > homonto/skills/my-notes/SKILL.md
+```
+
 `plan` prints a Terraform-style diff (`+` create, `~` update, `-` delete) and
 leaves secrets as unresolved tokens:
 
@@ -129,13 +143,12 @@ links.
 
 ## 3. Your first owned skill
 
-Skills you author live under `homonto/skills/` next to `homonto.toml` and are
-**symlinked** into each tool, so editing the source is instantly live
-everywhere:
+Local skills live under the optional, user-created `homonto/skills/` next to
+`homonto.toml` and are **symlinked** into each tool. Edit the skill created in
+step 2 to add your note conventions; source edits are instantly live:
 
 ```console
-$ mkdir -p homonto/skills/my-notes
-$ printf -- '---\nname: my-notes\ndescription: My note conventions\n---\n' > homonto/skills/my-notes/SKILL.md
+$ $EDITOR homonto/skills/my-notes/SKILL.md
 $ homonto apply --yes
 ```
 
@@ -228,15 +241,20 @@ command and gate: [onto reference](onto-reference.md).
 | Supported | Notes |
 |---|---|
 | MCP servers, settings, skills, plugins, TUI settings | OpenCode, full — the only adapter (Claude Code and codex were removed in v0.13.0) |
-| Frameworks (`[frameworks.*]`) | builtin `onto`, `to` (complementary), and `h` (GitHub intake over both); also `local:` roots and digest-pinned `remote:` sources |
+| Packages (`[frameworks.*]`) | builtin `onto` and `to` lifecycle workflows (complementary), and the `h` GitHub skill bundle; also `local:` roots and digest-pinned `remote:` sources |
 | Commands, subagents (`builtin:` / `local:`) | subagents: `mode = link` (default) or `copy` |
 | Remote sources (`remote:…`) | subagents and frameworks; **require `digest = "sha256:…"`**; fetched, verified, pinned, cached |
+| Moving/renaming the repo | same-domain project links are relative; reapply repairs eligible state-recorded relocations through the normal plan/confirm path (see [projection & state](projection-and-state.md)) |
+
+`[frameworks.h]` with `source = "builtin:h"` is the stable generic package key
+for the bundle. It installs both onto and to dependencies, the five `/h-*`
+skills/commands, and their two read-only workers; all commands use the shared
+`homonto` coordinator. Calling `h` a skill bundle does not rename the key.
 
 | Not supported (accepted for beta) | Detail |
 |---|---|
 | OpenCode JSONC comments | any apply that writes `opencode.jsonc` drops comments (no-op applies don't) |
 | Secrets without a backend | `${pass:…}` needs `pass` on `PATH`; `${ENV_VAR}` needs the var set |
-| Moving/renaming the repo | skill symlinks are absolute — delete stale links and reapply after a move |
 | Adapters beyond OpenCode | none; configs naming `claude`/`codex` fail at load citing the v0.13.0 removal |
 
 ## Where to next

@@ -11,13 +11,14 @@ The mutating commands (`init`, `new`, `phase`, `bypass`, `done`, `abandon`) refu
 until, in order:
 
 1. `homonto.toml` exists at the workspace root,
-2. it declares a `[frameworks.to]` table, and
+2. it declares `[frameworks.to]` or `[frameworks.h]` (the GitHub skill bundle
+   installs to as a dependency), and
 3. `.homonto/catalog/skills/to` exists as a directory (the declaration has
    been applied).
 
 Each failure names the fix (`homonto init`, declare `[frameworks.to]`, run
 `homonto apply`). `promote` is the exception: it bridges the two frameworks,
-so either an applied `[frameworks.to]` or an applied `[frameworks.onto]`
+so an applied `[frameworks.to]`, `[frameworks.onto]`, or `[frameworks.h]`
 passes its gate. Read-only forms never write, but resolve `homonto.toml` for
 the records root and selected source scope when needed. Legacy config-free
 recovery uses `docs`; a broken configured root is not an empty workspace.
@@ -44,7 +45,7 @@ not inspect a workspace.
 | `to abandon <name>` | Terminal exit without done; archives (gated). Works from any non-terminal phase. |
 | `to status [--all]` | Active changes and phases; corrupt state and source-scope errors are reported per entry. Root resolution, unsafe layout, and directory-read errors fail the command rather than appearing as an empty inventory. A genuinely absent tasks tree is empty. `--json` emits an array; `--all --json` emits `{tasks, onto}` for both workflows. Read-only. |
 | `to handoff <name>` | Compact recovery pack: identity, phase, safe next skill, and a plan excerpt (head, complete unchecked task contracts, `Final Verify:`, and bounded notes/verification sections) for resuming after compaction. A missing `plan.md` is reported, not silently omitted. Read-only unless `--write` is selected. |
-| `to doctor [--quiet]` | Workspace health: invalid state files, wedged terminal-but-active changes (an interrupted archive — re-run the finishing command to converge), missing `plan.md`, `do`-phase tasks missing non-empty `Files:`, `Change:`, or `Verify:` fields, a missing or empty `Final Verify:`, non-terminal archive entries, binary↔framework version skew, and unavailable selected repos for active scoped changes. These are diagnostics, not transition gates. `--quiet` prints nothing and signals via exit code only — the hook primitive. Read-only. |
+| `to doctor [--quiet]` | Workspace health: invalid state files, wedged terminal-but-active changes (an interrupted archive — re-run the finishing command to converge), missing `plan.md`, `do`-phase tasks missing non-empty `Files:`, `Change:`, or `Verify:` fields, a missing or empty `Final Verify:`, non-terminal archive entries, binary↔framework version skew, and unavailable selected repos for active scoped changes. These are diagnostics, not transition gates. `--quiet` prints nothing and signals via exit code only, for scripts or diagnostic hooks. Read-only; it does not block session completion. |
 | `to version` | The release-stamped version. |
 
 ### Source bases at creation

@@ -78,7 +78,8 @@ it, including calls made from source worktrees.
 
 Do not offer or run `git init` unless the user explicitly requests a new Git
 repository. `homonto init [dir]` only scaffolds `homonto.toml`, `.gitignore`,
-and local content; it does not initialize Git or install a framework.
+and `.env.example`; it does not initialize Git or install a framework. Create local
+skill directories only when adding explicitly declared local skills.
 Framework installation is declarative: add the requested `[frameworks.onto]`
 or `[frameworks.to]` entry, inspect `homonto plan`, then run `homonto apply`.
 If Git is a required later gate and no worktree exists, report that concrete

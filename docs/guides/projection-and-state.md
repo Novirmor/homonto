@@ -34,19 +34,26 @@ in the tool's file. Consequences:
 
 ## Owned content is symlinked
 
-Skills you author live under `homonto/skills/` (the local provider root, next
-to `homonto.toml`) and are **symlinked** into each tool, so editing the
-source is instantly live everywhere. `apply` ensures the links exist and
-point correctly. It **never clobbers** a real file or a symlink pointing
+Skills you author live under the optional, user-created `homonto/skills/`
+(the local provider root, next to `homonto.toml`) and are **symlinked** into
+each tool, so editing the source is instantly live everywhere. `apply` ensures
+the links exist and point correctly. It **never clobbers** a real file or a symlink pointing
 elsewhere; those are reported as conflicts.
 
 Link-mode commands and subagents work the same way; copy-mode subagents are
 projected as real managed files instead (see [subagents](subagents.md)).
 
-> Symlinks store an **absolute** target. If you move or rename the repo,
-> existing links point at the old path and are reported as conflicts. Delete
-> the stale links and re-run `apply` to relink (see
-> [troubleshooting](troubleshooting.md)).
+Same-domain project links store **relative** targets: their source and
+destination are inside the config repository and move together. User-scoped
+and cross-repository links remain absolute. After a repository move, run
+`homonto plan` and `homonto apply` from the new location. Eligible stale
+absolute links are repaired through that normal plan/confirm path when the
+on-disk target exactly matches the recorded prior target and the old/new
+paths satisfy the relocation checks. This includes eligible user-scoped links
+whose source moved while their destination stayed fixed. Unrecorded or
+changed foreign links remain conflicts; cross-repository links do not qualify
+for this same-domain repair. See [ADR 0026](../adr/0026-relative-project-links.md)
+and [troubleshooting](troubleshooting.md).
 
 ## State — `.homonto/state.json`
 

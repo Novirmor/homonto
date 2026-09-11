@@ -72,27 +72,31 @@ type recoveryIdentityWire struct {
 // replacement starts. Its immutable blob holds the exact bytes that authorize
 // an interrupted target temporary.
 type recoveryPayloadDescriptor struct {
-	Version        int    `json:"version"`
-	RunID          string `json:"run_id"`
-	Owner          string `json:"owner"`
-	IdentitySHA256 string `json:"identity_sha256"`
-	Purpose        string `json:"purpose"`
-	Target         string `json:"target"`
-	Mode           uint32 `json:"mode"`
-	Size           int64  `json:"size"`
-	SHA256         string `json:"sha256"`
+	Version               int                      `json:"version"`
+	RunID                 string                   `json:"run_id"`
+	Owner                 string                   `json:"owner"`
+	IdentitySHA256        string                   `json:"identity_sha256"`
+	Purpose               string                   `json:"purpose"`
+	Target                string                   `json:"target"`
+	Mode                  uint32                   `json:"mode"`
+	Size                  int64                    `json:"size"`
+	SHA256                string                   `json:"sha256"`
+	JournalPreviousSHA256 string                   `json:"journal_previous_sha256,omitempty"`
+	JournalProgress       *recoveryJournalProgress `json:"journal_progress,omitempty"`
 }
 
 type recoveryPayloadDescriptorWire struct {
-	Version        int    `json:"v"`
-	RunID          string `json:"r"`
-	Owner          string `json:"o"`
-	IdentitySHA256 string `json:"i"`
-	Purpose        string `json:"p"`
-	Target         string `json:"t"`
-	Mode           uint32 `json:"m"`
-	Size           int64  `json:"s"`
-	SHA256         string `json:"h"`
+	Version               int                      `json:"v"`
+	RunID                 string                   `json:"r"`
+	Owner                 string                   `json:"o"`
+	IdentitySHA256        string                   `json:"i"`
+	Purpose               string                   `json:"p"`
+	Target                string                   `json:"t"`
+	Mode                  uint32                   `json:"m"`
+	Size                  int64                    `json:"s"`
+	SHA256                string                   `json:"h"`
+	JournalPreviousSHA256 string                   `json:"q,omitempty"`
+	JournalProgress       *recoveryJournalProgress `json:"j,omitempty"`
 }
 
 func newRecoveryIdentity(intent preparationIntent, plan Plan) (recoveryIdentity, error) {
@@ -532,6 +536,14 @@ func newRecoveryPayloadDescriptor(identity recoveryIdentity, purpose, target str
 		Size:           int64(len(data)),
 		SHA256:         migrationDigest(data),
 	}
+	if purpose == journalKindRecoveryJournal {
+		previous, progress, err := journalRecoveryDescriptorProgress(identity, target, data)
+		if err != nil {
+			return recoveryPayloadDescriptor{}, err
+		}
+		descriptor.JournalPreviousSHA256 = previous
+		descriptor.JournalProgress = progress
+	}
 	if err := descriptor.validate(identity, purpose, target); err != nil {
 		return recoveryPayloadDescriptor{}, err
 	}
@@ -553,20 +565,34 @@ func (descriptor recoveryPayloadDescriptor) validate(identity recoveryIdentity, 
 	if err != nil || target != expectedTarget || !pathWithin(identity.Workflow, target) {
 		return fmt.Errorf("workspace migration: private recovery payload descriptor target is invalid")
 	}
+	if purpose != journalKindRecoveryJournal {
+		if descriptor.JournalPreviousSHA256 != "" || descriptor.JournalProgress != nil {
+			return fmt.Errorf("workspace migration: private recovery payload descriptor progress is invalid")
+		}
+		return nil
+	}
+	if (descriptor.JournalPreviousSHA256 == "") != (descriptor.JournalProgress == nil) {
+		return fmt.Errorf("workspace migration: private recovery journal descriptor progress is invalid")
+	}
+	if descriptor.JournalProgress != nil && (!validDigest(descriptor.JournalPreviousSHA256) || descriptor.JournalPreviousSHA256 == descriptor.SHA256 || descriptor.JournalProgress.validate() != nil) {
+		return fmt.Errorf("workspace migration: private recovery journal descriptor progress is invalid")
+	}
 	return nil
 }
 
 func recoveryPayloadDescriptorData(descriptor recoveryPayloadDescriptor) ([]byte, error) {
 	data, err := json.Marshal(recoveryPayloadDescriptorWire{
-		Version:        descriptor.Version,
-		RunID:          descriptor.RunID,
-		Owner:          descriptor.Owner,
-		IdentitySHA256: descriptor.IdentitySHA256,
-		Purpose:        descriptor.Purpose,
-		Target:         descriptor.Target,
-		Mode:           descriptor.Mode,
-		Size:           descriptor.Size,
-		SHA256:         descriptor.SHA256,
+		Version:               descriptor.Version,
+		RunID:                 descriptor.RunID,
+		Owner:                 descriptor.Owner,
+		IdentitySHA256:        descriptor.IdentitySHA256,
+		Purpose:               descriptor.Purpose,
+		Target:                descriptor.Target,
+		Mode:                  descriptor.Mode,
+		Size:                  descriptor.Size,
+		SHA256:                descriptor.SHA256,
+		JournalPreviousSHA256: descriptor.JournalPreviousSHA256,
+		JournalProgress:       descriptor.JournalProgress,
 	})
 	if err != nil {
 		return nil, err
@@ -592,15 +618,17 @@ func parseRecoveryPayloadDescriptorLinkTarget(target string) (recoveryPayloadDes
 		return recoveryPayloadDescriptor{}, err
 	}
 	descriptor := recoveryPayloadDescriptor{
-		Version:        wire.Version,
-		RunID:          wire.RunID,
-		Owner:          wire.Owner,
-		IdentitySHA256: wire.IdentitySHA256,
-		Purpose:        wire.Purpose,
-		Target:         wire.Target,
-		Mode:           wire.Mode,
-		Size:           wire.Size,
-		SHA256:         wire.SHA256,
+		Version:               wire.Version,
+		RunID:                 wire.RunID,
+		Owner:                 wire.Owner,
+		IdentitySHA256:        wire.IdentitySHA256,
+		Purpose:               wire.Purpose,
+		Target:                wire.Target,
+		Mode:                  wire.Mode,
+		Size:                  wire.Size,
+		SHA256:                wire.SHA256,
+		JournalPreviousSHA256: wire.JournalPreviousSHA256,
+		JournalProgress:       wire.JournalProgress,
 	}
 	canonical, err := recoveryPayloadDescriptorLinkTarget(descriptor)
 	if err != nil || canonical != target {
@@ -784,7 +812,19 @@ func promoteRecoveryPayloadDescriptor(identity recoveryIdentity, descriptor reco
 	return syncPinnedMigrationDirectoryKind(parent, parentPath, "recovery-descriptor")
 }
 
-func recoverPendingRecoveryDescriptorStages(identity recoveryIdentity) error {
+type pendingRecoveryDescriptorStage struct {
+	descriptor recoveryPayloadDescriptor
+	expected   []byte
+	promote    bool
+	repair     bool
+}
+
+// recoverPendingRecoveryDescriptorStages first authenticates every durable
+// staged payload before it promotes a descriptor or repairs a blob. A later
+// journal can supply a compact predecessor-bound replay delta; initial payload
+// stages remain for their ordinary resume/restore paths after their prefix has
+// been verified.
+func recoverPendingRecoveryDescriptorStages(identity recoveryIdentity, replay func(recoveryPayloadDescriptor) ([]byte, error)) error {
 	dir, err := recoveryDescriptorDirectory(identity.Workflow, identity.RunID)
 	if err != nil {
 		return err
@@ -796,6 +836,7 @@ func recoverPendingRecoveryDescriptorStages(identity recoveryIdentity) error {
 	if err != nil {
 		return err
 	}
+	stages := make([]pendingRecoveryDescriptorStage, 0, len(entries))
 	for _, entry := range entries {
 		if !strings.HasPrefix(entry.Name(), recoveryDescriptorStagePrefix) {
 			continue
@@ -816,6 +857,7 @@ func recoverPendingRecoveryDescriptorStages(identity recoveryIdentity) error {
 		if err != nil || name != entry.Name() {
 			return fmt.Errorf("workspace migration: durable recovery descriptor staging entry is invalid")
 		}
+		stage := pendingRecoveryDescriptorStage{descriptor: descriptor}
 		if _, err := loadRecoveryPayloadBlob(identity, descriptor); err != nil {
 			blobPath, pathErr := recoveryPayloadBlobPath(identity, descriptor.SHA256)
 			if pathErr != nil {
@@ -825,14 +867,47 @@ func recoverPendingRecoveryDescriptorStages(identity recoveryIdentity) error {
 			if readErr != nil || blobExists {
 				return err
 			}
-			// A descriptor staging link is durable authority, but its blob may be
-			// in the private create/write window. Leave the stage and any matching
-			// temporary in place; the caller that can reproduce the exact payload
-			// will authenticate its prefix before replacing it.
-			continue
+			if replay == nil {
+				return fmt.Errorf("workspace migration: durable recovery blob temporary cannot be authenticated")
+			}
+			expected, replayErr := replay(descriptor)
+			if replayErr != nil || int64(len(expected)) != descriptor.Size || migrationDigest(expected) != descriptor.SHA256 {
+				return fmt.Errorf("workspace migration: durable recovery blob temporary is not an exact immutable payload")
+			}
+			authority, authorityErr := recoveryPayloadBlobTempAuthority(identity, descriptor, expected)
+			if authorityErr != nil {
+				return authorityErr
+			}
+			temporaryName, nameErr := authority.name()
+			if nameErr != nil {
+				return nameErr
+			}
+			temporaryPath := filepath.Join(filepath.Dir(blobPath), temporaryName)
+			temporary, mode, temporaryExists, readErr := readMigrationOptionalRegular(identity.Workflow, temporaryPath)
+			if readErr != nil {
+				return readErr
+			}
+			if temporaryExists && !authority.matchesPartial(temporary, mode) {
+				return fmt.Errorf("workspace migration: durable recovery blob temporary is not an exact immutable payload")
+			}
+			stage.expected = expected
+			stage.repair = descriptor.Purpose == journalKindRecoveryJournal && descriptor.JournalProgress != nil
+		} else {
+			stage.promote = true
 		}
-		if err := promoteRecoveryPayloadDescriptor(identity, descriptor); err != nil {
-			return err
+		stages = append(stages, stage)
+	}
+	for _, stage := range stages {
+		if stage.repair {
+			if err := ensureRecoveryPayloadBlob(identity, stage.descriptor, stage.expected); err != nil {
+				return err
+			}
+			stage.promote = true
+		}
+		if stage.promote {
+			if err := promoteRecoveryPayloadDescriptor(identity, stage.descriptor); err != nil {
+				return err
+			}
 		}
 	}
 	return nil
@@ -1570,7 +1645,8 @@ func validateRecoveryPayloadStore(identity recoveryIdentity, allowAbsent bool) e
 			continue
 		}
 		if active, ok := activeDescriptors[entry.Name()]; ok {
-			if active != descriptor {
+			activeLink, err := recoveryPayloadDescriptorLinkTarget(active)
+			if err != nil || activeLink != link {
 				return fmt.Errorf("workspace migration: durable recovery descriptor set has an unexpected entry")
 			}
 		} else {

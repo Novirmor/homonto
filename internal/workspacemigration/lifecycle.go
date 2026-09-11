@@ -193,6 +193,43 @@ type privateWrite struct {
 	Postimage  []byte `json:"postimage,omitempty"`
 }
 
+// recoveryJournalProgress is the bounded, private delta that lets recovery
+// reconstruct a successor journal before it accepts a staged blob prefix. It
+// deliberately excludes the immutable plan, snapshots, write preimages,
+// bindings, and private owner seed carried by the predecessor journal.
+type recoveryJournalProgress struct {
+	Phase                 string `json:"p"`
+	ExpectedMigrationTree string `json:"m,omitempty"`
+	MigrationCommit       string `json:"c,omitempty"`
+	ExpectedProofTree     string `json:"q,omitempty"`
+	ProofCommit           string `json:"d,omitempty"`
+	RestoreParent         string `json:"r,omitempty"`
+	ExpectedRestoreTree   string `json:"t,omitempty"`
+	RestoreCommit         string `json:"x,omitempty"`
+	ProofPrepared         bool   `json:"w,omitempty"`
+	CompletionPrepared    bool   `json:"n,omitempty"`
+	MigrationIndexPost    bool   `json:"i,omitempty"`
+	ProofIndexPost        bool   `json:"j,omitempty"`
+	RestoreIndexPost      bool   `json:"k,omitempty"`
+}
+
+func (progress recoveryJournalProgress) validate() error {
+	if !validJournalPhase(progress.Phase) {
+		return fmt.Errorf("invalid journal progress phase")
+	}
+	for _, tree := range []string{progress.ExpectedMigrationTree, progress.ExpectedProofTree, progress.ExpectedRestoreTree} {
+		if tree != "" && !canonicalCommit.MatchString(tree) {
+			return fmt.Errorf("invalid journal progress tree")
+		}
+	}
+	for _, commit := range []string{progress.MigrationCommit, progress.ProofCommit, progress.RestoreParent, progress.RestoreCommit} {
+		if commit != "" && !canonicalCommit.MatchString(commit) {
+			return fmt.Errorf("invalid journal progress commit")
+		}
+	}
+	return nil
+}
+
 // migrationAfterWrite is a test seam. A failure after the durable file write
 // models interruption at every file boundary; recovery classifies pre/post
 // bytes rather than assuming a failed call made no progress.
@@ -950,36 +987,57 @@ func journalPreparationIntent(j privateJournal) (preparationIntent, error) {
 	return intent, nil
 }
 
-func cleanupPrivateRecoveryTemporaryArtifacts(layout workspace.Layout, intent preparationIntent, current *privateJournal) error {
+func cleanupPrivateRecoveryTemporaryArtifacts(layout workspace.Layout, intent preparationIntent, current *privateJournal) (*privateJournal, error) {
 	identity, err := loadRecoveryIdentity(intent.Workflow, intent.RunID)
 	if err != nil || !recoveryIdentityMatchesIntent(identity, intent) {
-		return fmt.Errorf("workspace migration: durable recovery identity is missing or differs from preparation state")
+		return nil, fmt.Errorf("workspace migration: durable recovery identity is missing or differs from preparation state")
 	}
 	if err := validateRecoveryIdentityLayout(identity, layout); err != nil {
-		return err
+		return nil, err
 	}
-	if err := recoverPendingRecoveryDescriptorStages(identity); err != nil {
-		return err
+	if err := recoverPendingRecoveryDescriptorStages(identity, recoveryPendingPayloadReplay(layout, identity, intent, current)); err != nil {
+		return nil, err
+	}
+	if current == nil {
+		journal, err := loadJournal(intent.Workflow, intent.RunID)
+		if err == nil {
+			journalIntent, intentErr := journalPreparationIntent(journal)
+			if intentErr != nil || journalIntent != intent || !privateJournalInitialTemporary(journal) {
+				return nil, privateJournalTemporaryConflict()
+			}
+			current = &journal
+		} else if !errors.Is(err, os.ErrNotExist) {
+			return nil, err
+		}
 	}
 	if err := validateRecoveryPayloadStore(identity, true); err != nil {
-		return err
+		return nil, err
 	}
 	if err := ensureNoUnexpectedPrivateRecoveryTemporary(identity); err != nil {
-		return err
+		return nil, err
 	}
 	if err := reconcilePreparationStatusPayload(identity, intent, current == nil); err != nil {
-		return err
+		return nil, err
 	}
 	if err := reconcilePreparationIntentPayload(identity, intent, current == nil); err != nil {
-		return err
+		return nil, err
 	}
 	if err := cleanupPrivateRecoveryBundleTemporaryArtifact(layout, identity, intent, current); err != nil {
-		return err
+		return nil, err
 	}
 	if err := cleanupPrivateJournalTemporaryArtifact(layout, identity, intent, current); err != nil {
-		return err
+		return nil, err
 	}
-	return cleanupPrivateRecoveryCompletionPayload(identity, current)
+	journal, err := loadJournal(intent.Workflow, intent.RunID)
+	if err == nil {
+		current = &journal
+	} else if !errors.Is(err, os.ErrNotExist) {
+		return nil, err
+	}
+	if err := cleanupPrivateRecoveryCompletionPayload(identity, current); err != nil {
+		return nil, err
+	}
+	return current, nil
 }
 
 func privateRecoveryPayloadConflict(purpose string) error {
@@ -1259,6 +1317,318 @@ func privateJournalWritesExtend(current, candidate []privateWrite) bool {
 		}
 	}
 	return true
+}
+
+func journalRecoveryDescriptorProgress(identity recoveryIdentity, target string, data []byte) (string, *recoveryJournalProgress, error) {
+	previousDescriptor, previousData, exists, err := loadPrivateRecoveryPayload(identity, journalKindRecoveryJournal, target)
+	if err != nil {
+		return "", nil, err
+	}
+	if !exists || previousDescriptor.SHA256 == migrationDigest(data) {
+		return "", nil, nil
+	}
+	previous, err := parsePrivateJournal(identity.Workflow, identity.RunID, target, previousData, os.FileMode(previousDescriptor.Mode))
+	if err != nil {
+		return "", nil, err
+	}
+	previousIntent, err := journalPreparationIntent(previous)
+	if err != nil || !recoveryIdentityMatchesIntent(identity, previousIntent) {
+		return "", nil, fmt.Errorf("workspace migration: predecessor journal differs from durable recovery identity")
+	}
+	candidate, err := parsePrivateJournal(identity.Workflow, identity.RunID, target, data, 0o600)
+	if err != nil {
+		return "", nil, err
+	}
+	progress, err := recoveryJournalProgressFrom(previous, candidate)
+	if err != nil {
+		return "", nil, err
+	}
+	replayed, err := replayRecoveryJournalProgress(previous, progress)
+	if err != nil {
+		return "", nil, err
+	}
+	replayedData, err := journalData(replayed)
+	if err != nil || !bytes.Equal(replayedData, data) {
+		return "", nil, fmt.Errorf("workspace migration: private journal successor cannot be replayed exactly")
+	}
+	return previousDescriptor.SHA256, &progress, nil
+}
+
+func recoveryJournalProgressFrom(previous, candidate privateJournal) (recoveryJournalProgress, error) {
+	if !privateJournalTemporaryExtends(previous, candidate) {
+		return recoveryJournalProgress{}, fmt.Errorf("workspace migration: private journal successor does not extend durable progress")
+	}
+	progress := recoveryJournalProgress{
+		Phase:                 candidate.Phase,
+		ExpectedMigrationTree: candidate.ExpectedMigrationTree,
+		MigrationCommit:       candidate.MigrationCommit,
+		ExpectedProofTree:     candidate.ExpectedProofTree,
+		ProofCommit:           candidate.ProofCommit,
+		RestoreParent:         candidate.RestoreParent,
+		ExpectedRestoreTree:   candidate.ExpectedRestoreTree,
+		RestoreCommit:         candidate.RestoreCommit,
+	}
+	previousWrites := make(map[string]privateWrite, len(previous.Writes))
+	for _, write := range previous.Writes {
+		previousWrites[journalWriteKey(write.Scope, write.Kind, write.Path)] = write
+	}
+	for _, write := range candidate.Writes {
+		old := previousWrites[journalWriteKey(write.Scope, write.Kind, write.Path)]
+		if len(old.Postimage) == 0 && len(write.Postimage) != 0 {
+			switch write.Kind {
+			case journalKindProof:
+				expected, err := journalProofData(candidate)
+				if err != nil || !bytes.Equal(write.Postimage, expected) {
+					return recoveryJournalProgress{}, fmt.Errorf("workspace migration: private journal proof successor is not deterministic")
+				}
+				progress.ProofPrepared = true
+			case journalKindCompletion:
+				expected, err := completionWitnessData(candidate)
+				if err != nil || !bytes.Equal(write.Postimage, expected) {
+					return recoveryJournalProgress{}, fmt.Errorf("workspace migration: private journal completion successor is not deterministic")
+				}
+				progress.CompletionPrepared = true
+			default:
+				return recoveryJournalProgress{}, fmt.Errorf("workspace migration: private journal successor contains unsupported mutable data")
+			}
+		}
+	}
+	progress.MigrationIndexPost = previous.MigrationIndexPost == nil && candidate.MigrationIndexPost != nil
+	progress.ProofIndexPost = previous.ProofIndexPost == nil && candidate.ProofIndexPost != nil
+	progress.RestoreIndexPost = previous.RestoreIndexPost == nil && candidate.RestoreIndexPost != nil
+	if err := progress.validate(); err != nil {
+		return recoveryJournalProgress{}, err
+	}
+	return progress, nil
+}
+
+func replayRecoveryJournalProgress(previous privateJournal, progress recoveryJournalProgress) (privateJournal, error) {
+	if err := progress.validate(); err != nil {
+		return privateJournal{}, err
+	}
+	candidate := clonePrivateJournalForProgress(previous)
+	candidate.Phase = progress.Phase
+	candidate.ExpectedMigrationTree = progress.ExpectedMigrationTree
+	candidate.MigrationCommit = progress.MigrationCommit
+	candidate.ExpectedProofTree = progress.ExpectedProofTree
+	candidate.ProofCommit = progress.ProofCommit
+	candidate.RestoreParent = progress.RestoreParent
+	candidate.ExpectedRestoreTree = progress.ExpectedRestoreTree
+	candidate.RestoreCommit = progress.RestoreCommit
+	if progress.ProofPrepared {
+		data, err := journalProofData(candidate)
+		if err != nil {
+			return privateJournal{}, err
+		}
+		if err := setJournalProgressPostimage(&candidate, journalKindProof, data); err != nil {
+			return privateJournal{}, err
+		}
+	}
+	if progress.CompletionPrepared {
+		data, err := completionWitnessData(candidate)
+		if err != nil {
+			return privateJournal{}, err
+		}
+		if err := setJournalProgressPostimage(&candidate, journalKindCompletion, data); err != nil {
+			return privateJournal{}, err
+		}
+	}
+	if progress.MigrationIndexPost {
+		if candidate.MigrationIndexPost != nil {
+			return privateJournal{}, fmt.Errorf("workspace migration: recovery journal migration index progress is invalid")
+		}
+		entries, err := derivedJournalIndex(candidate.Workflow, candidate, journalIndexMigration)
+		if err != nil {
+			return privateJournal{}, err
+		}
+		candidate.MigrationIndexPost = entries
+	}
+	if progress.ProofIndexPost {
+		if candidate.ProofIndexPost != nil {
+			return privateJournal{}, fmt.Errorf("workspace migration: recovery journal proof index progress is invalid")
+		}
+		entries, err := derivedJournalIndex(candidate.Workflow, candidate, journalIndexProof)
+		if err != nil {
+			return privateJournal{}, err
+		}
+		candidate.ProofIndexPost = entries
+	}
+	if progress.RestoreIndexPost {
+		if candidate.RestoreIndexPost != nil {
+			return privateJournal{}, fmt.Errorf("workspace migration: recovery journal restore index progress is invalid")
+		}
+		entries, err := derivedJournalIndex(candidate.Workflow, candidate, journalIndexRestore)
+		if err != nil {
+			return privateJournal{}, err
+		}
+		candidate.RestoreIndexPost = entries
+	}
+	if !privateJournalTemporaryExtends(previous, candidate) || candidate.validate() != nil {
+		return privateJournal{}, fmt.Errorf("workspace migration: recovery journal progress does not extend durable authority")
+	}
+	return candidate, nil
+}
+
+func clonePrivateJournalForProgress(journal privateJournal) privateJournal {
+	clone := journal
+	clone.Writes = make([]privateWrite, len(journal.Writes))
+	for i, write := range journal.Writes {
+		clone.Writes[i] = write
+		clone.Writes[i].Preimage = append([]byte(nil), write.Preimage...)
+		clone.Writes[i].Postimage = append([]byte(nil), write.Postimage...)
+	}
+	clone.MigrationIndexPost = append([]recordsIndexEntry(nil), journal.MigrationIndexPost...)
+	clone.ProofIndexPost = append([]recordsIndexEntry(nil), journal.ProofIndexPost...)
+	clone.RestoreIndexPost = append([]recordsIndexEntry(nil), journal.RestoreIndexPost...)
+	return clone
+}
+
+func setJournalProgressPostimage(journal *privateJournal, kind string, data []byte) error {
+	for i := range journal.Writes {
+		write := &journal.Writes[i]
+		if write.Kind != kind {
+			continue
+		}
+		if !write.PostExists || len(write.Postimage) != 0 {
+			return fmt.Errorf("workspace migration: recovery journal progress write is invalid")
+		}
+		write.Postimage = append([]byte(nil), data...)
+		return nil
+	}
+	return fmt.Errorf("workspace migration: recovery journal progress write is absent")
+}
+
+func replayPendingRecoveryJournalPayload(identity recoveryIdentity, descriptor recoveryPayloadDescriptor) ([]byte, error) {
+	if descriptor.Purpose != journalKindRecoveryJournal || descriptor.JournalProgress == nil || !validDigest(descriptor.JournalPreviousSHA256) {
+		return nil, fmt.Errorf("workspace migration: pending journal payload is not reconstructible")
+	}
+	previousDescriptor, previousData, err := loadRecoveryJournalPayloadByDigest(identity, descriptor.JournalPreviousSHA256)
+	if err != nil {
+		return nil, err
+	}
+	journal, err := parsePrivateJournal(identity.Workflow, identity.RunID, descriptor.Target, previousData, os.FileMode(previousDescriptor.Mode))
+	if err != nil {
+		return nil, err
+	}
+	candidate, err := replayRecoveryJournalProgress(journal, *descriptor.JournalProgress)
+	if err != nil {
+		return nil, err
+	}
+	intent, err := journalPreparationIntent(candidate)
+	if err != nil || !recoveryIdentityMatchesIntent(identity, intent) {
+		return nil, fmt.Errorf("workspace migration: pending journal payload differs from durable recovery identity")
+	}
+	data, err := journalData(candidate)
+	if err != nil || int64(len(data)) != descriptor.Size || migrationDigest(data) != descriptor.SHA256 {
+		return nil, fmt.Errorf("workspace migration: pending journal payload does not match its descriptor")
+	}
+	return data, nil
+}
+
+func loadRecoveryJournalPayloadByDigest(identity recoveryIdentity, digest string) (recoveryPayloadDescriptor, []byte, error) {
+	target, err := journalPath(identity.Workflow, identity.RunID)
+	if err != nil {
+		return recoveryPayloadDescriptor{}, nil, err
+	}
+	active, data, exists, err := loadPrivateRecoveryPayload(identity, journalKindRecoveryJournal, target)
+	if err != nil {
+		return recoveryPayloadDescriptor{}, nil, err
+	}
+	if exists && active.SHA256 == digest {
+		return active, data, nil
+	}
+	dir, err := recoveryDescriptorDirectory(identity.Workflow, identity.RunID)
+	if err != nil {
+		return recoveryPayloadDescriptor{}, nil, err
+	}
+	entries, err := recoveryDirectoryEntries(identity.Workflow, dir, 0o700)
+	if err != nil {
+		return recoveryPayloadDescriptor{}, nil, err
+	}
+	var found recoveryPayloadDescriptor
+	var foundData []byte
+	for _, entry := range entries {
+		if !strings.HasPrefix(entry.Name(), recoveryDescriptorHistoryPrefix) || entry.Type()&os.ModeSymlink == 0 {
+			continue
+		}
+		link, exists, err := readMigrationOpaqueSymlink(identity.Workflow, filepath.Join(dir, entry.Name()))
+		if err != nil || !exists {
+			return recoveryPayloadDescriptor{}, nil, fmt.Errorf("workspace migration: durable recovery descriptor history is invalid")
+		}
+		descriptor, err := parseRecoveryPayloadDescriptorLinkTarget(link)
+		if err != nil || descriptor.validate(identity, journalKindRecoveryJournal, target) != nil {
+			return recoveryPayloadDescriptor{}, nil, fmt.Errorf("workspace migration: durable recovery descriptor history is invalid")
+		}
+		name, err := recoveryDescriptorHistoryName(descriptor)
+		if err != nil || name != entry.Name() {
+			return recoveryPayloadDescriptor{}, nil, fmt.Errorf("workspace migration: durable recovery descriptor history is invalid")
+		}
+		if descriptor.SHA256 != digest {
+			continue
+		}
+		if foundData != nil {
+			return recoveryPayloadDescriptor{}, nil, fmt.Errorf("workspace migration: durable recovery journal predecessor is ambiguous")
+		}
+		data, err := loadRecoveryPayloadBlob(identity, descriptor)
+		if err != nil {
+			return recoveryPayloadDescriptor{}, nil, err
+		}
+		found, foundData = descriptor, data
+	}
+	if foundData == nil {
+		return recoveryPayloadDescriptor{}, nil, fmt.Errorf("workspace migration: durable recovery journal predecessor is missing")
+	}
+	return found, foundData, nil
+}
+
+func recoveryPendingPayloadReplay(layout workspace.Layout, identity recoveryIdentity, intent preparationIntent, current *privateJournal) func(recoveryPayloadDescriptor) ([]byte, error) {
+	var initial map[string][]byte
+	initialPayload := func(purpose string) ([]byte, error) {
+		if initial == nil {
+			var err error
+			initial, err = regeneratePreparationPayloads(layout, intent)
+			if err != nil {
+				return nil, err
+			}
+		}
+		payload, ok := initial[purpose]
+		if !ok {
+			return nil, fmt.Errorf("workspace migration: pending recovery payload is not reconstructible")
+		}
+		return payload, nil
+	}
+	return func(descriptor recoveryPayloadDescriptor) ([]byte, error) {
+		if err := descriptor.validate(identity, descriptor.Purpose, descriptor.Target); err != nil {
+			return nil, err
+		}
+		switch descriptor.Purpose {
+		case journalKindRecoveryStatus:
+			return journalStatusData(intent)
+		case journalKindRecoveryIntent:
+			return preparationIntentData(intent)
+		case journalKindRecoveryBundle:
+			return initialPayload(journalKindRecoveryBundle)
+		case journalKindRecoveryJournal:
+			if descriptor.JournalProgress != nil {
+				return replayPendingRecoveryJournalPayload(identity, descriptor)
+			}
+			if current != nil && !privateJournalInitialTemporary(*current) {
+				return nil, fmt.Errorf("workspace migration: pending journal payload is not reconstructible")
+			}
+			return initialPayload(journalKindRecoveryJournal)
+		case journalKindRecoveryCompletion:
+			if current == nil {
+				return nil, fmt.Errorf("workspace migration: pending completion payload is not reconstructible")
+			}
+			write, ok := journalWrite(*current, journalKindCompletion)
+			if !ok || !write.PostExists || len(write.Postimage) == 0 {
+				return nil, fmt.Errorf("workspace migration: pending completion payload is not reconstructible")
+			}
+			return append([]byte(nil), write.Postimage...), nil
+		default:
+			return nil, fmt.Errorf("workspace migration: pending recovery payload is not reconstructible")
+		}
+	}
 }
 
 func verifyPrivateJournalTemporaryProgress(layout workspace.Layout, journal privateJournal) error {
@@ -2686,19 +3056,31 @@ func cleanupRecoveryMaterial(layout workspace.Layout, runID, expectedPlanHash st
 		if err != nil {
 			return err
 		}
-		if err := cleanupPreparationStatusTemporaryArtifact(intent); err != nil {
+		journal, err := cleanupPrivateRecoveryTemporaryArtifacts(layout, intent, material.journal)
+		if err != nil {
 			return err
 		}
-		if err := cleanupPrivateRecoveryTemporaryArtifacts(layout, intent, material.journal); err != nil {
+		if journal != nil {
+			material.journal = journal
+		}
+		if err := cleanupPreparationStatusTemporaryArtifact(intent); err != nil {
 			return err
 		}
 		return cleanupJournalTemporaryArtifacts(*material.journal)
 	}
 	if material.intent != nil {
+		journal, err := cleanupPrivateRecoveryTemporaryArtifacts(layout, *material.intent, nil)
+		if err != nil {
+			return err
+		}
 		if err := cleanupPreparationStatusTemporaryArtifact(*material.intent); err != nil {
 			return err
 		}
-		return cleanupPrivateRecoveryTemporaryArtifacts(layout, *material.intent, nil)
+		if journal != nil {
+			material.journal = journal
+			return cleanupJournalTemporaryArtifacts(*journal)
+		}
+		return nil
 	}
 	if material.bootstrap != nil {
 		if err := cleanupBootstrapPreparationStatusTemporaryArtifact(layout, runID, expectedPlanHash, *material.bootstrap); err != nil {
@@ -3899,15 +4281,10 @@ func finalizeMarker(layout workspace.Layout, journal privateJournal) error {
 // steps remains safely resumable because neither phase advancement nor normal
 // barrier authorization occurs first.
 func ensureCompletionWitness(journal *privateJournal) error {
-	witness, err := completionWitnessForJournal(*journal)
+	data, err := completionWitnessData(*journal)
 	if err != nil {
 		return err
 	}
-	data, err := json.MarshalIndent(witness, "", "  ")
-	if err != nil {
-		return err
-	}
-	data = append(data, '\n')
 	for i := range journal.Writes {
 		write := &journal.Writes[i]
 		if write.Kind != journalKindCompletion {
@@ -3930,6 +4307,18 @@ func ensureCompletionWitness(journal *privateJournal) error {
 		return nil
 	}
 	return fmt.Errorf("workspace migration: reviewed completion witness operation is absent")
+}
+
+func completionWitnessData(journal privateJournal) ([]byte, error) {
+	witness, err := completionWitnessForJournal(journal)
+	if err != nil {
+		return nil, err
+	}
+	data, err := json.MarshalIndent(witness, "", "  ")
+	if err != nil {
+		return nil, err
+	}
+	return append(data, '\n'), nil
 }
 
 func migrationStatusIgnored(journal privateJournal) map[string]bool {
@@ -4113,15 +4502,11 @@ func addProofWrite(journal *privateJournal) error {
 	if err != nil {
 		return err
 	}
-	proof := migrationrecord.CommitProof{Version: migrationrecord.ReceiptVersion, RunID: journal.RunID, MigrationCommit: journal.MigrationCommit, Parent: journal.RecordsParent, Tree: journal.ExpectedMigrationTree, MessageSHA256: journal.MigrationMessageSHA256}
-	if err := proof.Validate(journal.RunID); err != nil {
-		return err
-	}
-	data, err := json.MarshalIndent(proof, "", "  ")
+	data, err := journalProofData(*journal)
 	if err != nil {
 		return err
 	}
-	write, err := prepareWrite(journalScopeRecords, journalKindProof, journal.Workflow, proofPath, false, nil, true, append(data, '\n'), 0o644)
+	write, err := prepareWrite(journalScopeRecords, journalKindProof, journal.Workflow, proofPath, false, nil, true, data, 0o644)
 	if err != nil {
 		return err
 	}
@@ -4132,6 +4517,18 @@ func addProofWrite(journal *privateJournal) error {
 		}
 	}
 	return fmt.Errorf("workspace migration: reviewed proof operation is absent from private journal")
+}
+
+func journalProofData(journal privateJournal) ([]byte, error) {
+	proof := migrationrecord.CommitProof{Version: migrationrecord.ReceiptVersion, RunID: journal.RunID, MigrationCommit: journal.MigrationCommit, Parent: journal.RecordsParent, Tree: journal.ExpectedMigrationTree, MessageSHA256: journal.MigrationMessageSHA256}
+	if err := proof.Validate(journal.RunID); err != nil {
+		return nil, err
+	}
+	data, err := json.MarshalIndent(proof, "", "  ")
+	if err != nil {
+		return nil, err
+	}
+	return append(data, '\n'), nil
 }
 
 func migrationGitIdentity(root string) error {

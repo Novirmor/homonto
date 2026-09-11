@@ -1407,6 +1407,88 @@ func TestMigrationRobustness_ProcessKillCrashHelper(t *testing.T) {
 			}
 			select {}
 		}
+	case "recovery-journal-pending-finalization-blob-partial-sync":
+		layout, err := workspace.LoadMigration(config)
+		if err != nil {
+			t.Fatal(err)
+		}
+		migrationFS = defaultMigrationFSOps
+		migrationFS.sync = func(actualKind, path string, file *os.File) error {
+			if actualKind != "recovery-blob" {
+				return file.Sync()
+			}
+			matches, err := stagedRecoveryJournalBlobHasPhase(layout.WorkflowRoot, path, "pending-finalization")
+			if err != nil || !matches {
+				if err != nil {
+					return err
+				}
+				return file.Sync()
+			}
+			info, err := file.Stat()
+			if err != nil {
+				return err
+			}
+			prefixSize := info.Size() / 2
+			if prefixSize == 0 || prefixSize >= info.Size() {
+				return fmt.Errorf("partial recovery blob test seam has no strict prefix")
+			}
+			if err := file.Truncate(prefixSize); err != nil {
+				return err
+			}
+			if err := file.Sync(); err != nil {
+				return err
+			}
+			if _, err := fmt.Fprintln(os.Stdout, stage+"-durable"); err != nil {
+				return err
+			}
+			select {}
+		}
+	case "recovery-initial-journal-blob-rename-sync":
+		layout, err := workspace.LoadMigration(config)
+		if err != nil {
+			t.Fatal(err)
+		}
+		migrationFS = defaultMigrationFSOps
+		initialBlobPath := ""
+		migrationFS.sync = func(actualKind, path string, file *os.File) error {
+			if err := file.Sync(); err != nil {
+				return err
+			}
+			if actualKind == "recovery-blob" {
+				matches, err := stagedRecoveryJournalBlobHasPhase(layout.WorkflowRoot, path, "prepared")
+				if err != nil {
+					return err
+				}
+				if matches {
+					initialBlobPath = path
+				}
+				return nil
+			}
+			if actualKind != "directory" || initialBlobPath == "" || path != filepath.Dir(initialBlobPath) {
+				return nil
+			}
+			identity, descriptor, matches, err := stagedRecoveryJournalDescriptorForBlob(layout.WorkflowRoot, initialBlobPath)
+			if err != nil {
+				return err
+			}
+			if !matches || descriptor.Purpose != journalKindRecoveryJournal {
+				return nil
+			}
+			journalPath, err := journalPath(layout.WorkflowRoot, identity.RunID)
+			if err != nil {
+				return err
+			}
+			if _, active, err := loadRecoveryPayloadDescriptor(identity, journalKindRecoveryJournal, journalPath); err != nil || active {
+				if err != nil {
+					return err
+				}
+				return nil
+			}
+			if _, err := fmt.Fprintln(os.Stdout, stage+"-durable"); err != nil {
+				return err
+			}
+			select {}
+		}
 	case "journal-pending-sync":
 		migrationFS = defaultMigrationFSOps
 		migrationFS.sync = func(kind, path string, file *os.File) error {
@@ -1481,6 +1563,75 @@ func recoveryPayloadSyncStage(stage string) (string, int, bool) {
 		}
 	}
 	return "", 0, false
+}
+
+func stagedRecoveryJournalBlobHasPhase(root, blobPath, phase string) (bool, error) {
+	identity, descriptor, found, err := stagedRecoveryJournalDescriptorForBlob(root, blobPath)
+	if err != nil || !found {
+		return false, err
+	}
+	authority, err := recoveryPayloadBlobTemporaryAuthority(identity, descriptor)
+	if err != nil {
+		return false, err
+	}
+	name, err := authority.name()
+	if err != nil {
+		return false, err
+	}
+	data, mode, exists, err := readMigrationOptionalRegular(root, filepath.Join(filepath.Dir(blobPath), name))
+	if err != nil || !exists {
+		return false, err
+	}
+	journal, err := parsePrivateJournal(root, identity.RunID, descriptor.Target, data, mode)
+	if err != nil {
+		return false, err
+	}
+	return journal.Phase == phase, nil
+}
+
+func stagedRecoveryJournalDescriptorForBlob(root, blobPath string) (recoveryIdentity, recoveryPayloadDescriptor, bool, error) {
+	runs, err := os.ReadDir(filepath.Join(root, ".workflow", "migrations"))
+	if err != nil {
+		return recoveryIdentity{}, recoveryPayloadDescriptor{}, false, err
+	}
+	for _, run := range runs {
+		if !run.IsDir() || !migrationrecord.SafeRunID(run.Name()) {
+			continue
+		}
+		identity, err := loadRecoveryIdentity(root, run.Name())
+		if err != nil {
+			return recoveryIdentity{}, recoveryPayloadDescriptor{}, false, err
+		}
+		dir, err := recoveryDescriptorDirectory(root, run.Name())
+		if err != nil {
+			return recoveryIdentity{}, recoveryPayloadDescriptor{}, false, err
+		}
+		entries, err := os.ReadDir(dir)
+		if err != nil {
+			return recoveryIdentity{}, recoveryPayloadDescriptor{}, false, err
+		}
+		for _, entry := range entries {
+			if !strings.HasPrefix(entry.Name(), recoveryDescriptorStagePrefix) {
+				continue
+			}
+			link, exists, err := readMigrationOpaqueSymlink(root, filepath.Join(dir, entry.Name()))
+			if err != nil || !exists {
+				return recoveryIdentity{}, recoveryPayloadDescriptor{}, false, fmt.Errorf("read staged recovery descriptor: %w", err)
+			}
+			descriptor, err := parseRecoveryPayloadDescriptorLinkTarget(link)
+			if err != nil || descriptor.validate(identity, journalKindRecoveryJournal, descriptor.Target) != nil {
+				continue
+			}
+			expected, err := recoveryPayloadBlobPath(identity, descriptor.SHA256)
+			if err != nil {
+				return recoveryIdentity{}, recoveryPayloadDescriptor{}, false, err
+			}
+			if expected == blobPath {
+				return identity, descriptor, true, nil
+			}
+		}
+	}
+	return recoveryIdentity{}, recoveryPayloadDescriptor{}, false, nil
 }
 
 func killMigrationProcess(t *testing.T, fixture *migrationFixture, plan Plan, stage string) {
@@ -1996,6 +2147,226 @@ func TestSkepticRecoveryRejectsAlteredPartialBundleBlob(t *testing.T) {
 	}
 }
 
+func TestSkepticRecoveryLaterJournalBlobConflict(t *testing.T) {
+	for _, altered := range []bool{false, true} {
+		name := "untouched"
+		if altered {
+			name = "altered"
+		}
+		t.Run(name, func(t *testing.T) {
+			fixture := newMigrationFixture(t, false, false)
+			plan, err := Build(fixture.config, fixture.manifest)
+			if err != nil {
+				t.Fatal(err)
+			}
+			sourceBefore := skepticRecoverySourceState(t, fixture.repos["app"])
+			statePath := filepath.Join(fixture.records, "changes", "active", "onto-state.yaml")
+			stateBefore := readFile(t, statePath)
+			recordsTree := gitTextTest(t, fixture.records, "rev-parse", "HEAD^{tree}")
+
+			killMigrationProcess(t, fixture, plan, "recovery-journal-pending-finalization-blob-partial-sync")
+			runID := interruptedRunID(t, fixture.records)
+			current, err := loadJournal(fixture.records, runID)
+			if err != nil || current.Phase != "applying" || current.MigrationCommit == "" || current.ProofCommit == "" {
+				t.Fatalf("durable predecessor journal = %+v, %v", current, err)
+			}
+			descriptor, temporary := skepticPendingRecoveryBlobTemporary(t, fixture.records, runID, journalKindRecoveryJournal)
+			partial, mode, exists, err := readMigrationOptionalRegular(fixture.records, temporary)
+			if err != nil || !exists || mode.Perm() != recoveryBlobMode || len(partial) == 0 || int64(len(partial)) >= descriptor.Size {
+				t.Fatalf("pending journal blob temporary = exists:%t mode:%o err:%v", exists, mode.Perm(), err)
+			}
+			sourceAtRecovery := skepticRecoverySourceState(t, fixture.repos["app"])
+			recordsHeadAtRecovery := gitTextTest(t, fixture.records, "rev-parse", "HEAD^{commit}")
+			recordsIndexAtRecovery, err := gitIndexSHA256(fixture.records)
+			if err != nil {
+				t.Fatal(err)
+			}
+			stateAtRecovery := readFile(t, statePath)
+
+			if altered {
+				partial = append([]byte(nil), partial...)
+				partial[len(partial)-1] ^= 0xff
+				if err := os.Chmod(temporary, 0o600); err != nil {
+					t.Fatal(err)
+				}
+				if err := os.WriteFile(temporary, partial, 0o600); err != nil {
+					t.Fatal(err)
+				}
+				if err := os.Chmod(temporary, recoveryBlobMode); err != nil {
+					t.Fatal(err)
+				}
+			}
+
+			result, err := Recover(fixture.config, runID, "restore", plan.PlanHash)
+			if altered {
+				if err == nil {
+					t.Fatal("Recover restore accepted an altered later journal blob prefix")
+				}
+				assertSkepticRecoverySourceState(t, fixture.repos["app"], sourceAtRecovery)
+				if got := gitTextTest(t, fixture.records, "rev-parse", "HEAD^{commit}"); got != recordsHeadAtRecovery {
+					t.Fatalf("failed recovery changed records HEAD: %q != %q", got, recordsHeadAtRecovery)
+				}
+				if got, err := gitIndexSHA256(fixture.records); err != nil || got != recordsIndexAtRecovery {
+					t.Fatalf("failed recovery changed records index: %q, %v", got, err)
+				}
+				if got := readFile(t, statePath); got != stateAtRecovery {
+					t.Fatalf("failed recovery changed records state: %q != %q", got, stateAtRecovery)
+				}
+				if got, mode, exists, err := readMigrationOptionalRegular(fixture.records, temporary); err != nil || !exists || mode.Perm() != recoveryBlobMode || !bytes.Equal(got, partial) {
+					t.Fatalf("altered pending journal blob changed: exists:%t mode:%o data:%q err:%v", exists, mode.Perm(), got, err)
+				}
+				return
+			}
+			if err != nil || result.Status != "restored" {
+				t.Fatalf("Recover restore after later journal blob prefix = %+v, %v", result, err)
+			}
+			assertSkepticRecoverySourceState(t, fixture.repos["app"], sourceBefore)
+			if got := readFile(t, statePath); got != stateBefore {
+				t.Fatalf("restored state = %q, want %q", got, stateBefore)
+			}
+			if got := gitTextTest(t, fixture.records, "rev-parse", "HEAD^{tree}"); got != recordsTree {
+				t.Fatalf("restored records tree = %q != %q", got, recordsTree)
+			}
+		})
+	}
+}
+
+func TestSkepticRecoveryInitialJournalBlobRename(t *testing.T) {
+	for _, action := range []string{"resume", "restore"} {
+		t.Run(action, func(t *testing.T) {
+			fixture := newMigrationFixture(t, false, false)
+			plan, err := Build(fixture.config, fixture.manifest)
+			if err != nil {
+				t.Fatal(err)
+			}
+			sourceBefore := skepticRecoverySourceState(t, fixture.repos["app"])
+			statePath := filepath.Join(fixture.records, "changes", "active", "onto-state.yaml")
+			stateBefore := readFile(t, statePath)
+			recordsHead := gitTextTest(t, fixture.records, "rev-parse", "HEAD^{commit}")
+			recordsIndex, err := gitIndexSHA256(fixture.records)
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			killMigrationProcess(t, fixture, plan, "recovery-initial-journal-blob-rename-sync")
+			runID := interruptedRunID(t, fixture.records)
+			identity, err := loadRecoveryIdentity(fixture.records, runID)
+			if err != nil {
+				t.Fatal(err)
+			}
+			journalPath, err := journalPath(fixture.records, runID)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if _, exists, err := loadRecoveryPayloadDescriptor(identity, journalKindRecoveryJournal, journalPath); err != nil || exists {
+				t.Fatalf("active initial journal descriptor = exists:%t err:%v", exists, err)
+			}
+			descriptor := skepticPendingRecoveryDescriptor(t, fixture.records, runID, journalKindRecoveryJournal)
+			if _, err := loadRecoveryPayloadBlob(identity, descriptor); err != nil {
+				t.Fatalf("final initial journal blob = %v", err)
+			}
+			status, err := migrationrecord.LoadJournalStatus(fixture.records, runID)
+			if err != nil || status.Phase != "preparing" {
+				t.Fatalf("preparation status after blob rename = %+v, %v", status, err)
+			}
+
+			result, err := Recover(fixture.config, runID, action, plan.PlanHash)
+			if err != nil {
+				t.Fatalf("first Recover after initial journal blob rename = %v", err)
+			}
+			assertSkepticRecoverySourceState(t, fixture.repos["app"], sourceBefore)
+			if action == "resume" {
+				if result.Status != "complete" {
+					t.Fatalf("resume result = %+v", result)
+				}
+				if _, err := Verify(fixture.config, runID); err != nil {
+					t.Fatalf("Verify after initial journal blob rename resume: %v", err)
+				}
+				return
+			}
+			if result.Status != "restored" {
+				t.Fatalf("restore result = %+v", result)
+			}
+			if got := readFile(t, statePath); got != stateBefore {
+				t.Fatalf("restored state = %q, want %q", got, stateBefore)
+			}
+			if got := gitTextTest(t, fixture.records, "rev-parse", "HEAD^{commit}"); got != recordsHead {
+				t.Fatalf("restore changed records HEAD: %q != %q", got, recordsHead)
+			}
+			if got, err := gitIndexSHA256(fixture.records); err != nil || got != recordsIndex {
+				t.Fatalf("restore changed records index: %q, %v", got, err)
+			}
+		})
+	}
+}
+
+func TestRecoveryJournalProgressDescriptorReplaysCompactSuccessor(t *testing.T) {
+	fixture := newMigrationFixture(t, false, false)
+	plan, err := Build(fixture.config, fixture.manifest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	layout, err := workspace.LoadMigration(fixture.config)
+	if err != nil {
+		t.Fatal(err)
+	}
+	intent, err := newPreparationIntent(layout, plan)
+	if err != nil {
+		t.Fatal(err)
+	}
+	identity, err := newRecoveryIdentity(intent, plan)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := publishRecoveryIdentity(identity); err != nil {
+		t.Fatal(err)
+	}
+	if err := savePreparationIntent(intent); err != nil {
+		t.Fatal(err)
+	}
+	previous, err := prepareJournal(layout, plan, intent)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := saveJournal(previous); err != nil {
+		t.Fatal(err)
+	}
+	candidate := previous
+	candidate.Phase = "applying"
+	candidate.ExpectedMigrationTree = strings.Repeat("a", 40)
+	candidate.MigrationCommit = strings.Repeat("b", 40)
+	proof, err := journalProofData(candidate)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := setJournalProgressPostimage(&candidate, journalKindProof, proof); err != nil {
+		t.Fatal(err)
+	}
+	data, err := journalData(candidate)
+	if err != nil {
+		t.Fatal(err)
+	}
+	path, err := journalPath(fixture.records, intent.RunID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	descriptor, err := newRecoveryPayloadDescriptor(identity, journalKindRecoveryJournal, path, data, 0o600)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if descriptor.JournalPreviousSHA256 == "" || descriptor.JournalProgress == nil || !descriptor.JournalProgress.ProofPrepared {
+		t.Fatalf("journal successor descriptor lacks deterministic progress: %+v", descriptor)
+	}
+	link, err := recoveryPayloadDescriptorLinkTarget(descriptor)
+	if err != nil || len(link) > recoveryLinkTargetLimit {
+		t.Fatalf("journal successor descriptor link = %d bytes, %v", len(link), err)
+	}
+	replayed, err := replayPendingRecoveryJournalPayload(identity, descriptor)
+	if err != nil || !bytes.Equal(replayed, data) {
+		t.Fatalf("replayed journal successor = %q, %v", replayed, err)
+	}
+}
+
 func TestSkepticRecoveryRestoredCompletion(t *testing.T) {
 	fixture := newMigrationFixture(t, false, false)
 	plan, err := Build(fixture.config, fixture.manifest)
@@ -2168,6 +2539,60 @@ func assertSkepticRecoveryPartialBlob(t *testing.T, root, runID, purpose string)
 	}
 	t.Fatalf("SIGKILL did not retain a partial %s recovery blob", purpose)
 	return recoveryPayloadDescriptor{}
+}
+
+func skepticPendingRecoveryDescriptor(t *testing.T, root, runID, purpose string) recoveryPayloadDescriptor {
+	t.Helper()
+	identity, err := loadRecoveryIdentity(root, runID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	dir, err := recoveryDescriptorDirectory(identity.Workflow, identity.RunID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, entry := range entries {
+		if !strings.HasPrefix(entry.Name(), recoveryDescriptorStagePrefix) {
+			continue
+		}
+		link, exists, err := readMigrationOpaqueSymlink(identity.Workflow, filepath.Join(dir, entry.Name()))
+		if err != nil || !exists {
+			t.Fatalf("pending descriptor link = exists:%t err:%v", exists, err)
+		}
+		descriptor, err := parseRecoveryPayloadDescriptorLinkTarget(link)
+		if err != nil || descriptor.Purpose != purpose || descriptor.validate(identity, purpose, descriptor.Target) != nil {
+			continue
+		}
+		return descriptor
+	}
+	t.Fatalf("SIGKILL did not retain a pending %s recovery descriptor", purpose)
+	return recoveryPayloadDescriptor{}
+}
+
+func skepticPendingRecoveryBlobTemporary(t *testing.T, root, runID, purpose string) (recoveryPayloadDescriptor, string) {
+	t.Helper()
+	descriptor := skepticPendingRecoveryDescriptor(t, root, runID, purpose)
+	identity, err := loadRecoveryIdentity(root, runID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	authority, err := recoveryPayloadBlobTemporaryAuthority(identity, descriptor)
+	if err != nil {
+		t.Fatal(err)
+	}
+	name, err := authority.name()
+	if err != nil {
+		t.Fatal(err)
+	}
+	blobPath, err := recoveryPayloadBlobPath(identity, descriptor.SHA256)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return descriptor, filepath.Join(filepath.Dir(blobPath), name)
 }
 
 func assertSkepticRecoveryStagingCleared(t *testing.T, root, runID string) {
@@ -4107,7 +4532,43 @@ func overwriteJournalPayloadForTest(t *testing.T, records, runID string, journal
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := writePrivateRecoveryPayload(identity, journalKindRecoveryJournal, path, data); err != nil {
+	identityDigest, err := recoveryIdentityDigest(identity)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// This deliberately bypasses successor replay construction so recovery,
+	// rather than publication, sees a self-consistent but invalid journal.
+	descriptor := recoveryPayloadDescriptor{
+		Version:        recoveryPayloadDescriptorVersion,
+		RunID:          identity.RunID,
+		Owner:          identity.Owner,
+		IdentitySHA256: identityDigest,
+		Purpose:        journalKindRecoveryJournal,
+		Target:         path,
+		Mode:           0o600,
+		Size:           int64(len(data)),
+		SHA256:         migrationDigest(data),
+	}
+	if err := descriptor.validate(identity, journalKindRecoveryJournal, path); err != nil {
+		t.Fatal(err)
+	}
+	if err := ensureRecoveryPayloadStore(identity); err != nil {
+		t.Fatal(err)
+	}
+	if err := stageRecoveryPayloadDescriptor(identity, descriptor); err != nil {
+		t.Fatal(err)
+	}
+	if err := ensureRecoveryPayloadBlob(identity, descriptor, data); err != nil {
+		t.Fatal(err)
+	}
+	if err := promoteRecoveryPayloadDescriptor(identity, descriptor); err != nil {
+		t.Fatal(err)
+	}
+	authority, err := privateRecoveryPayloadTempAuthority(identity, descriptor, data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := writeMigrationRegularAuthorized(identity.Workflow, path, data, 0o600, nil, authority); err != nil {
 		t.Fatal(err)
 	}
 }

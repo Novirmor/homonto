@@ -15,8 +15,8 @@ User-facing documentation, one topic per file.
   exit codes, and examples.
 - [`onto-reference.md`](onto-reference.md) — every `onto` command, the phase
   flow, and every entry/exit gate the binary enforces.
-- [`to-reference.md`](to-reference.md) — every `to` command: the gate, flags,
-  archive naming, and crash safety.
+- [`to-reference.md`](to-reference.md) — every `to` command: installation and
+  state checks, verification assertions, archive naming, and crash safety.
 
 ## Concepts
 
@@ -41,18 +41,20 @@ pick per change — the request or command decides which dispatcher the shared
 `homonto` coordinator loads (ADR 0045). onto is for work that
 someone else has to pick up or audit — it leaves an archived, gate-stamped
 record a stranger can read; `to` is for a fast solo loop that still wants a
-real verification pass. The `h` companion framework adds the GitHub intake
-workflows (`/h-spike-issue`, `/h-resolve-issue`, `/h-review-pr`,
-`/h-continue-pr`, `/h-review-batch`) over both.
+real verification pass. The `h` GitHub skill bundle adds intake skills and
+matching commands (`/h-spike-issue`, `/h-resolve-issue`, `/h-review-pr`,
+`/h-continue-pr`, `/h-review-batch`) over both. Its stable `[frameworks.h]`
+package key installs onto and to as dependencies, plus the `h-spike` and
+`h-review` workers, using the same coordinator.
 
 - [`onto-workflow.md`](onto-workflow.md) — concepts: the binary/skills split,
   the five phases, presets, and the specialist subagents.
 - [`to-workflow.md`](to-workflow.md) — concepts: the bookkeeper/skills split,
   `plan → do → done`, the plan contract, and the subagents (read-only ones
   concurrent, the single implementer serial).
-- [`enforcement.md`](enforcement.md) — making the workflow non-skippable at
-  the tool boundary with hooks (`onto doctor --quiet` / `to doctor --quiet`
-  plus an OpenCode plugin).
+- [`enforcement.md`](enforcement.md) — read-only diagnostics (`onto doctor
+  --quiet` / `to doctor --quiet`), the bundled OpenCode observer, and why
+  notifications and logging do not block session completion.
 - [`yagni.md`](yagni.md) — you aren't gonna need it: where each framework
   enforces building only what the change needs now.
 - [`kiss.md`](kiss.md) — keep it simple: the simplicity mechanics both

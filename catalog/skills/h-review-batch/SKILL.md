@@ -19,7 +19,7 @@ final table with reviewed/failed/posted counts and any posted URLs. While
 approval is pending, leave all drafts unpublished. Continue to this endpoint
 in the same invocation unless the user names an earlier endpoint or asks to
 pause. Follow
-[h workflow autonomy](../h-resolve-issue/references/autonomy.md) for failure
+[h GitHub skill autonomy](../h-resolve-issue/references/autonomy.md) for failure
 recovery, trusted workspace execution, and permission boundaries; it never
 replaces explicit approval of the shown drafts.
 

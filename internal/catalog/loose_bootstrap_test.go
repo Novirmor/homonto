@@ -43,6 +43,8 @@ func TestLooseBootstrapDispatchers(t *testing.T) {
 func TestLooseBootstrapSharedSafety(t *testing.T) {
 	text := hPromptText(t, "skills/homonto/references/autonomy.md")
 	for _, want := range []string{
+		"only scaffolds `homonto.toml`, `.gitignore`, and `.env.example`",
+		"Create local skill directories only when adding explicitly declared local skills",
 		"missing, broken, or incompatible, inspect PATH and known installed compatible binaries first",
 		"distinguish command-not-found from an executable that fails",
 		"explicit path or session-local PATH, not an unrelated same-name tool",

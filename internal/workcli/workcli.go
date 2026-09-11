@@ -129,10 +129,11 @@ func WorkflowRoot(root string) (string, error) {
 	if rel == "" {
 		rel = "docs"
 	}
-	if filepath.IsAbs(rel) || rel == "." || strings.Contains(rel, `\`) {
+	clean := filepath.Clean(rel)
+	if filepath.IsAbs(rel) || clean == "." || strings.Contains(rel, `\`) {
 		return "", fmt.Errorf("workflow.root %q must be a relative path below the configuration repository", cfg.Workflow.Root)
 	}
-	rel = filepath.Clean(rel)
+	rel = clean
 	if rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
 		return "", fmt.Errorf("workflow.root %q must remain below the configuration repository", cfg.Workflow.Root)
 	}

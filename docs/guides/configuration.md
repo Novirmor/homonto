@@ -19,7 +19,7 @@ Quick map of every table:
 | `[commands.<name>]` | Slash commands | [Commands](#commands--commandsname) |
 | `[subagents.<name>]` | Agent definitions | [Subagents](#subagents--subagentsname) |
 | `[subagents.<name>.opencode]` | Per-subagent model override (required for every declared subagent) | [Subagent models](#subagent-models--subagentsnameopencode) |
-| `[frameworks.<name>]` | Bundled framework installs | [Frameworks](#frameworks--frameworksname) |
+| `[frameworks.<name>]` | Package installs (lifecycle frameworks or skill bundles) | [Frameworks](#frameworks--frameworksname) |
 | `[plugins.opencode.<name>]` | OpenCode plugins | [Plugins](#plugins--pluginsopencodename) |
 | `[settings.opencode]` | OpenCode settings | [Settings](#settings--settingsopencode) |
 | `[tui.opencode]` | OpenCode TUI settings | [TUI](#tui--tuiopencode) |
@@ -208,6 +208,10 @@ keys always project into the global tool files. Subagent models are declared
 per agent — see
 [subagent models](#subagent-models--subagentsnametool).
 
+`homonto init` does not create local skill directories. For `local:graphify`
+above, create `homonto/skills/graphify/` and its `SKILL.md` before planning or
+applying. Local content remains supported and user-owned.
+
 ## Commands — `[commands.<name>]`
 
 Slash commands, materialized as single files under
@@ -264,19 +268,21 @@ frontmatter block: [subagents](subagents.md). The remote pipeline:
 
 ## Frameworks — `[frameworks.<name>]`
 
-A framework is a bundled set of skills, commands, and subagents that install
-together, with dependency expansion. The builtin catalog ships exactly the
-three homonto-native frameworks, `onto`, `to`, and the `h` GitHub-intake
-companion. onto and `to` are **complementary** (ADR 0042): declare either or
+A `[frameworks.<name>]` table is the generic package/dependency mechanism for
+skills, commands, subagents, and plugins that install together. The builtin
+catalog ships two lifecycle frameworks, `onto` and `to`, and the `h` GitHub
+skill bundle. onto and `to` are **complementary** (ADR 0042): declare either or
 both — the change picks its workflow by which dispatcher the shared
 `homonto` coordinator loads (ADR 0045), and both frameworks' agents project
 side by side.
-Every framework installs the shared `homonto` knowledge skill, and onto, to,
-and `h` all install the one shared `homonto` coordinator agent. `h` depends
-on onto and to: declaring `[frameworks.h]` transitively installs both
-workflow frameworks and satisfies their binaries' install gates, adding the
-five `/h-*` GitHub workflows and the read-only `h-spike` / `h-review`
-workers on top.
+These builtin packages install the shared `homonto` knowledge skill and the
+one shared `homonto` coordinator agent. `h` depends on onto and to: declaring
+`[frameworks.h]` with `source = "builtin:h"` transitively installs both lifecycle
+frameworks and satisfies their binaries' install gates. It adds the five
+GitHub skills and matching commands (`/h-spike-issue`, `/h-resolve-issue`,
+`/h-review-pr`, `/h-continue-pr`, `/h-review-batch`) and the read-only `h-spike`
+/ `h-review` workers. `[frameworks.h]` remains the stable package key; the
+skill-bundle terminology does not rename it or introduce a third lifecycle.
 Beyond `builtin:`, a framework source may be `local:<path>` (a framework root
 in your repo) or `remote:<url>` with a required `digest = "sha256:…"` pin.
 Third-party workflow stacks are not bundled.
@@ -288,8 +294,13 @@ scope  = "project"
 ```
 
 When the interactive installer creates a new `homonto.toml`, its project-setup
-step can write the selected framework declarations and one OpenCode model for
-each expanded agent. Review the generated values before `homonto apply`.
+step can write the selected onto/to lifecycle declarations and, with both
+binaries installed, the optional `h` GitHub skill bundle. Its model choice
+populates `[settings.opencode]` and every expanded agent's model block, including
+transitive dependencies. On apply the setting updates **global OpenCode
+settings**, affecting other projects. Next steps reflect the configured,
+installed workflows and whether `h` was selected. Review the generated values
+before `homonto apply`.
 
 ## Repos — `[repos]`
 
@@ -655,9 +666,9 @@ implicit (no `--stdin` flag). No execution event is treated as an approval.
 
 ## OpenCode integrations — `[integrations.opencode]`
 
-The shipped `onto`, `to`, and `h` frameworks install a project-local,
-homonto-managed `.opencode/plugins/homonto-workflow.ts` link by default. The
-plugin resolves the config from its materialized catalog and binding metadata,
+The shipped `onto`/`to` lifecycle frameworks and `h` GitHub skill bundle install
+a project-local, homonto-managed `.opencode/plugins/homonto-workflow.ts` link
+by default. The plugin resolves the config from its materialized catalog and binding metadata,
 not the session's launch directory, then reads
 `homonto workflow snapshot --json --config <path>` on idle, debounced file-watcher
 updates, and compaction. Reads share one in-flight request with a trailing

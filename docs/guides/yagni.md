@@ -12,8 +12,8 @@ onto and `to` are [complementary](to-workflow.md#onto-and-to--complementary-by-s
 pick the workflow per change. If a change doesn't need evidence gates, spec
 deltas, and a dependency graph, putting it through onto anyway is a YAGNI
 violation you pay for on
-every change. Pick `to`; switch the repo to onto when a real requirement —
-audits, multi-change dependencies, non-skippable verification — shows up, not
+every change. Pick `to`; promote the change to onto when a real requirement —
+audits, multi-change dependencies, evidence-backed transitions — shows up, not
 before.
 
 ## YAGNI in onto

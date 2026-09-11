@@ -17,6 +17,60 @@ func hPromptText(t *testing.T, file string) string {
 	return strings.Join(strings.Fields(string(content)), " ")
 }
 
+func TestHSkillBundleNamingAndEntryPoints(t *testing.T) {
+	c, err := New()
+	if err != nil {
+		t.Fatal(err)
+	}
+	h, ok := c.Framework("h")
+	if !ok {
+		t.Fatal("missing h bundle manifest")
+	}
+	if !strings.Contains(h.Description, "GitHub skill bundle") || strings.Contains(h.Description, "GitHub intake workflows") {
+		t.Errorf("h description must identify a GitHub skill bundle: %q", h.Description)
+	}
+	entries := []string{"h-spike-issue", "h-resolve-issue", "h-review-pr", "h-continue-pr", "h-review-batch"}
+	if len(h.Skills) != len(entries) || len(h.Commands) != len(entries) {
+		t.Errorf("h must declare five skill/command entry points, got %d skills and %d commands", len(h.Skills), len(h.Commands))
+	}
+	for _, name := range entries {
+		t.Run(name, func(t *testing.T) {
+			if h.Skills[name] != "skills/"+name || h.Commands[name] != "commands/"+name+".md" {
+				t.Errorf("entry point paths changed: skill=%q command=%q", h.Skills[name], h.Commands[name])
+			}
+			command := hPromptText(t, "commands/"+name+".md")
+			for _, want := range []string{
+				"required skill is unavailable", "install or reapply the `h` GitHub skill bundle",
+				"[frameworks.h]", "homonto apply",
+			} {
+				if !strings.Contains(command, want) {
+					t.Errorf("command missing skill recovery guidance %q", want)
+				}
+			}
+			if strings.Contains(command, "framework is missing") {
+				t.Error("unavailable skill must not imply a missing framework")
+			}
+		})
+	}
+}
+
+func TestHomontoDistinguishesHSkillsFromLifecycleWorkflows(t *testing.T) {
+	text := hPromptText(t, "subagents/homonto.md")
+	for _, want := range []string{
+		"`h` GitHub skill bundle", "`onto` and `to` own the lifecycle workflows",
+		"h-* GitHub intake skills", "Review skills draft findings",
+	} {
+		if !strings.Contains(text, want) {
+			t.Errorf("coordinator missing skill/workflow distinction %q", want)
+		}
+	}
+	for _, obsolete := range []string{"GitHub intake workflows", "Review workflows"} {
+		if strings.Contains(text, obsolete) {
+			t.Errorf("coordinator retains obsolete skill label %q", obsolete)
+		}
+	}
+}
+
 func TestHPublicationAuditContracts(t *testing.T) {
 	text := hPromptText(t, "skills/homonto/references/publication.md")
 	for _, want := range []string{
@@ -68,7 +122,7 @@ func TestHAutonomySuccessEndpoints(t *testing.T) {
 			for _, want := range []string{
 				"**Success endpoint:** " + tc.endpoint,
 				"same invocation", "earlier endpoint", "pause",
-				"[h workflow autonomy]", "failure recovery", "trusted workspace execution",
+				"[h GitHub skill autonomy]", "failure recovery", "trusted workspace execution",
 			} {
 				if !strings.Contains(skill, want) {
 					t.Errorf("skill missing %q", want)
@@ -95,6 +149,7 @@ func TestHAutonomyRoutingTrustAndSafety(t *testing.T) {
 		{
 			"skills/h-resolve-issue/references/autonomy.md",
 			[]string{
+				"# h GitHub skill autonomy",
 				"[autonomous workflow policy](../../homonto/references/autonomy.md)",
 				"repair in-scope causes, re-run the required evidence, and continue",
 				"bounded retries", "reconcile remote state before retrying a mutation",
@@ -155,6 +210,7 @@ func TestHAutonomyRoutingTrustAndSafety(t *testing.T) {
 		{
 			"skills/h-review-pr/references/context-pack.md",
 			[]string{
+				"[h GitHub skill autonomy](../../h-resolve-issue/references/autonomy.md)",
 				"canonical repository `id` and host", "A mismatch is a blocker", "headRefOid",
 				"Arbitrary API mutations retain their tool permission prompt boundary",
 				"no redundant user dialog when allowed by configured permissions",

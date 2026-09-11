@@ -16,7 +16,7 @@ branches or workflow state, commit, push, or post anything to GitHub.
 with findings, candidate paths, unknowns, risks, approach, and workflow fit;
 no implementation or GitHub publication. Continue to this endpoint in the same
 invocation unless the user names an earlier endpoint or asks to pause. Follow
-[h workflow autonomy](../h-resolve-issue/references/autonomy.md) for failure
+[h GitHub skill autonomy](../h-resolve-issue/references/autonomy.md) for failure
 recovery, trusted workspace execution, and permission boundaries. Workers stay
 read-only; any relevant routine checks belong to the coordinator.
 

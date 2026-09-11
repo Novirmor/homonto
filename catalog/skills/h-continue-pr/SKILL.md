@@ -21,7 +21,7 @@ and only demonstrably addressed threads resolved (or explicitly covered in the
 comment when tooling cannot resolve them). Report the PR and comment URLs and
 any unresolved items. Continue to this endpoint in the same invocation unless
 the user names an earlier endpoint or asks to pause. Follow
-[h workflow autonomy](../h-resolve-issue/references/autonomy.md) for routing,
+[h GitHub skill autonomy](../h-resolve-issue/references/autonomy.md) for routing,
 failure recovery, trusted workspace execution, and permission boundaries.
 
 Follow the shared [workspace and dirty-work policy](../homonto/references/workspace-policy.md).

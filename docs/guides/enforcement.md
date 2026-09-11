@@ -28,7 +28,7 @@ verification, using plain references elsewhere. See
 [ADR 0053](../adr/0053-keep-history-without-blocking-fresh-verification.md).
 A hook can act on the exit code.
 
-In a repository using the `to` framework instead, `to doctor --quiet` has
+For the `to` lifecycle workflow, `to doctor --quiet` has
 the same read-only, exit-code-only interface. Both resolve the configured
 records root and source scope where needed; they are not universally
 config-independent. Use `--dir <config-root>`, even from a source worktree.
@@ -36,8 +36,8 @@ The example below works with the command swapped.
 
 ## Via the bundled OpenCode bridge
 
-The shipped `onto`, `to`, and `h` frameworks project the read-only
-`homonto-workflow` plugin by default. It observes the workflow snapshot when a
+The shipped `onto`/`to` lifecycle frameworks and `h` GitHub skill bundle project
+the read-only `homonto-workflow` plugin by default. It observes the workflow snapshot when a
 session goes idle, after debounced file-watcher updates, and during compaction.
 It resolves the config from its materialized catalog and binding metadata, not
 the session launch directory. It displays OpenCode toasts for phase, task, and

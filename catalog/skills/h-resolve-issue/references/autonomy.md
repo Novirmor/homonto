@@ -1,4 +1,4 @@
-# h workflow autonomy
+# h GitHub skill autonomy
 
 Follow the shared [autonomous workflow policy](../../homonto/references/autonomy.md).
 Its [workspace and dirty-work policy](../../homonto/references/workspace-policy.md)

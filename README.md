@@ -17,12 +17,12 @@ v0.13.0 (configs naming them fail at load naming the key).
   every key you configured by hand, byte for byte.
 - **Pinned remote content.** A `remote:` source requires a sha256 digest and
   is verified fail-closed before anything touches your tools.
-- **Autonomous workflow agents.** The bundled `onto` and `to` primaries choose
+- **Shared workflow coordinator.** The bundled `homonto` primary chooses
   routine workspace, isolation, and validation details from repository evidence
-  instead of pausing for approval; they ask only about product intent, required
+  instead of pausing for approval; it asks only about product intent, required
   waivers, or destructive ambiguity.
 - **Declared multi-repo access.** `[repos]` names trusted sibling Git
-  worktrees. `homonto apply` gives the bundled workflow primaries and
+  worktrees. `homonto apply` gives the shared `homonto` coordinator and
   implementers OpenCode access to those paths, while undeclared directories and
   read-only specialists stay outside that boundary.
 
@@ -31,8 +31,8 @@ The repository ships **three binaries**:
 | Binary | Role |
 |---|---|
 | `homonto` | The deterministic installer and projector described above. |
-| `onto` | A spec-driven workflow operator. It gates a change through `open → design → build → verify → close` with evidence-based, non-skippable transitions. `onto handoff --json`/`--write` emit versioned recovery packs, `onto evidence record` and `onto trace` keep requirement-to-evidence traceability, and `onto graph` maps change dependencies. |
-| `to` | A minimal coding-framework bookkeeper: `plan → do → done`, no gates. The lightweight complement to onto (see [the design](docs/to-framework-design.md)). `to promote` converts a growing `to` change into a full onto change; `onto demote` converts back. |
+| `onto` | A spec-driven workflow operator: `open → design → build → verify → close`. Normal transitions validate required artifacts, recorded evidence, and applicable Git state. `onto handoff --json`/`--write` emit versioned recovery packs, `onto evidence record` and `onto trace` keep requirement-to-evidence traceability, and `onto graph` maps change dependencies. |
+| `to` | A minimal coding-framework bookkeeper: `plan → do → done`. It checks installation, phase/state, and applicable source cleanliness; `done --verified` records a self-asserted verification claim. The skills require real verification (see [the design](docs/to-framework-design.md)). `to promote` converts a growing `to` change into a full onto change; `onto demote` converts back. |
 
 ### Onto Task And Trace IDs
 
@@ -61,8 +61,18 @@ only what homonto authors:
   `homonto` coordinator, and four specialists. onto and `to` are complementary;
   declare either or both and pick the workflow per change through `/onto` or
   `/to` ([ADR 0042](docs/adr/0042-onto-and-to-are-complementary.md)).
+- **`h`** — the GitHub skill bundle: `h-spike-issue`, `h-resolve-issue`,
+  `h-review-pr`, `h-continue-pr`, and `h-review-batch`, with matching `/h-*`
+  commands and two read-only workers, `h-spike` and `h-review`. It installs
+  both onto and to as dependencies and uses the shared `homonto` coordinator.
 - **Loose skills and commands** (`handoff`, `grilling`, …) — framework-agnostic
   and installed individually.
+
+`[frameworks.h]` with `source = "builtin:h"` remains the stable configuration
+key: `frameworks` is the generic package/dependency mechanism, including skill
+bundles. There is no key rename or third lifecycle workflow. `/onto`, `/to`,
+and `/h-*` all route to the shared `homonto` coordinator
+([ADR 0045](docs/adr/0045-one-homonto-coordinator-for-both-workflows.md)).
 
 Third-party workflow stacks are not bundled. As of v0.3.0 the `comet`,
 `openspec`, and `superpowers` frameworks are removed
@@ -84,8 +94,12 @@ prints the PATH line for you to apply — it never edits your shell
 configuration. It can also run the non-destructive `homonto init` in the
 current directory when you explicitly confirm. For a new config, it also asks
 where workflow records belong, which sibling Git repositories to trust, which
-workflow frameworks to enable, and one model for OpenCode plus every selected
-workflow agent. Existing `homonto.toml` files remain unchanged. In an
+onto/to lifecycle workflows to enable, and whether to add the `h` GitHub skill
+bundle when both workflow binaries are installed. Its model choice is written
+to `[settings.opencode]` and every selected agent's model block: on apply, it
+updates **global OpenCode settings**, affecting other projects too. Next steps
+name only the configured, installed workflows and, when selected, `/h-*`.
+Existing `homonto.toml` files remain unchanged. In an
 interactive terminal it uses Gum when available, then dialog, then text
 prompts:
 
@@ -95,9 +109,9 @@ curl -fsSL -o install.sh https://raw.githubusercontent.com/noviopenworks/homonto
 
 Tagged releases attach prebuilt `homonto`, `onto`, and `to` binaries for
 Linux, macOS, and Windows (amd64 and arm64) with a `SHA256SUMS` file. From a
-checked-out repo use `go install .`, not a bare `go build .`: the output name
-collides with the `homonto/` content directory (see
-[troubleshooting](docs/guides/troubleshooting.md)).
+checked-out repo, `go install .` installs the binary. If you have created a local
+`homonto/` content directory, use an explicit output path when building to avoid
+a name collision (see [troubleshooting](docs/guides/troubleshooting.md)).
 
 After installing a newer binary, run `homonto update` to bring the projected
 catalog content (frameworks, skills, commands, subagents) up to that version.
@@ -107,14 +121,15 @@ catalog content (frameworks, skills, commands, subagents) up to that version.
 Run these commands in the directory that will hold `homonto.toml`. `homonto
 init` scaffolds configuration only: it never runs `git init`, and no MCP server
 is required. Add MCPs only when a tool needs one; framework installation is a
-separate, declarative `[frameworks.onto]` or `[frameworks.to]` entry followed by
-`homonto apply`. A `[tmp]` entry declares one gitignored scratch directory
-every agent can write to without prompts — apply creates it and generates the
+separate, declarative `[frameworks.onto]` or `[frameworks.to]` entry (or both
+through `[frameworks.h]`) followed by `homonto apply`. A `[tmp]` entry declares
+one gitignored scratch directory every agent can write to without prompts —
+apply creates it and generates the
 skill reference that names it
 ([ADR 0048](docs/adr/0048-one-declared-workspace-tmp-directory.md)).
 
 ```bash
-homonto init            # scaffold homonto.toml, .gitignore, .env.example, homonto/skills/
+homonto init            # scaffold homonto.toml, .gitignore, .env.example
 $EDITOR homonto.toml    # declare your MCPs / skills / plugins / settings
 homonto plan            # dry run: show the diff, write nothing, resolve no secrets
 homonto apply           # plan → confirm [y/N] → write atomically (--yes to skip)
@@ -144,6 +159,14 @@ model = "anthropic/claude-opus-4-8"
 # names it; homonto never deletes its content ([ADR 0048](docs/adr/0048-one-declared-workspace-tmp-directory.md)).
 # [tmp]
 # dir = ".tmp"
+```
+
+For this example's optional local skill, create the source before `plan` or
+`apply`; `init` does not create `homonto/skills/` or a `.gitkeep`:
+
+```bash
+mkdir -p homonto/skills/my-notes
+$EDITOR homonto/skills/my-notes/SKILL.md   # write your skill instructions
 ```
 
 `plan` prints a Terraform-style diff (`+` create, `~` update, `-` delete).
@@ -190,8 +213,8 @@ Full flags, exit codes, and examples:
 | [The onto workflow](docs/guides/onto-workflow.md) | Concepts: phases, skills, specialist subagents. |
 | [onto reference](docs/guides/onto-reference.md) | Every onto command and every gate the binary enforces. |
 | [The to workflow](docs/guides/to-workflow.md) | Concepts: `plan → do → done`, the plan contract, the subagents. |
-| [to reference](docs/guides/to-reference.md) | Every `to` command: the gate, flags, archive naming, crash safety. |
-| [Enforcement](docs/guides/enforcement.md) | Making the workflow non-skippable with tool hooks (`onto doctor --quiet` / `to doctor --quiet`). |
+| [to reference](docs/guides/to-reference.md) | Every `to` command: installation and state checks, verification assertions, archive naming, crash safety. |
+| [Enforcement](docs/guides/enforcement.md) | Read-only doctor diagnostics and the OpenCode workflow observer; their limits at the tool boundary. |
 | [YAGNI](docs/guides/yagni.md) · [KISS](docs/guides/kiss.md) | The principles both frameworks enforce: what to build, and how simply. |
 | [Troubleshooting & caveats](docs/guides/troubleshooting.md) | Known limitations and gotchas, with workarounds. |
 
@@ -215,7 +238,8 @@ The source of truth for shipped behavior is the code and its tests. Durable
 architecture rationale lives in [`docs/adr/`](docs/adr/). Start with
 [`AGENTS.md`](AGENTS.md) for how work is done here: directly on a branch, with
 no external workflow stack
-([ADR 0023](docs/adr/0023-develop-directly-without-comet.md)). onto is the
-workflow we ship, and [`docs/personas.md`](docs/personas.md) explains the
+([ADR 0023](docs/adr/0023-develop-directly-without-comet.md)). onto and to are the
+lifecycle workflows we ship, with the `h` GitHub skill bundle;
+[`docs/personas.md`](docs/personas.md) explains the
 split. Releases follow
 [`docs/release-checklist.md`](docs/release-checklist.md).

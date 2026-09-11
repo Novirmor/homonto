@@ -189,8 +189,8 @@ code written inside it is held to the same bar:
 - **No-slop prose.** The framework vendors onto's `onto-no-slop` skill (itself
   a build of Hardik Pandya's stop-slop) as `to-no-slop`. All prose artifacts a
   `to` change produces — the plan and its notes, verification record, and
-  commit messages — go through it. `to` cannot reference onto's copy because
-  the two frameworks are never installed together, so it ships its own.
+  commit messages — go through it. `to` ships its own namespaced copy so it
+  can be installed independently; both frameworks may also coexist (ADR 0042).
 - **Code-writing standards.** The `/to-do` skill carries the code-quality
   prose adapted from onto's build phase: read the surrounding code before
   changing it, match its idiom and comment density, keep changes focused, add

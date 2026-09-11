@@ -91,16 +91,6 @@ func Init(dir string) (created, updated []string, err error) {
 		}
 		created = append(created, p)
 	}
-	keep := filepath.Join(dir, "homonto", "skills", ".gitkeep")
-	if _, statErr := os.Stat(keep); statErr != nil {
-		if mkErr := os.MkdirAll(filepath.Dir(keep), 0o755); mkErr != nil {
-			return created, updated, mkErr
-		}
-		if writeErr := os.WriteFile(keep, nil, 0o644); writeErr != nil {
-			return created, updated, writeErr
-		}
-		created = append(created, keep)
-	}
 	return created, updated, nil
 }
 

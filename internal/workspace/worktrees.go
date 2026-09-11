@@ -17,6 +17,7 @@ import (
 	"strings"
 	"unicode"
 
+	"github.com/noviopenworks/homonto/internal/applylock"
 	"github.com/noviopenworks/homonto/internal/fsutil"
 	"github.com/noviopenworks/homonto/internal/migrationrecord"
 	"github.com/noviopenworks/homonto/internal/workflowroot"
@@ -331,11 +332,11 @@ func marshalWorktreeRegistry(r worktreeRegistry) ([]byte, error) {
 // order: per-framework mutation locks, the cross-framework name lock, then the
 // registry lock. The caller must hold any outer config and records locks first.
 func LockMigrationBindings(l Layout) (func(), error) {
-	unlockOnto, err := lockWorktreeLifecyclePath(filepath.Join(worktreeStatesDir(l, "onto"), ".onto.lock"))
+	unlockOnto, err := lockWorktreeLifecyclePath(l, filepath.Join(worktreeStatesDir(l, "onto"), ".onto.lock"))
 	if err != nil {
 		return nil, err
 	}
-	unlockTo, err := lockWorktreeLifecyclePath(filepath.Join(worktreeStatesDir(l, "to"), ".to.lock"))
+	unlockTo, err := lockWorktreeLifecyclePath(l, filepath.Join(worktreeStatesDir(l, "to"), ".to.lock"))
 	if err != nil {
 		unlockOnto()
 		return nil, err
@@ -546,19 +547,23 @@ func lockWorktreeRegistry(l Layout) (func(), error) {
 	if err := realWorktreePath(path, false); err != nil {
 		return nil, err
 	}
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+	guardianRoot := filepath.Join(l.ConfigRoot, ".homonto")
+	if err := realWorktreePath(guardianRoot, true); err != nil {
 		return nil, err
 	}
-	if err := realWorktreePath(path, false); err != nil {
-		return nil, err
-	}
-	f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
+	lock, err := applylock.AcquirePath(path, guardianRoot)
 	if err != nil {
-		return nil, fmt.Errorf("worktree: registry lock %s: %w; remove a stale lock only after confirming its owner is no longer running", path, err)
+		return nil, fmt.Errorf("worktree: registry lock %s: %w", path, err)
 	}
-	fmt.Fprintf(f, "pid=%d\n", os.Getpid())
-	f.Close()
-	return func() { _ = os.Remove(path) }, nil
+	return func() { _ = lock.Release() }, nil
+}
+
+func worktreeLifecycleGuardianRoot(l Layout) string {
+	_, common, err := GitIdentity(l.WorkflowRoot)
+	if err == nil {
+		return common
+	}
+	return filepath.Join(l.ConfigRoot, ".homonto")
 }
 
 // LockLifecycle shares the active-name reservation used by both workflow CLIs.
@@ -568,33 +573,31 @@ func lockWorktreeRegistry(l Layout) (func(), error) {
 // Callers already holding the name lock must not acquire it again.
 func LockLifecycle(l Layout) (func(), error) {
 	path := filepath.Join(filepath.Dir(worktreeStatesDir(l, "onto")), ".change-names.lock")
-	return lockWorktreeLifecyclePath(path)
+	return lockWorktreeLifecyclePath(l, path)
 }
 
-func lockWorktreeLifecyclePath(path string) (func(), error) {
+func lockWorktreeLifecyclePath(l Layout, path string) (func(), error) {
 	if err := realWorktreePath(path, false); err != nil {
 		return nil, err
 	}
+	guardianRoot := worktreeLifecycleGuardianRoot(l)
+	if err := realWorktreePath(guardianRoot, true); err != nil {
+		return nil, err
+	}
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-		return nil, err
+		return nil, fmt.Errorf("worktree: creating lock directory %s: %w", filepath.Dir(path), err)
 	}
-	f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
+	lock, err := applylock.AcquirePath(path, guardianRoot)
 	if err != nil {
-		return nil, fmt.Errorf("worktree: lifecycle/name lock %s: %w; wait for its owner, or remove only after confirming it is no longer running", path, err)
+		return nil, fmt.Errorf("worktree: lifecycle/name lock %s: %w", path, err)
 	}
-	_, writeErr := fmt.Fprintf(f, "pid=%d\n", os.Getpid())
-	closeErr := f.Close()
-	if err := errors.Join(writeErr, closeErr); err != nil {
-		_ = os.Remove(path)
-		return nil, err
-	}
-	return func() { _ = os.Remove(path) }, nil
+	return func() { _ = lock.Release() }, nil
 }
 
 func lockBindingLifecycle(l Layout, workflow string) (func(), error) {
 	// Share the framework's mutation lock so archive/terminal writes cannot
 	// interleave with the active-state read, even in existing-history mode.
-	unlockState, err := lockWorktreeLifecyclePath(filepath.Join(worktreeStatesDir(l, workflow), "."+workflow+".lock"))
+	unlockState, err := lockWorktreeLifecyclePath(l, filepath.Join(worktreeStatesDir(l, workflow), "."+workflow+".lock"))
 	if err != nil {
 		return nil, err
 	}

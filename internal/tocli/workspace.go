@@ -297,9 +297,9 @@ func commandArchiveDest(ctx context.Context, root, name, finished string) (strin
 // lock takes an exclusive per-workspace lock for a mutating command, so two
 // concurrent sessions cannot interleave writes on the same change
 // (last-writer-wins with no diagnostic). The lock lives at
-// docs/tasks/.to.lock via the shared workcli helper — the same file `onto
-// demote` holds as its destination lock — and a lock whose recorded pid is
-// provably no longer running is reclaimed automatically by the next attempt.
+// docs/tasks/.to.lock via the shared workcli helper — the same legacy pathname
+// `onto demote` protects. The guardian is workspace-owned control metadata and
+// the legacy path is a compatible claim rather than PID-based stale state.
 func lock(root string) (func(), error) {
 	if err := validateWorkflowDir(root, tasksDir(root)); err != nil {
 		return nil, err
@@ -307,7 +307,7 @@ func lock(root string) (func(), error) {
 	if err := os.MkdirAll(tasksDir(root), 0o755); err != nil {
 		return nil, fmt.Errorf("to: lock: %w", err)
 	}
-	return workcli.LockWorkspace("to", filepath.Join(tasksDir(root), ".to.lock"))
+	return workcli.LockWorkspace("to", root, filepath.Join(tasksDir(root), ".to.lock"))
 }
 
 // printJSON marshals v with indentation to the command's stdout.

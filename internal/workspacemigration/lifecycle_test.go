@@ -1,10 +1,14 @@
 package workspacemigration
 
 import (
+	"bufio"
 	"bytes"
 	"encoding/json"
 	"errors"
+	"fmt"
+	"io"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -863,6 +867,733 @@ func TestRecoverRefusesAlteredDynamicJournalOutputs(t *testing.T) {
 	}
 }
 
+func TestRecoverRejectsRetiredReceiptDrift(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		mutate func(*migrationrecord.Receipt)
+	}{
+		{
+			name: "retiredID",
+			mutate: func(receipt *migrationrecord.Receipt) {
+				receipt.Retired[0].ID = "different-retired-id"
+			},
+		},
+		{
+			name: "path",
+			mutate: func(receipt *migrationrecord.Receipt) {
+				receipt.Retired[0].Path = "changes/different-retired"
+			},
+		},
+		{
+			name: "schema",
+			mutate: func(receipt *migrationrecord.Receipt) {
+				receipt.Retired[0].SchemaVersion++
+			},
+		},
+		{
+			name: "hash",
+			mutate: func(receipt *migrationrecord.Receipt) {
+				receipt.Retired[0].SHA256 = strings.Repeat("0", 64)
+			},
+		},
+		{
+			name: "empty",
+			mutate: func(receipt *migrationrecord.Receipt) {
+				receipt.Retired = []migrationrecord.RetiredRecord{}
+			},
+		},
+		{
+			name: "extra",
+			mutate: func(receipt *migrationrecord.Receipt) {
+				receipt.Retired = append(receipt.Retired, migrationrecord.RetiredRecord{
+					Path: "changes/extra-retired", ID: "extra-retired-id", SchemaVersion: 1, SHA256: strings.Repeat("1", 64),
+				})
+			},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			fixture := newMigrationFixture(t, true, false)
+			plan, err := Build(fixture.config, fixture.manifest)
+			if err != nil {
+				t.Fatal(err)
+			}
+			runID := interruptAtReceiptWrite(t, fixture, plan)
+			journal, err := loadJournal(fixture.records, runID)
+			if err != nil {
+				t.Fatal(err)
+			}
+			for i := range journal.Writes {
+				if journal.Writes[i].Kind != journalKindReceipt {
+					continue
+				}
+				receipt, err := migrationrecord.ParseReceipt(journal.Writes[i].Postimage)
+				if err != nil {
+					t.Fatal(err)
+				}
+				tc.mutate(&receipt)
+				data, err := json.Marshal(receipt)
+				if err != nil {
+					t.Fatal(err)
+				}
+				journal.Writes[i].Postimage = append(data, '\n')
+				break
+			}
+			overwriteJournalForTest(t, fixture.records, runID, journal)
+			before := migrationSnapshot(t, fixture)
+			retiredPath := filepath.Join(fixture.records, "changes", "active-retired", "onto-state.yaml")
+			retiredBefore := readFile(t, retiredPath)
+			previous := migrationAfterWrite
+			writes := 0
+			migrationAfterWrite = func(string) error {
+				writes++
+				return nil
+			}
+			t.Cleanup(func() { migrationAfterWrite = previous })
+			if _, err := Recover(fixture.config, runID, "resume", plan.PlanHash); err == nil || !strings.Contains(err.Error(), "retired") {
+				t.Fatalf("Recover receipt drift = %v", err)
+			}
+			if writes != 0 {
+				t.Fatalf("receipt drift reached %d recovery writes", writes)
+			}
+			if got := readFile(t, retiredPath); got != retiredBefore {
+				t.Fatalf("receipt drift changed retired state: %q", got)
+			}
+			if after := migrationSnapshot(t, fixture); !bytes.Equal(mustJSON(t, before), mustJSON(t, after)) {
+				t.Fatalf("receipt drift refusal changed authoritative files\nbefore: %#v\nafter: %#v", before, after)
+			}
+		})
+	}
+}
+
+func TestRecoverRejectsChangedRetiredPreimageBeforeWrites(t *testing.T) {
+	fixture := newMigrationFixture(t, true, false)
+	plan, err := Build(fixture.config, fixture.manifest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	runID := interruptAtRegistryWrite(t, fixture, plan)
+	retiredPath := filepath.Join(fixture.records, "changes", "active-retired", "onto-state.yaml")
+	writeFile(t, retiredPath, "schema_version: 1\nchange: active\nid: retired-id\nphase: build\nabandoned: true\ntampered: true\n")
+	previous := migrationAfterWrite
+	writes := 0
+	migrationAfterWrite = func(string) error {
+		writes++
+		return nil
+	}
+	defer func() { migrationAfterWrite = previous }()
+	if _, err := Recover(fixture.config, runID, "resume", plan.PlanHash); err == nil || !strings.Contains(err.Error(), "active-retired/onto-state.yaml") {
+		t.Fatalf("Recover changed retired preimage = %v", err)
+	}
+	if writes != 0 {
+		t.Fatalf("changed retired preimage reached %d recovery writes", writes)
+	}
+	if got := readFile(t, retiredPath); !strings.Contains(got, "tampered: true") {
+		t.Fatalf("changed retired preimage was overwritten: %q", got)
+	}
+}
+
+func TestMigrationRejectsSourceRefDrift(t *testing.T) {
+	t.Run("tag create before apply", func(t *testing.T) {
+		fixture := newMigrationFixture(t, false, false)
+		plan, err := Build(fixture.config, fixture.manifest)
+		if err != nil {
+			t.Fatal(err)
+		}
+		runGit(t, fixture.repos["app"], "tag", "migration-ref-drift")
+		if _, err := Apply(fixture.config, fixture.manifest, plan.PlanHash); err == nil || !strings.Contains(err.Error(), "stale plan hash") {
+			t.Fatalf("Apply after tag create = %v", err)
+		}
+	})
+
+	t.Run("tag update before apply", func(t *testing.T) {
+		fixture := newMigrationFixture(t, false, false)
+		runGit(t, fixture.repos["app"], "tag", "migration-ref-drift", "HEAD")
+		plan, err := Build(fixture.config, fixture.manifest)
+		if err != nil {
+			t.Fatal(err)
+		}
+		target := gitTextTest(t, fixture.repos["app"], "commit-tree", "HEAD^{tree}", "-p", "HEAD", "-m", "ref-only target")
+		runGit(t, fixture.repos["app"], "tag", "-f", "migration-ref-drift", target)
+		if _, err := Apply(fixture.config, fixture.manifest, plan.PlanHash); err == nil || !strings.Contains(err.Error(), "stale plan hash") {
+			t.Fatalf("Apply after tag update = %v", err)
+		}
+	})
+
+	t.Run("same commit symbolic head switch before apply", func(t *testing.T) {
+		fixture := newMigrationFixture(t, false, false)
+		runGit(t, fixture.repos["app"], "branch", "same-commit", "HEAD")
+		plan, err := Build(fixture.config, fixture.manifest)
+		if err != nil {
+			t.Fatal(err)
+		}
+		runGit(t, fixture.repos["app"], "symbolic-ref", "HEAD", "refs/heads/same-commit")
+		if _, err := Apply(fixture.config, fixture.manifest, plan.PlanHash); err == nil || !strings.Contains(err.Error(), "stale plan hash") {
+			t.Fatalf("Apply after symbolic HEAD switch = %v", err)
+		}
+	})
+
+	t.Run("hook changes refs", func(t *testing.T) {
+		fixture := newMigrationFixture(t, false, false)
+		plan, err := Build(fixture.config, fixture.manifest)
+		if err != nil {
+			t.Fatal(err)
+		}
+		hook := filepath.Join(fixture.records, ".git", "hooks", "pre-commit")
+		writeFile(t, hook, "#!/bin/sh\ngit -C \""+fixture.repos["app"]+"\" tag -f migration-hook-ref-drift\n")
+		if err := os.Chmod(hook, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := Apply(fixture.config, fixture.manifest, plan.PlanHash); err == nil || !strings.Contains(err.Error(), "source refs changed") {
+			t.Fatalf("Apply after hook ref change = %v", err)
+		}
+	})
+
+	t.Run("hook changes same commit symbolic head", func(t *testing.T) {
+		fixture := newMigrationFixture(t, false, false)
+		runGit(t, fixture.repos["app"], "branch", "same-commit", "HEAD")
+		plan, err := Build(fixture.config, fixture.manifest)
+		if err != nil {
+			t.Fatal(err)
+		}
+		hook := filepath.Join(fixture.records, ".git", "hooks", "pre-commit")
+		writeFile(t, hook, "#!/bin/sh\ngit -C \""+fixture.repos["app"]+"\" symbolic-ref HEAD refs/heads/same-commit\n")
+		if err := os.Chmod(hook, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := Apply(fixture.config, fixture.manifest, plan.PlanHash); err == nil || !strings.Contains(err.Error(), "symbolic HEAD changed") {
+			t.Fatalf("Apply after hook symbolic HEAD switch = %v", err)
+		}
+	})
+}
+
+func TestMigrationVerifyWithoutExternalManifest(t *testing.T) {
+	t.Run("completed verification", func(t *testing.T) {
+		fixture := newMigrationFixture(t, false, false)
+		plan, err := Build(fixture.config, fixture.manifest)
+		if err != nil {
+			t.Fatal(err)
+		}
+		result, err := Apply(fixture.config, fixture.manifest, plan.PlanHash)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := os.Remove(fixture.manifest); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := Verify(fixture.config, result.RunID); err != nil {
+			t.Fatalf("Verify without external manifest: %v", err)
+		}
+	})
+
+	t.Run("recovery", func(t *testing.T) {
+		fixture := newMigrationFixture(t, false, false)
+		plan, err := Build(fixture.config, fixture.manifest)
+		if err != nil {
+			t.Fatal(err)
+		}
+		runID := interruptAtRegistryWrite(t, fixture, plan)
+		if err := os.Remove(fixture.manifest); err != nil {
+			t.Fatal(err)
+		}
+		result, err := Recover(fixture.config, runID, "resume", plan.PlanHash)
+		if err != nil || result.Status != "complete" {
+			t.Fatalf("Recover without external manifest = %+v, %v", result, err)
+		}
+	})
+}
+
+func TestMigrationVerifyRejectsModifiedManifestBackup(t *testing.T) {
+	fixture := newMigrationFixture(t, false, false)
+	plan, err := Build(fixture.config, fixture.manifest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	result, err := Apply(fixture.config, fixture.manifest, plan.PlanHash)
+	if err != nil {
+		t.Fatal(err)
+	}
+	journal, err := loadJournal(fixture.records, result.RunID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for i := range journal.Snapshots {
+		if journal.Snapshots[i].Path == journal.Plan.Manifest.Path {
+			journal.Snapshots[i].Data = append(journal.Snapshots[i].Data, []byte("tampered\n")...)
+			break
+		}
+	}
+	overwriteJournalForTest(t, fixture.records, result.RunID, journal)
+	if err := os.Remove(fixture.manifest); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Verify(fixture.config, result.RunID); err == nil || !strings.Contains(err.Error(), "snapshot") {
+		t.Fatalf("Verify with tampered manifest backup = %v", err)
+	}
+}
+
+func TestMigrationRobustness_StagedOnlyConflict(t *testing.T) {
+	fixture := newMigrationFixture(t, false, false)
+	plan, err := Build(fixture.config, fixture.manifest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	runID := interruptAtReceiptWrite(t, fixture, plan)
+	foreign := filepath.Join(t.TempDir(), "staged-only-conflict")
+	writeFile(t, foreign, "operator staged blob\n")
+	blob := gitTextTest(t, fixture.records, "hash-object", "-w", foreign)
+	state := "changes/active/onto-state.yaml"
+	runGit(t, fixture.records, "update-index", "--add", "--cacheinfo", "100644,"+blob+","+state)
+	if _, err := Recover(fixture.config, runID, "resume", plan.PlanHash); err == nil || !strings.Contains(err.Error(), "records index") {
+		t.Fatalf("Recover staged-only conflict = %v", err)
+	}
+	if entry := gitTextTest(t, fixture.records, "ls-files", "--stage", "--", state); !strings.Contains(entry, blob) {
+		t.Fatalf("operator staged blob was overwritten: %q", entry)
+	}
+}
+
+func TestMigrationRobustness_ParentSubstitution(t *testing.T) {
+	if err := requireMigrationFilesystemSupport(); err != nil {
+		t.Skip(err)
+	}
+	root := t.TempDir()
+	parent := filepath.Join(root, "records", "state")
+	if err := os.MkdirAll(parent, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	target := filepath.Join(parent, "journal.json")
+	replaced := parent + "-replaced"
+	previous := migrationAfterParentPin
+	migrationAfterParentPin = func(_, path string) error {
+		if path != target {
+			return nil
+		}
+		if err := os.Rename(parent, replaced); err != nil {
+			return err
+		}
+		return os.Mkdir(parent, 0o755)
+	}
+	t.Cleanup(func() { migrationAfterParentPin = previous })
+
+	err := writeMigrationRegular(root, target, []byte("journal\n"), 0o600)
+	if err == nil || !strings.Contains(err.Error(), "parent directory changed") {
+		t.Fatalf("write after parent substitution = %v", err)
+	}
+	for _, path := range []string{target, filepath.Join(replaced, "journal.json")} {
+		if _, err := os.Lstat(path); !os.IsNotExist(err) {
+			t.Fatalf("parent substitution wrote %s: %v", path, err)
+		}
+	}
+}
+
+func TestMigrationRobustness_DurableDirectoriesAndUnlinks(t *testing.T) {
+	if err := requireMigrationFilesystemSupport(); err != nil {
+		t.Skip(err)
+	}
+	root := t.TempDir()
+	target := filepath.Join(root, "migration", "private", "journal.json")
+	previous := migrationFS
+	calls := []string{}
+	migrationFS = defaultMigrationFSOps
+	migrationFS.sync = func(kind, _ string, file *os.File) error {
+		calls = append(calls, kind)
+		return file.Sync()
+	}
+	t.Cleanup(func() { migrationFS = previous })
+	saw := func(kind string) bool {
+		for _, call := range calls {
+			if call == kind {
+				return true
+			}
+		}
+		return false
+	}
+
+	if err := writeMigrationRegular(root, target, []byte("durable\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if !saw("file") || !saw("directory") {
+		t.Fatalf("durable write syncs = %v, want file and directory", calls)
+	}
+	calls = nil
+	if err := removeMigrationOptionalRegular(root, target); err != nil {
+		t.Fatal(err)
+	}
+	if !saw("directory") {
+		t.Fatalf("durable unlink syncs = %v, want parent directory", calls)
+	}
+	if _, err := os.Lstat(target); !os.IsNotExist(err) {
+		t.Fatalf("removed migration file still exists: %v", err)
+	}
+}
+
+func TestMigrationRobustness_ProcessKillCrashHelper(t *testing.T) {
+	config := os.Getenv("HOMONTO_MIGRATION_KILL_CONFIG")
+	if config == "" {
+		return
+	}
+	manifest := os.Getenv("HOMONTO_MIGRATION_KILL_MANIFEST")
+	planHash := os.Getenv("HOMONTO_MIGRATION_KILL_PLAN_HASH")
+	stage := os.Getenv("HOMONTO_MIGRATION_KILL_STAGE")
+	if stage == "" {
+		stage = "intent"
+	}
+	previous := migrationAfterPreparation
+	previousWrite := migrationAfterWrite
+	defer func() {
+		migrationAfterPreparation = previous
+		migrationAfterWrite = previousWrite
+	}()
+	switch stage {
+	case "intent":
+		migrationAfterPreparation = func(boundary string) error {
+			if boundary != "intent" {
+				return nil
+			}
+			if _, err := fmt.Fprintln(os.Stdout, "intent-durable"); err != nil {
+				return err
+			}
+			select {}
+		}
+	case "registry":
+		registry := filepath.Join(filepath.Dir(config), ".homonto", "worktrees.json")
+		migrationAfterWrite = func(path string) error {
+			if path != registry {
+				return nil
+			}
+			if _, err := fmt.Fprintln(os.Stdout, "registry-durable"); err != nil {
+				return err
+			}
+			select {}
+		}
+	default:
+		t.Fatalf("unsupported crash-helper stage %q", stage)
+	}
+	if _, err := Apply(config, manifest, planHash); err != nil {
+		t.Fatalf("crash helper Apply: %v", err)
+	}
+	t.Fatal("crash helper unexpectedly completed")
+}
+
+func killMigrationProcess(t *testing.T, fixture *migrationFixture, plan Plan, stage string) {
+	t.Helper()
+	cmd := exec.Command(os.Args[0], "-test.run=^TestMigrationRobustness_ProcessKillCrashHelper$")
+	cmd.Env = append(os.Environ(),
+		"HOMONTO_MIGRATION_KILL_CONFIG="+fixture.config,
+		"HOMONTO_MIGRATION_KILL_MANIFEST="+fixture.manifest,
+		"HOMONTO_MIGRATION_KILL_PLAN_HASH="+plan.PlanHash,
+		"HOMONTO_MIGRATION_KILL_STAGE="+stage,
+	)
+	stdout, err := cmd.StdoutPipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	var stderr bytes.Buffer
+	cmd.Stderr = &stderr
+	if err := cmd.Start(); err != nil {
+		t.Fatal(err)
+	}
+	line, err := bufio.NewReader(stdout).ReadString('\n')
+	want := stage + "-durable\n"
+	if err != nil || line != want {
+		_ = cmd.Process.Kill()
+		rest, _ := io.ReadAll(stdout)
+		_ = cmd.Wait()
+		t.Fatalf("crash helper readiness = %q, %v, stdout=%s, stderr=%s", line, err, string(rest), stderr.String())
+	}
+	if err := cmd.Process.Kill(); err != nil {
+		t.Fatal(err)
+	}
+	if err := cmd.Wait(); err == nil {
+		t.Fatal("crash helper exited successfully after SIGKILL")
+	}
+}
+
+func TestMigrationRobustness_ProcessKillRecovery(t *testing.T) {
+	fixture := newMigrationFixture(t, false, false)
+	plan, err := Build(fixture.config, fixture.manifest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	killMigrationProcess(t, fixture, plan, "intent")
+
+	runID := interruptedRunID(t, fixture.records)
+	if _, err := workspace.Load(fixture.config); err == nil {
+		t.Fatal("ordinary load accepted a workspace with a pending migration")
+	}
+	if err := migrationrecord.ValidateBarrier(fixture.records); err == nil || !strings.Contains(err.Error(), "workspace migration pending") {
+		t.Fatalf("migration barrier after SIGKILL = %v", err)
+	}
+	result, err := Recover(fixture.config, runID, "resume", plan.PlanHash)
+	if err != nil || result.Status != "complete" {
+		t.Fatalf("Recover after SIGKILL = %+v, %v", result, err)
+	}
+	if _, err := Verify(fixture.config, runID); err != nil {
+		t.Fatalf("Verify after SIGKILL: %v", err)
+	}
+}
+
+func TestMigrationRobustness_ProcessKillAfterRegistryWriteRecovery(t *testing.T) {
+	for _, action := range []string{"resume", "restore"} {
+		t.Run(action, func(t *testing.T) {
+			fixture := newMigrationFixture(t, false, false)
+			plan, err := Build(fixture.config, fixture.manifest)
+			if err != nil {
+				t.Fatal(err)
+			}
+			killMigrationProcess(t, fixture, plan, "registry")
+
+			registry := filepath.Join(fixture.root, ".homonto", "worktrees.json")
+			if data, err := os.ReadFile(registry); err != nil || len(data) == 0 {
+				t.Fatalf("registry was not durably written before SIGKILL: data=%q err=%v", data, err)
+			}
+			runID := interruptedRunID(t, fixture.records)
+			result, err := Recover(fixture.config, runID, action, plan.PlanHash)
+			if err != nil {
+				t.Fatalf("fresh %s after registry SIGKILL: %v", action, err)
+			}
+			if action == "resume" {
+				if result.Status != "complete" {
+					t.Fatalf("resume result = %+v", result)
+				}
+				if _, err := Verify(fixture.config, runID); err != nil {
+					t.Fatalf("Verify after registry SIGKILL resume: %v", err)
+				}
+				return
+			}
+			if result.Status != "restored" {
+				t.Fatalf("restore result = %+v", result)
+			}
+			for _, path := range []string{registry, filepath.Join(fixture.root, ".homonto", "workflow-layout.json")} {
+				if _, err := os.Lstat(path); !errors.Is(err, os.ErrNotExist) {
+					t.Fatalf("restore retained generated control file %s: %v", path, err)
+				}
+			}
+		})
+	}
+}
+
+func TestMigrationRobustness_BackupPreparationFailure(t *testing.T) {
+	fixture := newMigrationFixture(t, false, false)
+	plan, err := Build(fixture.config, fixture.manifest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	previous := migrationAfterPreparation
+	migrationAfterPreparation = func(stage string) error {
+		if stage == "backup" {
+			return errors.New("interrupted after durable backup")
+		}
+		return nil
+	}
+	_, err = Apply(fixture.config, fixture.manifest, plan.PlanHash)
+	migrationAfterPreparation = previous
+	if err == nil || !strings.Contains(err.Error(), "interrupted after durable backup") {
+		t.Fatalf("Apply after backup interruption = %v", err)
+	}
+	runID := interruptedRunID(t, fixture.records)
+	backupPath, err := recordsGitBackupPath(fixture.records, runID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if info, err := os.Stat(backupPath); err != nil || info.Mode().Perm() != 0o600 {
+		t.Fatalf("durable backup = %v, %v", info, err)
+	}
+	if _, err := loadJournal(fixture.records, runID); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("journal exists after backup preparation interruption: %v", err)
+	}
+	intent, err := loadPreparationIntent(fixture.records, runID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	layout, err := workspace.LoadMigrationRecovery(fixture.config)
+	if err != nil {
+		t.Fatal(err)
+	}
+	replanned, err := buildLockedIgnoring(layout.ConfigPath, intent.ManifestPath, migrationPreparationIgnored(layout, intent.RunID))
+	if err != nil || replanned.Status != "ready" || replanned.PlanHash != plan.PlanHash {
+		t.Fatalf("replan after backup interruption = status=%s hash=%s blockers=%+v error=%v", replanned.Status, replanned.PlanHash, replanned.Blockers, err)
+	}
+	result, err := Recover(fixture.config, runID, "resume", plan.PlanHash)
+	if err != nil || result.Status != "complete" {
+		t.Fatalf("Recover after backup interruption = %+v, %v", result, err)
+	}
+	if _, err := Verify(fixture.config, runID); err != nil {
+		t.Fatalf("Verify after backup interruption: %v", err)
+	}
+}
+
+func TestMigrationRobustness_InterruptedPreparationRecovery(t *testing.T) {
+	fixture := newMigrationFixture(t, false, false)
+	plan, err := Build(fixture.config, fixture.manifest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	const runID = "migration-12345678"
+	private := filepath.Join(fixture.records, ".workflow", "migrations", runID, "private")
+	if err := os.MkdirAll(private, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	temp := filepath.Join(private, ".homonto-migration-0123456789abcdef0123456789abcdef")
+	if err := os.WriteFile(temp, []byte("partial\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := migrationrecord.ValidateBarrier(fixture.records); err == nil || !strings.Contains(err.Error(), "workspace migration pending (preparing)") {
+		t.Fatalf("migration barrier before interrupted preparation recovery = %v", err)
+	}
+	result, err := Recover(fixture.config, runID, "restore", plan.PlanHash)
+	if err != nil || result.Status != "preparation-cleared" {
+		t.Fatalf("Recover interrupted preparation = %+v, %v", result, err)
+	}
+	if err := migrationrecord.ValidateBarrier(fixture.records); err != nil {
+		t.Fatalf("migration barrier after interrupted preparation recovery: %v", err)
+	}
+	if _, err := os.Lstat(temp); !os.IsNotExist(err) {
+		t.Fatalf("partial preparation temp remains after recovery: %v", err)
+	}
+	if rebuilt, err := Build(fixture.config, fixture.manifest); err != nil {
+		t.Fatalf("Build after interrupted preparation recovery: %v; blockers=%+v", err, rebuilt.Blockers)
+	}
+}
+
+func TestMigrationRobustness_PreparationTempRecovery(t *testing.T) {
+	fixture := newMigrationFixture(t, false, false)
+	plan, err := Build(fixture.config, fixture.manifest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	previous := migrationAfterPreparation
+	migrationAfterPreparation = func(stage string) error {
+		if stage == "backup" {
+			return errors.New("interrupted after durable backup")
+		}
+		return nil
+	}
+	_, err = Apply(fixture.config, fixture.manifest, plan.PlanHash)
+	migrationAfterPreparation = previous
+	if err == nil || !strings.Contains(err.Error(), "interrupted after durable backup") {
+		t.Fatalf("Apply after backup interruption = %v", err)
+	}
+	runID := interruptedRunID(t, fixture.records)
+	journalFile, err := journalPath(fixture.records, runID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	temp := filepath.Join(filepath.Dir(journalFile), ".homonto-migration-0123456789abcdef0123456789abcdef")
+	if err := os.WriteFile(temp, []byte("partial private write\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	result, err := Recover(fixture.config, runID, "resume", plan.PlanHash)
+	if err != nil || result.Status != "complete" {
+		t.Fatalf("Recover after preparation temp = %+v, %v", result, err)
+	}
+	if _, err := os.Lstat(temp); !os.IsNotExist(err) {
+		t.Fatalf("preparation temp remains after recovery: %v", err)
+	}
+	if _, err := Verify(fixture.config, runID); err != nil {
+		t.Fatalf("Verify after preparation temp recovery: %v", err)
+	}
+}
+
+func TestRecordsIndexMatchesWorktreeRejectsStagedModeConflict(t *testing.T) {
+	fixture := newMigrationFixture(t, false, false)
+	state := "changes/active/onto-state.yaml"
+	baseline, err := captureRecordsIndex(fixture.records, []string{state})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(baseline) != 1 || baseline[0].Mode != 0o100644 {
+		t.Fatalf("baseline index = %+v", baseline)
+	}
+	if info, err := os.Lstat(filepath.Join(fixture.records, filepath.FromSlash(state))); err != nil || info.Mode()&0o111 != 0 {
+		t.Fatalf("worktree mode before staged conflict: info=%v err=%v", info, err)
+	}
+	runGit(t, fixture.records, "update-index", "--chmod=+x", "--", state)
+	actual, err := captureRecordsIndex(fixture.records, []string{state})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(actual) != 1 || actual[0].Mode != 0o100755 {
+		t.Fatalf("staged mode conflict = %+v", actual)
+	}
+	matches, err := recordsIndexMatchesWorktree(fixture.records, actual, baseline, []string{state})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if matches {
+		t.Fatal("staged executable mode matched a non-executable worktree file")
+	}
+}
+
+func TestMigrationRobustness_RestoreHookAddsForeignPath(t *testing.T) {
+	fixture := newMigrationFixture(t, false, false)
+	plan, err := Build(fixture.config, fixture.manifest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	previous := migrationAfterMarker
+	migrationAfterMarker = func() error { return errors.New("interrupt after marker") }
+	_, err = Apply(fixture.config, fixture.manifest, plan.PlanHash)
+	migrationAfterMarker = previous
+	if err == nil || !strings.Contains(err.Error(), "interrupt after marker") {
+		t.Fatalf("Apply = %v", err)
+	}
+	runID := interruptedRunID(t, fixture.records)
+	journal, err := loadJournal(fixture.records, runID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	beforeHead := journal.ProofCommit
+	hook := filepath.Join(fixture.records, ".git", "hooks", "pre-commit")
+	writeFile(t, hook, "#!/bin/sh\ncd \"$(git rev-parse --show-toplevel)\" || exit 1\nprintf 'foreign restore hook\\n' > foreign-after-restore.md\ngit add -- foreign-after-restore.md\n")
+	if err := os.Chmod(hook, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Recover(fixture.config, runID, "restore", plan.PlanHash); err == nil || !strings.Contains(err.Error(), "restoration commit") {
+		t.Fatalf("Recover restore with foreign hook path = %v", err)
+	}
+	if head := gitTextTest(t, fixture.records, "rev-parse", "HEAD"); head == beforeHead {
+		t.Fatal("bad restoration commit was not retained for diagnosis")
+	}
+	if paths := gitTextTest(t, fixture.records, "show", "--format=", "--name-only", "HEAD"); !strings.Contains(paths, "foreign-after-restore.md") {
+		t.Fatalf("foreign hook path was not committed: %q", paths)
+	}
+	journal, err = loadJournal(fixture.records, runID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if journal.Phase == "restored" {
+		t.Fatalf("bad restoration commit reported restored: %+v", journal)
+	}
+}
+
+func TestMigrationRobustness_ForgedCompleteBarrier(t *testing.T) {
+	fixture := newMigrationFixture(t, false, false)
+	plan, err := Build(fixture.config, fixture.manifest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	previous := migrationAfterMarker
+	migrationAfterMarker = func() error { return errors.New("interrupt after marker") }
+	_, err = Apply(fixture.config, fixture.manifest, plan.PlanHash)
+	migrationAfterMarker = previous
+	if err == nil || !strings.Contains(err.Error(), "interrupt after marker") {
+		t.Fatalf("Apply = %v", err)
+	}
+	runID := interruptedRunID(t, fixture.records)
+	journal, err := loadJournal(fixture.records, runID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if journal.Phase != "pending-finalization" {
+		t.Fatalf("interrupted phase = %q", journal.Phase)
+	}
+	journal.Phase = "complete"
+	overwriteJournalForTest(t, fixture.records, runID, journal)
+	if _, err := workspace.Load(fixture.config); err == nil || !strings.Contains(err.Error(), "authorization") {
+		t.Fatalf("ordinary load accepted forged completion phase: %v", err)
+	}
+}
+
 func interruptAtRegistryWrite(t *testing.T, fixture *migrationFixture, plan Plan) string {
 	t.Helper()
 	previous := migrationAfterWrite
@@ -874,6 +1605,23 @@ func interruptAtRegistryWrite(t *testing.T, fixture *migrationFixture, plan Plan
 	}
 	defer func() { migrationAfterWrite = previous }()
 	if _, err := Apply(fixture.config, fixture.manifest, plan.PlanHash); err == nil || !strings.Contains(err.Error(), "interrupted registry write") {
+		t.Fatalf("Apply error = %v", err)
+	}
+	return interruptedRunID(t, fixture.records)
+}
+
+func interruptAtReceiptWrite(t *testing.T, fixture *migrationFixture, plan Plan) string {
+	t.Helper()
+	previous := migrationAfterWrite
+	migrationAfterWrite = func(path string) error {
+		rel, err := filepath.Rel(fixture.records, path)
+		if err == nil && strings.HasPrefix(filepath.ToSlash(rel), ".workflow/migrations/") && filepath.Base(rel) == "receipt.json" {
+			return errors.New("interrupted receipt write")
+		}
+		return nil
+	}
+	defer func() { migrationAfterWrite = previous }()
+	if _, err := Apply(fixture.config, fixture.manifest, plan.PlanHash); err == nil || !strings.Contains(err.Error(), "interrupted receipt write") {
 		t.Fatalf("Apply error = %v", err)
 	}
 	return interruptedRunID(t, fixture.records)

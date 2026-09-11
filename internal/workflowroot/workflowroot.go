@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/noviopenworks/homonto/internal/applylock"
 	"github.com/noviopenworks/homonto/internal/fsutil"
 	"github.com/noviopenworks/homonto/internal/migrationrecord"
 )
@@ -68,7 +69,7 @@ func WriteLayoutMarker(marker LayoutMarker) error {
 		return err
 	}
 	if exists && old == marker {
-		return nil
+		return applylock.PrepareGuardianRoot(filepath.Join(repo, ".homonto"))
 	}
 	data, err := json.MarshalIndent(marker, "", "  ")
 	if err != nil {
@@ -77,7 +78,7 @@ func WriteLayoutMarker(marker LayoutMarker) error {
 	if err := fsutil.WriteControlPlaneWithin(repo, path, append(data, '\n'), 0o644); err != nil {
 		return &inspectionError{"writing workflow layout marker", path, err}
 	}
-	return nil
+	return applylock.PrepareGuardianRoot(filepath.Join(repo, ".homonto"))
 }
 
 // TransitionLegacyMigrationLayout is the one write path that can activate
@@ -128,7 +129,7 @@ func TransitionLegacyMigrationLayout(marker LayoutMarker, runID string) error {
 	if err := fsutil.WriteControlPlaneWithin(repo, path, append(data, '\n'), 0o644); err != nil {
 		return &inspectionError{"writing legacy migration layout marker", path, err}
 	}
-	return nil
+	return applylock.PrepareGuardianRoot(filepath.Join(repo, ".homonto"))
 }
 
 // Absence is decided only by Lstat, never by a read through a dangling link.

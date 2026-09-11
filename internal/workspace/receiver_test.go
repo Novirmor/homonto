@@ -240,7 +240,7 @@ func TestWorktreeLifecycleExcludesStateWritersBeforeRead(t *testing.T) {
 	for _, workflow := range []string{"onto", "to"} {
 		l := wtFixture(t, workflow)
 		for _, path := range []string{filepath.Join(worktreeStatesDir(l, workflow), "."+workflow+".lock"), filepath.Join(l.WorkflowRoot, ".change-names.lock")} {
-			unlock, err := lockWorktreeLifecyclePath(path)
+			unlock, err := lockWorktreeLifecyclePath(l, path)
 			if err != nil {
 				t.Fatal(err)
 			}

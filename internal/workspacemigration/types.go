@@ -15,9 +15,9 @@ import (
 
 const (
 	// PlanVersion is the only exported migration-plan schema accepted by the
-	// M3 executor. Version 3 adds content-free source-worktree preservation
-	// evidence; an older inventory cannot authorize recovery.
-	PlanVersion = 3
+	// M3 executor. Version 4 adds the source reference and HEAD-attachment
+	// proof needed to detect same-commit branch switches and tag changes.
+	PlanVersion = 4
 	// ManifestVersion is the only input manifest format accepted by M1.
 	ManifestVersion = 1
 	// ControlOnlyAttestation is the explicit operator statement required before
@@ -94,11 +94,22 @@ type RecordsGit struct {
 	RemoteNames  []string `json:"remote_names"`
 }
 
+// GitReference is one name-to-object binding observed in a source repository.
+// It deliberately retains no source contents. Source and execution snapshots
+// include every ref, while the symbolic HEAD attachment is recorded separately.
+type GitReference struct {
+	Name   string `json:"name"`
+	Object string `json:"object"`
+}
+
 type Execution struct {
 	Path         string               `json:"path"`
 	GitCommonDir string               `json:"git_common_dir"`
 	GitDir       string               `json:"git_dir"`
 	Head         string               `json:"head"`
+	HeadRef      string               `json:"head_ref,omitempty"`
+	HeadAttached bool                 `json:"head_attached"`
+	Refs         []GitReference       `json:"refs"`
 	Branch       string               `json:"branch"`
 	IndexSHA256  string               `json:"index_sha256"`
 	Dirt         Dirt                 `json:"dirt"`
@@ -132,6 +143,9 @@ type Source struct {
 	BaseBranchHead string               `json:"base_branch_head"`
 	GitCommonDir   string               `json:"git_common_dir"`
 	Head           string               `json:"head"`
+	HeadRef        string               `json:"head_ref,omitempty"`
+	HeadAttached   bool                 `json:"head_attached"`
+	Refs           []GitReference       `json:"refs"`
 	IndexSHA256    string               `json:"index_sha256"`
 	Dirt           Dirt                 `json:"dirt"`
 	Preservation   WorktreePreservation `json:"preservation"`
@@ -308,10 +322,16 @@ func (p *Plan) finish() (Plan, error) {
 			return p.Records[i].Sources[a].Alias < p.Records[i].Sources[b].Alias
 		})
 		for j := range p.Records[i].Sources {
+			sort.Slice(p.Records[i].Sources[j].Refs, func(a, b int) bool {
+				return p.Records[i].Sources[j].Refs[a].Name < p.Records[i].Sources[j].Refs[b].Name
+			})
 			sort.Slice(p.Records[i].Sources[j].Preservation.Files, func(a, b int) bool {
 				return p.Records[i].Sources[j].Preservation.Files[a].Path < p.Records[i].Sources[j].Preservation.Files[b].Path
 			})
 			if p.Records[i].Sources[j].Execution != nil {
+				sort.Slice(p.Records[i].Sources[j].Execution.Refs, func(a, b int) bool {
+					return p.Records[i].Sources[j].Execution.Refs[a].Name < p.Records[i].Sources[j].Execution.Refs[b].Name
+				})
 				sort.Slice(p.Records[i].Sources[j].Execution.Preservation.Files, func(a, b int) bool {
 					return p.Records[i].Sources[j].Execution.Preservation.Files[a].Path < p.Records[i].Sources[j].Execution.Preservation.Files[b].Path
 				})

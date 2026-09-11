@@ -12,8 +12,8 @@ import (
 // (<workflow-root>/changes/.onto.lock): every onto command that mutates an
 // existing change (advance, set, abandon, close, bypass, merge-deltas) and
 // `onto demote` (as the source-side exclusion) hold it, so two writers never
-// interleave on the same change. A lock whose recorded pid provably no
-// longer runs is reclaimed automatically by the next attempt.
+// interleave on the same change. The guardian lives in the workspace control
+// metadata and the legacy O_EXCL pathname remains a compatible claim.
 //
 // Lock order is global and fixed: to workspace lock → shared destination
 // lock → onto workspace lock. Commands holding only this lock acquire it
@@ -22,7 +22,7 @@ func lockOnto(root string) (func(), error) {
 	if err := os.MkdirAll(changesDir(root), 0o755); err != nil {
 		return nil, fmt.Errorf("onto: lock: %w", err)
 	}
-	return workcli.LockWorkspace("onto", filepath.Join(changesDir(root), ".onto.lock"))
+	return workcli.LockWorkspace("onto", root, filepath.Join(changesDir(root), ".onto.lock"))
 }
 
 // lockToWorkspace takes the `to` workspace lock
@@ -34,5 +34,5 @@ func lockToWorkspace(root string) (func(), error) {
 	if err := os.MkdirAll(tasks, 0o755); err != nil {
 		return nil, fmt.Errorf("onto: lock: %w", err)
 	}
-	return workcli.LockWorkspace("to", filepath.Join(tasks, ".to.lock"))
+	return workcli.LockWorkspace("to", root, filepath.Join(tasks, ".to.lock"))
 }

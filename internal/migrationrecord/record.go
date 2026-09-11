@@ -7,6 +7,7 @@ package migrationrecord
 import (
 	"bytes"
 	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -25,7 +26,10 @@ const (
 	ReceiptVersion = 1
 	// JournalVersion is the version of the small status envelope at the start
 	// of the private migration journal. The executor owns the remaining fields.
-	JournalVersion = 1
+	JournalVersion = 2
+	// CompletionWitnessVersion is the independent authorization record normal
+	// loaders require before a completed migration can unblock the workspace.
+	CompletionWitnessVersion = 1
 )
 
 var runIDPattern = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{7,127}$`)
@@ -63,9 +67,10 @@ type RecordWrite struct {
 // historical change name is intentionally absent: a retired record must never
 // be attached to an active record merely because their old names match.
 type RetiredRecord struct {
-	Path   string `json:"path"`
-	ID     string `json:"id"`
-	SHA256 string `json:"sha256"`
+	Path          string `json:"path"`
+	ID            string `json:"id"`
+	SchemaVersion int    `json:"schema_version"`
+	SHA256        string `json:"sha256"`
 }
 
 // Binding is the public proof for one adopted legacy execution checkout. The
@@ -115,6 +120,22 @@ type CommitProof struct {
 	MessageSHA256   string `json:"message_sha256"`
 }
 
+// CompletionWitness is written only after the executor has validated the final
+// migration invariant with the schema-2 marker active. It binds exact receipt
+// and proof bytes to the approved plan and transaction without hashing itself
+// or future source development.
+type CompletionWitness struct {
+	Version           int    `json:"version"`
+	RunID             string `json:"run_id"`
+	PlanHash          string `json:"plan_hash"`
+	ReceiptSHA256     string `json:"receipt_sha256"`
+	CommitProofSHA256 string `json:"commit_proof_sha256"`
+	MigrationCommit   string `json:"migration_commit"`
+	MigrationParent   string `json:"migration_parent"`
+	MigrationTree     string `json:"migration_tree"`
+	TransactionSHA256 string `json:"transaction_sha256"`
+}
+
 // JournalStatus is the minimal private-journal envelope normal loaders use to
 // keep pending migration operations fail-closed. Its full private payload is
 // validated by the executor before any recovery operation.
@@ -125,6 +146,11 @@ type JournalStatus struct {
 }
 
 func SafeRunID(runID string) bool { return runIDPattern.MatchString(runID) }
+
+func digest(data []byte) string {
+	sum := sha256.Sum256(data)
+	return fmt.Sprintf("%x", sum[:])
+}
 
 func migrationRoot(root string) string {
 	return filepath.Join(root, ".workflow", "migrations")
@@ -151,6 +177,15 @@ func JournalPath(root, runID string) (string, error) {
 	return filepath.Join(migrationRoot(root), runID, "private", "journal.json"), nil
 }
 
+// CompletionWitnessPath is separate from the journal status envelope so
+// changing only a journal phase can never authorize an incomplete migration.
+func CompletionWitnessPath(root, runID string) (string, error) {
+	if !SafeRunID(runID) {
+		return "", fmt.Errorf("migration record: invalid run ID")
+	}
+	return filepath.Join(migrationRoot(root), runID, "private", "completion.json"), nil
+}
+
 // LoadJournalStatus reads only the common, non-sensitive envelope of a private
 // journal. Recovery validates the full journal separately.
 func LoadJournalStatus(root, runID string) (JournalStatus, error) {
@@ -170,6 +205,86 @@ func LoadJournalStatus(root, runID string) (JournalStatus, error) {
 		return JournalStatus{}, fmt.Errorf("migration record: journal status is malformed or unsupported")
 	}
 	return status, nil
+}
+
+// IsPreparationOrphan recognizes only the empty directory scaffolding that can
+// survive a crash while publishing the first preparation status. A valid
+// preparing status may appear beside interrupted atomic-write temporaries. It
+// is not a general recovery escape hatch: any other file, symlink, or unexpected
+// entry remains an invalid migration record and must not be removed automatically.
+func IsPreparationOrphan(root, runID string) (bool, error) {
+	if !SafeRunID(runID) {
+		return false, fmt.Errorf("migration record: invalid run ID")
+	}
+	runPath := filepath.Join(migrationRoot(root), runID)
+	if err := fsutil.RequireRealParents(root, filepath.Dir(runPath)); err != nil {
+		return false, err
+	}
+	info, err := os.Lstat(runPath)
+	if errors.Is(err, os.ErrNotExist) {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	if !info.IsDir() || info.Mode()&os.ModeSymlink != 0 {
+		return false, nil
+	}
+	entries, err := os.ReadDir(runPath)
+	if err != nil {
+		return false, err
+	}
+	if len(entries) == 0 {
+		return true, nil
+	}
+	if len(entries) != 1 || entries[0].Name() != "private" || !entries[0].IsDir() {
+		return false, nil
+	}
+	privatePath := filepath.Join(runPath, "private")
+	privateInfo, err := os.Lstat(privatePath)
+	if err != nil {
+		return false, err
+	}
+	if !privateInfo.IsDir() || privateInfo.Mode()&os.ModeSymlink != 0 {
+		return false, nil
+	}
+	privateEntries, err := os.ReadDir(privatePath)
+	if err != nil {
+		return false, err
+	}
+	statusSeen := false
+	for _, entry := range privateEntries {
+		if entry.Name() == "journal.json" {
+			info, err := os.Lstat(filepath.Join(privatePath, entry.Name()))
+			if err != nil || !info.Mode().IsRegular() || info.Mode()&os.ModeSymlink != 0 || info.Mode().Perm() != 0o600 {
+				return false, nil
+			}
+			status, err := LoadJournalStatus(root, runID)
+			if err != nil || status.Phase != "preparing" || statusSeen {
+				return false, nil
+			}
+			statusSeen = true
+			continue
+		}
+		if !preparationTempName(entry.Name()) {
+			return false, nil
+		}
+		info, err := os.Lstat(filepath.Join(privatePath, entry.Name()))
+		if err != nil || !info.Mode().IsRegular() || info.Mode()&os.ModeSymlink != 0 || info.Mode().Perm() != 0o600 {
+			return false, nil
+		}
+	}
+	return true, nil
+}
+
+func preparationTempName(name string) bool {
+	const prefix = ".homonto-migration-"
+	token := strings.TrimPrefix(name, prefix)
+	if token == name || len(token) != 32 || token != strings.ToLower(token) {
+		return false
+	}
+	_, err := hex.DecodeString(token)
+	return err == nil
 }
 
 // LoadReceipt reads only a real, regular public receipt and validates its
@@ -226,8 +341,9 @@ func (r Receipt) Validate() error {
 		seenPaths[write.Path] = true
 	}
 	seenRetired := map[string]bool{}
+	seenRetiredPaths := map[string]bool{}
 	for _, retired := range r.Retired {
-		if !safeRelative(retired.Path) || retired.ID == "" || !digestPattern.MatchString(retired.SHA256) {
+		if !safeRelative(retired.Path) || retired.ID == "" || retired.SchemaVersion < 1 || !digestPattern.MatchString(retired.SHA256) || seenRetiredPaths[retired.Path] {
 			return fmt.Errorf("migration record: invalid retired record")
 		}
 		key := retired.Path + "\x00" + retired.ID
@@ -235,6 +351,7 @@ func (r Receipt) Validate() error {
 			return fmt.Errorf("migration record: duplicate retired record")
 		}
 		seenRetired[key] = true
+		seenRetiredPaths[retired.Path] = true
 	}
 	seenBindings := map[string]bool{}
 	for _, binding := range r.Bindings {
@@ -258,6 +375,67 @@ func (b Binding) Validate() error {
 		!commitPattern.MatchString(b.BaseRef) || !commitPattern.MatchString(b.BaseCommit) ||
 		!strings.HasPrefix(b.BaseTarget, "refs/heads/") || !digestPattern.MatchString(b.OwnershipHash) {
 		return fmt.Errorf("migration record: invalid binding")
+	}
+	return nil
+}
+
+// ValidateRetiredCorrespondence proves that every retired receipt entry has
+// exactly the preserve_retired state-file set it claims. It cannot infer an ID
+// from raw YAML (that belongs to ontostate), so callers with the parsed state
+// must additionally compare the path-and-ID pair before filtering it.
+func (r Receipt) ValidateRetiredCorrespondence(root string) error {
+	if err := r.Validate(); err != nil {
+		return err
+	}
+	if !filepath.IsAbs(root) || filepath.Clean(root) != root {
+		return fmt.Errorf("migration record: retired correspondence root is invalid")
+	}
+	type expectedRetired struct {
+		sha256 string
+	}
+	byPath := map[string][]RecordWrite{}
+	for _, write := range r.RecordWrites {
+		if write.Action != "preserve_retired" {
+			continue
+		}
+		if write.PreSHA256 != write.PostSHA256 || len(write.Fields) != 0 || write.LegacyConfig != nil || !retiredStateFile(filepath.Base(write.Path)) {
+			return fmt.Errorf("migration record: invalid preserved retired state write")
+		}
+		dir := filepath.Clean(filepath.Dir(write.Path))
+		rel, err := filepath.Rel(root, dir)
+		if err != nil || !safeRelative(filepath.ToSlash(rel)) {
+			return fmt.Errorf("migration record: preserved retired state is outside workflow root")
+		}
+		byPath[filepath.ToSlash(rel)] = append(byPath[filepath.ToSlash(rel)], write)
+	}
+	expected := make(map[string]expectedRetired, len(byPath))
+	for path, writes := range byPath {
+		sort.Slice(writes, func(i, j int) bool { return writes[i].Path < writes[j].Path })
+		seenNames := map[string]bool{}
+		for _, write := range writes {
+			name := filepath.Base(write.Path)
+			if seenNames[name] {
+				return fmt.Errorf("migration record: duplicate preserved retired state write")
+			}
+			seenNames[name] = true
+		}
+		expected[path] = expectedRetired{sha256: writes[0].PreSHA256}
+	}
+	actual := make(map[string]RetiredRecord, len(r.Retired))
+	for _, retired := range r.Retired {
+		if _, exists := actual[retired.Path]; exists {
+			return fmt.Errorf("migration record: duplicate retired receipt path")
+		}
+		actual[retired.Path] = retired
+	}
+	if len(actual) != len(expected) {
+		return fmt.Errorf("migration record: retired receipt coverage differs from preserved state writes")
+	}
+	for path, wanted := range expected {
+		retired, ok := actual[path]
+		if !ok || retired.SHA256 != wanted.sha256 {
+			return fmt.Errorf("migration record: retired receipt entry lacks its preserved state")
+		}
 	}
 	return nil
 }
@@ -292,6 +470,131 @@ func ParseCommitProof(data []byte, runID string) (CommitProof, error) {
 		return CommitProof{}, err
 	}
 	return proof, nil
+}
+
+// NewCompletionWitness derives a non-self-referential authorization record
+// from the exact receipt and commit-proof bytes already accepted by the
+// migration. It never retains those bytes in the witness.
+func NewCompletionWitness(runID string, receiptData, proofData []byte) (CompletionWitness, error) {
+	receipt, err := ParseReceipt(receiptData)
+	if err != nil {
+		return CompletionWitness{}, err
+	}
+	if receipt.RunID != runID {
+		return CompletionWitness{}, fmt.Errorf("migration record: receipt run ID differs from completion witness")
+	}
+	proof, err := ParseCommitProof(proofData, runID)
+	if err != nil {
+		return CompletionWitness{}, err
+	}
+	witness := CompletionWitness{
+		Version:           CompletionWitnessVersion,
+		RunID:             runID,
+		PlanHash:          receipt.PlanHash,
+		ReceiptSHA256:     digest(receiptData),
+		CommitProofSHA256: digest(proofData),
+		MigrationCommit:   proof.MigrationCommit,
+		MigrationParent:   proof.Parent,
+		MigrationTree:     proof.Tree,
+	}
+	witness.TransactionSHA256 = completionTransactionDigest(witness)
+	if err := witness.Validate(); err != nil {
+		return CompletionWitness{}, err
+	}
+	return witness, nil
+}
+
+func (w CompletionWitness) Validate() error {
+	if w.Version != CompletionWitnessVersion || !SafeRunID(w.RunID) || !digestPattern.MatchString(w.PlanHash) ||
+		!digestPattern.MatchString(w.ReceiptSHA256) || !digestPattern.MatchString(w.CommitProofSHA256) ||
+		!commitPattern.MatchString(w.MigrationCommit) || !commitPattern.MatchString(w.MigrationParent) ||
+		!commitPattern.MatchString(w.MigrationTree) || !digestPattern.MatchString(w.TransactionSHA256) ||
+		w.TransactionSHA256 != completionTransactionDigest(w) {
+		return fmt.Errorf("migration record: invalid completion witness")
+	}
+	return nil
+}
+
+// ParseCompletionWitness applies the same strict JSON rules used for a
+// persisted witness when recovery validates its private journal authority.
+func ParseCompletionWitness(data []byte) (CompletionWitness, error) {
+	var witness CompletionWitness
+	if err := decodeStrict(data, &witness); err != nil {
+		return CompletionWitness{}, fmt.Errorf("migration record: invalid completion witness: %w", err)
+	}
+	if err := witness.Validate(); err != nil {
+		return CompletionWitness{}, err
+	}
+	return witness, nil
+}
+
+func completionTransactionDigest(w CompletionWitness) string {
+	data := strings.Join([]string{
+		"schema-2-completion-v1",
+		w.RunID,
+		w.PlanHash,
+		w.ReceiptSHA256,
+		w.CommitProofSHA256,
+		w.MigrationCommit,
+		w.MigrationParent,
+		w.MigrationTree,
+	}, "\x00")
+	return digest([]byte(data))
+}
+
+// LoadCompletionWitness reads the independently persisted completion record.
+// It is private recovery material, so it must remain a 0600 regular file.
+func LoadCompletionWitness(root, runID string) (CompletionWitness, error) {
+	path, err := CompletionWitnessPath(root, runID)
+	if err != nil {
+		return CompletionWitness{}, err
+	}
+	if err := fsutil.RequireRealParents(root, filepath.Dir(path)); err != nil {
+		return CompletionWitness{}, err
+	}
+	info, err := os.Lstat(path)
+	if err != nil || !info.Mode().IsRegular() || info.Mode()&os.ModeSymlink != 0 || info.Mode().Perm() != 0o600 {
+		return CompletionWitness{}, fmt.Errorf("migration record: completion witness is not a 0600 regular file")
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return CompletionWitness{}, fmt.Errorf("migration record: reading completion witness: %w", err)
+	}
+	return ParseCompletionWitness(data)
+}
+
+// ValidateCompletionWitness compares the persisted authorization against the
+// exact current receipt and proof bytes. It deliberately does not inspect
+// sources, which may legitimately evolve after migration completion.
+func ValidateCompletionWitness(root, runID string) error {
+	receiptPath, err := ReceiptPath(root, runID)
+	if err != nil {
+		return err
+	}
+	proofPath, err := CommitProofPath(root, runID)
+	if err != nil {
+		return err
+	}
+	receiptData, err := readRegularWithin(root, receiptPath)
+	if err != nil {
+		return fmt.Errorf("migration record: reading completion receipt: %w", err)
+	}
+	proofData, err := readRegularWithin(root, proofPath)
+	if err != nil {
+		return fmt.Errorf("migration record: reading completion proof: %w", err)
+	}
+	expected, err := NewCompletionWitness(runID, receiptData, proofData)
+	if err != nil {
+		return err
+	}
+	actual, err := LoadCompletionWitness(root, runID)
+	if err != nil {
+		return err
+	}
+	if actual != expected {
+		return fmt.Errorf("migration record: completion witness does not match the approved migration records")
+	}
+	return nil
 }
 
 // ValidateBarrier rejects every incomplete or malformed migration operation.
@@ -339,16 +642,30 @@ func ValidateBarrier(root string) error {
 		runID := entry.Name()
 		status, err := LoadJournalStatus(root, runID)
 		if err != nil {
+			orphan, orphanErr := IsPreparationOrphan(root, runID)
+			if orphanErr != nil {
+				return fmt.Errorf("workspace migration barrier: inspect preparation artifact: %w", orphanErr)
+			}
+			if orphan {
+				return fmt.Errorf("workspace migration pending (preparing); run homonto workspace migrate recover --run-id %s --action resume --yes or restore before ordinary commands", runID)
+			}
 			return fmt.Errorf("workspace migration barrier: migration journal is missing, malformed, or unsupported")
 		}
 		if status.Phase != "complete" {
 			return fmt.Errorf("workspace migration pending (%s); run homonto workspace migrate recover --run-id %s --action resume --yes or restore before ordinary commands", status.Phase, runID)
 		}
-		if _, err := LoadReceipt(root, runID); err != nil {
+		receipt, err := LoadReceipt(root, runID)
+		if err != nil {
 			return fmt.Errorf("workspace migration barrier: completed migration receipt is invalid: %w", err)
 		}
 		if _, err := LoadCommitProof(root, runID); err != nil {
 			return fmt.Errorf("workspace migration barrier: completed migration proof is invalid: %w", err)
+		}
+		if err := receipt.ValidateRetiredCorrespondence(root); err != nil {
+			return fmt.Errorf("workspace migration barrier: completed migration retired records are invalid: %w", err)
+		}
+		if err := ValidateCompletionWitness(root, runID); err != nil {
+			return fmt.Errorf("workspace migration barrier: completed migration authorization is invalid: %w", err)
 		}
 	}
 	return nil
@@ -356,7 +673,7 @@ func ValidateBarrier(root string) error {
 
 func validJournalPhase(phase string) bool {
 	switch phase {
-	case "prepared", "applying", "pending-finalization", "restoring", "restored", "complete":
+	case "preparing", "prepared", "applying", "pending-finalization", "restoring", "restored", "complete":
 		return true
 	default:
 		return false
@@ -367,9 +684,16 @@ func validJournalPhase(phase string) bool {
 // as retired by a completed public receipt. The retained state must still match
 // the receipt digest exactly. It is intentionally path+ID based; names are not
 // used as identity.
-func IsRetired(root, changeDir, stateID string) (bool, error) {
+func IsRetired(root, changeDir, stateID string, schemaVersions ...int) (bool, error) {
 	if stateID == "" {
 		return false, nil
+	}
+	if len(schemaVersions) > 1 || len(schemaVersions) == 1 && schemaVersions[0] < 1 {
+		return false, fmt.Errorf("migration record: retired state schema is invalid")
+	}
+	stateSchema := 0
+	if len(schemaVersions) == 1 {
+		stateSchema = schemaVersions[0]
 	}
 	rel, err := filepath.Rel(root, changeDir)
 	if err != nil || !safeRelative(filepath.ToSlash(rel)) {
@@ -399,17 +723,30 @@ func IsRetired(root, changeDir, stateID string) (bool, error) {
 		if _, err := LoadCommitProof(root, entry.Name()); err != nil {
 			return false, err
 		}
+		if err := receipt.ValidateRetiredCorrespondence(root); err != nil {
+			return false, err
+		}
+		if err := ValidateCompletionWitness(root, entry.Name()); err != nil {
+			return false, err
+		}
 		for _, retired := range receipt.Retired {
-			if retired.Path == rel && retired.ID == stateID {
-				matches, err := retiredStateMatches(root, changeDir, receipt.RecordWrites, retired.SHA256)
-				if err != nil {
-					return false, err
-				}
-				if !matches {
-					return false, fmt.Errorf("migration record: retired state does not match its receipt")
-				}
-				return true, nil
+			if retired.Path != rel {
+				continue
 			}
+			if retired.ID != stateID {
+				return false, fmt.Errorf("migration record: retired receipt ID differs from state identity")
+			}
+			if stateSchema != 0 && retired.SchemaVersion != stateSchema {
+				return false, fmt.Errorf("migration record: retired receipt schema differs from state identity")
+			}
+			matches, err := retiredStateMatches(root, changeDir, receipt.RecordWrites, retired.SHA256)
+			if err != nil {
+				return false, err
+			}
+			if !matches {
+				return false, fmt.Errorf("migration record: retired state does not match its receipt")
+			}
+			return true, nil
 		}
 	}
 	return false, nil

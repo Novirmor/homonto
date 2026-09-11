@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"fmt"
 	"io"
+	"os"
+	"path/filepath"
 	"sort"
 	"strings"
 
@@ -96,6 +98,27 @@ func InspectRaw(b []byte, sourceName string) (RawInspection, error) {
 		RepoBases:     cloneRepoBases(state.RepoBases),
 		UnknownFields: unknown,
 	}, nil
+}
+
+// RawSchemaVersion returns the explicitly persisted schema version of the
+// canonical state file without applying LoadChange's read-time migration.
+func RawSchemaVersion(changeDir string) (int, error) {
+	for _, name := range []string{"onto-state.yaml", "state.yaml"} {
+		path := filepath.Join(changeDir, name)
+		data, err := os.ReadFile(path)
+		if os.IsNotExist(err) {
+			continue
+		}
+		if err != nil {
+			return 0, fmt.Errorf("onto-state: failed to read %s: %w", path, err)
+		}
+		state, err := InspectRaw(data, path)
+		if err != nil {
+			return 0, err
+		}
+		return state.SchemaVersion, nil
+	}
+	return 0, fmt.Errorf("onto-state: no state file (onto-state.yaml or state.yaml) in %s", changeDir)
 }
 
 func cloneRepoBases(in map[string]RepoBase) map[string]RepoBase {

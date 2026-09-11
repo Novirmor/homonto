@@ -41,3 +41,14 @@ func TestInspectRawRejectsTrailingYAMLDocuments(t *testing.T) {
 		}
 	}
 }
+
+func TestRawSchemaVersionUsesCanonicalStateFile(t *testing.T) {
+	dir := t.TempDir()
+	writeFixture(t, dir, "onto-state.yaml", "schema_version: 1\nchange: canonical\nphase: build\n")
+	writeFixture(t, dir, "state.yaml", "schema_version: 2\nchange: secondary\nphase: build\n")
+
+	version, err := RawSchemaVersion(dir)
+	if err != nil || version != 1 {
+		t.Fatalf("RawSchemaVersion = %d, %v", version, err)
+	}
+}

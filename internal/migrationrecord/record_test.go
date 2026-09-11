@@ -34,6 +34,19 @@ func TestIsRetiredRequiresEveryPreservedStateFileToMatch(t *testing.T) {
 	}
 }
 
+func TestIsRetiredRejectsRawSchemaMismatch(t *testing.T) {
+	root := t.TempDir()
+	changeDir := filepath.Join(root, "changes", "retired")
+	statePath := filepath.Join(changeDir, "onto-state.yaml")
+	state := []byte("schema_version: 3\nid: retired-id\nchange: retired\nworkflow: full\nphase: build\nabandoned: true\n")
+	writeTestFile(t, statePath, state, 0o644)
+	seedRetiredReceipt(t, root, "changes/retired", "retired-id", map[string][]byte{statePath: state})
+
+	if _, err := IsRetired(root, changeDir, "retired-id", 2); err == nil || !strings.Contains(err.Error(), "schema") {
+		t.Fatalf("IsRetired schema mismatch = %v", err)
+	}
+}
+
 func TestPublicRecordsRejectDuplicateJSONKeys(t *testing.T) {
 	root := t.TempDir()
 	const runID = "migration-12345678"
@@ -64,6 +77,54 @@ func TestPublicRecordsRejectDuplicateJSONKeys(t *testing.T) {
 	}
 }
 
+func TestPreparationJournalStatusBlocksOrdinaryLoaders(t *testing.T) {
+	root := t.TempDir()
+	const runID = "migration-12345678"
+	path, err := JournalPath(root, runID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	writeTestJSON(t, path, JournalStatus{Version: JournalVersion, RunID: runID, Phase: "preparing"}, 0o600)
+	status, err := LoadJournalStatus(root, runID)
+	if err != nil || status.Phase != "preparing" {
+		t.Fatalf("LoadJournalStatus = %+v, %v", status, err)
+	}
+	if err := ValidateBarrier(root); err == nil || !strings.Contains(err.Error(), "workspace migration pending") {
+		t.Fatalf("ValidateBarrier preparing = %v", err)
+	}
+}
+
+func TestIsPreparationOrphanAcceptsPreparingStatusAndTemporaryFile(t *testing.T) {
+	root := t.TempDir()
+	const runID = "migration-12345678"
+	path, err := JournalPath(root, runID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	writeTestJSON(t, path, JournalStatus{Version: JournalVersion, RunID: runID, Phase: "preparing"}, 0o600)
+	writeTestFile(t, filepath.Join(filepath.Dir(path), ".homonto-migration-0123456789abcdef0123456789abcdef"), []byte("partial\n"), 0o600)
+
+	orphan, err := IsPreparationOrphan(root, runID)
+	if err != nil || !orphan {
+		t.Fatalf("IsPreparationOrphan = %t, %v", orphan, err)
+	}
+}
+
+func TestPreparationDirectoryWithoutStatusBlocksOrdinaryLoaders(t *testing.T) {
+	root := t.TempDir()
+	const runID = "migration-12345678"
+	private := filepath.Join(root, ".workflow", "migrations", runID, "private")
+	if err := os.MkdirAll(private, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(private, ".homonto-migration-0123456789abcdef0123456789abcdef"), []byte("partial\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := ValidateBarrier(root); err == nil || !strings.Contains(err.Error(), "workspace migration pending (preparing)") {
+		t.Fatalf("ValidateBarrier partial preparation directory = %v", err)
+	}
+}
+
 func seedRetiredReceipt(t *testing.T, root, retiredPath, stateID string, states map[string][]byte) {
 	t.Helper()
 	const runID = "migration-12345678"
@@ -86,13 +147,30 @@ func seedRetiredReceipt(t *testing.T, root, retiredPath, stateID string, states 
 		LayoutMarker:    FileRef{Path: filepath.Join(root, ".homonto", "workflow-layout.json"), SHA256: strings.Repeat("d", 64)},
 		Registry:        FileRef{Path: filepath.Join(root, ".homonto", "worktrees.json"), SHA256: strings.Repeat("e", 64)},
 		RecordWrites:    writes,
-		Retired:         []RetiredRecord{{Path: retiredPath, ID: stateID, SHA256: anchor}},
+		Retired:         []RetiredRecord{{Path: retiredPath, ID: stateID, SchemaVersion: 3, SHA256: anchor}},
 		Bindings:        []Binding{},
 		CommitProofPath: filepath.ToSlash(proofPath[len(root)+1:]),
 	}
 	writeTestJSON(t, filepath.Join(root, ".workflow", "migrations", runID, "private", "journal.json"), JournalStatus{Version: JournalVersion, RunID: runID, Phase: "complete"}, 0o600)
 	writeTestJSON(t, filepath.Join(root, ".workflow", "migrations", runID, "receipt.json"), receipt, 0o644)
 	writeTestJSON(t, proofPath, CommitProof{Version: ReceiptVersion, RunID: runID, MigrationCommit: strings.Repeat("1", 40), Parent: strings.Repeat("2", 40), Tree: strings.Repeat("3", 40), MessageSHA256: strings.Repeat("4", 64)}, 0o644)
+	receiptData, err := os.ReadFile(filepath.Join(root, ".workflow", "migrations", runID, "receipt.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	proofData, err := os.ReadFile(proofPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	witness, err := NewCompletionWitness(runID, receiptData, proofData)
+	if err != nil {
+		t.Fatal(err)
+	}
+	witnessPath, err := CompletionWitnessPath(root, runID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	writeTestJSON(t, witnessPath, witness, 0o600)
 }
 
 func writeTestFile(t *testing.T, path string, data []byte, mode os.FileMode) {

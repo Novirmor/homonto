@@ -201,6 +201,7 @@ func seedWorkflowStatusRetiredReceipt(t *testing.T, workflow, retiredPath, state
 	}
 	digest := sha256.Sum256(state)
 	const runID = "migration-12345678"
+	receiptPath := filepath.Join(workflow, ".workflow", "migrations", runID, "receipt.json")
 	proofPath := filepath.Join(workflow, ".workflow", "migrations", runID, "commit-proof.json")
 	receipt := migrationrecord.Receipt{
 		Version: migrationrecord.ReceiptVersion, RunID: runID, PlanHash: strings.Repeat("a", 64),
@@ -209,13 +210,30 @@ func seedWorkflowStatusRetiredReceipt(t *testing.T, workflow, retiredPath, state
 		LayoutMarker: migrationrecord.FileRef{Path: filepath.Join(filepath.Dir(workflow), ".homonto", "workflow-layout.json"), SHA256: strings.Repeat("d", 64)},
 		Registry:     migrationrecord.FileRef{Path: filepath.Join(filepath.Dir(workflow), ".homonto", "worktrees.json"), SHA256: strings.Repeat("e", 64)},
 		RecordWrites: []migrationrecord.RecordWrite{{Path: statePath, PreSHA256: hex.EncodeToString(digest[:]), PostSHA256: hex.EncodeToString(digest[:]), Action: "preserve_retired"}},
-		Retired:      []migrationrecord.RetiredRecord{{Path: retiredPath, ID: stateID, SHA256: hex.EncodeToString(digest[:])}},
+		Retired:      []migrationrecord.RetiredRecord{{Path: retiredPath, ID: stateID, SchemaVersion: 3, SHA256: hex.EncodeToString(digest[:])}},
 		Bindings:     []migrationrecord.Binding{}, CommitProofPath: filepath.ToSlash(proofPath[len(workflow)+1:]),
 	}
 	proof := migrationrecord.CommitProof{Version: migrationrecord.ReceiptVersion, RunID: runID, MigrationCommit: strings.Repeat("1", 40), Parent: strings.Repeat("2", 40), Tree: strings.Repeat("3", 40), MessageSHA256: strings.Repeat("4", 64)}
 	writeWorkflowStatusJSON(t, filepath.Join(workflow, ".workflow", "migrations", runID, "private", "journal.json"), migrationrecord.JournalStatus{Version: migrationrecord.JournalVersion, RunID: runID, Phase: "complete"}, 0o600)
-	writeWorkflowStatusJSON(t, filepath.Join(workflow, ".workflow", "migrations", runID, "receipt.json"), receipt, 0o644)
+	writeWorkflowStatusJSON(t, receiptPath, receipt, 0o644)
 	writeWorkflowStatusJSON(t, proofPath, proof, 0o644)
+	receiptData, err := os.ReadFile(receiptPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	proofData, err := os.ReadFile(proofPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	witness, err := migrationrecord.NewCompletionWitness(runID, receiptData, proofData)
+	if err != nil {
+		t.Fatal(err)
+	}
+	witnessPath, err := migrationrecord.CompletionWitnessPath(workflow, runID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	writeWorkflowStatusJSON(t, witnessPath, witness, 0o600)
 }
 
 func writeWorkflowStatusFile(t *testing.T, path, text string) {

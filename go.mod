@@ -1,6 +1,9 @@
 module github.com/noviopenworks/homonto
 
-go 1.23
+// os.Root is used by the schema-2 migration writer to retain a checked parent
+// directory across a concurrent pathname replacement. Keep this floor narrow:
+// the pinned toolchain below remains the project's actual build toolchain.
+go 1.25
 
 // Pin a patched toolchain: remote-source fetch introduces reachable call paths
 // into crypto/tls, crypto/x509, net/textproto, encoding/asn1, and net/http,

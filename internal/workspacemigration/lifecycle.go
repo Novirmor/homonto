@@ -14,10 +14,10 @@ import (
 	"path/filepath"
 	"reflect"
 	"sort"
+	"strconv"
 	"strings"
 
 	"github.com/noviopenworks/homonto/internal/applylock"
-	"github.com/noviopenworks/homonto/internal/fsutil"
 	"github.com/noviopenworks/homonto/internal/migrationrecord"
 	"github.com/noviopenworks/homonto/internal/ontostate"
 	"github.com/noviopenworks/homonto/internal/workflowroot"
@@ -26,22 +26,26 @@ import (
 
 const migrationJournalVersion = migrationrecord.JournalVersion
 
-const migrationIgnore = "# Private schema-2 migration recovery material.\n*/private/\n"
+const migrationIgnore = "# Local schema-2 migration status envelopes.\n*/private/\n"
+
+const (
+	migrationPreparationIntentVersion = 1
+	migrationGuardianIdentity         = "process-guardian-v1"
+)
 
 const (
 	journalScopeRecords = "records"
 	journalScopeConfig  = "config"
 	journalScopeOwner   = "private_git"
 
-	journalKindState          = "state"
-	journalKindIgnore         = "migration_ignore"
-	journalKindReceipt        = "receipt"
-	journalKindRegistry       = "registry"
-	journalKindOwner          = "owner"
-	journalKindMarker         = "marker"
-	journalKindProof          = "proof"
-	journalKindPrivateJournal = "private_journal"
-	journalKindRecordsBackup  = "records_git_backup"
+	journalKindState      = "state"
+	journalKindIgnore     = "migration_ignore"
+	journalKindReceipt    = "receipt"
+	journalKindRegistry   = "registry"
+	journalKindOwner      = "owner"
+	journalKindMarker     = "marker"
+	journalKindProof      = "proof"
+	journalKindCompletion = "completion"
 )
 
 // ApplyResult is the content-free outcome of a successful migration apply.
@@ -90,6 +94,7 @@ type privateJournal struct {
 	Writes        []privateWrite               `json:"writes"`
 	Bindings      []workspace.MigrationBinding `json:"bindings"`
 	RecordsBackup recordsGitBackup             `json:"records_git_backup"`
+	IntentOwner   string                       `json:"intent_owner"`
 
 	RecordsParent          string `json:"records_parent"`
 	RecordsIndexSHA256     string `json:"records_index_sha256"`
@@ -100,6 +105,32 @@ type privateJournal struct {
 	ProofMessage           string `json:"proof_message"`
 	ExpectedProofTree      string `json:"expected_proof_tree,omitempty"`
 	ProofCommit            string `json:"proof_commit,omitempty"`
+	RestoreMessage         string `json:"restore_message"`
+	RestoreMessageSHA256   string `json:"restore_message_sha256"`
+	RestoreParent          string `json:"restore_parent,omitempty"`
+	ExpectedRestoreTree    string `json:"expected_restore_tree,omitempty"`
+	RestoreCommit          string `json:"restore_commit,omitempty"`
+
+	RecordsIndexPre    []recordsIndexEntry `json:"records_index_pre"`
+	MigrationIndexPost []recordsIndexEntry `json:"migration_index_post,omitempty"`
+	ProofIndexPost     []recordsIndexEntry `json:"proof_index_post,omitempty"`
+	RestoreIndexPost   []recordsIndexEntry `json:"restore_index_post,omitempty"`
+}
+
+// preparationIntent is the minimal durable recovery identity created before
+// any private backup or authoritative migration write. It deliberately holds
+// no source bytes, state preimages, binding tokens, or Git backup material.
+type preparationIntent struct {
+	Version      int    `json:"version"`
+	RunID        string `json:"run_id"`
+	Phase        string `json:"phase"`
+	PlanHash     string `json:"plan_hash"`
+	ConfigPath   string `json:"config_path"`
+	ConfigRoot   string `json:"config_root"`
+	Workflow     string `json:"workflow_root"`
+	ManifestPath string `json:"manifest_path"`
+	Owner        string `json:"owner"`
+	Guardian     string `json:"guardian"`
 }
 
 type privateSnapshot struct {
@@ -128,6 +159,17 @@ type recordsGitRef struct {
 	Object string `json:"object"`
 }
 
+// recordsIndexEntry is the exact logical index state for one migration-owned
+// path. It retains object IDs and normalized Git modes, never record bytes.
+// Stage is persisted even though migrations accept only stage zero, making an
+// unmerged index a hard failure rather than an implicit add --all repair.
+type recordsIndexEntry struct {
+	Path   string `json:"path"`
+	Mode   uint32 `json:"mode"`
+	Object string `json:"object"`
+	Stage  int    `json:"stage"`
+}
+
 type privateWrite struct {
 	Scope      string `json:"scope"`
 	Kind       string `json:"kind"`
@@ -148,6 +190,10 @@ var migrationAfterWrite = func(string) error { return nil }
 // migrationAfterMarker is a test seam for the crash window after schema-2
 // ownership becomes visible but before the private journal can be completed.
 var migrationAfterMarker = func() error { return nil }
+
+// migrationAfterPreparation models a crash-safe failure boundary after the
+// durable intent and at the completion of private backup preparation.
+var migrationAfterPreparation = func(string) error { return nil }
 
 func migrationDigest(data []byte) string {
 	sum := sha256.Sum256(data)
@@ -170,6 +216,22 @@ func newRunID() (string, error) {
 	return "migration-" + hex.EncodeToString(random[:]), nil
 }
 
+func newMigrationOwner() (string, error) {
+	var random [16]byte
+	if _, err := rand.Read(random[:]); err != nil {
+		return "", err
+	}
+	return hex.EncodeToString(random[:]), nil
+}
+
+func validMigrationOwner(value string) bool {
+	if len(value) != 32 || value != strings.ToLower(value) {
+		return false
+	}
+	_, err := hex.DecodeString(value)
+	return err == nil
+}
+
 func journalPath(root, runID string) (string, error) {
 	return migrationrecord.JournalPath(root, runID)
 }
@@ -180,6 +242,41 @@ func journalRunDir(root, runID string) (string, error) {
 		return "", err
 	}
 	return filepath.Dir(filepath.Dir(path)), nil
+}
+
+func journalStatusPath(root, runID string) (string, error) {
+	return migrationrecord.JournalPath(root, runID)
+}
+
+func preparationIntentPath(root, runID string) (string, error) {
+	runDir, err := journalRunDir(root, runID)
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(runDir, "private", "intent.json"), nil
+}
+
+func migrationGitDirectory(root string) (string, error) {
+	if !filepath.IsAbs(root) || filepath.Clean(root) != root {
+		return "", fmt.Errorf("workspace migration: workflow root must be canonical and absolute")
+	}
+	path, err := migrationGitText(root, "rev-parse", "--absolute-git-dir")
+	if err != nil {
+		return "", fmt.Errorf("workspace migration: resolve Git directory: %w", err)
+	}
+	path, err = absolutePath(path)
+	if err != nil {
+		return "", fmt.Errorf("workspace migration: Git directory is invalid")
+	}
+	return path, nil
+}
+
+func migrationRecoveryLockPath(root string) (string, error) {
+	gitDir, err := migrationGitDirectory(root)
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(gitDir, "homonto-migration.lock"), nil
 }
 
 func recordsGitBackupPath(root, runID string) (string, error) {
@@ -195,17 +292,7 @@ func ensurePrivateJournalDirectory(root, runID string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	dir := filepath.Dir(path)
-	if err := fsutil.RequireRealParents(root, filepath.Dir(dir)); err != nil {
-		return "", err
-	}
-	if err := os.MkdirAll(dir, 0o700); err != nil {
-		return "", err
-	}
-	if err := os.Chmod(dir, 0o700); err != nil {
-		return "", err
-	}
-	if err := fsutil.RequireRealParents(root, dir); err != nil {
+	if err := ensureMigrationDirectory(root, filepath.Dir(path), 0o700); err != nil {
 		return "", err
 	}
 	return path, nil
@@ -243,18 +330,7 @@ func captureRecordsGitBackup(root, runID string, planned RecordsGit) (recordsGit
 	if _, err := ensurePrivateJournalDirectory(root, runID); err != nil {
 		return recordsGitBackup{}, err
 	}
-	if _, err := os.Lstat(bundlePath); err == nil {
-		return recordsGitBackup{}, fmt.Errorf("workspace migration: private records Git backup already exists")
-	} else if !errors.Is(err, os.ErrNotExist) {
-		return recordsGitBackup{}, err
-	}
-	if _, err := migrationGit(root, "bundle", "create", bundlePath, "HEAD", "--all"); err != nil {
-		return recordsGitBackup{}, fmt.Errorf("workspace migration: create records Git backup: %w", err)
-	}
-	if err := os.Chmod(bundlePath, 0o600); err != nil {
-		return recordsGitBackup{}, err
-	}
-	bundle, err := readRealRegularFile(bundlePath)
+	bundle, bundleMode, exists, err := readMigrationOptionalRegular(root, bundlePath)
 	if err != nil {
 		return recordsGitBackup{}, err
 	}
@@ -268,6 +344,23 @@ func captureRecordsGitBackup(root, runID string, planned RecordsGit) (recordsGit
 		Head:         head,
 		Refs:         refs,
 	}
+	if exists {
+		if bundleMode.Perm() != 0o600 {
+			return recordsGitBackup{}, fmt.Errorf("workspace migration: private records Git backup is not a 0600 regular file")
+		}
+		if err := verifyRecordsGitBackup(root, backup); err != nil {
+			return recordsGitBackup{}, err
+		}
+		return backup, nil
+	}
+	bundle, err = migrationGitOutput(root, "bundle", "create", "-", "HEAD", "--all")
+	if err != nil {
+		return recordsGitBackup{}, fmt.Errorf("workspace migration: create records Git backup: %w", err)
+	}
+	if err := writeMigrationRegular(root, bundlePath, bundle, 0o600); err != nil {
+		return recordsGitBackup{}, err
+	}
+	backup.BundleSHA256 = migrationDigest(bundle)
 	if err := verifyRecordsGitBackup(root, backup); err != nil {
 		return recordsGitBackup{}, err
 	}
@@ -297,21 +390,17 @@ func recordsGitReferences(root string) ([]recordsGitRef, error) {
 }
 
 func verifyRecordsGitBackup(root string, backup recordsGitBackup) error {
-	if err := fsutil.RequireRealParents(root, filepath.Dir(backup.BundlePath)); err != nil {
-		return fmt.Errorf("workspace migration: private records Git backup path is unsafe")
-	}
-	info, err := os.Lstat(backup.BundlePath)
-	if err != nil || !info.Mode().IsRegular() || info.Mode()&os.ModeSymlink != 0 || info.Mode().Perm() != 0o600 {
+	data, mode, exists, err := readMigrationOptionalRegular(root, backup.BundlePath)
+	if err != nil || !exists || mode.Perm() != 0o600 {
 		return fmt.Errorf("workspace migration: private records Git backup is not a 0600 regular file")
 	}
-	data, err := os.ReadFile(backup.BundlePath)
-	if err != nil || migrationDigest(data) != backup.BundleSHA256 || migrationDigest(backup.IndexData) != backup.IndexSHA256 {
+	if migrationDigest(data) != backup.BundleSHA256 || migrationDigest(backup.IndexData) != backup.IndexSHA256 {
 		return fmt.Errorf("workspace migration: private records Git backup digest differs")
 	}
-	if _, err := migrationGit(root, "bundle", "verify", backup.BundlePath); err != nil {
+	if _, err := migrationGitInput(root, data, "bundle", "verify", "-"); err != nil {
 		return fmt.Errorf("workspace migration: private records Git backup verification failed: %w", err)
 	}
-	data, err = migrationGit(root, "bundle", "list-heads", backup.BundlePath)
+	data, err = migrationGitInput(root, data, "bundle", "list-heads", "-")
 	if err != nil {
 		return fmt.Errorf("workspace migration: private records Git backup heads are unreadable: %w", err)
 	}
@@ -352,12 +441,15 @@ func saveJournal(j privateJournal) error {
 	if err != nil {
 		return err
 	}
-	if err := fsutil.WriteControlPlaneWithin(j.Workflow, path, append(data, '\n'), 0o600); err != nil {
+	if err := writeMigrationRegular(j.Workflow, path, append(data, '\n'), 0o600); err != nil {
 		return fmt.Errorf("workspace migration: write private journal: %w", err)
 	}
-	info, err := os.Lstat(path)
-	if err != nil || !info.Mode().IsRegular() || info.Mode().Perm()&0o077 != 0 {
-		return fmt.Errorf("workspace migration: private journal permissions are unsafe")
+	intentPath, err := preparationIntentPath(j.Workflow, j.RunID)
+	if err != nil {
+		return err
+	}
+	if err := removeMigrationOptionalRegular(j.Workflow, intentPath); err != nil {
+		return fmt.Errorf("workspace migration: retire preparation intent: %w", err)
 	}
 	return nil
 }
@@ -367,32 +459,22 @@ func loadJournal(root, runID string) (privateJournal, error) {
 	if err != nil {
 		return privateJournal{}, err
 	}
-	if err := fsutil.RequireRealParents(root, filepath.Dir(path)); err != nil {
-		return privateJournal{}, err
+	if status, err := migrationrecord.LoadJournalStatus(root, runID); err == nil && status.Phase == "preparing" {
+		return privateJournal{}, os.ErrNotExist
 	}
-	info, err := os.Lstat(path)
+	data, mode, exists, err := readMigrationOptionalRegular(root, path)
 	if err != nil {
 		return privateJournal{}, err
 	}
-	if !info.Mode().IsRegular() || info.Mode()&os.ModeSymlink != 0 || info.Mode().Perm()&0o077 != 0 {
+	if !exists {
+		return privateJournal{}, os.ErrNotExist
+	}
+	if mode.Perm()&0o077 != 0 {
 		return privateJournal{}, fmt.Errorf("workspace migration: private journal is not a 0600 regular file")
 	}
-	data, err := os.ReadFile(path)
-	if err != nil {
-		return privateJournal{}, err
-	}
-	dec := json.NewDecoder(bytes.NewReader(data))
-	dec.DisallowUnknownFields()
 	var journal privateJournal
-	if err := dec.Decode(&journal); err != nil {
+	if err := decodePrivateJSON(data, &journal); err != nil {
 		return privateJournal{}, fmt.Errorf("workspace migration: invalid private journal: %w", err)
-	}
-	var extra any
-	if err := dec.Decode(&extra); err != io.EOF {
-		if err == nil {
-			return privateJournal{}, fmt.Errorf("workspace migration: invalid private journal trailing data")
-		}
-		return privateJournal{}, err
 	}
 	if err := journal.validate(); err != nil {
 		return privateJournal{}, err
@@ -401,6 +483,149 @@ func loadJournal(root, runID string) (privateJournal, error) {
 		return privateJournal{}, err
 	}
 	return journal, nil
+}
+
+func decodePrivateJSON(data []byte, target any) error {
+	dec := json.NewDecoder(bytes.NewReader(data))
+	dec.DisallowUnknownFields()
+	if err := dec.Decode(target); err != nil {
+		return err
+	}
+	var extra any
+	if err := dec.Decode(&extra); err != io.EOF {
+		if err == nil {
+			return fmt.Errorf("trailing data")
+		}
+		return err
+	}
+	return nil
+}
+
+func saveJournalStatus(root, runID, phase string) error {
+	if !migrationrecord.SafeRunID(runID) || phase == "" {
+		return fmt.Errorf("workspace migration: invalid journal status identity")
+	}
+	status := migrationrecord.JournalStatus{Version: migrationJournalVersion, RunID: runID, Phase: phase}
+	data, err := json.Marshal(status)
+	if err != nil {
+		return err
+	}
+	path, err := journalStatusPath(root, runID)
+	if err != nil {
+		return err
+	}
+	return writeMigrationRegular(root, path, append(data, '\n'), 0o600)
+}
+
+func newPreparationIntent(layout workspace.Layout, plan Plan) (preparationIntent, error) {
+	if err := validateReadyPlan(plan); err != nil {
+		return preparationIntent{}, err
+	}
+	runID, err := newRunID()
+	if err != nil {
+		return preparationIntent{}, err
+	}
+	owner, err := newMigrationOwner()
+	if err != nil {
+		return preparationIntent{}, err
+	}
+	intent := preparationIntent{
+		Version:      migrationPreparationIntentVersion,
+		RunID:        runID,
+		Phase:        "preparing",
+		PlanHash:     plan.PlanHash,
+		ConfigPath:   layout.ConfigPath,
+		ConfigRoot:   layout.ConfigRoot,
+		Workflow:     layout.WorkflowRoot,
+		ManifestPath: plan.Manifest.Path,
+		Owner:        owner,
+		Guardian:     migrationGuardianIdentity,
+	}
+	if err := intent.validate(); err != nil {
+		return preparationIntent{}, err
+	}
+	return intent, nil
+}
+
+func (intent preparationIntent) validate() error {
+	if intent.Version != migrationPreparationIntentVersion || intent.Phase != "preparing" || !migrationrecord.SafeRunID(intent.RunID) || !validDigest(intent.PlanHash) || !validMigrationOwner(intent.Owner) || intent.Guardian != migrationGuardianIdentity {
+		return fmt.Errorf("workspace migration: invalid preparation intent identity")
+	}
+	for _, path := range []string{intent.ConfigPath, intent.ConfigRoot, intent.Workflow, intent.ManifestPath} {
+		if !filepath.IsAbs(path) || filepath.Clean(path) != path {
+			return fmt.Errorf("workspace migration: invalid preparation intent path")
+		}
+	}
+	if filepath.Dir(intent.ConfigPath) != intent.ConfigRoot {
+		return fmt.Errorf("workspace migration: invalid preparation intent layout")
+	}
+	return nil
+}
+
+func validatePreparationIntentLayout(intent preparationIntent, layout workspace.Layout) error {
+	if err := intent.validate(); err != nil {
+		return err
+	}
+	if intent.ConfigPath != layout.ConfigPath || intent.ConfigRoot != layout.ConfigRoot || intent.Workflow != layout.WorkflowRoot {
+		return fmt.Errorf("workspace migration: preparation intent does not belong to this workspace layout")
+	}
+	return nil
+}
+
+func savePreparationIntent(intent preparationIntent) error {
+	if err := intent.validate(); err != nil {
+		return err
+	}
+	// Publish the content-free pending status first so an interrupted intent is
+	// discoverable by ordinary loaders before any backup work can begin.
+	if err := saveJournalStatus(intent.Workflow, intent.RunID, intent.Phase); err != nil {
+		return err
+	}
+	path, err := ensurePrivateJournalDirectory(intent.Workflow, intent.RunID)
+	if err != nil {
+		return err
+	}
+	intentPath, err := preparationIntentPath(intent.Workflow, intent.RunID)
+	if err != nil {
+		return err
+	}
+	if filepath.Dir(path) != filepath.Dir(intentPath) {
+		return fmt.Errorf("workspace migration: preparation intent directory differs from journal directory")
+	}
+	data, err := json.MarshalIndent(intent, "", "  ")
+	if err != nil {
+		return err
+	}
+	return writeMigrationRegular(intent.Workflow, intentPath, append(data, '\n'), 0o600)
+}
+
+func loadPreparationIntent(root, runID string) (preparationIntent, error) {
+	path, err := preparationIntentPath(root, runID)
+	if err != nil {
+		return preparationIntent{}, err
+	}
+	data, mode, exists, err := readMigrationOptionalRegular(root, path)
+	if err != nil {
+		return preparationIntent{}, err
+	}
+	if !exists {
+		return preparationIntent{}, os.ErrNotExist
+	}
+	if mode.Perm()&0o077 != 0 {
+		return preparationIntent{}, fmt.Errorf("workspace migration: preparation intent is not a 0600 regular file")
+	}
+	var intent preparationIntent
+	if err := decodePrivateJSON(data, &intent); err != nil {
+		return preparationIntent{}, fmt.Errorf("workspace migration: invalid preparation intent: %w", err)
+	}
+	if err := intent.validate(); err != nil {
+		return preparationIntent{}, err
+	}
+	status, err := migrationrecord.LoadJournalStatus(root, runID)
+	if err != nil || status.Phase != "preparing" {
+		return preparationIntent{}, fmt.Errorf("workspace migration: preparation intent status is missing or invalid")
+	}
+	return intent, nil
 }
 
 func (j privateJournal) validate() error {
@@ -418,21 +643,27 @@ func (j privateJournal) validate() error {
 	if err := validateReadyPlan(j.Plan); err != nil {
 		return err
 	}
-	if !canonicalCommit.MatchString(j.RecordsParent) || !validDigest(j.RecordsIndexSHA256) || strings.TrimSpace(j.MigrationMessage) == "" || !validDigest(j.MigrationMessageSHA256) || strings.TrimSpace(j.ProofMessage) == "" {
+	if !canonicalCommit.MatchString(j.RecordsParent) || !validDigest(j.RecordsIndexSHA256) || (j.IntentOwner != "" && !validMigrationOwner(j.IntentOwner)) || strings.TrimSpace(j.MigrationMessage) == "" || !validDigest(j.MigrationMessageSHA256) || strings.TrimSpace(j.ProofMessage) == "" || strings.TrimSpace(j.RestoreMessage) == "" || !validDigest(j.RestoreMessageSHA256) {
 		return fmt.Errorf("workspace migration: invalid private journal records identity")
 	}
 	if j.MigrationMessageSHA256 != migrationDigest([]byte(j.MigrationMessage+"\n")) {
 		return fmt.Errorf("workspace migration: invalid private journal migration message")
 	}
-	for _, tree := range []string{j.ExpectedMigrationTree, j.ExpectedProofTree} {
+	if j.RestoreMessageSHA256 != migrationDigest([]byte(j.RestoreMessage+"\n")) {
+		return fmt.Errorf("workspace migration: invalid private journal restore message")
+	}
+	for _, tree := range []string{j.ExpectedMigrationTree, j.ExpectedProofTree, j.ExpectedRestoreTree} {
 		if tree != "" && !canonicalCommit.MatchString(tree) {
 			return fmt.Errorf("workspace migration: invalid private journal Git tree")
 		}
 	}
-	for _, commit := range []string{j.MigrationCommit, j.ProofCommit} {
+	for _, commit := range []string{j.MigrationCommit, j.ProofCommit, j.RestoreParent, j.RestoreCommit} {
 		if commit != "" && !canonicalCommit.MatchString(commit) {
 			return fmt.Errorf("workspace migration: invalid private journal Git commit")
 		}
+	}
+	if (j.ExpectedMigrationTree != "" && j.MigrationCommit == "" && j.Phase != "prepared" && j.Phase != "applying") || (j.ProofCommit != "" && (j.MigrationCommit == "" || j.ExpectedProofTree == "")) || (j.ExpectedRestoreTree != "" && j.RestoreParent == "") || (j.RestoreCommit != "" && (j.RestoreParent == "" || j.ExpectedRestoreTree == "")) {
+		return fmt.Errorf("workspace migration: incomplete private journal commit state")
 	}
 	seenWrites := map[string]bool{}
 	for _, write := range j.Writes {
@@ -453,6 +684,9 @@ func (j privateJournal) validate() error {
 		seenSnapshots[snapshot.Path] = true
 	}
 	if err := validateRecordsGitBackup(j); err != nil {
+		return err
+	}
+	if err := validateJournalIndexAuthority(j); err != nil {
 		return err
 	}
 	seenBindings := map[string]bool{}
@@ -480,6 +714,176 @@ func validateRecordsGitBackup(j privateJournal) error {
 		seen[ref.Name] = true
 	}
 	return nil
+}
+
+func journalIndexPaths(journal privateJournal) ([]string, error) {
+	selected := map[string]bool{
+		journalKindState: true, journalKindIgnore: true, journalKindReceipt: true, journalKindProof: true,
+	}
+	seen := map[string]bool{}
+	paths := []string{}
+	for _, write := range journal.Writes {
+		if write.Scope != journalScopeRecords || !selected[write.Kind] {
+			continue
+		}
+		rel, err := filepath.Rel(journal.Workflow, write.Path)
+		if err != nil || !safeGitRelativePath(filepath.ToSlash(rel)) || seen[filepath.ToSlash(rel)] {
+			return nil, fmt.Errorf("workspace migration: unsafe records index path")
+		}
+		seen[filepath.ToSlash(rel)] = true
+		paths = append(paths, filepath.ToSlash(rel))
+	}
+	sort.Strings(paths)
+	return paths, nil
+}
+
+func captureRecordsIndex(root string, paths []string) ([]recordsIndexEntry, error) {
+	wanted := make(map[string]bool, len(paths))
+	for _, path := range paths {
+		if !safeGitRelativePath(path) || wanted[path] {
+			return nil, fmt.Errorf("workspace migration: invalid records index path")
+		}
+		wanted[path] = true
+	}
+	if len(wanted) == 0 {
+		return []recordsIndexEntry{}, nil
+	}
+	args := append([]string{"ls-files", "--stage", "-z", "--"}, paths...)
+	data, err := migrationGit(root, args...)
+	if err != nil {
+		return nil, err
+	}
+	entries := make([]recordsIndexEntry, 0, len(paths))
+	seen := map[string]bool{}
+	for _, raw := range bytesSplitNUL(data) {
+		before, rawPath, ok := bytes.Cut(raw, []byte{'\t'})
+		path := string(rawPath)
+		fields := strings.Fields(string(before))
+		if !ok || len(fields) != 3 || !wanted[path] || !safeGitRelativePath(path) || seen[path] || !canonicalCommit.MatchString(fields[1]) {
+			return nil, fmt.Errorf("workspace migration: records index has an invalid entry")
+		}
+		mode, err := strconv.ParseUint(fields[0], 8, 32)
+		if err != nil || !validRecordsIndexMode(uint32(mode)) {
+			return nil, fmt.Errorf("workspace migration: records index has an unsupported file mode")
+		}
+		stage, err := strconv.Atoi(fields[2])
+		if err != nil || stage != 0 {
+			return nil, fmt.Errorf("workspace migration: records index has an unmerged entry")
+		}
+		seen[path] = true
+		entries = append(entries, recordsIndexEntry{Path: path, Mode: uint32(mode), Object: fields[1], Stage: stage})
+	}
+	sort.Slice(entries, func(i, j int) bool { return entries[i].Path < entries[j].Path })
+	return entries, nil
+}
+
+func validRecordsIndexMode(mode uint32) bool {
+	return mode == 0o100644 || mode == 0o100755
+}
+
+func validateJournalIndexSnapshot(paths []string, entries []recordsIndexEntry, required bool) error {
+	if required && entries == nil {
+		return fmt.Errorf("workspace migration: private journal lacks records index authority")
+	}
+	allowed := make(map[string]bool, len(paths))
+	for _, path := range paths {
+		if !safeGitRelativePath(path) || allowed[path] {
+			return fmt.Errorf("workspace migration: invalid reviewed records index path")
+		}
+		allowed[path] = true
+	}
+	seen := map[string]bool{}
+	last := ""
+	for _, entry := range entries {
+		if !allowed[entry.Path] || entry.Path <= last || seen[entry.Path] || !validRecordsIndexMode(entry.Mode) || !canonicalCommit.MatchString(entry.Object) || entry.Stage != 0 {
+			return fmt.Errorf("workspace migration: invalid private records index authority")
+		}
+		seen[entry.Path] = true
+		last = entry.Path
+	}
+	return nil
+}
+
+func validateJournalIndexAuthority(journal privateJournal) error {
+	paths, err := journalIndexPaths(journal)
+	if err != nil {
+		return err
+	}
+	if err := validateJournalIndexSnapshot(paths, journal.RecordsIndexPre, true); err != nil {
+		return err
+	}
+	for _, write := range journal.Writes {
+		if write.Scope != journalScopeRecords || write.Kind != journalKindState || !write.PreExists {
+			continue
+		}
+		rel, err := filepath.Rel(journal.Workflow, write.Path)
+		if err != nil || !indexContainsPath(journal.RecordsIndexPre, filepath.ToSlash(rel)) {
+			return fmt.Errorf("workspace migration: private journal index omits a planned state preimage")
+		}
+	}
+	for _, snapshot := range [][]recordsIndexEntry{journal.MigrationIndexPost, journal.ProofIndexPost, journal.RestoreIndexPost} {
+		if snapshot == nil {
+			continue
+		}
+		if err := validateJournalIndexSnapshot(paths, snapshot, false); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func indexContainsPath(entries []recordsIndexEntry, path string) bool {
+	for _, entry := range entries {
+		if entry.Path == path {
+			return true
+		}
+	}
+	return false
+}
+
+func sameRecordsIndex(actual, expected []recordsIndexEntry) bool {
+	return reflect.DeepEqual(actual, expected)
+}
+
+// validateRecordsIndexAgainst refuses a staged-only or unmerged conflict before
+// the migration can invoke git add. Every accepted entry is one exact snapshot
+// captured by this journal; arbitrary index filters and third blobs are never
+// normalized away.
+func validateRecordsIndexAgainst(root string, paths []string, allowed ...[]recordsIndexEntry) ([]recordsIndexEntry, error) {
+	actual, err := captureRecordsIndex(root, paths)
+	if err != nil {
+		return nil, err
+	}
+	for _, expected := range allowed {
+		if expected != nil && sameRecordsIndex(actual, expected) {
+			return actual, nil
+		}
+	}
+	return nil, fmt.Errorf("workspace migration: records index contains a conflicting staged blob, mode, or path")
+}
+
+func verifyJournalRecordsIndex(root string, journal privateJournal) error {
+	paths, err := journalIndexPaths(journal)
+	if err != nil {
+		return err
+	}
+	allowed := [][]recordsIndexEntry{journal.RecordsIndexPre}
+	switch journal.Phase {
+	case "prepared":
+		// The durable journal exists before any migration index mutation.
+	case "applying":
+		allowed = append(allowed, journal.MigrationIndexPost, journal.ProofIndexPost)
+	case "pending-finalization", "complete":
+		allowed = [][]recordsIndexEntry{journal.ProofIndexPost}
+	case "restoring":
+		allowed = append(allowed, journal.MigrationIndexPost, journal.ProofIndexPost, journal.RestoreIndexPost)
+	case "restored":
+		if journal.RestoreCommit != "" {
+			allowed = [][]recordsIndexEntry{journal.RestoreIndexPost}
+		}
+	}
+	_, err = validateRecordsIndexAgainst(root, paths, allowed...)
+	return err
 }
 
 func safeBackupRefName(name string) bool {
@@ -522,7 +926,7 @@ func (w privateWrite) validate(j privateJournal) error {
 		return fmt.Errorf("workspace migration: unknown private journal write scope")
 	}
 	switch w.Kind {
-	case journalKindState, journalKindIgnore, journalKindReceipt, journalKindRegistry, journalKindOwner, journalKindMarker, journalKindProof:
+	case journalKindState, journalKindIgnore, journalKindReceipt, journalKindRegistry, journalKindOwner, journalKindMarker, journalKindProof, journalKindCompletion:
 	default:
 		return fmt.Errorf("workspace migration: unknown private journal write kind")
 	}
@@ -553,20 +957,6 @@ func validateJournalAuthority(j privateJournal) error {
 		path, err := resolvePlannedOperationPath(operation.Path, j.RunID)
 		if err != nil {
 			return err
-		}
-		if operation.Kind == journalKindPrivateJournal {
-			journalPath, err := journalPath(j.Workflow, j.RunID)
-			if err != nil || operation.Scope != journalScopeRecords || path != journalPath || !operation.PostExists || operation.PostMode != 0o600 || operation.DynamicRule != dynamicJournalRule {
-				return fmt.Errorf("workspace migration: private journal operation differs from reviewed authority")
-			}
-			continue
-		}
-		if operation.Kind == journalKindRecordsBackup {
-			backupPath, err := recordsGitBackupPath(j.Workflow, j.RunID)
-			if err != nil || operation.Scope != journalScopeRecords || path != backupPath || j.RecordsBackup.BundlePath != backupPath || !operation.PostExists || operation.PostMode != 0o600 || operation.DynamicRule != dynamicRecordsBackupRule {
-				return fmt.Errorf("workspace migration: records Git backup operation differs from reviewed authority")
-			}
-			continue
 		}
 		expectedWrites++
 		key := journalWriteKey(operation.Scope, operation.Kind, path)
@@ -647,6 +1037,10 @@ func validateJournalSnapshots(j privateJournal) error {
 			return fmt.Errorf("workspace migration: private snapshot differs from reviewed input at %s", ref.Path)
 		}
 	}
+	manifest, ok := actual[j.Plan.Manifest.Path]
+	if !ok || manifest.SHA256 != j.Plan.Manifest.SHA256 || migrationDigest(manifest.Data) != j.Plan.Manifest.SHA256 {
+		return fmt.Errorf("workspace migration: private manifest snapshot differs from reviewed plan")
+	}
 	return nil
 }
 
@@ -685,10 +1079,41 @@ func validateDynamicJournalWrite(j privateJournal, operation ProspectiveOperatio
 		if proof.MigrationCommit != j.MigrationCommit || proof.Parent != j.RecordsParent || proof.Tree != j.ExpectedMigrationTree || proof.MessageSHA256 != j.MigrationMessageSHA256 {
 			return fmt.Errorf("workspace migration: private journal proof differs from reviewed authority")
 		}
+	case dynamicCompletionRule:
+		if len(write.Postimage) == 0 && j.Phase != "complete" {
+			return nil
+		}
+		expected, err := completionWitnessForJournal(j)
+		if err != nil {
+			return err
+		}
+		actual, err := migrationrecord.ParseCompletionWitness(write.Postimage)
+		if err != nil || actual != expected {
+			return fmt.Errorf("workspace migration: private journal completion witness differs from final authorization")
+		}
 	default:
 		return fmt.Errorf("workspace migration: unknown dynamic journal operation")
 	}
 	return nil
+}
+
+func completionWitnessForJournal(journal privateJournal) (migrationrecord.CompletionWitness, error) {
+	receipt, ok := journalWrite(journal, journalKindReceipt)
+	if !ok || len(receipt.Postimage) == 0 {
+		return migrationrecord.CompletionWitness{}, fmt.Errorf("workspace migration: completion authorization lacks its reviewed receipt")
+	}
+	proof, ok := journalWrite(journal, journalKindProof)
+	if !ok || len(proof.Postimage) == 0 {
+		return migrationrecord.CompletionWitness{}, fmt.Errorf("workspace migration: completion authorization lacks its reviewed commit proof")
+	}
+	witness, err := migrationrecord.NewCompletionWitness(journal.RunID, receipt.Postimage, proof.Postimage)
+	if err != nil {
+		return migrationrecord.CompletionWitness{}, err
+	}
+	if witness.PlanHash != journal.PlanHash || witness.MigrationCommit != journal.MigrationCommit || witness.MigrationParent != journal.RecordsParent || witness.MigrationTree != journal.ExpectedMigrationTree {
+		return migrationrecord.CompletionWitness{}, fmt.Errorf("workspace migration: completion authorization differs from the reviewed transaction")
+	}
+	return witness, nil
 }
 
 func validateJournalConcreteAuthority(layout workspace.Layout, journal privateJournal) error {
@@ -717,15 +1142,16 @@ func validateJournalConcreteAuthority(layout workspace.Layout, journal privateJo
 }
 
 func validateJournalCommitAuthority(journal privateJournal) error {
-	if len(journal.Plan.Prospective.Commits) != 2 {
+	if len(journal.Plan.Prospective.Commits) != 3 {
 		return fmt.Errorf("workspace migration: reviewed commit authority is incomplete")
 	}
 	migration := journal.Plan.Prospective.Commits[0]
 	proof := journal.Plan.Prospective.Commits[1]
-	if migration.Kind != "migration" || migration.Parent != journal.RecordsParent || migration.ParentRule != "exact_plan_records_head" || migration.MessageTemplate != "Migrate legacy workflow records to schema-2 ownership ({run_id})" || migration.TreeRule != "git_write_tree_after_exact_paths" || proof.Kind != "proof" || proof.Parent != "{migration_commit}" || proof.ParentRule != "migration_commit" || proof.MessageTemplate != "Record schema-2 migration commit proof ({run_id})" || proof.TreeRule != "git_write_tree_after_exact_paths" {
+	restore := journal.Plan.Prospective.Commits[2]
+	if migration.Kind != "migration" || migration.Parent != journal.RecordsParent || migration.ParentRule != "exact_plan_records_head" || migration.MessageTemplate != "Migrate legacy workflow records to schema-2 ownership ({run_id})" || migration.TreeRule != "git_write_tree_after_exact_paths" || proof.Kind != "proof" || proof.Parent != "{migration_commit}" || proof.ParentRule != "migration_commit" || proof.MessageTemplate != "Record schema-2 migration commit proof ({run_id})" || proof.TreeRule != "git_write_tree_after_exact_paths" || restore.Kind != "restore" || restore.Parent != "{latest_records_migration_commit}" || restore.ParentRule != "migration_or_proof_commit" || restore.MessageTemplate != "Restore interrupted schema-2 migration ({run_id})" || restore.TreeRule != "git_write_tree_after_exact_paths" {
 		return fmt.Errorf("workspace migration: private journal commit authority differs from reviewed plan")
 	}
-	if journal.MigrationMessage != strings.ReplaceAll(migration.MessageTemplate, runIDPlaceholder, journal.RunID) || journal.ProofMessage != strings.ReplaceAll(proof.MessageTemplate, runIDPlaceholder, journal.RunID) {
+	if journal.MigrationMessage != strings.ReplaceAll(migration.MessageTemplate, runIDPlaceholder, journal.RunID) || journal.ProofMessage != strings.ReplaceAll(proof.MessageTemplate, runIDPlaceholder, journal.RunID) || journal.RestoreMessage != strings.ReplaceAll(restore.MessageTemplate, runIDPlaceholder, journal.RunID) {
 		return fmt.Errorf("workspace migration: private journal messages differ from reviewed commit authority")
 	}
 	actualMigration, err := journalRecordPaths(journal, journalKindState, journalKindIgnore, journalKindReceipt)
@@ -736,7 +1162,9 @@ func validateJournalCommitAuthority(journal privateJournal) error {
 	if err != nil {
 		return err
 	}
-	if !sameStringSet(actualMigration, resolveCommitPaths(migration.Paths, journal.RunID)) || !sameStringSet(actualProof, resolveCommitPaths(proof.Paths, journal.RunID)) {
+	actualRestore := append(append([]string{}, actualMigration...), actualProof...)
+	sort.Strings(actualRestore)
+	if !sameStringSet(actualMigration, resolveCommitPaths(migration.Paths, journal.RunID)) || !sameStringSet(actualProof, resolveCommitPaths(proof.Paths, journal.RunID)) || !sameStringSet(actualRestore, resolveCommitPaths(restore.Paths, journal.RunID)) {
 		return fmt.Errorf("workspace migration: private journal commit paths differ from reviewed authority")
 	}
 	return nil
@@ -787,6 +1215,21 @@ func validateReceiptAgainstJournal(journal privateJournal, receipt migrationreco
 			return fmt.Errorf("workspace migration: receipt write differs from reviewed plan at %s", write.Path)
 		}
 	}
+	expectedRetired, err := expectedRetiredRecords(journal.Plan)
+	if err != nil {
+		return err
+	}
+	actualRetired := make([]migrationrecord.RetiredRecord, len(receipt.Retired))
+	copy(actualRetired, receipt.Retired)
+	sort.Slice(actualRetired, func(i, j int) bool {
+		return actualRetired[i].Path+"\x00"+actualRetired[i].ID < actualRetired[j].Path+"\x00"+actualRetired[j].ID
+	})
+	if !reflect.DeepEqual(actualRetired, expectedRetired) {
+		return fmt.Errorf("workspace migration: receipt retired-record set differs from reviewed plan")
+	}
+	if err := receipt.ValidateRetiredCorrespondence(journal.Workflow); err != nil {
+		return fmt.Errorf("workspace migration: receipt retired-record correspondence is invalid: %w", err)
+	}
 	if len(receipt.Bindings) != len(journal.Bindings) {
 		return fmt.Errorf("workspace migration: receipt binding set differs from private journal")
 	}
@@ -830,27 +1273,7 @@ func journalWriteRoot(j privateJournal, write privateWrite) (string, error) {
 }
 
 func readOptionalRegular(root, path string) ([]byte, os.FileMode, bool, error) {
-	if !pathWithin(root, path) {
-		return nil, 0, false, fmt.Errorf("workspace migration: path outside owned root")
-	}
-	if err := fsutil.RequireRealParents(root, filepath.Dir(path)); err != nil {
-		return nil, 0, false, err
-	}
-	info, err := os.Lstat(path)
-	if errors.Is(err, os.ErrNotExist) {
-		return nil, 0, false, nil
-	}
-	if err != nil {
-		return nil, 0, false, err
-	}
-	if !info.Mode().IsRegular() || info.Mode()&os.ModeSymlink != 0 {
-		return nil, 0, false, fmt.Errorf("workspace migration: expected a real regular file")
-	}
-	data, err := os.ReadFile(path)
-	if err != nil {
-		return nil, 0, false, err
-	}
-	return data, info.Mode().Perm(), true, nil
+	return readMigrationOptionalRegular(root, path)
 }
 
 func writeMatches(write privateWrite, data []byte, mode os.FileMode, exists bool, post bool) bool {
@@ -881,11 +1304,11 @@ func applyJournalWrite(j privateJournal, write privateWrite, post bool) (bool, e
 		wantExists, wantData, wantMode = write.PreExists, write.Preimage, os.FileMode(write.PreMode)
 	}
 	if wantExists {
-		if err := fsutil.WriteControlPlaneWithin(root, write.Path, wantData, wantMode); err != nil {
+		if err := writeMigrationRegular(root, write.Path, wantData, wantMode); err != nil {
 			return false, err
 		}
 	} else {
-		if err := removeOptionalRegular(root, write.Path); err != nil {
+		if err := removeMigrationOptionalRegular(root, write.Path); err != nil {
 			return false, err
 		}
 	}
@@ -896,23 +1319,7 @@ func applyJournalWrite(j privateJournal, write privateWrite, post bool) (bool, e
 }
 
 func removeOptionalRegular(root, path string) error {
-	if !pathWithin(root, path) {
-		return fmt.Errorf("workspace migration: path outside owned root")
-	}
-	if err := fsutil.RequireRealParents(root, filepath.Dir(path)); err != nil {
-		return err
-	}
-	info, err := os.Lstat(path)
-	if errors.Is(err, os.ErrNotExist) {
-		return nil
-	}
-	if err != nil {
-		return err
-	}
-	if !info.Mode().IsRegular() || info.Mode()&os.ModeSymlink != 0 {
-		return fmt.Errorf("workspace migration: refusing to remove a non-regular file")
-	}
-	return os.Remove(path)
+	return removeMigrationOptionalRegular(root, path)
 }
 
 func sortedJournalWrites(writes []privateWrite) []privateWrite {
@@ -952,6 +1359,29 @@ func migrationGit(dir string, args ...string) ([]byte, error) {
 	return out, nil
 }
 
+func migrationGitOutput(dir string, args ...string) ([]byte, error) {
+	cmd := migrationGitCommand(dir, args...)
+	var stderr bytes.Buffer
+	cmd.Stderr = &stderr
+	out, err := cmd.Output()
+	if err != nil {
+		return nil, fmt.Errorf("workspace migration: git %s: %s: %w", args[0], strings.TrimSpace(stderr.String()), err)
+	}
+	return out, nil
+}
+
+func migrationGitInput(dir string, input []byte, args ...string) ([]byte, error) {
+	cmd := migrationGitCommand(dir, args...)
+	cmd.Stdin = bytes.NewReader(input)
+	var stderr bytes.Buffer
+	cmd.Stderr = &stderr
+	out, err := cmd.Output()
+	if err != nil {
+		return nil, fmt.Errorf("workspace migration: git %s: %s: %w", args[0], strings.TrimSpace(stderr.String()), err)
+	}
+	return out, nil
+}
+
 func withInitialMigrationLocks(configPath string, fn func(workspace.Layout) error) error {
 	configPath, err := absolutePath(configPath)
 	if err != nil {
@@ -972,7 +1402,11 @@ func withInitialMigrationLocks(configPath string, fn func(workspace.Layout) erro
 	if err != nil {
 		return err
 	}
-	recordsLock, err := applylock.Acquire(filepath.Join(l.WorkflowRoot, ".git", "homonto-migration"))
+	recoveryLockPath, err := migrationRecoveryLockPath(l.WorkflowRoot)
+	if err != nil {
+		return err
+	}
+	recordsLock, err := applylock.AcquirePath(recoveryLockPath, filepath.Dir(recoveryLockPath))
 	if err != nil {
 		return fmt.Errorf("workspace migration: records lock: %w", err)
 	}
@@ -985,7 +1419,53 @@ func withInitialMigrationLocks(configPath string, fn func(workspace.Layout) erro
 	return fn(l)
 }
 
-func withRecoveryMigrationLocks(configPath, runID, expectedPlanHash string, fn func(workspace.Layout, *privateJournal) error) error {
+type recoveryMaterial struct {
+	journal *privateJournal
+	intent  *preparationIntent
+	orphan  bool
+}
+
+func loadRecoveryMaterial(root, runID string) (recoveryMaterial, error) {
+	path, err := journalPath(root, runID)
+	if err != nil {
+		return recoveryMaterial{}, err
+	}
+	journal, journalErr := loadJournal(root, runID)
+	if journalErr == nil {
+		if err := removeMigrationTemporaryFiles(root, filepath.Dir(path)); err != nil {
+			return recoveryMaterial{}, err
+		}
+		return recoveryMaterial{journal: &journal}, nil
+	}
+	intent, intentErr := loadPreparationIntent(root, runID)
+	if intentErr == nil {
+		if err := removeMigrationTemporaryFiles(root, filepath.Dir(path)); err != nil {
+			return recoveryMaterial{}, err
+		}
+		return recoveryMaterial{intent: &intent}, nil
+	}
+	if errors.Is(journalErr, os.ErrNotExist) && errors.Is(intentErr, os.ErrNotExist) {
+		orphan, orphanErr := migrationrecord.IsPreparationOrphan(root, runID)
+		if orphanErr != nil {
+			return recoveryMaterial{}, fmt.Errorf("workspace migration: inspect preparation artifact: %w", orphanErr)
+		}
+		if orphan {
+			if err := removeMigrationTemporaryFiles(root, filepath.Dir(path)); err != nil {
+				return recoveryMaterial{}, err
+			}
+			return recoveryMaterial{orphan: true}, nil
+		}
+		if status, statusErr := migrationrecord.LoadJournalStatus(root, runID); statusErr == nil && status.Phase == "preparing" {
+			return recoveryMaterial{}, fmt.Errorf("workspace migration: preparation artifacts are not recognized; refusing automatic cleanup")
+		}
+	}
+	if !errors.Is(journalErr, os.ErrNotExist) {
+		return recoveryMaterial{}, journalErr
+	}
+	return recoveryMaterial{}, intentErr
+}
+
+func withRecoveryMigrationLocks(configPath, runID, expectedPlanHash string, fn func(workspace.Layout, recoveryMaterial) error) error {
 	configPath, err := absolutePath(configPath)
 	if err != nil {
 		return err
@@ -1012,17 +1492,11 @@ func withRecoveryMigrationLocks(configPath, runID, expectedPlanHash string, fn f
 	if l.ConfigPath != configPath || l.ConfigRoot != configRoot {
 		return fmt.Errorf("workspace migration: recovery layout identity changed")
 	}
-	journal, err := loadJournal(l.WorkflowRoot, runID)
+	recoveryLockPath, err := migrationRecoveryLockPath(l.WorkflowRoot)
 	if err != nil {
 		return err
 	}
-	if err := validateJournalLayout(journal, l); err != nil {
-		return err
-	}
-	if journal.PlanHash != expectedPlanHash {
-		return fmt.Errorf("workspace migration: recovery journal does not match the reviewed plan hash")
-	}
-	recordsLock, err := applylock.Acquire(filepath.Join(l.WorkflowRoot, ".git", "homonto-migration"))
+	recordsLock, err := applylock.AcquirePath(recoveryLockPath, filepath.Dir(recoveryLockPath))
 	if err != nil {
 		return fmt.Errorf("workspace migration: records lock: %w", err)
 	}
@@ -1032,7 +1506,27 @@ func withRecoveryMigrationLocks(configPath, runID, expectedPlanHash string, fn f
 		return fmt.Errorf("workspace migration: lifecycle locks: %w", err)
 	}
 	defer releaseBindings()
-	return fn(l, &journal)
+	material, err := loadRecoveryMaterial(l.WorkflowRoot, runID)
+	if err != nil {
+		return err
+	}
+	if material.journal != nil {
+		if err := validateJournalLayout(*material.journal, l); err != nil {
+			return err
+		}
+		if material.journal.PlanHash != expectedPlanHash {
+			return fmt.Errorf("workspace migration: recovery journal does not match the reviewed plan hash")
+		}
+	}
+	if material.intent != nil {
+		if err := validatePreparationIntentLayout(*material.intent, l); err != nil {
+			return err
+		}
+		if material.intent.PlanHash != expectedPlanHash {
+			return fmt.Errorf("workspace migration: recovery preparation intent does not match the reviewed plan hash")
+		}
+	}
+	return fn(l, material)
 }
 
 func validateJournalLayout(j privateJournal, l workspace.Layout) error {
@@ -1050,23 +1544,19 @@ func validateJournalLayout(j privateJournal, l workspace.Layout) error {
 	return validateJournalConcreteAuthority(l, j)
 }
 
-func prepareJournal(l workspace.Layout, plan Plan) (privateJournal, error) {
+func prepareJournal(l workspace.Layout, plan Plan, intent preparationIntent) (privateJournal, error) {
 	if err := validateReadyPlan(plan); err != nil || plan.Layout.ConfigPath != l.ConfigPath || plan.Layout.ConfigRoot != l.ConfigRoot || plan.Layout.WorkflowRoot != l.WorkflowRoot {
 		return privateJournal{}, fmt.Errorf("workspace migration: invalid ready plan")
 	}
-	if err := verifyPlanInputs(l, plan, true); err != nil {
+	if err := validatePreparationIntentLayout(intent, l); err != nil || intent.PlanHash != plan.PlanHash || intent.ManifestPath != plan.Manifest.Path {
+		return privateJournal{}, fmt.Errorf("workspace migration: preparation intent does not match the reviewed plan")
+	}
+	if err := verifyPlanInputsWithIgnored(l, plan, true, migrationPreparationIgnored(l, intent.RunID)); err != nil {
 		return privateJournal{}, err
 	}
-	runID, err := newRunID()
-	if err != nil {
-		return privateJournal{}, err
-	}
-	runDir, err := journalRunDir(l.WorkflowRoot, runID)
-	if err != nil {
-		return privateJournal{}, err
-	}
-	if _, err := os.Lstat(runDir); err == nil {
-		return privateJournal{}, fmt.Errorf("workspace migration: generated run ID already exists")
+	runID := intent.RunID
+	if _, err := loadJournal(l.WorkflowRoot, runID); err == nil {
+		return privateJournal{}, fmt.Errorf("workspace migration: private journal already exists for preparation intent")
 	} else if !errors.Is(err, os.ErrNotExist) {
 		return privateJournal{}, err
 	}
@@ -1094,12 +1584,15 @@ func prepareJournal(l workspace.Layout, plan Plan) (privateJournal, error) {
 		Workflow:           l.WorkflowRoot,
 		Plan:               plan,
 		Bindings:           bindings,
+		IntentOwner:        intent.Owner,
 		RecordsParent:      plan.RecordsGit.Head,
 		RecordsIndexSHA256: plan.RecordsGit.IndexSHA256,
 		MigrationMessage:   "Migrate legacy workflow records to schema-2 ownership (" + runID + ")",
 		ProofMessage:       "Record schema-2 migration commit proof (" + runID + ")",
+		RestoreMessage:     "Restore interrupted schema-2 migration (" + runID + ")",
 	}
 	journal.MigrationMessageSHA256 = migrationDigest([]byte(journal.MigrationMessage + "\n"))
+	journal.RestoreMessageSHA256 = migrationDigest([]byte(journal.RestoreMessage + "\n"))
 	prepared := append([]preparedRecordWrite(nil), plan.preparedRecordWrites...)
 	for _, write := range prepared {
 		item, err := prepareWrite(journalScopeRecords, journalKindState, l.WorkflowRoot, write.summary.Path, true, write.preimage, true, write.postimage, 0o644)
@@ -1144,6 +1637,15 @@ func prepareJournal(l workspace.Layout, plan Plan) (privateJournal, error) {
 		return privateJournal{}, err
 	}
 	journal.Writes = append(journal.Writes, proofWrite)
+	completionPath, err := migrationrecord.CompletionWitnessPath(l.WorkflowRoot, runID)
+	if err != nil {
+		return privateJournal{}, err
+	}
+	completionWrite, err := prepareWrite(journalScopeRecords, journalKindCompletion, l.WorkflowRoot, completionPath, false, nil, true, nil, 0o600)
+	if err != nil {
+		return privateJournal{}, err
+	}
+	journal.Writes = append(journal.Writes, completionWrite)
 	registry, err := prepareWrite(journalScopeConfig, journalKindRegistry, l.ConfigRoot, adoptions.RegistryPath, false, nil, true, adoptions.RegistryData, 0o600)
 	if err != nil {
 		return privateJournal{}, err
@@ -1163,6 +1665,14 @@ func prepareJournal(l workspace.Layout, plan Plan) (privateJournal, error) {
 	}
 	journal.Writes = append(journal.Writes, markerWrite)
 	journal.Writes = sortedJournalWrites(journal.Writes)
+	indexPaths, err := journalIndexPaths(journal)
+	if err != nil {
+		return privateJournal{}, err
+	}
+	journal.RecordsIndexPre, err = captureRecordsIndex(l.WorkflowRoot, indexPaths)
+	if err != nil {
+		return privateJournal{}, err
+	}
 	journal.Snapshots, err = privateSnapshots(plan)
 	if err != nil {
 		return privateJournal{}, err
@@ -1170,11 +1680,14 @@ func prepareJournal(l workspace.Layout, plan Plan) (privateJournal, error) {
 	// Recheck the complete plan immediately before creating the durable records
 	// backup. The backup is private recovery material, not authority to accept a
 	// source or records change that raced the initial preflight.
-	if err := verifyPlanInputs(l, plan, true); err != nil {
+	if err := verifyPlanInputsWithIgnored(l, plan, true, migrationPreparationIgnored(l, intent.RunID)); err != nil {
 		return privateJournal{}, err
 	}
 	journal.RecordsBackup, err = captureRecordsGitBackup(l.WorkflowRoot, runID, plan.RecordsGit)
 	if err != nil {
+		return privateJournal{}, err
+	}
+	if err := migrationAfterPreparation("backup"); err != nil {
 		return privateJournal{}, err
 	}
 	if err := validateJournalConcreteAuthority(l, journal); err != nil {
@@ -1258,27 +1771,11 @@ func buildReceipt(plan Plan, runID, markerPath string, markerData []byte, adopti
 		}
 		receipt.RecordWrites = append(receipt.RecordWrites, migrationrecord.RecordWrite{Path: write.Path, PreSHA256: write.PreSHA256, PostSHA256: write.PostSHA256, Action: write.Action, Fields: append([]string{}, write.ChangedFields...), LegacyConfig: legacy})
 	}
-	for _, record := range plan.Records {
-		if record.Lifecycle != "retired" || record.ID == "" {
-			continue
-		}
-		preserved := make([]RecordWrite, 0, len(record.StateFiles))
-		for _, write := range plan.RecordWrites {
-			if write.Action != RecordWritePreserveRetired || filepath.Dir(write.Path) != record.Path {
-				continue
-			}
-			preserved = append(preserved, write)
-		}
-		if len(preserved) == 0 {
-			return migrationrecord.Receipt{}, fmt.Errorf("workspace migration: retired record has no preserved state write: %s", record.Path)
-		}
-		sort.Slice(preserved, func(i, j int) bool { return preserved[i].Path < preserved[j].Path })
-		rel, err := filepath.Rel(plan.Layout.WorkflowRoot, record.Path)
-		if err != nil {
-			return migrationrecord.Receipt{}, err
-		}
-		receipt.Retired = append(receipt.Retired, migrationrecord.RetiredRecord{Path: filepath.ToSlash(rel), ID: record.ID, SHA256: preserved[0].PreSHA256})
+	retired, err := expectedRetiredRecords(plan)
+	if err != nil {
+		return migrationrecord.Receipt{}, err
 	}
+	receipt.Retired = retired
 	for _, worktree := range adoptions.Worktrees {
 		tokenHash := migrationDigest([]byte(worktree.Ownership))
 		receipt.Bindings = append(receipt.Bindings, migrationrecord.Binding{Workflow: worktree.Workflow, Change: worktree.Change, StateID: worktree.StateID, Repo: worktree.Repo, Path: worktree.Path, CommonDir: worktree.CommonDir, GitDir: worktree.GitDir, Branch: worktree.Branch, BaseRef: worktree.BaseRef, BaseTarget: worktree.BaseTarget, BaseCommit: worktree.BaseCommit, OwnershipHash: tokenHash})
@@ -1291,6 +1788,73 @@ func buildReceipt(plan Plan, runID, markerPath string, markerData []byte, adopti
 		return migrationrecord.Receipt{}, err
 	}
 	return receipt, nil
+}
+
+// expectedRetiredRecords derives the public tombstone set from the exact
+// reviewed plan, not from whatever receipt bytes happen to be present in a
+// private journal. One path-and-ID entry represents each retired record; every
+// co-resident preserved state file remains covered by its RecordWrite entries.
+func expectedRetiredRecords(plan Plan) ([]migrationrecord.RetiredRecord, error) {
+	byPath := make(map[string][]RecordWrite)
+	for _, write := range plan.RecordWrites {
+		if write.Action != RecordWritePreserveRetired {
+			continue
+		}
+		if !validDigest(write.PreSHA256) || write.PreSHA256 != write.PostSHA256 || len(write.ChangedFields) != 0 || write.LegacyConfig != nil || !retiredStateFilename(filepath.Base(write.Path)) {
+			return nil, fmt.Errorf("workspace migration: invalid preserved retired write at %s", write.Path)
+		}
+		byPath[filepath.Clean(filepath.Dir(write.Path))] = append(byPath[filepath.Clean(filepath.Dir(write.Path))], write)
+	}
+	expected := make([]migrationrecord.RetiredRecord, 0)
+	consumed := map[string]bool{}
+	for _, record := range plan.Records {
+		if record.Lifecycle != "retired" {
+			continue
+		}
+		if record.ID == "" || !pathWithin(plan.Layout.WorkflowRoot, record.Path) {
+			return nil, fmt.Errorf("workspace migration: retired record has an invalid identity")
+		}
+		writes := byPath[record.Path]
+		if len(writes) == 0 {
+			return nil, fmt.Errorf("workspace migration: retired record has no preserved state write: %s", record.Path)
+		}
+		sort.Slice(writes, func(i, j int) bool { return writes[i].Path < writes[j].Path })
+		seenFiles := map[string]bool{}
+		for _, write := range writes {
+			name := filepath.Base(write.Path)
+			if seenFiles[name] {
+				return nil, fmt.Errorf("workspace migration: retired record has duplicate preserved state writes: %s", record.Path)
+			}
+			seenFiles[name] = true
+		}
+		rel, err := filepath.Rel(plan.Layout.WorkflowRoot, record.Path)
+		if err != nil || !safeGitRelativePath(filepath.ToSlash(rel)) {
+			return nil, fmt.Errorf("workspace migration: retired record path is invalid")
+		}
+		if record.SchemaVersion < 1 {
+			return nil, fmt.Errorf("workspace migration: retired record has an invalid schema")
+		}
+		expected = append(expected, migrationrecord.RetiredRecord{Path: filepath.ToSlash(rel), ID: record.ID, SchemaVersion: record.SchemaVersion, SHA256: writes[0].PreSHA256})
+		consumed[record.Path] = true
+	}
+	for path := range byPath {
+		if !consumed[path] {
+			return nil, fmt.Errorf("workspace migration: preserved retired write has no retired record: %s", path)
+		}
+	}
+	sort.Slice(expected, func(i, j int) bool {
+		return expected[i].Path+"\x00"+expected[i].ID < expected[j].Path+"\x00"+expected[j].ID
+	})
+	return expected, nil
+}
+
+func retiredStateFilename(name string) bool {
+	switch name {
+	case "onto-state.yaml", "state.yaml", "to-state.yaml":
+		return true
+	default:
+		return false
+	}
 }
 
 func migrationBindings(plan Plan) ([]workspace.MigrationBinding, error) {
@@ -1317,16 +1881,39 @@ func migrationGitText(dir string, args ...string) (string, error) {
 }
 
 func migrationIgnoredLocks() map[string]bool {
-	return map[string]bool{
-		".homonto/apply.lock":     true,
-		".homonto/worktrees.lock": true,
-		".change-names.lock":      true,
-		"changes/.onto.lock":      true,
-		"tasks/.to.lock":          true,
-	}
+	return migrationGuardianArtifacts()
 }
 
 func verifyPlanInputs(l workspace.Layout, plan Plan, requireCleanRecords bool) error {
+	return verifyPlanInputsWithIgnored(l, plan, requireCleanRecords, migrationIgnoredLocks())
+}
+
+func migrationHeldLockArtifacts(configRoot, workflowRoot string) map[string]bool {
+	ignored := migrationIgnoredLocks()
+	controlRoot := filepath.Join(configRoot, ".homonto")
+	for _, path := range []string{
+		filepath.Join(controlRoot, "apply.lock"),
+		filepath.Join(controlRoot, "worktrees.lock"),
+		filepath.Join(workflowRoot, ".change-names.lock"),
+		filepath.Join(workflowRoot, "changes", ".onto.lock"),
+		filepath.Join(workflowRoot, "tasks", ".to.lock"),
+	} {
+		ignored[path] = true
+	}
+	ignored[filepath.Join(controlRoot, "lock-guardians")+string(filepath.Separator)] = true
+	ignored[filepath.Join(workflowRoot, ".homonto", "lock-guardians")+string(filepath.Separator)] = true
+	return ignored
+}
+
+func migrationPreparationIgnored(l workspace.Layout, runID string) map[string]bool {
+	ignored := migrationHeldLockArtifacts(l.ConfigRoot, l.WorkflowRoot)
+	if migrationrecord.SafeRunID(runID) {
+		ignored[filepath.ToSlash(filepath.Join(".workflow", "migrations", runID, "private"))+"/"] = true
+	}
+	return ignored
+}
+
+func verifyPlanInputsWithIgnored(l workspace.Layout, plan Plan, requireCleanRecords bool, ignored map[string]bool) error {
 	if plan.Layout.ConfigPath != l.ConfigPath || plan.Layout.ConfigRoot != l.ConfigRoot || plan.Layout.WorkflowRoot != l.WorkflowRoot || plan.Layout.GitMode != l.GitMode || plan.Layout.SchemaVersion != l.SchemaVersion {
 		return fmt.Errorf("workspace migration: layout changed after planning")
 	}
@@ -1354,7 +1941,7 @@ func verifyPlanInputs(l workspace.Layout, plan Plan, requireCleanRecords bool) e
 	if err != nil || index != plan.RecordsGit.IndexSHA256 {
 		return fmt.Errorf("workspace migration: records index changed after planning")
 	}
-	dirt, err := gitDirtIgnoring(l.WorkflowRoot, l.WorkflowRoot, migrationIgnoredLocks())
+	dirt, err := gitDirtIgnoring(l.WorkflowRoot, l.WorkflowRoot, ignored)
 	if err != nil || dirt != plan.RecordsGit.Dirt {
 		return fmt.Errorf("workspace migration: records dirt changed after planning")
 	}
@@ -1386,6 +1973,14 @@ func verifySource(source Source) error {
 	if err != nil || head != source.Head {
 		return fmt.Errorf("workspace migration: source HEAD changed at %s", source.Path)
 	}
+	headRef, headAttached, err := sourceHEADAttachment(source.Path)
+	if err != nil || headRef != source.HeadRef || headAttached != source.HeadAttached {
+		return fmt.Errorf("workspace migration: source symbolic HEAD changed at %s", source.Path)
+	}
+	refs, err := sourceReferenceSnapshot(source.Path)
+	if err != nil || !reflect.DeepEqual(refs, source.Refs) {
+		return fmt.Errorf("workspace migration: source refs changed at %s", source.Path)
+	}
 	branchHead, err := migrationGitText(source.Path, "rev-parse", "--verify", "--end-of-options", "refs/heads/"+source.BaseBranch+"^{commit}")
 	if err != nil || branchHead != source.BaseBranchHead {
 		return fmt.Errorf("workspace migration: source base branch changed at %s", source.Path)
@@ -1412,6 +2007,14 @@ func verifySource(source Source) error {
 	head, err = migrationGitText(execution.Path, "rev-parse", "--verify", "HEAD^{commit}")
 	if err != nil || head != execution.Head {
 		return fmt.Errorf("workspace migration: execution checkout HEAD changed at %s", execution.Path)
+	}
+	headRef, headAttached, err = sourceHEADAttachment(execution.Path)
+	if err != nil || headRef != execution.HeadRef || headAttached != execution.HeadAttached || !headAttached {
+		return fmt.Errorf("workspace migration: execution checkout symbolic HEAD changed at %s", execution.Path)
+	}
+	refs, err = sourceReferenceSnapshot(execution.Path)
+	if err != nil || !reflect.DeepEqual(refs, execution.Refs) {
+		return fmt.Errorf("workspace migration: execution checkout refs changed at %s", execution.Path)
 	}
 	branch, err := migrationGitText(execution.Path, "branch", "--show-current")
 	if err != nil || branch != execution.Branch || branch == "" {
@@ -1453,6 +2056,9 @@ func Apply(configPath, manifestPath, expectedPlanHash string) (ApplyResult, erro
 	if !validDigest(expectedPlanHash) {
 		return ApplyResult{}, fmt.Errorf("workspace migration: --plan-hash must be a lowercase SHA-256 digest")
 	}
+	if err := requireMigrationFilesystemSupport(); err != nil {
+		return ApplyResult{}, err
+	}
 	configPath, err := absolutePath(configPath)
 	if err != nil {
 		return ApplyResult{}, err
@@ -1478,12 +2084,23 @@ func Apply(configPath, manifestPath, expectedPlanHash string) (ApplyResult, erro
 		if plan.PlanHash != expectedPlanHash {
 			return fmt.Errorf("workspace migration: stale plan hash; planned inputs changed or the supplied hash is not the locked inventory")
 		}
-		journal, err := prepareJournal(layout, plan)
+		intent, err := newPreparationIntent(layout, plan)
 		if err != nil {
 			return err
 		}
-		if err := saveJournal(journal); err != nil {
+		if err := savePreparationIntent(intent); err != nil {
 			return err
+		}
+		result = ApplyResult{RunID: intent.RunID, PlanHash: intent.PlanHash, Status: intent.Phase}
+		if err := migrationAfterPreparation("intent"); err != nil {
+			return fmt.Errorf("workspace migration: run %s is preparing; recover with `homonto workspace migrate recover --run-id %s --action resume --plan-hash %s --yes` or restore: %w", intent.RunID, intent.RunID, intent.PlanHash, err)
+		}
+		journal, err := prepareJournal(layout, plan, intent)
+		if err != nil {
+			return fmt.Errorf("workspace migration: run %s is preparing; recover with `homonto workspace migrate recover --run-id %s --action resume --plan-hash %s --yes` or restore: %w", intent.RunID, intent.RunID, intent.PlanHash, err)
+		}
+		if err := saveJournal(journal); err != nil {
+			return fmt.Errorf("workspace migration: run %s is preparing; recover with `homonto workspace migrate recover --run-id %s --action resume --plan-hash %s --yes` or restore: %w", intent.RunID, intent.RunID, intent.PlanHash, err)
 		}
 		// Read the durable copy before the first authoritative write. This proves
 		// a killed process has a complete private preimage rather than only a
@@ -1560,10 +2177,10 @@ func resumeJournalLocked(layout workspace.Layout, journal *privateJournal) error
 		return fmt.Errorf("workspace migration: run %s is restoring; use recover --action restore", journal.RunID)
 	}
 	if journal.Phase == "complete" {
-		_, err := verifyJournalLocked(layout, journal)
+		_, err := verifyJournalInvariant(layout, journal, true, true, migrationStatusIgnoredHeld(*journal))
 		return err
 	}
-	if err := verifyJournalInputs(layout, *journal); err != nil {
+	if err := verifyJournalInputsLocked(layout, *journal); err != nil {
 		return err
 	}
 	if journal.Phase == "prepared" || journal.Phase == "applying" {
@@ -1588,24 +2205,96 @@ func resumeJournalLocked(layout workspace.Layout, journal *privateJournal) error
 	if journal.Phase != "pending-finalization" {
 		return fmt.Errorf("workspace migration: unsupported resume phase %q", journal.Phase)
 	}
-	if _, err := verifyJournalInvariant(layout, journal, false, false); err != nil {
+	if _, err := verifyJournalInvariant(layout, journal, false, false, migrationStatusIgnoredHeld(*journal)); err != nil {
 		return err
 	}
 	if err := finalizeMarker(layout, *journal); err != nil {
 		return err
 	}
-	if _, err := verifyJournalInvariant(layout, journal, false, true); err != nil {
+	if _, err := verifyJournalInvariant(layout, journal, false, true, migrationStatusIgnoredHeld(*journal)); err != nil {
+		return err
+	}
+	if err := ensureCompletionWitness(journal); err != nil {
+		return err
+	}
+	if _, err := verifyJournalInvariant(layout, journal, false, true, migrationStatusIgnoredHeld(*journal)); err != nil {
 		return err
 	}
 	journal.Phase = "complete"
 	return saveJournal(*journal)
 }
 
+func resumePreparationLocked(layout workspace.Layout, intent preparationIntent) (*privateJournal, error) {
+	if err := validatePreparationIntentLayout(intent, layout); err != nil {
+		return nil, err
+	}
+	plan, err := buildLockedIgnoring(layout.ConfigPath, intent.ManifestPath, migrationPreparationIgnored(layout, intent.RunID))
+	if err != nil {
+		return nil, fmt.Errorf("workspace migration: preparation intent cannot be replanned: %w", err)
+	}
+	if plan.Status != "ready" {
+		return nil, fmt.Errorf("workspace migration: preparation intent no longer matches a ready plan")
+	}
+	if plan.PlanHash != intent.PlanHash {
+		return nil, fmt.Errorf("workspace migration: preparation intent no longer matches the reviewed plan hash")
+	}
+	journal, err := prepareJournal(layout, plan, intent)
+	if err != nil {
+		return nil, err
+	}
+	if err := saveJournal(journal); err != nil {
+		return nil, err
+	}
+	journal, err = loadJournal(layout.WorkflowRoot, journal.RunID)
+	if err != nil {
+		return nil, fmt.Errorf("workspace migration: private backup verification failed: %w", err)
+	}
+	return &journal, nil
+}
+
+func discardPreparationLocked(layout workspace.Layout, runID string) error {
+	if !migrationrecord.SafeRunID(runID) {
+		return fmt.Errorf("workspace migration: invalid preparation run ID")
+	}
+	for _, pathFn := range []func(string, string) (string, error){preparationIntentPath, recordsGitBackupPath} {
+		path, err := pathFn(layout.WorkflowRoot, runID)
+		if err != nil {
+			return err
+		}
+		if err := removeMigrationOptionalRegular(layout.WorkflowRoot, path); err != nil {
+			return err
+		}
+	}
+	statusPath, err := journalStatusPath(layout.WorkflowRoot, runID)
+	if err != nil {
+		return err
+	}
+	if err := removeMigrationOptionalRegular(layout.WorkflowRoot, statusPath); err != nil {
+		return err
+	}
+	privateDir := filepath.Dir(statusPath)
+	if err := removeMigrationEmptyDirectory(layout.WorkflowRoot, privateDir); err != nil {
+		return err
+	}
+	if err := removeMigrationEmptyDirectory(layout.WorkflowRoot, filepath.Dir(privateDir)); err != nil {
+		return err
+	}
+	return removeMigrationEmptyDirectory(layout.WorkflowRoot, filepath.Dir(filepath.Dir(privateDir)))
+}
+
 func verifyJournalInputs(layout workspace.Layout, journal privateJournal) error {
+	return verifyJournalInputsWithIgnored(layout, journal, migrationStatusIgnored(journal))
+}
+
+func verifyJournalInputsLocked(layout workspace.Layout, journal privateJournal) error {
+	return verifyJournalInputsWithIgnored(layout, journal, migrationStatusIgnoredHeld(journal))
+}
+
+func verifyJournalInputsWithIgnored(layout workspace.Layout, journal privateJournal, ignored map[string]bool) error {
 	if err := validateJournalLayout(journal, layout); err != nil {
 		return err
 	}
-	if err := verifyJournalRecordsWorkspace(layout, journal, false); err != nil {
+	if err := verifyJournalRecordsWorkspace(layout, journal, false, ignored); err != nil {
 		return err
 	}
 	if journal.Phase == "prepared" {
@@ -1617,12 +2306,18 @@ func verifyJournalInputs(layout workspace.Layout, journal privateJournal) error 
 		if err != nil || index != journal.RecordsIndexSHA256 {
 			return fmt.Errorf("workspace migration: records index changed after journal creation")
 		}
-		dirt, err := gitDirtIgnoring(layout.WorkflowRoot, layout.WorkflowRoot, migrationStatusIgnored(journal))
+		dirt, err := gitDirtIgnoring(layout.WorkflowRoot, layout.WorkflowRoot, ignored)
 		if err != nil || dirt != journal.Plan.RecordsGit.Dirt {
 			return fmt.Errorf("workspace migration: records dirt changed after journal creation")
 		}
 	}
 	for _, snapshot := range journal.Snapshots {
+		// The external manifest is an initial-planning input only. Once the
+		// durable journal has captured and authenticated its bytes, completed
+		// verification and recovery must not depend on its continued presence.
+		if snapshot.Path == journal.Plan.Manifest.Path {
+			continue
+		}
 		data, err := readRealRegularFile(snapshot.Path)
 		if err != nil {
 			return fmt.Errorf("workspace migration: backup input disappeared at %s", snapshot.Path)
@@ -1655,18 +2350,21 @@ func verifyJournalInputs(layout workspace.Layout, journal privateJournal) error 
 	return nil
 }
 
-func verifyJournalRecordsWorkspace(layout workspace.Layout, journal privateJournal, requireClean bool) error {
+func verifyJournalRecordsWorkspace(layout workspace.Layout, journal privateJournal, requireClean bool, ignored map[string]bool) error {
 	paths, err := journalRecordPaths(journal, journalKindState, journalKindIgnore, journalKindReceipt, journalKindProof)
 	if err != nil {
 		return err
 	}
-	if err := ensureOnlyMigrationChanges(layout.WorkflowRoot, paths, migrationStatusIgnored(journal)); err != nil {
+	if err := ensureOnlyMigrationChanges(layout.WorkflowRoot, paths, ignored); err != nil {
+		return err
+	}
+	if err := verifyJournalRecordsIndex(layout.WorkflowRoot, journal); err != nil {
 		return err
 	}
 	if !requireClean {
 		return nil
 	}
-	dirt, err := gitDirtIgnoring(layout.WorkflowRoot, layout.WorkflowRoot, migrationStatusIgnored(journal))
+	dirt, err := gitDirtIgnoring(layout.WorkflowRoot, layout.WorkflowRoot, ignored)
 	if err != nil {
 		return err
 	}
@@ -1678,7 +2376,7 @@ func verifyJournalRecordsWorkspace(layout workspace.Layout, journal privateJourn
 
 func applyForwardWrites(journal privateJournal, includeProof bool) error {
 	for _, write := range sortedJournalWrites(journal.Writes) {
-		if write.Kind == journalKindMarker || (!includeProof && write.Kind == journalKindProof) {
+		if write.Kind == journalKindMarker || write.Kind == journalKindCompletion || (!includeProof && write.Kind == journalKindProof) {
 			continue
 		}
 		if _, err := applyJournalWrite(journal, write, true); err != nil {
@@ -1718,13 +2416,60 @@ func finalizeMarker(layout workspace.Layout, journal privateJournal) error {
 	return migrationAfterMarker()
 }
 
+// ensureCompletionWitness is deliberately called only after the marker-active
+// final invariant has passed. The journal is persisted with the exact witness
+// bytes first, then the separate private file is written; a crash between those
+// steps remains safely resumable because neither phase advancement nor normal
+// barrier authorization occurs first.
+func ensureCompletionWitness(journal *privateJournal) error {
+	witness, err := completionWitnessForJournal(*journal)
+	if err != nil {
+		return err
+	}
+	data, err := json.MarshalIndent(witness, "", "  ")
+	if err != nil {
+		return err
+	}
+	data = append(data, '\n')
+	for i := range journal.Writes {
+		write := &journal.Writes[i]
+		if write.Kind != journalKindCompletion {
+			continue
+		}
+		if len(write.Postimage) == 0 {
+			write.Postimage = append([]byte(nil), data...)
+			if err := saveJournal(*journal); err != nil {
+				return err
+			}
+		} else if !bytes.Equal(write.Postimage, data) {
+			return fmt.Errorf("workspace migration: completion witness bytes differ from final authorization")
+		}
+		if _, err := applyJournalWrite(*journal, *write, true); err != nil {
+			return err
+		}
+		if err := migrationrecord.ValidateCompletionWitness(journal.Workflow, journal.RunID); err != nil {
+			return fmt.Errorf("workspace migration: completion authorization did not persist: %w", err)
+		}
+		return nil
+	}
+	return fmt.Errorf("workspace migration: reviewed completion witness operation is absent")
+}
+
 func migrationStatusIgnored(journal privateJournal) map[string]bool {
 	ignored := migrationIgnoredLocks()
-	path, err := journalPath(journal.Workflow, journal.RunID)
+	path, err := migrationrecord.JournalPath(journal.Workflow, journal.RunID)
 	if err == nil {
 		if rel, relErr := filepath.Rel(journal.Workflow, filepath.Dir(path)); relErr == nil {
 			ignored[filepath.ToSlash(rel)+"/"] = true
 		}
+	}
+	return ignored
+}
+
+func migrationStatusIgnoredHeld(journal privateJournal) map[string]bool {
+	ignored := migrationStatusIgnored(journal)
+	for path := range migrationHeldLockArtifacts(journal.ConfigRoot, journal.Workflow) {
+		ignored[path] = true
 	}
 	return ignored
 }
@@ -1783,7 +2528,7 @@ func ensureMigrationCommit(layout workspace.Layout, journal *privateJournal) err
 	if err != nil {
 		return err
 	}
-	tree, err := prepareRecordsCommit(layout.WorkflowRoot, *journal, paths)
+	tree, err := prepareRecordsCommit(layout.WorkflowRoot, journal, paths, "migration")
 	if err != nil {
 		return err
 	}
@@ -1859,7 +2604,7 @@ func ensureProofCommit(layout workspace.Layout, journal *privateJournal) error {
 	if err != nil {
 		return err
 	}
-	tree, err := prepareRecordsCommit(layout.WorkflowRoot, *journal, paths)
+	tree, err := prepareRecordsCommit(layout.WorkflowRoot, journal, paths, "proof")
 	if err != nil {
 		return err
 	}
@@ -1921,22 +2666,92 @@ func migrationGitIdentity(root string) error {
 	return nil
 }
 
-func prepareRecordsCommit(root string, journal privateJournal, paths []string) (string, error) {
+func prepareRecordsCommit(root string, journal *privateJournal, paths []string, kind string) (string, error) {
 	if len(paths) == 0 {
 		return "", fmt.Errorf("workspace migration: records commit unexpectedly has no paths")
 	}
-	if err := ensureOnlyMigrationChanges(root, paths, migrationStatusIgnored(journal)); err != nil {
+	var baseline []recordsIndexEntry
+	var recorded *[]recordsIndexEntry
+	switch kind {
+	case "migration":
+		baseline = journal.RecordsIndexPre
+		recorded = &journal.MigrationIndexPost
+	case "proof":
+		if journal.MigrationIndexPost == nil {
+			return "", fmt.Errorf("workspace migration: migration index postimage is not recorded")
+		}
+		baseline = journal.MigrationIndexPost
+		recorded = &journal.ProofIndexPost
+	default:
+		return "", fmt.Errorf("workspace migration: unknown records commit kind")
+	}
+	return stageRecordsPaths(root, journal, paths, paths, baseline, recorded, true, true)
+}
+
+// stageRecordsPaths is the sole migration staging path. It verifies the exact
+// old index before git add, then persists and checks the exact post-index. A
+// process killed after git add is recognized only when every owned path already
+// matches the journaled worktree image; an operator's staged third blob is never
+// silently overwritten.
+func stageRecordsPaths(root string, journal *privateJournal, paths, expectedStaged []string, baseline []recordsIndexEntry, recorded *[]recordsIndexEntry, post, requireExactStaged bool) (string, error) {
+	if err := ensureOnlyMigrationChanges(root, paths, migrationStatusIgnoredHeld(*journal)); err != nil {
 		return "", err
+	}
+	indexPaths, err := journalIndexPaths(*journal)
+	if err != nil {
+		return "", err
+	}
+	if err := verifyJournalRecordPaths(*journal, paths, post); err != nil {
+		return "", err
+	}
+	actual, err := captureRecordsIndex(root, indexPaths)
+	if err != nil {
+		return "", err
+	}
+	allowed := sameRecordsIndex(actual, baseline)
+	if !allowed && recorded != nil && *recorded != nil {
+		allowed = sameRecordsIndex(actual, *recorded)
+	}
+	if !allowed && (recorded == nil || *recorded == nil) {
+		allowed, err = recordsIndexMatchesWorktree(root, actual, baseline, paths)
+		if err != nil {
+			return "", err
+		}
+	}
+	if !allowed {
+		return "", fmt.Errorf("workspace migration: records index contains a conflicting staged blob, mode, or path")
 	}
 	args := append([]string{"add", "--all", "--"}, paths...)
 	if _, err := migrationGit(root, args...); err != nil {
 		return "", err
 	}
+	actual, err = captureRecordsIndex(root, indexPaths)
+	if err != nil {
+		return "", err
+	}
+	matched, err := recordsIndexMatchesWorktree(root, actual, baseline, paths)
+	if err != nil {
+		return "", err
+	}
+	if !matched {
+		return "", fmt.Errorf("workspace migration: records index postimage differs from staged migration paths")
+	}
+	if recorded != nil {
+		if *recorded != nil && !sameRecordsIndex(*recorded, actual) {
+			return "", fmt.Errorf("workspace migration: records index postimage changed after preparation")
+		}
+		if *recorded == nil {
+			*recorded = append([]recordsIndexEntry(nil), actual...)
+			if err := saveJournal(*journal); err != nil {
+				return "", err
+			}
+		}
+	}
 	staged, err := stagedPaths(root)
 	if err != nil {
 		return "", err
 	}
-	if !sameStringSet(staged, paths) {
+	if !stagedPathSetAllowed(staged, expectedStaged, requireExactStaged) {
 		return "", fmt.Errorf("workspace migration: records index contains paths outside the prepared commit")
 	}
 	tree, err := migrationGitText(root, "write-tree")
@@ -1944,6 +2759,113 @@ func prepareRecordsCommit(root string, journal privateJournal, paths []string) (
 		return "", fmt.Errorf("workspace migration: cannot prepare records Git tree")
 	}
 	return tree, nil
+}
+
+func verifyJournalRecordPaths(journal privateJournal, paths []string, post bool) error {
+	wanted := map[string]bool{}
+	for _, path := range paths {
+		if !safeGitRelativePath(path) {
+			return fmt.Errorf("workspace migration: unsafe staged records path")
+		}
+		wanted[path] = true
+	}
+	for _, write := range journal.Writes {
+		if write.Scope != journalScopeRecords {
+			continue
+		}
+		rel, err := filepath.Rel(journal.Workflow, write.Path)
+		if err != nil || !wanted[filepath.ToSlash(rel)] {
+			continue
+		}
+		data, mode, exists, err := readOptionalRegular(journal.Workflow, write.Path)
+		if err != nil || !writeMatches(write, data, mode, exists, post) {
+			return fmt.Errorf("workspace migration: records path differs from its journaled %simage", map[bool]string{true: "post", false: "pre"}[post])
+		}
+	}
+	return nil
+}
+
+func recordsIndexMatchesWorktree(root string, actual, baseline []recordsIndexEntry, stagedPaths []string) (bool, error) {
+	staged := map[string]bool{}
+	for _, path := range stagedPaths {
+		if !safeGitRelativePath(path) || staged[path] {
+			return false, fmt.Errorf("workspace migration: invalid staged records path")
+		}
+		staged[path] = true
+	}
+	actualByPath := map[string]recordsIndexEntry{}
+	for _, entry := range actual {
+		actualByPath[entry.Path] = entry
+	}
+	baselineByPath := map[string]recordsIndexEntry{}
+	for _, entry := range baseline {
+		baselineByPath[entry.Path] = entry
+	}
+	for path, expected := range baselineByPath {
+		if staged[path] {
+			continue
+		}
+		if actualByPath[path] != expected {
+			return false, nil
+		}
+	}
+	for path, entry := range actualByPath {
+		if !staged[path] {
+			if expected, ok := baselineByPath[path]; !ok || entry != expected {
+				return false, nil
+			}
+		}
+	}
+	for path := range staged {
+		object, mode, exists, err := recordsWorktreeIndexObject(root, path)
+		if err != nil {
+			return false, err
+		}
+		entry, indexed := actualByPath[path]
+		if exists != indexed {
+			return false, nil
+		}
+		if exists && (entry.Object != object || entry.Mode != mode || entry.Stage != 0) {
+			return false, nil
+		}
+	}
+	return true, nil
+}
+
+func recordsWorktreeIndexObject(root, path string) (string, uint32, bool, error) {
+	full := filepath.Join(root, filepath.FromSlash(path))
+	info, err := os.Lstat(full)
+	if errors.Is(err, os.ErrNotExist) {
+		return "", 0, false, nil
+	}
+	if err != nil {
+		return "", 0, false, err
+	}
+	if !info.Mode().IsRegular() || info.Mode()&os.ModeSymlink != 0 {
+		return "", 0, false, fmt.Errorf("workspace migration: staged records path is not a real regular file")
+	}
+	object, err := migrationGitText(root, "hash-object", "--path="+path, "--", full)
+	if err != nil || !canonicalCommit.MatchString(object) {
+		return "", 0, false, fmt.Errorf("workspace migration: cannot hash staged records path")
+	}
+	mode := uint32(0o100644)
+	if info.Mode()&0o111 != 0 {
+		mode = 0o100755
+	}
+	return object, mode, true, nil
+}
+
+func stagedPathSetAllowed(actual, expected []string, requireExact bool) bool {
+	allowed := map[string]bool{}
+	for _, path := range expected {
+		allowed[path] = true
+	}
+	for _, path := range actual {
+		if !allowed[path] {
+			return false
+		}
+	}
+	return !requireExact || sameStringSet(actual, expected)
 }
 
 func ensureOnlyMigrationChanges(root string, allowed []string, ignored map[string]bool) error {
@@ -2071,6 +2993,48 @@ func verifyProofCommit(root string, journal privateJournal) error {
 	return nil
 }
 
+func verifyRestoreCommit(root string, journal privateJournal) error {
+	if journal.RestoreCommit == "" || journal.RestoreParent == "" || journal.ExpectedRestoreTree == "" {
+		return fmt.Errorf("workspace migration: restoration commit is not recorded")
+	}
+	wantParent := journal.MigrationCommit
+	if journal.ProofCommit != "" {
+		wantParent = journal.ProofCommit
+	}
+	if journal.RestoreParent != wantParent {
+		return fmt.Errorf("workspace migration: restoration parent differs from completed migration history")
+	}
+	parents, err := migrationGitText(root, "rev-list", "--parents", "-n", "1", journal.RestoreCommit)
+	if err != nil {
+		return err
+	}
+	fields := strings.Fields(parents)
+	if len(fields) != 2 || fields[0] != journal.RestoreCommit || fields[1] != journal.RestoreParent {
+		return fmt.Errorf("workspace migration: restoration commit parent differs from prepared history")
+	}
+	tree, err := migrationGitText(root, "rev-parse", "--verify", journal.RestoreCommit+"^{tree}")
+	if err != nil || tree != journal.ExpectedRestoreTree {
+		return fmt.Errorf("workspace migration: restoration commit tree differs from prepared tree")
+	}
+	message, err := rawCommitMessage(root, journal.RestoreCommit)
+	if err != nil || !bytes.Equal(message, []byte(journal.RestoreMessage+"\n")) {
+		return fmt.Errorf("workspace migration: restoration commit message differs from prepared message")
+	}
+	kinds := []string{journalKindState, journalKindIgnore, journalKindReceipt}
+	if journal.RestoreParent == journal.ProofCommit && journal.ProofCommit != "" {
+		kinds = append(kinds, journalKindProof)
+	}
+	expected, err := journalRecordPaths(journal, kinds...)
+	if err != nil {
+		return err
+	}
+	actual, err := commitChangedPaths(root, journal.RestoreParent, journal.RestoreCommit)
+	if err != nil || !sameStringSet(actual, expected) {
+		return fmt.Errorf("workspace migration: restoration commit paths differ from prepared write set")
+	}
+	return nil
+}
+
 func commitChangedPaths(root, parent, commit string) ([]string, error) {
 	data, err := migrationGit(root, "diff-tree", "--no-commit-id", "--name-only", "--no-renames", "-r", "-z", parent, commit)
 	if err != nil {
@@ -2109,13 +3073,13 @@ func Verify(configPath, runID string) (Verification, error) {
 }
 
 func verifyJournalLocked(layout workspace.Layout, journal *privateJournal) (Verification, error) {
-	return verifyJournalInvariant(layout, journal, true, true)
+	return verifyJournalInvariant(layout, journal, true, true, migrationStatusIgnored(*journal))
 }
 
 // verifyJournalInvariant checks every final ownership, history, source, and
 // output invariant while the journal is still pending. Completion is written
 // only after this succeeds with the marker active.
-func verifyJournalInvariant(layout workspace.Layout, journal *privateJournal, requireComplete, requireMarker bool) (Verification, error) {
+func verifyJournalInvariant(layout workspace.Layout, journal *privateJournal, requireComplete, requireMarker bool, ignored map[string]bool) (Verification, error) {
 	if err := validateJournalLayout(*journal, layout); err != nil {
 		return Verification{}, err
 	}
@@ -2125,10 +3089,10 @@ func verifyJournalInvariant(layout workspace.Layout, journal *privateJournal, re
 	if !requireComplete && journal.Phase != "pending-finalization" {
 		return Verification{}, fmt.Errorf("workspace migration: run %s is not pending finalization", journal.RunID)
 	}
-	if err := verifyJournalInputs(layout, *journal); err != nil {
+	if err := verifyJournalInputsWithIgnored(layout, *journal, ignored); err != nil {
 		return Verification{}, err
 	}
-	if err := verifyJournalRecordsWorkspace(layout, *journal, true); err != nil {
+	if err := verifyJournalRecordsWorkspace(layout, *journal, true, ignored); err != nil {
 		return Verification{}, err
 	}
 	if requireMarker {
@@ -2158,6 +3122,18 @@ func verifyJournalInvariant(layout workspace.Layout, journal *privateJournal, re
 	if err := verifyReceipt(layout, *journal, receipt, proof, requireMarker); err != nil {
 		return Verification{}, err
 	}
+	completion, ok := journalWrite(*journal, journalKindCompletion)
+	if !ok {
+		return Verification{}, fmt.Errorf("workspace migration: completion witness operation is absent from journal")
+	}
+	if requireComplete && len(completion.Postimage) == 0 {
+		return Verification{}, fmt.Errorf("workspace migration: completed journal lacks its authorization witness")
+	}
+	if len(completion.Postimage) != 0 && requireMarker {
+		if err := migrationrecord.ValidateCompletionWitness(layout.WorkflowRoot, journal.RunID); err != nil {
+			return Verification{}, err
+		}
+	}
 	entries, err := workspace.ListWorktrees(layout)
 	if err != nil {
 		return Verification{}, err
@@ -2177,6 +3153,12 @@ func verifyJournalWrites(journal privateJournal, post bool) error {
 		data, mode, exists, err := readOptionalRegular(root, write.Path)
 		if err != nil {
 			return err
+		}
+		if write.Kind == journalKindCompletion && len(write.Postimage) == 0 && journal.Phase != "complete" {
+			if writeMatches(write, data, mode, exists, false) {
+				continue
+			}
+			return fmt.Errorf("workspace migration: %s content differs from the journaled completion preimage", write.Path)
 		}
 		if !writeMatches(write, data, mode, exists, post) {
 			return fmt.Errorf("workspace migration: %s content differs from the journaled %simage", write.Path, map[bool]string{true: "post", false: "pre"}[post])
@@ -2200,6 +3182,12 @@ func verifyJournalWritesForFinalization(journal privateJournal) error {
 				continue
 			}
 			return fmt.Errorf("workspace migration: %s content differs from the journaled marker image", write.Path)
+		}
+		if write.Kind == journalKindCompletion {
+			if writeMatches(write, data, mode, exists, false) || len(write.Postimage) != 0 && writeMatches(write, data, mode, exists, true) {
+				continue
+			}
+			return fmt.Errorf("workspace migration: %s content differs from the journaled completion image", write.Path)
 		}
 		if !writeMatches(write, data, mode, exists, true) {
 			return fmt.Errorf("workspace migration: %s content differs from the journaled postimage", write.Path)
@@ -2229,16 +3217,8 @@ func verifyReceipt(layout workspace.Layout, journal privateJournal, receipt migr
 			return fmt.Errorf("workspace migration: receipt output fingerprint differs at %s", ref.Path)
 		}
 	}
-	for _, retired := range receipt.Retired {
-		matched := false
-		for _, write := range receipt.RecordWrites {
-			if filepath.ToSlash(filepath.Dir(write.Path)) == filepath.ToSlash(filepath.Join(layout.WorkflowRoot, filepath.FromSlash(retired.Path))) && write.PreSHA256 == retired.SHA256 && write.PostSHA256 == retired.SHA256 {
-				matched = true
-			}
-		}
-		if !matched {
-			return fmt.Errorf("workspace migration: retired receipt entry lacks its preserved state")
-		}
+	if err := receipt.ValidateRetiredCorrespondence(layout.WorkflowRoot); err != nil {
+		return fmt.Errorf("workspace migration: retired receipt correspondence is invalid: %w", err)
 	}
 	return nil
 }
@@ -2273,19 +3253,53 @@ func Recover(configPath, runID, action, expectedPlanHash string) (RecoveryResult
 	if action != "resume" && action != "restore" {
 		return RecoveryResult{}, fmt.Errorf("workspace migration: recover action must be resume or restore")
 	}
+	if !migrationrecord.SafeRunID(runID) || !validDigest(expectedPlanHash) {
+		return RecoveryResult{}, fmt.Errorf("workspace migration: recover requires a valid run ID and reviewed plan hash")
+	}
+	if err := requireMigrationFilesystemSupport(); err != nil {
+		return RecoveryResult{}, err
+	}
 	result := RecoveryResult{RunID: runID, Action: action}
-	err := withRecoveryMigrationLocks(configPath, runID, expectedPlanHash, func(layout workspace.Layout, journal *privateJournal) error {
+	err := withRecoveryMigrationLocks(configPath, runID, expectedPlanHash, func(layout workspace.Layout, material recoveryMaterial) error {
+		if material.orphan {
+			if err := discardPreparationLocked(layout, runID); err != nil {
+				return err
+			}
+			result.Status = "preparation-cleared"
+			return nil
+		}
+		if material.intent != nil {
+			if action == "restore" {
+				if err := discardPreparationLocked(layout, material.intent.RunID); err != nil {
+					return err
+				}
+				result.Status = "preparation-cleared"
+				return nil
+			}
+			journal, err := resumePreparationLocked(layout, *material.intent)
+			if err != nil {
+				return err
+			}
+			if err := resumeJournalLocked(layout, journal); err != nil {
+				return err
+			}
+			result.Status = journal.Phase
+			return nil
+		}
+		if material.journal == nil {
+			return fmt.Errorf("workspace migration: recovery material is absent")
+		}
 		var err error
 		switch action {
 		case "resume":
-			err = resumeJournalLocked(layout, journal)
+			err = resumeJournalLocked(layout, material.journal)
 		case "restore":
-			err = restoreJournalLocked(layout, journal)
+			err = restoreJournalLocked(layout, material.journal)
 		}
 		if err != nil {
 			return err
 		}
-		result.Status = journal.Phase
+		result.Status = material.journal.Phase
 		return nil
 	})
 	return result, err
@@ -2302,9 +3316,14 @@ func restoreJournalLocked(layout workspace.Layout, journal *privateJournal) erro
 		return fmt.Errorf("workspace migration: completed migration cannot be restored automatically; assess a new recovery plan")
 	}
 	if journal.Phase == "restored" {
+		if journal.RestoreCommit != "" {
+			if err := verifyRestoreCommit(layout.WorkflowRoot, *journal); err != nil {
+				return err
+			}
+		}
 		return verifyJournalWrites(*journal, false)
 	}
-	if err := verifyJournalInputs(layout, *journal); err != nil {
+	if err := verifyJournalInputsLocked(layout, *journal); err != nil {
 		return err
 	}
 	if err := discoverCommittedProgress(layout.WorkflowRoot, journal); err != nil {
@@ -2323,8 +3342,19 @@ func restoreJournalLocked(layout workspace.Layout, journal *privateJournal) erro
 			return err
 		}
 	}
-	if err := restoreRecordsHistory(layout.WorkflowRoot, *journal); err != nil {
+	if err := restoreRecordsHistory(layout.WorkflowRoot, journal); err != nil {
 		return err
+	}
+	// Commit hooks can mutate source refs, source worktrees, or records after
+	// the restore tree was prepared. Re-run the complete input check before the
+	// journal is allowed to report a restored phase.
+	if err := verifyJournalInputsLocked(layout, *journal); err != nil {
+		return err
+	}
+	if journal.RestoreCommit != "" {
+		if err := verifyRestoreCommit(layout.WorkflowRoot, *journal); err != nil {
+			return err
+		}
 	}
 	if err := verifyJournalWrites(*journal, false); err != nil {
 		return err
@@ -2358,6 +3388,16 @@ func discoverCommittedProgress(root string, journal *privateJournal) error {
 			}
 		}
 	}
+	if journal.RestoreParent != "" && journal.RestoreCommit == "" && head != journal.RestoreParent && journal.ExpectedRestoreTree != "" {
+		candidate := *journal
+		candidate.RestoreCommit = head
+		if err := verifyRestoreCommit(root, candidate); err == nil {
+			journal.RestoreCommit = head
+			if err := saveJournal(*journal); err != nil {
+				return err
+			}
+		}
+	}
 	if journal.MigrationCommit != "" {
 		if err := verifyMigrationCommit(root, *journal); err != nil {
 			return err
@@ -2365,6 +3405,11 @@ func discoverCommittedProgress(root string, journal *privateJournal) error {
 	}
 	if journal.ProofCommit != "" {
 		if err := verifyProofCommit(root, *journal); err != nil {
+			return err
+		}
+	}
+	if journal.RestoreCommit != "" {
+		if err := verifyRestoreCommit(root, *journal); err != nil {
 			return err
 		}
 	}
@@ -2388,60 +3433,91 @@ func verifyRestorableWrites(journal privateJournal) error {
 	return nil
 }
 
-func restoreRecordsHistory(root string, journal privateJournal) error {
-	paths, err := journalRecordPaths(journal, journalKindState, journalKindIgnore, journalKindReceipt, journalKindProof)
+func restoreRecordsHistory(root string, journal *privateJournal) error {
+	paths, err := journalRecordPaths(*journal, journalKindState, journalKindIgnore, journalKindReceipt, journalKindProof)
 	if err != nil {
 		return err
 	}
 	if len(paths) == 0 {
 		return nil
 	}
-	if err := ensureOnlyMigrationChanges(root, paths, migrationStatusIgnored(journal)); err != nil {
+	if journal.RestoreCommit != "" {
+		return verifyRestoreCommit(root, *journal)
+	}
+	parent := journal.MigrationCommit
+	baseline := journal.MigrationIndexPost
+	if journal.ProofCommit != "" {
+		parent = journal.ProofCommit
+		baseline = journal.ProofIndexPost
+	}
+	if parent == "" {
+		// No migration commit escaped before interruption. The file/index restore
+		// is still validated by the preimage checks, but no Git history rewrite is
+		// authorized or needed.
+		return nil
+	}
+	if baseline == nil {
+		return fmt.Errorf("workspace migration: restoration baseline index is not recorded")
+	}
+	head, err := migrationGitText(root, "rev-parse", "--verify", "HEAD^{commit}")
+	if err != nil {
 		return err
+	}
+	if head != parent {
+		if journal.ExpectedRestoreTree == "" {
+			return fmt.Errorf("workspace migration: records HEAD moved before restoration commit")
+		}
+		candidate := *journal
+		candidate.RestoreCommit = head
+		if err := verifyRestoreCommit(root, candidate); err != nil {
+			return fmt.Errorf("workspace migration: records HEAD does not match the prepared restoration commit: %w", err)
+		}
+		journal.RestoreCommit = head
+		return saveJournal(*journal)
 	}
 	stagePaths, err := restorationStagePaths(root, paths)
 	if err != nil {
 		return err
 	}
-	if len(stagePaths) != 0 {
-		args := append([]string{"add", "--all", "--"}, stagePaths...)
-		if _, err := migrationGit(root, args...); err != nil {
-			return err
-		}
-	}
-	staged, err := stagedPaths(root)
-	if err != nil {
-		return err
-	}
-	allowed := map[string]bool{}
-	for _, path := range paths {
-		allowed[path] = true
-	}
-	for _, path := range staged {
-		if !allowed[path] {
-			return fmt.Errorf("workspace migration: records index contains path outside restoration write set")
-		}
-	}
-	if len(staged) == 0 {
+	if len(stagePaths) == 0 {
 		return nil
-	}
-	if journal.MigrationCommit == "" {
-		return fmt.Errorf("workspace migration: restoration has staged records but no recorded migration commit")
 	}
 	if err := migrationGitIdentity(root); err != nil {
 		return err
 	}
-	if _, err := migrationGit(root, "commit", "-m", "Restore interrupted schema-2 migration ("+journal.RunID+")"); err != nil {
-		return fmt.Errorf("workspace migration: records restoration commit remains pending: %w", err)
+	if journal.RestoreParent == "" {
+		journal.RestoreParent = parent
+		if err := saveJournal(*journal); err != nil {
+			return err
+		}
+	} else if journal.RestoreParent != parent {
+		return fmt.Errorf("workspace migration: restoration parent changed after preparation")
 	}
-	staged, err = stagedPaths(root)
+	tree, err := stageRecordsPaths(root, journal, stagePaths, paths, baseline, &journal.RestoreIndexPost, false, false)
 	if err != nil {
 		return err
 	}
-	if len(staged) != 0 {
-		return fmt.Errorf("workspace migration: records index remains staged after restoration commit")
+	if journal.ExpectedRestoreTree != "" && journal.ExpectedRestoreTree != tree {
+		return fmt.Errorf("workspace migration: staged restoration tree changed after preparation")
 	}
-	return nil
+	if journal.ExpectedRestoreTree == "" {
+		journal.ExpectedRestoreTree = tree
+		if err := saveJournal(*journal); err != nil {
+			return err
+		}
+	}
+	if _, err := migrationGit(root, "commit", "-m", journal.RestoreMessage); err != nil {
+		return fmt.Errorf("workspace migration: records restoration commit remains pending: %w", err)
+	}
+	head, err = migrationGitText(root, "rev-parse", "--verify", "HEAD^{commit}")
+	if err != nil {
+		return err
+	}
+	journal.RestoreCommit = head
+	if err := verifyRestoreCommit(root, *journal); err != nil {
+		return err
+	}
+	return saveJournal(*journal)
 }
 
 // restorationStagePaths omits paths that were never tracked and are absent

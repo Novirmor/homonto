@@ -10,7 +10,15 @@ import (
 // retiredMigrationState identifies a receipt-listed abandoned record without
 // using its historical change name as identity.
 func retiredMigrationState(root, changeDir string, state ontostate.State) (bool, error) {
-	return migrationrecord.IsRetired(workflowRoot(root), changeDir, state.ID)
+	retired, err := migrationrecord.IsRetired(workflowRoot(root), changeDir, state.ID)
+	if err != nil || !retired {
+		return retired, err
+	}
+	schemaVersion, err := ontostate.RawSchemaVersion(changeDir)
+	if err != nil {
+		return false, err
+	}
+	return migrationrecord.IsRetired(workflowRoot(root), changeDir, state.ID, schemaVersion)
 }
 
 func rejectRetiredMigrationState(root, changeDir string, state ontostate.State) error {

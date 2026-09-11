@@ -125,7 +125,8 @@ func collectSiblingStatus(root string) ([]statusEntry, error) {
 		if !e.IsDir() || e.Name() == "archive" {
 			continue
 		}
-		st, err := ontostate.LoadChange(filepath.Join(wf, "changes", e.Name()))
+		changeDir := filepath.Join(wf, "changes", e.Name())
+		st, err := ontostate.LoadChange(changeDir)
 		if err == nil {
 			err = st.Validate()
 		}
@@ -133,7 +134,7 @@ func collectSiblingStatus(root string) ([]statusEntry, error) {
 			out = append(out, statusEntry{Change: e.Name(), Error: err.Error()})
 			continue
 		}
-		retired, err := migrationrecord.IsRetired(wf, filepath.Join(wf, "changes", e.Name()), st.ID)
+		retired, err := retiredOntoMigrationState(wf, changeDir, st)
 		if err != nil {
 			return nil, fmt.Errorf("to status: retired migration record: %w", err)
 		}
@@ -148,6 +149,18 @@ func collectSiblingStatus(root string) ([]statusEntry, error) {
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].Change < out[j].Change })
 	return out, nil
+}
+
+func retiredOntoMigrationState(workflowRoot, changeDir string, state ontostate.State) (bool, error) {
+	retired, err := migrationrecord.IsRetired(workflowRoot, changeDir, state.ID)
+	if err != nil || !retired {
+		return retired, err
+	}
+	schemaVersion, err := ontostate.RawSchemaVersion(changeDir)
+	if err != nil {
+		return false, err
+	}
+	return migrationrecord.IsRetired(workflowRoot, changeDir, state.ID, schemaVersion)
 }
 
 // collectStatus scans docs/tasks/ for change directories, skipping the

@@ -185,8 +185,21 @@ func TestWriteLayoutMarkerIdempotenceAndMigration(t *testing.T) {
 		t.Fatalf("atomic replacement loosened mode: %v, %v", info, err)
 	}
 	entries, err := os.ReadDir(filepath.Dir(path))
-	if err != nil || len(entries) != 1 || entries[0].Name() != LayoutMarkerFile {
-		t.Fatalf("temporary files left behind: %v, %v", entries, err)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := map[string]struct{}{}
+	for _, entry := range entries {
+		got[entry.Name()] = struct{}{}
+	}
+	if len(got) != 2 {
+		t.Fatalf("unexpected control-plane entries: %v", entries)
+	}
+	if _, ok := got[LayoutMarkerFile]; !ok {
+		t.Fatalf("workflow layout marker is missing: %v", entries)
+	}
+	if _, ok := got["lock-guardians"]; !ok {
+		t.Fatalf("unexpected control-plane entries: %v", entries)
 	}
 }
 

@@ -2,12 +2,13 @@ package workcli
 
 import (
 	"errors"
-	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/noviopenworks/homonto/internal/applylock"
 )
 
 // onto and to mirror the Framework values each workflow CLI constructs, so the
@@ -300,64 +301,92 @@ func TestErrQuietFindingsIsSentinel(t *testing.T) {
 	}
 }
 
-// deadPid returns the pid of a child process that has already exited and been
-// reaped, so the number provably names no running process (CI is linux-only;
-// "true" exists everywhere we run).
-func deadPid(t *testing.T) int {
-	t.Helper()
-	cmd := exec.Command("true")
-	if err := cmd.Run(); err != nil {
-		t.Fatalf("spawning throwaway process: %v", err)
+// TestLockWorkspace_ExcludesConcurrentAndRejectsLegacy verifies that current
+// callers share a process-released guardian while an old O_EXCL artifact stays
+// a visible blocker rather than being guessed stale from a pid.
+func TestLockWorkspace_ExcludesConcurrentAndRejectsLegacy(t *testing.T) {
+	root := t.TempDir()
+	path := filepath.Join(root, "docs", "tasks", ".lock")
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatal(err)
 	}
-	return cmd.Process.Pid
-}
-
-// TestPidAlive_SelfAndDead verifies both directions of the liveness probe the
-// stale-lock reclaim trusts: the test's own pid reads alive, a reaped child's
-// pid reads dead.
-func TestPidAlive_SelfAndDead(t *testing.T) {
-	if !PidAlive(os.Getpid()) {
-		t.Errorf("PidAlive(self) = false, want true")
-	}
-	if PidAlive(deadPid(t)) {
-		t.Errorf("PidAlive(reaped child) = true, want false")
-	}
-}
-
-// TestLockWorkspace_ExcludesConcurrentAndReclaims verifies the shared lock:
-// a second acquire while held fails naming the lock file, and a lockfile
-// whose holder pid provably died is reclaimed by the next attempt.
-func TestLockWorkspace_ExcludesConcurrentAndReclaims(t *testing.T) {
-	dir := t.TempDir()
-	path := filepath.Join(dir, ".lock")
-	unlock, err := LockWorkspace("to", path)
+	unlock, err := LockWorkspace("to", root, path)
 	if err != nil {
 		t.Fatalf("first lock: %v", err)
 	}
-	if _, err := LockWorkspace("to", path); err == nil || !strings.Contains(err.Error(), "in progress") {
+	if _, err := LockWorkspace("to", root, path); err == nil || !strings.Contains(err.Error(), "in progress") {
 		t.Errorf("second lock while held = %v, want an in-progress error", err)
 	}
 	unlock()
-	// A stale lock naming a dead holder is reclaimed.
-	if err := os.WriteFile(path, []byte(strings.Repeat("x", 0)), 0o600); err != nil {
+	if err := os.WriteFile(path, []byte("pid=legacy\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	os.Remove(path)
-	if err := os.WriteFile(path, []byte("pid="+strings.Repeat("9", 20)+"\n"), 0o600); err != nil {
+	if _, err := LockWorkspace("to", root, path); err == nil || !strings.Contains(err.Error(), "legacy O_EXCL") {
+		t.Errorf("legacy lock must require hand cleanup: %v", err)
+	}
+	if err := os.Remove(path); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := LockWorkspace("to", path); err == nil || !strings.Contains(err.Error(), "in progress") {
-		t.Errorf("unreadable-pid lock must wait for hand cleanup: %v", err)
-	}
-	os.Remove(path)
-	if err := os.WriteFile(path, []byte(fmt.Sprintf("pid=%d\n", deadPid(t))), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	unlock2, err := LockWorkspace("to", path)
+	unlock2, err := LockWorkspace("to", root, path)
 	if err != nil {
-		t.Fatalf("lock over dead holder: %v", err)
+		t.Fatalf("lock after legacy cleanup: %v", err)
 	}
 	unlock2()
+}
+
+func TestLockWorkspaceKeepsGuardiansInOwnedMetadata(t *testing.T) {
+	root := t.TempDir()
+	workflowRoot := filepath.Join(root, "docs")
+	legacyPath := filepath.Join(workflowRoot, "tasks", ".to.lock")
+	if err := os.MkdirAll(filepath.Dir(legacyPath), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	unlock, err := LockWorkspace("to", root, legacyPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	guardianPath, err := applylock.GuardianPath(filepath.Join(root, ".homonto"), legacyPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if rel, err := filepath.Rel(filepath.Join(root, ".homonto"), guardianPath); err != nil || rel == "." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+		t.Fatalf("guardian path = %q, want owned metadata below %q", guardianPath, filepath.Join(root, ".homonto"))
+	}
+	unlock()
+	entries, err := os.ReadDir(filepath.Dir(legacyPath))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) != 0 {
+		t.Fatalf("records directory retains lock artifacts: %v", entries)
+	}
+}
+
+func TestLockWorkspaceUsesGitPrivateGuardian(t *testing.T) {
+	root := t.TempDir()
+	if out, err := exec.Command("git", "-C", root, "init", "-q").CombinedOutput(); err != nil {
+		t.Fatalf("git init: %v: %s", err, out)
+	}
+	legacyPath := filepath.Join(root, "docs", "tasks", ".to.lock")
+	if err := os.MkdirAll(filepath.Dir(legacyPath), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	unlock, err := LockWorkspace("to", root, legacyPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	unlock()
+
+	guardianPath, err := applylock.GuardianPath(filepath.Join(root, ".git"), legacyPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(guardianPath); err != nil {
+		t.Fatalf("Git-private guardian = %v", err)
+	}
+	if _, err := os.Lstat(filepath.Join(root, "docs", ".homonto")); !os.IsNotExist(err) {
+		t.Fatalf("workflow records metadata artifact = %v", err)
+	}
 }
 
 func TestLockChangeNames_ExcludesBothWorkflowCreators(t *testing.T) {

@@ -2,7 +2,6 @@ package workspace
 
 import (
 	"bytes"
-	"encoding/json"
 	"fmt"
 	"os"
 	"os/exec"
@@ -71,11 +70,9 @@ func wtFixture(t *testing.T, workflow string) Layout {
 	if err != nil {
 		t.Fatal(err)
 	}
-	marker, err := json.Marshal(workflowroot.LayoutMarker{SchemaVersion: 2, ConfigPath: l.ConfigPath, WorkflowRoot: l.WorkflowRoot, GitMode: l.GitMode})
-	if err != nil {
+	if err := workflowroot.WriteLayoutMarker(workflowroot.LayoutMarker{SchemaVersion: 2, ConfigPath: l.ConfigPath, WorkflowRoot: l.WorkflowRoot, GitMode: l.GitMode}); err != nil {
 		t.Fatal(err)
 	}
-	wtWrite(t, filepath.Join(root, ".homonto", workflowroot.LayoutMarkerFile), string(marker))
 	wtState(t, l, workflow, "feature", "generation-one", false, "a", "b")
 	return l
 }

@@ -15,7 +15,9 @@ import (
 	"strings"
 	"unicode"
 
+	"github.com/noviopenworks/homonto/internal/applylock"
 	"github.com/noviopenworks/homonto/internal/fsutil"
+	"github.com/noviopenworks/homonto/internal/migrationrecord"
 	"github.com/noviopenworks/homonto/internal/ontostate"
 	"github.com/noviopenworks/homonto/internal/workspace"
 )
@@ -34,19 +36,28 @@ func Build(configPath, manifestPath string) (Plan, error) {
 }
 
 // buildLocked repeats the read-only inventory while the migration's own
-// process/lifecycle/registry locks exist. Only those exact lock paths are
-// excluded; all other control files and pending operations remain blockers.
+// process/lifecycle/registry locks exist. Only protocol-owned claims and
+// guardian metadata are excluded; all other control files and pending
+// operations remain blockers.
 func buildLocked(configPath, manifestPath string) (Plan, error) {
-	return build(configPath, manifestPath, map[string]bool{
-		".homonto/apply.lock":     true,
-		".homonto/worktrees.lock": true,
-		".change-names.lock":      true,
-		"changes/.onto.lock":      true,
-		"tasks/.to.lock":          true,
-	})
+	resolved, err := absolutePath(configPath)
+	if err != nil {
+		return buildLockedIgnoring(configPath, manifestPath, migrationIgnoredLocks())
+	}
+	l, err := workspace.LoadMigration(resolved)
+	if err != nil {
+		return buildLockedIgnoring(configPath, manifestPath, migrationIgnoredLocks())
+	}
+	return buildLockedIgnoring(configPath, manifestPath, migrationHeldLockArtifacts(l.ConfigRoot, l.WorkflowRoot))
+}
+
+func buildLockedIgnoring(configPath, manifestPath string, ignored map[string]bool) (Plan, error) {
+	return build(configPath, manifestPath, ignored)
 }
 
 func build(configPath, manifestPath string, ignoredLocks map[string]bool) (Plan, error) {
+	requireCleanRecords := ignoredLocks != nil
+	ignoredLocks = mergeMigrationIgnoredArtifacts(ignoredLocks)
 	p := newPlan()
 	configPath, err := absolutePath(configPath)
 	if err != nil {
@@ -100,7 +111,7 @@ func build(configPath, manifestPath string, ignoredLocks map[string]bool) (Plan,
 	}
 
 	inspectControlFiles(&p, l, ignoredLocks)
-	if records, ok := inspectRecordsGit(&p, l, ignoredLocks != nil, ignoredLocks); ok {
+	if records, ok := inspectRecordsGit(&p, l, requireCleanRecords, ignoredLocks); ok {
 		p.RecordsGit = records
 	} else {
 		return p.finish()
@@ -123,6 +134,86 @@ func build(configPath, manifestPath string, ignoredLocks map[string]bool) (Plan,
 		prepareRecordWrites(&p, l.WorkflowRoot, discovered)
 	}
 	return p.finish()
+}
+
+// migrationGuardianArtifacts names lock metadata owned by the migration
+// protocol. Guardian files are intentionally opaque to planning: their inode
+// identity is verified by applylock before a migration can proceed.
+func migrationGuardianArtifacts() map[string]bool {
+	suffix := applylock.GuardianSuffix
+	return map[string]bool{
+		".homonto/apply.lock" + suffix:     true,
+		".homonto/worktrees.lock" + suffix: true,
+		".homonto/lock-guardians/":         true,
+		".change-names.lock" + suffix:      true,
+		"changes/.onto.lock" + suffix:      true,
+		"tasks/.to.lock" + suffix:          true,
+	}
+}
+
+func mergeMigrationIgnoredArtifacts(extra map[string]bool) map[string]bool {
+	merged := migrationGuardianArtifacts()
+	for path := range extra {
+		merged[path] = true
+	}
+	return merged
+}
+
+func preparationRunIDFromIgnoredArtifacts(ignored map[string]bool) string {
+	const prefix = ".workflow/migrations/"
+	const suffix = "/private/"
+	runID := ""
+	for path := range ignored {
+		path = filepath.ToSlash(path)
+		if !strings.HasPrefix(path, prefix) || !strings.HasSuffix(path, suffix) {
+			continue
+		}
+		candidate := strings.TrimSuffix(strings.TrimPrefix(path, prefix), suffix)
+		if !migrationrecord.SafeRunID(candidate) || runID != "" && runID != candidate {
+			return ""
+		}
+		runID = candidate
+	}
+	return runID
+}
+
+// preparationJournalOnly is the narrow exception that lets recovery rebuild
+// the reviewed plan after intent publication. Any additional migration artifact
+// remains a blocker and cannot be silently reinterpreted as preparation state.
+func preparationJournalOnly(root, runID string) bool {
+	if !migrationrecord.SafeRunID(runID) {
+		return false
+	}
+	status, err := migrationrecord.LoadJournalStatus(root, runID)
+	if err != nil || status.Phase != "preparing" {
+		return false
+	}
+	base := filepath.Join(root, ".workflow", "migrations")
+	entries, exists, err := realDirectoryEntries(base)
+	if err != nil || !exists || len(entries) != 1 || entries[0].Name() != runID || !entries[0].IsDir() {
+		return false
+	}
+	runEntries, exists, err := realDirectoryEntries(filepath.Join(base, runID))
+	if err != nil || !exists || len(runEntries) != 1 || runEntries[0].Name() != "private" || !runEntries[0].IsDir() {
+		return false
+	}
+	privateEntries, exists, err := realDirectoryEntries(filepath.Join(base, runID, "private"))
+	if err != nil || !exists || len(privateEntries) < 2 || len(privateEntries) > 3 {
+		return false
+	}
+	allowed := map[string]bool{"journal.json": true, "intent.json": true, "records.git.bundle": true}
+	seen := map[string]bool{}
+	for _, entry := range privateEntries {
+		if !allowed[entry.Name()] || entry.IsDir() || seen[entry.Name()] {
+			return false
+		}
+		info, err := os.Lstat(filepath.Join(base, runID, "private", entry.Name()))
+		if err != nil || !info.Mode().IsRegular() || info.Mode()&os.ModeSymlink != 0 {
+			return false
+		}
+		seen[entry.Name()] = true
+	}
+	return seen["journal.json"] && seen["intent.json"]
 }
 
 func legacyLayoutDetail(code string) string {
@@ -190,11 +281,34 @@ func ignoredPath(root, path string, ignored map[string]bool) bool {
 	if len(ignored) == 0 {
 		return false
 	}
+	path = filepath.Clean(path)
+	if ignored[path] {
+		return true
+	}
+	for prefix := range ignored {
+		if !filepath.IsAbs(prefix) || !strings.HasSuffix(prefix, string(filepath.Separator)) {
+			continue
+		}
+		base := filepath.Clean(strings.TrimSuffix(prefix, string(filepath.Separator)))
+		rel, err := filepath.Rel(base, path)
+		if err == nil && rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+			return true
+		}
+	}
 	rel, err := filepath.Rel(root, path)
 	if err != nil {
 		return false
 	}
-	return ignored[filepath.ToSlash(rel)]
+	rel = filepath.ToSlash(rel)
+	if ignored[rel] {
+		return true
+	}
+	for prefix := range ignored {
+		if strings.HasSuffix(prefix, "/") && (rel == strings.TrimSuffix(prefix, "/") || strings.HasPrefix(rel, prefix)) {
+			return true
+		}
+	}
+	return false
 }
 
 func readRealRegularFile(path string) ([]byte, error) {
@@ -467,6 +581,45 @@ func gitLines(dir string, args ...string) ([]string, error) {
 	lines := strings.Split(text, "\n")
 	sort.Strings(lines)
 	return lines, nil
+}
+
+// sourceReferenceSnapshot captures every ref name and object in a declared
+// source without touching its index. HEAD's symbolic attachment is intentionally
+// recorded separately because two branches can resolve to the same commit.
+func sourceReferenceSnapshot(root string) ([]GitReference, error) {
+	data, err := workspace.ReadGit(root, "for-each-ref", "--format=%(refname) %(objectname)", "refs")
+	if err != nil {
+		return nil, err
+	}
+	refs := []GitReference{}
+	seen := map[string]bool{}
+	for _, line := range strings.Split(strings.TrimSpace(string(data)), "\n") {
+		if line == "" {
+			continue
+		}
+		fields := strings.Fields(line)
+		if len(fields) != 2 || !safeBackupRefName(fields[0]) || !canonicalCommit.MatchString(fields[1]) || seen[fields[0]] {
+			return nil, fmt.Errorf("source refs cannot be snapshotted safely")
+		}
+		seen[fields[0]] = true
+		refs = append(refs, GitReference{Name: fields[0], Object: fields[1]})
+	}
+	sort.Slice(refs, func(i, j int) bool { return refs[i].Name < refs[j].Name })
+	return refs, nil
+}
+
+func sourceHEADAttachment(root string) (string, bool, error) {
+	ref, err := gitText(root, "rev-parse", "--symbolic-full-name", "HEAD")
+	if err != nil {
+		return "", false, err
+	}
+	if ref == "HEAD" {
+		return "", false, nil
+	}
+	if !safeBackupRefName(ref) {
+		return "", false, fmt.Errorf("source symbolic HEAD is unsafe")
+	}
+	return ref, true, nil
 }
 
 func gitDirt(dir string) (Dirt, error) {
@@ -811,15 +964,7 @@ func ignoredGitPath(root, path string, ignored map[string]bool) bool {
 	if rel == "." || rel == ".." || strings.HasPrefix(rel, "../") {
 		return false
 	}
-	if ignored[rel] {
-		return true
-	}
-	for prefix := range ignored {
-		if strings.HasSuffix(prefix, "/") && strings.HasPrefix(rel, prefix) {
-			return true
-		}
-	}
-	return false
+	return ignoredPath(root, filepath.Join(root, filepath.FromSlash(rel)), ignored)
 }
 
 // gitIndexSHA256 binds the exact index selected by this worktree without
@@ -1040,6 +1185,9 @@ func discoverRecords(p *Plan, root string, ignoredLocks map[string]bool) []disco
 		{filepath.Join(root, "tasks", ".to.lock"), "workflow_lifecycle_pending"},
 		{filepath.Join(root, ".homonto-workflow.json"), "managed_history_owner_present"},
 	} {
+		if entry.code == "migration_journal_present" && preparationJournalOnly(root, preparationRunIDFromIgnoredArtifacts(ignoredLocks)) {
+			continue
+		}
 		if ignoredPath(root, entry.path, ignoredLocks) {
 			continue
 		}
@@ -1216,7 +1364,8 @@ func discoverOntoRecord(p *Plan, root, dir, scope string) discoveredRecord {
 }
 
 func coResidentStatesEqual(a, b ontostate.RawInspection) bool {
-	return a.ID == b.ID &&
+	return a.SchemaVersion == b.SchemaVersion &&
+		a.ID == b.ID &&
 		a.Change == b.Change &&
 		a.Workflow == b.Workflow &&
 		a.Phase == b.Phase &&
@@ -1622,6 +1771,16 @@ func validateSource(p *Plan, l workspace.Layout, recordPath string, state *ontos
 		p.block("source_head_invalid", repo, "declared source HEAD cannot be read as a canonical commit")
 		return planned, false
 	}
+	headRef, headAttached, err := sourceHEADAttachment(repo)
+	if err != nil {
+		p.block("source_head_attachment_unavailable", repo, "declared source symbolic HEAD cannot be inspected without changing it")
+		return planned, false
+	}
+	refs, err := sourceReferenceSnapshot(repo)
+	if err != nil {
+		p.block("source_refs_unavailable", repo, "declared source refs cannot be snapshotted without changing them")
+		return planned, false
+	}
 	indexSHA256, err := gitIndexSHA256(repo)
 	if err != nil {
 		p.block("source_index_unavailable", repo, "declared source Git index cannot be fingerprinted without changing it")
@@ -1652,6 +1811,9 @@ func validateSource(p *Plan, l workspace.Layout, recordPath string, state *ontos
 	}
 	planned.BaseBranchHead = branchHead
 	planned.Head = head
+	planned.HeadRef = headRef
+	planned.HeadAttached = headAttached
+	planned.Refs = refs
 	planned.IndexSHA256 = indexSHA256
 	planned.Dirt = dirt
 	planned.Preservation = preservation
@@ -1692,6 +1854,16 @@ func inspectExecution(p *Plan, path, expectedCommon string) (*Execution, bool) {
 		p.block("execution_head_invalid", path, "execution checkout HEAD cannot be read as a canonical commit")
 		return nil, false
 	}
+	headRef, headAttached, err := sourceHEADAttachment(path)
+	if err != nil || !headAttached {
+		p.block("execution_head_attachment_unavailable", path, "execution checkout must retain an inspectable attached symbolic HEAD")
+		return nil, false
+	}
+	refs, err := sourceReferenceSnapshot(path)
+	if err != nil {
+		p.block("execution_refs_unavailable", path, "execution checkout refs cannot be snapshotted without changing them")
+		return nil, false
+	}
 	branch, err := gitText(path, "branch", "--show-current")
 	if err != nil {
 		p.block("execution_branch_unavailable", path, "execution checkout branch cannot be inspected")
@@ -1726,5 +1898,5 @@ func inspectExecution(p *Plan, path, expectedCommon string) (*Execution, bool) {
 		}
 		return nil, false
 	}
-	return &Execution{Path: path, GitCommonDir: common, GitDir: gitDir, Head: head, Branch: branch, IndexSHA256: indexSHA256, Dirt: dirt, Preservation: preservation}, true
+	return &Execution{Path: path, GitCommonDir: common, GitDir: gitDir, Head: head, HeadRef: headRef, HeadAttached: headAttached, Refs: refs, Branch: branch, IndexSHA256: indexSHA256, Dirt: dirt, Preservation: preservation}, true
 }

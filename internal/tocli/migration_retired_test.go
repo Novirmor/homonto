@@ -51,6 +51,7 @@ func seedRetiredOntoMigrationRecord(t *testing.T, workflow, retiredPath, stateID
 		t.Fatal(err)
 	}
 	digest := sha256.Sum256(state)
+	receiptPath := filepath.Join(workflow, ".workflow", "migrations", retiredMigrationRunID, "receipt.json")
 	proofPath := filepath.Join(workflow, ".workflow", "migrations", retiredMigrationRunID, "commit-proof.json")
 	receipt := migrationrecord.Receipt{
 		Version:  migrationrecord.ReceiptVersion,
@@ -72,7 +73,7 @@ func seedRetiredOntoMigrationRecord(t *testing.T, workflow, retiredPath, stateID
 			Path: retiredOntoStatePath(workflow, retiredPath), PreSHA256: hex.EncodeToString(digest[:]), PostSHA256: hex.EncodeToString(digest[:]), Action: "preserve_retired",
 		}},
 		Retired: []migrationrecord.RetiredRecord{{
-			Path: retiredPath, ID: stateID, SHA256: hex.EncodeToString(digest[:]),
+			Path: retiredPath, ID: stateID, SchemaVersion: 3, SHA256: hex.EncodeToString(digest[:]),
 		}},
 		Bindings:        []migrationrecord.Binding{},
 		CommitProofPath: filepath.ToSlash(proofPath[len(workflow)+1:]),
@@ -96,8 +97,25 @@ func seedRetiredOntoMigrationRecord(t *testing.T, workflow, retiredPath, stateID
 		RunID:   retiredMigrationRunID,
 		Phase:   "complete",
 	}, 0o600)
-	writeRetiredMigrationJSON(t, filepath.Join(workflow, ".workflow", "migrations", retiredMigrationRunID, "receipt.json"), receipt, 0o644)
+	writeRetiredMigrationJSON(t, receiptPath, receipt, 0o644)
 	writeRetiredMigrationJSON(t, proofPath, proof, 0o644)
+	receiptData, err := os.ReadFile(receiptPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	proofData, err := os.ReadFile(proofPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	witness, err := migrationrecord.NewCompletionWitness(retiredMigrationRunID, receiptData, proofData)
+	if err != nil {
+		t.Fatal(err)
+	}
+	witnessPath, err := migrationrecord.CompletionWitnessPath(workflow, retiredMigrationRunID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	writeRetiredMigrationJSON(t, witnessPath, witness, 0o600)
 }
 
 func retiredOntoStatePath(workflow, retiredPath string) string {

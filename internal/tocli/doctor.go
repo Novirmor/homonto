@@ -7,7 +7,6 @@ import (
 	"sort"
 
 	"github.com/noviopenworks/homonto/internal/buildinfo"
-	"github.com/noviopenworks/homonto/internal/migrationrecord"
 	"github.com/noviopenworks/homonto/internal/ontostate"
 	"github.com/noviopenworks/homonto/internal/tostate"
 	"github.com/noviopenworks/homonto/internal/workcli"
@@ -128,7 +127,7 @@ func activeOntoNames(workflowRoot, dir string) (map[string]bool, error) {
 		}
 		changeDir := filepath.Join(dir, e.Name())
 		if state, class, _ := ontostate.Classify(changeDir); class == "valid" {
-			retired, err := migrationrecord.IsRetired(workflowRoot, changeDir, state.ID)
+			retired, err := retiredOntoMigrationState(workflowRoot, changeDir, state)
 			if err != nil {
 				return nil, err
 			}

@@ -18,12 +18,11 @@ const (
 	prospectiveManifestVersion = 1
 	runIDPlaceholder           = "{run_id}"
 
-	dynamicReceiptRule       = "receipt-v1(run_id, reviewed_plan, registry, binding_token_hashes)"
-	dynamicRegistryRule      = "registry-v1(reviewed_binding_identities, fresh_128_bit_owner_tokens)"
-	dynamicOwnerRule         = "fresh_128_bit_owner_token"
-	dynamicProofRule         = "commit_proof-v1(migration_commit, migration_parent, migration_tree)"
-	dynamicJournalRule       = "private_journal-v1(reviewed_plan, exact_input_snapshots, concrete_writes, binding_tokens)"
-	dynamicRecordsBackupRule = "records_git_backup-v1(all_reachable_refs, head, raw_index)"
+	dynamicReceiptRule    = "receipt-v1(run_id, reviewed_plan, registry, binding_token_hashes)"
+	dynamicRegistryRule   = "registry-v1(reviewed_binding_identities, fresh_128_bit_owner_tokens)"
+	dynamicOwnerRule      = "fresh_128_bit_owner_token"
+	dynamicProofRule      = "commit_proof-v1(migration_commit, migration_parent, migration_tree)"
+	dynamicCompletionRule = "completion_witness-v1(receipt, commit_proof)"
 )
 
 // buildProspectiveManifest derives all mutation authority from a ready plan.
@@ -33,7 +32,7 @@ func buildProspectiveManifest(plan Plan) (ProspectiveManifest, error) {
 	if plan.Layout.ConfigRoot == "" || plan.Layout.WorkflowRoot == "" || !canonicalCommit.MatchString(plan.RecordsGit.Head) {
 		return ProspectiveManifest{}, fmt.Errorf("workspace migration: prospective operations require a complete layout and records head")
 	}
-	operations := make([]ProspectiveOperation, 0, len(plan.RecordWrites)+7)
+	operations := make([]ProspectiveOperation, 0, len(plan.RecordWrites)+5)
 	for _, write := range plan.RecordWrites {
 		if !filepath.IsAbs(write.Path) || filepath.Clean(write.Path) != write.Path || !pathWithin(plan.Layout.WorkflowRoot, write.Path) || !validDigest(write.PreSHA256) || !validDigest(write.PostSHA256) {
 			return ProspectiveManifest{}, fmt.Errorf("workspace migration: invalid planned record operation")
@@ -88,21 +87,12 @@ func buildProspectiveManifest(plan Plan) (ProspectiveManifest, error) {
 		},
 		ProspectiveOperation{
 			Scope:       journalScopeRecords,
-			Kind:        journalKindPrivateJournal,
-			Path:        plannedRunPath(plan.Layout.WorkflowRoot, "private", "journal.json"),
-			Intent:      "capture_private_preimages_and_recovery_state",
+			Kind:        journalKindCompletion,
+			Path:        plannedRunPath(plan.Layout.WorkflowRoot, "private", "completion.json"),
+			Intent:      "create_completion_witness",
 			PostExists:  true,
 			PostMode:    0o600,
-			DynamicRule: dynamicJournalRule,
-		},
-		ProspectiveOperation{
-			Scope:       journalScopeRecords,
-			Kind:        journalKindRecordsBackup,
-			Path:        plannedRunPath(plan.Layout.WorkflowRoot, "private", "records.git.bundle"),
-			Intent:      "capture_records_git_recovery_bundle",
-			PostExists:  true,
-			PostMode:    0o600,
-			DynamicRule: dynamicRecordsBackupRule,
+			DynamicRule: dynamicCompletionRule,
 		},
 		ProspectiveOperation{
 			Scope:       journalScopeConfig,
@@ -176,6 +166,14 @@ func buildProspectiveManifest(plan Plan) (ProspectiveManifest, error) {
 				ParentRule:      "migration_commit",
 				Paths:           []string{plannedRunRelativePath("commit-proof.json")},
 				MessageTemplate: "Record schema-2 migration commit proof ({run_id})",
+				TreeRule:        "git_write_tree_after_exact_paths",
+			},
+			{
+				Kind:            "restore",
+				Parent:          "{latest_records_migration_commit}",
+				ParentRule:      "migration_or_proof_commit",
+				Paths:           append(append([]string{}, migrationPaths...), plannedRunRelativePath("commit-proof.json")),
+				MessageTemplate: "Restore interrupted schema-2 migration ({run_id})",
 				TreeRule:        "git_write_tree_after_exact_paths",
 			},
 		},

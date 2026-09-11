@@ -137,6 +137,14 @@ func readOnto(dir string, archived bool, out *Snapshot) {
 		state, class, classErr := ontostate.Classify(changeDir)
 		if class == "valid" && !archived {
 			retired, err := migrationrecord.IsRetired(out.WorkflowRoot, changeDir, state.ID)
+			if err == nil && retired {
+				schemaVersion, schemaErr := ontostate.RawSchemaVersion(changeDir)
+				if schemaErr != nil {
+					err = schemaErr
+				} else {
+					retired, err = migrationrecord.IsRetired(out.WorkflowRoot, changeDir, state.ID, schemaVersion)
+				}
+			}
 			if err != nil {
 				out.Findings = append(out.Findings, Finding{Workflow: "onto", Change: entry.Name(), Message: "retired migration record: " + err.Error()})
 				continue

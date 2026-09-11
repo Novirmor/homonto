@@ -20,5 +20,5 @@ func Acquire(root string) (func(), error) {
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return nil, fmt.Errorf("destlock: %w", err)
 	}
-	return workcli.LockWorkspace("destlock", filepath.Join(dir, ".new.lock"))
+	return workcli.LockWorkspace("destlock", root, filepath.Join(dir, ".new.lock"))
 }

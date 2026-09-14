@@ -3,7 +3,7 @@
 # so the host system is never touched. Built and run by scripts/docker-test.sh
 # (and CI). The release-packaging suite cross-compiles every target, so the image
 # carries zip (windows archives) and git (onto's worktree checks).
-FROM golang:1.23
+FROM golang:1.26.6-bookworm
 
 RUN apt-get update && apt-get install -y --no-install-recommends zip git \
     && rm -rf /var/lib/apt/lists/*

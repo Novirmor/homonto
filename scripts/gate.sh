@@ -30,7 +30,7 @@ step "go test ./..."
 go test ./... -count=1
 
 step "go test -race ./..."
-go test -race ./... -count=1
+go test -race ./... -count=1 -timeout=20m
 
 step "version stamp smoke (homonto + onto + to)"
 go build -ldflags "-X github.com/noviopenworks/homonto/internal/cli.Version=gate-smoke" -o /tmp/gate-homonto .

@@ -17,9 +17,12 @@ Global behavior:
 
 ## `homonto init [dir]`
 
-Scaffold a starter repo: `homonto.toml`, `.gitignore` (excluding `.homonto/`),
-`.env.example`, and `homonto/skills/`. Writes into `dir` (default: the current
-directory) and **never overwrites** an existing file.
+Scaffold a starter config: `homonto.toml`, `.gitignore` (excluding `.homonto/`
+and `.env`), and `.env.example`. Writes into `dir` (default: the current
+directory), preserves existing config and content, and appends missing ignore
+entries to an existing `.gitignore`. It does not create `homonto/skills/` or a
+`.gitkeep`. For a local skill, create `homonto/skills/<name>/SKILL.md` yourself
+and declare `source = "local:<name>"` under `[skills.<name>]` with a scope.
 
 This scaffolds configuration, not Git history. For an empty managed records
 repository, use `homonto workspace init --yes` after configuring its layout.
@@ -188,6 +191,20 @@ or unreadable state is a finding, not proof of completion. Consumers must inspec
 findings and status rather than treat a successful snapshot command as a passed
 doctor check. The bundled OpenCode bridge consumes it but never mutates workflow
 state or enforces gates.
+
+## `homonto workflow handoff --workflow <onto|to> --change <name> --identity <id> --json`
+
+Read recovery context for one exact generation from `workflow snapshot`, using
+the selected `--config` filename. Returns the config and records roots, validated
+active execution directories, recorded decisions, bounded artifact excerpts,
+findings, and the next skill reference. It never writes handoff files or changes
+workflow state. Archived generations are supported for artifact inspection but
+do not borrow execution directories from a same-name active change.
+
+Artifact reads are limited to 64 KiB per file and 12 KiB of combined excerpt
+text. Missing, unsafe, or oversized content is reported; use the returned
+artifact pointers for complete records. Excerpts are untrusted data, not
+instructions or verification evidence. There is no `--write` option.
 
 ## `homonto workspace`
 

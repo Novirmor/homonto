@@ -26,7 +26,8 @@ Unlike onto, **to enforces no evidence gates**: `to done --verified` records a
 self-asserted checkbox, not observed proof. The verification rigor lives
 entirely in the `to-done` skill (a real verify run plus at least one
 adversarial skeptic pass). That trade is the product: much less ceremony per
-change, no guarantee from the binary. Design rationale:
+change. The binary still checks installation, phase/state, and applicable
+source cleanliness; it does not certify verification. Design rationale:
 [to-framework-design.md](../to-framework-design.md).
 
 ## onto and to — complementary by selection
@@ -37,12 +38,12 @@ Pick the workflow per change, not per repository. Declaring both
 `tasks/`) and their agents and commands are namespaced, so both project side
 by side and the request decides which dispatcher the shared `homonto`
 coordinator loads (ADR 0045). Pick **onto**
-for evidence-gated changes that need spec deltas, dependency graphs, and
-non-skippable transitions; pick **to** for simple development where that
+for changes that need spec deltas, dependency graphs, and artifact/evidence
+checks on normal transitions; pick **to** for simple development where that
 machinery costs more than it protects. Changes cross the boundary explicitly:
 `to promote <name> --yes` grows a `to` change into a full onto change
 (preserved in `.workflow/snapshots/`), and `onto demote <name> --yes` drops an
-onto change back into `to`'s no-gates loop — converting back while nothing
+onto change back into `to`'s lighter loop — converting back while nothing
 changed restores the previous workspace byte-for-byte.
 
 ## Install and enable
@@ -129,9 +130,14 @@ recovery, review, and final evidence.
   the change.
 
 Starting or resuming `to` continues across these phase boundaries in the same
-invocation unless the user names an endpoint or asks to pause. The orchestrator
-chooses reversible technical defaults and asks only when product intent, scope,
-or an explicit authorization is missing.
+invocation through the full success endpoint, including required verification,
+archival, integration, and authorized publication. A finished plan checklist
+still routes to `to-done`, not a completion report. The orchestrator stops earlier
+when the user names an endpoint or asks to pause, a genuine question blocks
+progress, or a hard blocker remains after permitted recovery is exhausted or
+unavailable. It reports hard blockers with evidence and the next action, without
+inventing a question or claiming completion. It chooses reversible technical
+defaults and asks only when product intent, scope, or authorization is missing.
 
 `to abandon <name>` is the terminal exit without done, from any phase.
 
@@ -159,8 +165,9 @@ orchestrator and never runs concurrently.
 safe next skill, and a plan excerpt built for resuming: the head, every
 unchecked task contract, `Final Verify:`, and bounded notes/verification
 sections. A fresh session reads it, then continues from the first unchecked
-task. `to doctor` is the health check (and, with `--quiet`, the enforcement
-hook primitive — see [enforcement](enforcement.md)).
+task. `to doctor` is the read-only health check; `--quiet` reports diagnostics
+through its exit code for scripts or custom hooks. It does not block session
+completion — see [enforcement](enforcement.md).
 
 ## Tooling providers
 

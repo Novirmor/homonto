@@ -75,8 +75,8 @@ in_file "$PVAR" '  websearch: allow'
 # guards. in_file regex-matches (BRE): escape the literal asterisks.
 in_file "$PVAR" '"git push \*": ask'
 in_file "$PVAR" '"gh pr comment\*": ask'
-in_file "$PVAR" '"onto bypass\*": deny'
-in_file "$PVAR" '"to bypass\*": deny'
+in_file "$PVAR" '"onto bypass\*": ask'
+in_file "$PVAR" '"to bypass\*": ask'
 is_link "$W/.opencode/agent/homonto.md"; is_file "$W/.opencode/agent/homonto.md"
 for agent in homonto onto-implementer to-implementer; do
 	RVAR="$W/.homonto/catalog/subagents/$agent.opencode.md"

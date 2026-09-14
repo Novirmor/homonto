@@ -18,8 +18,7 @@ func TestInitScaffoldsRepoAndSkipsExisting(t *testing.T) {
 	if err != nil {
 		t.Fatalf("init: %v\n%s", err, out)
 	}
-	for _, want := range []string{"homonto.toml", ".gitignore", ".env.example",
-		filepath.Join("homonto", "skills", ".gitkeep")} {
+	for _, want := range []string{"homonto.toml", ".gitignore", ".env.example"} {
 		p := filepath.Join(dir, want)
 		if _, err := os.Stat(p); err != nil {
 			t.Fatalf("init did not create %s: %v", want, err)
@@ -28,21 +27,39 @@ func TestInitScaffoldsRepoAndSkipsExisting(t *testing.T) {
 			t.Fatalf("init output did not report %s\n%s", p, out)
 		}
 	}
+	if _, err := os.Stat(filepath.Join(dir, "homonto")); !os.IsNotExist(err) {
+		t.Fatalf("default init must not create homonto/: stat error = %v", err)
+	}
 
-	// Mark the config so we can prove the second run leaves it untouched.
+	// Declare user-created local content before re-running init.
 	cfg := filepath.Join(dir, "homonto.toml")
-	if err := os.WriteFile(cfg, []byte("# user edit\n"), 0o644); err != nil {
+	configBody := "[skills.custom]\nsource = \"local:custom\"\nscope = \"project\"\n"
+	if err := os.WriteFile(cfg, []byte(configBody), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	skill := filepath.Join(dir, "homonto", "skills", "custom", "SKILL.md")
+	if err := os.MkdirAll(filepath.Dir(skill), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	const skillBody = "# My local skill\nUser-authored instructions.\n"
+	if err := os.WriteFile(skill, []byte(skillBody), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	out2, err := runCmd(t, home, "", "init", dir)
 	if err != nil {
 		t.Fatalf("second init: %v\n%s", err, out2)
 	}
-	if strings.Contains(out2, cfg) {
-		t.Fatalf("second init re-created an existing file:\n%s", out2)
+	if out2 != "" {
+		t.Fatalf("second init should report no changes:\n%s", out2)
 	}
-	if b, _ := os.ReadFile(cfg); string(b) != "# user edit\n" {
+	if b, _ := os.ReadFile(cfg); string(b) != configBody {
 		t.Fatalf("second init clobbered an existing config: %q", string(b))
+	}
+	if b, err := os.ReadFile(skill); err != nil || string(b) != skillBody {
+		t.Fatalf("second init changed local skill content: %q, error %v", b, err)
+	}
+	if _, err := os.Stat(filepath.Join(dir, "homonto", "skills", ".gitkeep")); !os.IsNotExist(err) {
+		t.Fatalf("second init must not add a gitkeep: stat error = %v", err)
 	}
 }
 

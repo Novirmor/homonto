@@ -483,17 +483,23 @@ func TestApplyRerendersSubagentPatternsWhenShellProxyChanges(t *testing.T) {
 						t.Errorf("%s missing %s", agent, want)
 					}
 				}
-				denied := []string{"onto bypass*", "to bypass*"}
+				protected := []string{"onto bypass*", "to bypass*"}
+				action := "ask"
 				if agent != "homonto" {
-					denied = []string{"onto *", "to *", "homonto *", "git push", "git push *", "gh pr comment*", "gh api*"}
+					protected = []string{"onto *", "to *", "homonto *", "git push", "git push *", "gh pr comment*", "gh api*"}
+					action = "deny"
 				}
-				for _, pattern := range denied {
-					want := fmt.Sprintf("    %q: deny", prefix+pattern)
+				for _, pattern := range protected {
+					want := fmt.Sprintf("    %q: %s", prefix+pattern, action)
 					if !strings.Contains(text, want) {
 						t.Errorf("%s missing %s", agent, want)
 					}
 				}
-				for _, pattern := range []string{"rm -r*", "git reset *", "git worktree remove*"} {
+				patterns := []string{"rm -r*"}
+				if agent != "homonto" {
+					patterns = append(patterns, "git reset *", "git worktree remove*")
+				}
+				for _, pattern := range patterns {
 					want := fmt.Sprintf("    %q: ask", prefix+pattern)
 					if !strings.Contains(text, want) {
 						t.Errorf("%s missing protected exception %s with proxy %q", agent, want, proxy)
@@ -543,7 +549,7 @@ func TestHFrameworkRendersCoordinatorAndReadonlyWorkers(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, want := range []string{"mode: primary", `"h-spike": allow`, `"h-review": allow`, "external_directory:", "webfetch: allow", "websearch: allow", `"*": allow`, `"git push *": ask`, `"gh pr comment*": ask`, `"onto bypass*": deny`} {
+	for _, want := range []string{"mode: primary", `"h-spike": allow`, `"h-review": allow`, "external_directory:", "webfetch: allow", "websearch: allow", `"*": allow`, `"git push *": ask`, `"gh pr comment*": ask`, `"onto bypass*": ask`} {
 		if !strings.Contains(string(primary), want) {
 			t.Errorf("homonto primary (via h) missing %q:\n%s", want, primary)
 		}

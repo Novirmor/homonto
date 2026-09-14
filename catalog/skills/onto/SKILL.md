@@ -23,7 +23,11 @@ derive → route. It never performs phase work itself.
 Follow the shared [autonomous workflow policy](../homonto/references/autonomy.md)
 through every phase. Starting or resuming onto authorizes continuation through
 close unless the user names an endpoint or asks to pause. Phase boundaries are
-checkpoints, not requests for permission to continue.
+checkpoints, not requests for permission to continue. Reach the workflow's full
+success endpoint, including required verification, archival, integration, and
+authorized publication; completed implementation tasks alone are not enough.
+A genuine blocking question or a hard blocker after permitted recovery is
+exhausted or unavailable can also stop progress under the shared policy.
 
 This includes the shared [workspace and dirty-work policy](../homonto/references/workspace-policy.md)
 in every sub-skill, even direct entry. Read generated `references/workspace.md`
@@ -301,8 +305,10 @@ crossed — never talk a change *down* from full to a preset.
 
 After routing, the dispatcher is done, but the invocation is not. The sub-skill
 owns the phase and loads the next one after its exit checklist. Continue this
-chain through close unless the user named an endpoint, explicitly requested a
-pause, or the autonomous policy identifies a real blocker.
+chain through close to the workflow's full success endpoint, unless the user
+named an earlier endpoint, explicitly requested a pause, or the autonomous policy
+identifies a blocking question or hard blocker. Report a hard blocker factually;
+do not turn it into an unnecessary continuation question or claim completion.
 
 ## 7. Delegation, parallelization, and dialogs
 

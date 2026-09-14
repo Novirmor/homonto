@@ -1,4 +1,4 @@
-# h workflow autonomy
+# h GitHub skill autonomy
 
 Follow the shared [autonomous workflow policy](../../homonto/references/autonomy.md).
 Its [workspace and dirty-work policy](../../homonto/references/workspace-policy.md)
@@ -67,10 +67,10 @@ The coordinator and implementers default to allowing task-relevant inspection,
 setup, cloning, tests/builds, Python/Node scripts, command chains, and pipes.
 Unknown commands and composition do not generically ask in this trusted profile;
 known `git push`, GitHub publication, and raw `gh api` patterns ask for the
-coordinator but are denied for implementers. Destructive patterns ask for both
-writable roles; direct-bypass denies remain. A tool prompt cannot override role
-ownership or publication approval. This Bash
-baseline overrides inherited Bash policy, not edit permissions, directory grants,
+coordinator but are denied for implementers. The coordinator auto-allows local Git
+operations; `git push` still asks. Implementers retain prompts for destructive commands.
+Direct workflow bypasses ask the coordinator for confirmation and remain denied for
+implementers. A tool prompt cannot override role ownership or publication approval. This Bash baseline overrides inherited Bash policy, not edit permissions, directory grants,
 delegation, or assigned write scope. Inspect commands and scripts for relevance;
 routine execution does not require an additional user dialog. Observed allowed
 runs are valid evidence under the workflow's normal verification rules.
@@ -98,9 +98,9 @@ recognize every risky tool; these are known host-enforcement limits, not grants.
 Resolve authorizes its verified push and PR creation; continue authorizes its
 verified push, summary comment, and demonstrably addressed thread resolutions.
 Neither needs a second conversational publication approval for those actions.
-Review publication is different: only explicit approval of the shown draft
+Review and spike publication are different: only explicit approval of the shown draft
 authorizes posting that draft. Execution trust, tool allows, and the invocation
-itself never provide review publication consent. Changed findings require renewed
+itself never provide review or spike publication consent. Changed findings require renewed
 draft approval. The same role and publication rules apply inside scripts or API
 payloads; neither default-allow shell nor past accepted commands authorizes an
 otherwise out-of-scope publication or arbitrary workflow-policy bypass.

@@ -20,11 +20,16 @@ without posting; if approved, post exactly the approved draft and report its
 URL. While approval is pending, leave the draft unpublished. Continue to this
 endpoint in the same invocation unless the user names an earlier endpoint or
 asks to pause. Follow
-[h workflow autonomy](../h-resolve-issue/references/autonomy.md) for failure
+[h GitHub skill autonomy](../h-resolve-issue/references/autonomy.md) for failure
 recovery, trusted workspace execution, and permission boundaries; it never
 replaces explicit approval of the shown draft.
 
 ## Required order
+
+For supported comments and reviews, prefer the shared
+[OpenCode draft flow](../homonto/references/publication.md#opencode-comment-and-review-drafts)
+when its tools are available. It implements the draft, decision, and posting steps
+below without an extra approval dialog; context validation remains required.
 
 1. **Resolve input.** Accept one unambiguous PR reference: a GitHub PR URL,
    `OWNER/REPO#NUMBER`, a number, or a unique head branch resolved against the

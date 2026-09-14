@@ -28,7 +28,7 @@ verification, using plain references elsewhere. See
 [ADR 0053](../adr/0053-keep-history-without-blocking-fresh-verification.md).
 A hook can act on the exit code.
 
-In a repository using the `to` framework instead, `to doctor --quiet` has
+For the `to` lifecycle workflow, `to doctor --quiet` has
 the same read-only, exit-code-only interface. Both resolve the configured
 records root and source scope where needed; they are not universally
 config-independent. Use `--dir <config-root>`, even from a source worktree.
@@ -36,8 +36,8 @@ The example below works with the command swapped.
 
 ## Via the bundled OpenCode bridge
 
-The shipped `onto`, `to`, and `h` frameworks project the read-only
-`homonto-workflow` plugin by default. It observes the workflow snapshot when a
+The shipped `onto`/`to` lifecycle frameworks and `h` GitHub skill bundle project
+the `homonto-workflow` plugin by default. Its observer reads the workflow snapshot when a
 session goes idle, after debounced file-watcher updates, and during compaction.
 It resolves the config from its materialized catalog and binding metadata, not
 the session launch directory. It displays OpenCode toasts for phase, task, and
@@ -50,6 +50,12 @@ that read. Transient subprocess/config/output failures produce an observation
 error without replacing the last successful comparison with an empty snapshot;
 a later success clears the error. Compaction awaits fresh status and includes
 pending work and findings, or an explicit observation error, not stale success.
+Compaction and resumed model requests also receive bounded recovery excerpts
+for up to three nonterminal generations, including task context, decisions,
+artifact pointers, and validated source directories. The overall context budget
+is 16 KiB with a 1.5-second wait; truncation and unavailable reads are explicit.
+Multiple changes do not automatically select an owner. The coordinator can use
+`homonto_status` and `homonto_handoff` for read-only structured inspection.
 Shutdown cancels scheduled/in-flight work. Disable the bridge with:
 
 ```toml
@@ -57,10 +63,20 @@ Shutdown cancels scheduled/in-flight work. Disable the bridge with:
 workflow_bridge = false
 ```
 
-The bridge is an observer, not an enforcement hook: it does not execute
+The observation and recovery hooks are not enforcement hooks: they do not execute
 `doctor`, block session completion, advance workflow state, or record evidence.
 Use `onto doctor` or `to doctor` without `--quiet` for the full diagnosis;
 use `--quiet` when only the exit code is needed.
+
+With the builtin `h` bundle configured, the plugin separately exposes
+coordinator-only `homonto_github_draft`, `homonto_github_status`, and
+`homonto_github_publish` tools. These stage exact issue/PR comments and supported
+formal reviews, then consume matching native question replies before publishing.
+Permission replies alone never approve a draft. Event hooks, compaction, and
+recovery never publish. Drafts are session-bound, expire after 15 minutes, and
+are lost on restart; approval is never reconstructed from conversation summaries.
+Uncertain sends are reconciled rather than resent. This is a workflow approval
+mechanism, not isolation from trusted shell or host API clients.
 
 ## Custom OpenCode hook
 

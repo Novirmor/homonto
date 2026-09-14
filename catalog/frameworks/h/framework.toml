@@ -1,6 +1,6 @@
 name = "h"
-version = "0.3.0"
-description = "GitHub intake workflows over onto and to — spike, resolve, review, continue"
+version = "0.6.0"
+description = "GitHub skill bundle over onto and to — spike, resolve, review, continue, batch review"
 
 # The h bundle drives both workflow frameworks, so it hard-depends on them:
 # declaring [frameworks.h] transitively installs onto's and to's skills,

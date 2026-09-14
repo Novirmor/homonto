@@ -168,10 +168,10 @@ cannot override them. These are command-pattern checks, not script inspection.
 ## Bundled workflow agents
 
 The `onto` and `to` frameworks each install four specialists, and — together
-with the `h` companion — the one shared `homonto` coordinator primary
+with the `h` GitHub skill bundle — the one shared `homonto` coordinator primary
 (ADR 0045; all three declare the same catalog file, so any of them installs
 it). The primary is edit-capable and owns authoritative GitHub intake for the `/h-*`
-workflows; explorers, reviewers, skeptics, and the `h-spike`/`h-review`
+skills; explorers, reviewers, skeptics, and the `h-spike`/`h-review`
 workers are deliberately read-only so they can run concurrently without
 changing the workspace. The coordinator and both implementers use
 `bash_default: allow`: general shell execution is allowed for authorized work,
@@ -195,8 +195,10 @@ defaults also apply to checked-out PR code: individual test/build approvals are
 not required, and observed allowed runs count as verification evidence.
 Known `git push`, GitHub publication, and raw `gh api` patterns ask for the
 coordinator but are denied for implementers, even for read-only API payloads.
-Destructive patterns ask for both writable roles. These protected rules and direct
-workflow bypass denies follow exact allow additions. Unknown commands and
+The coordinator auto-allows local Git operations; `git push` still asks. Implementers
+retain prompts for destructive commands. Direct workflow bypasses ask the coordinator for
+confirmation and remain denied for implementers. These protected rules follow exact allow
+additions. Unknown commands and
 shell composition otherwise inherit the allow baseline. **This deliberately
 overrides inherited Bash policy, including Bash asks and denies.** It does not
 change inherited edit behavior, declared directory grants, or delegation limits.
@@ -209,19 +211,17 @@ directory patterns contain arbitrary shell access. OpenCode may evaluate parsed
 commands separately rather than the whole invocation. These are known host
 enforcement limits, not authority to evade policy or an actual prompt/denial.
 
-With `[tooling] shell_proxy = "rtk"`, the renderer derives command-specific
-`rtk` and `rtk proxy` allows from the base rules and exact additions. Protected
-asks also cover these known wrapper forms without the provider configured;
-trusted-default denies do too. Guarded custom profiles retain the previous
-provider-dependent deny expansion. Under the trusted allow baseline, unmatched
-wrapper requests are allowed; protecting recognizable forms is not a wrapper
-sandbox. Guarded profiles retain command-specific allows, not a blanket RTK grant.
+With `[tooling] shell_proxy = "rtk"`, the coordinator receives an explicit `rtk *`
+allow. Protected asks still follow that allow and cover known wrapper forms. The renderer
+also derives command-specific `rtk` and `rtk proxy` allows from base rules and exact
+additions. Guarded custom profiles retain the previous provider-dependent deny expansion
+and command-specific allows; the coordinator's RTK grant is not a wrapper sandbox.
 
 Use documented command-first workflow forms such as `onto status --dir ...`.
-Direct `onto bypass ...` and `to bypass ...` requests are denied. Flag-first
-`onto`/`to` forms have protected asks because glob rules cannot reliably identify
-subcommands after arbitrary flags. Scripts can hide them entirely; the allow
-baseline does not authorize flag-first, wrapped, or scripted bypasses.
+Direct `onto bypass ...` and `to bypass ...` requests ask the coordinator for
+confirmation. Flag-first `onto`/`to` forms also ask because glob rules cannot
+reliably identify subcommands after arbitrary flags. Scripts can hide them entirely;
+the allow baseline does not authorize a bypass without an explicit user request.
 A change or evidence name such as `bypass-fix` is an argument, not a bypass
 command. No allowed command or tool approval waives a workflow requirement.
 
@@ -234,7 +234,7 @@ reviewed command allows (or native permissions without a neutral block); there
 is no new model-route Bash-default knob. See
 [ADR 0054](../adr/0054-default-to-trusted-workspace-shell.md).
 
-The h workflows work toward explicit outcomes: an implementation brief, a
+The `h` skills work toward explicit outcomes: an implementation brief, a
 verified issue-closing PR, verified updates to the existing PR, or validated
 review drafts. Resolve and continuation select `to` or `onto` using explicit
 preference, an existing matching change, repository policy, then risk and fit.
@@ -294,8 +294,9 @@ The coordinator uses the configuration root as its workspace root, falling back
 to the Git worktree root and then the host working directory. It does not ask
 where to work during a normal invocation and never initializes Git unless the
 user explicitly asks. It runs the evidence-gated onto lifecycle, the lighter
-`plan → do → done` counterpart, and the h GitHub intake — complementary per
-configuration, selected per change.
+`plan → do → done` counterpart, and the `h` GitHub intake skills. Lifecycle
+workflows are selected per change; `[frameworks.h]` is the stable package key
+that installs the skill bundle and both workflow dependencies.
 
 The `model:` and optional `variant:` lines come from the config's
 `[subagents.<name>.opencode]` block. The block is required — a production
@@ -327,7 +328,7 @@ rewrite a native source to hide a name mismatch.
 The onto framework's specialists show the division of labor: read-only
 `onto-explorer` (trivial model), `onto-reviewer` and `onto-skeptic` (review),
 and the edit-capable `onto-implementer` (coding) — all `spawn: []`; they
-never nest. The `to-*` twins carry the same roles, and the h framework adds
+never nest. The `to-*` twins carry the same roles, and the `h` skill bundle adds
 the read-only `h-spike` and `h-review` workers in the same shape.
 
 ## Remote subagents are pinned and fail-closed

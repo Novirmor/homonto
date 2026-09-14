@@ -204,8 +204,8 @@ four specialists the skills delegate to.
 
 - **`homonto`** — the coordinator, and the one agent that is not a
   specialist. Both workflow frameworks declare it from the same catalog path
-  (ADR 0045), so installing onto, to, or the `h` companion installs the same
-  agent; it is declared `primary: true`, which renders as OpenCode's
+  (ADR 0045), so installing onto, to, or the `h` GitHub skill bundle installs
+  the same agent; it is declared `primary: true`, which renders as OpenCode's
   `mode: primary`, where the `/onto` command carries `agent: homonto` and
   routes into it. The agent prompt deliberately does not restate the skill,
   so the two cannot drift.

@@ -40,7 +40,11 @@ itself.
 Follow the shared [autonomous workflow policy](../homonto/references/autonomy.md)
 through every phase. Starting or resuming to authorizes continuation through
 done unless the user names an endpoint or asks to pause. Phase boundaries are
-checkpoints, not requests for permission to continue.
+checkpoints, not requests for permission to continue. Reach the workflow's full
+success endpoint, including required verification, archival, integration, and
+authorized publication; completed implementation tasks alone are not enough.
+A genuine blocking question or a hard blocker after permitted recovery is
+exhausted or unavailable can also stop progress under the shared policy.
 
 Follow the shared [workspace and dirty-work policy](../homonto/references/workspace-policy.md)
 in every sub-skill, even direct entry. Read generated `references/workspace.md`
@@ -153,8 +157,11 @@ An abandoned archive is unsuccessful history, never verified completion or
 publication input. Do not resume abandoned work without new explicit user intent.
 
 After a sub-skill completes its phase, load the next sub-skill and continue in
-the same invocation. Stop only at a user-named endpoint, an explicit pause, or a
-real blocker under the autonomous workflow policy.
+the same invocation through the workflow's full success endpoint. Finished plan
+tasks route to `to-done` for final verification and archival, not a completion
+report. Stop earlier only for a user-named endpoint, an explicit pause, or a
+blocking question or hard blocker under the autonomous workflow policy. Report
+a hard blocker factually without inventing a question or claiming completion.
 
 ## Delegation rules (all phases)
 

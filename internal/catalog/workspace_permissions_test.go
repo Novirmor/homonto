@@ -79,7 +79,8 @@ func TestWorkspaceCommandsMatchCoordinatorPermissions(t *testing.T) {
 				{[]string{"--dir", "/workspace", "bypass", "change"}, "bypass", "ask"},
 				{[]string{"--dir=/workspace", "bypass", "change"}, "bypass", "ask"},
 				{[]string{"--help", "bypass", "change"}, "bypass", "ask"},
-				{[]string{"bypass", "--help"}, "bypass", "deny"},
+				{[]string{"bypass", "change", "--to", "close", "--reason", "operator recovery"}, "bypass", "ask"},
+				{[]string{"bypass", "--help"}, "bypass", "ask"},
 				{[]string{"help", "bypass"}, "help", "allow"},
 				{[]string{"new", "bypass-fix", "--dir", "/workspace"}, "new", "allow"},
 			} {

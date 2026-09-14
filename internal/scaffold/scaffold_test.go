@@ -55,6 +55,75 @@ func TestScaffoldExamplesUseCurrentFormatAndValidate(t *testing.T) {
 	}
 }
 
+func TestInitCreatesStarterFilesWithoutLocalContentDirectory(t *testing.T) {
+	dir := t.TempDir()
+	created, updated, err := Init(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(created) != 3 || len(updated) != 0 {
+		t.Errorf("init: created %v, updated %v; want three created files and no updates", created, updated)
+	}
+	for _, name := range []string{"homonto.toml", ".gitignore", ".env.example"} {
+		if _, err := os.Stat(filepath.Join(dir, name)); err != nil {
+			t.Errorf("starter file %s: %v", name, err)
+		}
+	}
+	if _, err := os.Stat(filepath.Join(dir, "homonto")); !os.IsNotExist(err) {
+		t.Fatalf("default init must not create homonto/: stat error = %v", err)
+	}
+}
+
+func TestInitPreservesExistingLocalSkillContent(t *testing.T) {
+	for _, legacyKeep := range []bool{false, true} {
+		name := "without gitkeep"
+		if legacyKeep {
+			name = "with legacy gitkeep"
+		}
+		t.Run(name, func(t *testing.T) {
+			dir := t.TempDir()
+			if _, _, err := Init(dir); err != nil {
+				t.Fatal(err)
+			}
+			skill := filepath.Join("homonto", "skills", "custom", "SKILL.md")
+			if err := os.MkdirAll(filepath.Join(dir, filepath.Dir(skill)), 0o755); err != nil {
+				t.Fatal(err)
+			}
+			content := map[string]string{
+				"homonto.toml": "[skills.custom]\nsource = \"local:custom\"\nscope = \"project\"\n",
+				skill:          "# My local skill\nUser-authored instructions.\n",
+			}
+			keep := filepath.Join("homonto", "skills", ".gitkeep")
+			if legacyKeep {
+				content[keep] = "# user-owned placeholder\n"
+			}
+			for path, body := range content {
+				if err := os.WriteFile(filepath.Join(dir, path), []byte(body), 0o644); err != nil {
+					t.Fatal(err)
+				}
+			}
+			created, updated, err := Init(dir)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(created) != 0 || len(updated) != 0 {
+				t.Errorf("re-init must be a no-op: created %v, updated %v", created, updated)
+			}
+			for path, want := range content {
+				got, err := os.ReadFile(filepath.Join(dir, path))
+				if err != nil || string(got) != want {
+					t.Errorf("re-init changed %s: got %q, error %v; want %q", path, got, err, want)
+				}
+			}
+			if !legacyKeep {
+				if _, err := os.Stat(filepath.Join(dir, keep)); !os.IsNotExist(err) {
+					t.Errorf("init must not add a gitkeep to local skills: stat error = %v", err)
+				}
+			}
+		})
+	}
+}
+
 func TestInitCreatesFilesAndSkipsExisting(t *testing.T) {
 	dir := t.TempDir()
 	os.WriteFile(filepath.Join(dir, "homonto.toml"), []byte("# mine\n"), 0o644)
@@ -74,7 +143,7 @@ func TestInitCreatesFilesAndSkipsExisting(t *testing.T) {
 	if _, err := os.Stat(filepath.Join(dir, ".gitignore")); err != nil {
 		t.Fatal(".gitignore not created")
 	}
-	if _, err := os.Stat(filepath.Join(dir, "homonto", "skills")); err != nil {
-		t.Fatal("homonto/skills not created")
+	if _, err := os.Stat(filepath.Join(dir, "homonto")); !os.IsNotExist(err) {
+		t.Fatalf("init must not create homonto/: stat error = %v", err)
 	}
 }

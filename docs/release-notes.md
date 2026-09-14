@@ -15,6 +15,97 @@ bookkeeper) — for every supported OS/arch as separate archives under one
 `SHA256SUMS`. `onto` and `to` each require `homonto` to have installed their
 framework first (`[frameworks.onto]` / `[frameworks.to]` + `homonto apply`).
 
+### New in v0.28.0 — OpenCode recovery tools and approved GitHub drafts
+
+- OpenCode compaction and resumed model requests receive bounded recovery context:
+  unfinished tasks, recorded decisions, artifact pointers, and validated source
+  directories for up to three nonterminal change generations. Missing or truncated
+  context is explicit; recovery does not select an owner or advance a workflow.
+- The coordinator gets read-only `homonto_status` and `homonto_handoff` tools.
+  The new `homonto workflow handoff --workflow <onto|to> --change <name>
+  --identity <id> --json` command preserves the exact selected `--config` and
+  generation, including archives without borrowing a same-name active worktree.
+- Builtin `h` enables `homonto_github_draft`, `homonto_github_status`, and
+  `homonto_github_publish`. They support issue comments, PR summary comments,
+  and commit-bound `COMMENT`/`REQUEST_CHANGES` reviews. The coordinator shows
+  the exact preview and submits its native question; only matching replies
+  approve the selected items. Workers cannot use these tools. Permission allows
+  are not draft approval, and uncertain sends are reconciled rather than resent.
+- `/h-spike-issue` offers to post its checked brief after explicit draft approval.
+  A spike nested inside resolve remains research-only unless comment publication
+  is separately requested. Existing push and PR-creation authorization is unchanged.
+- Continuation instructions now require the full success endpoint, not merely
+  completed implementation tasks. Required verification, archival, integration,
+  and authorized publication still follow. Hard blockers permit factual reports
+  without invented continuation questions or false completion claims.
+
+### Upgrading to v0.28.0
+
+Install all three binaries at v0.28.0, run `homonto update` (or `homonto apply`)
+in each configured project, then quit and restart OpenCode. The projection refreshes
+its config/coordinator binding and tool permissions. No workflow records migrate.
+`integrations.opencode.workflow_bridge = false` disables the managed runtime
+integration, including its recovery and GitHub draft tools.
+
+Drafts and approvals are memory-only, session-bound, and expire after 15 minutes.
+Restart requires a fresh draft and approval; reconcile any interrupted publication
+before proceeding. Batches allow up to ten items, 8 KiB per body, and 32 KiB of
+bodies. Native questions are required to approve drafts. Question replies are
+host-channel confirmation, not human-only attestation or a sandbox against trusted
+shell/API access. Formal `APPROVE` reviews retain the existing explicit,
+commit-bound path. Tool registration and wire schemas were smoke-tested with
+OpenCode 1.18.30; publication tests use fake GitHub responses, not live comments.
+
+### New in v0.27.0 — cleaner setup and GitHub skill naming
+
+- `homonto init` now creates only `homonto.toml`, `.gitignore`, and
+  `.env.example`. It no longer creates an unused `homonto/skills/.gitkeep`.
+  Existing local content is preserved; create and declare local skills when
+  needed.
+- The installer, catalog, and current guides describe `h` as a **GitHub skill
+  bundle**, not a third lifecycle workflow. `[frameworks.h]`, the five `/h-*`
+  entry points, and its dependencies on onto and to are unchanged.
+- Guided setup rejects invalid repository selections, numeric-only repository
+  names, model `#variant` suffixes, workflow-root aliases of the config root,
+  and records/tmp collisions. The config loader and workflow resolver also
+  reject root aliases such as `./` and `docs/..`.
+- Installation refuses directory targets for executables. Retry loops stop
+  cleanly at EOF, invalid detected model defaults can be replaced, and path
+  validation ignores inherited `CDPATH`. Empty-array handling and version
+  validation work with Bash 3.2 as well as current Bash.
+- Next steps reflect selected configuration and installed binaries. The model
+  prompt discloses its global OpenCode scope. Current documentation corrects
+  coordinator naming, local-skill setup, repository relocation, and the limits
+  of workflow diagnostics.
+
+### Upgrading to v0.27.0
+
+Install all three binaries at v0.27.0, then run `homonto update` (or
+`homonto apply`) in each configured project and restart OpenCode. Existing
+local-skill directories are not deleted, and workflow records are not migrated.
+If an old `workflow.root` resolves to the config directory itself, choose a
+dedicated records directory before applying; these aliases are now rejected.
+
+### New in v0.26.0 — autonomous coordinator permissions
+
+- The dedicated `/onto-bypass` and `/to-bypass` commands now prompt the
+  coordinator for confirmation instead of being unconditionally denied. They
+  remain unavailable to implementers and undiscoverable to ordinary workflow
+  skills.
+- The coordinator can perform all local Git operations without a tool prompt;
+  `git push` still asks. Implementers retain destructive-command prompts.
+- When `[tooling] shell_proxy = "rtk"`, the coordinator receives an explicit
+  `rtk *` permission. Recognized publication, workflow-bypass, and destructive
+  non-Git commands still prompt. See [ADR 0055](adr/0055-require-confirmation-for-explicit-workflow-bypasses.md),
+  [ADR 0056](adr/0056-allow-coordinator-local-git-operations.md), and
+  [ADR 0057](adr/0057-allow-coordinator-rtk-commands.md).
+
+### Upgrading to v0.26.0
+
+Install all three binaries at v0.26.0, then run `homonto update` (or `homonto
+apply`) and restart OpenCode. Reapplying updates the coordinator's rendered
+permission map; no workflow records migrate.
+
 ### New in v0.25.0 — trusted workspace shell by default
 
 - The coordinator and implementers now default to trusted-workspace shell

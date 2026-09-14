@@ -983,6 +983,13 @@ func SourceDirs(configRoot, workflow, change string, aliases []string) (map[stri
 	if err != nil {
 		return nil, err
 	}
+	return SourceDirsForLayout(l, workflow, change, aliases)
+}
+
+func SourceDirsForLayout(l Layout, workflow, change string, aliases []string) (map[string]string, error) {
+	if err := checkWorktreeNames(workflow, change); err != nil {
+		return nil, err
+	}
 	selected, err := worktreeAliases(l, aliases)
 	if err != nil {
 		return nil, err
@@ -1008,6 +1015,58 @@ func SourceDirs(configRoot, workflow, change string, aliases []string) (map[stri
 		out[alias] = path
 	}
 	return out, nil
+}
+
+func SourceDirsForActiveState(l Layout, workflow, change string) (map[string]string, error) {
+	if err := checkWorktreeNames(workflow, change); err != nil {
+		return nil, err
+	}
+	s, err := bindingState(l, workflow, change, "", true)
+	if err != nil {
+		return nil, err
+	}
+	if s.RepoMode != "explicit" && len(s.Repos) == 0 && len(s.RepoBases) == 0 {
+		l.SchemaVersion = 1
+	} else if (s.RepoMode == "explicit") != l.ExplicitRepos() {
+		return nil, fmt.Errorf("worktree: source scope changed between legacy and explicit configuration; restore the recorded configuration")
+	}
+	selected, err := worktreeAliases(l, s.Repos)
+	if err != nil {
+		return nil, err
+	}
+	for _, alias := range selected {
+		path, err := worktreeAuthority(l, alias)
+		if err != nil {
+			return nil, err
+		}
+		if err := realWorktreePath(path, true); err != nil {
+			return nil, err
+		}
+		if s.RepoBases[alias].GitCommonDir != "" {
+			common, err := worktreeCommon(path)
+			if err != nil {
+				return nil, err
+			}
+			if err := s.checkAuthority(l, alias, common); err != nil {
+				return nil, err
+			}
+		}
+	}
+	r, err := readWorktreeRegistry(l)
+	if err != nil {
+		return nil, err
+	}
+	for _, w := range r.Entries {
+		if w.Workflow == workflow && w.Change == change {
+			if w.StateID != s.identity {
+				return nil, fmt.Errorf("worktree: ownership: state identity mismatch for %s/%s", workflow, change)
+			}
+			if err := validateWorktree(l, w); err != nil {
+				return nil, err
+			}
+		}
+	}
+	return SourceDirsForLayout(l, workflow, change, s.Repos)
 }
 
 // CreateWorktree registers and creates an isolated checkout without touching the

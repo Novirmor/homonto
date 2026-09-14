@@ -5,8 +5,9 @@ Known limitations of the beta line, common gotchas, and their workarounds.
 ## Building & installing
 
 **`go build .` fails with `build output "homonto" already exists and is a
-directory`.** The output name collides with the `homonto/` content directory
-next to `main.go`, and `go build -o homonto .` silently deposits the binary
+directory`.** This happens if a local `homonto/` content directory exists
+next to `main.go`; init no longer creates it by default. The output name collides
+with that directory, and `go build -o homonto .` silently deposits the binary
 *inside* that directory. Use `go install .`, `go run .`, or build to an
 explicit path outside the content dir:
 
@@ -75,12 +76,16 @@ a file that is not its own symlink. A real file, or a link pointing
 elsewhere at the target path, is reported instead of overwritten. Move the
 conflicting file out of the way and re-apply.
 
-**I moved/renamed my homonto repo and now everything conflicts.** Skill
-symlinks store an **absolute** target, so after a move the existing links
-point at the old path, and `apply`/`status` report conflicts rather than
-silently repointing — homonto never changes a symlink it cannot prove it
-owns. Delete the stale links and re-run `apply` to relink at the new
-location.
+**I moved/renamed my homonto repo.** Same-domain project symlinks use relative
+targets and move with the repository. From the new location, run `homonto plan`
+and `homonto apply`. They repair eligible stale absolute links when the on-disk
+target exactly matches the state-recorded prior target and the old/new path
+positions satisfy the relocation checks. Eligible user-scoped links can also
+be repaired when only their source moved; user-scoped and cross-repository
+targets remain absolute. Cross-repository links do not qualify for same-domain
+repair. If a conflict remains, inspect the link and `.homonto/state.json` to
+understand the ownership mismatch; keep managed links and state intact for
+diagnosis. See [projection & state](projection-and-state.md).
 
 **A tool file was reported unparseable.** That adapter aborts and reports;
 homonto never overwrites a file it cannot parse. Fix the JSON by hand (or
@@ -110,8 +115,9 @@ in v0.13.0: a config naming them — `targets = ["claude"]` or
 at load, naming the key. The `homonto import` command (a Claude MCP
 bootstrap) went with them.
 
-- **Frameworks** resolve from the builtin catalog (`onto` and/or `to`,
-  complementary), a `local:` root, or a digest-pinned `remote:` source.
+- **Packages under `[frameworks.*]`** resolve from the builtin catalog (`onto`
+  and/or `to` lifecycle workflows, or the `h` GitHub skill bundle that depends
+  on both), a `local:` root, or a digest-pinned `remote:` source.
 - **Remote sources** (subagents and frameworks) require a
   `digest = "sha256:…"` pin (see
   [remote source trust](remote-source-trust.md)). homonto never re-resolves
@@ -121,7 +127,7 @@ bootstrap) went with them.
 
 **`onto new`/`advance`/`close` refuse to run.** The mutating commands
 require the onto framework to be installed *by homonto*
-(`[frameworks.onto]` + `homonto apply`). The read-only commands (`status`,
+(`[frameworks.onto]` or `[frameworks.h]` + `homonto apply`). The read-only commands (`status`,
 `state`, `gate`, `scale`, `graph`, `handoff`, `dirt`, `doctor`, `version`)
 always work.
 
@@ -180,7 +186,7 @@ resume without re-deriving state.
 
 **`to init`/`new`/`phase`/`done`/`abandon` refuse to run.** Same rule as
 onto: the mutating commands require the to framework installed *by homonto*
-(`[frameworks.to]` + `homonto apply`). The read-only commands (`status`,
+(`[frameworks.to]` or `[frameworks.h]` + `homonto apply`). The read-only commands (`status`,
 `handoff`, `doctor`, `version`) always work.
 
 **`to done` refuses a scoped change.** A change created with `to new --repo

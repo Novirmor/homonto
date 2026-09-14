@@ -123,12 +123,10 @@ func TestBypassResourcesAreDedicatedCommands(t *testing.T) {
 			if err != nil {
 				return err
 			}
-			// A homonto capability block's bash_deny entries may name the
-			// bypass commands in order to DENY them (rendered verbatim by
-			// agentfm); that enforces this test's contract rather than
-			// weakening it. Only the deny block is exempt — an allow entry
-			// naming bypass still fails below.
-			lower := strings.ToLower(stripBashDenyBlock(string(content)))
+			// A homonto capability block's bash_ask/bash_deny entries may name
+			// the bypass commands as permission enforcement (rendered verbatim
+			// by agentfm). An allow entry still fails this scan.
+			lower := strings.ToLower(stripBashProtectionBlocks(string(content)))
 			for _, prohibited := range []string{"/onto-bypass", "/to-bypass", "onto-bypass", "to-bypass", "onto bypass", "to bypass"} {
 				if strings.Contains(lower, prohibited) {
 					t.Errorf("ordinary resource %s must not reference %q", path, prohibited)
@@ -142,22 +140,24 @@ func TestBypassResourcesAreDedicatedCommands(t *testing.T) {
 	}
 }
 
-// stripBashDenyBlock removes the child list items of a `bash_deny:` key (the
-// key itself stays) so capability-denial declarations can be exempted from a
-// prose scan without exempting anything else in the resource.
-func stripBashDenyBlock(content string) string {
+// stripBashProtectionBlocks removes the child list items of `bash_ask:` and
+// `bash_deny:` keys (the keys themselves stay) so capability-enforcement
+// declarations can be exempted from a prose scan without exempting anything
+// else in the resource.
+func stripBashProtectionBlocks(content string) string {
 	var out []string
-	inDeny := false
+	inProtection := false
 	for _, ln := range strings.Split(content, "\n") {
-		if inDeny {
+		if inProtection {
 			if ln == "" || ln[0] == ' ' || ln[0] == '\t' {
 				continue
 			}
-			inDeny = false
+			inProtection = false
 		}
-		if strings.HasPrefix(strings.TrimSpace(ln), "bash_deny:") {
+		key := strings.TrimSpace(ln)
+		if strings.HasPrefix(key, "bash_ask:") || strings.HasPrefix(key, "bash_deny:") {
 			out = append(out, ln)
-			inDeny = true
+			inProtection = true
 			continue
 		}
 		out = append(out, ln)
@@ -165,20 +165,20 @@ func stripBashDenyBlock(content string) string {
 	return strings.Join(out, "\n")
 }
 
-// The exemption must be surgical: deny children vanish, but an ALLOW entry
-// naming a bypass command survives the strip and would still fail the walk.
-func TestStripBashDenyBlockKeepsAllows(t *testing.T) {
-	content := "homonto:\n  bash_allow:\n    - \"onto bypass*\"\n  bash_deny:\n    - \"onto bypass*\"\n  spawn: []\n"
-	stripped := stripBashDenyBlock(content)
+// The exemption must be surgical: protection children vanish, but an ALLOW
+// entry naming a bypass command survives the strip and would still fail the walk.
+func TestStripBashProtectionBlocksKeepsAllows(t *testing.T) {
+	content := "homonto:\n  bash_allow:\n    - \"onto bypass*\"\n  bash_ask:\n    - \"onto bypass*\"\n  bash_deny:\n    - \"to bypass*\"\n  spawn: []\n"
+	stripped := stripBashProtectionBlocks(content)
 	if !strings.Contains(stripped, `- "onto bypass*"`) {
 		t.Fatalf("allow entries must survive the strip:\n%s", stripped)
 	}
-	if strings.Contains(stripped, `- "onto bypass*"\n  spawn`) {
-		t.Fatalf("strip must not reorder survivors:\n%s", stripped)
+	if strings.Contains(stripped, `- "to bypass*"`) {
+		t.Fatalf("protection entries must not survive the strip:\n%s", stripped)
 	}
-	stripped = stripBashDenyBlock("bash_allow:\n  - \"onto bypass*\"\nbash_deny:\n  - \"to bypass*\"\nnext: 1\n")
+	stripped = stripBashProtectionBlocks("bash_allow:\n  - \"onto bypass*\"\nbash_ask:\n  - \"onto bypass*\"\nbash_deny:\n  - \"to bypass*\"\nnext: 1\n")
 	if strings.Count(stripped, "bypass") != 1 {
-		t.Fatalf("only the deny child may vanish:\n%s", stripped)
+		t.Fatalf("only protection children may vanish:\n%s", stripped)
 	}
 }
 
@@ -207,6 +207,7 @@ func TestWorkflowPromptsDefaultToAutonomousContinuation(t *testing.T) {
 		"Ask the user only when",
 		"not automatically a user question",
 		"Do not ask for approval of a summary, proposal, plan, diff, phase transition, or close plan",
+		"never stop merely to ask whether to continue",
 	} {
 		if !strings.Contains(policyText, want) {
 			t.Errorf("autonomy policy missing %q", want)
@@ -227,6 +228,59 @@ func TestWorkflowPromptsDefaultToAutonomousContinuation(t *testing.T) {
 			if strings.Contains(string(content), prohibited) {
 				t.Errorf("%s retains ceremonial instruction %q", file, prohibited)
 			}
+		}
+	}
+}
+
+func TestContinuationRequiresFullSuccessEndpoint(t *testing.T) {
+	for _, file := range []string{
+		"subagents/homonto.md", "skills/homonto/references/autonomy.md",
+		"skills/onto/SKILL.md", "skills/to/SKILL.md",
+	} {
+		t.Run(file, func(t *testing.T) {
+			text := hPromptText(t, file)
+			for _, want := range []string{"full success endpoint", "verification", "archival", "integration", "publication", "endpoint", "pause", "hard blocker"} {
+				if !strings.Contains(text, want) {
+					t.Errorf("continuation contract missing %q", want)
+				}
+			}
+			for _, obsolete := range []string{
+				"every task of the change is finished (then report completion and stop)",
+				"stop only when every remaining task is finished",
+				"stop only when the change's tasks are finished",
+				"legitimate only when the remaining tasks are finished",
+				"exactly three reasons", "question and nothing else",
+			} {
+				if strings.Contains(text, obsolete) {
+					t.Errorf("unsafe stopping condition retained: %q", obsolete)
+				}
+			}
+		})
+	}
+	policy := hPromptText(t, "skills/homonto/references/autonomy.md")
+	for _, want := range []string{
+		"Finished implementation tasks alone do not establish completion",
+		"A phase sub-skill's completion is not the invocation's endpoint",
+	} {
+		if !strings.Contains(policy, want) {
+			t.Errorf("completed-checklist scenario missing %q", want)
+		}
+	}
+	to := hPromptText(t, "skills/to/SKILL.md")
+	if !strings.Contains(to, "| finishing do (work complete, verifying) | `to-done` |") {
+		t.Error("finished implementation must still route to final verification")
+	}
+}
+
+func TestContinuationAllowsFactualBlockerReports(t *testing.T) {
+	policy := hPromptText(t, "skills/homonto/references/autonomy.md")
+	for _, want := range []string{
+		"explicit permission denial", "exhausted bounded retries", "uncertain publication outcome",
+		"report the blocker, evidence, preserved state, and next action, then stop",
+		"Do not invent a question", "Never retry or route around an explicit denial",
+	} {
+		if !strings.Contains(policy, want) {
+			t.Errorf("hard-blocker scenario missing %q", want)
 		}
 	}
 }

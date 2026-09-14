@@ -5,8 +5,9 @@ agent: homonto
 
 # /h-continue-pr
 
-Load and follow the `h-continue-pr` skill. If it is not installed, say the
-`h` framework is missing (declare `[frameworks.h]` and run `homonto apply`)
+Load and follow the `h-continue-pr` skill. If it is unavailable, say the
+required skill is unavailable, direct the user to install or reapply the `h`
+GitHub skill bundle (declare `[frameworks.h]` if needed and run `homonto apply`),
 and stop.
 
 `$ARGUMENTS` is one unambiguous PR reference: a GitHub PR URL,

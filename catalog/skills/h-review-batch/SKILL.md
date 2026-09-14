@@ -19,11 +19,17 @@ final table with reviewed/failed/posted counts and any posted URLs. While
 approval is pending, leave all drafts unpublished. Continue to this endpoint
 in the same invocation unless the user names an earlier endpoint or asks to
 pause. Follow
-[h workflow autonomy](../h-resolve-issue/references/autonomy.md) for failure
+[h GitHub skill autonomy](../h-resolve-issue/references/autonomy.md) for failure
 recovery, trusted workspace execution, and permission boundaries; it never
 replaces explicit approval of the shown drafts.
 
 ## Required order
+
+For comment publication, prefer the shared
+[OpenCode draft flow](../homonto/references/publication.md#opencode-comment-and-review-drafts)
+when available. Stage the selected drafts together and use its single native
+question dialog for the per-item decisions; do not ask twice. Larger batches
+retain the explicit shown-draft approval path below rather than truncating them.
 
 1. **Parse input.** Either a repository URL (`https://github.com/OWNER/REPO`)
     optionally followed by `limit N` (default 10) and `author USER`, or one

@@ -12,9 +12,10 @@ do not transfer that authority. Follow the invocation's exact publication scope
 and the workflow's verification gates, even for publication inside a script,
 interpreter, wrapper, or API payload. Known `git push`, GitHub publication, and
 raw `gh api` patterns ask for the coordinator but are denied for implementers.
-Destructive patterns ask for both writable roles. These protected rules follow
-exact allow additions, but cannot detect every hidden operation. A tool prompt
-cannot override role ownership or publication approval.
+The coordinator auto-allows local Git operations; `git push` still asks. Implementers
+retain prompts for destructive commands. These protected rules follow exact allow
+additions, but cannot detect every hidden operation. A tool prompt cannot override role
+ownership or publication approval.
 
 Resolve authorizes its verified push and PR creation; continue authorizes its
 verified push, summary comment, and demonstrably addressed thread resolutions.
@@ -24,6 +25,52 @@ approval. Other workflows use their own publication authorization, not h's by
 analogy. An allowed command, a tool approval, or a private history of accepted
 commands does not establish draft approval or expand the authorized scope.
 Honor tool prompts and denials; never route around them through another tool.
+
+## OpenCode comment and review drafts
+
+When available, use `homonto_github_draft`, `homonto_github_status`, and
+`homonto_github_publish` for issue comments, PR summary comments, and formal
+`COMMENT` or `REQUEST_CHANGES` reviews. These tools belong to the coordinator;
+workers cannot stage or publish. They do not push, create PRs, resolve threads,
+or replace source verification. Existing resolve/continue authorization for
+those other operations remains unchanged.
+
+Stage a batch with `items`, each containing `kind` (`issue_comment`, `pr_comment`,
+or `pr_review`), canonical HTTPS `url`, exact `body`, `baseOID`, `headOID`, and
+`reviewEvent`. Issue comments use empty strings for the three review fields;
+PR comments require reviewed OIDs and an empty event. The tool checks declared
+repository scope and captures the posting account and destination. PR bodies
+include the reviewed OIDs before preview. Read the returned full preview, not
+the original body alone. Each body is limited to 8 KiB, each batch to ten items
+and 32 KiB of bodies; do not silently truncate a larger draft.
+
+Show the exact returned preview, then pass its `question` arguments unchanged
+to OpenCode's native question tool. Each item offers Decline, Revise, or a unique
+Publish choice in one dialog. Only the matching question reply approves that
+item. A model-provided approval flag, tool permission, or earlier conversation
+summary cannot approve it. If the user chooses Revise, stage a new batch and
+show it again; staging invalidates unpublished approvals from the previous batch.
+Publish unaffected approved items before staging revisions when appropriate.
+No question tool or no reply means no publication.
+
+Call `homonto_github_publish` with the returned `draftID` after the decision.
+It sends only approved items, rechecks remote context after tool permission,
+and returns per-item states and confirmed URLs. Stale items need a fresh review
+and draft. Uncertain sends are reconcile-only: do not switch to shell posting,
+stage another batch, or blindly retry. Repeating publish may confirm an existing
+remote result but never resends an uncertain item. Declined items stay unpublished.
+
+Drafts and approvals live only in the current plugin instance and session.
+Restart requires restaging and fresh approval; do not infer approval from injected
+recovery context. If publication may have been interrupted, reconcile the remote
+destination first and stop if the outcome remains unclear. The native question
+channel is workflow confirmation, not human-only attestation: host API clients
+can answer questions, and trusted shell execution is not a sandbox.
+
+If these tools are absent, use the skill's existing shown-draft approval and
+body-file commands. A tool denial, stale draft, or uncertain outcome is not
+tool absence. Formal `APPROVE` reviews remain on the existing commit-bound
+review path, only when explicitly selected and with no critical or major findings.
 
 ## Pin and reconcile
 

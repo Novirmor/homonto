@@ -1,6 +1,6 @@
 # Review draft format
 
-Every review workflow presents findings in this shape — one finding per
+Every review skill presents findings in this shape — one finding per
 line, severity first, so a reader can stop reading when the severity drops.
 
 ```markdown

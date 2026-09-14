@@ -275,6 +275,9 @@ func Render(name string, content []byte, tool string, ctx *RenderContext) ([]byt
 		if ctx != nil && ctx.ShellProxy == "rtk" && (h.Bash == nil || *h.Bash) {
 			h.BashAllow = rtkPatterns(h.BashAllow, false)
 			spec.BashAllowAdd = rtkPatterns(spec.BashAllowAdd, false)
+			if name == "homonto" {
+				h.BashAllow = append(h.BashAllow, "rtk *")
+			}
 		}
 		// Known wrappers must not evade protected prompts or a trusted-shell
 		// deny just because RTK is not configured as the shell proxy.
@@ -283,6 +286,15 @@ func Render(name string, content []byte, tool string, ctx *RenderContext) ([]byt
 			h.BashDeny = rtkPatterns(h.BashDeny, true)
 		}
 		if perm := opencodePermission(h, spec.BashAllowAdd, externalDirectories, externalDirectoryDenies, editDirectoryDenies, managesExternalDirectories); perm != "" {
+			if name == "homonto" || strings.HasPrefix(name, "onto-") || strings.HasPrefix(name, "to-") || name == "h-spike" || name == "h-review" {
+				action := "deny"
+				if name == "homonto" && !h.ReadOnly && (h.Bash == nil || *h.Bash) {
+					action = "allow"
+				}
+				for _, tool := range []string{"homonto_status", "homonto_handoff", "homonto_read", "homonto_github_draft", "homonto_github_status", "homonto_github_publish", "homonto_github_read"} {
+					perm += "\n  " + tool + ": " + action
+				}
+			}
 			extra = append(extra, "permission:", perm)
 		}
 	default:

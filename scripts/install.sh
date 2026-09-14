@@ -33,6 +33,7 @@ WORKFLOW_ROOT="docs"
 WORKFLOW_MODEL=""
 REPO_NAMES=()
 REPO_PATHS=()
+REPO_CANONICAL_PATHS=()
 UI_SECTION="Install homonto"
 
 usage() {
@@ -103,19 +104,22 @@ ui_section() {
 
 ui_hint() { printf '  > %s\n' "$1" >&2; }
 
-# ask <prompt> <default> -> echoes the answer (empty when the default is used).
+# ask <prompt> <default> [retry] -> echoes the answer.
 # Prompt goes to stderr so the answer is the only thing on stdout, and callers
-# capture it. EOF (closed stdin) means "use the default".
+# capture it. EOF uses the default on a first attempt, but aborts a retry.
 ask() {
   local prompt="$1" default="$2" answer=""
   printf '  ? %s' "$prompt" >&2
   [ -n "$default" ] && printf ' [%s]' "$default" >&2
   printf ' ' >&2
-  if ! IFS= read -r answer; then answer=""; fi
+  if ! IFS= read -r answer; then
+    [ "${3:-no}" != yes ] || die "end of input while retrying: ${prompt}"
+    answer=""
+  fi
   if [ -n "$answer" ]; then printf '%s\n' "$answer"; else printf '%s\n' "$default"; fi
 }
 
-# ui_input <prompt> <default> -> the answer (default when empty/cancelled).
+# ui_input <prompt> <default> [retry] -> the answer (default when empty).
 ui_input() {
   local prompt="$1" default="$2" value=""
   if [ "$(ui_mode)" = dialog ]; then
@@ -132,7 +136,7 @@ ui_input() {
     [ -n "$value" ] || value="$default"
     printf '%s\n' "$value"
   else
-    ask "$prompt" "$default"
+    ask "$prompt" "$default" "${3:-no}"
   fi
 }
 
@@ -155,7 +159,7 @@ ui_select() {
     fi
     printf '%s\n' "$choice"
   else
-    local input o i
+    local input o i retry=no
     printf '  ? %s\n' "$prompt" >&2
     i=1
     for o in "$@"; do
@@ -167,7 +171,8 @@ ui_select() {
       i=$((i + 1))
     done
     while :; do
-      input="$(ask "Choose" "$1")"
+      input="$(ask "Choose" "$1" "$retry")" || return 1
+      retry=yes
       i=1
       for o in "$@"; do
         if [ "$input" = "$i" ]; then printf '%s\n' "$o"; return 0; fi
@@ -247,7 +252,8 @@ normalize_version() { # 1.2.3 -> v1.2.3 ; v1.2.3 -> v1.2.3
 }
 
 ask_version() {
-  local latest input
+  local latest input retry=no
+  local version_pattern='^v[0-9]+\.[0-9]+\.[0-9]+([-.][0-9A-Za-z.]+)?$'
   if [ -z "$VERSION" ]; then
     latest="$(resolve_latest)" || die "could not look up the latest release (network or API failure)"
     [ -n "$latest" ] || die "could not parse the latest release from the GitHub API"
@@ -256,8 +262,10 @@ ask_version() {
   fi
   latest="$(normalize_version "$latest")"
   while :; do
-    input="$(normalize_version "$(ui_input "Install version" "$latest")")"
-    if [[ "$input" =~ ^v[0-9]+\.[0-9]+\.[0-9]+([-.][0-9A-Za-z.]+)?$ ]]; then
+    input="$(ui_input "Install version" "$latest" "$retry")" || return 1
+    retry=yes
+    input="$(normalize_version "$input")"
+    if [[ "$input" =~ $version_pattern ]]; then
       VERSION="$input"
       return 0
     fi
@@ -314,6 +322,7 @@ install_binary() { # <binary> <workdir>
   # Extract only the single executable member of the archive.
   tar -xzf "$workdir/$asset" -C "$staging" --strip-components=1 "$member"
   target="$INSTALL_DIR/$bin"
+  [ ! -d "$target" ] || die "binary target is a directory: ${target}"
   if [ -e "$target" ]; then
     if ! ui_confirm "$bin already exists at ${target} — overwrite?"; then
       die "aborted: ${bin} already exists at ${target} and was not replaced"
@@ -389,42 +398,81 @@ valid_model() {
   provider="${1%%/*}"
   model="${1#*/}"
   [ -n "$provider" ] && [ -n "$model" ] || return 1
-  case "$provider$model" in *[[:space:]]*) return 1 ;; esac
+  case "$provider$model" in *[[:space:]#]*) return 1 ;; esac
   return 0
 }
 
 ask_setup_frameworks() {
   case "$WORKFLOW_BIN" in
-    both) SETUP_FRAMEWORKS="$(ui_select "Frameworks to configure" both onto to none)" ;;
-    onto) SETUP_FRAMEWORKS="$(ui_select "Frameworks to configure" onto both to none)" ;;
-    to)   SETUP_FRAMEWORKS="$(ui_select "Frameworks to configure" to both onto none)" ;;
-    *)    SETUP_FRAMEWORKS="$(ui_select "Frameworks to configure" none both onto to)" ;;
+    both) SETUP_FRAMEWORKS="$(ui_select "Lifecycle workflows to configure" both onto to none)" ;;
+    onto) SETUP_FRAMEWORKS="$(ui_select "Lifecycle workflows to configure" onto both to none)" ;;
+    to)   SETUP_FRAMEWORKS="$(ui_select "Lifecycle workflows to configure" to both onto none)" ;;
+    *)    SETUP_FRAMEWORKS="$(ui_select "Lifecycle workflows to configure" none both onto to)" ;;
   esac
 }
 
+# Resolve a relative directory without creating it. Existing components use
+# physical paths, so symlink aliases participate in root and overlap checks.
+resolve_setup_directory() {
+  local path component components=()
+  path="$(pwd -P)"
+  IFS=/ read -r -a components <<<"$1"
+  for component in ${components[@]+"${components[@]}"}; do
+    case "$component" in '' | .) continue ;; ..) return 1 ;; esac
+    path="$path/$component"
+    if [ -d "$path" ]; then
+      path="$(CDPATH='' cd -P -- "$path" && pwd -P)" || return 1
+    elif [ -e "$path" ] || [ -L "$path" ]; then
+      return 1
+    fi
+  done
+  printf '%s\n' "$path"
+}
+
 ask_workflow_root() {
+  local resolved base retry="${1:-no}"
+  base="$(pwd -P)"
   while :; do
-    WORKFLOW_ROOT="$(ui_input "Workflow records directory" "docs")"
+    WORKFLOW_ROOT="$(ui_input "Workflow records directory" "docs" "$retry")" || return 1
+    retry=yes
     safe_toml_value "$WORKFLOW_ROOT"
     case "$WORKFLOW_ROOT" in
+      [[:space:]]* | *[[:space:]])
+        printf 'install: workflow records directory must not have surrounding whitespace\n' >&2
+        continue
+        ;;
       '' | . | /* | .. | ../* | */../* | *\\*)
         printf 'install: workflow records directory must be a relative path below this repository\n' >&2
+        continue
         ;;
-      *) return 0 ;;
     esac
+    if resolved="$(resolve_setup_directory "$WORKFLOW_ROOT")" && [[ "$resolved" == "$base/"* ]]; then
+      return 0
+    fi
+    printf 'install: workflow records directory must be a relative path below this repository\n' >&2
   done
+}
+
+workflow_tmp_overlap() {
+  local records tmp base
+  records="$(resolve_setup_directory "$WORKFLOW_ROOT")" || return 0
+  tmp="$(resolve_setup_directory .tmp)" || die "workspace tmp directory is not a usable directory: .tmp"
+  base="$(pwd -P)"
+  [[ "$tmp" == "$base/"* ]] || die "workspace tmp directory must resolve below this repository: .tmp"
+  [[ "$records" == "$tmp" || "$records" == "$tmp/"* || "$tmp" == "$records/"* ]]
 }
 
 repo_name_seen() {
   local name="$1" existing
-  for existing in "${REPO_NAMES[@]}"; do
+  # Bash 3.2 treats an empty array as unset under set -u; use guarded expansion.
+  for existing in ${REPO_NAMES[@]+"${REPO_NAMES[@]}"}; do
     [ "$existing" = "$name" ] && return 0
   done
   return 1
 }
 
 collect_repositories() {
-  local path name
+  local path name canonical root existing duplicate
   ui_hint "The current directory is the config repository and is already included."
   ui_hint "Add sibling Git repositories one at a time; press Enter with no path when finished."
   while :; do
@@ -433,11 +481,27 @@ collect_repositories() {
     safe_toml_value "$path"
     [ -d "$path" ] || { printf 'install: repository path does not exist: %s\n' "$path" >&2; continue; }
     command -v git >/dev/null 2>&1 || die "git is required to add a repository"
-    git -C "$path" rev-parse --is-inside-work-tree >/dev/null 2>&1 \
+    root="$(git -C "$path" rev-parse --show-toplevel 2>/dev/null)" \
       || { printf 'install: repository path is not a Git worktree: %s\n' "$path" >&2; continue; }
+    canonical="$(CDPATH='' cd -P -- "$path" && pwd -P)" || continue
+    root="$(CDPATH='' cd -P -- "$root" && pwd -P)" || continue
+    [ "$canonical" = "$root" ] \
+      || { printf 'install: repository path must be a Git worktree root: %s\n' "$path" >&2; continue; }
+    [ "$canonical" != "$(pwd -P)" ] \
+      || { printf 'install: config repository is already included: %s\n' "$path" >&2; continue; }
+    duplicate=no
+    for existing in ${REPO_CANONICAL_PATHS[@]+"${REPO_CANONICAL_PATHS[@]}"}; do
+      [ "$existing" != "$canonical" ] || duplicate=yes
+    done
+    [ "$duplicate" = no ] \
+      || { printf 'install: repository path already selected: %s\n' "$path" >&2; continue; }
     name="$(ui_input "Repository name" "$(basename "$path")")"
     if ! [[ "$name" =~ ^[A-Za-z0-9_-]+$ ]]; then
       printf 'install: repository name must use letters, numbers, hyphens, or underscores\n' >&2
+      continue
+    fi
+    if [[ "$name" =~ ^[0-9]+$ ]]; then
+      printf 'install: repository name must not be numeric-only\n' >&2
       continue
     fi
     if repo_name_seen "$name"; then
@@ -446,6 +510,7 @@ collect_repositories() {
     fi
     REPO_NAMES+=("$name")
     REPO_PATHS+=("$path")
+    REPO_CANONICAL_PATHS+=("$canonical")
     ui_hint "Added repository $name -> $path"
   done
 }
@@ -469,8 +534,8 @@ write_framework_config() {
       h) names+=(h-spike h-review onto-explorer onto-reviewer onto-implementer onto-skeptic to-explorer to-reviewer to-implementer to-skeptic) ;;
     esac
   done
-  for name in "${names[@]}"; do
-    [[ " ${emitted[*]} " == *" $name "* ]] && continue
+  for name in ${names[@]+"${names[@]}"}; do
+    [[ " ${emitted[*]-} " == *" $name "* ]] && continue
     emitted+=("$name")
     printf '\n[subagents.%s.opencode]\nmodel = "%s"\n' "$name" "$WORKFLOW_MODEL"
   done
@@ -479,33 +544,42 @@ write_framework_config() {
 configure_new_project() {
   local i frameworks=()
   ui_section "Configure project"
-  ui_hint "Choose the workflow configuration for this new repository."
+  ui_hint "Choose onto and/or to lifecycle workflows for this new repository."
   ask_setup_frameworks
   if [ "$SETUP_FRAMEWORKS" != none ]; then
     if [ "$WORKFLOW_BIN" = both ]; then
-      if ui_confirm "Also configure the h GitHub workflows? ([frameworks.h]: /h-spike-issue, /h-resolve-issue, /h-review-pr, /h-continue-pr, /h-review-batch — requires both onto and to)"; then
+      if ui_confirm "Also configure the h GitHub skill bundle? ([frameworks.h]: /h-spike-issue, /h-resolve-issue, /h-review-pr, /h-continue-pr, /h-review-batch — requires both onto and to)"; then
         SETUP_H=yes
       fi
     else
-      ui_hint "h GitHub workflows require both onto and to binaries; install both to configure h."
+      ui_hint "The h GitHub skill bundle requires both onto and to binaries; install both to configure h."
     fi
   fi
   ask_workflow_root
   if ui_confirm "Declare a workspace tmp directory? ([tmp] dir = \".tmp\": scratch every agent can write; apply creates it and keeps it gitignored; homonto never deletes content)"; then
     SETUP_TMP=yes
+    while workflow_tmp_overlap; do
+      printf 'install: workflow records directory overlaps the workspace tmp directory .tmp; choose another records directory\n' >&2
+      ask_workflow_root yes
+    done
   fi
   if [ "$SETUP_FRAMEWORKS" != none ]; then
-    local default_model model
+    local default_model model retry=no
     default_model="$(default_workflow_model)"
-    valid_model "$default_model" || die "detected default model \"$default_model\" is not provider/model"
+    if ! valid_model "$default_model"; then
+      ui_hint "Ignoring invalid detected model \"$default_model\"; choose a provider/model without a #variant suffix."
+      default_model=opencode-go/qwen3.7-plus
+    fi
+    ui_hint "On homonto apply, this model updates global OpenCode settings (affecting other projects) and all selected workflow agents."
     while :; do
-      model="$(ui_input "Model for OpenCode and all workflow agents" "$default_model")"
+      model="$(ui_input "Model for OpenCode and all workflow agents" "$default_model" "$retry")" || return 1
+      retry=yes
       safe_toml_value "$model"
       if valid_model "$model"; then
         WORKFLOW_MODEL="$model"
         break
       fi
-      printf 'install: "%s" is not a model — use provider/model (e.g. %s)\n' "$model" "$default_model" >&2
+      printf 'install: "%s" is not a model — use provider/model without a #variant suffix (e.g. %s)\n' "$model" "$default_model" >&2
     done
   fi
   collect_repositories
@@ -523,7 +597,7 @@ configure_new_project() {
   {
     printf '\n# Generated by scripts/install.sh. Adjust these values as your project evolves.\n'
     printf '\n[workflow]\nroot = "%s"\n' "$WORKFLOW_ROOT"
-    if [ "${#REPO_NAMES[@]}" -gt 0 ]; then
+    if [ -n "${REPO_NAMES[*]-}" ]; then
       printf '\n[repos]\n'
       for i in "${!REPO_NAMES[@]}"; do
         printf '%s = "%s"\n' "${REPO_NAMES[$i]}" "${REPO_PATHS[$i]}"
@@ -532,7 +606,7 @@ configure_new_project() {
     if [ "$SETUP_TMP" = yes ]; then
       printf '\n# Scratch space every agent can write without prompts (ADR 0048).\n[tmp]\ndir = ".tmp"\n'
     fi
-    if [ "${#frameworks[@]}" -gt 0 ]; then
+    if [ -n "${frameworks[*]-}" ]; then
       printf '\n[settings.opencode]\nmodel = "%s"\n' "$WORKFLOW_MODEL"
       write_framework_config "${frameworks[@]}"
     fi
@@ -556,18 +630,23 @@ next_steps() {
       printf '  apply creates the declared .tmp scratch directory and keeps it\n' >&2
       printf '  gitignored; homonto never deletes its content.\n' >&2
     fi
-    printf '  One homonto coordinator drives both workflows: pick per change\n' >&2
-    printf '  with /onto or /to; /h-* commands run the GitHub workflows.\n' >&2
+    for bin in onto to; do
+      if { [ "$WORKFLOW_BIN" = both ] || [ "$WORKFLOW_BIN" = "$bin" ]; } \
+        && { [ "$SETUP_FRAMEWORKS" = both ] || [ "$SETUP_FRAMEWORKS" = "$bin" ] || [ "$SETUP_H" = yes ]; }; then
+        printf '  After apply, use /%s for the %s lifecycle workflow.\n' "$bin" "$bin" >&2
+      fi
+    done
+    if [ "$SETUP_H" = yes ]; then
+      printf '  After apply, /h-* commands provide the h GitHub skill bundle.\n' >&2
+    fi
   elif [ "$INIT_RAN" -eq 1 ]; then
     printf '\nNext steps\n' >&2
     printf '  Edit homonto.toml (declare MCPs / skills / frameworks), then\n' >&2
-    printf 'homonto plan and homonto apply. One homonto coordinator drives\n' >&2
-    printf 'both workflows; pick per change with /onto or /to.\n' >&2
+    printf '  run homonto plan and homonto apply.\n' >&2
   else
     printf '\nNext steps\n' >&2
     printf '  In the directory that should hold homonto.toml, run homonto init,\n' >&2
-    printf 'edit homonto.toml, then homonto plan and homonto apply. One homonto\n' >&2
-    printf 'coordinator drives both workflows; pick per change with /onto or /to.\n' >&2
+    printf '  edit homonto.toml, then run homonto plan and homonto apply.\n' >&2
   fi
 }
 

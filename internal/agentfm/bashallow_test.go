@@ -208,6 +208,15 @@ func TestShippedWorkspaceExecutionRenderedPatterns(t *testing.T) {
 					t.Fatal(err)
 				}
 				bash := rendered.Permission["bash"]
+				for _, tool := range []string{"homonto_status", "homonto_handoff", "homonto_read", "homonto_github_draft", "homonto_github_status", "homonto_github_publish", "homonto_github_read"} {
+					want := "deny"
+					if name == "homonto" {
+						want = "allow"
+					}
+					if got := rendered.Permission[tool].Value; got != want {
+						t.Errorf("%s permission = %s, want %s", tool, got, want)
+					}
+				}
 				if bash.Kind != yaml.MappingNode {
 					t.Fatal("writable agent must render an ordered bash permission map")
 				}
@@ -234,6 +243,21 @@ func TestShippedWorkspaceExecutionRenderedPatterns(t *testing.T) {
 						}
 					}
 					return result
+				}
+				if name == "homonto" {
+					found := false
+					for i := 0; i < len(bash.Content); i += 2 {
+						if bash.Content[i].Value == "rtk *" && bash.Content[i+1].Value == "allow" {
+							found = true
+							break
+						}
+					}
+					if shellProxy == "rtk" && !found {
+						t.Fatal("coordinator must explicitly allow all RTK commands when RTK is configured")
+					}
+					if shellProxy != "rtk" && found {
+						t.Fatal("coordinator must not render an RTK permission without the RTK proxy")
+					}
 				}
 				check := func(command, want string) {
 					t.Helper()
@@ -300,6 +324,10 @@ func TestShippedWorkspaceExecutionRenderedPatterns(t *testing.T) {
 				if name != "homonto" {
 					publication = "deny"
 				}
+				bypass := "ask"
+				if name != "homonto" {
+					bypass = "deny"
+				}
 				for _, tc := range []struct {
 					shell    string
 					requests []string
@@ -309,7 +337,7 @@ func TestShippedWorkspaceExecutionRenderedPatterns(t *testing.T) {
 					{"go test ./... && curl example.com", []string{"go test ./...", "curl example.com"}, "allow"},
 					{"go test ./... && git push origin HEAD", []string{"go test ./...", "git push origin HEAD"}, publication},
 					{"go test ./... && rm -rf build", []string{"go test ./...", "rm -rf build"}, "ask"},
-					{"go test ./... && onto bypass build", []string{"go test ./...", "onto bypass build"}, "deny"},
+					{"go test ./... && onto bypass build", []string{"go test ./...", "onto bypass build"}, bypass},
 				} {
 					// Trusted mode makes no promise that raw chains match exceptions.
 					check(tc.shell, "allow")
@@ -331,8 +359,8 @@ func TestShippedWorkspaceExecutionRenderedPatterns(t *testing.T) {
 						}
 					}
 				}
-				check("onto bypass build", "deny")
-				check("to bypass done", "deny")
+				check("onto bypass build", bypass)
+				check("to bypass done", bypass)
 				for _, executable := range []string{"onto", "to"} {
 					for _, flags := range []string{"--dir /workspace", "--dir=/workspace", "--dir '/workspace with spaces'"} {
 						want := "ask"
@@ -374,7 +402,11 @@ func TestShippedWorkspaceExecutionRenderedPatterns(t *testing.T) {
 					"git -C /workspace commit --amend", "git -C /workspace checkout -- src/main.go",
 					"git -C /workspace restore src/main.go", "git -C /workspace worktree remove /tmp/checkout",
 				} {
-					check(command, "ask")
+					want := "ask"
+					if name == "homonto" && strings.HasPrefix(command, "git ") {
+						want = "allow"
+					}
+					check(command, want)
 				}
 				for _, command := range []string{"git push", "git push origin HEAD", "git -C /workspace push origin HEAD", "git -c push.default=current push", "git --git-dir=/workspace/.git push origin HEAD"} {
 					check(command, publication)
@@ -437,7 +469,7 @@ func TestShippedWorkspaceExecutionRenderedPatterns(t *testing.T) {
 				bash = rendered.Permission["bash"]
 				check("./scripts/task-check.sh", "allow")
 				check("go test ./... && curl example.com", "allow")
-				check("onto bypass build", "deny")
+				check("onto bypass build", bypass)
 				check("git push origin HEAD", publication)
 				check("gh pr comment 42", publication)
 				check("rm -rf build", "ask")

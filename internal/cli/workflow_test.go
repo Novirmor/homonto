@@ -6,6 +6,8 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+
+	"github.com/noviopenworks/homonto/internal/workflowstatus"
 )
 
 func TestWorkflowSnapshotJSONIsReadOnly(t *testing.T) {
@@ -51,6 +53,48 @@ func TestWorkflowSnapshotJSONIsReadOnly(t *testing.T) {
 	}
 	if string(before) != string(after) {
 		t.Fatal("workflow snapshot changed state")
+	}
+}
+
+func TestWorkflowHandoffJSON(t *testing.T) {
+	root := t.TempDir()
+	cfg := filepath.Join(root, "selected.toml")
+	if err := os.WriteFile(cfg, []byte("[workflow]\nroot = 'records'\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "homonto.toml"), []byte("invalid = ["), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	dir := filepath.Join(root, "records/tasks/demo")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "to-state.yaml"), []byte("id: exact\nchange: demo\nphase: do\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	base := []string{"workflow", "handoff", "--workflow", "to", "--change", "demo", "--identity", "exact", "--json", "--config", cfg}
+	cmd := NewRootCmd()
+	var out bytes.Buffer
+	cmd.SetOut(&out)
+	cmd.SetArgs(base)
+	if err := cmd.Execute(); err != nil {
+		t.Fatal(err)
+	}
+	var got workflowstatus.Handoff
+	if err := json.Unmarshal(out.Bytes(), &got); err != nil {
+		t.Fatal(err)
+	}
+	if got.ConfigPath != cfg || got.Change.Identity != "exact" || got.NextSkill != "to-do" {
+		t.Fatalf("handoff = %s", out.String())
+	}
+	for _, extra := range [][]string{{"--write"}, {"--file", "/etc/passwd"}, {"--argv", "status"}, {"unexpected"}, {"--identity", "missing"}, {"--json=false"}} {
+		cmd := NewRootCmd()
+		cmd.SetOut(&bytes.Buffer{})
+		cmd.SetErr(&bytes.Buffer{})
+		cmd.SetArgs(append(append([]string{}, base...), extra...))
+		if err := cmd.Execute(); err == nil {
+			t.Errorf("accepted %v", extra)
+		}
 	}
 }
 

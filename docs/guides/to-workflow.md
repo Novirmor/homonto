@@ -130,9 +130,14 @@ recovery, review, and final evidence.
   the change.
 
 Starting or resuming `to` continues across these phase boundaries in the same
-invocation unless the user names an endpoint or asks to pause. The orchestrator
-chooses reversible technical defaults and asks only when product intent, scope,
-or an explicit authorization is missing.
+invocation through the full success endpoint, including required verification,
+archival, integration, and authorized publication. A finished plan checklist
+still routes to `to-done`, not a completion report. The orchestrator stops earlier
+when the user names an endpoint or asks to pause, a genuine question blocks
+progress, or a hard blocker remains after permitted recovery is exhausted or
+unavailable. It reports hard blockers with evidence and the next action, without
+inventing a question or claiming completion. It chooses reversible technical
+defaults and asks only when product intent, scope, or authorization is missing.
 
 `to abandon <name>` is the terminal exit without done, from any phase.
 

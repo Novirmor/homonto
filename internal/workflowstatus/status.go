@@ -70,6 +70,17 @@ func ReadConfig(configPath string) Snapshot {
 		out.Findings = append(out.Findings, Finding{Workflow: "workspace", Message: err.Error()})
 		return out
 	}
+	return readLayout(l, false)
+}
+
+func readLayout(l workspace.Layout, bounded bool) Snapshot {
+	out := Snapshot{ConfigPath: l.ConfigPath, WorkflowRoot: l.WorkflowRoot, Changes: []Change{}, Findings: []Finding{}}
+	if bounded {
+		if err := realHandoffParents(l.WorkflowRoot); err != nil {
+			out.Findings = append(out.Findings, Finding{Workflow: "workspace", Message: err.Error()})
+			return out
+		}
+	}
 	out.WorkflowRoot = l.WorkflowRoot
 	if info, err := os.Stat(l.WorkflowRoot); os.IsNotExist(err) {
 		return out // a valid configuration need not have initialized records yet
@@ -88,8 +99,8 @@ func ReadConfig(configPath string) Snapshot {
 			out.Findings = append(out.Findings, Finding{Workflow: "workspace", Message: "workflow history pending; run homonto workspace recover"})
 		}
 	}
-	readOnto(filepath.Join(l.WorkflowRoot, "changes"), false, &out)
-	readTo(filepath.Join(l.WorkflowRoot, "tasks"), false, &out)
+	readOnto(filepath.Join(l.WorkflowRoot, "changes"), false, &out, bounded)
+	readTo(filepath.Join(l.WorkflowRoot, "tasks"), false, &out, bounded)
 	sort.Slice(out.Changes, func(i, j int) bool {
 		if out.Changes[i].Workflow == out.Changes[j].Workflow {
 			if out.Changes[i].Name != out.Changes[j].Name {
@@ -108,7 +119,7 @@ func ReadConfig(configPath string) Snapshot {
 	return out
 }
 
-func readOnto(dir string, archived bool, out *Snapshot) {
+func readOnto(dir string, archived bool, out *Snapshot, bounded bool) {
 	if err := fsutil.RequireRealParents(out.WorkflowRoot, dir); err != nil {
 		out.Findings = append(out.Findings, Finding{Workflow: "onto", Message: err.Error()})
 		return
@@ -122,7 +133,7 @@ func readOnto(dir string, archived bool, out *Snapshot) {
 	}
 	for _, entry := range entries {
 		if !archived && entry.Name() == "archive" {
-			readOnto(filepath.Join(dir, entry.Name()), true, out)
+			readOnto(filepath.Join(dir, entry.Name()), true, out, bounded)
 			continue
 		}
 		if entry.Type()&os.ModeSymlink != 0 {
@@ -133,6 +144,9 @@ func readOnto(dir string, archived bool, out *Snapshot) {
 			continue
 		}
 		changeDir := filepath.Join(dir, entry.Name())
+		if bounded && !handoffRecordSafe(changeDir, "onto", out) {
+			continue
+		}
 		state, class, classErr := ontostate.Classify(changeDir)
 		if class == "valid" && !archived && state.Change != entry.Name() {
 			class, classErr = "invalid", fmt.Errorf("state identity does not match directory")
@@ -145,8 +159,12 @@ func readOnto(dir string, archived bool, out *Snapshot) {
 			out.Findings = append(out.Findings, Finding{Workflow: "onto", Change: entry.Name(), Message: message})
 			continue
 		}
-		completed, total := checkboxProgress(filepath.Join(changeDir, "tasks.md"))
-		derived := ontostate.DeriveWorkingPhase(changeDir, state)
+		completed, total := 0, 0
+		derived := ""
+		if !bounded || handoffEvidenceSafe(changeDir, "onto", out) {
+			completed, total = checkboxProgress(filepath.Join(changeDir, "tasks.md"))
+			derived = ontostate.DeriveWorkingPhase(changeDir, state)
+		}
 		pending := ontoPending(state, completed, total)
 		status := "active"
 		if state.Abandoned {
@@ -191,7 +209,7 @@ func readOnto(dir string, archived bool, out *Snapshot) {
 	}
 }
 
-func readTo(dir string, archived bool, out *Snapshot) {
+func readTo(dir string, archived bool, out *Snapshot, bounded bool) {
 	if err := fsutil.RequireRealParents(out.WorkflowRoot, dir); err != nil {
 		out.Findings = append(out.Findings, Finding{Workflow: "to", Message: err.Error()})
 		return
@@ -205,7 +223,7 @@ func readTo(dir string, archived bool, out *Snapshot) {
 	}
 	for _, entry := range entries {
 		if !archived && entry.Name() == "archive" {
-			readTo(filepath.Join(dir, entry.Name()), true, out)
+			readTo(filepath.Join(dir, entry.Name()), true, out, bounded)
 			continue
 		}
 		if entry.Type()&os.ModeSymlink != 0 {
@@ -216,6 +234,9 @@ func readTo(dir string, archived bool, out *Snapshot) {
 			continue
 		}
 		changeDir := filepath.Join(dir, entry.Name())
+		if bounded && !handoffRecordSafe(changeDir, "to", out) {
+			continue
+		}
 		state, err := tostate.Load(filepath.Join(changeDir, tostate.FileName))
 		if err == nil {
 			err = state.Validate()
@@ -227,7 +248,10 @@ func readTo(dir string, archived bool, out *Snapshot) {
 			out.Findings = append(out.Findings, Finding{Workflow: "to", Change: entry.Name(), Message: err.Error()})
 			continue
 		}
-		completed, total := checkboxProgress(filepath.Join(changeDir, "plan.md"))
+		completed, total := 0, 0
+		if !bounded || handoffEvidenceSafe(changeDir, "to", out) {
+			completed, total = checkboxProgress(filepath.Join(changeDir, "plan.md"))
+		}
 		pending := []string{}
 		if state.Phase == tostate.PhaseDo && completed < total {
 			pending = append(pending, "complete planned tasks")

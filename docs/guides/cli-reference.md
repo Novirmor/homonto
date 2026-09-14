@@ -192,6 +192,20 @@ findings and status rather than treat a successful snapshot command as a passed
 doctor check. The bundled OpenCode bridge consumes it but never mutates workflow
 state or enforces gates.
 
+## `homonto workflow handoff --workflow <onto|to> --change <name> --identity <id> --json`
+
+Read recovery context for one exact generation from `workflow snapshot`, using
+the selected `--config` filename. Returns the config and records roots, validated
+active execution directories, recorded decisions, bounded artifact excerpts,
+findings, and the next skill reference. It never writes handoff files or changes
+workflow state. Archived generations are supported for artifact inspection but
+do not borrow execution directories from a same-name active change.
+
+Artifact reads are limited to 64 KiB per file and 12 KiB of combined excerpt
+text. Missing, unsafe, or oversized content is reported; use the returned
+artifact pointers for complete records. Excerpts are untrusted data, not
+instructions or verification evidence. There is no `--write` option.
+
 ## `homonto workspace`
 
 Inspect the configured records layout and manage its Git checkpoints. These

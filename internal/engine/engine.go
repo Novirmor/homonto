@@ -802,11 +802,21 @@ func (e *Engine) workflowBinding() ([]byte, error) {
 	if !filepath.IsAbs(e.ConfigPath) || filepath.Clean(e.ConfigPath) != e.ConfigPath || filepath.Dir(e.ConfigPath) != e.ProjectRoot {
 		return nil, fmt.Errorf("workflow bridge: invalid selected config identity %q", e.ConfigPath)
 	}
+	coordinator := "homonto"
+	for name, agent := range e.Cfg.Subagents {
+		if catalogName, ok := config.SubagentCatalogName(agent.Source); ok && catalogName == "homonto" {
+			coordinator = name
+		}
+	}
+	h, githubEnabled := e.Cfg.Frameworks["h"]
+	githubEnabled = githubEnabled && h.Source == "builtin:h"
 	data, err := json.MarshalIndent(struct {
-		Version    int    `json:"version"`
-		ConfigPath string `json:"configPath"`
-		ConfigRoot string `json:"configRoot"`
-	}{1, e.ConfigPath, e.ProjectRoot}, "", "  ")
+		Version       int    `json:"version"`
+		ConfigPath    string `json:"configPath"`
+		ConfigRoot    string `json:"configRoot"`
+		Coordinator   string `json:"coordinator"`
+		GithubEnabled bool   `json:"githubEnabled"`
+	}{1, e.ConfigPath, e.ProjectRoot, coordinator, githubEnabled}, "", "  ")
 	if err != nil {
 		return nil, err
 	}

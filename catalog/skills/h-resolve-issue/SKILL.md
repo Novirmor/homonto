@@ -36,7 +36,11 @@ candidate pinning, exact PR reuse, recovery, and repository-qualified issue inte
 
 ## Required order
 
-1. **Spike first.** Run the `h-spike-issue` skill to completion. "The issue
+1. **Spike first.** Run the `h-spike-issue` skill to completion at its research
+   endpoint: validate and report the brief, then skip the optional comment steps
+   unless the user separately requests issue-comment publication. That separate
+   publication still requires approval of the shown draft; resolve's invocation
+   does not authorize it or add a publication dialog before implementation. "The issue
    looks tiny" is not a skip condition; a declined spike attempt is recorded
    in the final report, not acted on.
 2. **Select and explain the workflow.** Apply the h autonomy precedence:

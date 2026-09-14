@@ -262,6 +262,65 @@ func TestHAutonomyInputAndPublication(t *testing.T) {
 	}
 }
 
+func TestHSpikeIssueCommentPublication(t *testing.T) {
+	text := hPromptText(t, "skills/h-spike-issue/SKILL.md")
+	previous := -1
+	for _, step := range []string{"**Validate the brief.**", "**Report the brief**", "**Offer publication.**", "**Post if approved.**", "**Report publication outcome.**"} {
+		index := strings.Index(text, step)
+		if index <= previous {
+			t.Fatalf("spike step %q missing or out of order", step)
+		}
+		previous = index
+	}
+	for _, want := range []string{
+		"one explicit approval of the shown draft",
+		"Post this brief as a comment on ISSUE_URL?",
+		"If declined, finish without posting",
+		"While approval is pending, leave the draft unpublished",
+		"If the user already asked for no posting, skip the offer",
+		"Changed findings require renewed draft approval",
+		"canonical host, repository ID, and issue ID",
+		"Re-fetch the issue and relevant comments",
+		"exactly the approved draft",
+		"generated `references/tmp.md`",
+		"otherwise `mktemp`",
+		"gh issue comment NUMBER --repo HOST/OWNER/REPO --body-file COMMENT_FILE",
+		"Reconcile existing comments before retrying a failed post",
+		"comment URL", "Do not implement",
+		"coordinator supplies the authoritative GitHub packet and owns every GitHub operation",
+	} {
+		if !strings.Contains(text, want) {
+			t.Errorf("spike publication contract missing %q", want)
+		}
+	}
+	command := hPromptText(t, "commands/h-spike-issue.md")
+	for _, want := range []string{"offer to post", "explicit approval of the shown draft", "It never edits code"} {
+		if !strings.Contains(command, want) {
+			t.Errorf("spike command missing %q", want)
+		}
+	}
+	for _, obsolete := range []string{"no implementation or GitHub publication", "or posts to GitHub", "Do not write files unless the user asks"} {
+		if strings.Contains(text, obsolete) || strings.Contains(command, obsolete) {
+			t.Errorf("spike retains conflicting publication rule %q", obsolete)
+		}
+	}
+}
+
+func TestHSpikePublicationDoesNotBlockResolve(t *testing.T) {
+	for _, file := range []string{"skills/h-spike-issue/SKILL.md", "skills/h-resolve-issue/SKILL.md"} {
+		text := hPromptText(t, file)
+		for _, want := range []string{"research endpoint", "skip the optional comment steps", "unless the user separately requests issue-comment publication"} {
+			if !strings.Contains(text, want) {
+				t.Errorf("%s missing nested-spike contract %q", file, want)
+			}
+		}
+	}
+	text := hPromptText(t, "skills/h-resolve-issue/references/autonomy.md")
+	if !strings.Contains(text, "Review and spike publication") {
+		t.Error("shared autonomy must require draft approval for spike publication")
+	}
+}
+
 func TestHAutonomyNoRoutineApprovalRegressions(t *testing.T) {
 	build := hPromptText(t, "skills/onto-build/SKILL.md")
 	if !strings.Contains(build, "separate coordinator-owned bookkeeping commit before the next dispatch") {

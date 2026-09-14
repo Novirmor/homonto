@@ -98,9 +98,9 @@ recognize every risky tool; these are known host-enforcement limits, not grants.
 Resolve authorizes its verified push and PR creation; continue authorizes its
 verified push, summary comment, and demonstrably addressed thread resolutions.
 Neither needs a second conversational publication approval for those actions.
-Review publication is different: only explicit approval of the shown draft
+Review and spike publication are different: only explicit approval of the shown draft
 authorizes posting that draft. Execution trust, tool allows, and the invocation
-itself never provide review publication consent. Changed findings require renewed
+itself never provide review or spike publication consent. Changed findings require renewed
 draft approval. The same role and publication rules apply inside scripts or API
 payloads; neither default-allow shell nor past accepted commands authorizes an
 otherwise out-of-scope publication or arbitrary workflow-policy bypass.

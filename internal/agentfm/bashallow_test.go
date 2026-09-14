@@ -208,6 +208,15 @@ func TestShippedWorkspaceExecutionRenderedPatterns(t *testing.T) {
 					t.Fatal(err)
 				}
 				bash := rendered.Permission["bash"]
+				for _, tool := range []string{"homonto_status", "homonto_handoff", "homonto_read", "homonto_github_draft", "homonto_github_status", "homonto_github_publish", "homonto_github_read"} {
+					want := "deny"
+					if name == "homonto" {
+						want = "allow"
+					}
+					if got := rendered.Permission[tool].Value; got != want {
+						t.Errorf("%s permission = %s, want %s", tool, got, want)
+					}
+				}
 				if bash.Kind != yaml.MappingNode {
 					t.Fatal("writable agent must render an ordered bash permission map")
 				}

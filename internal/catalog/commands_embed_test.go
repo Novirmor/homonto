@@ -207,6 +207,7 @@ func TestWorkflowPromptsDefaultToAutonomousContinuation(t *testing.T) {
 		"Ask the user only when",
 		"not automatically a user question",
 		"Do not ask for approval of a summary, proposal, plan, diff, phase transition, or close plan",
+		"never stop merely to ask whether to continue",
 	} {
 		if !strings.Contains(policyText, want) {
 			t.Errorf("autonomy policy missing %q", want)
@@ -227,6 +228,59 @@ func TestWorkflowPromptsDefaultToAutonomousContinuation(t *testing.T) {
 			if strings.Contains(string(content), prohibited) {
 				t.Errorf("%s retains ceremonial instruction %q", file, prohibited)
 			}
+		}
+	}
+}
+
+func TestContinuationRequiresFullSuccessEndpoint(t *testing.T) {
+	for _, file := range []string{
+		"subagents/homonto.md", "skills/homonto/references/autonomy.md",
+		"skills/onto/SKILL.md", "skills/to/SKILL.md",
+	} {
+		t.Run(file, func(t *testing.T) {
+			text := hPromptText(t, file)
+			for _, want := range []string{"full success endpoint", "verification", "archival", "integration", "publication", "endpoint", "pause", "hard blocker"} {
+				if !strings.Contains(text, want) {
+					t.Errorf("continuation contract missing %q", want)
+				}
+			}
+			for _, obsolete := range []string{
+				"every task of the change is finished (then report completion and stop)",
+				"stop only when every remaining task is finished",
+				"stop only when the change's tasks are finished",
+				"legitimate only when the remaining tasks are finished",
+				"exactly three reasons", "question and nothing else",
+			} {
+				if strings.Contains(text, obsolete) {
+					t.Errorf("unsafe stopping condition retained: %q", obsolete)
+				}
+			}
+		})
+	}
+	policy := hPromptText(t, "skills/homonto/references/autonomy.md")
+	for _, want := range []string{
+		"Finished implementation tasks alone do not establish completion",
+		"A phase sub-skill's completion is not the invocation's endpoint",
+	} {
+		if !strings.Contains(policy, want) {
+			t.Errorf("completed-checklist scenario missing %q", want)
+		}
+	}
+	to := hPromptText(t, "skills/to/SKILL.md")
+	if !strings.Contains(to, "| finishing do (work complete, verifying) | `to-done` |") {
+		t.Error("finished implementation must still route to final verification")
+	}
+}
+
+func TestContinuationAllowsFactualBlockerReports(t *testing.T) {
+	policy := hPromptText(t, "skills/homonto/references/autonomy.md")
+	for _, want := range []string{
+		"explicit permission denial", "exhausted bounded retries", "uncertain publication outcome",
+		"report the blocker, evidence, preserved state, and next action, then stop",
+		"Do not invent a question", "Never retry or route around an explicit denial",
+	} {
+		if !strings.Contains(policy, want) {
+			t.Errorf("hard-blocker scenario missing %q", want)
 		}
 	}
 }

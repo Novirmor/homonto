@@ -14,7 +14,38 @@ func workflowCmd() *cobra.Command {
 		Use:   "workflow",
 		Short: "Read workflow progress without changing it",
 	}
-	cmd.AddCommand(workflowSnapshotCmd())
+	cmd.AddCommand(workflowSnapshotCmd(), workflowHandoffCmd())
+	return cmd
+}
+
+func workflowHandoffCmd() *cobra.Command {
+	var workflow, change, identity string
+	var jsonMode bool
+	cmd := &cobra.Command{
+		Use:   "handoff",
+		Short: "Read bounded recovery context for an exact workflow generation",
+		Args:  cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			if !jsonMode {
+				return fmt.Errorf("workflow handoff: pass --json for machine-readable recovery context")
+			}
+			cfgPath, _ := cmd.Flags().GetString("config")
+			handoff, err := workflowstatus.ReadHandoff(cfgPath, workflow, change, identity)
+			if err != nil {
+				return err
+			}
+			data, err := json.MarshalIndent(handoff, "", "  ")
+			if err != nil {
+				return err
+			}
+			cmd.Println(string(data))
+			return nil
+		},
+	}
+	cmd.Flags().StringVar(&workflow, "workflow", "", "workflow: onto or to")
+	cmd.Flags().StringVar(&change, "change", "", "exact change name")
+	cmd.Flags().StringVar(&identity, "identity", "", "generation identity from workflow snapshot")
+	cmd.Flags().BoolVar(&jsonMode, "json", false, "emit structured recovery context")
 	return cmd
 }
 

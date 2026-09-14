@@ -678,11 +678,36 @@ failures are reported separately
 without discarding the last successful comparison, and a later success clears
 the error. Compaction awaits a fresh result and includes pending status/findings,
 or the observation error rather than stale success. This is not enforcement:
-it never runs doctor, blocks completion, advances a phase, records evidence,
-writes workflow state, or sends workflow data to a remote service.
+its observation hooks never run doctor, block completion, advance a phase,
+record evidence, write workflow state, or send workflow data to a remote service.
+
+The coordinator also gets `homonto_status` and `homonto_handoff` tools bound to
+the exact config filename. Compaction and model-context preparation read bounded
+handoffs for up to three nonterminal generations, including tasks, decisions,
+artifact pointers, and validated source directories. The context cap is 16 KiB;
+the 1.5-second overall deadline reports omitted or unavailable details. There is
+no automatic phase advancement or resumption of a remembered publication approval.
+
+Declaring builtin `[frameworks.h]` additionally enables the shared GitHub draft
+tools: `homonto_github_draft`, `homonto_github_status`, and
+`homonto_github_publish`. These support issue comments, PR comments, and
+commit-bound `COMMENT`/`REQUEST_CHANGES` reviews, not pushes or PR creation.
+Stage a batch, show the complete returned preview, pass its question arguments
+unchanged to the native question tool, then publish the approved items by draft ID.
+Decline and Revise do not publish; permissions or model-supplied approval flags
+cannot replace the matching question response. Tools are denied to shipped
+workers and checked against the installed coordinator name at runtime.
+
+Drafts remain in memory, with at most ten items, 8 KiB per body, 32 KiB per batch,
+and a 15-minute lifetime. Restaging invalidates older unpublished approvals;
+restarting requires fresh approval and reconciliation of any interrupted send.
+Headless clients without native questions cannot approve drafts. A question reply
+is host-channel confirmation, not human-only attestation; trusted API clients can
+answer it. The integration uses the raw-schema custom-tool compatibility and
+question/context hook contracts verified against OpenCode 1.18.29/1.18.30.
 
 Disable only that managed bridge when a project needs no runtime workflow
-status:
+status, recovery tools, or GitHub draft tools:
 
 ```toml
 [integrations.opencode]

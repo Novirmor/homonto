@@ -26,6 +26,11 @@ replaces explicit approval of the shown draft.
 
 ## Required order
 
+For supported comments and reviews, prefer the shared
+[OpenCode draft flow](../homonto/references/publication.md#opencode-comment-and-review-drafts)
+when its tools are available. It implements the draft, decision, and posting steps
+below without an extra approval dialog; context validation remains required.
+
 1. **Resolve input.** Accept one unambiguous PR reference: a GitHub PR URL,
    `OWNER/REPO#NUMBER`, a number, or a unique head branch resolved against the
    repository. Use `gh pr view` to establish the canonical PR URL and number;

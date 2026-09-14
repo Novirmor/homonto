@@ -12,11 +12,38 @@ import (
 	"testing"
 	"time"
 
+	"github.com/noviopenworks/homonto/internal/config"
 	"github.com/noviopenworks/homonto/internal/jsonutil"
 	"github.com/noviopenworks/homonto/internal/secret"
 	"github.com/noviopenworks/homonto/internal/workflowroot"
 	"github.com/noviopenworks/homonto/internal/workflowstatus"
 )
+
+func TestWorkflowBindingCoordinatorAndGithubScope(t *testing.T) {
+	root := t.TempDir()
+	for _, source := range []string{"", "builtin:h", "local:h"} {
+		for _, name := range []string{"homonto", "coordinator"} {
+			e := &Engine{ConfigPath: filepath.Join(root, "selected.toml"), ProjectRoot: root, Cfg: &config.Config{
+				Frameworks: map[string]config.Resource{"h": {Source: source}},
+				Subagents:  map[string]config.Subagent{name: {Source: "builtin:homonto"}},
+			}}
+			data, err := e.workflowBinding()
+			if err != nil {
+				t.Fatal(err)
+			}
+			var binding struct {
+				Coordinator   string `json:"coordinator"`
+				GithubEnabled bool   `json:"githubEnabled"`
+			}
+			if err := json.Unmarshal(data, &binding); err != nil {
+				t.Fatal(err)
+			}
+			if binding.Coordinator != name || binding.GithubEnabled != (source == "builtin:h") {
+				t.Fatalf("source=%q alias=%q binding=%s", source, name, data)
+			}
+		}
+	}
+}
 
 // TestBundledPluginMaterializesAndProjects (A3): with the onto framework
 // declared, the permission-observer plugin materializes under
@@ -413,6 +440,16 @@ func TestWorkflowBridgeRuntimeUsesMaterializedConfigBinding(t *testing.T) {
 				}
 				fixture := filepath.Join(repo, "snapshot.json")
 				pluginTestWrite(t, fixture, string(data))
+				handoff, err := workflowstatus.ReadHandoff(configPath, "onto", "one", snapshot.Changes[0].Identity)
+				if err != nil {
+					t.Fatal(err)
+				}
+				handoffData, err := json.Marshal(handoff)
+				if err != nil {
+					t.Fatal(err)
+				}
+				handoffFixture := filepath.Join(repo, "handoff.json")
+				pluginTestWrite(t, handoffFixture, string(handoffData))
 				launch := filepath.Join(repo, "source/nested")
 				if err := os.MkdirAll(launch, 0o755); err != nil {
 					t.Fatal(err)
@@ -423,7 +460,7 @@ func TestWorkflowBridgeRuntimeUsesMaterializedConfigBinding(t *testing.T) {
 				}
 				ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 				defer cancel()
-				cmd := exec.CommandContext(ctx, "node", script, e.workflowBridgeDestination(), configPath, fixture)
+				cmd := exec.CommandContext(ctx, "node", script, e.workflowBridgeDestination(), configPath, fixture, handoffFixture)
 				cmd.Dir = launch
 				if out, err := cmd.CombinedOutput(); err != nil {
 					t.Fatalf("native projected TypeScript runtime contract: %v\n%s", err, out)
@@ -469,7 +506,7 @@ func TestWorkflowBindingRepairsAndConfigSwitchesAllSchemas(t *testing.T) {
 					fingerprint = next
 				}
 				bindingPath := e.workflowBindingPath()
-				want, err := json.MarshalIndent(map[string]any{"version": 1, "configPath": configPath, "configRoot": repo}, "", "  ")
+				want, err := json.MarshalIndent(map[string]any{"version": 1, "configPath": configPath, "configRoot": repo, "coordinator": "homonto", "githubEnabled": false}, "", "  ")
 				if err != nil {
 					t.Fatal(err)
 				}

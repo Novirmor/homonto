@@ -5,6 +5,12 @@ description: Use when a GitHub pull request has review feedback to address — i
 
 # h-continue-pr
 
+When the user chooses the structured OpenCode comment path, use the shared
+[OpenCode draft flow](../homonto/references/publication.md#opencode-comment-and-review-drafts)
+for the final summary after verified delivery. Its native question approves the
+exact comment; it does not authorize pushes or thread resolutions. Otherwise
+retain the invocation-authorized summary publication described below.
+
 Continue one GitHub pull request: collect the outstanding feedback, feed it
 into the matching workflow change, and update that PR with verified fixes.
 

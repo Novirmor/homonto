@@ -7,6 +7,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"reflect"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -205,6 +206,54 @@ func TestLayoutGitIdentity(t *testing.T) {
 	}
 }
 
+func TestReadGitDisablesConfiguredFSMonitor(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("synthetic fsmonitor hook uses a POSIX shell")
+	}
+	repo := t.TempDir()
+	git(t, "init", "-q", repo)
+	write(t, filepath.Join(repo, "tracked"), "tracked\n")
+	git(t, "-C", repo, "add", "tracked")
+	git(t, "-C", repo, "-c", "user.name=Test", "-c", "user.email=test@example.invalid", "commit", "-q", "-m", "initial")
+
+	sentinel := filepath.Join(t.TempDir(), "fsmonitor-ran")
+	hook := filepath.Join(t.TempDir(), "fsmonitor-hook")
+	write(t, hook, fmt.Sprintf("#!/bin/sh\n: > %q\nprintf '0000000000000000000000000000000000000000\\n'\n", sentinel))
+	if err := os.Chmod(hook, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	git(t, "-C", repo, "config", "--local", "core.fsmonitor", hook)
+
+	if out, err := exec.Command("git", "-C", repo, "status", "--porcelain=v1").CombinedOutput(); err != nil {
+		t.Fatalf("configured fsmonitor probe: %v\n%s", err, out)
+	}
+	if _, err := os.Lstat(sentinel); err != nil {
+		t.Fatalf("configured fsmonitor hook did not run: %v", err)
+	}
+	if err := os.Remove(sentinel); err != nil {
+		t.Fatal(err)
+	}
+	index := filepath.Join(repo, ".git", "index")
+	before, err := os.ReadFile(index)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := workspace.ReadGit(repo, "status", "--porcelain=v1", "-z", "--untracked-files=all"); err != nil {
+		t.Fatalf("ReadGit: %v", err)
+	}
+	if _, _, err := workspace.GitIdentity(repo); err != nil {
+		t.Fatalf("GitIdentity: %v", err)
+	}
+	if _, err := os.Lstat(sentinel); !os.IsNotExist(err) {
+		t.Fatalf("fsmonitor hook ran during read-only probe: %v", err)
+	}
+	after, err := os.ReadFile(index)
+	if err != nil || !reflect.DeepEqual(before, after) {
+		t.Fatalf("read-only probe changed index: %v", err)
+	}
+}
+
 func TestLayoutManagedStructuralValidationOnly(t *testing.T) {
 	base := t.TempDir()
 	path := filepath.Join(base, "control", "homonto.toml")
@@ -225,6 +274,63 @@ func TestLayoutManagedStructuralValidationOnly(t *testing.T) {
 	if _, err := workspace.Load(path); err == nil || !strings.Contains(err.Error(), "inside Git repository") {
 		t.Fatalf("nested managed repository: %v", err)
 	}
+}
+
+func TestLoadMigrationRecoveryRevalidatesLayoutTopology(t *testing.T) {
+	newFixture := func(t *testing.T) (base, control, config, records, source string) {
+		t.Helper()
+		base = t.TempDir()
+		control = filepath.Join(base, "control")
+		records = filepath.Join(base, "records")
+		source = filepath.Join(base, "source")
+		git(t, "init", "-q", source)
+		config = filepath.Join(control, "homonto.toml")
+		write(t, config, fmt.Sprintf("schema_version=2\n[workflow]\nroot='../records'\ngit='existing'\n[worktrees]\ndir='../execution'\n[repos]\napp=%q\n", source))
+		write(t, filepath.Join(control, ".homonto", "workflow-root"), "../records\n")
+		return base, control, config, records, source
+	}
+
+	t.Run("legacy marker", func(t *testing.T) {
+		_, _, config, _, _ := newFixture(t)
+		if _, err := workspace.LoadMigrationRecovery(config); err != nil {
+			t.Fatalf("LoadMigrationRecovery: %v", err)
+		}
+	})
+	t.Run("unavailable declared repository", func(t *testing.T) {
+		_, _, config, _, source := newFixture(t)
+		write(t, config, fmt.Sprintf("schema_version=2\n[workflow]\nroot='../records'\ngit='existing'\n[worktrees]\ndir='../execution'\n[repos]\napp=%q\nmissing='../missing'\n", source))
+		if _, err := workspace.LoadMigrationRecovery(config); err == nil || !strings.Contains(err.Error(), "does not exist") {
+			t.Fatalf("LoadMigrationRecovery unavailable repo = %v", err)
+		}
+	})
+	t.Run("overlapping allocation root", func(t *testing.T) {
+		_, _, config, _, source := newFixture(t)
+		write(t, config, fmt.Sprintf("schema_version=2\n[workflow]\nroot='../records'\ngit='existing'\n[worktrees]\ndir='../records'\n[repos]\napp=%q\n", source))
+		if _, err := workspace.LoadMigrationRecovery(config); err == nil || !strings.Contains(err.Error(), "overlaps workflow.root") {
+			t.Fatalf("LoadMigrationRecovery overlap = %v", err)
+		}
+	})
+	t.Run("mismatched schema-two marker", func(t *testing.T) {
+		_, control, config, records, _ := newFixture(t)
+		write(t, filepath.Join(control, ".homonto", "workflow-layout.json"), fmt.Sprintf("{\"schema_version\":2,\"config_path\":%q,\"workflow_root\":%q,\"git_mode\":\"existing\"}\n", config, filepath.Join(filepath.Dir(records), "other-records")))
+		if _, err := workspace.LoadMigrationRecovery(config); err == nil || !strings.Contains(err.Error(), "does not match") {
+			t.Fatalf("LoadMigrationRecovery marker mismatch = %v", err)
+		}
+	})
+	t.Run("symlink workflow root", func(t *testing.T) {
+		base, _, config, records, source := newFixture(t)
+		if err := os.MkdirAll(records, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.Symlink(records, filepath.Join(base, "records-link")); err != nil {
+			t.Skipf("symlinks unavailable: %v", err)
+		}
+		write(t, config, fmt.Sprintf("schema_version=2\n[workflow]\nroot='../records-link'\ngit='existing'\n[worktrees]\ndir='../execution'\n[repos]\napp=%q\n", source))
+		write(t, filepath.Join(filepath.Dir(config), ".homonto", "workflow-root"), "../records-link\n")
+		if _, err := workspace.LoadMigrationRecovery(config); err == nil {
+			t.Fatal("LoadMigrationRecovery accepted a symlink workflow root")
+		}
+	})
 }
 
 func TestLayoutSymlinkAndFileBoundaries(t *testing.T) {

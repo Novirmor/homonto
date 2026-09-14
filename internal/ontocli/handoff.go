@@ -61,6 +61,11 @@ func handoffCmd() *cobra.Command {
 			if !ontostate.ValidPhase(st.Phase) {
 				return fmt.Errorf("onto handoff: %q has an unknown phase %q; refusing to build a handoff path from it", name, st.Phase)
 			}
+			if doWrite && !asJSON {
+				if err := rejectRetiredMigrationState(dir, changeDir, st); err != nil {
+					return fmt.Errorf("onto handoff: %w", err)
+				}
+			}
 			pack, err := buildHandoff(dir, name, changeDir, st)
 			if err != nil {
 				return err

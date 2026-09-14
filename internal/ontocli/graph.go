@@ -211,8 +211,17 @@ func buildGraph(root string) ([]graphNode, []graphEdge, error) {
 	var edges []graphEdge
 
 	capSeen := map[string]bool{}
-	add := func(dir, fallbackName string, archived bool) {
+	add := func(dir, fallbackName string, archived bool) error {
 		st, class, _ := ontostate.Classify(dir)
+		if !archived && class == "valid" {
+			retired, err := retiredMigrationState(root, dir, st)
+			if err != nil {
+				return err
+			}
+			if retired {
+				return nil
+			}
+		}
 		name := st.Change
 		if class != "valid" || name == "" {
 			name = fallbackName
@@ -242,6 +251,7 @@ func buildGraph(root string) ([]graphNode, []graphEdge, error) {
 				}
 			}
 		}
+		return nil
 	}
 
 	changesDir := changesDir(root)
@@ -256,14 +266,18 @@ func buildGraph(root string) ([]graphNode, []graphEdge, error) {
 		if !e.IsDir() || e.Name() == "archive" {
 			continue
 		}
-		add(filepath.Join(changesDir, e.Name()), e.Name(), false)
+		if err := add(filepath.Join(changesDir, e.Name()), e.Name(), false); err != nil {
+			return nil, nil, fmt.Errorf("onto graph: retired migration record: %w", err)
+		}
 	}
 	if archived, aErr := os.ReadDir(filepath.Join(changesDir, "archive")); aErr == nil {
 		for _, e := range archived {
 			if !e.IsDir() {
 				continue
 			}
-			add(filepath.Join(changesDir, "archive", e.Name()), e.Name(), true)
+			if err := add(filepath.Join(changesDir, "archive", e.Name()), e.Name(), true); err != nil {
+				return nil, nil, fmt.Errorf("onto graph: retired migration record: %w", err)
+			}
 		}
 	}
 

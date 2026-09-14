@@ -64,7 +64,7 @@ func doctorCmd() *cobra.Command {
 // siblingActiveDuplicates lists active onto change names that also exist as
 // active directories in the `to` workflow's tree.
 func siblingActiveDuplicates(root string) ([]string, error) {
-	mine, err := activeDirNames(changesDir(root))
+	mine, err := activeOntoDirNames(root)
 	if err != nil {
 		return nil, err
 	}
@@ -99,6 +99,38 @@ func activeDirNames(dir string) (map[string]bool, error) {
 	for _, e := range entries {
 		if !e.IsDir() || e.Name() == "archive" {
 			continue
+		}
+		names[e.Name()] = true
+	}
+	return names, nil
+}
+
+// activeOntoDirNames excludes receipt-listed retired records while retaining
+// malformed records as active names so a broken state cannot silently release a
+// duplicate-name reservation.
+func activeOntoDirNames(root string) (map[string]bool, error) {
+	dir := changesDir(root)
+	entries, err := os.ReadDir(dir)
+	if os.IsNotExist(err) {
+		return map[string]bool{}, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	names := map[string]bool{}
+	for _, e := range entries {
+		if !e.IsDir() || e.Name() == "archive" {
+			continue
+		}
+		changeDir := filepath.Join(dir, e.Name())
+		if state, class, _ := ontostate.Classify(changeDir); class == "valid" {
+			retired, err := retiredMigrationState(root, changeDir, state)
+			if err != nil {
+				return nil, err
+			}
+			if retired {
+				continue
+			}
 		}
 		names[e.Name()] = true
 	}

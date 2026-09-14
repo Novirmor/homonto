@@ -1,4 +1,4 @@
-//go:build windows
+//go:build !(darwin || dragonfly || freebsd || linux || netbsd || openbsd || windows)
 
 package applylock
 
@@ -10,8 +10,8 @@ import (
 	"path/filepath"
 )
 
-// Windows retains the portable O_EXCL fallback. Schema-2 migration refuses
-// this platform before it can promise SIGKILL-safe recovery.
+// Unsupported platforms retain the portable lock for ordinary commands. The
+// schema-2 migration rejects these platforms before taking a mutation lock.
 func acquirePath(path, _ string) (*Lock, error) {
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return nil, fmt.Errorf("apply lock: %w", err)

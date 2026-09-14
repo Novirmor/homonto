@@ -311,6 +311,18 @@ func provenanceTree(t *testing.T, root string) map[string]string {
 		if err != nil {
 			return err
 		}
+		if d.IsDir() && filepath.Base(path) == ".homonto" {
+			entries, err := os.ReadDir(path)
+			if err != nil {
+				return err
+			}
+			if len(entries) == 1 && entries[0].Name() == "lock-guardians" && entries[0].IsDir() {
+				return filepath.SkipDir
+			}
+		}
+		if d.IsDir() && filepath.Base(path) == "lock-guardians" && (filepath.Base(filepath.Dir(path)) == ".homonto" || filepath.Base(filepath.Dir(path)) == ".git") {
+			return filepath.SkipDir
+		}
 		if d.IsDir() {
 			out[path] = "directory"
 			return nil

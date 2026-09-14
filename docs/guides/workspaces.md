@@ -424,12 +424,46 @@ builds and scripts execute with the process's privileges, including access
 to credentials and the network. Agent role instructions and command rules
 do not guarantee that every host prompt or shell composition is enforced.
 
-Configuration migration currently consists of guards, not a migration command.
-Changing schema, records root, or Git mode while workflow state exists can
-fail closed, including for archives and recovery directories. Managed history
+Changing schema, records root, or Git mode while workflow state exists still
+fails closed, including for archives and recovery directories. Managed history
 also binds absolute config and records paths. Restore the prior configuration
 on refusal; do not delete ownership markers or archives to bypass the guard.
-There is no `homonto workspace migrate` command or ownership-safe rebind API.
+
+The only exception is the narrow, one-time migration of supported legacy
+workflow records into schema-2 ownership. It requires a schema-2, non-Git
+control directory; `workflow.git = "existing"`; an existing records Git root;
+the matching legacy workflow-root marker; and an explicit manifest. It does not
+migrate arbitrary layouts, rebind sources, or repair a changed topology.
+
+```bash
+homonto workspace migrate plan --config /work/control/homonto.toml --manifest /work/migration.json --json
+homonto workspace migrate apply --config /work/control/homonto.toml --manifest /work/migration.json --plan-hash <reviewed-plan-hash> --yes
+homonto workspace migrate verify --config /work/control/homonto.toml --run-id <run-id> --json
+```
+
+`plan` is read-only and emits the reviewed SHA-256 plan hash. `apply` writes a
+private recovery journal, receipt/proof commits, and adopted execution bindings;
+it writes the schema-2 marker only after the final invariants hold. If it is
+interrupted, use the reported run ID and the same reviewed plan hash; do not
+guess a new one:
+
+```bash
+homonto workspace migrate recover --config /work/control/homonto.toml --run-id <run-id> --action resume --plan-hash <reviewed-plan-hash> --yes
+```
+
+Before any private recovery status, intent, backup, journal, or completion
+target is replaced, migration durably records an identity-bound descriptor and
+an immutable payload blob. Recovery accepts only the descriptor's exact target,
+mode, and digest; a missing, malformed, foreign, or altered private artifact
+stops before an authoritative migration write. A preparation-only `restore`
+retains that private evidence behind a retirement marker, so a repeated recovery
+is safe and normal workspace loading can distinguish deliberate cleanup from an
+unrecognized pending run.
+
+Use `--action restore` only to restore the captured preimages of an incomplete
+run. Neither recovery action resets source branches, deletes unknown worktrees,
+or accepts a different layout or plan hash. There remains no general
+ownership-safe rebind API.
 
 `to promote` and `onto demote` refuse conversions involving registered
 worktree bindings because they cannot transactionally rebind ownership to the

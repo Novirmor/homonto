@@ -11,16 +11,13 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io/fs"
 	"os"
 	"path/filepath"
 	"regexp"
-	"runtime"
 	"sort"
-	"strconv"
 	"strings"
-	"syscall"
 
+	"github.com/noviopenworks/homonto/internal/applylock"
 	"github.com/noviopenworks/homonto/internal/schema"
 	"github.com/noviopenworks/homonto/internal/workflowroot"
 	"github.com/noviopenworks/homonto/internal/workspace"
@@ -450,32 +447,36 @@ func (f Framework) ValidChangeName(name string) error {
 	return nil
 }
 
-// LockWorkspace takes an exclusive workspace lock at the given path: an
-// O_CREATE|O_EXCL file recording the holder pid. A lock whose holder pid
-// provably no longer runs is auto-reclaimed; a lock with no readable pid —
-// a crash in the create-to-write window — and a lock held by a live pid are
-// never touched. Both CLIs use it for the `to` workspace lock
-// (docs/tasks/.to.lock): `to`'s own mutating commands, and `onto demote`
-// holding the same destination lock `to new` takes, in promote's fixed
-// lock order.
-func LockWorkspace(prefix, path string) (func(), error) {
-	f, err := os.OpenFile(path, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o600)
-	if errors.Is(err, fs.ErrExist) {
-		if pid, ok := lockPid(path); ok && !PidAlive(pid) {
-			if rmErr := os.Remove(path); rmErr == nil {
-				f, err = os.OpenFile(path, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o600)
-			}
-		}
-	}
+// LockWorkspace takes the shared kernel-released guardian for a workflow
+// mutation path. Its guardian lives in Git-private metadata when the workflow
+// root is a Git worktree, avoiding a records-tree artifact even when schema-2
+// records live outside the configuration repository. A non-Git legacy root
+// uses the configuration repository's existing .homonto metadata. A compatible
+// claim remains at path for old binaries.
+func LockWorkspace(prefix, root, path string) (func(), error) {
+	workflowRoot, err := WorkflowRoot(root)
 	if err != nil {
-		if errors.Is(err, fs.ErrExist) {
-			return nil, fmt.Errorf("%s: another %s command is in progress (lock held at %s); wait for it, or remove the file if none is running", prefix, prefix, path)
+		return nil, fmt.Errorf("%s: lock: %w", prefix, err)
+	}
+	if err := ValidateWorkflowPath(root, path); err != nil {
+		return nil, fmt.Errorf("%s: lock: %w", prefix, err)
+	}
+	lock, err := applylock.AcquirePath(path, workflowGuardianRoot(root, workflowRoot))
+	if err != nil {
+		if errors.Is(err, applylock.ErrHeld) {
+			return nil, fmt.Errorf("%s: another %s command is in progress (lock held at %s): %w", prefix, prefix, path, err)
 		}
 		return nil, fmt.Errorf("%s: lock: %w", prefix, err)
 	}
-	fmt.Fprintf(f, "pid=%d\n", os.Getpid())
-	_ = f.Close()
-	return func() { _ = os.Remove(path) }, nil
+	return func() { _ = lock.Release() }, nil
+}
+
+func workflowGuardianRoot(root, workflowRoot string) string {
+	_, common, err := workspace.GitIdentity(workflowRoot)
+	if err == nil {
+		return common
+	}
+	return filepath.Join(root, ".homonto")
 }
 
 // LockChangeNames serializes creation of active change names across both
@@ -489,48 +490,7 @@ func LockChangeNames(root string) (func(), error) {
 	if err := os.MkdirAll(wfRoot, 0o755); err != nil {
 		return nil, fmt.Errorf("change names: creating workflow root: %w", err)
 	}
-	return LockWorkspace("change names", filepath.Join(wfRoot, ".change-names.lock"))
-}
-
-// lockPid reads the holder pid recorded in a lockfile. ok=false when the file
-// is unreadable or carries no parseable pid= line: such a lock is never
-// auto-reclaimed, because the create-to-write window means it may still have
-// a live owner that simply has not written its pid yet.
-func lockPid(path string) (int, bool) {
-	b, err := os.ReadFile(path)
-	if err != nil {
-		return 0, false
-	}
-	for _, ln := range strings.Split(string(b), "\n") {
-		if v, ok := strings.CutPrefix(ln, "pid="); ok {
-			if pid, err := strconv.Atoi(strings.TrimSpace(v)); err == nil && pid > 0 {
-				return pid, true
-			}
-		}
-	}
-	return 0, false
-}
-
-// PidAlive reports whether pid names a running process. Only a confirmed
-// finished/dead process counts as dead — os.Signal(0) yields
-// os.ErrProcessDone (or ESRCH) for one that no longer runs — while a
-// permission error means the process exists but belongs to another user. On
-// Windows os.FindProcess itself fails for a finished pid, so its success is
-// the answer there. A recycled pid (dead holder's number taken by an
-// unrelated process) therefore reads as alive — the safe direction; the lock
-// waits for hand cleanup, as before.
-func PidAlive(pid int) bool {
-	p, err := os.FindProcess(pid)
-	if err != nil {
-		return false
-	}
-	if runtime.GOOS == "windows" {
-		return true
-	}
-	if err := p.Signal(syscall.Signal(0)); err != nil {
-		return !(errors.Is(err, os.ErrProcessDone) || errors.Is(err, syscall.ESRCH))
-	}
-	return true
+	return LockWorkspace("change names", root, filepath.Join(wfRoot, ".change-names.lock"))
 }
 
 // SiblingChangeDir returns the directory the sibling workflow would hold a

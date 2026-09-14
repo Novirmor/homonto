@@ -219,6 +219,10 @@ From a source checkout, pass the control config's full path. See
 | `workspace init` | `--yes` required | Explicit initialization of an absent/empty managed records root; in `existing` mode, only validates its existing Git owner. |
 | `workspace checkpoint` | `--message <text>` required; repeatable `--path <path>` | Commit selected owned record files/subtrees in managed mode. |
 | `workspace recover` | none | Retry an exact prepared checkpoint, or preserve only the scoped delta of an interrupted pre-write intent with a recovery label. |
+| `workspace migrate plan` | `--manifest <path>` required; `--json` required | Read-only inventory of the supported legacy-records transition. Emits a reviewed `plan_hash` in JSON. |
+| `workspace migrate apply` | `--manifest <path>`, `--plan-hash <sha256>`, and `--yes` required | Apply the exact reviewed legacy-records migration with a durable private recovery journal. |
+| `workspace migrate verify` | `--run-id <id>` and `--json` required | Verify a completed migration receipt, records history, and adopted bindings without printing private journal data. |
+| `workspace migrate recover` | `--run-id <id>`, `--action resume\|restore`, `--plan-hash <sha256>`, and `--yes` required | Resume or restore exactly one interrupted migration journal. The plan hash must be the reviewed hash for that run. |
 
 Inspection text reports `Config`, `Workflow`, `Git mode`, `Initialized`, and
 `Pending checkpoint`. JSON includes `schema_version`, `config_path`,
@@ -277,7 +281,19 @@ stored pre-operation snapshot and records `Recover interrupted operation: <label
 It neither sweeps unrelated paths nor claims the operation completed; later edits
 inside the scope cannot be attributed to an editor. A no-change intent creates
 no empty commit. Inspect workflow state afterward. Recovery never pushes or
-rolls back user edits. There is no `workspace migrate` command.
+rolls back user edits.
+
+`workspace migrate` is a separate, narrow command family for supported legacy
+records only. Run `migrate plan --json`, review its `plan_hash`, then pass that
+same hash to `migrate apply --yes`. An interrupted run reports its run ID; pass
+both that run ID and the original reviewed hash to `migrate recover --yes`.
+Recovery revalidates the configured schema-2 layout, all declared repositories,
+and the journal's exact Plan-derived write authority before it writes anything.
+Private migration recovery payloads are additionally bound to a durable run
+identity, descriptor, immutable blob, target, mode, and digest. Missing,
+malformed, foreign, or altered recovery material fails closed before recovery
+writes an authoritative file; `restore` never resets source branches or accepts
+a different reviewed plan hash.
 
 ## `homonto worktree`
 

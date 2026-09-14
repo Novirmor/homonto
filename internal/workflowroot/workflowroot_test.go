@@ -185,8 +185,21 @@ func TestWriteLayoutMarkerIdempotenceAndMigration(t *testing.T) {
 		t.Fatalf("atomic replacement loosened mode: %v, %v", info, err)
 	}
 	entries, err := os.ReadDir(filepath.Dir(path))
-	if err != nil || len(entries) != 1 || entries[0].Name() != LayoutMarkerFile {
-		t.Fatalf("temporary files left behind: %v, %v", entries, err)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := map[string]struct{}{}
+	for _, entry := range entries {
+		got[entry.Name()] = struct{}{}
+	}
+	if len(got) != 2 {
+		t.Fatalf("unexpected control-plane entries: %v", entries)
+	}
+	if _, ok := got[LayoutMarkerFile]; !ok {
+		t.Fatalf("workflow layout marker is missing: %v", entries)
+	}
+	if _, ok := got["lock-guardians"]; !ok {
+		t.Fatalf("unexpected control-plane entries: %v", entries)
 	}
 }
 
@@ -253,6 +266,37 @@ func TestValidateLayoutLegacySameRootIsNotUpgrade(t *testing.T) {
 		if err := ValidateLayout(filepath.Join(repo, "homonto.toml"), "docs", "existing", 1); err != nil {
 			t.Fatalf("legacy unchanged = %v", err)
 		}
+	}
+}
+
+func TestValidateLegacyMigrationReadRejectsAlternativeLegacyRoots(t *testing.T) {
+	for _, name := range []string{"changes", "tasks", ".to-promote", ".onto-demote"} {
+		t.Run(name, func(t *testing.T) {
+			repo := t.TempDir()
+			workflowRoot := filepath.Join(repo, ".homonto-local")
+			writeMarker(t, repo, ".homonto-local")
+			path := filepath.Join(repo, "docs", name)
+			if err := os.MkdirAll(path, 0o755); err != nil {
+				t.Fatal(err)
+			}
+
+			err := ValidateLegacyMigrationRead(filepath.Join(repo, "homonto.toml"), workflowRoot, "existing", 2)
+			if err == nil || LegacyMigrationReadCode(err) != "legacy_alternative_state_present" || !strings.Contains(err.Error(), fmt.Sprintf("%q", path)) {
+				t.Fatalf("ValidateLegacyMigrationRead = %v", err)
+			}
+		})
+	}
+}
+
+func TestValidateLegacyMigrationReadAllowsSelectedLegacyRoot(t *testing.T) {
+	repo := t.TempDir()
+	workflowRoot := filepath.Join(repo, ".homonto-local")
+	writeMarker(t, repo, ".homonto-local")
+	if err := os.MkdirAll(filepath.Join(workflowRoot, "changes"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := ValidateLegacyMigrationRead(filepath.Join(repo, "homonto.toml"), workflowRoot, "existing", 2); err != nil {
+		t.Fatalf("ValidateLegacyMigrationRead = %v", err)
 	}
 }
 

@@ -174,7 +174,10 @@ func traceCmd() *cobra.Command {
 		Args:  cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			changesDir := changesDir(dir)
-			names := activeChangeNames(cmd, changesDir)
+			names, err := activeChangeNames(dir, changesDir)
+			if err != nil {
+				return fmt.Errorf("onto trace: retired migration record: %w", err)
+			}
 			if len(args) == 1 {
 				if err := ontoFramework.ValidChangeName(args[0]); err != nil {
 					return err
@@ -365,22 +368,32 @@ func renderTrace(cmd *cobra.Command, g traceGraph) {
 
 // activeChangeNames lists change directories under docs/changes (excluding
 // archive) that look like changes; best-effort for trace.
-func activeChangeNames(cmd *cobra.Command, changesDir string) []string {
+func activeChangeNames(root, changesDir string) ([]string, error) {
 	entries, err := os.ReadDir(changesDir)
 	if err != nil {
-		return nil
+		return nil, nil
 	}
 	var out []string
 	for _, e := range entries {
 		if !e.IsDir() || e.Name() == "archive" || strings.HasPrefix(e.Name(), ".") {
 			continue
 		}
-		if _, err := os.Stat(filepath.Join(changesDir, e.Name(), "onto-state.yaml")); err == nil {
+		changeDir := filepath.Join(changesDir, e.Name())
+		if _, err := os.Stat(filepath.Join(changeDir, "onto-state.yaml")); err == nil {
+			if state, class, _ := ontostate.Classify(changeDir); class == "valid" {
+				retired, err := retiredMigrationState(root, changeDir, state)
+				if err != nil {
+					return nil, err
+				}
+				if retired {
+					continue
+				}
+			}
 			out = append(out, e.Name())
 		}
 	}
 	sort.Strings(out)
-	return out
+	return out, nil
 }
 
 // headCommitAt resolves HEAD in root, read-only; empty when git is absent.

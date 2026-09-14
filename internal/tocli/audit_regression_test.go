@@ -28,6 +28,13 @@ func auditSnapshot(t *testing.T, root string) map[string]string {
 		if err != nil {
 			return err
 		}
+		guardianRoot := filepath.Join(".homonto", "lock-guardians")
+		if rel == guardianRoot {
+			if d.IsDir() {
+				return filepath.SkipDir
+			}
+			return nil
+		}
 		info, err := d.Info()
 		if err != nil {
 			return err

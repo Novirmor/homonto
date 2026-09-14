@@ -3,7 +3,7 @@
 # homonto's projection and onto's workflow against the real tool. Credentials
 # are never baked in — they are mounted read-only at run time
 # by scripts/e2e-matrix.sh. Built once, run per matrix cell via entrypoint.sh.
-FROM golang:1.23-bookworm
+FROM golang:1.26.6-bookworm
 
 # Runtime deps: curl for the installer, jq/python3 for the suite assertions,
 # git for onto's dirty-worktree checks, unzip for the opencode installer.

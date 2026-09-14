@@ -15,6 +15,41 @@ bookkeeper) — for every supported OS/arch as separate archives under one
 `SHA256SUMS`. `onto` and `to` each require `homonto` to have installed their
 framework first (`[frameworks.onto]` / `[frameworks.to]` + `homonto apply`).
 
+### New in v0.29.0 — explicit legacy-record migration
+
+- Adds `homonto workspace migrate plan`, `apply`, `verify`, and `recover` for
+  the supported legacy-records to schema-2 ownership transition. Planning is
+  read-only; applying requires an explicit source manifest, its reviewed plan
+  hash, and `--yes`.
+- Migration preserves record identities, phases, decisions, historical evidence,
+  and retired records. It can adopt validated legacy execution worktrees without
+  changing their source files, indexes, or refs. Ordinary discovery keeps retired
+  records out of active workflows.
+- Private backups, payload descriptors, and journaled writes support resume or
+  restore after interruption. Recovery rejects stale plans, conflicting edits,
+  or altered payloads rather than overwriting them. See
+  [ADR 0058](adr/0058-bind-migration-recovery-to-durable-payloads.md) and the
+  [workspace guide](guides/workspaces.md).
+- Shared Unix mutation locks use process-released guardians with compatible
+  legacy lock claims. Test images now use the pinned Go 1.26.6 toolchain, and
+  the full race suite has a bounded 20-minute timeout with no tests skipped.
+
+### Upgrading to v0.29.0
+
+Install all three binaries at v0.29.0, then run `homonto update` (or
+`homonto apply`) in each configured project and restart OpenCode. **Updating
+does not migrate existing workflow records.** Migration is a separate, explicit
+operation requiring a schema-2 non-Git control directory, `workflow.git = "existing"`,
+an existing records Git root, the matching legacy root marker, and a manifest.
+It is not a general workspace relocation or source-rebinding command.
+
+**Building from source now requires Go 1.25 or newer**; the pinned toolchain
+remains Go 1.26.6. Migration mutation/recovery is unavailable on unsupported
+platforms, including Windows; ordinary Windows binaries still ship. Preserve
+the private recovery directory after interruption and use the reported run ID
+with `recover`, rather than deleting recovery artifacts. Process-interruption
+tests do not establish durability under host power loss.
+
 ### New in v0.28.0 — OpenCode recovery tools and approved GitHub drafts
 
 - OpenCode compaction and resumed model requests receive bounded recovery context:

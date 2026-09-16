@@ -38,7 +38,7 @@ type Status = "pending" | "approved" | "declined" | "revision-requested" | "inva
 type Item = InputItem & { itemID: string; target: Target; snapshot: Snapshot; payload: string; status: Status; receipt?: { id: number; url: string }; reason?: string }
 type Question = { header: string; question: string; options: { label: string; description: string }[]; multiple: false }
 type Session = { deleted: boolean; staging: boolean; current?: string; cancel: AbortController }
-type Draft = { draftID: string; sessionID: string; expiresAt: number; abort: AbortSignal; invalidated: boolean; items: Item[]; question: { questions: Question[] }; callID?: string; requestID?: string; answered: boolean }
+type Draft = { draftID: string; sessionID: string; expiresAt: number; invalidated: boolean; items: Item[]; question: { questions: Question[] }; callID?: string; requestID?: string; answered: boolean }
 
 const TTL = 15 * 60 * 1000
 const MAX_SESSIONS = 64
@@ -108,7 +108,6 @@ export function createGithubDrafts({ run, configPath, coordinator }: { run: Run;
 
   function expire() {
     for (const d of drafts.values()) {
-      if (d.abort.aborted) invalidate(d)
       if (Date.now() >= d.expiresAt) {
         d.answered = true
         for (const i of d.items) if (["pending", "approved"].includes(i.status)) i.status = "expired"
@@ -135,7 +134,7 @@ export function createGithubDrafts({ run, configPath, coordinator }: { run: Run;
   }
   function live(ctx: ToolContext, d?: Draft) {
     const s = guard(ctx)
-    if (d) check(!d.invalidated && !d.abort.aborted && s.current === d.draftID && Date.now() < d.expiresAt, "draft invalidated or expired")
+    if (d) check(!d.invalidated && s.current === d.draftID && Date.now() < d.expiresAt, "draft invalidated or expired")
   }
   async function command(argv: string[], ctx: ToolContext, stdin?: string): Promise<string> {
     const s = guard(ctx)
@@ -246,7 +245,7 @@ export function createGithubDrafts({ run, configPath, coordinator }: { run: Run;
     s.current = undefined
     s.staging = true
     const draftID = randomUUID()
-    const d: Draft = { draftID, sessionID: ctx.sessionID, expiresAt: Date.now() + TTL, abort: ctx.abort, invalidated: false, items: [], question: { questions: [] }, answered: false }
+    const d: Draft = { draftID, sessionID: ctx.sessionID, expiresAt: Date.now() + TTL, invalidated: false, items: [], question: { questions: [] }, answered: false }
     drafts.set(draftID, d)
     try {
       for (const input of inputs) {

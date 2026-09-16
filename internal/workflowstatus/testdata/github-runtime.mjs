@@ -123,6 +123,14 @@ for (const mutate of [s => s.setState('closed'), s => s.setActor(8), s => s.setH
   assert.equal((await invoke(s, 'publish', { draftID: d.draftID }, denied)).items[0].status, 'blocked')
   assert.equal(s.postCount(), 0)
 }
+{
+  const s = setup(), controller = new AbortController(), d = await stage(s, [item()], context({ abort: controller.signal }))
+  controller.abort()
+  approve(s, d)
+  const out = await invoke(s, 'publish', { draftID: d.draftID })
+  assert.equal(out.items[0].status, 'published')
+  assert.equal(s.postCount(), 1)
+}
 for (const error of ['lost-response', 'lost-without-record']) {
   const s = setup(), d = await stage(s)
   approve(s, d); s.setError(error)

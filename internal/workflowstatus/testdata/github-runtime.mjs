@@ -55,7 +55,7 @@ function setup() {
       html_url: `https://github.com/owner/repo/${pr ? 'pull/2' : 'issues/1'}`,
       ...(pr ? { base: { sha: A, repo: { id: 20 } }, head: { sha: head }, merged: false, draft: false } : {}) })
   }
-  const service = createGithubDrafts({ run, configPath, coordinator: 'coordinator' })
+  const service = createGithubDrafts({ run, configPath })
   return { service, calls, comments, postCount: () => calls.filter(c => c.argv.includes('POST')).length,
     setState: value => state = value, setHead: value => head = value, setActor: value => actor = value,
     setError: value => mutateError = value, setBeforeMutation: value => beforeMutation = value }
@@ -101,7 +101,6 @@ for (const tamper of [p => ({ ...p, sessionID: 'other' }), p => ({ ...p, tool: {
 }
 {
   const s = setup(), d = await stage(s)
-  await assert.rejects(() => stage(s, [item()], context({ agent: 'h-review' })), /coordinator/)
   await assert.rejects(() => invoke(s, 'publish', { draftID: d.draftID, approved: true }), /invalid arguments/)
   await assert.rejects(() => invoke(s, 'status', { draftID: d.draftID }, context({ sessionID: 'other' })), /unknown draft/)
   approve(s, d)
@@ -124,10 +123,13 @@ for (const mutate of [s => s.setState('closed'), s => s.setActor(8), s => s.setH
   assert.equal(s.postCount(), 0)
 }
 {
-  const s = setup(), controller = new AbortController(), d = await stage(s, [item()], context({ abort: controller.signal }))
+  const s = setup(), controller = new AbortController()
+  const d = await stage(s, [item()], context({ agent: 'custom-publisher', abort: controller.signal }))
   controller.abort()
   approve(s, d)
-  const out = await invoke(s, 'publish', { draftID: d.draftID })
+  const custom = context({ agent: 'custom-publisher' })
+  assert.equal((await invoke(s, 'status', { draftID: d.draftID }, custom)).items[0].status, 'approved')
+  const out = await invoke(s, 'publish', { draftID: d.draftID }, custom)
   assert.equal(out.items[0].status, 'published')
   assert.equal(s.postCount(), 1)
 }
@@ -164,7 +166,7 @@ for (const error of ['lost-response', 'lost-without-record']) {
 {
   const s = setup(), d = await stage(s)
   approve(s, d); s.service.dispose()
-  await assert.rejects(() => invoke(s, 'publish', { draftID: d.draftID }), /coordinator/)
+  await assert.rejects(() => invoke(s, 'publish', { draftID: d.draftID }), /live session/)
   const restarted = setup()
   await assert.rejects(() => invoke(restarted, 'publish', { draftID: d.draftID }), /unknown draft/)
 }

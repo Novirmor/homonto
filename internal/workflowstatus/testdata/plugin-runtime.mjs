@@ -80,8 +80,8 @@ try {
   assert.ok(githubHooks.tool.homonto_github_status)
   assert.ok(githubHooks.tool.homonto_github_publish)
   await assert.rejects(() => githubHooks.tool.homonto_github_draft.execute({ items: [] }, {
-    sessionID: "session", messageID: "message", agent: "h-review", abort: new AbortController().signal, async ask() {},
-  }), /coordinator/)
+    sessionID: "session", messageID: "message", agent: "custom-publisher", abort: new AbortController().signal, async ask() {},
+  }), /1–10 items/)
   await githubHooks.dispose()
   await writeFile(bindingPath, bindingBytes)
   responses.push({ value: backendSnapshot })

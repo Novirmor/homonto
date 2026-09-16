@@ -68,10 +68,12 @@ The observation and recovery hooks are not enforcement hooks: they do not execut
 Use `onto doctor` or `to doctor` without `--quiet` for the full diagnosis;
 use `--quiet` when only the exit code is needed.
 
-With the builtin `h` bundle configured, the plugin separately exposes
-coordinator-only `homonto_github_draft`, `homonto_github_status`, and
-`homonto_github_publish` tools. These stage exact issue/PR comments and supported
-formal reviews, then consume matching native question replies before publishing.
+With the builtin `h` bundle configured, the plugin separately exposes session-bound
+`homonto_github_draft`, `homonto_github_status`, and `homonto_github_publish`
+tools. Any live OpenCode agent permitted to invoke them may stage, inspect, and
+publish drafts; generated homonto worker profiles still deny the tools. They stage
+exact issue/PR comments and supported formal reviews, then consume matching native
+question replies before publishing.
 Permission replies alone never approve a draft. Event hooks, compaction, and
 recovery never publish. Drafts are session-bound, expire after 15 minutes, and
 are lost on restart; approval is never reconstructed from conversation summaries.

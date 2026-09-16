@@ -1,6 +1,6 @@
 # Trust workspace execution and automate h routing
 
-- **Status:** Partially superseded by 0054 (finite shell allowlist, composition guards, and blanket coordinator-only GitHub access; routing, execution trust, and publication obligations retained)
+- **Status:** Partially superseded by 0054 (finite shell allowlist and composition guards) and 0059 (session-approved GitHub draft tools); routing, execution trust, and shipped-worker publication ownership retained
 - **Date:** 2026-09-07
 
 ## Context

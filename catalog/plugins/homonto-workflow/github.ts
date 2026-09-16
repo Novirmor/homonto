@@ -98,8 +98,8 @@ function inputItems(args: unknown): InputItem[] {
   return items
 }
 
-export function createGithubDrafts({ run, configPath, coordinator }: { run: Run; configPath: string; coordinator: string }) {
-  check(typeof run === "function" && pathOK(configPath) && text(coordinator) && coordinator.trim(), "runner, bound absolute configPath and coordinator are required")
+export function createGithubDrafts({ run, configPath }: { run: Run; configPath: string }) {
+  check(typeof run === "function" && pathOK(configPath), "runner and bound absolute configPath are required")
   const sessions = new Map<string, Session>()
   const drafts = new Map<string, Draft>()
   const requests = new Set<string>()
@@ -121,8 +121,9 @@ export function createGithubDrafts({ run, configPath, coordinator }: { run: Run;
   }
   function guard(ctx: ToolContext): Session {
     expire()
-    check(!disposed && ctx && ctx.agent === coordinator && text(ctx.sessionID) && ctx.sessionID.length > 0 && ctx.sessionID.length <= 256 &&
-      text(ctx.messageID) && ctx.messageID.length > 0 && ctx.abort instanceof AbortSignal && !ctx.abort.aborted && typeof ctx.ask === "function", "GitHub tools require the live coordinator context")
+    check(!disposed && ctx && text(ctx.agent) && ctx.agent.length > 0 && ctx.agent.length <= 256 &&
+      text(ctx.sessionID) && ctx.sessionID.length > 0 && ctx.sessionID.length <= 256 && text(ctx.messageID) && ctx.messageID.length > 0 &&
+      ctx.abort instanceof AbortSignal && !ctx.abort.aborted && typeof ctx.ask === "function", "GitHub tools require a live session context")
     let s = sessions.get(ctx.sessionID)
     if (!s) {
       check(sessions.size < MAX_SESSIONS, "GitHub session capacity reached")

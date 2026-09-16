@@ -1,6 +1,6 @@
 # Default to trusted workspace shell
 
-- **Status:** Partially superseded by 0055, 0056, and 0057
+- **Status:** Partially superseded by 0055, 0056, 0057, and 0059
 - **Date:** 2026-09-08
 
 ## Context

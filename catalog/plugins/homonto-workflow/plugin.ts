@@ -244,7 +244,6 @@ export const homontoWorkflow = (async ({ client, directory }: Parameters<Plugin>
     githubBinding = JSON.stringify(initialBinding)
     github = createGithubDrafts({
       configPath: initialBinding.configPath,
-      coordinator: initialBinding.coordinator,
       run: async (argv, options) => {
         if (JSON.stringify(await selectedBinding()) !== githubBinding) {
           github?.dispose()

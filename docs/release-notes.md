@@ -15,6 +15,26 @@ bookkeeper) — for every supported OS/arch as separate archives under one
 `SHA256SUMS`. `onto` and `to` each require `homonto` to have installed their
 framework first (`[frameworks.onto]` / `[frameworks.to]` + `homonto apply`).
 
+### New in v0.30.0 — session-approved GitHub publication
+
+- GitHub publication drafts now outlive the OpenCode tool call that staged
+  them. Ending that call no longer invalidates an otherwise live, approved
+  draft.
+- Custom agents and skills that OpenCode permits to invoke the
+  `homonto_github_*` tools can stage, inspect, and publish drafts in the same
+  session without switching to the `homonto` agent. Generated homonto worker
+  profiles continue to deny those tools.
+- Exact native-question approval, the 15-minute TTL, session deletion, draft
+  replacement, plugin disposal, publication permissions, actor and destination
+  freshness, and uncertain-send reconciliation remain enforced. See
+  [ADR 0059](adr/0059-authorize-github-drafts-by-session-and-approval.md).
+
+### Upgrading to v0.30.0
+
+Install all three binaries at v0.30.0, run `homonto update` (or `homonto apply`)
+in each configured project, and restart OpenCode so the updated workflow plugin
+is loaded.
+
 ### New in v0.29.0 — explicit legacy-record migration
 
 - Adds `homonto workspace migrate plan`, `apply`, `verify`, and `recover` for

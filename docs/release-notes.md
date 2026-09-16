@@ -15,6 +15,24 @@ bookkeeper) — for every supported OS/arch as separate archives under one
 `SHA256SUMS`. `onto` and `to` each require `homonto` to have installed their
 framework first (`[frameworks.onto]` / `[frameworks.to]` + `homonto apply`).
 
+### New in v0.31.0 — expanded GitHub draft capacity
+
+- Long-running OpenCode servers now admit up to 4,096 observed GitHub sessions,
+  1,024 retained publication drafts, and 65,536 correlated question request IDs
+  per plugin instance, replacing the previous 64/128/512 ceilings.
+- Regression coverage crosses each previous ceiling. Drafts retain a lower limit
+  than lightweight identity records because they hold item bodies and remote
+  snapshots. See
+  [ADR 0060](adr/0060-raise-github-draft-runtime-capacities.md).
+- This release increases headroom without changing publication authorization or
+  lifecycle semantics. Terminal-record reclamation remains separate work.
+
+### Upgrading to v0.31.0
+
+Install all three binaries at v0.31.0, run `homonto update` (or `homonto apply`)
+in each configured project, and restart OpenCode so the updated workflow plugin
+is loaded.
+
 ### New in v0.30.0 — session-approved GitHub publication
 
 - GitHub publication drafts now outlive the OpenCode tool call that staged

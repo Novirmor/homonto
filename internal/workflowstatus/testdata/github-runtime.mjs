@@ -170,6 +170,34 @@ for (const error of ['lost-response', 'lost-without-record']) {
   const restarted = setup()
   await assert.rejects(() => invoke(restarted, 'publish', { draftID: d.draftID }), /unknown draft/)
 }
+{
+  const s = setup()
+  for (let n = 0; n < 65; n++) {
+    const d = await stage(s, [item()], context({ sessionID: `capacity-session-${n}` }))
+    assert.equal(d.items[0].status, 'pending')
+  }
+}
+{
+  const s = setup()
+  let d
+  for (let n = 0; n < 129; n++) d = await stage(s, [item({ body: `Capacity draft ${n}` })])
+  assert.equal(d.items[0].status, 'pending')
+}
+{
+  const realNow = Date.now
+  let now = realNow()
+  Date.now = () => now
+  try {
+    const s = setup()
+    let d
+    for (let n = 0; n < 513; n++) {
+      if (n > 0) now += 16 * 60 * 1000
+      d = await stage(s, [item({ body: `Capacity request ${n}` })])
+      approve(s, d)
+    }
+    assert.equal((await invoke(s, 'status', { draftID: d.draftID })).items[0].status, 'approved')
+  } finally { Date.now = realNow }
+}
 for (const input of [item({ url: 'https://github.com/owner/repo/issues/1?x=1' }), item({ body: 'x'.repeat(8193) }), item({ kind: 'pr_review', url: 'https://github.com/owner/repo/pull/2', baseOID: A, headOID: B, reviewEvent: 'APPROVE' })]) {
   const s = setup()
   await assert.rejects(() => stage(s, [input]))

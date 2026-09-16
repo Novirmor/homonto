@@ -41,9 +41,9 @@ type Session = { deleted: boolean; staging: boolean; current?: string; cancel: A
 type Draft = { draftID: string; sessionID: string; expiresAt: number; invalidated: boolean; items: Item[]; question: { questions: Question[] }; callID?: string; requestID?: string; answered: boolean }
 
 const TTL = 15 * 60 * 1000
-const MAX_SESSIONS = 64
-const MAX_DRAFTS = 128
-const MAX_REQUESTS = 512
+const MAX_SESSIONS = 4096
+const MAX_DRAFTS = 1024
+const MAX_REQUESTS = 65536
 const bytes = (s: string) => new TextEncoder().encode(s).length
 const record = (v: unknown): v is Record<string, unknown> => !!v && typeof v === "object" && !Array.isArray(v)
 const id = (v: unknown): v is number => Number.isSafeInteger(v) && (v as number) > 0

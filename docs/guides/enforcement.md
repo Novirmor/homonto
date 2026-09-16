@@ -79,6 +79,9 @@ recovery never publish. Drafts are session-bound, expire after 15 minutes, and
 are lost on restart; approval is never reconstructed from conversation summaries.
 Uncertain sends are reconciled rather than resent. This is a workflow approval
 mechanism, not isolation from trusted shell or host API clients.
+The plugin instance admits up to 4,096 observed GitHub sessions, 1,024 retained
+drafts, and 65,536 correlated question request IDs. Drafts remain the heavier
+resource and therefore keep the lower ceiling.
 
 ## Custom OpenCode hook
 

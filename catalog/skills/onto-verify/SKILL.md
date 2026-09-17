@@ -141,9 +141,15 @@ after recording to confirm current claims and resolve stale or unknown-ID findin
 On any failure, record `onto set verify-result <name> fail` once per round, which increments
 `observed.verify_rounds`, and note the date and failing items in `notes.md`.
 If step 4 already recorded fail, do not increment it again here.
-Default to **fix**: add tasks for the failures in `tasks.md`; the unchecked tasks
-drive derivation back to build without a backward phase write. Repair, then run a
-fresh verification round.
+Default to **fix**: verify each skeptic finding against the candidate, then turn
+every real in-scope source defect into an unchecked repair task with a matching
+`plan.md` detail block before changing code. Give it the full task contract
+(Owner, Repo, Cwd, Files, Change, Verify). The unchecked task drives derivation
+back to build without a backward phase write: **load `onto-build` and continue in
+the same invocation**. `onto-build` re-dispatches `onto-implementer` for a source
+repair (or the coordinator repairs a records-owned task), then this skill runs a
+fresh verification round on the new candidate. Do not stop at a skeptic finding
+or ask the user to continue when the repair is technically clear and in scope.
 
 Ask the user only if accepting a known lower-severity deviation is a real option
 and fixing it would cross a user-owned constraint. Never recommend acceptance,

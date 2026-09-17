@@ -46,10 +46,15 @@ including workspace roots and dirty-work decisions, even on direct entry.
    - If accepted findings change code, the previous verdict describes an old
      tree. Re-run `Final Verify:`, then re-dispatch once against the new final
      candidate. Keep only the completed verdict for the tree being archived.
-3. **Triage its findings.** Fix what's real (back through the `to-do` loop for
-   anything substantial), decline the rest with a written reason. A code change
-   invalidates both the previous `Final Verify:` result and skeptic verdict;
-   repeat steps 1–2 before finishing.
+3. **Triage its findings.** Verify each finding against the candidate. A real
+in-scope source defect becomes a new unchecked repair task with the complete
+Owner/Repo/Cwd/Files/Change/Verify contract, appended to `plan.md` before code
+changes. **Load `to-do` and continue in the same invocation**; its serial loop
+re-dispatches `to-implementer` for the repair. Do not stop at a skeptic finding
+or ask the user to continue when the repair is technically clear and in scope.
+Decline only findings refuted by evidence, with a written reason. A code change
+invalidates both the previous `Final Verify:` result and skeptic verdict; repeat
+steps 1–2 on the new candidate before finishing.
    Before archival, identify each receiver needed for authorized integration.
    Prefer preallocating `homonto worktree receiver <name> --workflow to --repo <alias> --json`
    while active, before writing the final record below. Record the receiver

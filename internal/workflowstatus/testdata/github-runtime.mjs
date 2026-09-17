@@ -11,24 +11,31 @@ const context = (overrides = {}) => ({ sessionID: 'session-1', messageID: 'messa
 function setup() {
   const calls = [], comments = []
   let mutateError = '', state = 'open', head = B, actor = 7, denyScope = false
+  let sources = { app: '/workspace/source' }, origins = { '/workspace/source': 'git@github.com:owner/repo.git' }
   let nextID = 100, beforeMutation
   const run = async (argv, options = {}) => {
     calls.push({ argv, options })
     assert.ok(!options.signal?.aborted)
     if (argv[0] === 'homonto') {
       assert.deepEqual(argv, ['homonto', 'workspace', 'inspect', '--json', '--config', configPath])
-      return JSON.stringify({ schema_version: 2, config_path: configPath, config_root: '/workspace/control', repos: { app: '/workspace/source' } })
+      return JSON.stringify({ schema_version: 2, config_path: configPath, config_root: '/workspace/control', repos: sources })
     }
     if (argv[0] === 'git') {
-      assert.deepEqual(argv, ['git', '-C', '/workspace/source', 'remote', 'get-url', 'origin'])
-      return 'git@github.com:owner/repo.git\n'
+      assert.deepEqual(argv.slice(0, 2), ['git', '-C'])
+      assert.deepEqual(argv.slice(3), ['remote', 'get-url', 'origin'])
+      assert.ok(Object.hasOwn(origins, argv[2]), `unexpected source ${argv[2]}`)
+      return `${origins[argv[2]]}\n`
     }
     assert.equal(argv[0], 'gh')
     assert.equal(argv[argv.indexOf('--hostname') + 1], 'github.com')
     const endpoint = argv.find(a => a === 'user' || a.startsWith('repos/'))
     const post = argv[argv.indexOf('--method') + 1] === 'POST'
     if (endpoint === 'user') return JSON.stringify({ id: actor, login: 'author' })
-    if (endpoint === 'repos/owner/repo') return JSON.stringify({ id: denyScope ? 999 : 20, full_name: 'owner/repo', html_url: 'https://github.com/owner/repo' })
+    const identity = /^repos\/([^/]+\/[^/]+)$/.exec(endpoint)
+    if (identity) {
+      const name = identity[1]
+      return JSON.stringify({ id: denyScope && name === 'owner/repo' ? 999 : name === 'owner/.github-private' ? 21 : 20, full_name: name, html_url: `https://github.com/${name}` })
+    }
     if (post) {
       assert.deepEqual(argv.slice(-2), ['--input', '-'])
       const body = JSON.parse(options.stdin)
@@ -50,15 +57,19 @@ function setup() {
       assert.ok(argv.includes('--paginate') && argv.includes('--slurp'))
       return JSON.stringify([comments])
     }
-    const pr = endpoint.includes('/pulls/')
+    const target = /^repos\/([^/]+\/[^/]+)\/(issues|pulls)\//.exec(endpoint)
+    assert.ok(target, `unexpected endpoint ${endpoint}`)
+    const [, name, type] = target
+    const pr = type === 'pulls'
     return JSON.stringify({ id: pr ? 31 : 30, number: pr ? 2 : 1, state, title: 'Research issue', body: 'Original context', updated_at: '2026-09-13T00:00:00Z', locked: false,
-      html_url: `https://github.com/owner/repo/${pr ? 'pull/2' : 'issues/1'}`,
-      ...(pr ? { base: { sha: A, repo: { id: 20 } }, head: { sha: head }, merged: false, draft: false } : {}) })
+      html_url: `https://github.com/${name}/${pr ? 'pull/2' : 'issues/1'}`,
+      ...(pr ? { base: { sha: A, repo: { id: name === 'owner/.github-private' ? 21 : 20 } }, head: { sha: head }, merged: false, draft: false } : {}) })
   }
   const service = createGithubDrafts({ run, configPath })
   return { service, calls, comments, postCount: () => calls.filter(c => c.argv.includes('POST')).length,
     setState: value => state = value, setHead: value => head = value, setActor: value => actor = value,
-    setError: value => mutateError = value, setBeforeMutation: value => beforeMutation = value }
+    setError: value => mutateError = value, setBeforeMutation: value => beforeMutation = value,
+    setSources: value => { sources = value.sources; origins = value.origins } }
 }
 const invoke = async (s, name, args, ctx = context()) => JSON.parse(await s.service.tools[`homonto_github_${name}`].execute(args, ctx))
 const stage = (s, items = [item()], ctx) => invoke(s, 'draft', { items }, ctx)
@@ -201,6 +212,28 @@ for (const error of ['lost-response', 'lost-without-record']) {
 for (const input of [item({ url: 'https://github.com/owner/repo/issues/1?x=1' }), item({ body: 'x'.repeat(8193) }), item({ kind: 'pr_review', url: 'https://github.com/owner/repo/pull/2', baseOID: A, headOID: B, reviewEvent: 'APPROVE' })]) {
   const s = setup()
   await assert.rejects(() => stage(s, [input]))
+  assert.equal(s.calls.length, 0)
+}
+{
+  const s = setup()
+  s.setSources({ sources: { private: '/workspace/private', app: '/workspace/source' }, origins: { '/workspace/private': 'git@github.com:owner/.github-private.git', '/workspace/source': 'git@github.com:owner/repo.git' } })
+  const d = await stage(s)
+  assert.equal(d.items[0].repository.name, 'owner/repo')
+}
+for (const remote of ['https://github.com/owner/.github-private.git', 'git@github.com:owner/.github-private.git', 'ssh://git@github.com/owner/.github-private.git']) {
+  const s = setup()
+  s.setSources({ sources: { private: '/workspace/private' }, origins: { '/workspace/private': remote } })
+  const d = await stage(s, [item({ url: 'https://github.com/owner/.github-private/issues/1' })])
+  assert.equal(d.items[0].repository.name, 'owner/.github-private')
+}
+{
+  const s = setup()
+  s.setSources({ sources: { private: '/workspace/private' }, origins: { '/workspace/private': 'git@github.com:owner/..git' } })
+  await assert.rejects(() => stage(s), /source private: origin validation failed/)
+}
+for (const name of ['.', '..']) {
+  const s = setup()
+  await assert.rejects(() => stage(s, [item({ url: `https://github.com/owner/${name}/issues/1` })]))
   assert.equal(s.calls.length, 0)
 }
 console.log('GitHub draft runtime passed')

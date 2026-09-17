@@ -50,7 +50,7 @@ const id = (v: unknown): v is number => Number.isSafeInteger(v) && (v as number)
 const text = (v: unknown): v is string => typeof v === "string"
 const oid = (v: unknown): v is string => text(v) && /^[a-f0-9]{40}$/.test(v)
 const pathOK = (v: unknown): v is string => text(v) && isAbsolute(v) && normalize(v) === v && !/[\x00-\x1f\x7f*?]/.test(v)
-const nameOK = (v: unknown): v is string => text(v) && /^[A-Za-z0-9][A-Za-z0-9-]*\/[A-Za-z0-9_][A-Za-z0-9_.-]*$/.test(v)
+const nameOK = (v: unknown): v is string => text(v) && /^[A-Za-z0-9][A-Za-z0-9-]*\/(?!\.{1,2}$)[A-Za-z0-9_.][A-Za-z0-9_.-]*$/.test(v)
 const hostOK = (v: string) => v.length <= 253 && v.includes(".") && v.split(".").every(x => /^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/.test(x)) && !/^\d+(?:\.\d+)+$/.test(v)
 function check(ok: unknown, message: string): asserts ok { if (!ok) throw new Error(message) }
 function exact(a: unknown, b: unknown): boolean {
@@ -158,13 +158,18 @@ export function createGithubDrafts({ run, configPath }: { run: Run; configPath: 
   async function scope(ctx: ToolContext): Promise<Repo[]> {
     const v: unknown = JSON.parse(await command(["homonto", "workspace", "inspect", "--json", "--config", configPath], ctx))
     check(record(v) && [0, 1, 2].includes(v.schema_version as number) && v.config_path === configPath && v.config_root === dirname(configPath) && record(v.repos), "invalid workspace inspect contract")
-    const paths = Object.values(v.repos)
-    if ((v.schema_version as number) < 2) paths.push(v.config_root)
+    const sources = Object.entries(v.repos)
+    if ((v.schema_version as number) < 2) sources.push(["config root", v.config_root])
+    const paths = sources.map(([, path]) => path)
     check(paths.length > 0 && paths.length <= 64 && paths.every(pathOK) && new Set(paths).size === paths.length, "invalid or empty declared source scope")
     const result: Repo[] = []
-    for (const p of paths) {
-      const o = origin(await command(["git", "-C", p as string, "remote", "get-url", "origin"], ctx))
-      const r = await repo(o.host, o.repo, ctx)
+    for (const [alias, p] of sources) {
+      let o: { host: string; repo: string }
+      try { o = origin(await command(["git", "-C", p, "remote", "get-url", "origin"], ctx)) }
+      catch { throw new Error(`source ${alias}: origin validation failed`) }
+      let r: Repo
+      try { r = await repo(o.host, o.repo, ctx) }
+      catch { throw new Error(`source ${alias}: repository identity validation failed`) }
       check(!result.some(other => other.host === r.host && other.id === r.id), "ambiguous repository aliases")
       result.push(r)
     }

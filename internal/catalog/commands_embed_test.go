@@ -285,6 +285,32 @@ func TestContinuationAllowsFactualBlockerReports(t *testing.T) {
 	}
 }
 
+func TestSkepticFindingsReturnToImplementation(t *testing.T) {
+	for _, tc := range []struct {
+		file string
+		want []string
+	}{
+		{"skills/onto-verify/SKILL.md", []string{
+			"real in-scope source defect", "matching `plan.md` detail block", "load `onto-build` and continue in the same invocation", "re-dispatches `onto-implementer`", "Do not stop at a skeptic finding",
+		}},
+		{"skills/to-done/SKILL.md", []string{
+			"real in-scope source defect", "Owner/Repo/Cwd/Files/Change/Verify", "Load `to-do` and continue in the same invocation", "re-dispatches `to-implementer`", "Do not stop at a skeptic finding",
+		}},
+		{"subagents/homonto.md", []string{
+			"A skeptic finding that survives coordinator triage is a **repair loop**", "never ask merely whether to continue fixing a verified defect",
+		}},
+	} {
+		t.Run(tc.file, func(t *testing.T) {
+			text := hPromptText(t, tc.file)
+			for _, want := range tc.want {
+				if !strings.Contains(text, want) {
+					t.Errorf("missing skeptic repair-loop contract %q", want)
+				}
+			}
+		})
+	}
+}
+
 func TestWorkflowRecoveryAndPresetTransitionsAreExecutable(t *testing.T) {
 	dispatcher, err := fs.ReadFile(embedded.FS, "skills/onto/SKILL.md")
 	if err != nil {

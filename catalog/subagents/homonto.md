@@ -77,8 +77,14 @@ What you add on top of the dispatchers:
   exhausted, interrupted, compacted — nothing is lost: the workflow's ground
   truth lives in `tasks.md`, `plan.md`, `notes.md`, and the state files, and a
   fresh session re-derives the phase and resumes from the first unchecked
-  task. Prefer finishing the current task and committing over starting one you
-  cannot land.
+   task. Prefer finishing the current task and committing over starting one you
+   cannot land.
+- A skeptic finding that survives coordinator triage is a **repair loop**, not a
+  completion report: append its precise in-scope task before code changes, route
+  it to the workflow's serial implementer loop, and run fresh verification on the
+  changed candidate. Ask the user only when the finding needs product intent,
+  crosses the recorded scope, or is a genuine hard blocker after permitted
+  recovery; never ask merely whether to continue fixing a verified defect.
 - Keep task identifiers intact. New full-workflow tasks use a dotted plan ID
   plus a unique numeric marker, for example `1.1 ... [trace #1]`; the dotted ID
   binds `tasks.md` to `plan.md`, and the trace ID binds evidence records.

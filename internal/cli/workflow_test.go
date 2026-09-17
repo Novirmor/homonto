@@ -4,11 +4,38 @@ import (
 	"bytes"
 	"encoding/json"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"testing"
 
 	"github.com/noviopenworks/homonto/internal/workflowstatus"
 )
+
+func TestWorkflowSnapshotWritesJSONToStdout(t *testing.T) {
+	root := t.TempDir()
+	cfg := filepath.Join(root, "homonto.toml")
+	if err := os.WriteFile(cfg, []byte(""), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if os.Getenv("HOMONTO_WORKFLOW_SNAPSHOT_HELPER") == "1" {
+		os.Exit(Execute([]string{"workflow", "snapshot", "--json", "--config", cfg}))
+	}
+	cmd := exec.Command(os.Args[0], "-test.run=^TestWorkflowSnapshotWritesJSONToStdout$")
+	cmd.Env = append(os.Environ(), "HOMONTO_WORKFLOW_SNAPSHOT_HELPER=1")
+	var stdout, stderr bytes.Buffer
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+	if err := cmd.Run(); err != nil {
+		t.Fatalf("workflow snapshot: %v\nstdout:\n%s\nstderr:\n%s", err, stdout.String(), stderr.String())
+	}
+	var snapshot workflowstatus.Snapshot
+	if err := json.Unmarshal(stdout.Bytes(), &snapshot); err != nil {
+		t.Fatalf("stdout is not snapshot JSON: %v\n%s", err, stdout.String())
+	}
+	if stderr.Len() != 0 {
+		t.Fatalf("stderr = %q", stderr.String())
+	}
+}
 
 func TestWorkflowSnapshotJSONIsReadOnly(t *testing.T) {
 	root := t.TempDir()

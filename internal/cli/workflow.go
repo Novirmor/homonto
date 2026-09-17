@@ -38,8 +38,8 @@ func workflowHandoffCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			cmd.Println(string(data))
-			return nil
+			_, err = fmt.Fprintln(cmd.OutOrStdout(), string(data))
+			return err
 		},
 	}
 	cmd.Flags().StringVar(&workflow, "workflow", "", "workflow: onto or to")
@@ -68,8 +68,8 @@ func workflowSnapshotCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			cmd.Println(string(data))
-			return nil
+			_, err = fmt.Fprintln(cmd.OutOrStdout(), string(data))
+			return err
 		},
 	}
 	cmd.Flags().BoolVar(&jsonMode, "json", false, "emit the stable machine-readable snapshot")

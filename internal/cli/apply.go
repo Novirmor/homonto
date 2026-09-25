@@ -62,7 +62,7 @@ func runApply(cmd *cobra.Command, cfgPath string, yes, snapshotMode bool, banner
 	if err != nil {
 		return err
 	}
-	for _, w := range e.Warnings {
+	for _, w := range append(e.OpenCodeV2Warnings(), e.Warnings...) {
 		cmd.Println("warn:", w)
 	}
 	// A digest-only remote repin leaves the name-based symlink plan empty

@@ -24,6 +24,7 @@ import (
 // Adapter projects desired config into OpenCode's opencode.jsonc under home.
 type Adapter struct {
 	baseadapter.Base
+	cliConfigHome string
 }
 
 // catalogPluginNames are the bundled plugin names homonto materializes as
@@ -34,7 +35,11 @@ var catalogPluginNames = map[string]bool{"permission-observer": true, "homonto-w
 // New builds an OpenCode adapter at user scope. home is $HOME; content holds
 // owned skills. Use WithProjectRoot to install project-scope skills.
 func New(home, content string) *Adapter {
-	return &Adapter{Base: baseadapter.Base{
+	configHome := os.Getenv("XDG_CONFIG_HOME")
+	if !filepath.IsAbs(configHome) {
+		configHome = filepath.Join(home, ".config")
+	}
+	return &Adapter{cliConfigHome: configHome, Base: baseadapter.Base{
 		Tool:          "opencode",
 		VariantSuffix: ".opencode.md",
 		Home:          home,
@@ -117,11 +122,12 @@ func (a *Adapter) readProjectCfg() ([]byte, error) {
 	return readStandardized(a.projectCfgFile())
 }
 
-// tuiFile is the second managed file: OpenCode reads TUI settings from a
-// separate ~/.config/opencode/tui.json. [tui.opencode] keys project here under
-// the "tui." state namespace, independent of opencode.jsonc.
 func (a *Adapter) tuiFile() string {
 	return filepath.Join(a.Home, ".config", "opencode", "tui.json")
+}
+
+func (a *Adapter) cliFile() string {
+	return filepath.Join(a.cliConfigHome, "opencode", "cli.json")
 }
 
 // mcpValue renders one declared server as OpenCode's mcp entry, or ok=false
@@ -194,13 +200,18 @@ func (a *Adapter) desiredProjectSettings(c *config.Config) map[string]string {
 	return map[string]string{}
 }
 
-// desiredTUI maps each [tui.opencode] key to its tui.* state key (tui.json).
-func desiredTUI(c *config.Config) map[string]string {
-	out := map[string]string{}
-	for k, v := range c.TUI.OpenCode {
-		out["tui."+k] = structproj.MustJSON(v)
+const cliStatePrefix = "tui.cli."
+
+func desiredTUI(c *config.Config) (map[string]string, error) {
+	settings, err := config.OpenCodeCLISettings(c.TUI.OpenCode)
+	if err != nil {
+		return nil, err
 	}
-	return out
+	out := map[string]string{}
+	for k, v := range settings {
+		out[cliStatePrefix+k] = structproj.MustJSON(v)
+	}
+	return out, nil
 }
 
 // Document-path mappings for each structured-document namespace. Config-supplied
@@ -214,6 +225,7 @@ func projSettingDocPath(key string) string {
 	return jsonutil.EscapePath(trim(key, "projsetting."))
 }
 func tuiDocPath(key string) string { return jsonutil.EscapePath(trim(key, "tui.")) }
+func cliDocPath(key string) string { return trim(key, cliStatePrefix) }
 
 func (a *Adapter) Plan(c *config.Config, st *state.State) (adapter.ChangeSet, error) {
 	if err := a.Expand(c); err != nil {
@@ -224,13 +236,17 @@ func (a *Adapter) Plan(c *config.Config, st *state.State) (adapter.ChangeSet, er
 	// file, plugins, user-scope MCPs and settings — belong to the config
 	// repo's adapter alone, so they are neither read nor planned here.
 	global := a.RepoName == ""
+	desiredCLI, err := desiredTUI(c)
+	if err != nil {
+		return adapter.ChangeSet{}, err
+	}
 	var doc, tuiDoc []byte
 	if global {
 		var err error
 		if doc, err = readStandardized(a.cfgFile()); err != nil {
 			return adapter.ChangeSet{}, err
 		}
-		if tuiDoc, err = readStandardized(a.tuiFile()); err != nil {
+		if tuiDoc, err = readStandardized(a.cliFile()); err != nil {
 			return adapter.ChangeSet{}, err
 		}
 	}
@@ -240,11 +256,6 @@ func (a *Adapter) Plan(c *config.Config, st *state.State) (adapter.ChangeSet, er
 	}
 	cs := adapter.ChangeSet{Tool: a.Name()}
 
-	// Structured-document namespaces go through the shared projection contract:
-	// mcp./setting.* live in the global opencode.jsonc; projsetting.* lives in
-	// the project-level opencode.jsonc; tui.* lives in tui.json. Each Project
-	// call prunes only its own recorded keys, so the generic delete loop below no
-	// longer touches these prefixes. plugin.* stays bespoke (array membership).
 	codec := jsoncodec.Codec{}
 	if global {
 		if changes, err := structproj.Project("opencode", "mcp.", a.desiredMCPs(c), doc, st, codec, mcpDocPath); err != nil {
@@ -269,10 +280,15 @@ func (a *Adapter) Plan(c *config.Config, st *state.State) (adapter.ChangeSet, er
 		} else {
 			cs.Changes = append(cs.Changes, changes...)
 		}
-		if changes, err := structproj.Project("opencode", "tui.", desiredTUI(c), tuiDoc, st, codec, tuiDocPath); err != nil {
+		if changes, err := structproj.Project("opencode", cliStatePrefix, desiredCLI, tuiDoc, st, cliCodec{}, cliDocPath); err != nil {
 			return adapter.ChangeSet{}, err
 		} else {
 			cs.Changes = append(cs.Changes, changes...)
+		}
+		for _, key := range st.Keys("opencode") {
+			if hasPrefix(key, "tui.") && !hasPrefix(key, cliStatePrefix) {
+				cs.Changes = append(cs.Changes, adapter.Change{Action: "delete", Key: key, Old: adapter.SecretRedaction, Cause: adapter.CauseRemove})
+			}
 		}
 	}
 	if global {
@@ -285,6 +301,9 @@ func (a *Adapter) Plan(c *config.Config, st *state.State) (adapter.ChangeSet, er
 			if a.PluginCatalogRoot != "" {
 				if _, ok := catalogPluginNames[src]; ok {
 					entry = filepath.Join(a.PluginCatalogRoot, src, "plugin.ts")
+					if src == "permission-observer" {
+						entry = filepath.Join(a.PluginCatalogRoot, src)
+					}
 				}
 			}
 			previous, inState := st.Get("opencode", "plugin."+src)
@@ -354,9 +373,6 @@ func (a *Adapter) Plan(c *config.Config, st *state.State) (adapter.ChangeSet, er
 		for k := range c.Settings.OpenCode {
 			declared["setting."+k] = true
 		}
-		for k := range c.TUI.OpenCode {
-			declared["tui."+k] = true
-		}
 		for _, pl := range c.Plugins.OpenCode {
 			declared["plugin."+pl.Source] = true
 		}
@@ -421,14 +437,12 @@ func (a *Adapter) ObserveHashes(st *state.State) (map[string]string, error) {
 		if doc, err = readStandardized(a.cfgFile()); err != nil {
 			return nil, err
 		}
-		if tuiDoc, err = readStandardized(a.tuiFile()); err != nil {
+		if tuiDoc, err = readStandardized(a.cliFile()); err != nil {
 			return nil, err
 		}
 	}
 	codec := jsoncodec.Codec{}
 	out := map[string]string{}
-	// Structured-document keys (mcp./setting.* in opencode.jsonc; tui.* in
-	// tui.json) re-hash their on-disk value through the shared contract.
 	if obs, err := structproj.Observe("opencode", "mcp.", doc, st, codec, mcpDocPath); err != nil {
 		return nil, err
 	} else {
@@ -461,11 +475,32 @@ func (a *Adapter) ObserveHashes(st *state.State) (map[string]string, error) {
 			out[k] = v
 		}
 	}
-	if obs, err := structproj.Observe("opencode", "tui.", tuiDoc, st, codec, tuiDocPath); err != nil {
+	if obs, err := structproj.Observe("opencode", cliStatePrefix, tuiDoc, st, cliCodec{}, cliDocPath); err != nil {
 		return nil, err
 	} else {
 		for k, v := range obs {
 			out[k] = v
+		}
+	}
+	if a.RepoName == "" {
+		var legacy []byte
+		for _, key := range st.Keys("opencode") {
+			if !hasPrefix(key, "tui.") || hasPrefix(key, cliStatePrefix) {
+				continue
+			}
+			if legacy == nil {
+				legacy, err = readStandardized(a.tuiFile())
+				if err != nil {
+					return nil, err
+				}
+			}
+			v, ok, err := codec.Get(legacy, tuiDocPath(key))
+			if err != nil {
+				return nil, err
+			}
+			if ok {
+				out[key] = secret.Hash(v)
+			}
 		}
 	}
 	// File-projection keys (skill./command./subagent.*) live on disk as symlinks;
@@ -489,7 +524,11 @@ func (a *Adapter) ObserveHashes(st *state.State) (map[string]string, error) {
 			// path), so check that, not the bare state key.
 			entry := trim(key, "plugin.")
 			if a.PluginCatalogRoot != "" && catalogPluginNames[entry] {
-				entry = filepath.Join(a.PluginCatalogRoot, entry, "plugin.ts")
+				if entry == "permission-observer" {
+					entry = filepath.Join(a.PluginCatalogRoot, entry)
+				} else {
+					entry = filepath.Join(a.PluginCatalogRoot, entry, "plugin.ts")
+				}
 			}
 			if arrayHas(doc, "plugin", entry) {
 				if e, ok := st.Get("opencode", key); ok {
@@ -515,6 +554,14 @@ func (a *Adapter) ObserveHashes(st *state.State) (map[string]string, error) {
 }
 
 func (a *Adapter) Apply(cfg *config.Config, cs adapter.ChangeSet, res *secret.Resolver, st *state.State) error {
+	if _, err := desiredTUI(cfg); err != nil {
+		return err
+	}
+	for _, ch := range filterChanges(cs.Changes, "tui.") {
+		if !hasPrefix(ch.Key, cliStatePrefix) && ch.Action != "delete" && ch.Action != "noop" {
+			return fmt.Errorf("opencode: obsolete V1 TUI change %q; re-plan for V2 cli.json (historical TUI writes cannot be replayed)", ch.Key)
+		}
+	}
 	if err := a.Expand(cfg); err != nil {
 		return err
 	}
@@ -528,7 +575,7 @@ func (a *Adapter) Apply(cfg *config.Config, cs adapter.ChangeSet, res *secret.Re
 		if doc, err = readStandardized(a.cfgFile()); err != nil {
 			return err
 		}
-		if tuiDoc, err = readStandardized(a.tuiFile()); err != nil {
+		if tuiDoc, err = readStandardized(a.cliFile()); err != nil {
 			return err
 		}
 	}
@@ -536,16 +583,11 @@ func (a *Adapter) Apply(cfg *config.Config, cs adapter.ChangeSet, res *secret.Re
 	if err != nil {
 		return err
 	}
-	// Write opencode.jsonc only when a managed key in it actually changed.
-	// adopt/noop are state-only and must leave the file byte-for-byte untouched
-	// (JSONC comments preserved); skill.* is symlink work, not JSON. tuiChanged
-	// gates tui.json's write independently, so a change to one file never
-	// rewrites the other.
 	codec := jsoncodec.Codec{}
 	// Structured-document prefixes go through the shared contract. Order matters
 	// for byte-identical output: mcp./plugin./setting.* all live in opencode.jsonc,
 	// and the prior single sorted-change loop appended them in mcp < plugin <
-	// setting order — so apply them in that order too. tui.* lives in tui.json.
+	// setting order — so apply them in that order too.
 	// In repo mode the change filters match nothing (global namespaces are never
 	// planned there) and the write gates below stay false; passing the empty
 	// filters keeps this one code path for both modes.
@@ -633,9 +675,16 @@ func (a *Adapter) Apply(cfg *config.Config, cs adapter.ChangeSet, res *secret.Re
 		}
 		projChanged = projChanged || ch
 	}
-	tuiDoc, tuiChanged, err := structproj.Apply("opencode", "tui.", filterChanges(cs.Changes, "tui."), tuiDoc, codec, res, st, tuiDocPath)
+	tuiDoc, tuiChanged, err := structproj.Apply("opencode", cliStatePrefix, filterChanges(cs.Changes, cliStatePrefix), tuiDoc, cliCodec{}, res, st, cliDocPath)
 	if err != nil {
 		return err
+	}
+	if global {
+		for _, ch := range filterChanges(cs.Changes, "tui.") {
+			if !hasPrefix(ch.Key, cliStatePrefix) && ch.Action == "delete" {
+				st.Delete("opencode", ch.Key)
+			}
+		}
 	}
 	// File-projection keys (skill./command./subagent.): adopt records state only;
 	// delete removes the managed symlink. Their create/update are handled by the
@@ -695,7 +744,7 @@ func (a *Adapter) Apply(cfg *config.Config, cs adapter.ChangeSet, res *secret.Re
 		}
 	}
 	if tuiChanged {
-		if err := fsutil.WriteAtomic(a.tuiFile(), tuiDoc); err != nil {
+		if err := fsutil.WriteAtomic(a.cliFile(), tuiDoc); err != nil {
 			return err
 		}
 	}

@@ -116,15 +116,23 @@ for c in onto onto-open onto-design onto-build onto-verify onto-close onto-fix o
 done
 ok "skill, full command set, and subagent links resolve to the catalog"
 
+log "builtin workflow installs the V2 server and terminal plugin by default"
+is_link "$W/.opencode/plugins/homonto-workflow-context"
+is_file "$W/.opencode/plugins/homonto-workflow-context/index.ts"
+is_file "$W/.opencode/plugins/homonto-workflow-context/tui.tsx"
+absent "$W/.opencode/plugins/homonto-workflow.ts"
+ok "V2 directory plugin projects without loading the V1 bridge"
+
 log "plugin projected into opencode's plugin array"
 OJSONC="$HOME/.config/opencode/opencode.jsonc"
 in_file "$OJSONC" '"plugin"'
 in_file "$OJSONC" '@e2e/hud'
 ok "plugin array present with the declared plugin"
 
-log "opencode TUI projected into tui.json"
-in_file "$HOME/.config/opencode/tui.json" 'gruvbox'
-ok "tui.json theme projected"
+log "OpenCode V2 terminal theme projected into global cli.json"
+in_file "$HOME/.config/opencode/cli.json" '"name"[[:space:]]*:[[:space:]]*"gruvbox"'
+absent "$HOME/.config/opencode/tui.json"
+ok "cli.json theme projected without creating a V1 terminal file"
 
 log "re-apply is idempotent"
 out="$("$HOMONTO" apply --yes 2>&1)"; printf '%s\n' "$out"

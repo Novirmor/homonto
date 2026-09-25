@@ -265,6 +265,11 @@ func (e *Engine) Apply(ctx context.Context, sets []adapter.ChangeSet) error {
 	if err := e.preflightCatalogRoots(); err != nil {
 		return err
 	}
+	for _, link := range e.workflowPluginLinks() {
+		if err := e.preflightWorkflowPluginDestination(link); err != nil {
+			return err
+		}
+	}
 	for _, cs := range sets {
 		for _, c := range cs.Changes {
 			// Deletes carry no New value; nothing to resolve. Adopt is non-secret
@@ -648,11 +653,20 @@ func (e *Engine) tmpSurfacePresent(dir string) bool {
 
 // allPluginDirsExist reports whether every bundled plugin directory is
 // materialized — the plugin side of the materialize gate.
-func allPluginDirsExist(root string, names []string) bool {
+func allPluginDirsExist(root string, names []string, workflowContext bool) bool {
 	for _, n := range names {
-		fi, err := os.Lstat(filepath.Join(root, n, "plugin.ts"))
-		if err != nil || !fi.Mode().IsRegular() {
-			return false
+		files := []string{"plugin.ts"}
+		if n == "permission-observer" {
+			files = append(files, "index.ts", "v2.ts")
+		}
+		if n == workflowBridgePlugin && workflowContext {
+			files = append(files, "index.ts", "tui.tsx", "rpc.ts", "v2.ts", "runner.ts", "github.ts", "authorization.ts", "compat.ts")
+		}
+		for _, file := range files {
+			fi, err := os.Lstat(filepath.Join(root, n, file))
+			if err != nil || !fi.Mode().IsRegular() {
+				return false
+			}
 		}
 	}
 	return true
@@ -847,25 +861,53 @@ func (e *Engine) workflowBridgeDestination() string {
 	return filepath.Join(e.ProjectRoot, ".opencode", "plugins", workflowBridgePlugin+".ts")
 }
 
+func (e *Engine) workflowContextDestination() string {
+	return filepath.Join(e.ProjectRoot, ".opencode", "plugins", workflowBridgePlugin+"-context")
+}
+
+type workflowPluginLink struct {
+	source      string
+	destination string
+	enabled     bool
+	directory   bool
+}
+
+func (e *Engine) workflowPluginLinks() []workflowPluginLink {
+	return []workflowPluginLink{
+		{source: e.workflowBridgeSource(), destination: e.workflowBridgeDestination(), enabled: e.Cfg.WorkflowBridgeEnabled()},
+		{source: filepath.Join(e.PluginCatalogRoot, workflowBridgePlugin, "v2.ts"), destination: e.workflowContextDestination() + ".ts"},
+		{source: filepath.Join(e.PluginCatalogRoot, workflowBridgePlugin), destination: e.workflowContextDestination(), enabled: e.Cfg.WorkflowContextEnabled(), directory: true},
+	}
+}
+
 // Both endpoints move with the project (ADR 0026). Keep the exact relative
 // spelling as the owned target; matching a foreign path's suffix is not proof.
-func (e *Engine) workflowBridgeTarget() (string, error) {
-	return filepath.Rel(filepath.Dir(e.workflowBridgeDestination()), e.workflowBridgeSource())
+func (link workflowPluginLink) target() (string, error) {
+	return filepath.Rel(filepath.Dir(link.destination), link.source)
 }
 
 // workflowBridgePresent reports whether the configured bridge state has
 // converged. A foreign file deliberately remains "not present" so apply can
 // name the conflict instead of treating an untrusted replacement as managed.
 func (e *Engine) workflowBridgePresent() bool {
-	dst := e.workflowBridgeDestination()
+	for _, link := range e.workflowPluginLinks() {
+		if !e.workflowPluginLinkPresent(link) {
+			return false
+		}
+	}
+	return true
+}
+
+func (e *Engine) workflowPluginLinkPresent(link workflowPluginLink) bool {
+	dst := link.destination
 	if err := fsutil.RequireRealParents(e.ProjectRoot, filepath.Dir(dst)); err != nil {
 		return false
 	}
-	if !e.Cfg.WorkflowBridgeEnabled() {
+	if !link.enabled {
 		_, err := os.Lstat(dst)
 		return os.IsNotExist(err)
 	}
-	want, err := e.workflowBridgeTarget()
+	want, err := link.target()
 	if err != nil {
 		return false
 	}
@@ -877,15 +919,55 @@ func (e *Engine) workflowBridgePresent() bool {
 // The source remains in the generated catalog even when disabled, so toggling
 // the setting is reversible without a fetch or a copied plugin file.
 func (e *Engine) ensureWorkflowBridge() error {
-	dst := e.workflowBridgeDestination()
-	if err := fsutil.RequireRealParents(e.ProjectRoot, filepath.Dir(dst)); err != nil {
+	links := e.workflowPluginLinks()
+	for _, link := range links {
+		if err := e.ensureWorkflowPluginLink(link, true); err != nil {
+			return err
+		}
+	}
+	for _, enabled := range []bool{false, true} {
+		for _, link := range links {
+			if link.enabled == enabled {
+				if err := e.ensureWorkflowPluginLink(link, false); err != nil {
+					return err
+				}
+			}
+		}
+	}
+	return nil
+}
+
+func (e *Engine) preflightWorkflowPluginDestination(link workflowPluginLink) error {
+	if err := fsutil.RequireRealParents(e.ProjectRoot, filepath.Dir(link.destination)); err != nil {
 		return fmt.Errorf("workflow bridge: unsafe plugin directory: %w", err)
 	}
-	want, err := e.workflowBridgeTarget()
+	want, err := link.target()
 	if err != nil {
 		return fmt.Errorf("workflow bridge: relative plugin target: %w", err)
 	}
-	if !e.Cfg.WorkflowBridgeEnabled() {
+	target, err := os.Readlink(link.destination)
+	if os.IsNotExist(err) {
+		return nil
+	}
+	if err != nil {
+		return fmt.Errorf("workflow bridge: %s exists and is not a homonto-managed symlink; not overwriting", link.destination)
+	}
+	if target != want && target != link.source {
+		return fmt.Errorf("workflow bridge: %s points outside homonto's catalog; not replacing", link.destination)
+	}
+	return nil
+}
+
+func (e *Engine) ensureWorkflowPluginLink(link workflowPluginLink, dryRun bool) error {
+	dst := link.destination
+	if err := fsutil.RequireRealParents(e.ProjectRoot, filepath.Dir(dst)); err != nil {
+		return fmt.Errorf("workflow bridge: unsafe plugin directory: %w", err)
+	}
+	want, err := link.target()
+	if err != nil {
+		return fmt.Errorf("workflow bridge: relative plugin target: %w", err)
+	}
+	if !link.enabled {
 		target, err := os.Readlink(dst)
 		if os.IsNotExist(err) {
 			return nil
@@ -893,20 +975,36 @@ func (e *Engine) ensureWorkflowBridge() error {
 		if err != nil {
 			return fmt.Errorf("workflow bridge: %s exists and is not a homonto-managed symlink; not removing", dst)
 		}
-		if target != want && target != e.workflowBridgeSource() {
+		if target != want && target != link.source {
 			return fmt.Errorf("workflow bridge: %s points outside homonto's catalog; not removing", dst)
+		}
+		if dryRun {
+			return nil
 		}
 		return os.Remove(dst)
 	}
-	if _, err := os.Stat(e.workflowBridgeSource()); err != nil {
+	if err := fsutil.RequireRealParents(e.ProjectRoot, filepath.Dir(link.source)); err != nil {
+		return fmt.Errorf("workflow bridge: unsafe catalog source: %w", err)
+	}
+	info, err := os.Lstat(link.source)
+	if err != nil {
 		return fmt.Errorf("workflow bridge: catalog source missing: %w", err)
+	}
+	if (link.directory && !info.IsDir()) || (!link.directory && !info.Mode().IsRegular()) {
+		return fmt.Errorf("workflow bridge: catalog source has wrong type: %s", link.source)
+	}
+	if link.directory && !allPluginDirsExist(e.PluginCatalogRoot, []string{workflowBridgePlugin}, true) {
+		return fmt.Errorf("workflow bridge: catalog source incomplete: %s", link.source)
 	}
 	if target, err := os.Readlink(dst); err == nil {
 		if target == want {
 			return nil
 		}
-		if target != e.workflowBridgeSource() {
+		if target != link.source {
 			return fmt.Errorf("workflow bridge: %s points outside homonto's catalog; not replacing", dst)
+		}
+		if dryRun {
+			return nil
 		}
 		// Migrate only the exact absolute target of this current project. A stale
 		// pre-move absolute target has no recorded bridge provenance to authenticate.
@@ -915,6 +1013,9 @@ func (e *Engine) ensureWorkflowBridge() error {
 		}
 	} else if !os.IsNotExist(err) {
 		return fmt.Errorf("workflow bridge: %s exists and is not a homonto-managed symlink; not overwriting", dst)
+	}
+	if dryRun {
+		return nil
 	}
 	if err := os.MkdirAll(filepath.Dir(dst), 0o755); err != nil {
 		return fmt.Errorf("workflow bridge: create plugin directory: %w", err)
@@ -987,7 +1088,7 @@ func (e *Engine) planCatalog() (*catalogPlan, error) {
 			}
 		}
 	}
-	if e.Cfg.WorkflowBridgeEnabled() {
+	if e.Cfg.WorkflowBridgeEnabled() || e.Cfg.WorkflowContextEnabled() {
 		pluginSet[workflowBridgePlugin] = true
 	}
 	if len(skillSet)+len(cmdSet)+len(subSet)+len(pluginSet) == 0 {
@@ -1072,7 +1173,7 @@ func (e *Engine) planCatalog() (*catalogPlan, error) {
 		allWorkspaceReferencesExist(e.CatalogRoot, skillNames, workspaceRef) &&
 		allCommandFilesExist(e.CommandCatalogRoot, cmdNames) &&
 		allSubagentFilesExist(e.SubagentCatalogRoot, subNames, cl, renderCtx) &&
-		allPluginDirsExist(e.PluginCatalogRoot, pluginNames) &&
+		allPluginDirsExist(e.PluginCatalogRoot, pluginNames, e.Cfg.WorkflowContextEnabled()) &&
 		e.workflowBindingPresent(workflowBinding)
 	return &catalogPlan{
 		cl:              cl,

@@ -76,6 +76,9 @@ func TestBundledPluginSourcesResolveToEntrypointFiles(t *testing.T) {
 				t.Fatal(err)
 			}
 			want := filepath.Join(catalog, name, "plugin.ts")
+			if name == "permission-observer" {
+				want = filepath.Join(catalog, name)
+			}
 			got := pluginArray(t, cfgPath)
 			if len(got) != 2 || got[0] != "foreign" || got[1] != want {
 				t.Fatalf("entrypoints = %v, want foreign and %q", got, want)

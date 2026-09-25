@@ -165,7 +165,47 @@ func (e *Engine) Doctor() []string {
 		out = append(out, e.doctorSubagents("opencode", opencodeSubagents)...)
 	}
 	out = append(out, e.doctorTooling()...)
+	for _, warning := range e.OpenCodeV2Warnings() {
+		out = append(out, "warn: "+warning)
+	}
 	out = append(out, e.doctorRemoteDigests()...)
+	return out
+}
+
+func (e *Engine) OpenCodeV2Warnings() []string {
+	plugins := map[string]bool{}
+	if e.Cfg.WorkflowBridgeEnabled() {
+		plugins["homonto-workflow"] = true
+	}
+	for _, plugin := range e.Cfg.Plugins.OpenCode {
+		if plugin.IsEnabled() {
+			plugins[plugin.Source] = true
+		}
+	}
+	names := make([]string, 0, len(plugins))
+	for name := range plugins {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	var out []string
+	for _, name := range names {
+		switch name {
+		case "homonto-workflow":
+			out = append(out, "OpenCode V2 cutover blocked: homonto-workflow still uses the V1 plugin API; opt into integrations.opencode.workflow_context = true and explicitly disable workflow_bridge and any homonto-workflow plugin declaration for read-only snapshot context. GitHub draft tools, publication, and TUI notifications remain unavailable in that bridge")
+		case "permission-observer":
+			out = append(out, "OpenCode V2 permission suggestions: only two correlated explicit 'once' approvals of one exact shell command qualify; 'always' replies may be automatic and are not counted")
+		default:
+			out = append(out, fmt.Sprintf("OpenCode V2 compatibility unverified for plugin %q: verify its V2 entrypoint and runtime behavior before cutover; config normalization does not port plugins", name))
+		}
+	}
+	if e.Cfg.WorkflowContextEnabled() {
+		for _, framework := range e.Cfg.Frameworks {
+			if framework.Source == "builtin:h" {
+				out = append(out, "OpenCode V2 GitHub publication requires a bound local service, native question approval, and a live host verification; fail closed if the matching service cannot be discovered")
+				break
+			}
+		}
+	}
 	return out
 }
 

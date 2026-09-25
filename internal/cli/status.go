@@ -41,7 +41,7 @@ func statusCmd() *cobra.Command {
 					Drift    []string `json:"drift"`
 					Pending  int      `json:"pending"`
 					Warnings []string `json:"warnings"`
-				}{Drift: drift, Pending: pending, Warnings: e.Warnings}
+				}{Drift: drift, Pending: pending, Warnings: append(e.OpenCodeV2Warnings(), e.Warnings...)}
 				if payload.Drift == nil {
 					payload.Drift = []string{}
 				}
@@ -55,7 +55,7 @@ func statusCmd() *cobra.Command {
 				cmd.Println(string(b))
 				return nil
 			}
-			for _, w := range e.Warnings {
+			for _, w := range append(e.OpenCodeV2Warnings(), e.Warnings...) {
 				cmd.Println("warn:", w)
 			}
 			for _, l := range drift {

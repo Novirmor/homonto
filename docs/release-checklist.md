@@ -6,9 +6,9 @@ decides *whether*.
 
 Releases are driven by the `release` GitHub workflow
 (`.github/workflows/release.yml`), which triggers on any pushed `v*` tag. Do
-not push a tag until that workflow packages all three binaries. The workflow
-must re-run the CI gates, cross-compile every target, write checksums for
-the archives, and publish a GitHub release.
+not push a tag until the local gate and packaging rehearsal pass. After the
+tag is pushed, the workflow must re-run the CI gates, cross-compile every
+target, write checksums for the archives, and publish a GitHub release.
 
 ## Pre-tag verification
 
@@ -34,8 +34,51 @@ is where the old hand-written checks now live, done against a disposable
   render, and prune behavior for the builtin catalog.
 - **`onto-lifecycle`** — drives a change through onto's gates.
 - **`to-lifecycle`** — drives a change through to's plan → do → done: gate
-	refusal, the `--verified` requirement, archive, doctor and convergence,
-	and onto/to coexistence with shared-resource deduplication.
+  refusal, the `--verified` requirement, archive, doctor and convergence,
+  and onto/to coexistence with shared-resource deduplication.
+
+## OpenCode 2 candidate hold points
+
+For the proposed **v0.32.0-rc.1**, keep the `-rc` suffix:
+this runtime transition is still an early preview. Completing the Go/Docker
+gate is necessary, **not sufficient** to claim production OpenCode 2 or GitHub
+publication support: those suites do not boot the real OpenCode 2 host.
+
+Before choosing a tag commit:
+
+1. Use a disposable home/config and **pinned OpenCode 2.0.16** to check the
+   actual project-local V2 plugin directory, terminal panel, reload/unload,
+   status/handoff tools, model context and compaction, idle notifications, and
+   the explicitly declared permission observer. Verify old V1 plugin links are
+   removed on apply; changing config alone does not hot-reload the client.
+2. Test GitHub draft **denial and approval** with the host's native question and
+   exact read/shell permission prompts. Confirm unknown sessions, moved
+   directories, changed bindings, cancellation, and a service mismatch fail
+   closed. A standalone/unregistered server intentionally cannot authorize
+   GitHub publication. The isolated local model + fake `gh` run proves no
+   external send occurred, not that real GitHub accepted a receipt.
+3. Before enabling publication beyond preview, run a **real GitHub sandbox**
+   using a throwaway repo/account: verify a denied send, a single permitted
+   send with matching receipt, changed actor/destination/PR OIDs, and uncertain
+   send reconciliation. Never use a production issue/PR for this check.
+4. Check both migration directions in throwaway projects. OpenCode 2 reads
+   supported V1 server config, but the native terminal file is global
+   `cli.json`; start V2 before homonto creates that file if relying on its
+   one-time `tui.json` preference import. V1 files remain untouched, and
+   snapshot undo does not restore their previous terminal values. A V1 binary
+   or OpenCode installation must use the saved V1 config/state, not native
+   V2-only settings.
+5. Review the candidate section in `docs/release-notes.md` against the final
+   tag and verification results. Re-run `./scripts/gate.sh` after the last
+   change; only a fully green gate, including the release-packaging Docker
+   suite, is a tag candidate. CI and the release workflow install Node 24 for
+   the V2 permission-observer contract check.
+
+If a hold point is still open, the default is to keep the change on the branch.
+For an **explicitly owner-approved early prerelease only**, a green complete
+gate and packaging smoke remain mandatory; name every waived live-only check
+in the published release notes and do not claim production support. Never
+carry such a waiver forward to a stable release by implication.
 
 > **Dogfooding is deferred to v1.** This repository is developed directly
 > on branches, with no external workflow stack
@@ -50,15 +93,17 @@ is where the old hand-written checks now live, done against a disposable
 
 ## Tag and publish
 
-1. Pick the version. Pre-releases use a suffix (`v0.1.0-rc.1`); a bare
+1. Pick the version. Pre-releases use a suffix (proposed
+   `v0.32.0-rc.1`); a bare
    `vMAJOR.MINOR.PATCH` is a full release. The workflow marks any tag
    containing `-` as a GitHub pre-release automatically.
 2. Tag an annotated tag on the commit that passed verification, and push
    it:
 
    ```sh
-   git tag -a v0.1.0-rc.1 -m "v0.1.0-rc.1"
-   git push origin v0.1.0-rc.1
+    TAG=v0.32.0-rc.1 # replace for a later candidate
+    git tag -a "$TAG" -m "$TAG"
+    git push origin "$TAG"
    ```
 
 3. The `release` workflow then:
@@ -80,11 +125,12 @@ release commit layout, and do not tag while this smoke covers only some of
 the binaries:
 
 ```sh
+TAG=v0.32.0-rc.1 # replace for the tag being checked
 GOBIN=$(mktemp -d)
 export GOBIN
-go install github.com/noviopenworks/homonto@v0.1.0-rc.1
-go install github.com/noviopenworks/homonto/cmd/onto@v0.1.0-rc.1  # update if final path differs
-go install github.com/noviopenworks/homonto/cmd/to@v0.1.0-rc.1
+go install "github.com/noviopenworks/homonto@$TAG"
+go install "github.com/noviopenworks/homonto/cmd/onto@$TAG"
+go install "github.com/noviopenworks/homonto/cmd/to@$TAG"
 export PATH="$GOBIN:$PATH"
 "$GOBIN"/homonto version    # expect the tagged version string
 "$GOBIN"/onto version       # expect the tagged version string
@@ -97,10 +143,11 @@ must download the tagged script, verify the real release archives against
 binary, temp dir, decline initialization):
 
 ```sh
+TAG=v0.32.0-rc.1 # replace for the tag being checked
 TMPBIN=$(mktemp -d)
 curl -fsSL -o /tmp/homonto-install.sh \
-  "https://raw.githubusercontent.com/noviopenworks/homonto/v0.1.0-rc.1/scripts/install.sh"
-printf 'v0.1.0-rc.1\nnone\n%s\nn\n' "$TMPBIN" | bash /tmp/homonto-install.sh
+  "https://raw.githubusercontent.com/noviopenworks/homonto/$TAG/scripts/install.sh"
+printf '%s\nnone\n%s\nn\n' "$TAG" "$TMPBIN" | bash /tmp/homonto-install.sh
 "$TMPBIN"/homonto version   # expect the tagged version string
 ```
 
@@ -178,17 +225,18 @@ plus a follow-up, never a force-push:
    offered:
 
    ```sh
-   gh release delete v0.1.0-rc.1 --yes
+   TAG=v0.32.0-rc.1 # the affected tag; never reuse its version
+   gh release delete "$TAG" --yes
    ```
 
 2. Delete the tag locally and on the remote:
 
    ```sh
-   git tag -d v0.1.0-rc.1
-   git push origin :refs/tags/v0.1.0-rc.1
+   git tag -d "$TAG"
+   git push origin ":refs/tags/$TAG"
    ```
 
-3. `go install ...@v0.1.0-rc.1` keeps working for anyone who already
+3. `go install ...@v0.32.0-rc.1` keeps working for anyone who already
    resolved it (the module proxy caches tags), so a broken release is
    corrected by shipping a higher patch/rc tag, not by expecting the old
    one to vanish. Never re-point an existing tag at a different commit.

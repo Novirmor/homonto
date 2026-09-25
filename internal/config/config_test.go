@@ -107,23 +107,75 @@ func TestLoad(t *testing.T) {
 }
 
 func TestWorkflowBridgeEnabled(t *testing.T) {
-	falseValue := false
+	falseValue, trueValue := false, true
 	for _, tc := range []struct {
 		name string
 		cfg  Config
 		want bool
 	}{
 		{"no framework", Config{}, false},
-		{"builtin workflow framework", Config{Frameworks: map[string]Resource{"onto": {Source: "builtin:onto"}}}, true},
+		{"builtin workflow framework", Config{Frameworks: map[string]Resource{"onto": {Source: "builtin:onto"}}}, false},
+		{"explicit legacy bridge", Config{Integrations: Integrations{OpenCode: OpenCodeIntegrations{WorkflowBridge: &trueValue}}}, true},
 		{"non-builtin framework", Config{Frameworks: map[string]Resource{"onto": {Source: "local:onto"}}}, false},
 		{"explicit opt-out", Config{
 			Frameworks:   map[string]Resource{"to": {Source: "builtin:to"}},
 			Integrations: Integrations{OpenCode: OpenCodeIntegrations{WorkflowBridge: &falseValue}},
 		}, false},
+		{"context suppresses implicit bridge", Config{
+			Frameworks:   map[string]Resource{"h": {Source: "builtin:h"}},
+			Integrations: Integrations{OpenCode: OpenCodeIntegrations{WorkflowContext: &trueValue}},
+		}, false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			if got := tc.cfg.WorkflowBridgeEnabled(); got != tc.want {
 				t.Fatalf("WorkflowBridgeEnabled() = %t, want %t", got, tc.want)
+			}
+		})
+	}
+}
+
+func TestLoadWorkflowContext(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		text    string
+		context bool
+		bridge  bool
+		wantErr string
+	}{
+		{name: "default"},
+		{name: "disabled", text: "[integrations.opencode]\nworkflow_context = false\n"},
+		{name: "opt in without framework", text: "[integrations.opencode]\nworkflow_context = true\n", context: true},
+		{name: "framework default suppressed", text: sample + "\n[integrations.opencode]\nworkflow_context = true\n", context: true},
+		{name: "V2 default", text: sample, context: true},
+		{name: "explicit legacy retained", text: "[integrations.opencode]\nworkflow_bridge = true\n", bridge: true},
+		{name: "legacy disabled", text: "[integrations.opencode]\nworkflow_context = true\nworkflow_bridge = false\n", context: true},
+		{name: "conflicting integrations", text: "[integrations.opencode]\nworkflow_context = true\nworkflow_bridge = true\n", wantErr: "conflicts with explicit workflow_bridge = true"},
+		{name: "implicit enabled plugin conflict", text: "[integrations.opencode]\nworkflow_context = true\n[plugins.opencode.legacy]\nsource = 'homonto-workflow'\n", wantErr: "conflicts with enabled plugins.opencode.legacy source homonto-workflow"},
+		{name: "explicit enabled plugin conflict", text: "[integrations.opencode]\nworkflow_context = true\nworkflow_bridge = false\n[plugins.opencode.legacy]\nsource = 'homonto-workflow'\nenabled = true\n", wantErr: "conflicts with enabled plugins.opencode.legacy source homonto-workflow"},
+		{name: "disabled plugin allowed", text: "[integrations.opencode]\nworkflow_context = true\n[plugins.opencode.legacy]\nsource = 'homonto-workflow'\nenabled = false\n", context: true},
+		{name: "other plugin retained", text: "[integrations.opencode]\nworkflow_context = true\n[plugins.opencode.observer]\nsource = 'permission-observer'\n", context: true},
+		{name: "wrong type", text: "[integrations.opencode]\nworkflow_context = 'true'\n", wantErr: "WorkflowContext of type bool"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			path := filepath.Join(t.TempDir(), "homonto.toml")
+			if err := os.WriteFile(path, []byte(tc.text), 0o644); err != nil {
+				t.Fatal(err)
+			}
+			cfg, err := Load(path)
+			if tc.wantErr != "" {
+				if err == nil || !strings.Contains(err.Error(), tc.wantErr) {
+					t.Fatalf("Load error = %v, want %q", err, tc.wantErr)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			if cfg.WorkflowContextEnabled() != tc.context || cfg.WorkflowBridgeEnabled() != tc.bridge {
+				t.Fatalf("context = %t, bridge = %t; want %t, %t", cfg.WorkflowContextEnabled(), cfg.WorkflowBridgeEnabled(), tc.context, tc.bridge)
+			}
+			if plugin, ok := cfg.Plugins.OpenCode["observer"]; ok && !plugin.IsEnabled() {
+				t.Fatal("explicit unrelated plugin was silently disabled")
 			}
 		})
 	}
@@ -259,9 +311,6 @@ func TestLoadRejectsIndexLikeNames(t *testing.T) {
 	}
 }
 
-// TestLoadParsesTUIOpenCode: a [tui.opencode] table parses into TUI.OpenCode as
-// a free-form map, mirroring [settings.opencode]. These keys project to a
-// second managed file (~/.config/opencode/tui.json).
 func TestLoadParsesTUIOpenCode(t *testing.T) {
 	doc := "[tui.opencode]\ntheme = \"gruvbox\"\nscroll_speed = 3\n"
 	p := filepath.Join(t.TempDir(), "homonto.toml")
@@ -280,9 +329,6 @@ func TestLoadParsesTUIOpenCode(t *testing.T) {
 	}
 }
 
-// TestLoadRejectsTUIIndexLikeName: like [settings.opencode], a [tui.opencode]
-// key that sjson would treat as an array index ("0", "-1") or an empty key
-// would corrupt tui.json. Load must reject it naming the offending entry.
 func TestLoadRejectsTUIIndexLikeName(t *testing.T) {
 	for _, tc := range []struct{ label, doc, name string }{
 		{"tui zero", "[tui.opencode]\n\"0\" = \"x\"\n", "0"},

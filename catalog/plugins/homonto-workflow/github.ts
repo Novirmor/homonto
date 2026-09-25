@@ -165,7 +165,7 @@ export function createGithubDrafts({ run, configPath }: { run: Run; configPath: 
     const result: Repo[] = []
     for (const [alias, p] of sources) {
       let o: { host: string; repo: string }
-      try { o = origin(await command(["git", "-C", p, "remote", "get-url", "origin"], ctx)) }
+      try { o = origin(await command(["git", "-C", p as string, "remote", "get-url", "origin"], ctx)) }
       catch { throw new Error(`source ${alias}: origin validation failed`) }
       let r: Repo
       try { r = await repo(o.host, o.repo, ctx) }
@@ -338,11 +338,11 @@ export function createGithubDrafts({ run, configPath }: { run: Run; configPath: 
     if (!s || s.deleted || !d || d.answered || d.callID || !d.items.every(i => i.status === "pending") || !exact(output.args, d.question)) return
     d.callID = input.callID
   }
-  function event({ event: e }: { event: { type: string; properties?: unknown } }) {
+  function event({ event: e }: { event: { type: string; properties?: unknown; data?: unknown } }) {
     expire()
     if (e.type === "server.instance.disposed") { dispose(); return }
-    if (disposed || !record(e.properties)) return
-    const p = e.properties
+    if (disposed || !record(e.data ?? e.properties)) return
+    const p = (e.data ?? e.properties) as Record<string, unknown>
     if (e.type === "session.deleted") {
       const sessionID = record(p.info) ? p.info.id : p.sessionID
       if (!text(sessionID)) return
@@ -352,6 +352,41 @@ export function createGithubDrafts({ run, configPath }: { run: Run; configPath: 
         s.cancel.abort()
         for (const d of drafts.values()) if (d.sessionID === sessionID) invalidate(d)
       } else if (sessions.size < MAX_SESSIONS) sessions.set(sessionID, { deleted: true, staging: false, cancel: new AbortController() })
+      return
+    }
+    if (e.type === "form.created" && record(p.form)) {
+      const form = p.form
+      if (!text(form.sessionID)) return
+      const s = sessions.get(form.sessionID)
+      const d = s?.current ? drafts.get(s.current) : undefined
+      if (!s || s.deleted || !d || d.answered || !d.callID || d.requestID ||
+          !d.items.every(i => i.status === "pending") || !text(form.id) || requests.has(form.id) ||
+          requests.size >= MAX_REQUESTS || !record(form.metadata) || form.metadata.kind !== "question" ||
+          !record(form.metadata.tool) || form.metadata.tool.id !== d.callID ||
+          !text(form.metadata.tool.messageID) || !Array.isArray(form.fields) ||
+          !exact(form.fields, d.question.questions.map((q, n) => ({
+            key: `q${n}`, title: q.header, description: q.question, type: "string", custom: true,
+            options: q.options.map(o => ({ value: o.label, label: o.label, description: o.description })),
+          })))) return
+      d.requestID = form.id
+      requests.add(form.id)
+      return
+    }
+    if (e.type === "form.replied" || e.type === "form.cancelled") {
+      if (!text(p.sessionID)) return
+      const s = sessions.get(p.sessionID)
+      const d = s?.current ? drafts.get(s.current) : undefined
+      if (!s || s.deleted || !d || d.answered || !d.requestID || p.id !== d.requestID) return
+      d.answered = true
+      if (e.type === "form.cancelled" || !record(p.answer) || Object.keys(p.answer).length !== d.items.length) {
+        for (const i of d.items) i.status = "declined"
+        return
+      }
+      d.items.forEach((i, n) => {
+        const answer = (p.answer as Record<string, unknown>)[`q${n}`]
+        i.status = answer === "Decline" ? "declined" : answer === "Revise" ? "revision-requested" :
+          answer === d.question.questions[n].options[2].label ? "approved" : "declined"
+      })
       return
     }
     if (!text(p.sessionID)) return

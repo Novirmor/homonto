@@ -73,6 +73,19 @@ function setup() {
 }
 const invoke = async (s, name, args, ctx = context()) => JSON.parse(await s.service.tools[`homonto_github_${name}`].execute(args, ctx))
 const stage = (s, items = [item()], ctx) => invoke(s, 'draft', { items }, ctx)
+function form(s, d, ctx = context(), override = x => x) {
+  s.service.before({ tool: 'question', sessionID: ctx.sessionID, callID: 'call-v2' }, { args: d.question })
+  const fields = d.question.questions.map((q, n) => ({ key: `q${n}`, title: q.header, description: q.question,
+    type: 'string', custom: true, options: q.options.map(o => ({ value: o.label, label: o.label, description: o.description })) }))
+  s.service.event({ event: { type: 'form.created', data: { form: override({
+    id: `frm_${d.draftID}`, sessionID: ctx.sessionID, fields,
+    metadata: { kind: 'question', tool: { messageID: 'message-v2', id: 'call-v2' } },
+  }) } } })
+}
+function formReply(s, d, choice = 'Publish') {
+  s.service.event({ event: { type: 'form.replied', data: { id: `frm_${d.draftID}`, sessionID: 'session-1',
+    answer: { q0: choice === 'Publish' ? d.question.questions[0].options[2].label : choice } } } })
+}
 function asked(s, d, ctx = context(), mutate = x => x) {
   s.service.before({ tool: 'question', sessionID: ctx.sessionID, callID: 'call-1' }, { args: d.question })
   s.service.event({ event: { type: 'question.asked', properties: mutate({ id: `que_${d.draftID}`, sessionID: ctx.sessionID, questions: d.question.questions, tool: { messageID: 'question-message', callID: 'call-1' } }) } })
@@ -96,6 +109,20 @@ function approve(s, d, choices, ctx) { asked(s, d, ctx); reply(s, d, choices, ct
   assert.deepEqual(JSON.parse(s.calls.find(c => c.argv.includes('POST')).options.stdin), { body: item().body })
   await invoke(s, 'publish', { draftID: d.draftID })
   assert.equal(s.postCount(), 1)
+}
+{
+  const s = setup(), d = await stage(s)
+  form(s, d); formReply(s, d)
+  assert.equal((await invoke(s, 'status', { draftID: d.draftID })).items[0].status, 'approved')
+  const out = await invoke(s, 'publish', { draftID: d.draftID })
+  assert.equal(out.items[0].status, 'published')
+  assert.equal(s.postCount(), 1)
+}
+for (const tamper of [x => ({ ...x, sessionID: 'other' }), x => ({ ...x, fields: [{ ...x.fields[0], description: 'tampered' }] }), x => ({ ...x, metadata: { ...x.metadata, tool: { id: 'other', messageID: 'message-v2' } } })]) {
+  const s = setup(), d = await stage(s)
+  form(s, d, context(), tamper); formReply(s, d)
+  assert.equal((await invoke(s, 'status', { draftID: d.draftID })).items[0].status, 'pending')
+  assert.equal(s.postCount(), 0)
 }
 for (const choice of ['Decline', 'Revise', 'unrecognized']) {
   const s = setup(), d = await stage(s)

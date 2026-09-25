@@ -290,8 +290,6 @@ type Settings struct {
 	OpenCode map[string]any `toml:"opencode"`
 }
 
-// TUI declares per-tool TUI settings projected to a tool-native TUI file. Only
-// OpenCode has a separate TUI file (~/.config/opencode/tui.json).
 type TUI struct {
 	OpenCode map[string]any `toml:"opencode"`
 }
@@ -303,10 +301,10 @@ type Integrations struct {
 }
 
 // OpenCodeIntegrations controls project-local OpenCode runtime integrations.
-// WorkflowBridge defaults to enabled whenever a builtin workflow framework is
-// installed; false removes only homonto's managed bridge link.
+// The V2 workflow context is the default for builtin workflow frameworks.
 type OpenCodeIntegrations struct {
-	WorkflowBridge *bool `toml:"workflow_bridge"`
+	WorkflowBridge  *bool `toml:"workflow_bridge"`
+	WorkflowContext *bool `toml:"workflow_context"`
 }
 
 // Marketplace is the post-removal detector shape for
@@ -392,12 +390,20 @@ type Config struct {
 	repoDirs map[string]string
 }
 
-// WorkflowBridgeEnabled reports whether the project should receive the bundled
-// runtime workflow observer. It is enabled by default for the shipped workflow
-// frameworks and can be disabled explicitly under [integrations.opencode].
+// WorkflowBridgeEnabled reports whether the legacy V1 bridge was explicitly requested.
 func (c *Config) WorkflowBridgeEnabled() bool {
 	if c.Integrations.OpenCode.WorkflowBridge != nil {
 		return *c.Integrations.OpenCode.WorkflowBridge
+	}
+	return false
+}
+
+func (c *Config) WorkflowContextEnabled() bool {
+	if c.Integrations.OpenCode.WorkflowContext != nil {
+		return *c.Integrations.OpenCode.WorkflowContext
+	}
+	if c.WorkflowBridgeEnabled() {
+		return false
 	}
 	for _, framework := range c.Frameworks {
 		switch framework.Source {

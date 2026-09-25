@@ -27,6 +27,10 @@ jobs:
           # an older Go lets govulncheck downgrade to go1.25 and fail the gate.
           go-version: "1.26.6"
 
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+
       # Guard: never ship a tag that does not pass the COMPLETE gate. This is the
       # same scripts/gate.sh that CI and local rehearsal run — race, mod-tidy,
       # vet, build, test, version stamps, cli smoke, govulncheck, and the

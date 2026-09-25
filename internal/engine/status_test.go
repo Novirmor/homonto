@@ -7,8 +7,63 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/noviopenworks/homonto/internal/config"
 	"github.com/noviopenworks/homonto/internal/secret"
 )
+
+func TestOpenCodeV2PluginReadiness(t *testing.T) {
+	disabled, enabled := false, true
+	for _, tc := range []struct {
+		name string
+		cfg  config.Config
+		want []string
+	}{
+		{name: "no plugins"},
+		{name: "context only", cfg: config.Config{Integrations: config.Integrations{OpenCode: config.OpenCodeIntegrations{WorkflowContext: &enabled}}}},
+		{name: "context replaces default", cfg: config.Config{Frameworks: map[string]config.Resource{"onto": {Source: "builtin:onto"}}, Integrations: config.Integrations{OpenCode: config.OpenCodeIntegrations{WorkflowContext: &enabled}}}},
+		{name: "context with github", cfg: config.Config{Frameworks: map[string]config.Resource{"github": {Source: "builtin:h"}}, Integrations: config.Integrations{OpenCode: config.OpenCodeIntegrations{WorkflowContext: &enabled}}}, want: []string{"GitHub publication requires a bound local service"}},
+		{name: "context retains explicit observer warning", cfg: config.Config{Integrations: config.Integrations{OpenCode: config.OpenCodeIntegrations{WorkflowContext: &enabled}}, Plugins: config.Plugins{OpenCode: map[string]config.Plugin{"observer": {Source: "permission-observer"}}}}, want: []string{"only two correlated explicit 'once' approvals"}},
+		{name: "default V2 workflow", cfg: config.Config{Frameworks: map[string]config.Resource{"onto": {Source: "builtin:onto"}}}},
+		{name: "disabled bridge", cfg: config.Config{Frameworks: map[string]config.Resource{"to": {Source: "builtin:to"}}, Integrations: config.Integrations{OpenCode: config.OpenCodeIntegrations{WorkflowBridge: &disabled}}}},
+		{name: "disabled observer", cfg: config.Config{Plugins: config.Plugins{OpenCode: map[string]config.Plugin{"observer": {Source: "permission-observer", Enabled: &disabled}}}}},
+		{name: "enabled observer", cfg: config.Config{Plugins: config.Plugins{OpenCode: map[string]config.Plugin{"observer": {Source: "permission-observer"}}}}, want: []string{"only two correlated explicit 'once' approvals"}},
+		{name: "explicit bridge despite opt out", cfg: config.Config{Integrations: config.Integrations{OpenCode: config.OpenCodeIntegrations{WorkflowBridge: &disabled}}, Plugins: config.Plugins{OpenCode: map[string]config.Plugin{"bridge": {Source: "homonto-workflow"}}}}, want: []string{"homonto-workflow still uses the V1 plugin API"}},
+		{name: "deduplicate and sort", cfg: config.Config{Frameworks: map[string]config.Resource{"h": {Source: "builtin:h"}}, Plugins: config.Plugins{OpenCode: map[string]config.Plugin{"observer": {Source: "permission-observer"}, "bridge": {Source: "homonto-workflow"}, "external": {Source: "external-plugin"}}}}, want: []string{`compatibility unverified for plugin "external-plugin"`, "homonto-workflow still uses the V1 plugin API", "only two correlated explicit 'once' approvals", "GitHub publication requires a bound local service"}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			e := &Engine{Cfg: &tc.cfg}
+			got := e.OpenCodeV2Warnings()
+			if len(got) != len(tc.want) {
+				t.Fatalf("warnings = %v, want %v", got, tc.want)
+			}
+			for i, want := range tc.want {
+				if !strings.Contains(got[i], want) {
+					t.Errorf("warning %q does not contain %q", got[i], want)
+				}
+			}
+		})
+	}
+}
+
+func TestOpenCodeV2ReadinessDoesNotClaimSkippedAdapters(t *testing.T) {
+	repo, home := t.TempDir(), t.TempDir()
+	path := filepath.Join(repo, "homonto.toml")
+	if err := os.WriteFile(path, []byte("[plugins.opencode.permission-observer]\nsource = 'permission-observer'\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	e := buildStatusEngine(t, repo, home)
+	for range 2 {
+		if _, err := e.Plan(); err != nil {
+			t.Fatal(err)
+		}
+		if len(e.Warnings) != 0 {
+			t.Fatalf("plan warnings: %v", e.Warnings)
+		}
+	}
+	if !strings.Contains(strings.Join(e.Doctor(), "\n"), "warn: OpenCode V2 permission suggestions:") {
+		t.Fatal("doctor omitted the V2 blocker")
+	}
+}
 
 func TestDoctorFlagsMissingSkillContent(t *testing.T) {
 	home := t.TempDir()

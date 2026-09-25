@@ -25,5 +25,8 @@ jobs:
           # >=1.25), which then cannot parse the go1.26-gated stdlib files the
           # pinned toolchain pulls in — failing the gate before it starts.
           go-version: "1.26.6"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
       - name: gate
         run: ./scripts/gate.sh

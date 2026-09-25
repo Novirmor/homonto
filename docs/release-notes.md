@@ -15,6 +15,56 @@ bookkeeper) — for every supported OS/arch as separate archives under one
 `SHA256SUMS`. `onto` and `to` each require `homonto` to have installed their
 framework first (`[frameworks.onto]` / `[frameworks.to]` + `homonto apply`).
 
+### v0.32.0-rc.1 — early OpenCode 2 preview
+
+This is a **pre-release for evaluation**, not a production GitHub-publication
+recommendation. Its release owner explicitly accepted the remaining live
+validation gaps for this limited RC; that acceptance does not establish their
+safety or waive them for a stable release.
+The embedded catalog advances to 0.32.0 (onto 0.25.0, to 0.22.0, h 0.10.0);
+the binary version is stamped from the candidate tag when packaged.
+
+- Builtin `onto`, `to`, and `h` now project the V2 workflow server/terminal plugin
+  by default: session-bound recovery context, read-only status/handoff tools,
+  a workflow panel, and session-idle notifications. The opt-in V1
+  `workflow_bridge` is retained only for rollback and is reported as
+  incompatible with V2.
+- `permission-observer` uses V2 tool and permission events. It suggests an exact
+  shell command only after two correlated **`once`** approvals. V2 `always`
+  replies may be automatic and do not count; suggestions will be less frequent
+  than under V1 rather than falsely treating execution as approval.
+- With builtin `h`, GitHub drafts use V2 native questions, exact read/shell
+  permission requests against the matching registered **local** OpenCode
+  service, post-approval freshness checks, and receipt reconciliation. An
+  unregistered/standalone or mismatched service fails closed. A local fake-model
+  and fake-`gh` run exercised denial and an exactly-once simulated send on
+  OpenCode 2.0.16; **no real GitHub publication was tested**.
+- `[tui.opencode]` now projects supported settings to global `cli.json`, not
+  `tui.json`. Only four documented legacy aliases map automatically; unsupported
+  V1-only terminal fields fail validation. Homonto leaves V1 `tui.json(c)`
+  untouched and preserves unmanaged V2 settings. Supported V1 server config
+  remains in its compatible syntax; no wholesale JSON migration is required.
+
+**Before trying this candidate:** keep a copy of your V1 config and state. If
+you want OpenCode's one-time terminal preference migration, start V2 *before*
+homonto writes `cli.json`. Install matching versions of all three binaries,
+run `homonto plan` and `homonto apply` in each configured project, then quit and
+restart OpenCode. Explicit V1 `workflow_bridge = true` or
+`source = "homonto-workflow"` declarations must be removed or disabled when
+using the V2 default. Disabling `workflow_context` disables the V2 bridge; it
+does not restore V1 automatically. A snapshot undo does not reverse the
+`tui.json` → `cli.json` projection: re-declare the intended terminal values
+and apply. Do not point a V1 OpenCode installation at native V2-only settings.
+
+**Verified for this RC:** the full Go/race/vet/vulnerability gate and
+triple-binary Docker packaging/checksum smoke passed, plus an isolated
+OpenCode 2.0.16 local-model/fake-`gh` approval flow. **Not verified:** live
+terminal reload/notification behavior and a *real* GitHub sandbox run for a
+permitted and denied publication (including stale destinations and uncertain
+sends). The fake run is evidence about the protocol, not the external
+publication path. Complete those checks before recommending production use.
+See the [release checklist](release-checklist.md).
+
 ### New in v0.31.0 — expanded GitHub draft capacity
 
 - Long-running OpenCode servers now admit up to 4,096 observed GitHub sessions,

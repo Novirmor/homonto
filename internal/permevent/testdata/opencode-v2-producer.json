@@ -1,0 +1,22 @@
+{
+  "revision": "3a103fe0aff726a4edc7492f03f7b88195d9e4c9",
+  "asked": {
+    "type": "permission.asked",
+    "data": {
+      "id": "per_1",
+      "sessionID": "ses_1",
+      "action": "shell",
+      "resources": ["git status"],
+      "save": ["git *"],
+      "source": { "type": "tool", "messageID": "msg_1", "id": "call_1" }
+    }
+  },
+  "replied": {
+    "type": "permission.replied",
+    "data": { "sessionID": "ses_1", "requestID": "per_1", "reply": "once" }
+  },
+  "automaticAlways": {
+    "type": "permission.replied",
+    "data": { "sessionID": "ses_1", "requestID": "per_1", "reply": "always" }
+  }
+}

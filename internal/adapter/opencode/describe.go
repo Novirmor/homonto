@@ -54,8 +54,12 @@ func (a *Adapter) Describe(c *config.Config) []adapter.ManagedResource {
 		for k := range c.Settings.OpenCode {
 			add("setting", k, "setting."+k, a.cfgFile(), &state.Origin{Kind: "direct"})
 		}
-		for k := range c.TUI.OpenCode {
-			add("tui", k, "tui."+k, a.tuiFile(), &state.Origin{Kind: "direct"})
+		tui, err := desiredTUI(c)
+		if err != nil {
+			return nil
+		}
+		for key := range tui {
+			add("tui", cliDocPath(key), key, a.cliFile(), &state.Origin{Kind: "direct"})
 		}
 		for _, pl := range c.Plugins.OpenCode {
 			if pl.IsEnabled() {

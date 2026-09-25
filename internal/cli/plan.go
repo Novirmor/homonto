@@ -52,9 +52,9 @@ func planCmd() *cobra.Command {
 				setExitCode(planExitCode(plan.HasChanges(sets), len(repins), catalogStale))
 			}
 			if output == "json" {
-				return planJSON(cmd, sets, repins, e.Warnings, e.Cfg.RepoDirs())
+				return planJSON(cmd, sets, repins, append(e.OpenCodeV2Warnings(), e.Warnings...), e.Cfg.RepoDirs())
 			}
-			for _, w := range e.Warnings {
+			for _, w := range append(e.OpenCodeV2Warnings(), e.Warnings...) {
 				cmd.Println("warn:", w)
 			}
 			// Declared [repos] context (ADR 0024 stage 2): the plan names every

@@ -49,8 +49,10 @@ case "$link" in
   /*) fail "project link must be relative, got $link" ;;
 esac
 # The bundled plugin materialized as owned catalog content.
-is_file ".homonto/catalog/plugins/permission-observer/plugin.ts"
-ok "relative link + bundled plugin materialized"
+is_file ".homonto/catalog/plugins/permission-observer/index.ts"
+is_file ".homonto/catalog/plugins/permission-observer/v2.ts"
+in_file "$HOME/.config/opencode/opencode.jsonc" ".homonto/catalog/plugins/permission-observer"
+ok "relative link + V2 bundled plugin directory materialized"
 
 log "explain names origins and history"
 "$HOMONTO" explain skill projskill > explain.txt 2>&1

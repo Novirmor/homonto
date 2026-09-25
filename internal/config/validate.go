@@ -318,6 +318,17 @@ func validateMCPs(c *Config) error {
 // validatePlugins rejects plugin declarations that would collide or silently
 // project nothing, for both [plugins.claude] and [plugins.opencode].
 func validatePlugins(c *Config) error {
+	if c.WorkflowContextEnabled() {
+		if bridge := c.Integrations.OpenCode.WorkflowBridge; bridge != nil && *bridge {
+			return fmt.Errorf("parse config: integrations.opencode.workflow_context = true conflicts with explicit workflow_bridge = true; choose the V2 read-only context bridge or the legacy V1 bridge")
+		}
+		for _, name := range sortedPluginNames(c.Plugins.OpenCode) {
+			plugin := c.Plugins.OpenCode[name]
+			if plugin.IsEnabled() && plugin.Source == "homonto-workflow" {
+				return fmt.Errorf("parse config: integrations.opencode.workflow_context = true conflicts with enabled plugins.opencode.%s source homonto-workflow, which loads the legacy V1 bridge alongside V2; explicitly disable or remove that plugin declaration", name)
+			}
+		}
+	}
 	for _, tool := range []struct {
 		name string
 		m    map[string]Plugin
@@ -363,6 +374,9 @@ func validateSettingsAndTUI(c *Config) error {
 		if err := validateKey("settings.opencode", k); err != nil {
 			return err
 		}
+		if k == "plugins" {
+			return fmt.Errorf("parse config: settings.opencode key %q is reserved: native V2 plugins can override homonto's managed plugin array; use [plugins.opencode]", k)
+		}
 		if k == "mcp" || k == "plugin" {
 			return fmt.Errorf("parse config: settings.opencode key %q is reserved (homonto manages %s there); rename it", k, k)
 		}
@@ -370,15 +384,8 @@ func validateSettingsAndTUI(c *Config) error {
 			return fmt.Errorf("parse config: settings.opencode key %q is unsupported by OpenCode; configure variant on an agent instead", k)
 		}
 	}
-	// [tui.opencode] keys project into a second managed file (tui.json). Reject
-	// index-like/empty names for the same JSON-array-corruption reason as
-	// [settings.opencode].
-	for k := range c.TUI.OpenCode {
-		if err := validateKey("tui.opencode", k); err != nil {
-			return err
-		}
-	}
-	return nil
+	_, err := OpenCodeCLISettings(c.TUI.OpenCode)
+	return err
 }
 
 // Load reads, parses, and validates a homonto.toml file into a Config. It runs

@@ -1,23 +1,15 @@
 #!/bin/sh
-# F1 gate: the OpenCode permission-telemetry contract must stay pinned and
-# tested. Fails when the fixture, the parser tests, or the pinned revision
-# constant is absent — the release contract blocks permission learning on an
-# authoritative event, and this check keeps that dependency honest.
+# The V2 observer counts only exact-command, correlated `once` approvals.
 set -eu
 cd "$(dirname "$0")/.."
 
-FIXTURE=internal/permevent/testdata/opencode_events.jsonl
+FIXTURE=internal/permevent/testdata/opencode-v2-producer.json
 [ -f "$FIXTURE" ] || { echo "permevent-check: missing fixture $FIXTURE" >&2; exit 1; }
-
-grep -q 'PinnedOpencodeRevision = "[0-9a-f]\{40\}"' internal/permevent/permevent.go || {
-	echo "permevent-check: missing 40-char PinnedOpencodeRevision in internal/permevent/permevent.go" >&2
+command -v node >/dev/null || { echo "permevent-check: Node required for V2 plugin runtime test" >&2; exit 1; }
+node -e 'if (!process.features.typescript) process.exit(1)' || {
+	echo "permevent-check: Node with native TypeScript stripping required" >&2
 	exit 1
 }
 
-grep -q 'permission.asked' "$FIXTURE" && grep -q 'permission.replied' "$FIXTURE" || {
-	echo "permevent-check: fixture does not carry both event types" >&2
-	exit 1
-}
-
-go test ./internal/permevent/ >/dev/null
-echo "permevent-check passed: contract fixture present, revision pinned, parser green"
+go test ./internal/permevent/ -run 'Test(V2ProducerContract|PermissionV2PluginRuntime)$' -count=1
+echo "permevent-check passed: V2 producer pin and runtime observer green"

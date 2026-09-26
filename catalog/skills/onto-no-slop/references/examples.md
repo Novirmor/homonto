@@ -1,59 +1,17 @@
-# Before/After Examples
+# Technical edits
 
-## Example 1: Throat-Clearing + Binary Contrast
+**Before:** “It is worth noting that the cache generally expires asynchronously
+after 60 seconds.”
 
-**Before:**
-> "Here's the thing: building products is hard. Not because the technology is complex. Because people are complex. Let that sink in."
+**After:** “The cache generally expires asynchronously after 60 seconds.”
 
-**After:**
-> "Building products is hard. Technology is manageable. People aren't."
+The timing and execution qualifiers remain; only the announcement disappeared.
 
-**Changes:** Removed opener, binary contrast structure, and emphasis crutch. Direct statements.
+**Before:** “We have successfully implemented robust verification.”
 
----
+**After:** “`go test ./internal/config` passed; the integration suite was not run.”
 
-## Example 2: Filler + Unnecessary Reassurance
+Use this edit only when those are the observed facts. Exact output stays verbatim.
 
-**Before:**
-> "It turns out that most teams struggle with alignment. The uncomfortable truth is that nobody wants to admit they're confused. And that's okay."
-
-**After:**
-> "Teams struggle with alignment. Nobody admits confusion."
-
-**Changes:** Cut hedging ("most"), removed throat-clearing phrases, deleted permission-granting ending.
-
----
-
-## Example 3: Business Jargon Stack
-
-**Before:**
-> "In today's fast-paced landscape, we need to lean into discomfort and navigate uncertainty with clarity. This matters because your competition isn't waiting."
-
-**After:**
-> "Move faster. Your competition is."
-
-**Changes:** Eliminated jargon entirely. Core message in six words.
-
----
-
-## Example 4: Dramatic Fragmentation
-
-**Before:**
-> "Speed. Quality. Cost. You can only pick two. That's it. That's the tradeoff."
-
-**After:**
-> "Speed, quality, cost—pick two."
-
-**Changes:** Single sentence. No performative emphasis.
-
----
-
-## Example 5: Rhetorical Setup
-
-**Before:**
-> "What if I told you that the best teams don't optimize for productivity? Here's what I mean: they optimize for learning. Think about it."
-
-**After:**
-> "The best teams optimize for learning, not productivity."
-
-**Changes:** Direct claim. No rhetorical scaffolding.
+**Keep unchanged:** “Writes are atomic, retries are idempotent, and failed
+requests leave the previous value intact.” Each item states a distinct contract.

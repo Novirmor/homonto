@@ -43,9 +43,10 @@ findings, not footnotes>
 
 - Conformance skeptic: <verdict summary + findings triaged>
 - Robustness skeptic: <verdict summary + findings triaged>
-<!-- or: "skipped: <reason>" — protocol-mandated skips (no dispatch
-     capability; light-mode optional) are recorded HERE only and need no
-     acceptor; they do not go in Deviations -->
+<!-- Or record a light-mode optional skip / unavailable independent pass here,
+     with reason and direct checks performed. Explicit independent-review
+     requirements still block; denial or a blocked worker is not absence.
+     Direct review is never labeled a completed skeptic verdict. -->
 
 ## Regression
 

@@ -1,6 +1,6 @@
 ---
 name: to-done
-description: to phase 3 — done. Use when a change's plan is fully executed — runs real verification, obtains one completed skeptic pass on the final candidate, records the outcome, then `to done --verified` archives the change.
+description: Finish an existing to change after its tasks land. Verify the final candidate, obtain a skeptic pass when dispatch is available or record the permitted direct-review fallback, then archive and complete authorized integration.
 ---
 
 # to-done — Phase 3: Done
@@ -22,11 +22,19 @@ including workspace roots and dirty-work decisions, even on direct entry.
 
 ## Steps
 
-1. **Run the plan's `Final Verify:` command**, not a task's nested check, and
-   read the output. State honestly what it covered; record any unavailable or
+1. **Validate the plan's `Final Verify:` evidence**, not merely a task's nested
+   check. Follow [candidate-bound verification](../homonto/references/execution.md#candidate-bound-verification):
+   run the command unless matching evidence has unchanged provenance and inputs,
+   and read its output. State honestly what it covered; record any unavailable or
    skipped checks as gaps rather than treating one green command as universal
    proof.
-2. **Obtain at least one completed `to-skeptic` pass on the final candidate.**
+2. **Review the final candidate.** With actual dispatch available, obtain at least
+   one completed `to-skeptic` pass. If dispatch or the worker is unavailable,
+   follow the shared [capability policy](../homonto/references/execution.md#dispatch-capability):
+   perform the claim/gap checks directly and record the unavailable independent
+   pass in `## Verification`. Explicit independent-review requirements still block;
+   denial, blocked evidence, or an unsuccessful worker are not absence. Never
+   label direct review a completed skeptic pass.
    Hand it a complete evidence pack: the complete `plan.md` (including `## Notes`),
    each source alias and absolute cwd, frozen base and final candidate OIDs,
    exact diff and supporting files, literal Final Verify command, exit status
@@ -63,7 +71,8 @@ steps 1–2 on the new candidate before finishing.
    make receiver allocation the first post-archive action.
 4. **Record the outcome** under `## Verification` at the bottom of `plan.md`:
    the literal verify command and result, coverage gaps or skipped checks, and
-   the skeptic's verdict (including declined findings). De-slop the prose, but
+   the skeptic's verdict (including declined findings), or the permitted
+   unavailable-pass gap and direct-review findings. Edit the prose for clarity, but
    record each verified source candidate OID and tree OID plus its intended
    integration target and canonical publication identity for recovery; to has
    no onto integration sidecar or receipt API. Do not replace those OIDs with
@@ -97,8 +106,8 @@ steps 1–2 on the new candidate before finishing.
    After joining isolated source commits,
    rerun `Final Verify:` in the actual receiving checkout and inspect the final
    tree before any push. If target changes or conflict resolution changes the
-   reviewed tree, obtain a fresh completed skeptic pass with the full evidence
-   pack for that integrated candidate. Pin its commit/tree and push only that
+    reviewed tree, repeat final review under the same capability policy with the
+    full evidence pack for that integrated candidate. Pin its commit/tree and push only that
    reverified candidate. Do not treat pre-merge tests or `--verified` as proof
    of a new integration tree. Record recovery evidence outside immutable archives
    in the handoff/publication report; never invent an onto receipt for to.

@@ -22,7 +22,8 @@ including workspace roots and dirty-work decisions, even on direct entry.
   If any contract field is missing or ambiguous, route to `to-plan` for repair
   without changing recorded do; never infer ownership merely from conversion.
 - On resume (fresh session, context loss): run `to handoff <name>` first, then
-  find the first unchecked task in `plan.md` and continue from there; never
+   find the first executable unchecked task in `plan.md`, honoring recorded
+   prerequisites under the execution policy, and continue from there; never
   redo completed tasks.
 
 ## The loop
@@ -34,7 +35,8 @@ It edits and verifies those named workflow records serially and obtains read-onl
 review, then checkpoints/commits them in their records owner. Never ask a
 source-only implementer to edit records. Source tasks use the loop below.
 
-1. **Dispatch `to-implementer`** with the complete task verbatim: outcome,
+1. **Execute under the shared [dispatch policy](../homonto/references/execution.md#dispatch-capability).**
+   When dispatch is available, send `to-implementer` the complete task verbatim: outcome,
    files and symbols, behavioral contract, verification command, and expected
    passing signal. Include any directly relevant conclusion from the plan's
    grounding; do not silently add scope. One implementer at a time — **never in
@@ -46,7 +48,7 @@ source-only implementer to edit records. Source tasks use the loop below.
     commands, and all workflow calls retain `--dir "<configRoot>"`.
 2. **Verify against the repository**, not the report: check the diff exists
    and the task's verification command passes.
-3. **Dispatch `to-reviewer`** with the original task contract, the resulting
+3. **Review the candidate.** With dispatch available, send `to-reviewer` the original task contract, the resulting
    diff, and the verification result. Ask it to judge both correctness and
    whether the stated outcome is actually complete. Reviewers are read-only and
    may run concurrently — on a task worth more than one angle, dispatch several
@@ -60,23 +62,25 @@ source-only implementer to edit records. Source tasks use the loop below.
 5. **Check off the task** only when its stated outcome is present and its exact
    verification has the expected result. Resolve technical subagent questions
    from repository evidence; ask the user only if product intent is missing.
-   Commit one task at a time in its source repo with a message that names the
-   outcome. De-slop the message. In managed mode checkpoint the checkoff and
+   Land focused commits under the shared execution policy, naming every included
+   task and its verified outcome. Edit the message for clarity. In managed mode checkpoint the checkoff and
    notes separately with `homonto workspace checkpoint --path tasks/<name>/plan.md --message "Record task completion"`.
    Existing combined mode keeps source and plan in the current manual commit
    pattern; separate existing records get a named records commit.
 
-Small tasks (a rename, a doc line) may skip the subagent loop and be done
-directly — but never skip the verification command or the commit.
+Small tasks (a rename, a doc line) may run directly. When dispatch is unavailable,
+the coordinator executes and reviews the task, recording the missing independent
+review; an explicit review requirement still blocks. A denied or blocked worker
+is not unavailable dispatch. Never skip verification or landing the changes.
 
 **The plan is live state.** Discovered work — a missing edge case, a
 prerequisite, a forgotten test — is APPENDED to `plan.md` as a new unchecked
 task (full contract: Owner/Repo/Cwd/Files/Change/Verify, outcome line suffixed
 `(discovered <date>)`, placed before `Final Verify:`) **before** its code is
 written; append-then-do, never do-then-maybe-note. Check off only at the
-task's own commit; never reorder or delete tasks — a task made unnecessary is
+task's landing commit; keep completed history — a task made unnecessary is
 checked as `- [x] SUPERSEDED: <reason>`. A fresh session resumes from the
-first unchecked task, so if the checkboxes ever stop describing reality, fix
+first executable unchecked task under the shared dependency policy, so if the checkboxes ever stop describing reality, fix
 the plan before writing more code. Work that breaks the plan's stated
 boundary is not "discovered work" — confirm the scope change with the user
 first.
@@ -94,7 +98,7 @@ first.
 
 ## Exit
 
-All tasks checked and the plan's `Final Verify:` command passing → load the
+All tasks checked → load the
 `to-done` skill and continue in the same invocation unless the user named do as
 the endpoint or asked to pause. Do not run `to done` from here; finishing is
 `to-done`'s job.

@@ -26,6 +26,10 @@ directory when `references/tmp.md` names one, as
 `handoff-<YYYYMMDD-HHMMSS>.md`. Otherwise return the handoff in conversation;
 do not require an external-directory write.
 
+If a user decision is needed, use OpenCode's built-in `question` tool, including
+in standalone mode. If unavailable, denied or dismissed, return the handoff with
+the decision pending; do not substitute chat/shell prompts or assume consent.
+
 Write for a reader who has the repository but none of this chat. Capture the
 decisions and the reasons behind them, not a transcript. If a fact already lives
 in a durable artifact — a spec, plan, ADR, issue, commit, or diff — reference it

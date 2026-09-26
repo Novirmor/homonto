@@ -85,41 +85,42 @@ func TestWorkspacePromptAuditContracts(t *testing.T) {
 }
 
 func TestWorkspaceSkillsPolicyReachability(t *testing.T) {
-	const policy = "skills/homonto/references/workspace-policy.md"
-	links := regexp.MustCompile(`\]\(([^)]+\.md)\)`)
+	links := regexp.MustCompile(`\]\(([^)#]+\.md)(?:#[^)]*)?\)`)
 	files, err := fs.Glob(embedded.FS, "skills/*/SKILL.md")
 	if err != nil || len(files) == 0 {
 		t.Fatalf("skill inventory: %v (%d files)", err, len(files))
 	}
 	// Include every entry, not only the workflow sub-skills whose dispatcher
 	// normally loads the policy for them. Direct invocation must be safe too.
-	for _, file := range files {
-		t.Run(file, func(t *testing.T) {
-			seen := map[string]bool{}
-			var reachesPolicy func(string) bool
-			reachesPolicy = func(file string) bool {
-				if seen[file] || !strings.HasPrefix(file, "skills/") {
-					return false
-				}
-				seen[file] = true
-				content, err := fs.ReadFile(embedded.FS, file)
-				if err != nil {
-					return false // Generated/optional references are not policy links.
-				}
-				if file == policy {
-					return true
-				}
-				for _, link := range links.FindAllSubmatch(content, -1) {
-					if reachesPolicy(path.Join(path.Dir(file), string(link[1]))) {
+	for _, policy := range []string{"skills/homonto/references/workspace-policy.md", "skills/homonto/references/autonomy.md"} {
+		for _, file := range files {
+			t.Run(path.Base(policy)+"/"+file, func(t *testing.T) {
+				seen := map[string]bool{}
+				var reachesPolicy func(string) bool
+				reachesPolicy = func(file string) bool {
+					if seen[file] || !strings.HasPrefix(file, "skills/") {
+						return false
+					}
+					seen[file] = true
+					content, err := fs.ReadFile(embedded.FS, file)
+					if err != nil {
+						return false // Generated/optional references are not policy links.
+					}
+					if file == policy {
 						return true
 					}
+					for _, link := range links.FindAllSubmatch(content, -1) {
+						if reachesPolicy(path.Join(path.Dir(file), string(link[1]))) {
+							return true
+						}
+					}
+					return false
 				}
-				return false
-			}
-			if !reachesPolicy(file) {
-				t.Fatal("no working link chain to shared workspace/dirty policy")
-			}
-		})
+				if !reachesPolicy(file) {
+					t.Fatalf("no working link chain to %s", policy)
+				}
+			})
+		}
 	}
 }
 

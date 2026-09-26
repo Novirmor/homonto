@@ -33,8 +33,10 @@ exceeds the work.
 
 ## Per-task dispatch
 
-**Default path: serial. One task at a time, strictly in
-plan order.** Two implementers on one branch share the working tree and Git
+**Default path: serial. One task at a time in recorded execution order.**
+Follow [execution policy](../../homonto/references/execution.md) for a prerequisite
+override: record it before dispatch and keep task IDs/history intact.
+Two implementers on one branch share the working tree and Git
 index, so their edits and commits can race. The coordinator alone writes
 workflow and task records. Fan out implementers only under the legacy combined
 exception below; if the mode or ownership is uncertain, stay serial.
@@ -155,6 +157,8 @@ review the integrated candidate, not a task tree still being written.
 
 ## Failure of the protocol itself
 
-No real dispatch capability available → record the fact, fall back to
+No real dispatch capability available → under the shared capability policy, record the fact, fall back to
 `build_mode: direct` in `onto-state.yaml` (via `onto set build-mode <name>
 direct`), announce, continue.
+An explicit independent-review requirement, denied tool or blocked worker does
+not qualify for silently dropping the required review.

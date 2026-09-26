@@ -12,17 +12,10 @@ func TestLooseBootstrapDispatchers(t *testing.T) {
 			text := hPromptText(t, "skills/"+name+"/SKILL.md")
 			for _, want := range []string{
 				"Run `" + name + " version`",
-				"missing, broken, or incompatible",
-				"inspect PATH and known installed compatible binaries first",
-				"[bootstrap policy](../homonto/references/autonomy.md#root-and-bootstrap)",
-				"installation/build is already authorized, repair in-scope setup",
-				"trusted source and compatible version at an inspected workspace-local destination",
-				"Never silently overwrite global binaries, edit shell profiles, or install from an untrusted arbitrary source",
-				"binary path, command, exit status, and error output",
-				"ask for the specific setup decision needed when scope or authority is missing",
-				"Re-run version checks and verify the framework-install gate at configRoot",
-				"No workflow state mutations until both pass",
-				"never use handwritten bookkeeping or fabricated installation directories as a fallback",
+				"framework-install gate at configRoot",
+				"[bootstrap recovery](../homonto/references/autonomy.md#root-and-bootstrap)",
+				"block mutations", "authorized investigation can continue",
+				"fabricated installation directories",
 			} {
 				if !strings.Contains(text, want) {
 					t.Errorf("bootstrap contract missing %q", want)

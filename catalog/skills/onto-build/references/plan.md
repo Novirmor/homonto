@@ -15,7 +15,7 @@ together without being maintained twice.
 # Plan: <change-name>
 
 Design: `design.md` (Status: Confirmed <date>). Completion state lives in
-`tasks.md`. One commit per task.
+`tasks.md`. Focused commits identify the tasks they land.
 
 ## Task N.M — <outcome, imperative>  <!-- add `(risk: high)` when it warrants a reviewer -->
 
@@ -29,8 +29,9 @@ Design: `design.md` (Status: Confirmed <date>). Completion state lives in
 
 ## Rules
 
-- Bite-sized: one reviewable commit (~200 lines of change) per task —
-  split anything bigger.
+- Bite-sized: one independently verifiable outcome per task. Follow the shared
+  [execution policy](../../homonto/references/execution.md); split distinct outcomes,
+  not a fixed line count. Keep implementation and its focused tests together.
 - `(risk: high)` marks tasks that get a reviewer agent under
   `build_mode: subagent` (and deserve extra scrutiny under `direct`).
 - **Number tasks to match `tasks.md`.** `## Task 2.3` here is the detail for
@@ -42,7 +43,8 @@ Design: `design.md` (Status: Confirmed <date>). Completion state lives in
   `## Task N.M — <outcome> (discovered <date>)` with the same Files/Do/Verify
   fields, BEFORE its code is written — and appended to `tasks.md` in the same
   edit, which is where its checkbox lives. Numbering only grows; never
-  renumber or delete a task. A task that becomes unnecessary keeps its heading
+  renumber or delete a task. Record prerequisite execution overrides in notes
+  before dispatch without moving checkbox entries. A task that becomes unnecessary keeps its heading
   and gains a `SUPERSEDED: <reason>` line, matching the
   `- [x] N.M SUPERSEDED: <reason> [trace #K]` entry in `tasks.md`.
 - Initially end with validation. Append discovered tasks after existing tasks,

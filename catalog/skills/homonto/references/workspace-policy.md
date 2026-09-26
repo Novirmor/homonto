@@ -47,6 +47,10 @@ Never bootstrap a managed root first and then try to adopt the populated result.
 
 ## Dirty work: inspect, present, choose
 
+Use OpenCode's built-in `question` tool under
+[the shared decision policy](autonomy.md#decide-before-asking) for every required
+dirty-work or initialization decision; ordinary chat and shell prompts are not substitutes.
+
 Before writes, including workflow records, branch operations, and commands that
 can generate files, inspect each affected Git root's status, staged and unstaged
 diffs, and untracked paths. For onto also run

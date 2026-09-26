@@ -1,101 +1,47 @@
 ---
 name: to-no-slop
-description: Remove AI writing patterns from prose. Use when drafting, editing, or reviewing any to prose artifact — plans, execution notes, verification records, commit messages — to eliminate predictable AI tells.
+description: Edit to plans, notes, verification records and commit messages for clarity while preserving technical meaning, evidence and task contracts.
 metadata:
-  trigger: Writing prose, editing drafts, reviewing content for AI patterns
   author: Hardik Pandya (https://hvpandya.com)
-  source: adapted from stop-slop, https://github.com/hardikpandya/stop-slop (MIT); vendored into the to framework as to-no-slop
+  source: adapted from stop-slop, https://github.com/hardikpandya/stop-slop (MIT); revised for technical workflow prose
 ---
 
 # to-no-slop
 
-Follow the shared [workspace and dirty-work policy](../homonto/references/workspace-policy.md)
-before prose edits, even on direct entry; prose cleanup does not authorize
-overwriting user edits or bypassing managed records checkpoints.
+## Purpose and entry
 
-Eliminate predictable AI writing patterns from prose. This is the to
-framework's build of the **stop-slop** skill by Hardik Pandya, unchanged in its
-rules and extended with a short section on applying them inside to. (to ships
-its own copy so each framework's prose stays independently versioned.)
+Edit prose being written or reviewed within the authorized task. Follow the shared
+[workspace policy](../homonto/references/workspace-policy.md) before file edits.
+This is a lightweight edit pass, not another gate or a reason to create notes.
 
-## Core Rules
+## Actions
 
-1. **Cut filler phrases.** Remove throat-clearing openers, emphasis crutches, and all adverbs. See [references/phrases.md](references/phrases.md).
+1. Preserve accuracy: qualifiers, uncertainty, constraints and genuine distinctions.
+2. State the useful point early. Remove repeated explanations, empty emphasis and
+   announcements that add no information.
+3. Name the relevant actor or component. Prefer active voice when it clarifies
+   responsibility; passive voice and nonhuman subjects are valid when accurate.
+4. Replace vague claims with concrete behavior or evidence. Never strengthen a
+   claim merely to make it shorter.
+5. Use the structure the reader needs. Keep useful lists, technical adverbs and
+   punctuation; there are no quotas for sentence length, alternatives or list size.
 
-2. **Break formulaic structures.** Avoid binary contrasts, negative listings, dramatic fragmentation, rhetorical setups, false agency. See [references/structures.md](references/structures.md).
+## Completion evidence
 
-3. **Use active voice.** Every sentence needs a human subject doing something. No passive constructions. No inanimate objects performing human actions ("the complaint becomes a fix").
+Read the edited passage against the original: same meaning, less friction. No
+numeric score or style receipt is required. Continue the owning phase.
 
-4. **Be specific.** No vague declaratives ("The reasons are structural"). Name the specific thing. No lazy extremes ("every," "always," "never") doing vague work.
+Never alter checkbox/task identity, Owner/Repo/Cwd/Files/Change/Verify fields,
+`Final Verify:`, required headings, normative requirements, literal commands or
+captured output. Preserve load-bearing terms such as “atomically” and
+“idempotently.” When uncertain, leave the line and resolve its meaning before
+editing. Existing style receipts are history.
 
-5. **Put the reader in the room.** No narrator-from-a-distance voice. "You" beats "People." Specifics beat abstractions.
-
-6. **Vary rhythm.** Mix sentence lengths. Two items beat three. End paragraphs differently. No em dashes.
-
-7. **Trust readers.** State facts directly. Skip softening, justification, hand-holding.
-
-8. **Cut quotables.** If it sounds like a pull-quote, rewrite it.
-
-## Quick Checks
-
-Before delivering prose:
-
-- Any adverbs? Kill them.
-- Any passive voice? Find the actor, make them the subject.
-- Inanimate thing doing a human verb ("the decision emerges")? Name the person.
-- Sentence starts with a Wh- word? Restructure it.
-- Any "here's what/this/that" throat-clearing? Cut to the point.
-- Any "not X, it's Y" contrasts? State Y directly.
-- Three consecutive sentences match length? Break one.
-- Paragraph ends with punchy one-liner? Vary it.
-- Em-dash anywhere? Remove it.
-- Vague declarative ("The implications are significant")? Name the specific implication.
-- Narrator-from-a-distance ("Nobody designed this")? Put the reader in the scene.
-- Meta-joiners ("The rest of this essay...")? Delete. Let the essay move.
-
-## Scoring
-
-Walk each dimension as an edit question — if the honest answer is the bad
-half, revise that aspect before the gate:
-
-| Dimension | Question |
-|-----------|----------|
-| Directness | Statements or announcements? |
-| Rhythm | Varied or metronomic? |
-| Trust | Respects reader intelligence? |
-| Authenticity | Sounds human? |
-| Density | Anything cuttable? |
-
-There is no numeric self-score: a model grading its own prose against a
-threshold always passes itself. The questions are the control; answer them
-honestly and edit.
-
-## Examples
-
-See [references/examples.md](references/examples.md) for before/after transformations.
-
-## Using this inside to
-
-to keeps little prose, which makes what it keeps matter more: `plan.md`, its
-`## Notes` and `## Verification` sections, and commit messages. Run these rules
-over every such artifact before it lands, so the record a human reads later
-sounds like a human wrote it.
-
-This pass edits the **prose you wrote** — the paragraphs a human reads. It
-never edits structure the workflow depends on. Off-limits, always:
-
-- **Machine-read markers.** Checkbox syntax `- [ ]`/`- [x]` in the plan's
-  task list, the `Final Verify:` label, and literal verification commands and
-  output. The to-do loop tracks completion through those checkboxes, and a
-  "cleaned up" command or output is a falsified record.
-- **The plan's task structure.** Each task's `Files:`, `Change:`, and `Verify:`
-  lines are contract, not prose. Tighten the wording, never drop the parts or
-  weaken the expected passing signal.
-
-Within those bounds everything applies: active voice, name the actor, be
-specific, cut the throat-clearing, vary the rhythm, no em dashes in your own
-sentences. When in doubt whether a line is prose or contract, leave it.
+For examples, read [technical edits](references/examples.md). The optional
+[phrase](references/phrases.md) and [structure](references/structures.md) references
+are editing aids, not word bans.
 
 ## License
 
-MIT. Original skill by Hardik Pandya (https://github.com/hardikpandya/stop-slop).
+MIT. Adapted from Hardik Pandya's stop-slop; the technical editing rules above
+replace the original blanket stylistic bans.

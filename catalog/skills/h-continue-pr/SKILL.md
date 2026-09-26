@@ -185,8 +185,9 @@ exact recorded candidates, workflow-specific recovery, and pending-mode conflict
        receiver API, never recreate active state. Managed archival checkpoints automatically,
       existing mode commits the archive in the records' owner. If isolated,
        integrate the exact recorded verified candidate into the PR head, rerun
-       Final Verify in the receiving checkout, and obtain a fresh completed skeptic
-       for a changed integration tree before step 7. To has no onto receipt API.
+       Final Verify in the receiving checkout, and repeat final review under
+       `to-done`'s capability policy for a changed integration tree before step 7.
+       To has no onto receipt API.
     - **onto:** open or resume with configRoot fixed and the source alias selected.
       Validate anchors with `onto set base-ref <name> <commit> --repo <alias> --dir "<configRoot>"`
       and `onto set base-branch <name> <branch> --repo <alias> --dir "<configRoot>"`

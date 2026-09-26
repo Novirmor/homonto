@@ -289,8 +289,9 @@ func TestWorkflowPromptCLISequences(t *testing.T) {
 			run(t, root, onto, "new", "resume", "--workflow", preset, "--dir", root)
 			// A new process resumes the scaffold: derived build is not setup completion.
 			var state struct {
-				Phase   string `json:"phase"`
-				Derived string `json:"derived_phase"`
+				Phase    string `json:"phase"`
+				Derived  string `json:"derived_phase"`
+				Workflow string `json:"workflow"`
 			}
 			out := run(t, root, onto, "state", "resume", "--json", "--dir", root)
 			if err := json.Unmarshal([]byte(out), &state); err != nil || state.Phase != "open" || state.Derived != "build" {
@@ -369,6 +370,43 @@ func TestWorkflowPromptCLISequences(t *testing.T) {
 				out := run(t, root, onto, "state", "resume", "--json", "--dir", root)
 				if err := json.Unmarshal([]byte(out), &state); err != nil || state.Phase != phase {
 					t.Fatalf("setup repair changed recorded %s: %v %s", phase, err, out)
+				}
+			}
+			// A defect found after a passing verify must return BOTH presets to
+			// their inline build contract without a rewind or full-workflow plan.
+			run(t, root, onto, "set", "verify-result", "resume", "pass", "--dir", root)
+			run(t, root, "git", "add", "docs/changes/resume")
+			run(t, root, "git", "commit", "-m", "record passing preset verification")
+			run(t, root, onto, "advance", "resume", "--dir", root)
+			report := filepath.Join(change, "verification.md")
+			write(t, report, "# Verification\nResult: superseded (repair 2026-09-27)\nScenario-ID: SC-resume\n")
+			run(t, root, onto, "set", "verify-result", "resume", "pending", "--dir", root)
+			tasks := "- [x] 1.1 Verify local probe ref [trace #1]\n- [ ] 1.2 Recheck probe after repair [trace #2]\n  - Owner: coordinator\n  - Repo: config\n  - Cwd: " + root + "\n  - Files: refs/heads/probe\n  - Change: preserve the verified probe ref\n  - Verify: git rev-parse --verify refs/heads/probe; exit 0\n"
+			write(t, filepath.Join(change, "tasks.md"), tasks)
+			out = run(t, root, onto, "state", "resume", "--json", "--dir", root)
+			if err := json.Unmarshal([]byte(out), &state); err != nil || state.Phase != "close" || state.Derived != "build" || state.Workflow != preset {
+				t.Fatalf("preset repair must derive build without rewinding close: %v %s", err, out)
+			}
+			output := run(t, root, "git", probeArgs...)
+			write(t, filepath.Join(change, "tasks.md"), strings.Replace(tasks, "- [ ] 1.2", "- [x] 1.2", 1))
+			out = run(t, root, onto, "state", "resume", "--json", "--dir", root)
+			if err := json.Unmarshal([]byte(out), &state); err != nil || state.Phase != "close" || state.Derived != "verify" {
+				t.Fatalf("repaired preset must derive verify: %v %s", err, out)
+			}
+			write(t, report, "# Verification\nResult: pass\nScenario-ID: SC-resume\nCommand: git rev-parse --verify refs/heads/probe\nExit: 0\n"+output+"\n")
+			outputFile := filepath.Join(t.TempDir(), "repair-probe.txt")
+			write(t, outputFile, output+"\n")
+			for _, task := range []string{"1", "2"} {
+				run(t, root, onto, "evidence", "record", "resume", "--task", task, "--scenario", "SC-resume", "--exec", "git", "--cmd-hash", hash, "--exit", "0", "--output", outputFile, "--artifact", report, "--dir", root)
+			}
+			run(t, root, onto, "set", "verify-result", "resume", "pass", "--dir", root)
+			out = run(t, root, onto, "state", "resume", "--json", "--dir", root)
+			if err := json.Unmarshal([]byte(out), &state); err != nil || state.Phase != "close" || state.Derived != "close" {
+				t.Fatalf("reverified preset must return to close: %v %s", err, out)
+			}
+			for _, name := range []string{"plan.md", "design.md"} {
+				if _, err := os.Stat(filepath.Join(change, name)); !os.IsNotExist(err) {
+					t.Fatalf("preset repair unexpectedly required %s: %v", name, err)
 				}
 			}
 		})

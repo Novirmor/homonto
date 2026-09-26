@@ -15,8 +15,9 @@ including workspace roots and dirty-work decisions, even on direct entry.
 - No workspace exists yet for this work, **or** `onto state <name> --json`
   reports `phase: open` or a dispatcher-routed `derived_phase: open`, with
   `workflow: full`.
-- Bug fixes and small tweaks belong to `onto-fix` / `onto-tweak` — if the
-  request fits a preset, hand over to it instead.
+- An explicit `/onto-open` or full-onto choice stays full, even for a small bug
+  or tweak. Never redirect selected full work to a preset. For unselected new
+  work, return to the dispatcher for the shared workflow-selection decision.
 - If the workspace has a `notes.md`, read it first — resume from its
   Pending items; never re-ask what Confirmed already answers.
 - Any other state → route back through `/onto` (the dispatcher rederives the
@@ -143,8 +144,7 @@ onto set proposal-approved <name> "YYYY-MM-DD <one-line review summary>"
       <name>` after review; on a downward mismatch, skipped advance and handed
       directly to `onto-design` so the unchanged later phase cannot route back
       into open
-- [ ] onto-no-slop pass run over `proposal.md` and `notes.md`, the pass
-      recorded in `notes.md` (`no-slop: <artifact> done`)
+- [ ] Proposal and notes edited for clarity with `onto-no-slop`; no style receipt required
 - [ ] **Record the workspace**: in managed mode, checkpoint manual Markdown
       before the state transition with `homonto workspace checkpoint --path changes/<name> --message "Record open phase"`;
       binary state mutations checkpoint automatically. Existing mode retains

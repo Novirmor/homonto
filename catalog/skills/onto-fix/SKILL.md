@@ -17,8 +17,9 @@ through the entire preset unless the user names an endpoint or asks to pause.
 - A new bug-fix request (clear broken behavior), or an active change with
   `workflow: fix`. This preset owns the change's whole lifecycle; the
   dispatcher routes every phase of a fix change here.
-- Not for new capabilities, refactors, or behavior *changes* — those are
-  full-workflow work via `onto-open`.
+- Validate the shared [eligibility table](../homonto/references/workflow-selection.md#eligibility-and-escalation).
+  If an explicit fix request instead requires a new contract, explain the mismatch
+  and ask for a compatible path or scope decision; do not silently change its goal.
 - Read `notes.md` at entry when present. If any skill's `references/`
   directory is missing, degrade per the dispatcher rule: note the gap and
   fall back to the SKILL.md tables, continue.
@@ -29,7 +30,7 @@ through the entire preset unless the user names an endpoint or asks to pause.
   | Recorded/setup or derived phase | Enter at |
   |---|---|
   | recorded open/design, or missing proposal review/isolation/task contracts | step 1 setup resume; preserve state, fill only missing artifacts/decisions, never rerun `new` |
-  | build with setup complete | step 2, first unchecked task; inspect and reconcile partial work, never redo a committed task |
+   | build with setup complete | step 2, first executable unchecked task under recorded dependencies; reconcile partial work, never redo a committed task |
   | verify | step 3 |
   | close | step 4 |
 
@@ -134,7 +135,17 @@ question justifies interrupting the preset.
 the `tdd` decision.** Watch it fail for the expected reason. Then find the
 root cause (systematic debugging — reproduce, read the whole error, trace
 data flow; no fix before the root cause is identified), apply the minimal
-fix, watch the test pass, run the surrounding tests. One commit per task.
+fix, watch the test pass, run the surrounding tests. Follow
+[task execution and evidence](../homonto/references/execution.md) for focused
+commits, dispatch fallback and evidence reuse. Preserve the failing reproduction
+as evidence; a later green run does not replace it.
+
+On verification failure or a defect found before archive, resume this step with
+an appended inline Owner/Repo/Cwd/Files/Change/Verify repair task. Keep the fix
+workflow, existing isolation, TDD mode and the recorded phase. Do not create
+`plan.md` or `design.md` for an in-scope repair. Invalidate the old passing result
+before repair, then return to step 3 for fresh verification. Escalate only under
+the shared eligibility table, not because a check failed.
 
 ### 3. Verify
 
@@ -163,15 +174,10 @@ legacy `guides: pending` value must still be resolved before archive.
 
 ## Upgrade rules
 
-The moment ANY of these becomes true, stop preset implementation and upgrade
-automatically to the full workflow:
-
-- the fix touches **more than 5 non-test files** (the mandatory failing test
-  never counts toward the trigger; aligned with tweak's limit so a fix never
-  carries more ceremony than a same-sized feature)
-- architecture or schema changes (new modules, interfaces, dependencies)
-- the fix introduces a **new public API**
-- the fix scope exceeds a single function/module
+Use the shared [eligibility and escalation table](../homonto/references/workflow-selection.md#eligibility-and-escalation)
+before selection and throughout implementation. When a fix exceeds it, stop
+preset implementation and upgrade automatically to full. There are no additional
+file, function, or test-count thresholds in this skill.
 
 On upgrade, run `onto set workflow <name> full`, annotate the proposal's first
 line to `Preset: fix (upgraded to full YYYY-MM-DD)`, and create `design.md` from
@@ -179,7 +185,8 @@ the full template. Expand the reduced proposal to the full proposal structure,
 preserving confirmed scope, scenarios, markers, and Grounding. Mark the design
 with `Status: Under revision`. That marker drives working
 phase derivation to design without moving the canonical phase backward. Route
-through `/onto` to backfill the design, then continue. Ask only if the discovered
+through `/onto` to backfill the design, invalidating any prior passing report and
+setting verify-result pending before design is reconfirmed, then continue. Ask only if the discovered
 work exceeds the user's requested product scope. Never keep patching past a
 trigger "because it's almost done".
 
@@ -200,7 +207,5 @@ trigger "because it's almost done".
       carried obligation resolved, `onto merge-deltas` run, `close.merged` set, close plan
       validated **before** any spec/ADR mutation, close prep committed, archived
       in its own commit
-- [ ] onto-no-slop pass run over each prose artifact (proposal,
-      verification, new guide prose), noted in `notes.md` (`no-slop: <artifact>
-done`); never a
-      machine-read marker or a requirement's normative wording
+- [ ] Prose edited for clarity with `onto-no-slop`; preserve machine-read markers,
+      normative wording and literal evidence; no style receipt required

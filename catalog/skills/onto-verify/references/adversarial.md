@@ -12,10 +12,12 @@ defects self-review missed).
   the ceiling — see "More than two" below.
 - `verify.scale: light` → one skeptic, optional; a skip is recorded in the
   report's Adversarial section with its reason.
-- No subagent capability → record "adversarial pass skipped: no dispatch
-  capability" in the report's Adversarial section (protocol-mandated
-  skips live there, need no acceptor); verification may still pass with
-  it recorded.
+- Unavailable dispatch/worker → apply the shared
+  [capability policy](../../homonto/references/execution.md#dispatch-capability).
+  Perform claim/gap checks directly and record the missing independent pass in
+  Adversarial. Explicit independent-review requirements still block; denial and
+  blocked/failed workers do not qualify as absence. Never claim a completed
+  independent pass for direct review.
 
 ## The two mandatory skeptics
 
@@ -47,8 +49,8 @@ approving skeptic has failed its job; "I could not refute X because
 
 ## More than two
 
-Skeptics deny edits and shell commands, so additional lenses race nothing and cost only
-tokens. Add them when the change earns it, dispatched in the same parallel
+Skeptics deny edits and shell commands. Add bounded, distinct lenses when their
+expected coverage justifies the latency, context and token cost, in the same parallel
 batch and named in the report's Adversarial section like the mandatory two:
 
 - **abuse** — drive the shipped behavior as a hostile user would: untrusted

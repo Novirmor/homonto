@@ -1,8 +1,8 @@
 # tasks.md — canonical template
 
 The change's checklist, and the **single source of completion state**. Design
-derives it from the confirmed approach; build refines and checks items off, one
-commit per checked item. The phase derivation and the build exit gate read these
+derives it from the confirmed approach; build checks each item off only after
+its work and verification land. The phase derivation and the build exit gate read these
 checkboxes and nothing else.
 
 On a full change, each item's executable detail (files, what to do, how it is
@@ -52,7 +52,9 @@ only this file carries the checkbox.
   written, checked off when its commit lands. Never renumber, reorder, or
   delete existing tasks; a task made unnecessary is checked as
   `- [x] N.N SUPERSEDED: <reason> [trace #K]`. A fresh session resumes from the first
-  unchecked task, so the checkboxes must describe reality at every commit.
+  executable unchecked task, honoring prerequisite overrides recorded under the
+  shared [execution policy](../../homonto/references/execution.md), so the checkboxes
+  must describe reality at every commit.
 - Every change ends with a Validation area — a change that can't state its
   own proof isn't ready to build.
   Never insert new work before an existing validation task. Append discovered

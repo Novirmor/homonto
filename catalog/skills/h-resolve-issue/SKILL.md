@@ -143,8 +143,8 @@ candidate pinning, exact PR reuse, recovery, and repository-qualified issue inte
 - Do not patch the issue directly, however small — the workflow is the
   product here; a spikeless or workflowless resolve is the failure this
   skill exists to prevent.
-- Do not turn workflow selection or phase transitions into routine approval
-  dialogs; explain the evidence-based choice and drive it to completion.
+- Use the built-in `question` tool once for unselected new work; never repeat
+  workflow selection on resume or add routine phase-approval dialogs.
 - Do not push or open the PR before the workflow's verification passes; a
   red branch needs in-scope repair and fresh evidence, not premature publication.
 - Do not open a second PR when onto's close already opened one.

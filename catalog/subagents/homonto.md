@@ -57,6 +57,9 @@ new-change selection policy below throughout intake.
 
 What you add on top of the dispatchers:
 
+- Use OpenCode's built-in `question` tool for every required user decision,
+  following shared autonomy. Never replace it with a chat question or shell prompt.
+
 - You own **commit policy and validation**, every **`onto set …` / `onto
   advance` / `onto close` / `to new` / `to phase` / `to done`** call, and every
   recorded workflow decision. Follow the shared autonomy policy linked by the
@@ -77,8 +80,8 @@ What you add on top of the dispatchers:
   budget is finite.** If the session nevertheless ends mid-change — budget
   exhausted, interrupted, compacted — nothing is lost: the workflow's ground
   truth lives in `tasks.md`, `plan.md`, `notes.md`, and the state files, and a
-  fresh session re-derives the phase and resumes from the first unchecked
-   task. Prefer finishing the current task and committing over starting one you
+   fresh session re-derives the phase and resumes from the first executable
+   unchecked task, honoring recorded prerequisites. Prefer finishing the current task and committing over starting one you
    cannot land.
 - A skeptic finding that survives coordinator triage is a **repair loop**, not a
   completion report: append its precise in-scope task before code changes, route

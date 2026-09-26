@@ -48,8 +48,11 @@ level with `onto set verify-scale <name> light|full` (or `onto scale <name>
 
 ### 2. Check against design and specs
 
-For **every scenario in every delta spec** (workspace `specs/*.md`): run the
-command(s) that demonstrate the behavior and capture the actual output.
+For **every scenario in every delta spec** (workspace `specs/*.md`): obtain
+candidate-bound command evidence under the shared
+[execution policy](../homonto/references/execution.md#candidate-bound-verification).
+Reuse a matching observed run when its provenance and inputs are unchanged;
+otherwise run the command(s) and capture the actual output.
 Walk `design.md`'s key decisions and confirm the implementation matches —
 deviations are findings, not footnotes. Re-run stated verifications from
 `plan.md` where they are cheap.
@@ -76,13 +79,15 @@ Step 4 finalizes the report before hashing it into receipts. `onto set verify-re
 <name> pass --dir "<configRoot>"` binds all selected source HEADs. Preserved dirt
 is not a gate waiver; use validated registered bindings, not a clean arbitrary cwd.
 
-- Every claim needs a fresh command + its literal output. No "should work",
-  no "passed earlier", no stale logs.
+- Every claim needs a candidate-bound command + its literal output. A bare
+  "passed earlier" is not reusable evidence; validate provenance and coverage.
 - A scenario that cannot be demonstrated is a **fail**, not a skip.
 
 ### 3. Regression
 
-Run the project's full build and test suite. Capture the output. If the
+Obtain the project's full build and test suite results for the final candidate.
+Run missing or invalidated checks; do not repeat an unchanged build-exit run
+solely because the phase changed. Retain the output. If the
 project has no build/test suite (e.g. a content-only repo), record that
 fact as the regression result. It is a valid result, not a skipped check.
 
@@ -109,9 +114,11 @@ are CRITICAL-fix or gate-decided deviations. **Non-waivable classes:** a
 security defect, data loss, or a failed core-acceptance scenario is CRITICAL
 and must be fixed — it is never waived, skipped, or gate-accepted as a
 deviation, in light or full mode. Only lower-severity findings are eligible
-for a recorded skip. No dispatch capability → record the skipped pass in the
-report's Adversarial section (protocol-mandated skips live there, no acceptor
-needed) — but a non-waivable-class finding already surfaced still blocks.
+for a recorded deviation. For unavailable dispatch apply the shared execution
+policy: perform the claim/gap checks directly and record the missing independent
+pass in Adversarial. An explicit independent-review requirement remains a blocker;
+denial and blocked workers are not absence. Direct review never counts as an
+independent skeptic, and surfaced non-waivable defects still block.
 
 ### 4. Write the report
 
@@ -141,15 +148,23 @@ after recording to confirm current claims and resolve stale or unknown-ID findin
 On any failure, record `onto set verify-result <name> fail` once per round, which increments
 `observed.verify_rounds`, and note the date and failing items in `notes.md`.
 If step 4 already recorded fail, do not increment it again here.
-Default to **fix**: verify each skeptic finding against the candidate, then turn
-every real in-scope source defect into an unchecked repair task with a matching
-`plan.md` detail block before changing code. Give it the full task contract
-(Owner, Repo, Cwd, Files, Change, Verify). The unchecked task drives derivation
-back to build without a backward phase write: **load `onto-build` and continue in
-the same invocation**. `onto-build` re-dispatches `onto-implementer` for a source
-repair (or the coordinator repairs a records-owned task), then this skill runs a
-fresh verification round on the new candidate. Do not stop at a skeptic finding
-or ask the user to continue when the repair is technically clear and in scope.
+Default to **fix**: verify each finding against the candidate, then turn every
+real in-scope source defect into an unchecked repair task before changing code.
+Invalidate a previous passing report (`Result: superseded (repair <date>)`) and
+record pending unless this round already recorded fail. Preserve the recorded
+phase; unchecked tasks route back to build. Select the repair route by workflow:
+
+| Workflow | Repair contract and route |
+|---|---|
+| full | Append a matching `plan.md` detail block with Owner/Repo/Cwd/Files/Change/Verify; load `onto-build` and continue in the same invocation |
+| fix | Append the inline contract to `tasks.md`; load `onto-fix` step 2, retaining failing-test-first execution |
+| tweak | Append the inline contract to `tasks.md`; load `onto-tweak` step 2 |
+
+Do not create a plan or design for a preset repair. `onto-build` re-dispatches
+`onto-implementer` when its recorded mode and actual capability permit it; records
+tasks remain coordinator-owned. Return here for fresh verification of the changed
+candidate. Do not stop at a skeptic finding or ask whether to continue a clear
+in-scope repair. Escalation follows the shared eligibility table, not failure alone.
 
 Ask the user only if accepting a known lower-severity deviation is a real option
 and fixing it would cross a user-owned constraint. Never recommend acceptance,
@@ -168,9 +183,8 @@ replanning; the count is a warning, not a mandatory user interruption.
       rationale in the report)
 - [ ] Adversarial pass run (or its skip recorded in the report's
       Adversarial section)
-- [ ] onto-no-slop pass run over `verification.md`, recorded in
-      `notes.md` (`no-slop: verification done`) — never touch the
-      machine-read `Result:` line or the evidence table structure
+- [ ] Report prose edited for clarity before receipt hashing; preserve the
+      machine-read `Result:` line and literal evidence; no style receipt required
 - [ ] **Record the workspace**: managed Markdown uses
       `homonto workspace checkpoint --path changes/<name> --message "Record verification"`
       before state mutations; binary evidence/result writes checkpoint

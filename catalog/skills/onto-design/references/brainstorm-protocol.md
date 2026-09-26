@@ -24,9 +24,10 @@ focused question at a time. Do not require a fixed number of rounds. If the requ
 several independent subsystems, stop and flag a split (that is `onto-open`'s
 job), don't refine the details of something that should be decomposed.
 
-**3. Evaluate 2–3 approaches.** For the core design decisions, develop two or
-three distinct approaches with their trade-offs, lead with your recommendation
-and why. Choose it when the differences are technical and reversible. Ask the
+**3. Evaluate meaningful alternatives.** Compare viable approaches for the core
+decisions and explain your recommendation. One supported approach is enough when
+constraints rule out alternatives; record why instead of manufacturing options.
+Choose it when the differences are technical and reversible. Ask the
 user only when the alternatives materially change user-visible behavior, scope,
 compatibility, security posture, cost, or another constraint they own.
 

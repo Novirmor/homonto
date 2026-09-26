@@ -118,8 +118,9 @@ records a verified no-op in its own handoff, never through onto's receipt API.
 
 Before pushing, inspect the receiving tree, status, diff, and candidate ancestry.
 Reverify the actual integration tree after a merge, especially a changed target
-or conflict resolution; to also needs a current completed skeptic verdict for a
-changed tree. Pin the resulting verified delivery OID. Use an explicit non-force
+or conflict resolution; to also repeats final review for a changed tree under
+the shared [dispatch capability policy](execution.md#dispatch-capability), retaining
+the independent-review requirement when configured. Pin the resulting verified delivery OID. Use an explicit non-force
 refspec `git push "$REMOTE" "$DELIVERY_OID:refs/heads/$BRANCH"`, not a moving local
 branch tip. Confirm the remote head OID after delivery. If the remote advanced,
 reconcile without resetting, force-pushing, or publishing unverified additions.

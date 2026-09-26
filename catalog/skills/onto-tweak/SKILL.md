@@ -17,11 +17,11 @@ through the entire preset unless the user names an endpoint or asks to pause.
 
 - A small, local, non-bug change request, or an active change with
   `workflow: tweak`. This preset owns the change's whole lifecycle.
-- Broken behavior → `onto-fix`. **Small features are tweak territory** when
-  ALL of: ≤5 files touched (test files excluded), no new capability (no new
-  `<workflow-root>/specs/` file), and no existing spec's requirements change.
-  Structural work or anything introducing a new capability → full workflow
-  via `onto-open`.
+- Validate the shared [eligibility table](../homonto/references/workflow-selection.md#eligibility-and-escalation).
+  If an explicit tweak request actually describes broken behavior, explain the
+  mismatch and ask for a compatible path or scope decision; never silently
+  replace the user's choice. A capability is a behavioral contract, not merely
+  the existence of a spec file.
 - Read `notes.md` at entry when present (recommended for any tweak that
   spans sittings). If any skill's `references/` directory is missing, note
   the gap and fall back to the SKILL.md tables, continue.
@@ -30,7 +30,7 @@ through the entire preset unless the user names an endpoint or asks to pause.
   | Recorded/setup or derived phase | Enter at |
   |---|---|
   | recorded open/design, or missing proposal review/isolation/task contracts | step 1 setup resume; preserve state, fill only missing artifacts/decisions, never rerun `new` |
-  | build with setup complete | step 2, first unchecked task; inspect partial work, never redo a committed task |
+   | build with setup complete | step 2, first executable unchecked task under recorded dependencies; inspect partial work, never redo a committed task |
   | verify | step 3 |
   | close | step 4 |
 
@@ -106,11 +106,19 @@ capability or existing requirement depends on missing product intent.
 
 No `plan.md` required. Still binding:
 
-- one commit per task, checked off in `tasks.md` as it lands
+- follow [task execution and evidence](../homonto/references/execution.md):
+  reviewable outcomes, focused commits and checkoffs only after landing
 - the checklist is live: in-scope discovered work is APPENDED to `tasks.md`
   as a new unchecked item before its code is written — never done silently
 - on ANY failure: systematic debugging — root cause before any fix
 - stay inside the tweak's stated scope; anything more hits the upgrade gate
+
+On verification failure or a defect found before archive, resume this step with
+an appended inline Owner/Repo/Cwd/Files/Change/Verify repair task. Keep the tweak
+workflow, existing isolation and the recorded phase. Do not create `plan.md` or
+`design.md` for an in-scope repair. Invalidate the old passing result before
+repair, then return to step 3 for fresh verification. Escalate only under the
+shared eligibility table, not because a check failed.
 
 ### 3. Verify
 
@@ -138,19 +146,15 @@ guides obligation; resolve a carried legacy `guides: pending` value if present.
 
 ## Upgrade rules
 
-Upgrade automatically to the full workflow when ANY of:
-
-- the change touches **more than 5 files** (test files excluded — the entry
-  limit is ≤5, so exactly 5 is still a tweak)
-- cross-module coordination is required
-- **5+ new test cases** are needed
-- config **keys are added or removed** (value changes are fine)
-- a new capability emerges
-- an existing spec's requirements are affected
+Use the shared [eligibility and escalation table](../homonto/references/workflow-selection.md#eligibility-and-escalation)
+before selection and throughout implementation. Upgrade automatically when the
+tweak exceeds that table. Test count and a private configuration-key edit alone
+do not force escalation; assess behavior, compatibility, and migration obligations.
 
 On upgrade, run `onto set workflow <name> full`, annotate the proposal's first
 line to `Preset: tweak (upgraded to full YYYY-MM-DD)`, and create `design.md`
-from the full template with `Status: Under revision`. Route through `/onto` to
+from the full template with `Status: Under revision`. Invalidate any prior passing
+report and set verify-result pending before design is reconfirmed. Route through `/onto` to
 expand the reduced proposal to the full template, preserving confirmed scope,
 scenarios, markers, and Grounding, and
 backfill design without moving the canonical phase backward. Ask only if the
@@ -172,7 +176,5 @@ discovered work exceeds the user's requested product scope.
       carried obligation resolved, `onto merge-deltas` run, `close.merged` set,
       close plan validated **before** any spec/ADR mutation, close prep committed,
       archived in its own commit
-- [ ] onto-no-slop pass run over each prose artifact (proposal,
-      verification, new guide prose), noted in `notes.md` (`no-slop: <artifact>
-done`); never a
-      machine-read marker or a requirement's normative wording
+- [ ] Prose edited for clarity with `onto-no-slop`; preserve machine-read markers,
+      normative wording and literal evidence; no style receipt required

@@ -57,10 +57,15 @@ func TestIntegrationPromptRecoveryContracts(t *testing.T) {
 			"independently of whether local PR HEAD is ahead", "before local integration",
 		}},
 		{"skills/onto-close/SKILL.md", []string{
-			"before archive, recording its identity and absolute path", "reuse the preallocated receiver's recorded path",
-			"Route per-repo no-op before merge/PR", "unchanged:<receivingSHA>",
-			"--body-file \"$REPO_BODY_FILE\"", "no closing directive", "For every repo and retry regenerate",
-			"Every source has a proven `unchanged:` receipt", "does not verify remote publication",
+			"Identify receivers before archive", "record their identities/paths",
+			"[source integration](references/integration.md)",
+			"Every source has a proven unchanged receipt", "observed exact PR receipt",
+		}},
+		{"skills/onto-close/references/integration.md", []string{
+			"First route apparently unchanged sources", "unchanged:<receivingSHA>",
+			"validate and reuse the recorded receiver", "For each destination and retry",
+			"--body-file \"$REPO_BODY_FILE\"", "not proof of GitHub delivery",
+			"neutral shared body", "never pass neutral `ship.md` directly",
 		}},
 		{"skills/onto-close/references/ship-handoff.md", []string{
 			"Archived `ship.md` contains no closing directive", "For every destination and every retry",

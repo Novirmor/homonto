@@ -1,5 +1,5 @@
 ---
-description: Run the to done phase — real verification, at least one completed skeptic pass on the final candidate, then `to done --verified` archives the change.
+description: Finish a to change with final-candidate verification and review, the documented unavailable-dispatch fallback when needed, then archive and integrate.
 agent: homonto
 ---
 

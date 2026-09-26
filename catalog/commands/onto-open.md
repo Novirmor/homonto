@@ -1,5 +1,5 @@
 ---
-description: Open a new onto change — clarify scope and scaffold the workspace.
+description: Select full onto for a new change — clarify scope and scaffold its workspace, even when a preset could also fit.
 agent: homonto
 ---
 

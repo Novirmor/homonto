@@ -1,6 +1,6 @@
 ---
 name: onto-build
-description: onto phase 3 — plan and build. Use when an active change has phase build — writes the implementation plan, derives build and test modes from the work, then executes bite-sized tasks with one commit each; pauses after planning only on explicit request.
+description: Build an active full onto change from its confirmed design with reviewable tasks, focused commits and candidate-bound verification. Preset work returns to onto-fix or onto-tweak; pause after planning only on explicit request.
 ---
 
 # onto-build — Phase 3: Plan and Build
@@ -17,6 +17,9 @@ including workspace roots and dirty-work decisions, even on direct entry.
 - `workflow: full` → a `design.md` marked `Status: Confirmed` must exist; if
   it doesn't, the design phase isn't done — route back through `/onto`.
 - Presets (`fix`/`tweak`) enter build directly after open-lite.
+- If dispatched here for a preset, return to `onto-fix` or `onto-tweak` step 2.
+  The planning steps below are full-workflow steps; preset repairs retain their
+  inline contracts and existing mode, with no new design or plan requirement.
 - On a downward mismatch, repair the build artifacts while leaving the later
   recorded phase unchanged. After tasks are checked, return through `/onto`
   instead of advancing an already-ahead state.
@@ -38,7 +41,8 @@ including workspace roots and dirty-work decisions, even on direct entry.
   classified `change` belongs to another change — leave it. Never build on
   top of partial edits unknowingly — the same rule the subagent protocol
   enforces for fresh agents. Then find the first unchecked task in
-  `tasks.md`/`plan.md` and continue from there; never redo committed tasks.
+   `tasks.md`/`plan.md` and continue from there, honoring any recorded prerequisite
+   override in notes; never redo committed tasks.
 
 ## Steps
 
@@ -48,8 +52,10 @@ Write `<workflow-root>/changes/<name>/plan.md` from the canonical template
 `references/plan.md`: one `## Task N.M` detail block per `tasks.md` item,
 **numbered to match it**, each with exact file paths, what to do, and how to
 verify it; mark tasks warranting review `(risk: high)`. A task that can't
-state its verification isn't ready. One reviewable commit (~200 lines) per
-task — split anything bigger. Read `notes.md` first if present.
+state its verification isn't ready. Follow the shared
+[execution policy](../homonto/references/execution.md) for task granularity,
+focused commits, dispatch fallback and candidate-bound evidence. Split distinct
+outcomes, not a fixed line count. Read `notes.md` first if present.
 
 `tasks.md` owns completion state; `plan.md` owns the detail. Every item must
 have its task and every task its item — a number in one file and not the
@@ -136,8 +142,8 @@ automatically copies `.env` or dirty input. Read-only specialists may still fan 
    source repo and check off `tasks.md`. In managed mode checkpoint the checkoff
    with `homonto workspace checkpoint --path changes/<name> --message "Record task completion"`.
    Existing combined mode retains one source-plus-checkoff commit per task;
-   separate existing records get their own named commit. Never batch tasks or
-   leave completed bookkeeping unrecorded.
+    separate existing records get their own named commit. A permitted cohesive
+    batch names and verifies each included task; never leave completed bookkeeping unrecorded.
 
 **The task list is live state — append before doing, check off at landing.**
 The checkboxes are the change's ground truth; a fresh session resumes from
@@ -159,12 +165,13 @@ gets lost. Four rules, no exceptions:
    every checkoff and bookkeeping commit serially before the next dispatch.
   Never check off unverified work or defer bookkeeping past the next task.
   `plan.md` has no checkbox to update.
-- **Never renumber, reorder, or delete tasks.** A task that becomes
+- **Keep stable identifiers and completed history.** A task that becomes
   unnecessary is checked with a one-line reason
    (`- [x] N.N SUPERSEDED: <why> [trace #K]`); appended tasks take the next
    dotted number and trace ID.
-  Stable numbering is what makes "first unchecked task" a reliable resume
-  point.
+   Record a dependency override before executing an appended prerequisite;
+   resume the first executable unchecked task under the shared execution policy.
+   Keep checkbox order and IDs stable rather than renumbering history.
 - **Fix the list before writing more code.** If at any moment the checkboxes
   do not describe reality (an unchecked task is actually done, work happened
   that no task names), stop and reconcile the list first — that state is a
@@ -192,7 +199,7 @@ candidate; the serial review timing above does not override that fifth condition
 
 A diff worth more than one opinion gets **several reviewers at once, one per
 lens** (correctness, security, contract/scope, clarity) rather than one
-generalist pass — they are read-only, so concurrency costs nothing but tokens.
+generalist pass when distinct coverage justifies the latency and token cost.
 These lenses read **the diff**; verify's skeptic lenses attack **the running
 system's claims** and are named differently for that reason
 (`onto-verify/references/adversarial.md`). A reviewer pass never discharges a
@@ -245,12 +252,12 @@ cost, or another user-owned constraint.
 - [ ] Every `tasks.md` item checked (or explicitly marked deferred-to-close
       with the reason **and** a one-line statement of why it is non-runtime
       work — the close lint blocks runtime-behavior deferrals)
-- [ ] One implementation commit per task; in subagent mode, separate
+- [ ] Focused implementation commits identify each completed task; in subagent mode, separate
       coordinator bookkeeping commits are complete in existing mode, or named
       records checkpoints in managed mode. Selected source execution roots and
       owned records satisfy their clean gates; preserved dirt is not a waiver.
-- [ ] Project build + test suite run fresh and pass (state the commands and
-      results — do not rely on memory)
+- [ ] Project build + test suite have candidate-bound passing evidence (commands,
+      inputs and output recorded); verify may reuse it when unchanged
 - [ ] Decisions recorded via `onto set isolation|build-mode|tdd-mode <name> …`
 - [ ] If recorded phase is build, advanced build → verify via `onto advance
       <name>`; on a downward mismatch, skipped advance and returned to `/onto`

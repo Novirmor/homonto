@@ -56,10 +56,11 @@ If goals, scope, constraints, or acceptance scenarios still have gaps, keep
 asking — one question at a time. Do not write a design around an unresolved
 unknown; resolve it or explicitly record it as a risk with a fallback.
 
-### 3. Evaluate 2–3 approaches
+### 3. Evaluate meaningful alternatives
 
-Develop genuinely different candidate approaches with trade-offs and a
-recommendation. Record them in `notes.md`. When they are equivalent from the
+Compare genuinely viable approaches with trade-offs and a recommendation. When
+only one approach fits the constraints, record that basis without inventing
+alternatives to meet a quota. Record the comparison in `notes.md`. When alternatives are equivalent from the
 user's perspective, select the recommended technical approach and continue.
 Present a choice only when the alternatives materially change product behavior,
 compatibility, security posture, cost, or another user-owned constraint.
@@ -148,9 +149,8 @@ Never stash, overwrite, or absorb user work to make the preferred choice fit.
       queries and file reads the design rests on, or the recorded fallback;
       never blank
 - [ ] `notes.md` records the confirmed approach and every decision made
-- [ ] onto-no-slop pass run over `design.md`, every ADR draft, and
-      `notes.md`, each pass recorded in `notes.md` (`no-slop: <artifact>
-      done`)
+- [ ] Design, ADR drafts and notes edited for clarity with `onto-no-slop`;
+      no style receipt required
 - [ ] Isolation chosen via `onto set isolation <name> branch|worktree` and
       the approach token recorded via `onto set approach-confirmed <name>
       "<evidence>"` — the binary refuses design → build without both

@@ -7,7 +7,7 @@ decides *whether*.
 Releases are driven by the `release` GitHub workflow
 (`.github/workflows/release.yml`), which triggers on any pushed `v*` tag. Do
 not push a tag until the local gate and packaging rehearsal pass (or the
-one-time v0.32.0 CI substitution in "OpenCode 2 release hold points"). After
+version-specific CI substitutions below). After
 the tag is pushed, the workflow must re-run the CI gates, cross-compile every
 target, write checksums for the archives, and publish a GitHub release.
 
@@ -76,11 +76,13 @@ Before choosing a tag commit:
    suite, is a tag candidate. CI and the release workflow install Node 24 for
    the V2 permission-observer contract check.
 
-For **v0.32.0 only**, the release owner approved a green CI run of the exact
+For **v0.32.0 and v0.32.1**, the release owner separately approved a green CI run of the exact
 same `./scripts/gate.sh` on the final tag commit as the pre-tag gate when the
 local host has no Docker command. The local run must still pass its available
 steps; CI must finish the Docker E2E and release-packaging smoke **before**
 tagging. This is not a waiver of either check or a default for later releases.
+The v0.32.1 approval covers the workflow/skill repair release; it does not claim
+new live model-compliance or GitHub-publication validation.
 
 If a hold point is still open, keep the change on the branch. For an
 **explicitly owner-approved early prerelease only**, a green complete gate and

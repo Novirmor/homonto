@@ -15,7 +15,40 @@ bookkeeper) — for every supported OS/arch as separate archives under one
 `SHA256SUMS`. `onto` and `to` each require `homonto` to have installed their
 framework first (`[frameworks.onto]` / `[frameworks.to]` + `homonto apply`).
 
-### v0.32.0 — OpenCode 2
+### v0.32.1 — consistent workflow and skill instructions
+
+The embedded catalog is 0.32.2 (onto 0.25.2, to 0.22.2, h 0.10.2);
+all three binary versions are stamped v0.32.1 from the release tag.
+
+- Explicit workflow choices stay respected, including full onto for small work.
+  In-scope defects found before archive return to implementation without another
+  continuation approval. `onto-fix` and `onto-tweak` retain inline repair tasks
+  without acquiring a full design or plan; fix keeps its failing-test requirement.
+- Selection and preset escalation share one eligibility table. Test counts and
+  private configuration-key edits alone no longer force a full workflow.
+- Required user decisions use OpenCode's built-in `question` tool. Missing,
+  denied or dismissed questions leave decisions pending rather than implying consent.
+- Both workflows document direct fallback when dispatch is unavailable, with the
+  missing independent review reported. Explicit independent-review requirements
+  still block; denied or unsuccessful workers do not qualify as unavailable.
+- Shorter dispatch/close skills link to shared execution and recovery policies.
+  Tasks preserve identity while permitting recorded prerequisite execution;
+  verified evidence can serve multiple checkpoints when its candidate and inputs
+  remain unchanged. Prose edits preserve technical meaning without blanket style
+  bans or separate style receipts.
+
+**Upgrade:** install matching v0.32.1 binaries, run `homonto plan` and
+`homonto apply` in each configured project, then restart OpenCode to load the
+updated skills. Existing workflow records do not migrate.
+
+**Validation:** catalog contracts, installed-reference checks and executable CLI
+recovery tests cover both presets. These tests do not establish live model
+compliance. No new live agent-behavior evaluation was run. The release owner
+approved the complete pre-tag CI gate, including Docker E2E and packaging, as a
+substitute for unavailable local Docker for v0.32.1; available local checks must
+also pass. The release workflow repeats the full gate before publication.
+
+### Previous: v0.32.0 — OpenCode 2
 
 The embedded catalog is 0.32.1 (onto 0.25.1, to 0.22.1, h 0.10.1);
 the binary version is stamped from the release tag when packaged.

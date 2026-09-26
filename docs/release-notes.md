@@ -15,14 +15,10 @@ bookkeeper) — for every supported OS/arch as separate archives under one
 `SHA256SUMS`. `onto` and `to` each require `homonto` to have installed their
 framework first (`[frameworks.onto]` / `[frameworks.to]` + `homonto apply`).
 
-### v0.32.0-rc.1 — early OpenCode 2 preview
+### v0.32.0 — OpenCode 2
 
-This is a **pre-release for evaluation**, not a production GitHub-publication
-recommendation. Its release owner explicitly accepted the remaining live
-validation gaps for this limited RC; that acceptance does not establish their
-safety or waive them for a stable release.
-The embedded catalog advances to 0.32.0 (onto 0.25.0, to 0.22.0, h 0.10.0);
-the binary version is stamped from the candidate tag when packaged.
+The embedded catalog is 0.32.1 (onto 0.25.1, to 0.22.1, h 0.10.1);
+the binary version is stamped from the release tag when packaged.
 
 - Builtin `onto`, `to`, and `h` now project the V2 workflow server/terminal plugin
   by default: session-bound recovery context, read-only status/handoff tools,
@@ -38,14 +34,20 @@ the binary version is stamped from the candidate tag when packaged.
   service, post-approval freshness checks, and receipt reconciliation. An
   unregistered/standalone or mismatched service fails closed. A local fake-model
   and fake-`gh` run exercised denial and an exactly-once simulated send on
-  OpenCode 2.0.16; **no real GitHub publication was tested**.
+  OpenCode 2.0.16; the release owner reports a separate real-GitHub sandbox run.
 - `[tui.opencode]` now projects supported settings to global `cli.json`, not
   `tui.json`. Only four documented legacy aliases map automatically; unsupported
   V1-only terminal fields fail validation. Homonto leaves V1 `tui.json(c)`
   untouched and preserves unmanaged V2 settings. Supported V1 server config
   remains in its compatible syntax; no wholesale JSON migration is required.
+- For a new change without an explicit workflow path, the coordinator now asks
+  once with a task-specific recommendation among viable `to`, `onto fix`,
+  `onto tweak`, and full `onto` choices. `/onto` asks only for the onto path;
+  `/to`, `/onto-fix`, `/onto-tweak`, and `/onto-open` are explicit. Resuming an
+  existing change does not prompt again. Reapply and restart OpenCode to load
+  the updated catalog prompts; existing workflow records do not migrate.
 
-**Before trying this candidate:** keep a copy of your V1 config and state. If
+**Before upgrading:** keep a copy of your V1 config and state. If
 you want OpenCode's one-time terminal preference migration, start V2 *before*
 homonto writes `cli.json`. Install matching versions of all three binaries,
 run `homonto plan` and `homonto apply` in each configured project, then quit and
@@ -56,13 +58,17 @@ does not restore V1 automatically. A snapshot undo does not reverse the
 `tui.json` → `cli.json` projection: re-declare the intended terminal values
 and apply. Do not point a V1 OpenCode installation at native V2-only settings.
 
-**Verified for this RC:** the full Go/race/vet/vulnerability gate and
-triple-binary Docker packaging/checksum smoke passed, plus an isolated
-OpenCode 2.0.16 local-model/fake-`gh` approval flow. **Not verified:** live
-terminal reload/notification behavior and a *real* GitHub sandbox run for a
-permitted and denied publication (including stale destinations and uncertain
-sends). The fake run is evidence about the protocol, not the external
-publication path. Complete those checks before recommending production use.
+**Validation:** the RC passed the full Go/race/vet/vulnerability gate and
+triple-binary Docker packaging/checksum smoke, plus an isolated OpenCode 2.0.16
+local-model/fake-`gh` approval flow. For the stable release the owner reports
+passing live V2 terminal/reload/notification checks and a real throwaway-GitHub
+sandbox: denial, one approved publication with matching receipt, changed
+actor/destination/PR identity, and uncertain-send reconciliation. The live
+results are owner-reported; the isolated fake run is not evidence of external
+publication. The release owner approved the identical `./scripts/gate.sh` CI
+run on the final commit as a one-time substitute for the tagging host's missing
+Docker environment. The tag must not be pushed unless that run passes in full,
+including Docker E2E and release packaging.
 See the [release checklist](release-checklist.md).
 
 ### New in v0.31.0 — expanded GitHub draft capacity

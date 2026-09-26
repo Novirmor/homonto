@@ -6,8 +6,9 @@ decides *whether*.
 
 Releases are driven by the `release` GitHub workflow
 (`.github/workflows/release.yml`), which triggers on any pushed `v*` tag. Do
-not push a tag until the local gate and packaging rehearsal pass. After the
-tag is pushed, the workflow must re-run the CI gates, cross-compile every
+not push a tag until the local gate and packaging rehearsal pass (or the
+one-time v0.32.0 CI substitution in "OpenCode 2 release hold points"). After
+the tag is pushed, the workflow must re-run the CI gates, cross-compile every
 target, write checksums for the archives, and publish a GitHub release.
 
 ## Pre-tag verification
@@ -37,12 +38,13 @@ is where the old hand-written checks now live, done against a disposable
   refusal, the `--verified` requirement, archive, doctor and convergence,
   and onto/to coexistence with shared-resource deduplication.
 
-## OpenCode 2 candidate hold points
+## OpenCode 2 release hold points
 
-For the proposed **v0.32.0-rc.1**, keep the `-rc` suffix:
-this runtime transition is still an early preview. Completing the Go/Docker
-gate is necessary, **not sufficient** to claim production OpenCode 2 or GitHub
-publication support: those suites do not boot the real OpenCode 2 host.
+The **v0.32.0-rc.1** preview accepted live-validation gaps. Do not carry those
+waivers into **v0.32.0**: the Go/Docker gate alone does not boot the real
+OpenCode 2 host or prove GitHub publication. The release owner reports passing
+the live terminal and throwaway-GitHub checks for stable v0.32.0; retain their
+evidence separately and do not describe the RC's fake-`gh` run as a real send.
 
 Before choosing a tag commit:
 
@@ -57,7 +59,7 @@ Before choosing a tag commit:
    closed. A standalone/unregistered server intentionally cannot authorize
    GitHub publication. The isolated local model + fake `gh` run proves no
    external send occurred, not that real GitHub accepted a receipt.
-3. Before enabling publication beyond preview, run a **real GitHub sandbox**
+3. Before stable publication, run a **real GitHub sandbox**
    using a throwaway repo/account: verify a denied send, a single permitted
    send with matching receipt, changed actor/destination/PR OIDs, and uncertain
    send reconciliation. Never use a production issue/PR for this check.
@@ -74,11 +76,16 @@ Before choosing a tag commit:
    suite, is a tag candidate. CI and the release workflow install Node 24 for
    the V2 permission-observer contract check.
 
-If a hold point is still open, the default is to keep the change on the branch.
-For an **explicitly owner-approved early prerelease only**, a green complete
-gate and packaging smoke remain mandatory; name every waived live-only check
-in the published release notes and do not claim production support. Never
-carry such a waiver forward to a stable release by implication.
+For **v0.32.0 only**, the release owner approved a green CI run of the exact
+same `./scripts/gate.sh` on the final tag commit as the pre-tag gate when the
+local host has no Docker command. The local run must still pass its available
+steps; CI must finish the Docker E2E and release-packaging smoke **before**
+tagging. This is not a waiver of either check or a default for later releases.
+
+If a hold point is still open, keep the change on the branch. For an
+**explicitly owner-approved early prerelease only**, a green complete gate and
+packaging smoke remain mandatory; name every waived live-only check in the
+published release notes and do not claim production support.
 
 > **Dogfooding is deferred to v1.** This repository is developed directly
 > on branches, with no external workflow stack
@@ -93,7 +100,7 @@ carry such a waiver forward to a stable release by implication.
 
 ## Tag and publish
 
-1. Pick the version. Pre-releases use a suffix (proposed
+1. Pick the version. Pre-releases use a suffix (for example,
    `v0.32.0-rc.1`); a bare
    `vMAJOR.MINOR.PATCH` is a full release. The workflow marks any tag
    containing `-` as a GitHub pre-release automatically.
@@ -101,7 +108,7 @@ carry such a waiver forward to a stable release by implication.
    it:
 
    ```sh
-    TAG=v0.32.0-rc.1 # replace for a later candidate
+    TAG=v0.32.0 # replace for a later release
     git tag -a "$TAG" -m "$TAG"
     git push origin "$TAG"
    ```
@@ -125,7 +132,7 @@ release commit layout, and do not tag while this smoke covers only some of
 the binaries:
 
 ```sh
-TAG=v0.32.0-rc.1 # replace for the tag being checked
+TAG=v0.32.0 # replace for the tag being checked
 GOBIN=$(mktemp -d)
 export GOBIN
 go install "github.com/noviopenworks/homonto@$TAG"
@@ -143,7 +150,7 @@ must download the tagged script, verify the real release archives against
 binary, temp dir, decline initialization):
 
 ```sh
-TAG=v0.32.0-rc.1 # replace for the tag being checked
+TAG=v0.32.0 # replace for the tag being checked
 TMPBIN=$(mktemp -d)
 curl -fsSL -o /tmp/homonto-install.sh \
   "https://raw.githubusercontent.com/noviopenworks/homonto/$TAG/scripts/install.sh"
@@ -225,7 +232,7 @@ plus a follow-up, never a force-push:
    offered:
 
    ```sh
-   TAG=v0.32.0-rc.1 # the affected tag; never reuse its version
+   TAG=v0.32.0 # the affected tag; never reuse its version
    gh release delete "$TAG" --yes
    ```
 
@@ -236,7 +243,7 @@ plus a follow-up, never a force-push:
    git push origin ":refs/tags/$TAG"
    ```
 
-3. `go install ...@v0.32.0-rc.1` keeps working for anyone who already
+3. `go install ...@v0.32.0` keeps working for anyone who already
    resolved it (the module proxy caches tags), so a broken release is
    corrected by shipping a higher patch/rc tag, not by expecting the old
    one to vanish. Never re-point an existing tag at a different commit.

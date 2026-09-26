@@ -26,26 +26,26 @@ v0.13.0 (configs naming them fail at load naming the key).
   implementers OpenCode access to those paths, while undeclared directories and
   read-only specialists stay outside that boundary.
 
-### OpenCode 2 early preview
+### OpenCode 2
 
-**v0.32.0-rc.1** is an evaluation prerelease, not a production
-support guarantee. Its default runtime targets OpenCode 2: builtin
+**v0.32.0** targets OpenCode 2 by default: builtin
 `onto`, `to`, and `h` install the V2 workflow server and terminal plugin.
+For new work without an explicit workflow choice, the coordinator recommends
+and asks once among viable `to`, `onto fix`, `onto tweak`, and full `onto` paths;
+an existing change resumes in its recorded workflow without another prompt.
 Supported V1 server configuration syntax remains accepted by OpenCode 2; a
 wholesale JSON rewrite is not required. Explicitly enabling the old
 `workflow_bridge` still loads a V1 plugin and is **not** V2-compatible. `plan`
 and `doctor` report that opt-in and flag external plugins as unverified; these
 are advisory findings, not a successful runtime compatibility test.
 
-**What has been checked:** the Go suite, focused race tests, V2 TypeScript
-contracts, and an isolated OpenCode 2.0.16 server with a local model and fake
-`gh` implementation. The sandbox covered plugin activation, the permission →
-native-question → exact-shell-permission flow, denial, and one simulated send
-with a validated receipt. **No external model call or real GitHub comment was
-made.** The full pre-tag gate, including Docker packaging, passed locally.
-A real GitHub sandbox and live V2 terminal notification/reload checks remain
-unverified; this limited prerelease proceeds with those gaps explicitly
-accepted, not as a production-support claim. See the
+**Validation:** the v0.32.0-rc.1 gate passed the Go, race, TypeScript contract,
+and Docker packaging checks. An isolated OpenCode 2.0.16 local-model/fake-`gh`
+run checked plugin activation, denial, and one simulated approved send. For the
+stable release, the release owner also reports passing live V2 terminal/reload
+checks and a real throwaway-GitHub sandbox covering denial, approval, changed
+actor/destination/PR identity, and uncertain-send reconciliation. These live
+results are owner-reported, not independently reproduced here. See the
 [release notes](docs/release-notes.md) and
 [release checklist](docs/release-checklist.md).
 
@@ -75,7 +75,7 @@ between bridges removes the inactive homonto-owned link; foreign paths are
 preserved and reported as conflicts. Disabling `workflow_context` does not
 automatically restore the V1 bridge; that requires an explicit legacy opt-in.
 
-For a preview, keep a backup of V1 config and state, install matching versions
+Before upgrading, keep a backup of V1 config and state, install matching versions
 of `homonto`, `onto`, and `to`, inspect `homonto plan`, then run `homonto apply`.
 Quit and restart OpenCode after the apply. Do not point V1 OpenCode at V2-only
 terminal settings; restoring a V1 setup requires its original config, not only
@@ -122,13 +122,14 @@ source with the command observed in the tool hook and requires an identical
 single shell resource. The
 [permission producer](https://github.com/anomalyco/opencode/blob/v2.0.16/packages/core/src/permission.ts)
 emits indistinguishable `always` replies for some automatic approvals, so these
-do not count toward the threshold. Execution is not approval. Full release
-readiness requires verification against the installed V2 release and a real
-GitHub sandbox before production publication. In an isolated V2.0.16 server,
+do not count toward the threshold. Execution is not approval. Before the stable
+release, the owner reported completing live V2 and real GitHub sandbox checks.
+In an isolated V2.0.16 server,
 the read-only panel and permission → native question → shell permission →
 receipt flow were exercised with a local model and a fake `gh` binary; denial
 never sent, and allowing both approvals sent once to the fake destination.
-No external GitHub publication or external model call was made.
+That isolated run made no external GitHub publication or model call; the
+separate real-GitHub sandbox did exercise publication in a throwaway repo.
 
 The next V2-native opportunities are not implemented yet:
 

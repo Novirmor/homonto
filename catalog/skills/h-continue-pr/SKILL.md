@@ -160,15 +160,14 @@ exact recorded candidates, workflow-specific recovery, and pending-mode conflict
      continuation and route the existing change through its own dispatcher
      (abandon or repurpose), or stop. Never silently orphan an active
      change.
-    - No match → select and explain the workflow using explicit user preference
-      > existing matching change > repository policy > risk/fit, as defined in
-      h autonomy. Use `to` for bounded local work and `onto` for audit, handoff,
-      security-sensitive, or cross-cutting work; do not ask a mandatory
-      `to`/`onto` question. Open an onto `fix` change or a `to` change seeded
-       from the PR context, passing the creation-time `--base` choices from
-       step 4 and `--dir "<configRoot>"` before allocating its worktree. Preserve
-       dirty originals; no checkout or cleanup is needed to select a different
-       local base branch. The archived prior change, if any, is history:
+    - No match → follow h autonomy's new-change selection: honor an explicit
+      user path, otherwise recommend among viable `to`, `onto fix`, `onto
+      tweak`, and full `onto` options with reasons and ask once before creating
+      a change. Do not prompt when resuming a matching active change. Open the
+      chosen path's change seeded from the PR context, passing the creation-time
+      `--base` choices from step 4 and `--dir "<configRoot>"` before allocating
+      its worktree. Preserve dirty originals; no checkout or cleanup is needed
+      to select a different local base branch. The archived prior change, if any, is history:
       reference it and the PR in the new record; archives are never edited.
    - Several plausible matches → ask; never guess.
 6. **Drive and integrate the workflow.** Fix each feedback item through the

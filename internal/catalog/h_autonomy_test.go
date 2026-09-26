@@ -155,11 +155,10 @@ func TestHAutonomyRoutingTrustAndSafety(t *testing.T) {
 				"bounded retries", "reconcile remote state before retrying a mutation",
 				"genuinely missing material intent", "ambiguous change matches",
 				"unattributed dirty work that conflicts with safe progress",
-				"explicit user preference > existing matching change > repository policy > risk/fit",
+				"[new-change workflow selection](../../homonto/references/workflow-selection.md)",
 				"Resume a unique match through its dispatcher; never duplicate it",
 				"supported conversion", "Several plausible matches require a user decision",
-				"choose `to` for bounded local work", "choose `onto` for audit, handoff, security-sensitive, or cross-cutting work",
-				"continue without a mandatory `to`/`onto` question",
+				"Present viable options and ask once",
 				"trusted arbitrary code execution", "contributor-controlled code on PR heads and forks",
 				"default to allowing task-relevant inspection",
 				"Inspect commands and scripts for relevance",
@@ -181,7 +180,7 @@ func TestHAutonomyRoutingTrustAndSafety(t *testing.T) {
 			"skills/h-resolve-issue/SKILL.md",
 			[]string{
 				"**Spike first.**", "h-spike-issue` skill to completion",
-				"explicit user preference > existing matching change > repository policy > risk/fit",
+				"recommend a viable `to`",
 				"Ask for ambiguous matches or material scope conflicts",
 				"Only once the workflow's verification has passed",
 				"integration: pr", "onto complete-integration", "Reuse the single exact match",
@@ -192,7 +191,7 @@ func TestHAutonomyRoutingTrustAndSafety(t *testing.T) {
 		{
 			"skills/h-continue-pr/SKILL.md",
 			[]string{
-				"No match", "explicit user preference > existing matching change > repository policy > risk/fit",
+				"No match", "recommend among viable `to`",
 				"Several plausible matches", "dirty work conflicts with safe progress",
 				"OWNER, MEMBER, and COLLABORATOR feedback routes into the workflow",
 				"CONTRIBUTOR, FIRST_TIME_CONTRIBUTOR, NONE", "unknown, or other association require a user decision",
@@ -340,7 +339,7 @@ func TestHAutonomyNoRoutineApprovalRegressions(t *testing.T) {
 		for _, prohibited := range []string{
 			"always asks the user to choose", "ask which kind to open",
 			"a dialog with exactly those options", "This is irreducible user intent",
-			"Do not pick `to` or `onto` for the user", "workflow question",
+			"Do not pick `to` or `onto` for the user",
 			"each one prompts before running", "never pre-approve or batch-accept",
 			"do not use those runs as evidence", "Disable the allowance",
 			"repeat each required command with its own approval",

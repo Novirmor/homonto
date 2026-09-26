@@ -15,8 +15,8 @@ and stop.
 
 Continue in the same invocation to one verified PR closing the issue and a
 completed workflow record, unless the user names an earlier endpoint or asks
-to pause. The skill spikes first, selects and explains the workflow by explicit
-user preference > existing matching change > repository policy > risk/fit,
-and publishes only after verification passes. No mandatory workflow-choice
-dialog or second conversational push/PR approval is needed; configured tool
-permissions and genuine material-intent questions still apply.
+to pause. The skill spikes first, resumes a matching change or honors an explicit
+workflow choice; otherwise it recommends viable `to`, `onto fix`, `onto tweak`,
+or full `onto` paths and asks once before creating a change. It publishes only
+after verification passes. This choice is not a second conversational push/PR
+approval; configured tool permissions and material-intent questions still apply.

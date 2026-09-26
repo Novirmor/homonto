@@ -32,9 +32,14 @@ that satisfies the request and repository policy. This includes implementation
 approach, workspace name, branch or worktree isolation, build mode, test mode,
 task decomposition, and local integration mechanics.
 
-Ask the user only when the missing answer cannot be recovered from the request,
-code, tests, documentation, or established repository policy and different
-answers would materially change one of these:
+The new-change workflow choice is the one deliberate exception: follow
+[workflow selection](workflow-selection.md) before creating a change when the
+user has not selected its path. This does not reopen a recorded choice on resume.
+
+Ask the user only when (apart from the new-change choice above) the missing
+answer cannot be recovered from the request, code, tests, documentation, or
+established repository policy and different answers would materially change
+one of these:
 
 - product behavior, acceptance criteria, or scope
 - compatibility, security posture, cost, or an external commitment

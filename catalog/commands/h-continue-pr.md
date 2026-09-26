@@ -15,9 +15,9 @@ and stop.
 repository. Resolve its canonical identity rather than requiring a syntax rerun.
 
 The skill feeds the PR's outstanding feedback into the matching workflow
-change. With no match, select and explain the workflow by explicit user
-preference > existing matching change > repository policy > risk/fit; do not
-require a workflow-choice dialog. Continue in the same invocation to verified
+change. With no match, honor an explicit path or recommend viable `to` and
+onto paths with reasons and ask once before creating a change. Continue after
+the answer in the same invocation to verified
 fixes pushed to the exact existing PR head, one evidence-backed summary comment,
 and honestly addressed threads, unless the user names an earlier endpoint or
 asks to pause. The invocation authorizes those actions after verification;

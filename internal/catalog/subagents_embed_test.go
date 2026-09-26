@@ -118,7 +118,8 @@ func TestHomontoPrimaryPromptIsComplete(t *testing.T) {
 		"`onto` and `to` dispatcher skills are your doctrine",
 		"## GitHub intake",
 		"without an explicit approval",
-		"automatically chooses `to` or `onto`",
+		"homonto/references/workflow-selection.md",
+		"recommend and ask once among viable `to`",
 		"user's stated preference",
 		"any existing change, repository policy",
 		"risk, and evidence",
@@ -134,7 +135,7 @@ func TestHomontoPrimaryPromptIsComplete(t *testing.T) {
 			t.Errorf("homonto prompt missing %q", want)
 		}
 	}
-	for _, obsolete := range []string{"asks the user to pick", "question is irreducible user intent"} {
+	for _, obsolete := range []string{"automatically chooses `to` or `onto`", "question is irreducible user intent"} {
 		if strings.Contains(text, obsolete) {
 			t.Errorf("homonto prompt retains obsolete dialog requirement %q", obsolete)
 		}

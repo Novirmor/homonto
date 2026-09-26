@@ -86,9 +86,12 @@ Run `to status --json` and find the active change.
 
 - **One active change** → that is the change; note its phase.
 - **No active change** and `$ARGUMENTS` (or the conversation) describes new
-  work → first check bounded fit before allocation: design/spec/evidence-gated
-  or cross-cutting work routes to onto now, not after creating a binding that
-  blocks promotion. Resolve managed initialization and legacy isolation under
+  work → follow the shared [workflow-selection policy](../homonto/references/workflow-selection.md)
+  before `to new`. `/to` explicitly selects to; otherwise recommend viable
+  paths and ask once when no workflow was specified; check bounded fit before allocation:
+  design/spec/evidence-gated or cross-cutting work cannot silently
+  be routed to to after creating a binding that blocks promotion. Resolve
+  managed initialization and legacy isolation under
   the shared policy before scaffold writes. Derive source repositories in scope,
   create it with `to
   new <kebab-name>` plus one `--repo <alias>` per selected source (required in

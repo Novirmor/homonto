@@ -8,9 +8,9 @@ description: Use when the user asks to implement, fix, or resolve a GitHub issue
 Resolve one GitHub issue by driving a real workflow — never by patching
 around one.
 
-Invoking `/h-resolve-issue <issue>` is consent to: run the spike, select and
-explain the workflow, drive the selected workflow to completion under its own
-policy, and — after that workflow's verification passes — push the branch
+Invoking `/h-resolve-issue <issue>` is consent to: run the spike, select a
+workflow with the user if no path was specified, drive it to completion under
+its policy, and — after that workflow's verification passes — push the branch
 and open one pull request closing the issue. It is not consent to skip the
 spike, push before verification, or
 force-push.
@@ -43,12 +43,13 @@ candidate pinning, exact PR reuse, recovery, and repository-qualified issue inte
    does not authorize it or add a publication dialog before implementation. "The issue
    looks tiny" is not a skip condition; a declined spike attempt is recorded
    in the final report, not acted on.
-2. **Select and explain the workflow.** Apply the h autonomy precedence:
-    explicit user preference > existing matching change > repository policy >
-    risk/fit. Inspect both inventories (`to status --all`) and the issue-linked
-    records. Default to `to` for bounded local work, `onto` for audit, handoff,
-    security-sensitive, or cross-cutting work. Present the spike brief and the
-    deciding facts while continuing, not a mandatory workflow-choice dialog.
+2. **Select and explain the workflow.** Apply the shared workflow-selection
+    policy in h autonomy. Inspect both inventories (`to status --all`) and the
+    issue-linked records. Resume a unique match without prompting; honor an
+    explicit user path. Otherwise, after the spike, recommend a viable `to`,
+    `onto fix`, `onto tweak`, or full `onto` path with brief reasons and ask
+    once before creating the change. The question is not another publication
+    approval or a reason to pause again at phase boundaries.
     Verify the selected binary (`to version` or `onto version`);
     `homonto doctor` diagnoses missing applied frameworks. Missing required
     tooling is a blocker, not grounds to silently switch workflows.

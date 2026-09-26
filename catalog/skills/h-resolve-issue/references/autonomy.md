@@ -20,9 +20,10 @@ produce duplicate PRs or comments. Report a hard prerequisite, denied permission
 or exhausted recovery as a concrete blocker with the preserved state and next
 step, not a routine question about whether to continue.
 
-Ask only for genuinely missing material intent, ambiguous change matches,
-unattributed dirty work that conflicts with safe progress, or a scope change,
-waiver, destructive recovery, or external commitment not already authorized.
+Apart from the new-change workflow selection below, ask only for
+genuinely missing material intent, ambiguous change matches, unattributed dirty work
+that conflicts with safe progress, or a scope change, waiver, destructive
+recovery, or external commitment not already authorized.
 Nontrusted feedback still needs the scope decision required by `h-continue-pr`;
 trusting execution does not authorize implementing every request in PR text.
 Never discard unrelated work, force-push, rewrite history, bypass verification
@@ -40,8 +41,9 @@ identity. Missing declarations or several plausible matches require resolution,
 not an arbitrary external checkout. Validate registered bindings with
 `homonto worktree list --json`; only the coordinator allocates/removes them.
 
-For resolve and no-match continue, use this precedence:
-**explicit user preference > existing matching change > repository policy > risk/fit**.
+For resolve and no-match continue, inspect the user's explicit preference,
+existing matching change, and repository policy before applying the shared
+[new-change workflow selection](../../homonto/references/workflow-selection.md).
 Inspect both workflow inventories and the relevant proposal or plan before
 creating anything. Resume a unique match through its dispatcher; never duplicate
 it. An explicit preference selects the workflow but does not authorize abandoning
@@ -51,12 +53,14 @@ Several plausible matches require a user decision unless the request uniquely
 identifies one. A harmless name collision is solved with another unique name,
 not a new workflow-choice dialog.
 
-With no stronger signal, choose `to` for bounded local work; choose `onto` for
-audit, handoff, security-sensitive, or cross-cutting work. Explain the choice and
-its deciding facts, then continue without a mandatory `to`/`onto` question. The
-spike brief informs risk/fit; it is not an extra approval gate. Check the selected
-workflow's tooling before driving it; missing required tooling is a blocker, not
-permission to silently substitute another workflow.
+For a new change without an explicit path, recommend `to` for bounded solo
+work, `onto fix` for a reproducible bug needing a handoff record, `onto tweak`
+for a small non-bug change needing that record, or full `onto` for design,
+security-sensitive, or cross-cutting work. Present viable options and ask once
+after the spike brief (resolve) or feedback review (continue), before creation.
+The spike brief informs the recommendation; it is not an extra approval gate.
+Check the selected workflow's tooling before driving it; missing required
+tooling is a blocker, not permission to silently substitute another workflow.
 
 ## Trust workspace execution
 

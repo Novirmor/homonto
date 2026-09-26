@@ -49,8 +49,9 @@ add a repo declaration rather than approving an arbitrary directory at runtime.
 - **to** serves focused solo work with less ceremony: `plan -> do -> done`.
 
 The frameworks are complementary: declare either or both, and pick per
-change — the request or command decides which dispatcher the homonto
-coordinator loads (ADR 0045). Do not mix their workspaces or move a
+change using [new-change workflow selection](references/workflow-selection.md)
+— an explicit command selects its path, while an unspecified new change gets
+one recommended choice prompt. Do not mix their workspaces or move a
 change by hand. Use `to promote` when a to change must grow into an onto
 change, and `onto demote` for the way back.
 

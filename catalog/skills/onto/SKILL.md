@@ -102,6 +102,12 @@ on top of, revert, or commit-around uncommitted work you haven't attributed.
 | Exactly one | new description | Continue it when the description fits its recorded scope; ask only when it conflicts or describes independent work |
 | Two or more | anything | Use the named or uniquely matching change; otherwise list them and ask which request the user means |
 
+For a **new** change, apply the shared [workflow-selection policy](../homonto/references/workflow-selection.md)
+before `onto new`. `/onto` selects the onto family; unless the user also
+specified fix, tweak, or full, recommend among viable onto paths and ask once.
+An explicit `/onto-fix`, `/onto-tweak`, or `/onto-open` selects that path.
+Resuming an existing change never reopens this choice.
+
 **Dependencies**: each change's `onto-state.yaml` may name `deps:` — changes
 that must complete before this one builds. A dep is resolved when a legacy
 archive exists, or when a tracked archive's `.onto/integration.json` records
@@ -258,7 +264,8 @@ between open and design.
 | phase close | `onto-close` |
 | done | Report that the change is archived and integrated; continue only if the request already names more work |
 
-New work routes by intent: bug fix with clear reproduction → `onto-fix`;
+Once the new-change choice is made, route by its selected path. For a
+task-specific recommendation: bug fix with clear reproduction → `onto-fix`;
 copy/config/docs/prompt touch-up or a small feature within tweak limits
 (≤5 files excluding tests, no new capability, no existing-spec requirement
 change) → `onto-tweak`; anything needing design → `onto-open` (full).

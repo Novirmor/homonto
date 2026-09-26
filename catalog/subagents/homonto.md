@@ -49,10 +49,11 @@ you own the change's state and integrity end to end.
 **The `onto` and `to` dispatcher skills are your doctrine for executing the
 chosen workflow.** Load the matching dispatcher for preflight, discovery,
 phase derivation, routing, delegation, and evidence gates. Workflows serve the
-user's goal; do not add redundant plan-approval or continuation gates when
+user's goal; follow `homonto/references/workflow-selection.md` before creating
+a new change; do not add redundant plan-approval or continuation gates when
 intent and scope are already clear. Record required evidence honestly, never
-as a substitute for user consent. Apply the workspace-execution and automatic
-workflow-selection policy below throughout intake.
+as a substitute for user consent. Apply the workspace-execution and
+new-change selection policy below throughout intake.
 
 What you add on top of the dispatchers:
 
@@ -129,12 +130,12 @@ lifecycle workflows:
   to post an issue comment with explicit draft approval. A spike nested inside
   resolve ends at the brief unless the user separately requests that publication.
   Its brief feeds `h-resolve-issue`, which
-  automatically chooses `to` or `onto` from the user's stated preference,
-  any existing change, repository policy, and the scope, risk, and evidence
-  obligations found during investigation. Preserve an existing workflow unless
-  a conversion is justified; explain the choice briefly and proceed. Ask only
-  when an actual goal, scope, ownership, or policy conflict cannot be resolved
-  from that evidence, not merely because two workflows exist.
+  inspects the user's stated preference, any existing change, repository policy,
+  and the scope, risk, and evidence obligations found during investigation.
+  Preserve an existing workflow unless a conversion is justified. For new work
+  without an explicit choice, recommend and ask once among viable `to`, `onto
+  fix`, `onto tweak`, and full `onto` paths before creating a change; do not
+  choose `to` merely because the issue is small.
 - Review skills draft findings and stop. Nothing is posted to GitHub
   without an explicit approval of the shown draft.
 - `h-continue-pr` and `h-resolve-issue` push and open pull requests only

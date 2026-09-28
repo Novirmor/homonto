@@ -7,8 +7,6 @@ import (
 	"regexp"
 	"sort"
 	"strings"
-
-	"github.com/noviopenworks/homonto/internal/ontostate"
 )
 
 type scenarioDeclaration struct {
@@ -24,21 +22,21 @@ var scenarioIDLine = regexp.MustCompile(`^Scenario-ID:[\t ]*([^\s<>]+)[\t ]*$`)
 var requirementIDLine = regexp.MustCompile(`^Requirement-ID:[\t ]*([^\s<>]+)[\t ]*$`)
 
 // Index declarations, not prose references or fenced examples. Deltas own their
-// scenario contract; only no-spec presets may declare IDs in tasks/verification.
+// scenario contract; changes without deltas declare IDs in tasks/verification.
 // Each ID has one canonical declaration site, including across those two files.
-func loadScenarioIndex(changeDir string, st ontostate.State) (scenarioIndex, error) {
+func loadScenarioIndex(changeDir string) (scenarioIndex, error) {
 	index := scenarioIndex{}
 	paths, err := deltaSpecPaths(filepath.Join(changeDir, "specs"))
 	if err != nil {
 		return index, err
 	}
-	preset := len(paths) == 0 && (st.Workflow == "fix" || st.Workflow == "tweak")
-	if preset {
+	noDeltas := len(paths) == 0
+	if noDeltas {
 		paths = []string{filepath.Join(changeDir, "tasks.md"), filepath.Join(changeDir, "verification.md")}
 	}
 	for _, path := range paths {
 		data, err := os.ReadFile(path)
-		if preset && os.IsNotExist(err) {
+		if noDeltas && os.IsNotExist(err) {
 			continue
 		}
 		if err != nil {
@@ -63,7 +61,7 @@ func loadScenarioIndex(changeDir string, st ontostate.State) (scenarioIndex, err
 			if fence != "" {
 				continue
 			}
-			if !preset {
+			if !noDeltas {
 				switch {
 				case strings.HasPrefix(line, "### Requirement:"):
 					requirement = strings.TrimSpace(strings.TrimPrefix(line, "### Requirement:"))

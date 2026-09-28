@@ -181,15 +181,21 @@ advances; presets are exempt from the two full-only tokens but still record
 close-plan validation. `onto abandon` is the
 unsuccessful terminal state for work that stops rather than completes.
 
-No-spec fix/tweak changes declare each `Scenario-ID: <id>` once, on a standalone
+Changes without delta files, including full documentation-only changes and
+fix/tweak presets, declare each `Scenario-ID: <id>` once, on an unfenced standalone
 line in **one canonical location**, either `tasks.md` or `verification.md`, not
-both for the same ID. Use plain mentions elsewhere rather than repeating the
-declaration or fabricating delta specs. Structured evidence keeps every attempt,
+both for the same ID. Keep an explicit no-spec justification in the workflow
+review; this declaration mechanism does not waive required spec changes or full
+verification. When delta files exist, only their declarations count, even if
+they contain no usable IDs. `onto evidence record` rejects unknown and duplicate
+IDs before writing a receipt. Use plain mentions elsewhere rather than repeating
+the declaration or fabricating delta specs. Structured evidence keeps every attempt,
 but the last appended claim for each unambiguous `(repo, task, scenario)`
 supersedes earlier ones. Duplicate declarations are doctor findings with paths
 and line numbers, even without a sidecar; ambiguous IDs provide neither coverage
 nor trace supersession. Prose references and fenced examples are not declarations.
-See [ADR 0053](../adr/0053-keep-history-without-blocking-fresh-verification.md).
+See [ADR 0053](../adr/0053-keep-history-without-blocking-fresh-verification.md) and
+[ADR 0065](../adr/0065-resolve-no-delta-scenarios-for-every-workflow.md).
 Doctor also checks current claims for staleness. The failed-round counter remains
 historical: at least three failures is a doctor finding only while the current
 verification result is still `fail`, not after a later pass.

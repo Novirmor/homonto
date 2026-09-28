@@ -23,9 +23,14 @@ but are not that unresolved-rounds finding. Structured evidence staleness checks
 use the latest claim per unambiguous `(repo, task, scenario)`; superseded attempts
 remain audit history. Duplicate `Scenario-ID` declarations are findings with
 paths and line numbers even without a sidecar; ambiguous IDs provide no coverage
-or trace supersession. No-spec presets declare each ID once in either tasks or
-verification, using plain references elsewhere. See
-[ADR 0053](../adr/0053-keep-history-without-blocking-fresh-verification.md).
+or trace supersession. Changes without delta files, including full workflows,
+declare each ID once in either tasks or verification, using plain references
+elsewhere. Delta files take precedence whenever present. Recording rejects
+unknown or ambiguous IDs without changing evidence history; doctor still finds
+claims whose declarations later disappear. No-spec justification remains a review
+obligation, not a machine-read gate. See
+[ADR 0053](../adr/0053-keep-history-without-blocking-fresh-verification.md) and
+[ADR 0065](../adr/0065-resolve-no-delta-scenarios-for-every-workflow.md).
 A hook can act on the exit code.
 
 For the `to` lifecycle workflow, `to doctor --quiet` has

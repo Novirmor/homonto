@@ -60,6 +60,9 @@ deviations are findings, not footnotes. Re-run stated verifications from
 For presets without design/plan/deltas, verify every proposal Acceptance Scenario
 and the inline tasks' Verify contracts. No deltas does not mean zero scenarios;
 include the fix reproduction or tweak's observable result and regression cases.
+For a full change with a reviewed no-spec justification, verify the proposal's
+acceptance criteria, design decisions, and plan's Verify contracts without
+inventing behavioral spec deltas. Full verification still applies.
 
 **Fan out the analysis, centralize execution.** With more than a handful of
 scenarios, dispatch `onto-explorer` agents concurrently, one per capability or
@@ -138,9 +141,13 @@ current claim again using `onto evidence record`. The latest record for the same
 repository/task/scenario supersedes earlier claims without deleting audit history;
 there is no separate round-reset command. Re-record all claims bound to a changed
 report, not only the previously failing scenario. Never hand-edit the sidecar.
-For no-spec fix/tweak changes, declare stable `Scenario-ID: <id>` lines in
-`tasks.md` or `verification.md` and use those IDs in receipts. Do not invent delta
-specs merely to satisfy evidence lookup. Inspect `onto doctor` / `onto trace`
+For changes without delta files, including full documentation-only changes,
+declare each stable `Scenario-ID: <id>` once on an unfenced standalone line in
+either `tasks.md` or `verification.md` and use plain references elsewhere.
+When delta files exist, only their declarations count. Unknown or duplicate IDs
+are refused during evidence recording. Keep the explicit no-spec justification
+in the workflow review; these declarations do not waive required spec changes.
+Do not invent delta specs merely to satisfy evidence lookup. Inspect `onto doctor` / `onto trace`
 after recording to confirm current claims and resolve stale or unknown-ID findings.
 
 ### 5. Failure handling

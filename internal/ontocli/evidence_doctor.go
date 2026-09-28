@@ -19,7 +19,7 @@ import (
 // even without a sidecar; the absence of a sidecar itself is only a legacy note.
 func evidenceFindings(cmd *cobra.Command, root, changeDir, name string) (findings, notes []string) {
 	st, stateErr := ontostate.LoadChange(changeDir)
-	scenarios, scenarioErr := loadScenarioIndex(changeDir, st)
+	scenarios, scenarioErr := loadScenarioIndex(changeDir)
 	findings = scenarioFindings(name, scenarios)
 	if scenarioErr != nil {
 		findings = append(findings, fmt.Sprintf("%s: evidence scenario contract: %v", name, scenarioErr))
@@ -98,7 +98,7 @@ func evidenceFindings(cmd *cobra.Command, root, changeDir, name string) (finding
 			findings = append(findings, fmt.Sprintf("%s: task #%d not in tasks.md (stale record)", label, rec.Task))
 		}
 		if len(scenarios[rec.Scenario]) == 0 {
-			findings = append(findings, fmt.Sprintf("%s: scenario %q not found in any delta spec or no-spec preset scenario contract (stale or orphaned record)", label, rec.Scenario))
+			findings = append(findings, fmt.Sprintf("%s: scenario %q not found in the scenario contract (delta specs, or tasks.md/verification.md when no delta files exist; stale or orphaned record)", label, rec.Scenario))
 		}
 		source, scoped := sources[rec.Repo]
 		if !scoped {

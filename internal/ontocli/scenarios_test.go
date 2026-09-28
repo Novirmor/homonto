@@ -22,6 +22,9 @@ func TestScenarioDeclarationsRejectAmbiguousEvidence(t *testing.T) {
 		{"same spec distinct scenarios", "full", "specs/first.md", delta, "specs/first.md", delta + otherDelta, "specs/first.md:5", "specs/first.md:13"},
 		{"preset tasks and report", "tweak", "tasks.md", "- [x] #1 verify\nScenario-ID: SC-shared\n", "verification.md", "Result: pass\nScenario-ID: SC-shared\n", "tasks.md:2", "verification.md:2"},
 		{"preset duplicate task declarations", "fix", "tasks.md", "- [x] #1 verify\nScenario-ID: SC-shared\n", "tasks.md", "- [x] #1 verify\nScenario-ID: SC-shared\nAnother obligation:\nScenario-ID: SC-shared\n", "tasks.md:2", "tasks.md:4"},
+		{"full no-delta tasks and report", "full", "tasks.md", "- [x] #1 verify\nScenario-ID: SC-shared\n", "verification.md", "Result: pass\nScenario-ID: SC-shared\n", "tasks.md:2", "verification.md:2"},
+		{"full no-delta duplicate task declarations", "full", "tasks.md", "- [x] #1 verify\nScenario-ID: SC-shared\n", "tasks.md", "- [x] #1 verify\nScenario-ID: SC-shared\nAnother obligation:\nScenario-ID: SC-shared\n", "tasks.md:2", "tasks.md:4"},
+		{"full no-delta duplicate report declarations", "full", "verification.md", "Result: pass\nScenario-ID: SC-shared\n", "verification.md", "Result: pass\nScenario-ID: SC-shared\nAnother obligation:\nScenario-ID: SC-shared\n", "verification.md:2", "verification.md:4"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			root := prepWorkspace(t)
@@ -112,25 +115,37 @@ func TestScenarioDeclarationsRejectAmbiguousEvidence(t *testing.T) {
 }
 
 func TestScenarioDeclarationsIgnoreReferencesAndExamples(t *testing.T) {
-	for _, workflow := range []string{"full", "fix", "tweak"} {
-		t.Run(workflow, func(t *testing.T) {
+	for _, tc := range []struct {
+		name, workflow, declaration string
+	}{
+		{"full delta", "full", "specs/unique.md"},
+		{"fix", "fix", "tasks.md"},
+		{"tweak", "tweak", "tasks.md"},
+		{"full no-delta tasks", "full", "tasks.md"},
+		{"full no-delta report", "full", "verification.md"},
+		{"legacy no-delta report", "", "verification.md"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
 			root := prepWorkspace(t)
 			changeDir := filepath.Join(changesDir(root), "unique")
-			st := ontostate.State{Change: "unique", Workflow: workflow, Phase: "verify"}
+			st := ontostate.State{Change: "unique", Workflow: tc.workflow, Phase: "verify"}
 			if err := ontostate.Save(filepath.Join(changeDir, "onto-state.yaml"), st); err != nil {
 				t.Fatal(err)
 			}
-			const references = "SC-unique is checked again.\nSee Scenario-ID: SC-unique for the contract.\n`Scenario-ID: SC-unique`\n> Scenario-ID: SC-unique\n```markdown\nScenario-ID: SC-unique\n```\n~~~~markdown\nScenario-ID: SC-unique\n~~~~\n"
+			const references = "SC-unique is checked again.\nSee Scenario-ID: SC-unique for the contract.\n`Scenario-ID: SC-unique`\n> Scenario-ID: SC-unique\n```markdown\nScenario-ID: SC-unique\nScenario-ID: SC-backtick-example\n```\n~~~~markdown\nScenario-ID: SC-unique\nScenario-ID: SC-tilde-example\n~~~~\nSee Scenario-ID: SC-reference for another example.\n"
 			writeFile(t, filepath.Join(changeDir, "tasks.md"), "- [x] #1 verify SC-unique\n"+references)
 			writeFile(t, filepath.Join(changeDir, "verification.md"), "Result: pass\n"+references)
 			writeFile(t, filepath.Join(changeDir, "proposal.md"), "Scenario-ID: SC-unique\n")
 			writeFile(t, filepath.Join(changeDir, "notes.md"), "Scenario-ID: SC-unique\n")
-			if workflow == "full" {
+			switch tc.declaration {
+			case "specs/unique.md":
 				writeFile(t, filepath.Join(changeDir, "specs", "unique.md"), "Scenario-ID: SC-unique\n## ADDED Requirements\n### Requirement: unique behavior\nRequirement-ID: REQ-unique\n#### Scenario: checked behavior\nScenario-ID: SC-unique\n"+references)
-			} else {
+			case "tasks.md":
 				writeFile(t, filepath.Join(changeDir, "tasks.md"), "- [x] #1 verify SC-unique\nScenario-ID: SC-unique\n"+references)
+			case "verification.md":
+				writeFile(t, filepath.Join(changeDir, "verification.md"), "Result: pass\nScenario-ID: SC-unique\n"+references)
 			}
-			if index, err := loadScenarioIndex(changeDir, st); err != nil || len(index) != 1 || len(index["SC-unique"]) != 1 {
+			if index, err := loadScenarioIndex(changeDir); err != nil || len(index) != 1 || len(index["SC-unique"]) != 1 {
 				t.Fatalf("references became declarations: %+v %v", index, err)
 			}
 			if _, err := runOnto(t, "evidence", "record", "unique", "--dir", root, "--task", "1", "--scenario", "SC-unique", "--exec", "go", "--cmd-hash", cmdHash); err != nil {
@@ -151,5 +166,79 @@ func TestScenarioDeclarationsIgnoreReferencesAndExamples(t *testing.T) {
 				t.Fatal("unique scenario lost trace coverage")
 			}
 		})
+	}
+}
+
+func TestScenarioFullNoDeltaDoctorRejectsUnknownTask(t *testing.T) {
+	root := prepWorkspace(t)
+	seedDocsLayout(t, root)
+	changeDir := filepath.Join(changesDir(root), "unknown-task")
+	st := ontostate.State{Change: "unknown-task", Workflow: "full", Phase: "verify"}
+	if err := ontostate.Save(filepath.Join(changeDir, "onto-state.yaml"), st); err != nil {
+		t.Fatal(err)
+	}
+	for _, file := range []string{"proposal.md", "design.md", "plan.md"} {
+		writeFile(t, filepath.Join(changeDir, file), "Documentation-only review; no behavior or spec changes.\n")
+	}
+	writeFile(t, filepath.Join(changeDir, "tasks.md"), "- [x] #1 verify documentation\n")
+	writeFile(t, filepath.Join(changeDir, "verification.md"), "Result: pass\nScenario-ID: SC-docs\n")
+	if _, err := runOnto(t, "evidence", "record", "unknown-task", "--dir", root, "--task", "9", "--scenario", "SC-docs", "--exec", "go", "--cmd-hash", cmdHash); err != nil {
+		t.Fatal(err)
+	}
+	if findings, _ := evidenceFindings(NewRootCmd(), root, changeDir, "unknown-task"); len(findings) != 1 || !strings.Contains(findings[0], "task #9 not in tasks.md") {
+		t.Fatalf("unknown task diagnosis: %v", findings)
+	}
+	before, err := os.ReadFile(evidence.Path(changeDir))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if out, err := runOnto(t, "doctor", "--dir", root); err == nil || !strings.Contains(out, "task #9 not in tasks.md") {
+		t.Fatalf("doctor accepted unknown task: %s %v", out, err)
+	}
+	after, err := os.ReadFile(evidence.Path(changeDir))
+	if err != nil || !bytes.Equal(before, after) {
+		t.Fatal("doctor changed unknown-task audit history")
+	}
+}
+
+func TestScenarioFullNoDeltaPreservesExistingEvidence(t *testing.T) {
+	root := prepWorkspace(t)
+	changeDir := seedEvidenceChange(t, root, "existing")
+	if err := os.Remove(filepath.Join(changeDir, "specs", "login.md")); err != nil {
+		t.Fatal(err)
+	}
+	writeFile(t, filepath.Join(changeDir, "verification.md"), "Result: pass\nScenario-ID: handoff-content\nDocumentation-only; no behavioral spec changes.\n")
+	seedGitRepo(t, root)
+	commit, err := resolveCommit(root, "HEAD")
+	if err != nil {
+		t.Fatal(err)
+	}
+	hash, err := hashFile(filepath.Join(changeDir, "verification.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	sidecar := evidence.New("existing")
+	sidecar.Records = []evidence.Record{{Task: 2, Scenario: "handoff-content", Executable: "git", CommandHash: cmdHash,
+		Commit: commit, OperationID: "previous-record", ArtifactHash: hash, At: "2026-09-27T10:00:00Z"}}
+	if err := evidence.Save(changeDir, sidecar); err != nil {
+		t.Fatal(err)
+	}
+	before, err := os.ReadFile(evidence.Path(changeDir))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if findings, _ := evidenceFindings(NewRootCmd(), root, changeDir, "existing"); len(findings) != 0 {
+		t.Fatalf("existing no-delta evidence rejected: %v", findings)
+	}
+	graph := buildTrace(NewRootCmd(), root, changesDir(root), []string{"existing"})
+	covered := false
+	for _, edge := range graph.Edges {
+		covered = covered || edge == (traceEdge{From: "scenario:handoff-content", To: "evidence:existing/e1", Kind: "verified-by"})
+	}
+	if !covered || len(graph.Findings) != 0 {
+		t.Fatalf("existing receipt lost coverage: %+v", graph)
+	}
+	if after, err := os.ReadFile(evidence.Path(changeDir)); err != nil || !bytes.Equal(before, after) {
+		t.Fatal("resolving an existing no-delta receipt rewrote evidence history")
 	}
 }

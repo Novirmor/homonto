@@ -95,6 +95,11 @@ checks listed in its release notes, not the complete local pre-tag gate or the
 release workflow's repeated gate. Local Docker is available for this candidate;
 the earlier CI substitutions do not apply. Stable v0.32.1 remains the latest.
 
+For **v0.32.2-rc.2**, the owner requested a PR and another testing RC for #21.
+The same live-only deferrals apply and are listed in the new release notes.
+The complete local gate, PR checks, and repeated release-workflow gate are
+required; no stable-release support claim or CI substitution is introduced.
+
 > **Dogfooding is deferred to v1.** This repository is developed directly
 > on branches, with no external workflow stack
 > ([ADR 0023](adr/0023-develop-directly-without-comet.md);

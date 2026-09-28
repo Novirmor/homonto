@@ -180,10 +180,15 @@ func TestEvidenceDoctorFindings(t *testing.T) {
 	runOnto(t, "evidence", "record", "ev", "--dir", root,
 		"--task", "2", "--scenario", "SC-reset-expired", "--exec", "go",
 		"--cmd-hash", cmdHash, "--exit", "0")
-	// A stale record: unknown scenario, unknown task.
-	runOnto(t, "evidence", "record", "ev", "--dir", root,
+	writeFile(t, filepath.Join(changeDir, "specs", "removed.md"), "## ADDED Requirements\n### Requirement: retired behavior\n#### Scenario: retired check\nScenario-ID: SC-ghost\n")
+	if _, err := runOnto(t, "evidence", "record", "ev", "--dir", root,
 		"--task", "9", "--scenario", "SC-ghost", "--exec", "go",
-		"--cmd-hash", cmdHash, "--exit", "1")
+		"--cmd-hash", cmdHash, "--exit", "1"); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Remove(filepath.Join(changeDir, "specs", "removed.md")); err != nil {
+		t.Fatal(err)
+	}
 	// A duplicate requirement ID in a second spec.
 	os.WriteFile(filepath.Join(changeDir, "specs", "other.md"), []byte(
 		"## ADDED Requirements\n\n### Requirement: another\n\nRequirement-ID: REQ-reset-1\nMUST x.\n"), 0o644)

@@ -15,7 +15,42 @@ bookkeeper) — for every supported OS/arch as separate archives under one
 `SHA256SUMS`. `onto` and `to` each require `homonto` to have installed their
 framework first (`[frameworks.onto]` / `[frameworks.to]` + `homonto apply`).
 
-### v0.32.2-rc.1 — workflow continuity and GitHub tool recovery
+### v0.32.2-rc.2 — full no-delta verification evidence
+
+This **owner-approved testing prerelease** includes the RC1 continuity and
+GitHub-tool fixes below, plus the fix for #21. The embedded catalog is 0.32.4
+(onto 0.25.4, to 0.22.3, h 0.10.3); all three binary versions are stamped
+v0.32.2-rc.2. Stable v0.32.1 remains the latest stable release.
+
+- Full changes without delta files now resolve standalone, unfenced
+  `Scenario-ID: <id>` declarations in `tasks.md` or `verification.md`, just like
+  fix/tweak presets. Existing valid receipts resolve without migration,
+  deletion, fabricated specs, or a workflow downgrade.
+- When any delta files exist, their declarations remain authoritative, even if
+  they contain no IDs. Unknown or duplicate IDs are refused during evidence
+  recording before any receipt is written. Doctor still detects declarations
+  removed after recording; task, candidate, and artifact-hash checks are unchanged.
+- CLI help and verification instructions describe the supported contract.
+  Explicit no-spec justification remains a workflow-review requirement, not an
+  inferred approval or a waiver of required behavioral specifications.
+
+**Upgrade:** explicitly install v0.32.2-rc.2 binaries, run `homonto plan` and
+`homonto apply` in each configured project, and restart OpenCode. For a change
+blocked by #21 whose declarations and recorded evidence remain valid, rerun
+`onto doctor --dir <config-root>` and `onto trace <change> --dir <config-root>`
+with the new binary; do not delete receipts or alter workflow state to recover.
+If the candidate or verification report changed, record fresh verification.
+
+**Validation and accepted gaps:** regression tests cover the full documentation
+lifecycle in a registered schema-2 source worktree through verify, doctor, trace,
+and archive, plus delta precedence, duplicate/unknown IDs, fenced examples,
+task identity, evidence hashes, and existing receipts. The complete local gate,
+PR CI, and release-workflow gate remain required, including Docker E2E and
+packaging. RC1's live-only validation gaps remain deferred for this RC: no new
+live model-compliance, V2 terminal/reload/notification or native-question test,
+real-GitHub sandbox publication, or live V1/V2 migration smoke is claimed.
+
+### Previous: v0.32.2-rc.1 — workflow continuity and GitHub tool recovery
 
 This is an **owner-approved prerelease for user testing**, not a claim of newly
 validated production support. The embedded catalog is 0.32.3 (onto 0.25.3,

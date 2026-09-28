@@ -52,9 +52,12 @@ func evidenceRecordCmd() *cobra.Command {
 			"onto must not execute verification, or it would bypass the orchestrator's " +
 			"permission allowlist. Finalize verification.md before recording claims. " +
 			"A new claim supersedes earlier claims for the same repository, task, and " +
-			"scenario without deleting audit history. No-spec fix/tweak changes declare " +
-			"Scenario-ID: <id> in tasks.md or verification.md. Each ID must have " +
-			"exactly one declaration site; use plain references elsewhere.",
+			"scenario without deleting audit history. Changes without delta specs, including " +
+			"full documentation-only changes, declare Scenario-ID: <id> in tasks.md or " +
+			"verification.md. When delta files exist, only their declarations count. Each ID " +
+			"must have exactly one declaration site; unknown or duplicate IDs are rejected. " +
+			"Use plain references elsewhere. Keep an explicit no-spec justification in the " +
+			"workflow review; scenario declarations do not waive required spec changes.",
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			name := args[0]
@@ -89,12 +92,15 @@ func evidenceRecordCmd() *cobra.Command {
 			if st.Archived || st.Abandoned {
 				return fmt.Errorf("evidence record: terminal change is immutable")
 			}
-			index, err := loadScenarioIndex(changeDir, st)
+			index, err := loadScenarioIndex(changeDir)
 			if err != nil {
 				return fmt.Errorf("evidence record: scenario contract: %w", err)
 			}
 			if finding := scenarioAmbiguity(scenario, index[scenario]); finding != "" {
 				return fmt.Errorf("evidence record: %s", finding)
+			}
+			if len(index[scenario]) == 0 {
+				return fmt.Errorf("evidence record: unknown Scenario-ID %q; declare it in a delta spec, or in tasks.md or verification.md when no delta files exist", scenario)
 			}
 			alias, source, err := selectedSource(dir, st, repo)
 			if err != nil {
@@ -233,8 +239,8 @@ func buildTrace(cmd *cobra.Command, root, changesDir string, names []string) tra
 	for _, name := range names {
 		changeDir := filepath.Join(changesDir, name)
 		addNode("change", name, name)
-		st, stateErr := ontostate.LoadChange(changeDir)
-		index, indexErr := loadScenarioIndex(changeDir, st)
+		_, stateErr := ontostate.LoadChange(changeDir)
+		index, indexErr := loadScenarioIndex(changeDir)
 		g.Findings = append(g.Findings, scenarioFindings(name, index)...)
 		if indexErr != nil {
 			g.Findings = append(g.Findings, fmt.Sprintf("%s: scenario contract: %v", name, indexErr))

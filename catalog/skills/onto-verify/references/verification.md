@@ -64,5 +64,14 @@ stays present reading "none">
 - Every verdict cites fresh output from THIS verify round — no "passed
   earlier", no stale logs.
 - A scenario that cannot be demonstrated is a **fail**, not a skip.
+- With no delta files, full, fix, and tweak changes declare each scenario once
+  in `tasks.md` or `verification.md`, on an unfenced standalone line such as
+  `Scenario-ID: handoff-content`. Describe the observable check and cite that ID
+  in the evidence table; table mentions and fenced examples are not declarations.
+  Retain the explicit no-spec justification in the workflow review. Do not invent
+  behavioral specs, downgrade a full workflow, or omit required spec changes.
+- When any delta files exist, their scenario declarations are authoritative;
+  tasks/report declarations are not a fallback for missing delta IDs. Unknown or
+  duplicate IDs are rejected by `onto evidence record` before a receipt is written.
 - Accepted deviations keep `Result: pass`; they live in Deviations, never
   in the enum.

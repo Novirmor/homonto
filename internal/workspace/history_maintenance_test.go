@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -74,8 +75,9 @@ func TestHistoryAutomaticMaintenanceStaysForeground(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, key := range []string{"maintenance.autoDetach", "gc.autoDetach"} {
-		if got := historyTestGit(t, l.WorkflowRoot, "config", "--bool", "--get", key); got != "true" {
-			t.Fatalf("history Git changed caller configuration %s: %q", key, got)
+		got, err := exec.Command("git", "-C", l.WorkflowRoot, "config", "--bool", "--get", key).CombinedOutput()
+		if err != nil || strings.TrimSpace(string(got)) != "true" {
+			t.Fatalf("history Git changed caller configuration %s: %q, %v", key, got, err)
 		}
 	}
 }

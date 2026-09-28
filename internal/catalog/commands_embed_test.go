@@ -285,6 +285,75 @@ func TestContinuationAllowsFactualBlockerReports(t *testing.T) {
 	}
 }
 
+func TestContinuationFinalResponseCheck(t *testing.T) {
+	for _, file := range []string{
+		"subagents/homonto.md",
+		"skills/homonto/references/autonomy.md",
+		"plugins/homonto-workflow/continuation.ts",
+	} {
+		t.Run(file, func(t *testing.T) {
+			text := hPromptText(t, file)
+			for _, want := range []string{
+				"Before ending", "next authorized, in-scope action", "anticipated budget pressure",
+			} {
+				if !strings.Contains(text, want) {
+					t.Errorf("final-response continuation check missing %q", want)
+				}
+			}
+		})
+	}
+}
+
+func TestContinuationRuntimePolicyBoundaries(t *testing.T) {
+	text := hPromptText(t, "plugins/homonto-workflow/continuation.ts")
+	for _, want := range []string{
+		"export const CONTINUATION_POLICY",
+		"progress summary", "subagent report", "compaction",
+		"explicit pause", "permission denial", "bounded permitted recovery",
+		"Delegated workers", "research-only", "plan-only", "does not select",
+	} {
+		if !strings.Contains(text, want) {
+			t.Errorf("runtime continuation boundary missing %q", want)
+		}
+	}
+	for _, prohibited := range []string{
+		"session.prompt", "promptAsync", "session.abort", "Bun.spawn", "child_process",
+	} {
+		if strings.Contains(text, prohibited) {
+			t.Errorf("static continuation policy must not introduce %q", prohibited)
+		}
+	}
+}
+
+func TestContinuationPreservesAuthorityBoundaries(t *testing.T) {
+	for _, tc := range []struct {
+		file string
+		want []string
+	}{
+		{"skills/homonto/references/autonomy.md", []string{
+			"Answer informational requests without workflow mutations",
+			"Never retry or route around an explicit denial",
+			"Allowed execution is not workflow authorization",
+			"assigned scope",
+		}},
+		{"subagents/homonto.md", []string{
+			"Subagents never mutate workflow state and never prompt the user",
+			"Read-only workers still cannot edit or run shell commands",
+			"Review skills draft findings and stop",
+			"Never silently widen their write scope",
+		}},
+	} {
+		t.Run(tc.file, func(t *testing.T) {
+			text := hPromptText(t, tc.file)
+			for _, want := range tc.want {
+				if !strings.Contains(text, want) {
+					t.Errorf("continuation must preserve authority boundary %q", want)
+				}
+			}
+		})
+	}
+}
+
 func TestSkepticFindingsReturnToImplementation(t *testing.T) {
 	for _, tc := range []struct {
 		file string

@@ -28,6 +28,19 @@ a hard blocker prevents further authorized progress. Present intermediate plans,
 reports, phase boundaries, and verification results while continuing; never stop
 merely to ask whether to continue.
 
+Before ending, compare the requested endpoint with actual results and remaining
+work. Perform the next authorized, in-scope action in the same invocation when
+it is executable. A progress summary, subagent report, passing test, or promised
+evidence refresh is not a substitute for that action. After a worker returns,
+inspect its result and continue the parent task; delegated workers finish only
+their assignment and return. After compaction, recover the current assignment
+and continue. Durable checkpoints support continuation; anticipated budget pressure
+alone is not a blocker. Actual interruption or exhaustion is not completion.
+Honor research-only and plan-only endpoints and explicit pauses; this check does
+not select an observed change, grant coordinator authority, or authorize commits
+or publication. Do not expand scope, revive cancelled work, or mark unfinished
+tasks complete to satisfy the check.
+
 An explicit permission denial, exhausted bounded retries, or an uncertain
 publication outcome can be a hard blocker without a missing user decision.
 After permitted recovery is exhausted or unavailable, report the blocker,

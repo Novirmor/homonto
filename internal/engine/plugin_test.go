@@ -455,7 +455,7 @@ func TestWorkflowContextMaterializesAndRepairsWithoutFrameworks(t *testing.T) {
 		if target, err := os.Readlink(dst); err != nil || target != want {
 			t.Fatalf("context link = %q, %v; want %q", target, err, want)
 		}
-		for _, file := range []string{"plugin.ts", "index.ts", "tui.tsx", "rpc.ts", "v2.ts", "runner.ts"} {
+		for _, file := range []string{"plugin.ts", "index.ts", "tui.tsx", "rpc.ts", "v2.ts", "runner.ts", "continuation.ts"} {
 			info, err := os.Lstat(filepath.Join(dst, file))
 			if err != nil || !info.Mode().IsRegular() {
 				t.Fatalf("projected %s missing or not regular: %v", file, err)
@@ -475,7 +475,7 @@ func TestWorkflowContextMaterializesAndRepairsWithoutFrameworks(t *testing.T) {
 		if after, err := os.Lstat(dst); err != nil || !os.SameFile(before, after) {
 			t.Fatalf("no-op replaced context link: %v", err)
 		}
-		for _, file := range []string{"index.ts", "tui.tsx", "rpc.ts", "v2.ts", "runner.ts", "binding.json"} {
+		for _, file := range []string{"index.ts", "tui.tsx", "rpc.ts", "v2.ts", "runner.ts", "continuation.ts", "binding.json"} {
 			path := filepath.Join(e.PluginCatalogRoot, workflowBridgePlugin, file)
 			if err := os.Remove(path); err != nil {
 				t.Fatal(err)

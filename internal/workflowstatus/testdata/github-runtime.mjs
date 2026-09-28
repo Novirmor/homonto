@@ -9,11 +9,12 @@ const item = (overrides = {}) => ({ kind: 'issue_comment', url, body: 'Research 
 const context = (overrides = {}) => ({ sessionID: 'session-1', messageID: 'message-1', agent: 'coordinator', abort: new AbortController().signal, async ask() {}, ...overrides })
 
 function setup() {
-  const calls = [], comments = []
+  const calls = [], comments = [], timeline = []
   let mutateError = '', state = 'open', head = B, actor = 7, denyScope = false
   let sources = { app: '/workspace/source' }, origins = { '/workspace/source': 'git@github.com:owner/repo.git' }
   let nextID = 100, beforeMutation
   const run = async (argv, options = {}) => {
+    timeline.push({ command: argv })
     calls.push({ argv, options })
     assert.ok(!options.signal?.aborted)
     if (argv[0] === 'homonto') {
@@ -66,7 +67,7 @@ function setup() {
       ...(pr ? { base: { sha: A, repo: { id: name === 'owner/.github-private' ? 21 : 20 } }, head: { sha: head }, merged: false, draft: false } : {}) })
   }
   const service = createGithubDrafts({ run, configPath })
-  return { service, calls, comments, postCount: () => calls.filter(c => c.argv.includes('POST')).length,
+  return { service, calls, comments, timeline, postCount: () => calls.filter(c => c.argv.includes('POST')).length,
     setState: value => state = value, setHead: value => head = value, setActor: value => actor = value,
     setError: value => mutateError = value, setBeforeMutation: value => beforeMutation = value,
     setSources: value => { sources = value.sources; origins = value.origins } }
@@ -96,6 +97,78 @@ function reply(s, d, choices = ['Publish'], ctx = context()) {
 }
 function approve(s, d, choices, ctx) { asked(s, d, ctx); reply(s, d, choices, ctx) }
 
+{
+  const s = setup(), d = await stage(s)
+  const before = s.calls.length
+  let permissions = 0, updates = 0
+  const ctx = context({ async ask() { permissions++ }, progress() { updates++ } })
+  const aborted = new AbortController()
+  aborted.abort(new Error('credential-sentinel'))
+  const cases = [[undefined, 'missing_context'], [null, 'missing_context'], [[], 'invalid_context'], [true, 'invalid_context']]
+  for (const field of ['agent', 'sessionID', 'messageID']) {
+    for (const value of [undefined, null, '']) cases.push([{ ...ctx, [field]: value }, `missing_${field}`])
+    for (const value of [false, {}, [], ' ', 'x'.repeat(257)]) cases.push([{ ...ctx, [field]: value }, `invalid_${field}`])
+  }
+  for (const field of ['abort', 'ask']) {
+    for (const value of [undefined, null]) cases.push([{ ...ctx, [field]: value }, `missing_${field}`])
+    for (const value of [false, {}, 'credential-sentinel']) cases.push([{ ...ctx, [field]: value }, `invalid_${field}`])
+  }
+  cases.push([{ ...ctx, abort: aborted.signal }, 'invocation_cancelled'])
+  for (const [name, args] of [['draft', { items: [item()] }], ['status', { draftID: d.draftID }], ['publish', { draftID: d.draftID }]]) {
+    for (const [value, reason] of cases) {
+      await assert.rejects(() => s.service.tools[`homonto_github_${name}`].execute(args, value), error => {
+        assert.ok(error.message.startsWith(`[${reason}]`), error.message)
+        assert.match(error.message, /compatible live OpenCode session.*retry/)
+        assert.doesNotMatch(error.message, /coordinator-only|credential-sentinel/)
+        for (const secret of [configPath, url, item().body, d.draftID]) assert.ok(!error.message.includes(secret))
+        return true
+      })
+    }
+  }
+  assert.equal(permissions, 0)
+  assert.equal(updates, 0)
+  assert.equal(s.calls.length, before)
+  assert.equal((await invoke(s, 'status', { draftID: d.draftID })).items[0].status, 'pending')
+}
+{
+  const s = setup()
+  const ctx = context({ agent: 'custom-publisher', progress(stage) { s.timeline.push({ stage }) },
+    async ask({ permission }) { s.timeline.push({ permission }) } })
+  const d = await stage(s, [item()], ctx)
+  assert.equal(s.timeline.at(-1).stage, 'GitHub preview ready')
+  approve(s, d)
+  assert.equal((await invoke(s, 'publish', { draftID: d.draftID }, { ...ctx, messageID: 'next-turn' })).items[0].status, 'published')
+  for (const [n, entry] of s.timeline.entries()) {
+    if (entry.permission) assert.equal(s.timeline[n - 1].stage, entry.permission === 'bash' ? 'Requesting GitHub publication permission' : 'Requesting GitHub read permission')
+    if (entry.command) assert.equal(s.timeline[n - 1].stage, entry.command.includes('POST') ? 'Ready to publish GitHub draft' : entry.command[0] === 'gh' ? 'Reading GitHub' : 'Checking workspace')
+  }
+  const stages = s.timeline.filter(entry => entry.stage).map(entry => entry.stage)
+  assert.deepEqual([...new Set(stages)].sort(), ['Requesting GitHub read permission', 'Checking workspace', 'Reading GitHub',
+    'GitHub preview ready', 'Requesting GitHub publication permission', 'Ready to publish GitHub draft'].sort())
+  for (const secret of [configPath, url, item().body, d.draftID, 'author']) assert.ok(!stages.join('\n').includes(secret))
+}
+for (const progress of [() => { throw new Error('raw-stderr credential-sentinel') }, async () => { throw new Error('raw-stderr credential-sentinel') }, () => new Promise(() => {})]) {
+  const s = setup(), ctx = context({ progress })
+  const d = await stage(s, [item()], ctx)
+  approve(s, d)
+  const out = await invoke(s, 'publish', { draftID: d.draftID }, ctx)
+  assert.equal(out.items[0].status, 'published')
+  assert.equal(s.postCount(), 1)
+  assert.doesNotMatch(JSON.stringify(out), /raw-stderr|credential-sentinel/)
+}
+for (const phase of ['permission', 'workspace']) {
+  const s = setup(), controller = new AbortController()
+  const ctx = context({ agent: 'custom-publisher', abort: controller.signal,
+    async ask() { if (phase === 'permission') controller.abort() },
+    progress(stage) { if (phase === 'workspace' && stage === 'Checking workspace') controller.abort() } })
+  await assert.rejects(() => stage(s, [item()], ctx), /\[invocation_cancelled\].*aborted/)
+  assert.equal(s.calls.length, 0)
+  assert.deepEqual(JSON.parse(s.service.context(ctx.sessionID)).drafts, [])
+  const fresh = context({ agent: 'custom-publisher', messageID: 'next-turn' })
+  const d = await stage(s, [item()], fresh)
+  approve(s, d)
+  assert.equal((await invoke(s, 'publish', { draftID: d.draftID }, fresh)).items[0].status, 'published')
+}
 {
   const s = setup(), d = await stage(s)
   assert.equal(d.items[0].status, 'pending')
@@ -165,9 +238,9 @@ for (const mutate of [s => s.setState('closed'), s => s.setActor(8), s => s.setH
   const d = await stage(s, [item()], context({ agent: 'custom-publisher', abort: controller.signal }))
   controller.abort()
   approve(s, d)
-  const custom = context({ agent: 'custom-publisher' })
+  const custom = context({ agent: 'custom-publisher', messageID: 'next-turn' })
   assert.equal((await invoke(s, 'status', { draftID: d.draftID }, custom)).items[0].status, 'approved')
-  const out = await invoke(s, 'publish', { draftID: d.draftID }, custom)
+  const out = await invoke(s, 'publish', { draftID: d.draftID }, context({ agent: 'another-custom-publisher', messageID: 'publication-turn' }))
   assert.equal(out.items[0].status, 'published')
   assert.equal(s.postCount(), 1)
 }
@@ -198,13 +271,13 @@ for (const error of ['lost-response', 'lost-without-record']) {
   const s = setup(), d = await stage(s)
   approve(s, d)
   s.service.event({ event: { type: 'session.deleted', properties: { info: { id: 'session-1' } } } })
-  await assert.rejects(() => invoke(s, 'publish', { draftID: d.draftID }), /deleted/)
+  await assert.rejects(() => invoke(s, 'publish', { draftID: d.draftID }), /\[session_deleted\].*new live OpenCode session/)
   assert.equal(s.postCount(), 0)
 }
 {
   const s = setup(), d = await stage(s)
   approve(s, d); s.service.dispose()
-  await assert.rejects(() => invoke(s, 'publish', { draftID: d.draftID }), /live session/)
+  await assert.rejects(() => invoke(s, 'publish', { draftID: d.draftID }), /\[plugin_disposed\].*restart OpenCode/)
   const restarted = setup()
   await assert.rejects(() => invoke(restarted, 'publish', { draftID: d.draftID }), /unknown draft/)
 }

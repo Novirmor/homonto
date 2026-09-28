@@ -1,14 +1,11 @@
 import { randomUUID } from "node:crypto"
 import { dirname, isAbsolute, normalize } from "node:path"
+import { requireLiveContext } from "./compat.ts"
+import type { ToolContext } from "./compat.ts"
 
 type Run = (argv: string[], options?: { signal?: AbortSignal; stdin?: string; timeout?: number }) => Promise<string>
-type ToolContext = {
-  sessionID: string
-  messageID: string
-  agent: string
-  abort: AbortSignal
-  ask(permission: { permission: string; patterns: string[]; always: string[]; metadata: Record<string, unknown> }): Promise<void>
-}
+type ProgressStage = "Requesting GitHub read permission" | "Checking workspace" | "Reading GitHub" |
+  "GitHub preview ready" | "Requesting GitHub publication permission" | "Ready to publish GitHub draft"
 type InputItem = {
   kind: "issue_comment" | "pr_comment" | "pr_review"
   url: string
@@ -120,18 +117,20 @@ export function createGithubDrafts({ run, configPath }: { run: Run; configPath: 
     for (const i of d.items) if (["pending", "approved"].includes(i.status)) i.status = "invalidated"
   }
   function guard(ctx: ToolContext): Session {
+    requireLiveContext(ctx)
+    check(!disposed, "[plugin_disposed] GitHub plugin disposed; restart OpenCode in a compatible live session and stage a new draft")
     expire()
-    check(!disposed && ctx && text(ctx.agent) && ctx.agent.length > 0 && ctx.agent.length <= 256 &&
-      text(ctx.sessionID) && ctx.sessionID.length > 0 && ctx.sessionID.length <= 256 && text(ctx.messageID) && ctx.messageID.length > 0 &&
-      ctx.abort instanceof AbortSignal && !ctx.abort.aborted && typeof ctx.ask === "function", "GitHub tools require a live session context")
     let s = sessions.get(ctx.sessionID)
     if (!s) {
       check(sessions.size < MAX_SESSIONS, "GitHub session capacity reached")
       s = { deleted: false, staging: false, cancel: new AbortController() }
       sessions.set(ctx.sessionID, s)
     }
-    check(!s.deleted, "session deleted")
+    check(!s.deleted, "[session_deleted] GitHub session deleted; open a new live OpenCode session and stage a new draft")
     return s
+  }
+  function progress(ctx: ToolContext, stage: ProgressStage) {
+    try { void Promise.resolve(ctx.progress?.(stage)).catch(() => {}) } catch { }
   }
   function live(ctx: ToolContext, d?: Draft) {
     const s = guard(ctx)
@@ -139,6 +138,8 @@ export function createGithubDrafts({ run, configPath }: { run: Run; configPath: 
   }
   async function command(argv: string[], ctx: ToolContext, stdin?: string): Promise<string> {
     const s = guard(ctx)
+    if (stdin === undefined) progress(ctx, argv[0] === "gh" ? "Reading GitHub" : "Checking workspace")
+    guard(ctx)
     const result = await run(argv, { signal: AbortSignal.any([ctx.abort, lifetime.signal, s.cancel.signal]), timeout: 15000, ...(stdin === undefined ? {} : { stdin }) })
     guard(ctx)
     check(text(result) && bytes(result) <= 8 * 1024 * 1024, "command output exceeded limit")
@@ -255,6 +256,8 @@ export function createGithubDrafts({ run, configPath }: { run: Run; configPath: 
     drafts.set(draftID, d)
     try {
       for (const input of inputs) {
+        progress(ctx, "Requesting GitHub read permission")
+        live(ctx)
         await ctx.ask({ permission: "homonto_github_read", patterns: [input.url], always: [], metadata: { url: input.url } })
         live(ctx)
         const t = parseTarget(input.url)
@@ -276,6 +279,8 @@ export function createGithubDrafts({ run, configPath }: { run: Run; configPath: 
       live(ctx)
       check(Date.now() < d.expiresAt, "draft expired while staging")
       s.current = draftID
+      progress(ctx, "GitHub preview ready")
+      live(ctx, d)
       return view(d)
     } catch (error) {
       invalidate(d)
@@ -301,6 +306,8 @@ export function createGithubDrafts({ run, configPath }: { run: Run; configPath: 
         live(ctx, d)
         const cmd = argv(i.target.host, endpoint(i), "POST")
         const pattern = cmd.map(a => /^[A-Za-z0-9_./:-]+$/.test(a) ? a : `'${a.replaceAll("'", "'\\''")}'`).join(" ")
+        progress(ctx, "Requesting GitHub publication permission")
+        live(ctx, d)
         await ctx.ask({ permission: "bash", patterns: [pattern], always: [], metadata: { draftID: d.draftID, itemID: i.itemID, url: i.target.url, payload: i.payload } })
         live(ctx, d)
         const matches = await existing(i, ctx)
@@ -310,6 +317,7 @@ export function createGithubDrafts({ run, configPath }: { run: Run; configPath: 
         if (!exact(fresh, i.snapshot)) { i.status = "stale"; i.reason = "destination snapshot or authenticated actor changed"; continue }
         if (matches.length > 1) { i.status = "uncertain"; i.reason = "multiple matching remote publications"; continue }
         if (matches.length === 1) { i.receipt = matches[0]; i.status = "published"; continue }
+        progress(ctx, "Ready to publish GitHub draft")
         live(ctx, d)
         attempted = true
         const v: unknown = JSON.parse(await command(cmd, ctx, i.payload))

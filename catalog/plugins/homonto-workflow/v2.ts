@@ -1,5 +1,6 @@
 import type { Plugin } from "@opencode/plugin/promise/plugin"
 import type { SessionContext } from "@opencode/plugin/promise/session"
+import type { ToolContext as Invocation } from "@opencode/plugin/promise/tool"
 import { randomUUID } from "node:crypto"
 import { lstat, readFile, realpath } from "node:fs/promises"
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "node:path"
@@ -8,7 +9,8 @@ import { createRunner } from "./runner.ts"
 import { WorkflowPanelRPC } from "./rpc.ts"
 import { createAuthorization } from "./authorization.ts"
 import { createGithubDrafts } from "./github.ts"
-import { strictArgs } from "./compat.ts"
+import { requireCoordinator, requireLiveContext, strictArgs } from "./compat.ts"
+import { CONTINUATION_POLICY, CONTEXT_SNAPSHOT_LIMIT } from "./continuation.ts"
 
 type Binding = { version: 1; configPath: string; configRoot: string; coordinator: string; githubEnabled: boolean }
 type Change = {
@@ -247,11 +249,14 @@ export default {
         const next = await snapshot()
         await checkBinding(signal)
         if (signal.aborted || disposed || !await inScope()) return
-        return render(next, binding)
+        return { text: render(next, binding) }
       }
       try {
-        const text = await Promise.race([work(), interrupted])
-        if (!disposed && !signal.aborted && text) event.system.push({ type: "text", text })
+        const result = await Promise.race([work(), interrupted])
+        if (!disposed && !signal.aborted && result) {
+          event.system.push({ type: "text", text: CONTINUATION_POLICY })
+          if (result.text) event.system.push({ type: "text", text: bounded(result.text, CONTEXT_SNAPSHOT_LIMIT) })
+        }
         if (!disposed && !signal.aborted && github) event.system.push({ type: "text", text: github.context(event.sessionID) })
       } catch {
         if (!disposed) event.system.push({ type: "text", text: "## Homonto workflow context\nWorkflow observation unavailable; completion is not established. Inspect the selected config and run homonto workflow snapshot --json --config <selected-config>. No stale workflow context was reused." })
@@ -263,36 +268,86 @@ export default {
       }
     }
 
-    async function permitted(call: { sessionID: string; agent: string; messageID: string; id: string; signal: AbortSignal }) {
-      if (disposed || call.signal.aborted) throw new Error("workflow tool unavailable")
-      const session = await ctx.session.get({ sessionID: call.sessionID }, { signal: call.signal })
-      if (session.id !== call.sessionID || session.projectID !== ctx.location.project.id ||
-          !within(root, await realpath(session.location.directory))) throw new Error("workflow session outside selected config")
-      await checkBinding(call.signal)
-      if (disposed || call.signal.aborted) throw new Error("workflow tool unavailable")
+    function progress(call: Invocation, stage: string) {
+      try { void Promise.resolve(call.progress?.({ title: stage })).catch(() => {}) } catch {}
     }
 
-    function toolContext(call: { sessionID: string; agent: string; messageID: string; id: string; signal: AbortSignal }) {
+    async function validateSession(sessionID: string, parent: AbortSignal, report: (stage: string) => void = () => {}) {
+      const controller = new AbortController()
+      const signal = AbortSignal.any([parent, lifetime.signal, controller.signal])
+      let stage = "session lookup", timedOut = false
+      const stopped = () => new Error(timedOut
+        ? `[preflight_timeout] ${stage} exceeded 5 seconds; check the OpenCode service and retry in the selected workspace`
+        : "[invocation_cancelled] workflow preflight aborted or plugin disposed; resume only in a new authorized invocation")
+      const active = () => { if (signal.aborted || disposed) throw stopped() }
+      let interrupt!: () => void
+      const interrupted = new Promise<never>((_resolve, reject) => {
+        interrupt = () => reject(stopped())
+        signal.addEventListener("abort", interrupt, { once: true })
+      })
+      const timer = setTimeout(() => { timedOut = true; controller.abort() }, 5000)
+      timer.unref?.()
+      const work = async () => {
+        active()
+        report("Checking OpenCode session")
+        const session = await ctx.session.get({ sessionID }, { signal }).catch(() => {
+          throw new Error("[session_unavailable] OpenCode session lookup failed; resume in a live session in the selected workspace")
+        })
+        active()
+        if (!session || !text(session.id) || !text(session.projectID) || !session.location || !text(session.location.directory)) {
+          throw new Error("[session_unavailable] OpenCode returned incomplete session context; use a compatible live OpenCode session in the selected workspace")
+        }
+        if (session.id !== sessionID) throw new Error("[session_mismatch] OpenCode returned another session; restart OpenCode in the selected workspace")
+        if (session.projectID !== ctx.location.project.id) throw new Error("[project_mismatch] session belongs to another project; resume in the selected workspace")
+        stage = "workspace validation"
+        const directory = await realpath(session.location.directory).catch(() => {
+          throw new Error("[workspace_unavailable] session directory cannot be resolved; reopen the selected workspace")
+        })
+        active()
+        if (!within(root, directory)) throw new Error("[workspace_mismatch] workflow session outside selected config; resume in the workspace where this integration was applied")
+        stage = "binding validation"
+        report("Checking workflow binding")
+        await checkBinding(signal).catch(() => {
+          throw new Error("[binding_changed] workflow binding unavailable or changed; run homonto apply with the selected --config and restart OpenCode")
+        })
+        active()
+      }
+      try { await Promise.race([work(), interrupted]) } finally {
+        clearTimeout(timer)
+        signal.removeEventListener("abort", interrupt)
+        controller.abort()
+      }
+    }
+
+    async function permitted(call: Invocation) {
+      requireLiveContext(toolContext(call))
+      if (disposed) throw new Error("[plugin_disposed] workflow plugin disposed; restart OpenCode before retrying")
+      if (!text(call.id) || call.id.length > 256) throw new Error("[missing_call_id] tool invocation ID is missing or invalid; use a compatible live OpenCode session")
+      await validateSession(call.sessionID, call.signal, stage => progress(call, stage))
+    }
+
+    function toolContext(call: Invocation) {
       return {
-        sessionID: call.sessionID, messageID: call.messageID, agent: call.agent, abort: call.signal,
+        sessionID: call?.sessionID, messageID: call?.messageID, agent: call?.agent, abort: call?.signal,
+        progress: (stage: string) => progress(call, stage),
         ask: async (request: { permission: string; patterns: string[]; metadata: Record<string, unknown> }) => {
           if (!Object.values(request.metadata).every(v => typeof v === "string")) throw new Error("invalid permission metadata")
           await permitted(call)
           await authorization.ask(call, { permission: request.permission, patterns: request.patterns,
-            metadata: request.metadata as Record<string, string> })
+            metadata: request.metadata as Record<string, string> }, stage => progress(call, stage))
           await permitted(call)
         },
       }
     }
 
-    const readTool = async (call: { sessionID: string; agent: string; messageID: string; id: string; signal: AbortSignal }, name: string) => {
+    const readTool = async (call: Invocation, name: string) => {
+      requireCoordinator(toolContext(call), binding)
       await permitted(call)
-      if (call.agent !== binding.coordinator) throw new Error("homonto tools are coordinator-only")
       await toolContext(call).ask({ permission: "homonto_read", patterns: [binding.configPath], metadata: { tool: name } })
     }
 
     const githubTool = async (name: keyof NonNullable<typeof github>["tools"], input: unknown,
-      call: { sessionID: string; agent: string; messageID: string; id: string; signal: AbortSignal }) => {
+      call: Invocation) => {
       if (!github) throw new Error("GitHub tools are unavailable")
       await permitted(call)
       const result = await github.tools[name].execute(input, toolContext(call))
@@ -341,15 +396,6 @@ export default {
             input: { type: "object", properties: definition.args, required: Object.keys(definition.args), additionalProperties: false },
             execute: async (input, call) => {
               const result = await githubTool(name, input, call)
-              if (name === "homonto_github_draft") {
-                const draft: unknown = JSON.parse(result)
-                if (!object(draft) || !object(draft.question) || !Array.isArray(draft.question.questions)) throw new Error("invalid draft preview")
-                const question = (await ctx.tool.list()).find(tool => tool.id === "question")
-                if (!question) throw new Error("native question unavailable; draft remains pending")
-                github.before({ tool: "question", sessionID: call.sessionID, callID: call.id }, { args: draft.question })
-                await question.execute({ questions: draft.question.questions }, call)
-                return { content: await githubTool("homonto_github_status", { draftID: draft.draftID }, call) }
-              }
               return { content: result }
             } })
         }
@@ -373,10 +419,7 @@ export default {
             if (event.type !== "session.idle" || !object(event.data) || typeof event.data.sessionID !== "string") continue
             const sessionID = event.data.sessionID
             try {
-              const session = await ctx.session.get({ sessionID })
-              if (disposed || session.projectID !== ctx.location.project.id ||
-                  !within(root, await realpath(session.location.directory))) continue
-              await checkBinding(lifetime.signal)
+              await validateSession(sessionID, lifetime.signal)
               const next = await snapshot()
               if (disposed) return
               const changes = new Map(next.changes.map(c => [`${c.workflow}\u0000${c.identity}`, c]))

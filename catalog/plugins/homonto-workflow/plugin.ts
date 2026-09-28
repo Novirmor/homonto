@@ -11,6 +11,7 @@ import type { Run } from "./runner.ts"
 import { requireCoordinator, strictArgs } from "./compat.ts"
 import type { Binding, ToolContext, ToolDefinition } from "./compat.ts"
 import { createGithubDrafts } from "./github.ts"
+import { CONTINUATION_POLICY, CONTEXT_SNAPSHOT_LIMIT } from "./continuation.ts"
 
 type Change = {
   identity: string
@@ -434,12 +435,14 @@ export const homontoWorkflow = (async ({ client, directory }: Parameters<Plugin>
     },
     "experimental.session.compacting": async (input: { sessionID?: string }, output: { context: string[] }) => {
       const text = await recovery()
-      if (!disposed && text) output.context.push(text)
+      if (!disposed) output.context.push(CONTINUATION_POLICY)
+      if (!disposed && text) output.context.push(boundedText(text, CONTEXT_SNAPSHOT_LIMIT))
       if (!disposed && github && input.sessionID) output.context.push(github.context(input.sessionID))
     },
     "experimental.chat.system.transform": async (input: { sessionID?: string }, output: { system: string[] }) => {
       const text = await recovery()
-      if (!disposed && text) output.system.push(text)
+      if (!disposed) output.system.push(CONTINUATION_POLICY)
+      if (!disposed && text) output.system.push(boundedText(text, CONTEXT_SNAPSHOT_LIMIT))
       if (!disposed && github && input.sessionID) output.system.push(github.context(input.sessionID))
     },
   }

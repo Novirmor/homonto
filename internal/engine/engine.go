@@ -659,6 +659,9 @@ func allPluginDirsExist(root string, names []string, workflowContext bool) bool 
 		if n == "permission-observer" {
 			files = append(files, "index.ts", "v2.ts")
 		}
+		if n == workflowBridgePlugin {
+			files = append(files, "continuation.ts")
+		}
 		if n == workflowBridgePlugin && workflowContext {
 			files = append(files, "index.ts", "tui.tsx", "rpc.ts", "v2.ts", "runner.ts", "github.ts", "authorization.ts", "compat.ts")
 		}

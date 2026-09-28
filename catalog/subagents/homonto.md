@@ -81,8 +81,10 @@ What you add on top of the dispatchers:
   exhausted, interrupted, compacted — nothing is lost: the workflow's ground
   truth lives in `tasks.md`, `plan.md`, `notes.md`, and the state files, and a
    fresh session re-derives the phase and resumes from the first executable
-   unchecked task, honoring recorded prerequisites. Prefer finishing the current task and committing over starting one you
-   cannot land.
+   unchecked task, honoring recorded prerequisites. Before ending, compare the
+   requested endpoint with actual results and perform the next authorized, in-scope action
+   when executable. A progress summary or evidence-refresh promise is not that action.
+   Checkpoint durably and continue; anticipated budget pressure alone is not a blocker.
 - A skeptic finding that survives coordinator triage is a **repair loop**, not a
   completion report: append its precise in-scope task before code changes, route
   it to the workflow's serial implementer loop, and run fresh verification on the

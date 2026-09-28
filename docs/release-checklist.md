@@ -89,6 +89,12 @@ If a hold point is still open, keep the change on the branch. For an
 packaging smoke remain mandatory; name every waived live-only check in the
 published release notes and do not claim production support.
 
+For **v0.32.2-rc.1**, the owner requested a user-testing release after disclosure
+of the missing live V2 and GitHub validation. This prerelease defers the live-only
+checks listed in its release notes, not the complete local pre-tag gate or the
+release workflow's repeated gate. Local Docker is available for this candidate;
+the earlier CI substitutions do not apply. Stable v0.32.1 remains the latest.
+
 > **Dogfooding is deferred to v1.** This repository is developed directly
 > on branches, with no external workflow stack
 > ([ADR 0023](adr/0023-develop-directly-without-comet.md);

@@ -15,7 +15,51 @@ bookkeeper) — for every supported OS/arch as separate archives under one
 `SHA256SUMS`. `onto` and `to` each require `homonto` to have installed their
 framework first (`[frameworks.onto]` / `[frameworks.to]` + `homonto apply`).
 
-### v0.32.1 — consistent workflow and skill instructions
+### v0.32.2-rc.1 — workflow continuity and GitHub tool recovery
+
+This is an **owner-approved prerelease for user testing**, not a claim of newly
+validated production support. The embedded catalog is 0.32.3 (onto 0.25.3,
+to 0.22.3, h 0.10.3); all three binary versions are stamped v0.32.2-rc.1.
+
+- Both OpenCode plugin versions reinforce execution continuity for homonto,
+  build, and custom agents on model requests and compaction. The reminder checks
+  the current authorized assignment, not every observed change. Explicit pauses,
+  plan/research endpoints, worker boundaries, permissions, and concrete blockers
+  remain valid stops; idle events never automatically restart an agent.
+- Fixes #20's draft-contract mismatch: V2 GitHub drafting returns the exact
+  preview and native question arguments without invoking a nested question.
+  The agent presents the preview, calls native question separately, and publishes
+  only after a correlated approval. The reported hangs' original blocked await
+  was not established.
+- Session preflight and service-metadata reads have five-second deadlines and
+  cancellation cleanup. A stopped permission listener fails promptly instead
+  of stranding subsequent requests. Safe progress labels identify the current
+  stage without exposing draft bodies or credentials.
+- Addresses #19's diagnostic gap with distinct live-context, binding, workspace,
+  and service errors plus recovery guidance. Coordinator-only read tools name
+  the expected and observed agents. Host-authorized custom agents retain GitHub
+  draft access; exact approval, freshness checks, and uncertain-send safeguards
+  are unchanged.
+
+**Upgrade:** explicitly select v0.32.2-rc.1 in the installer or release downloads;
+the latest stable remains v0.32.1. Install matching binaries, run `homonto plan`
+and `homonto apply` in each configured project, then quit and restart OpenCode.
+Existing workflow records do not migrate. Draft approvals are memory-only:
+reconcile any interrupted publication before restarting, then stage a fresh
+draft and obtain fresh approval.
+
+**Validation and accepted gaps:** regression tests exercise the materialized V1
+and V2 adapters, exact native-form correlation, cancellation, deadlines, and
+publication against fake services. Strict TypeScript checks cover the V2 adapter
+against SDK 2.0.16 and 2.0.18. The complete local pre-tag gate and release-workflow
+gate, including Docker E2E and packaging, remain mandatory.
+The owner requested this user-testing release with live validation deferred:
+no new live model-compliance evaluation, actual V2 terminal/reload/notification
+or question/cancellation test, real-GitHub sandbox publication, or live V1/V2
+migration smoke was performed for this candidate. Mocked publication is not a
+real GitHub send, and prompt delivery is not proof of model compliance.
+
+### Previous: v0.32.1 — consistent workflow and skill instructions
 
 The embedded catalog is 0.32.2 (onto 0.25.2, to 0.22.2, h 0.10.2);
 all three binary versions are stamped v0.32.1 from the release tag.

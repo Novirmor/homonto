@@ -100,6 +100,11 @@ The same live-only deferrals apply and are listed in the new release notes.
 The complete local gate, PR checks, and repeated release-workflow gate are
 required; no stable-release support claim or CI substitution is introduced.
 
+The RC2 release gate encountered a reproduced Git 2.55 fixture-maintenance race
+in both its first run and one retry. **v0.32.2-rc.3** carries the test-setup fix
+through a follow-up PR; it retains the same live-only deferrals and complete
+gate requirements. The existing RC2 tag is immutable and is not retargeted.
+
 > **Dogfooding is deferred to v1.** This repository is developed directly
 > on branches, with no external workflow stack
 > ([ADR 0023](adr/0023-develop-directly-without-comet.md);

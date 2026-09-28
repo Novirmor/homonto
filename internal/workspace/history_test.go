@@ -57,7 +57,7 @@ func historyWrite(t *testing.T, path, data string) {
 
 func historyTestGit(t *testing.T, root string, args ...string) string {
 	t.Helper()
-	out, err := exec.Command("git", append([]string{"-C", root}, args...)...).CombinedOutput()
+	out, err := exec.Command("git", append([]string{"-C", root, "-c", "maintenance.autoDetach=false", "-c", "gc.autoDetach=false"}, args...)...).CombinedOutput()
 	if err != nil {
 		t.Fatalf("git %v: %s: %v", args, out, err)
 	}

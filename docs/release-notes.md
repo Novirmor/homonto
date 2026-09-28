@@ -15,7 +15,32 @@ bookkeeper) — for every supported OS/arch as separate archives under one
 `SHA256SUMS`. `onto` and `to` each require `homonto` to have installed their
 framework first (`[frameworks.onto]` / `[frameworks.to]` + `homonto apply`).
 
-### v0.32.2-rc.2 — full no-delta verification evidence
+### v0.32.2-rc.3 — no-delta evidence recovery and deterministic test setup
+
+This **owner-requested testing prerelease** includes the #21 fix described below
+and all RC1 runtime fixes. All three binaries are stamped v0.32.2-rc.3; catalog
+0.32.4 and framework versions (onto 0.25.4, to 0.22.3, h 0.10.3) are unchanged
+from the RC2 candidate. Stable v0.32.1 remains latest.
+
+RC2's release workflow stopped on a pre-existing fixture race before publishing
+assets. With Git 2.55, detached maintenance from the fixture's seed commit can
+remove `.git/objects/maintenance.lock` between filesystem snapshots, causing an
+isolation assertion to fail even without a workflow mutation. The history-test
+Git helper now waits for maintenance instead of detaching it; assertions and
+production Git isolation are unchanged. The RC2 tag is not moved or reused.
+
+**Upgrade:** explicitly select v0.32.2-rc.3, install matching binaries, run
+`homonto plan` and `homonto apply`, then restart OpenCode. For #21 recovery, use
+the doctor/trace steps below with the RC3 binary; valid existing receipts do not
+need deletion or migration.
+
+**Validation:** the fixture failure was reproduced with Git 2.55 in both a
+workflow-mutation run and a no-mutation control. The complete local, PR, and
+release gates remain mandatory. The live-only validation deferrals described
+below remain unchanged; this RC does not assert new live OpenCode or GitHub
+publication validation.
+
+### Previous candidate: v0.32.2-rc.2 — full no-delta verification evidence
 
 This **owner-approved testing prerelease** includes the RC1 continuity and
 GitHub-tool fixes below, plus the fix for #21. The embedded catalog is 0.32.4

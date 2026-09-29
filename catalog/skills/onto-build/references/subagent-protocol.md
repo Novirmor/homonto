@@ -62,14 +62,17 @@ prompt contains:
    source and test files, message style from recent
    `git log`, match surrounding code idiom
 5. The TDD rule in force (`tdd: tdd` → failing test first, watch it fail)
-6. The debugging rule: on any failure, root cause before any fix —
-   reproduce, read the whole error, trace; no symptom-patching
+6. The shared [debugging protocol](../../homonto/references/debugging.md), to use
+   for unexpected failures. Paste it or provide a worker-readable absolute path;
+   do not assume inherited context
 7. The bookkeeping boundary: do not edit `tasks.md`, `plan.md`, or workflow/state
    records. Preserve the handed dotted task ID and its `[trace #N]` marker in
    the return; the coordinator records completion after verifying the task
-8. Return contract: commit sha + diff summary + literal verification
-   output + any **discovered work** (needed work outside this task's
-   stated scope) — reported, never done. The coordinator appends each
+8. The shared [implementer return contract](../../homonto/references/execution.md#implementer-return),
+   pasted or at a worker-readable absolute path: assignment outcome, commit sha
+   and diff summary, candidate-bound literal verification output, gaps and any
+   **discovered work** (needed work outside this task's stated scope) — reported,
+   never done. The coordinator appends each
    reported item as an unchecked `- [ ] N.M <task> [trace #K]` in `tasks.md` plus its matching
    `## Task N.M` block in `plan.md` (or routes it through the scope-change
    gate) BEFORE the next dispatch, so the task list never trails what the
@@ -118,8 +121,9 @@ cleanup. Dirty input still requires the user's transport decision; never copy
 - **Verify against the repository, not the report**: the returned commit
   sha exists (`git log`), its diff contains only assigned source and test files
   with no task or workflow-state mutations, the working tree is clean, and the
-  stated verification output is plausible
-  (spot-run it when cheap).
+  evidence covers the task's expected passing signal. Reuse it only under the
+  shared candidate-bound verification policy; uncertain provenance or coverage
+  requires a rerun, not a plausibility judgment.
 - **Record completion only after verification**: the coordinator records the
   implementation commit SHA and verification commands/results, checks the task
   off in `tasks.md`, and commits the bookkeeping separately before the next

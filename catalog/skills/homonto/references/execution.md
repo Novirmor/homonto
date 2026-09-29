@@ -66,3 +66,51 @@ an earlier task review does not replace it. Changed candidates require fresh fin
 review under the dispatch policy above. Onto's required scenario evidence, report
 hashes and receipts still apply: regenerate affected reports/receipts, never claim
 that an old artifact hash covers an edited report.
+
+## Implementer return
+
+The coordinator supplies this contract with each task, pasted or as a
+worker-readable absolute path; do not assume inherited context. Return a concise
+message for the coordinator, not a new report file or a claim that the workflow
+is done. Include:
+
+- **Outcome:** complete, partial, or blocked for this assignment, not the whole workflow.
+  Name the task and preserve any handed task ID and trace marker.
+- **Changes:** files changed, what changed and why. Give the commit SHA only if
+  committing was authorized; otherwise identify the uncommitted candidate with
+  its base and exact diff, including new files. Do not commit just to identify it.
+- **Verification:** for each check, identify the tested candidate, absolute cwd,
+  literal command, relevant inputs/environment, exit status, and literal verification
+  output or a readable output path. State which expected passing signal was
+  observed and what it proves. Keep failure and skip information intact; an exit
+  status of zero when no tests ran is not evidence that the behavior passed.
+- **Gaps / discovered work:** checks that did not run, unavailable evidence,
+  remaining failures, and needed work outside scope — reported, never done.
+- **Questions:** only unresolved goal, scope, ownership or authorization decisions.
+  Technical blockers belong with their evidence under gaps; do not invent a user
+  decision. Return a unified diff if requested.
+
+Illustrative returns (replace the sample evidence with the task's actual results):
+
+> **Outcome:** complete — task 1.2, reject an empty name.
+> **Changes:** parser.go and parser_test.go; uncommitted candidate at base `<SHA>`
+> plus the supplied diff (including the new test file).
+> **Verification:** that candidate, cwd `/work/app`, `go test ./...`, Go `<version>`,
+> dependencies from go.sum, exit 0; output `ok example/app 0.012s`.
+> The empty-name regression and package suite ran and passed.
+> **Gaps / discovered work:** integration tests did not run; not required by this task.
+> **Questions:** none.
+
+> **Outcome:** partial — task 1.2; implementation present, verification incomplete.
+> **Changes:** same uncommitted candidate and diff supplied above.
+> **Verification:** cwd `/work/app`, `go test ./... -run '^TestEmptyNmae$'`,
+> same candidate and inputs, exit 0; output `ok example/app 0.003s [no tests to run]`.
+> No regression was exercised; this is not a passing verification of the fix.
+> **Gaps / discovered work:** run the correctly named regression and required suite
+> before completion. If still able to execute, correct the selector and run them
+> before returning; an avoidable command typo is not a blocker.
+> **Questions:** none.
+
+The coordinator validates the diff and evidence against the actual candidate
+under the verification policy above. A formatted worker report alone never
+establishes completion.

@@ -46,8 +46,14 @@ source-only implementer to edit records. Source tasks use the loop below.
     not substitute source directories. Same-repo tasks are serial until
     task-level bindings exist. Only the coordinator calls workspace/worktree
     commands, and all workflow calls retain `--dir "<configRoot>"`.
+   Supply the shared [implementer return contract](../homonto/references/execution.md#implementer-return)
+   and [debugging protocol](../homonto/references/debugging.md), pasted or at a
+   worker-readable absolute path; do not assume inherited context. The latter
+   applies to unexpected failures, not the expected red test of a test-first task.
 2. **Verify against the repository**, not the report: check the diff exists
-   and the task's verification command passes.
+   and the task's verification command establishes its expected passing signal,
+   using the shared candidate-bound evidence policy. An empty test selection is
+   not a verified outcome.
 3. **Review the candidate.** With dispatch available, send `to-reviewer` the original task contract, the resulting
    diff, and the verification result. Ask it to judge both correctness and
    whether the stated outcome is actually complete. Reviewers are read-only and
@@ -93,8 +99,8 @@ first.
 - Behavior changes get focused tests, added or updated in the same task.
 - Run the narrowest useful verification and read its output; a green run you
   didn't read is not verification.
-- No symptom patches: when something fails unexpectedly, find the root cause
-  before changing anything.
+- When something fails unexpectedly, follow
+  [systematic debugging](../homonto/references/debugging.md) before attempting a fix.
 
 ## Exit
 

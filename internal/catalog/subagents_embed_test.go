@@ -164,3 +164,36 @@ func TestImplementerPromptsTrustAssignedVerificationWithoutWideningWrites(t *tes
 		}
 	}
 }
+
+func TestImplementerEvidenceContract(t *testing.T) {
+	for _, file := range []string{
+		"subagents/onto-implementer.md", "subagents/to-implementer.md",
+		"skills/onto-build/references/subagent-protocol.md", "skills/to-do/SKILL.md",
+	} {
+		text := hPromptText(t, file)
+		for _, want := range []string{"homonto/references/execution.md#implementer-return", "homonto/references/debugging.md"} {
+			if !strings.Contains(text, want) {
+				t.Errorf("%s missing shared worker contract %q", file, want)
+			}
+		}
+	}
+	for _, file := range []string{"skills/onto-build/references/subagent-protocol.md", "skills/to-do/SKILL.md"} {
+		text := hPromptText(t, file)
+		for _, want := range []string{"worker-readable absolute path", "do not assume inherited context"} {
+			if !strings.Contains(text, want) {
+				t.Errorf("%s missing fresh-context delivery %q", file, want)
+			}
+		}
+	}
+	text := hPromptText(t, "skills/homonto/references/execution.md")
+	for _, want := range []string{
+		"## Implementer return", "complete, partial, or blocked", "assignment, not the whole workflow",
+		"uncommitted candidate", "absolute cwd", "relevant inputs/environment", "exit status",
+		"literal verification output", "readable output path", "did not run", "outside scope",
+		"no tests ran", "not evidence that the behavior passed", "Questions:",
+	} {
+		if !strings.Contains(text, want) {
+			t.Errorf("implementer return contract missing %q", want)
+		}
+	}
+}

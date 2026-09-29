@@ -132,9 +132,8 @@ question justifies interrupting the preset.
 ### 2. Build — failing test first, always
 
 **A failing test that reproduces the bug is required FIRST, regardless of
-the `tdd` decision.** Watch it fail for the expected reason. Then find the
-root cause (systematic debugging — reproduce, read the whole error, trace
-data flow; no fix before the root cause is identified), apply the minimal
+the `tdd` decision.** Watch it fail for the expected reason. Find the root cause
+using [systematic debugging](../homonto/references/debugging.md), apply the minimal
 fix, watch the test pass, run the surrounding tests. Follow
 [task execution and evidence](../homonto/references/execution.md) for focused
 commits, dispatch fallback and evidence reuse. Preserve the failing reproduction

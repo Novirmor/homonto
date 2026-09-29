@@ -216,15 +216,10 @@ scope.
 
 ### 4. Failure gate (systematic debugging)
 
-On ANY build/test/unexpected failure: stop and follow
-`references/debugging-protocol.md`. No source fix may be proposed or applied
-before the **root cause** is identified (reproduce → read the whole error →
-check recent changes → trace the data flow). If the root cause is a source bug,
-add a minimal failing test that reproduces it, then fix, then watch it pass.
-Symptom-patching is prohibited. After 3 failed hypotheses, reset the analysis
-with fresh exploration or a new reviewer instead of making a fourth guess. Ask
-the user only if the resulting rethink changes behavior, scope, compatibility,
-cost, or another user-owned constraint.
+On unexpected build/test failure or behavior, follow the shared
+[systematic debugging protocol](../homonto/references/debugging.md) before
+attempting a fix. It owns investigation, regression evidence, and when to stop
+patching and reassess; an expected test-first failure follows the TDD protocol.
 
 ### 5. Mid-build scope changes
 

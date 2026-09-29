@@ -1,13 +1,13 @@
 ---
 name: onto-tweak
-description: onto preset — small non-bug change. Use for copy, configuration, documentation, or prompt tweaks, and for small features within tweak limits (≤5 files, no new capability, no existing-spec requirement change) — open-lite, lightweight build, light verify, close; upgrades to the full workflow when scope grows.
+description: Use when onto tweak is explicitly selected for a bounded non-bug edit (copy, configuration, documentation, prompts, or a small feature), or when resuming an active tweak change. Eligibility follows the shared preset policy; verification follows the change's risk.
 ---
 
 # onto-tweak — Preset: Small Change
 
 Fast path for small non-bug changes (copy, config values, docs, prompts)
 and for small features that stay within the tweak limits:
-**open-lite → lightweight build → light verify → close**. Skips design and
+**open-lite → lightweight build → verify → close**. Skips design and
 the full plan — bounded by strict upgrade rules.
 Apply the shared [autonomous workflow policy](../homonto/references/autonomy.md),
 including workspace roots and dirty-work decisions, even on direct entry. Continue
@@ -110,7 +110,8 @@ No `plan.md` required. Still binding:
   reviewable outcomes, focused commits and checkoffs only after landing
 - the checklist is live: in-scope discovered work is APPENDED to `tasks.md`
   as a new unchecked item before its code is written — never done silently
-- on ANY failure: systematic debugging — root cause before any fix
+- on unexpected failure, follow [systematic debugging](../homonto/references/debugging.md)
+  before attempting a fix
 - stay inside the tweak's stated scope; anything more hits the upgrade gate
 
 On verification failure or a defect found before archive, resume this step with

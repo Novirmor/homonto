@@ -35,6 +35,18 @@ func TestWorkflowPolicyScenarios(t *testing.T) {
 		{"configuration and test-count eligibility", "skills/homonto/references/workflow-selection.md",
 			[]string{"Test count alone never forces escalation", "private implementation detail need not", "new public contract or migration requires full onto", "Informational questions"},
 			[]string{"5+ new test cases"}},
+		{"tweak entry does not promise light verification", "skills/onto-tweak/SKILL.md",
+			[]string{"explicitly selected", "active tweak change", "workflow-selection.md#eligibility-and-escalation", "onto-verify`'s scale and risk check"},
+			[]string{"≤5 files", "light verify"}},
+		{"tweak command defers eligibility and risk", "commands/onto-tweak.md",
+			[]string{"eligibility", "verification scale", "`onto-tweak` skill"},
+			[]string{"≤5 files", "light verify"}},
+		{"two source files and six tests", "skills/homonto/references/workflow-selection.md",
+			[]string{"at most five non-test files", "excluding tests and workflow bookkeeping", "Test count alone never forces escalation"}, nil},
+		{"one security-sensitive file", "skills/homonto/references/workflow-selection.md",
+			[]string{"security-sensitive surface needs full verification even if its preset still fits"}, nil},
+		{"intermittent and multi-component failures", "skills/homonto/references/debugging.md",
+			[]string{"If reproduction is unreliable", "gather evidence", "inputs, outputs", "without exposing secrets", "working path", "one variable at a time", "3 failed hypotheses", "outside the assigned scope"}, nil},
 		{"native decision channel", "skills/homonto/references/autonomy.md",
 			[]string{"OpenCode's built-in `question` tool", "Do not substitute a question in ordinary chat", "unavailable, denied, or dismissed", "never infer consent"}, nil},
 	} {
@@ -51,6 +63,18 @@ func TestWorkflowPolicyScenarios(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+func TestExecutionPathsLoadSharedDebuggingOnFailure(t *testing.T) {
+	for _, file := range []string{
+		"skills/onto-build/SKILL.md", "skills/onto-fix/SKILL.md",
+		"skills/onto-tweak/SKILL.md", "skills/to-do/SKILL.md",
+	} {
+		text := hPromptText(t, file)
+		if !strings.Contains(text, "../homonto/references/debugging.md") {
+			t.Errorf("%s must load shared debugging for failures", file)
+		}
 	}
 }
 
@@ -118,9 +142,11 @@ func TestExtractedWorkflowPoliciesMaterialize(t *testing.T) {
 			if err := c.Materialize(dir, names, "none", "none", "", nil); err != nil {
 				t.Fatal(err)
 			}
-			files := []string{"homonto/references/execution.md", "homonto/references/workflow-selection.md", "homonto/references/autonomy.md"}
+			files := []string{"homonto/references/execution.md", "homonto/references/workflow-selection.md", "homonto/references/autonomy.md", "homonto/references/debugging.md"}
 			if workflow == "onto" {
-				files = append(files, "onto/references/discovery.md", "onto/references/recovery.md", "onto-close/references/integration.md")
+				files = append(files, "onto/references/discovery.md", "onto/references/recovery.md", "onto-close/references/integration.md", "onto-build/SKILL.md", "onto-build/references/subagent-protocol.md", "onto-fix/SKILL.md", "onto-tweak/SKILL.md")
+			} else {
+				files = append(files, "to-do/SKILL.md")
 			}
 			for _, file := range files {
 				data, err := os.ReadFile(filepath.Join(dir, filepath.FromSlash(file)))

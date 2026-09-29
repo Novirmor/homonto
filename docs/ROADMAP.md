@@ -662,7 +662,7 @@ subagent-protocol pattern), no dependency on superpowers, self-containment kept.
     watch-it-fail-for-the-right-reason, never weaken a test, the rationalization
     table. (`tdd-mode: tdd` is onto-fix's mandatory default; its enforcement
     prose is currently ~6 lines.)
-  - `onto-build/references/debugging-protocol.md` — phased method (reproduce →
+  - `homonto/references/debugging.md` — phased method (reproduce →
     whole error → recent changes → data-flow → hypothesis → minimal experiment),
     shotgun fixes forbidden, escalate after 3 failed hypotheses.
   - `onto-build/references/worktree-protocol.md` — the mechanics behind

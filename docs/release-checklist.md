@@ -105,6 +105,15 @@ in both its first run and one retry. **v0.32.2-rc.3** carries the test-setup fix
 through a follow-up PR; it retains the same live-only deferrals and complete
 gate requirements. The existing RC2 tag is immutable and is not retargeted.
 
+For **v0.32.2**, the owner approved the previous RC and requested a stable
+release including the subsequent shared debugging and implementer-report
+improvements. Record this as release acceptance, not as evidence that specific
+live checks were rerun. The release notes retain the disclosed live-only gaps;
+no new live OpenCode, real-GitHub sandbox, migration, or model-compliance results
+are claimed. This version-specific acceptance does not waive the complete local
+gate on the final candidate, Docker packaging rehearsal, or repeated release
+gate, and is not a default waiver for later releases.
+
 > **Dogfooding is deferred to v1.** This repository is developed directly
 > on branches, with no external workflow stack
 > ([ADR 0023](adr/0023-develop-directly-without-comet.md);

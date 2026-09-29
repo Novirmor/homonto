@@ -15,7 +15,68 @@ bookkeeper) — for every supported OS/arch as separate archives under one
 `SHA256SUMS`. `onto` and `to` each require `homonto` to have installed their
 framework first (`[frameworks.onto]` / `[frameworks.to]` + `homonto apply`).
 
-### v0.32.2-rc.3 — no-delta evidence recovery and deterministic test setup
+### v0.32.2 — workflow recovery and evidence-backed implementation
+
+This stable release includes all changes since v0.32.1: the owner-approved
+v0.32.2-rc.3 candidate plus the shared debugging and implementer-report
+improvements below. All three binaries are stamped v0.32.2; the embedded catalog
+is 0.32.5 (onto 0.25.5, to 0.22.4, h 0.10.3). The h bundle receives the updated
+onto/to frameworks through its existing dependencies.
+
+- **Workflow continuity:** V1/V2 model-context and compaction reminders keep
+  homonto, build, and custom agents working on their authorized assignment.
+  Explicit endpoints, pauses, worker scope, permission denials, and concrete
+  blockers remain valid stops. Idle events never automatically restart agents.
+- **GitHub draft recovery (#19, #20):** V2 drafting returns the preview and native
+  question arguments without invoking a nested question. Publication still needs
+  correlated approval and freshness checks. Five-second preflight/service-read
+  deadlines, cancellation cleanup, stopped-listener detection, and distinct
+  context/binding/workspace/service errors replace stranded requests with useful
+  diagnostics. The original reported hang's exact blocked await was not established.
+- **Full no-delta evidence (#21):** full changes without delta files can resolve
+  standalone, unfenced `Scenario-ID` declarations from tasks or verification,
+  just like presets. Existing valid receipts recover without migration, deletion,
+  fabricated specs, or a workflow downgrade. Delta files retain precedence;
+  unknown/duplicate IDs are rejected before recording. Candidate, task, artifact
+  hashes, and explicit no-spec review obligations remain binding.
+- **Shared systematic debugging:** full onto, fix/tweak presets, to-do, and
+  implementers use one protocol. It covers intermittent reproduction, component
+  boundaries without exposing secrets, working-path comparisons, one-variable
+  experiments, and reassessment after three failed hypotheses. Expected test-first
+  failures are distinguished from unexpected failures; workers retain their scope.
+- **Explicit implementer returns:** workers report assignment status, the exact
+  candidate, changed files, commands, cwd, inputs, exit status, output, and gaps.
+  Dispatchers supply the contract rather than assume inherited context; coordinators
+  validate it against the repository. A successful command that ran no tests is
+  not verification, and an uncommitted candidate does not require a new commit
+  merely to identify it.
+- **Consistent tweak entry guidance:** descriptions use the shared eligibility
+  policy instead of an incorrect total-file limit, and no longer promise light
+  verification for security-sensitive work.
+- **Deterministic test setup:** Git 2.55 fixture maintenance now finishes before
+  filesystem snapshots. Production isolation and assertions are unchanged; RC2's
+  failed release tag was not moved or reused.
+
+**Upgrade:** install matching v0.32.2 binaries, run `homonto plan` and
+`homonto apply` in each configured project, then restart OpenCode. Workflow
+records and valid evidence receipts do not migrate. For #21 recovery, rerun
+`onto doctor --dir <config-root>` and `onto trace <change> --dir <config-root>`;
+changed candidates or reports need fresh verification. Reconcile interrupted
+GitHub publication before restarting; draft approvals are memory-only, so a
+newly staged draft needs fresh approval.
+
+**Validation and accepted gaps:** the owner approved the previous RC and
+requested this stable release with the additional prompt improvements. That is
+release acceptance, not a new report of individual live checks. The complete
+local pre-tag gate, including race tests, vulnerability scanning, Docker E2E and
+packaging, remains mandatory; the release workflow repeats it before publication.
+Regression tests cover the recovery paths, prompt contracts, and reference
+delivery with either framework installed alone. No new live model-compliance,
+V2 terminal/reload/notification/native-question, real-GitHub sandbox publication,
+or V1/V2 migration evaluation is claimed for this release. Prompt delivery and
+mocked publication do not establish those results.
+
+### Previous candidate: v0.32.2-rc.3 — no-delta evidence recovery and deterministic test setup
 
 This **owner-requested testing prerelease** includes the #21 fix described below
 and all RC1 runtime fixes. All three binaries are stamped v0.32.2-rc.3; catalog

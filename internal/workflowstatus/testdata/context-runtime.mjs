@@ -1,5 +1,6 @@
 import assert from "node:assert/strict"
-import { readFile, writeFile, realpath, rm, symlink, mkdir } from "node:fs/promises"
+import fs, { readFile, writeFile, realpath, rm, symlink, mkdir } from "node:fs/promises"
+import { syncBuiltinESMExports } from "node:module"
 import { dirname, join } from "node:path"
 import { pathToFileURL } from "node:url"
 
@@ -711,11 +712,40 @@ try {
   const beforeConcurrent = calls
   let lookups = 0
   getSession = async () => { lookups++; return session }
-  const second = invoke(instance, undefined, "compaction")
-  await until(() => lookups === 1)
-  await delay(20)
-  held(); held = undefined
-  assert.deepEqual(await first, await second)
+  // Session lookup precedes asynchronous binding validation. Hold its final
+  // realpath, then wait one event-loop turn after it returns so compaction has
+  // joined the snapshot flight before releasing the subprocess. A fixed sleep
+  // can release it too early on a busy release gate and cause an unqueued read.
+  const originalRealpath = fs.realpath
+  let releaseBinding, bindingChecked
+  const checked = new Promise(resolve => { bindingChecked = resolve })
+  fs.realpath = async (...args) => {
+    const directory = await originalRealpath(...args)
+    if (args[0] === root) {
+      await new Promise(resolve => { releaseBinding = resolve })
+      setImmediate(bindingChecked)
+    }
+    return directory
+  }
+  syncBuiltinESMExports()
+  try {
+    const second = invoke(instance, undefined, "compaction")
+    const complete = async () => {
+      await until(() => releaseBinding)
+      assert.equal(lookups, 1)
+      assert.equal(calls, beforeConcurrent)
+      releaseBinding()
+      await checked
+      fs.realpath = originalRealpath
+      syncBuiltinESMExports()
+      held(); held = undefined
+    }
+    const [context, compaction] = await Promise.all([first, second, complete()])
+    assert.deepEqual(context, compaction)
+  } finally {
+    fs.realpath = originalRealpath
+    syncBuiltinESMExports()
+  }
   assert.equal(calls, beforeConcurrent)
   assert.equal(maxLive, 1)
   getSession = undefined

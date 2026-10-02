@@ -81,3 +81,10 @@ func ReadStandardizedJSON(path string) ([]byte, error) {
 	}
 	return doc, nil
 }
+
+// IsLinkKey reports whether a state key belongs to a file-projection link
+// namespace (skill./command./subagent.) — whose records carry their own
+// destination ("dst -> src") rather than a fixed document path.
+func IsLinkKey(key string) bool {
+	return HasAnyPrefix(key, "skill.", "command.", "subagent.")
+}

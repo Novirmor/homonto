@@ -74,7 +74,7 @@ type ModelSpec struct {
 }
 
 // RenderContext carries the per-subagent model overrides the render needs for
-// the tool being rendered (OpenCode, the only adapter since v0.13.0). Overrides
+// the tool being rendered (OpenCode, the only host agentfm renders today). Overrides
 // is keyed by subagent name. A non-nil context is a production render and
 // requires a non-empty model for every rendered agent; a nil context is
 // reserved for catalog projection tests that intentionally omit model routing.
@@ -137,9 +137,9 @@ func ValidateInstalledName(name string, content []byte) error {
 }
 
 // ProjectsFor reports whether content is projected for tool at all. It is
-// false only where Render deliberately emits nothing — and since v0.13.0
-// (OpenCode the only adapter) no such case remains: every agent, primary
-// included, renders. Callers use it to tell "deliberately not projected here"
+// false only where Render deliberately emits nothing — and for OpenCode,
+// the only host agentfm renders today, no such case remains: every agent,
+// primary included, renders. Callers use it to tell "deliberately not projected here"
 // apart from "should be here and is missing", so a by-design absence is never
 // reported as a fixable finding.
 func ProjectsFor(content []byte, tool string) (bool, error) {

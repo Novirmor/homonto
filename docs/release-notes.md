@@ -15,7 +15,77 @@ bookkeeper) — for every supported OS/arch as separate archives under one
 `SHA256SUMS`. `onto` and `to` each require `homonto` to have installed their
 framework first (`[frameworks.onto]` / `[frameworks.to]` + `homonto apply`).
 
-### v0.32.2 — workflow recovery and evidence-backed implementation
+### claude-experimental-rc.1 — separate-target MCP experiment
+
+This **owner-requested experimental prerelease** is built from the `claude`
+branch. It is not a `vMAJOR.MINOR.PATCH` release, does not bump stable or catalog
+versions, and must not become GitHub's latest stable release. **v0.32.2 remains
+the stable recommendation.** All three archive binaries identify this build as
+`claude-experimental-rc.1`; the bundled workflow catalog is unchanged.
+
+**What to test:** explicit `targets = ["claude"]` on stdio `[mcps.*]`, at user,
+project, and declared-repository scope. `targets = ["opencode", "claude"]`
+projects to both native formats; omitted targets remain OpenCode-only. Plan,
+apply, managed-key pruning, drift, provenance, and unmanaged-content preservation
+are the intended experimental surface. Claude-only applies no longer depend on
+unrelated OpenCode files or plugins. Declaring two partitions over one native
+file, including retagging a resource to a self-repository, fails closed and names
+the cleanup sequence.
+
+**Install:** download the OS/architecture archives attached to this prerelease
+and verify them against `SHA256SUMS`. Install in a separate directory rather than
+replacing stable binaries. The stable interactive installer rejects this
+non-semantic tag; use the archives. This label is also not a semantic-version
+compatibility claim: builtin frameworks with version constraints are not the
+supported testing surface. Keep using stable binaries for workflow projects.
+
+**Example** (substitute a real stdio MCP command):
+
+```toml
+[mcps.demo]
+command = ["your-mcp-server", "--stdio"]
+scope = "project"
+targets = ["claude"]
+```
+
+Run the experimental `homonto plan`, inspect every destination, then use plain
+`homonto apply --yes` in a disposable config/project. Project scope writes
+`.mcp.json`; user scope writes `~/.claude.json` (an absolute `CLAUDE_CONFIG_DIR`
+changes that registry location). Native files may contain resolved credentials;
+do not commit them. State stores unresolved references and hashes.
+
+**Limits and release acceptance:**
+
+- This is **not** the complete Claude workflow port. Claude skills, agents,
+  coordinator, settings, hooks, frameworks, plugins, marketplaces, GitHub
+  publication integration, and workflow UI are not supported. Such declarations
+  remain rejected rather than silently weakened.
+- Earlier live checks used Claude Code **2.1.285** to capture sanitized MCP
+  format fixtures and list a homonto-projected server. Listing was discovery,
+  not a successful server connection, project-trust approval, or workflow run.
+  No new live Claude session or OpenCode/GitHub evaluation is claimed here.
+- **Do not rely on snapshot undo/recovery in this RC.** The branch changes the
+  journal to schema 2 and adds structured reversal, but interrupted recovery
+  lacks end-to-end acceptance evidence. Prepared journal after-images can be
+  incomplete; prepared reversal is best-effort and can skip errors. Direct native
+  file edits are not comprehensively guarded by after-state comparisons. Keep
+  independent backups; prefer plain apply in disposable projects. Older schema-1
+  journals can be inspected but may refuse reversal. These caveats supersede
+  stronger completion claims in the experimental plan.
+- Keep `CLAUDE_CONFIG_DIR` fixed while testing. Detectable default-to-override
+  moves refuse rather than strand recorded servers; removing or changing a
+  previous override can leave managed entries at an old location that state
+  does not record. Relative overrides are treated as unset. Symlink-aliased
+  configuration roots are not fully covered by ownership-overlap detection.
+- Existing historical Claude state may activate reconciliation even without a
+  current Claude declaration. Inspect pruning carefully; unsupported historical
+  structured records are retired state-only, leaving native content unmanaged.
+- The full local gate, including vulnerability scanning, Docker E2E, and the
+  packaging smoke, is mandatory before tagging. The release workflow repeats
+  the same gate before publishing. Its OpenCode/Go regression coverage does not
+  establish a full Claude host-compatibility guarantee.
+
+### Previous stable: v0.32.2 — workflow recovery and evidence-backed implementation
 
 This stable release includes all changes since v0.32.1: the owner-approved
 v0.32.2-rc.3 candidate plus the shared debugging and implementer-report

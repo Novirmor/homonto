@@ -70,13 +70,17 @@ func TestCLIMigrationSnapshotUndoRestoresLegacyStateWithoutRetargeting(t *testin
 	if _, ok := e.State.Get("opencode", "tui.cli.theme.name"); ok {
 		t.Fatal("undo retained the new state checkpoint")
 	}
+	// Undo restores managed VALUES (ADR 0030): the cli.json entry the apply
+	// created is reversed on disk, while unmanaged settings and the untouched
+	// legacy tui.json stay byte-identical.
 	cli := read(cliPath)
-	if gjson.Get(cli, "theme.name").String() != "gruvbox" {
-		t.Fatalf("current-TOML reverse planning changed behavior: %s", cli)
+	if gjson.Get(cli, "theme.name").Exists() {
+		t.Fatalf("undo must reverse the migrated cli.json entry: %s", cli)
 	}
 	if read(tuiPath) != legacy || gjson.Get(cli, "theme.mode").String() != "dark" || gjson.Get(cli, "tabs.mode").String() != "off" {
 		t.Fatal("undo changed V1 bytes or unmanaged CLI settings")
 	}
+	// Re-planning re-runs the migration from the restored legacy state.
 	sets, err = e.Plan()
 	if err != nil {
 		t.Fatal(err)
@@ -84,7 +88,7 @@ func TestCLIMigrationSnapshotUndoRestoresLegacyStateWithoutRetargeting(t *testin
 	adopted, retired := false, false
 	for _, cs := range sets {
 		for _, ch := range cs.Changes {
-			adopted = adopted || ch.Key == "tui.cli.theme.name" && ch.Action == "adopt"
+			adopted = adopted || ch.Key == "tui.cli.theme.name" && (ch.Action == "adopt" || ch.Action == "create")
 			retired = retired || ch.Key == "tui.theme" && ch.Action == "delete"
 		}
 	}
@@ -94,7 +98,11 @@ func TestCLIMigrationSnapshotUndoRestoresLegacyStateWithoutRetargeting(t *testin
 	if err := e.Apply(context.Background(), sets); err != nil {
 		t.Fatal(err)
 	}
-	if read(cliPath) != cli || read(tuiPath) != legacy {
-		t.Fatal("re-adoption rewrote tool files")
+	cli = read(cliPath)
+	if gjson.Get(cli, "theme.name").String() != "gruvbox" {
+		t.Fatalf("re-migration did not restore the migrated value: %s", cli)
+	}
+	if read(tuiPath) != legacy {
+		t.Fatal("re-migration rewrote the V1 file")
 	}
 }

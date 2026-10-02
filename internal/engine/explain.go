@@ -17,8 +17,10 @@ func (e *Engine) DescribeAll() []adapter.ManagedResource {
 		}
 	}
 	for _, t := range e.RepoTargets {
-		if d, ok := t.Adapter.(adapter.Describer); ok {
-			out = append(out, d.Describe(e.Cfg)...)
+		for _, a := range t.Adapters {
+			if d, ok := a.(adapter.Describer); ok {
+				out = append(out, d.Describe(e.Cfg)...)
+			}
 		}
 	}
 	return out
@@ -55,20 +57,23 @@ func (en *enricher) allocate() {
 
 // captureDeletes snapshots the entries a changeset is about to delete, so the
 // tombstone can carry the pre-delete desired value after the adapter's own
-// st.Delete removed the entry.
+// st.Delete removed the entry. The tombstone carries the full adapter label
+// (display); the state lookup uses the base tool id, the partition's key.
 func (en *enricher) captureDeletes(tool string, cs adapter.ChangeSet, st *state.State) []state.Tombstone {
 	var out []state.Tombstone
 	for _, c := range cs.Changes {
 		if c.Action != adapter.ActionDelete {
 			continue
 		}
-		e, _ := st.Get(tool, c.Key)
+		e, _ := st.Get(BaseToolID(tool), c.Key)
 		out = append(out, state.Tombstone{Tool: tool, Key: c.Key, Desired: e.Desired})
 	}
 	return out
 }
 
 // record applies provenance updates for one adapter's completed changeset.
+// State keys live under the base tool id even for repo-mode changesets, so
+// Enrich must look there — the suffixed label would silently match nothing.
 func (en *enricher) record(cs adapter.ChangeSet, deletes []state.Tombstone, st *state.State) {
 	for _, c := range cs.Changes {
 		switch c.Action {
@@ -84,7 +89,7 @@ func (en *enricher) record(cs adapter.ChangeSet, deletes []state.Tombstone, st *
 			origin = &o
 		}
 		cause := c.Cause
-		st.Enrich(cs.Tool, c.Key, origin, state.LastEvent{Op: en.op, Action: string(c.Action), Cause: string(cause), At: en.at})
+		st.Enrich(BaseToolID(cs.Tool), c.Key, origin, state.LastEvent{Op: en.op, Action: string(c.Action), Cause: string(cause), At: en.at})
 	}
 	for _, d := range deletes {
 		en.allocate()

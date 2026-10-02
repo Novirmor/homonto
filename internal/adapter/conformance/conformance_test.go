@@ -24,6 +24,7 @@ import (
 	"testing"
 
 	"github.com/noviopenworks/homonto/internal/adapter"
+	"github.com/noviopenworks/homonto/internal/adapter/claude"
 	"github.com/noviopenworks/homonto/internal/adapter/opencode"
 	"github.com/noviopenworks/homonto/internal/config"
 	"github.com/noviopenworks/homonto/internal/jsonutil"
@@ -79,8 +80,9 @@ func noSecret() *secret.Resolver {
 }
 
 func cases() []adapterCase {
-	// OpenCode is the only adapter since v0.13.0; the table stays so a future
-	// second adapter re-enters through the same contract.
+	// OpenCode is the default target; claude is the opt-in target (ADR 0066)
+	// and projects stdio MCPs in its first slice. The shared table drives both
+	// through the same contract.
 	return []adapterCase{
 		{
 			name:       "opencode",
@@ -126,6 +128,52 @@ func cases() []adapterCase {
 				return &config.Config{
 					MCPs: map[string]config.MCP{
 						"brave": {Command: []string{"npx", "server-brave"}, Env: map[string]string{"K": "${pass:ai/brave}"}, Targets: []string{"opencode"}},
+					},
+				}
+			},
+			secretKey: "mcp.brave",
+		},
+		{
+			name:       "claude",
+			newAdapter: func(home, content string) adapter.Adapter { return claude.New(home, content) },
+			newConfig: func() *config.Config {
+				return &config.Config{
+					MCPs: map[string]config.MCP{
+						"codegraph": {Command: []string{"codegraph", "serve"}, Targets: []string{"claude"}},
+					},
+				}
+			},
+			seed:       nil, // claude.Apply creates ~/.claude.json on a real create.
+			managedDir: func(home string) string { return filepath.Join(home, ".claude") },
+			// mcp.codegraph lives on disk as mcpServers.codegraph in ~/.claude.json.
+			driftKey: "mcp.codegraph",
+			driftMutate: func(t *testing.T, home string) {
+				t.Helper()
+				p := filepath.Join(home, ".claude.json")
+				raw, err := os.ReadFile(p)
+				if err != nil {
+					t.Fatalf("read claude config for drift mutation: %v", err)
+				}
+				doc, err := jsonutil.Standardize(raw)
+				if err != nil {
+					t.Fatalf("standardize claude config: %v", err)
+				}
+				out, err := jsonutil.SetJSON(doc, "mcpServers.codegraph.command", "impostor")
+				if err != nil {
+					t.Fatalf("set command out-of-band: %v", err)
+				}
+				mustWrite(t, p, string(out))
+			},
+			malformed: func(t *testing.T, home string) {
+				t.Helper()
+				// A pre-existing, unparseable ~/.claude.json (dangling value).
+				mustWrite(t, filepath.Join(home, ".claude.json"), `{"mcpServers": }`)
+			},
+			// A secret-backed MCP env var; claude projects it into ~/.claude.json.
+			secretConfig: func() *config.Config {
+				return &config.Config{
+					MCPs: map[string]config.MCP{
+						"brave": {Command: []string{"npx", "server-brave"}, Env: map[string]string{"K": "${pass:ai/brave}"}, Targets: []string{"claude"}},
 					},
 				}
 			},

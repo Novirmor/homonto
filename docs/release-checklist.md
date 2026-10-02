@@ -127,6 +127,19 @@ gate, and is not a default waiver for later releases.
 
 ## Tag and publish
 
+### Claude branch experiment
+
+The owner requested **`claude-experimental-rc.1`** without advancing the stable
+version line. The release workflow also accepts `claude-experimental-rc.*` tags
+and marks them as prereleases. Keep catalog/framework versions unchanged and
+stable v0.32.2 as latest. The complete local gate and packaging rehearsal remain
+required; this request accepts the explicitly experimental, MCP-only scope and
+the disclosed live-host and snapshot limitations in the release notes, not a
+production-support or full-workflow claim. Use direct archive installation:
+the stable installer deliberately does not accept these non-semantic tags.
+
+### Versioned releases
+
 1. Pick the version. Pre-releases use a suffix (for example,
    `v0.32.0-rc.1`); a bare
    `vMAJOR.MINOR.PATCH` is a full release. The workflow marks any tag

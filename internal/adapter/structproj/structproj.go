@@ -123,6 +123,17 @@ func Apply(tool, prefix string, changes []adapter.Change, disk []byte, codec Cod
 			}
 			st.Set(tool, c.Key, c.New, secret.Hash(codec.Canonical(MustJSON(val))))
 		case "delete":
+			// A key absent from disk is a pure state retirement: nothing to
+			// remove from the document. Running codec.Delete anyway would
+			// return an equivalent document with a trailing-newline diff
+			// (jsonutil normalizes on write), turning a no-op into a file
+			// creation for a file that never existed.
+			if _, ok, err := codec.Get(doc, pathFor(c.Key)); err != nil {
+				return nil, false, err
+			} else if !ok {
+				st.Delete(tool, c.Key)
+				continue
+			}
 			if err := ensure(); err != nil {
 				return nil, false, err
 			}

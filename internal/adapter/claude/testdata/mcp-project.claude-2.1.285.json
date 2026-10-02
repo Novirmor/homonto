@@ -1,0 +1,10 @@
+{
+  "mcpServers": {
+    "demoP": {
+      "type": "stdio",
+      "command": "srvP",
+      "args": [],
+      "env": {}
+    }
+  }
+}

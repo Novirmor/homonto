@@ -63,9 +63,11 @@ type eventJSON struct {
 }
 
 // stateFor returns the state partition an adapter label reads: the main state
-// for "opencode", the named partition for "opencode@<repo>".
+// for a plain tool id ("opencode", "claude"), the named partition for a
+// repo-mode label ("<tool>@<repo>"). Tool ids never contain "@", so cutting
+// at the first "@" separates the two for every adapter.
 func stateFor(e *engine.Engine, tool string) *state.State {
-	if name, ok := strings.CutPrefix(tool, "opencode@"); ok {
+	if _, name, ok := strings.Cut(tool, "@"); ok {
 		for _, t := range e.RepoTargets {
 			if t.Name == name {
 				return t.State
@@ -77,7 +79,7 @@ func stateFor(e *engine.Engine, tool string) *state.State {
 
 // partitionRepo extracts the repo alias from an adapter label, "" for main.
 func partitionRepo(tool string) string {
-	if name, ok := strings.CutPrefix(tool, "opencode@"); ok {
+	if _, name, ok := strings.Cut(tool, "@"); ok {
 		return name
 	}
 	return ""
@@ -99,7 +101,7 @@ func buildRows(e *engine.Engine) []explainRow {
 			row.Origin = "unknown (predates provenance)"
 		}
 		if st := stateFor(e, r.Tool); st != nil {
-			if entry, ok := st.Get(r.Tool, r.Key); ok {
+			if entry, ok := st.Get(engine.BaseToolID(r.Tool), r.Key); ok {
 				if entry.LastEvent != nil {
 					row.LastEvent = &eventJSON{Op: entry.LastEvent.Op, Action: entry.LastEvent.Action, Cause: entry.LastEvent.Cause, At: entry.LastEvent.At}
 				}

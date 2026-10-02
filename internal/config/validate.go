@@ -149,7 +149,7 @@ func validateRepoTargets(c *Config) error {
 			return fmt.Errorf("parse config: %s repo %q is not declared under [repos]", label, repo)
 		}
 		if !isProject {
-			return fmt.Errorf("parse config: %s repo %q requires scope = \"project\" — a repo-targeted resource projects into that repository's .opencode/, which only project scope reaches", label, repo)
+			return fmt.Errorf("parse config: %s repo %q requires scope = \"project\" — a repo-targeted resource projects into that repository's tool files, which only project scope reaches", label, repo)
 		}
 		return nil
 	}
@@ -217,7 +217,7 @@ func sortedMCPNames(c *Config) []string {
 func validateRemovedTools(c *Config) error {
 	if len(c.Settings.Claude) > 0 {
 		keys := sortedKeys(c.Settings.Claude)
-		return fmt.Errorf("parse config: settings.claude.%s — Claude Code support was removed in v0.13.0; OpenCode is the only adapter, move the key to [settings.opencode] or delete it", keys[0])
+		return fmt.Errorf("parse config: settings.claude.%s — Claude Code settings support was removed in v0.13.0 and is not restored for the claude target yet; move the key to [settings.opencode] or delete it", keys[0])
 	}
 	if len(c.Plugins.Claude) > 0 {
 		names := sortedPluginNames(c.Plugins.Claude)
@@ -292,18 +292,23 @@ func validateMCPs(c *Config) error {
 			return fmt.Errorf("parse config: mcps entry %q has no command; an MCP server needs a command to run", name)
 		}
 		// A target that names no adapter means the MCP is projected nowhere —
-		// a silent typo. OpenCode is the only adapter since v0.13.0; a target
-		// naming a removed tool gets its own migration message.
+		// a silent typo. OpenCode and Claude both project MCPs, at user scope
+		// and repo-tagged project scope; a target naming the removed codex
+		// pilot keeps its migration message.
 		for _, target := range m.Targets {
-			if target == "claude" {
-				return fmt.Errorf("parse config: mcps entry %q targets \"claude\", but Claude Code support was removed in v0.13.0; remove the target or delete the entry", name)
-			}
 			if target == "codex" {
 				return fmt.Errorf("parse config: mcps entry %q targets \"codex\", but the codex pilot was removed in v0.13.0; remove the target or delete the entry", name)
 			}
 			if !isMCPTarget(target) {
-				return fmt.Errorf("parse config: mcps entry %q targets unknown tool %q; the only valid target is \"opencode\"", name, target)
+				return fmt.Errorf("parse config: mcps entry %q targets unknown tool %q; the valid targets are \"opencode\" and \"claude\"", name, target)
 			}
+		}
+		// Claude Code reserves built-in server names in mcpServers and skips
+		// them at load; "workspace" is reserved today. A config using one for
+		// the claude target would plan, apply, and record clean while Claude
+		// never loads the server — reject it naming the collision.
+		if slices.Contains(m.TargetsOrAll(), "claude") && name == "workspace" {
+			return fmt.Errorf("parse config: mcps entry %q uses Claude Code's reserved server name \"workspace\"; rename the entry or drop the claude target", name)
 		}
 		switch m.Scope {
 		case "", "user", "project":
@@ -561,23 +566,24 @@ func validateSubagents(subagents map[string]Subagent) error {
 }
 
 // mcpTargetTools are valid MCP targets; resourceTargetTools are valid targets
-// for skills/commands/subagents/frameworks. OpenCode is the only adapter
-// since v0.13.0 — Claude Code and the codex pilot were removed, and their
-// target values are rejected by validateTarget with a migration message
-// rather than a bare "unknown tool".
-var mcpTargetTools = []string{"opencode"}
+// for skills/commands/subagents/frameworks. Both adapters project MCPs, so
+// "claude" is a valid MCP target; resource projection is OpenCode-only until
+// the claude resource renderers land, and validateTarget rejects "claude" for
+// resources with a message saying exactly that. The codex pilot stays removed.
+var mcpTargetTools = []string{"opencode", "claude"}
 var resourceTargetTools = []string{"opencode"}
 
 func isMCPTarget(t string) bool      { return slices.Contains(mcpTargetTools, t) }
 func isResourceTarget(t string) bool { return slices.Contains(resourceTargetTools, t) }
 
-// validateTarget rejects one target value for a managed resource, naming the
-// removed tools separately from an unknown one so a stale config gets a
-// migration message instead of a typo report.
+// validateTarget rejects one target value for a managed resource. A resource
+// naming claude fails with the current support boundary (MCPs only) rather
+// than a bare unknown-tool report, so a user steering toward the claude target
+// learns what works today.
 func validateTarget(label, target string) error {
 	switch target {
 	case "claude":
-		return fmt.Errorf("parse config: %s targets \"claude\", but Claude Code support was removed in v0.13.0; remove the target", label)
+		return fmt.Errorf("parse config: %s targets \"claude\", but the claude target supports mcps only for now; remove the target or retarget opencode", label)
 	case "codex":
 		return fmt.Errorf("parse config: %s targets \"codex\", but the codex pilot was removed in v0.13.0; remove the target", label)
 	}

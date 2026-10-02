@@ -5,8 +5,29 @@
 Describe your MCP servers, skills, commands, subagents, plugins, and settings
 once in `homonto.toml`. `homonto apply` projects that desired state into
 **OpenCode** through a Terraform-style **plan → confirm → apply** pipeline.
-OpenCode is the only adapter; Claude Code and codex support was removed in
-v0.13.0 (configs naming them fail at load naming the key).
+OpenCode remains the default target. This experimental `claude` branch restores
+**Claude Code stdio MCP projection only**, explicitly selected with
+`targets = ["claude"]`; omitted targets still mean OpenCode only. Claude
+skills, agents, frameworks, settings, plugins, and marketplaces remain
+unsupported. The codex pilot stays removed.
+
+**Experimental RC:** `claude-experimental-rc.1` is a branch-specific testing
+build, not a new stable version. Download its archives directly from the
+GitHub prerelease; the stable installer accepts semantic versions and does not
+select this tag. Use disposable configurations and keep copies of config,
+native tool files, and state. Do not rely on snapshot undo/recovery for important
+state in this RC. See the [release notes](docs/release-notes.md) for limitations.
+
+```toml
+[mcps.demo]
+command = ["your-mcp-server", "--stdio"]
+scope = "project"
+targets = ["claude"]
+```
+
+Project servers land in `.mcp.json`; user scope (the default) uses
+`~/.claude.json`, or `$CLAUDE_CONFIG_DIR/.claude.json` for an absolute override.
+Claude Code may require project MCP approval before starting a server.
 
 - **Declarative and reversible.** Edit the TOML. `plan` shows the exact diff,
   `apply` writes it surgically, and removing a resource prunes it on the next

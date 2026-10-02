@@ -39,7 +39,8 @@ func (m MCP) ScopeOrDefault() string {
 }
 
 // TargetsOrAll returns the explicit targets, or every tool when none are set
-// — OpenCode, the only adapter since v0.13.0.
+// — OpenCode, the default target since omitted targets stay OpenCode-only
+// (claude is opt-in per entry).
 func (m MCP) TargetsOrAll() []string {
 	if len(m.Targets) == 0 {
 		return []string{"opencode"}
@@ -66,8 +67,8 @@ type Resource struct {
 	Digest string `toml:"digest"`
 }
 
-// TargetsOrAll returns the explicit targets, or every tool when none are set
-// — OpenCode, the only adapter since v0.13.0.
+// TargetsOrAll returns the explicit targets, or the default set when none
+// are set — OpenCode (claude is opt-in through an explicit targets entry).
 func (r Resource) TargetsOrAll() []string {
 	if len(r.Targets) == 0 {
 		return []string{"opencode"}
@@ -187,8 +188,8 @@ func SubagentCatalogName(source string) (string, bool) {
 	return strings.CutPrefix(source, "builtin:")
 }
 
-// TargetsOrAll returns the explicit targets, or every tool when none are set
-// — OpenCode, the only adapter since v0.13.0.
+// TargetsOrAll returns the explicit targets, or the default set when none
+// are set — OpenCode (claude is opt-in through an explicit targets entry).
 func (s Subagent) TargetsOrAll() []string {
 	if len(s.Targets) == 0 {
 		return []string{"opencode"}
@@ -227,8 +228,8 @@ type Agent struct {
 	Mode    string   `toml:"mode"`    // optional; copy | link (empty = link)
 }
 
-// TargetsOrAll returns the explicit targets, or every tool when none are set
-// — OpenCode, the only adapter since v0.13.0.
+// TargetsOrAll returns the explicit targets, or the default set when none
+// are set — OpenCode (claude is opt-in through an explicit targets entry).
 func (a Agent) TargetsOrAll() []string {
 	if len(a.Targets) == 0 {
 		return []string{"opencode"}
@@ -451,6 +452,58 @@ func (c *Config) RepoDirs() map[string]string {
 		return map[string]string{}
 	}
 	return c.repoDirs
+}
+
+// TargetsTool reports whether any declaration selects tool: a resource whose
+// targets include it (omitted targets mean opencode, the default), or — for
+// opencode — any tool-scoped surface without a targets field
+// ([settings.opencode], [plugins.opencode.*], [tui.opencode]). The engine
+// uses this to decide whether an adapter has any footprint in this config at
+// all: a config that neither targets a tool nor owes it recorded state must
+// not have that tool's files read, warned about, or written.
+func (c *Config) TargetsTool(tool string) bool {
+	if tool == "opencode" {
+		if len(c.Settings.OpenCode) > 0 || len(c.Plugins.OpenCode) > 0 || len(c.TUI.OpenCode) > 0 {
+			return true
+		}
+	}
+	for _, m := range c.MCPs {
+		if slices.Contains(m.TargetsOrAll(), tool) {
+			return true
+		}
+	}
+	consider := func(r Resource) bool {
+		return slices.Contains(r.TargetsOrAll(), tool)
+	}
+	for _, r := range c.Skills {
+		if consider(r) {
+			return true
+		}
+	}
+	for _, r := range c.Commands {
+		if consider(r) {
+			return true
+		}
+	}
+	for _, r := range c.Frameworks {
+		if consider(r) {
+			return true
+		}
+	}
+	for _, s := range c.Subagents {
+		if s.IsTuneOnly() {
+			continue // projects no agent, selects no tool
+		}
+		if slices.Contains(s.TargetsOrAll(), tool) {
+			return true
+		}
+	}
+	for _, a := range c.Agents {
+		if slices.Contains(a.TargetsOrAll(), tool) {
+			return true
+		}
+	}
+	return false
 }
 
 // SetRemoteFrameworkDirs injects the verified cache dirs the engine resolved for

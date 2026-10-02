@@ -13,6 +13,8 @@ import (
 	"strings"
 
 	"github.com/noviopenworks/homonto/internal/adapter"
+	"github.com/noviopenworks/homonto/internal/adapter/baseadapter"
+	"github.com/noviopenworks/homonto/internal/adapter/claude"
 	"github.com/noviopenworks/homonto/internal/adapter/opencode"
 	"github.com/noviopenworks/homonto/internal/adapter/registry"
 	"github.com/noviopenworks/homonto/internal/agentfm"
@@ -35,6 +37,47 @@ func sortedRepoNames(repos map[string]string) []string {
 	}
 	sort.Strings(names)
 	return names
+}
+
+// selectAdapters drops the built adapters whose tool is neither targeted by
+// the config nor present in recorded state (ADR 0066). OpenCode always
+// survives: it is the default target, and keeping it unconditionally
+// preserves the exact adapter set (and plan behavior) of OpenCode-only
+// configs. An opt-in tool (claude) is kept when the config names it OR when
+// the state partition carries its records — without the second arm, dropping
+// the last claude declaration would remove the adapter and orphan its records
+// and files forever, with nothing left to plan their removal.
+func selectAdapters(built []adapter.Adapter, cfg *config.Config, st *state.State) []adapter.Adapter {
+	out := make([]adapter.Adapter, 0, len(built))
+	for _, a := range built {
+		if a.Name() != "opencode" && !cfg.TargetsTool(a.Name()) && len(st.Keys(a.Name())) == 0 {
+			continue
+		}
+		out = append(out, a)
+	}
+	return out
+}
+
+// adapterHasFootprint reports whether an adapter's tool is in play for this
+// config: explicitly targeted, or carrying records in its state partition
+// that only its adapter can reconcile. The opencode adapter stays built for
+// behavioral continuity, but a config that neither targets opencode nor owes
+// it reconciliation must not read OpenCode's files at all.
+func (e *Engine) adapterHasFootprint(a adapter.Adapter, st *state.State) bool {
+	base := BaseToolID(a.Name())
+	return e.Cfg.TargetsTool(base) || len(st.Keys(base)) > 0
+}
+
+// BaseToolID recovers the plain tool id from an adapter label: repo-mode
+// adapters are named "<tool>@<repo>", and tool ids never contain "@", so the
+// first "@" is always the separator. State partitions key their entries by
+// this base id even when the adapter that wrote them carries the repo suffix
+// — provenance recording and lookups must go through it.
+func BaseToolID(label string) string {
+	if i := strings.Index(label, "@"); i >= 0 {
+		return label[:i]
+	}
+	return label
 }
 
 // Engine wires config, adapters, secret resolver, and state for plan/apply.
@@ -70,12 +113,22 @@ type Engine struct {
 	Warnings []string
 }
 
-// RepoTarget is one declared repository's projection pair.
+// RepoTarget is one declared repository's projection pair (ADR 0024 stage 2,
+// extended to multiple tools by ADR 0066's M3). Every tool's repo-mode adapter
+// shares the ONE in-memory State partition: state.<name>.json namespaces keys
+// by tool id, so two adapters each loading their own copy would clobber each
+// other's saves on the same file.
 type RepoTarget struct {
-	Name    string          // the [repos] key
-	Dir     string          // resolved absolute repository directory
-	Adapter adapter.Adapter // opencode adapter in repo mode (Name() = "opencode@<name>")
-	State   *state.State    // partition at <stateDir>/state.<name>.json
+	// Name is the [repos] key; Dir its resolved absolute directory.
+	Name string
+	Dir  string
+	// Adapters holds one repo-mode adapter per selected tool (Name() =
+	// "<tool>@<name>"), in registry order: opencode always, claude when the
+	// config targets it.
+	Adapters []adapter.Adapter
+	// State is the partition at <stateDir>/state.<name>.json, shared by every
+	// adapter of this repository.
+	State *state.State
 }
 
 // Build loads config and wires both adapters. home is $HOME; contentDir is the
@@ -140,7 +193,13 @@ func Build(ctx context.Context, configPath, home, contentDir string) (*Engine, e
 	}
 	e := &Engine{
 		Cfg: cfg,
-		Adapters: registry.Builtins().Build(registry.Deps{
+		// Opt-in targets (ADR 0066): every registered adapter is built, then
+		// the ones neither targeted by the config nor present in recorded
+		// state are dropped. OpenCode is always kept (it is the default
+		// target, preserving single-tool behavior exactly); claude is kept
+		// when a declaration names it or the state partition still carries
+		// claude records that only its adapter can reconcile.
+		Adapters: selectAdapters(registry.Builtins().Build(registry.Deps{
 			Home:               home,
 			ContentDir:         contentDir,
 			ProjectRoot:        projectRoot,
@@ -149,7 +208,7 @@ func Build(ctx context.Context, configPath, home, contentDir string) (*Engine, e
 			SubagentCatalogDir: subagentCatalogDir,
 			PluginCatalogDir:   pluginCatalogDir,
 			RemoteSubagentDir:  remoteSubagentDir,
-		}),
+		}), cfg, st),
 		State:               st,
 		StateDir:            stateDir,
 		ContentDir:          contentDir,
@@ -178,27 +237,134 @@ func Build(ctx context.Context, configPath, home, contentDir string) (*Engine, e
 	if len(dirs) > 0 {
 		cfg.SetRemoteFrameworkDirs(dirs)
 	}
-	// Fan out one adapter+state pair per declared repository (ADR 0024 stage
-	// 2). Each shares the config repo's materialized catalog roots (links
-	// point here, absolute) but projects into its own root with its own state
-	// partition. Sorted names keep adapter order — and plan output —
-	// deterministic.
+	// Fan out one adapter per (tool, repo) (ADR 0024 stage 2; multi-tool per
+	// ADR 0066 M3). Each shares the config repo's materialized catalog roots
+	// (links point here, absolute) but projects into its own root. Every tool's
+	// adapter shares the ONE state partition per repository — the partition
+	// namespaces keys by tool id, so one State object must serve both adapters
+	// or the last save would erase the first tool's records. A repo's claude
+	// adapter follows the same selection rule as the main one: built when the
+	// config targets claude or that repo's partition still carries claude
+	// records awaiting reconciliation. Sorted names keep adapter order — and
+	// plan output — deterministic.
+	claudeSelected := cfg.TargetsTool("claude")
 	for _, name := range sortedRepoNames(cfg.Repos) {
 		st, err := state.LoadNamed(stateDir, name)
 		if err != nil {
 			return nil, fmt.Errorf("repo %s: %w", name, err)
 		}
-		a := opencode.New(home, contentDir).
+		target := RepoTarget{Name: name, Dir: cfg.RepoDirs()[name], State: st}
+		target.Adapters = append(target.Adapters, opencode.New(home, contentDir).
 			WithProjectRoot(cfg.RepoDirs()[name]).
 			WithCatalogRoot(catalogDir).
 			WithCommandCatalogRoot(commandCatalogDir).
 			WithSubagentCatalogRoot(subagentCatalogDir).
 			WithPluginCatalogRoot(pluginCatalogDir).
 			WithRemoteSubagentRoot(remoteSubagentDir).
-			WithRepo(name)
-		e.RepoTargets = append(e.RepoTargets, RepoTarget{Name: name, Dir: cfg.RepoDirs()[name], Adapter: a, State: st})
+			WithRepo(name))
+		if claudeSelected || len(st.Keys("claude")) > 0 {
+			target.Adapters = append(target.Adapters, claude.New(home, contentDir).
+				WithProjectRoot(cfg.RepoDirs()[name]).
+				WithCatalogRoot(catalogDir).
+				WithCommandCatalogRoot(commandCatalogDir).
+				WithSubagentCatalogRoot(subagentCatalogDir).
+				WithRemoteSubagentRoot(remoteSubagentDir).
+				WithRepo(name))
+		}
+		e.RepoTargets = append(e.RepoTargets, target)
+	}
+	// Reject two state partitions claiming the same physical file before any
+	// mutation (ADR 0066 M3): pruning and drift are scoped per partition, so
+	// overlapping owners could each remove or reset the other's content with
+	// neither able to see the conflict.
+	if err := e.detectDestinationConflicts(); err != nil {
+		return nil, err
 	}
 	return e, nil
+}
+
+// detectDestinationConflicts fails when two different adapters' resources —
+// declared OR recorded — address one physical destination. Destinations come
+// from the adapters' own Describe output (declared) and FileForKey mapping
+// (recorded state keys), so there is no second path table to drift.
+//
+// The recorded pass is what catches a declaration MOVE: with schema 2
+// repos.<name> = ".", an MCP retagged between the config repo's partition and
+// the self-repo's leaves the old partition holding a stale record for the
+// very file the new partition now declares. Desired-only overlap misses that
+// transition, and letting both changesets run would have one partition delete
+// the entry the other just adopted. Failing closed names the conflict and the
+// way out: clear the old declaration (apply), then re-declare under the new
+// owner.
+func (e *Engine) detectDestinationConflicts() error {
+	owners := map[string]map[string]bool{} // destination -> adapter labels
+	claim := func(dst, label string) {
+		if dst == "" {
+			return
+		}
+		if owners[dst] == nil {
+			owners[dst] = map[string]bool{}
+		}
+		owners[dst][label] = true
+	}
+	consider := func(a adapter.Adapter, st *state.State) {
+		if d, ok := a.(adapter.Describer); ok {
+			for _, r := range d.Describe(e.Cfg) {
+				claim(r.Destination, r.Tool)
+			}
+		}
+		if st == nil {
+			return
+		}
+		base := BaseToolID(a.Name())
+		var filer adapter.KeyFiler
+		if f, ok := a.(adapter.KeyFiler); ok {
+			filer = f
+		}
+		for _, key := range st.Keys(base) {
+			if filer != nil {
+				if dst := filer.FileForKey(key); dst != "" {
+					claim(dst, a.Name())
+					continue
+				}
+			}
+			// Link namespaces have no fixed document, but each record carries
+			// its own destination ("dst -> src") — the same move-transition
+			// hazard applies to skills/commands/subagents, so claim it.
+			if baseadapter.IsLinkKey(key) {
+				if entry, ok := st.Get(base, key); ok {
+					if dst, _, found := strings.Cut(entry.Desired, " -> "); found && dst != "" {
+						claim(dst, a.Name())
+					}
+				}
+			}
+		}
+	}
+	for _, a := range e.Adapters {
+		consider(a, e.State)
+	}
+	for _, t := range e.RepoTargets {
+		for _, a := range t.Adapters {
+			consider(a, t.State)
+		}
+	}
+	var conflicts []string
+	for dst, set := range owners {
+		if len(set) < 2 {
+			continue
+		}
+		labels := make([]string, 0, len(set))
+		for label := range set {
+			labels = append(labels, label)
+		}
+		sort.Strings(labels)
+		conflicts = append(conflicts, fmt.Sprintf("%s is claimed by %s", dst, strings.Join(labels, " and ")))
+	}
+	if len(conflicts) == 0 {
+		return nil
+	}
+	sort.Strings(conflicts)
+	return fmt.Errorf("config declares overlapping projection ownership: %s; two state partitions cannot own one file — if a declaration moved between partitions, remove it and apply to clear the old record, then re-declare it under its new owner", conflicts[0])
 }
 
 // CatalogDir returns the materialized builtin catalog root.
@@ -220,6 +386,14 @@ func (e *Engine) Plan() ([]adapter.ChangeSet, error) {
 	e.Warnings = nil
 	var sets []adapter.ChangeSet
 	for _, a := range e.Adapters {
+		if !e.adapterHasFootprint(a, e.State) {
+			// Neither targeted by the config nor carrying records: the tool is
+			// not this config's business. Planning it would still READ its
+			// files, so an unrelated malformed one could warn on (and block,
+			// via the skipped-adapter exit) a config that never mentions the
+			// tool (ADR 0066 isolation).
+			continue
+		}
 		cs, err := a.Plan(e.Cfg, e.State)
 		if err != nil {
 			e.Warnings = append(e.Warnings, fmt.Sprintf("%s skipped: %v", a.Name(), err))
@@ -228,12 +402,17 @@ func (e *Engine) Plan() ([]adapter.ChangeSet, error) {
 		sets = append(sets, cs)
 	}
 	for _, t := range e.RepoTargets {
-		cs, err := t.Adapter.Plan(e.Cfg, t.State)
-		if err != nil {
-			e.Warnings = append(e.Warnings, fmt.Sprintf("%s skipped: %v", t.Adapter.Name(), err))
-			continue
+		for _, a := range t.Adapters {
+			if !e.adapterHasFootprint(a, t.State) {
+				continue // same isolation rule as the config-repo adapters
+			}
+			cs, err := a.Plan(e.Cfg, t.State)
+			if err != nil {
+				e.Warnings = append(e.Warnings, fmt.Sprintf("%s skipped: %v", a.Name(), err))
+				continue
+			}
+			sets = append(sets, cs)
 		}
-		sets = append(sets, cs)
 	}
 	return sets, nil
 }
@@ -253,7 +432,9 @@ func (e *Engine) Apply(ctx context.Context, sets []adapter.ChangeSet) error {
 		knownTools[a.Name()] = true
 	}
 	for _, t := range e.RepoTargets {
-		knownTools[t.Adapter.Name()] = true
+		for _, a := range t.Adapters {
+			knownTools[a.Name()] = true
+		}
 	}
 	for _, cs := range sets {
 		if err := cs.Validate(knownTools); err != nil {
@@ -265,9 +446,11 @@ func (e *Engine) Apply(ctx context.Context, sets []adapter.ChangeSet) error {
 	if err := e.preflightCatalogRoots(); err != nil {
 		return err
 	}
-	for _, link := range e.workflowPluginLinks() {
-		if err := e.preflightWorkflowPluginDestination(link); err != nil {
-			return err
+	if e.workflowBridgeWanted() {
+		for _, link := range e.workflowPluginLinks() {
+			if err := e.preflightWorkflowPluginDestination(link); err != nil {
+				return err
+			}
 		}
 	}
 	for _, cs := range sets {
@@ -303,9 +486,18 @@ func (e *Engine) Apply(ctx context.Context, sets []adapter.ChangeSet) error {
 	}
 	// The workflow bridge is project-local runtime content. It observes the
 	// workflow snapshot but never writes state, so it is installed after its
-	// catalog source exists and before OpenCode can load the project directory.
-	if err := e.ensureWorkflowBridge(); err != nil {
-		return err
+	// catalog source exists and before OpenCode can load the project
+	// directory. Configs claiming an integration surface converge it fully;
+	// configs that relinquished one still owe removal of the links homonto
+	// created (foreign files are never theirs to touch).
+	if e.workflowBridgeWanted() {
+		if err := e.ensureWorkflowBridge(); err != nil {
+			return err
+		}
+	} else if e.bridgeOwnedOnDisk() {
+		if err := e.removeOwnedBridgeLinks(); err != nil {
+			return err
+		}
 	}
 	// Match each planned set to its adapter by tool name (Plan may have skipped
 	// some adapters, so indexes need not line up). The config repo's adapters
@@ -318,8 +510,10 @@ func (e *Engine) Apply(ctx context.Context, sets []adapter.ChangeSet) error {
 	}
 	pair := map[string]RepoTarget{}
 	for _, t := range e.RepoTargets {
-		byName[t.Adapter.Name()] = t.Adapter
-		pair[t.Adapter.Name()] = t
+		for _, a := range t.Adapters {
+			byName[a.Name()] = a
+			pair[a.Name()] = t
+		}
 	}
 	// Provenance recording brackets each adapter's write: origins + last
 	// events for live keys, tombstones for deletes, one operation per apply
@@ -792,8 +986,12 @@ type catalogPlan struct {
 // resolving the plan counts as "needs work" so apply runs and surfaces it,
 // rather than being silently swallowed here.
 func (e *Engine) CatalogNeedsMaterialize() bool {
-	if !e.workflowBridgePresent() {
-		return true
+	if e.workflowBridgeWanted() {
+		if !e.workflowBridgePresent() {
+			return true
+		}
+	} else if e.bridgeOwnedOnDisk() {
+		return true // relinquished ownership with cleanup still pending
 	}
 	// An incomplete [tmp] surface forces the apply path on its own: the CLI
 	// short-circuits a no-change apply before Engine.Apply runs, and the
@@ -873,6 +1071,60 @@ type workflowPluginLink struct {
 	destination string
 	enabled     bool
 	directory   bool
+}
+
+// workflowBridgeWanted reports whether this config claims an OpenCode
+// runtime-integration surface: an enabled bridge or workflow context, or an
+// explicit [integrations.opencode] toggle (even false — declaring the table
+// claims ownership of that integration's converged state, including the
+// disabled state's must-be-absent invariant). A config with none of these —
+// e.g. a claude-target MCP config in a project that happens to carry a
+// foreign .opencode/plugins/homonto-workflow.ts — must not have its applies
+// blocked by files in a tool it never mentions (ADR 0066's separate-target
+// isolation).
+func (e *Engine) workflowBridgeWanted() bool {
+	if e.Cfg.WorkflowBridgeEnabled() || e.Cfg.WorkflowContextEnabled() {
+		return true
+	}
+	i := e.Cfg.Integrations.OpenCode
+	return i.WorkflowBridge != nil || i.WorkflowContext != nil
+}
+
+// bridgeOwnedOnDisk reports whether any bridge destination currently holds a
+// symlink pointing at homonto's catalog spelling — ours to remove. A foreign
+// file or absent path is not ownership. A config that once enabled the bridge
+// and later dropped the [integrations.opencode] table entirely still owes
+// this cleanup; without the check the managed symlink would strand, loading
+// the bridge in OpenCode under a config that no longer declares it.
+func (e *Engine) bridgeOwnedOnDisk() bool {
+	for _, link := range e.workflowPluginLinks() {
+		want, err := link.target()
+		if err != nil {
+			continue
+		}
+		if target, err := os.Readlink(link.destination); err == nil && (target == want || target == link.source) {
+			return true
+		}
+	}
+	return false
+}
+
+// removeOwnedBridgeLinks removes exactly the bridge symlinks homonto owns,
+// ignoring foreign files and absent paths: relinquished ownership owes
+// removal of what it created and nothing else.
+func (e *Engine) removeOwnedBridgeLinks() error {
+	for _, link := range e.workflowPluginLinks() {
+		want, err := link.target()
+		if err != nil {
+			continue
+		}
+		if target, err := os.Readlink(link.destination); err == nil && (target == want || target == link.source) {
+			if err := os.Remove(link.destination); err != nil && !os.IsNotExist(err) {
+				return fmt.Errorf("workflow bridge: remove owned link %s: %w", link.destination, err)
+			}
+		}
+	}
+	return nil
 }
 
 func (e *Engine) workflowPluginLinks() []workflowPluginLink {

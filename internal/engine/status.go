@@ -9,6 +9,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/noviopenworks/homonto/internal/adapter/claude"
 	"github.com/noviopenworks/homonto/internal/agentfm"
 	"github.com/noviopenworks/homonto/internal/catalog"
 	"github.com/noviopenworks/homonto/internal/config"
@@ -49,6 +50,9 @@ func (e *Engine) Status() (drift []string, pending int, err error) {
 	}
 
 	for _, a := range e.Adapters {
+		if !e.adapterHasFootprint(a, e.State) {
+			continue // no declarations and no records: nothing of ours to observe
+		}
 		observed, oerr := a.ObserveHashes(e.State)
 		if oerr != nil {
 			e.Warnings = append(e.Warnings, fmt.Sprintf("%s drift skipped: %v", a.Name(), oerr))
@@ -69,26 +73,34 @@ func (e *Engine) Status() (drift []string, pending int, err error) {
 		}
 	}
 	// Per-repo attribution (ADR 0024 stage 2): each declared repository's
-	// partition is observed and labeled with its adapter's name, so drift and
-	// pending report WHICH repository a finding belongs to. State keys inside a
-	// partition live under the plain tool id; the partition file is the scope.
+	// partition is observed per tool adapter and labeled with that adapter's
+	// name, so drift and pending report WHICH repository and tool a finding
+	// belongs to. State keys inside a partition live under the plain tool id
+	// (recovered from the adapter label by cutting the @<repo> suffix); the
+	// partition file is the scope.
 	for _, t := range e.RepoTargets {
-		observed, oerr := t.Adapter.ObserveHashes(t.State)
-		if oerr != nil {
-			e.Warnings = append(e.Warnings, fmt.Sprintf("%s drift skipped: %v", t.Adapter.Name(), oerr))
-			continue
-		}
-		for _, key := range t.State.Keys("opencode") {
-			h, ok := observed[key]
-			if !ok {
-				drift = append(drift, fmt.Sprintf("%s %s missing (deleted out of band)", t.Adapter.Name(), key))
-				mark(t.Adapter.Name(), key)
+		for _, a := range t.Adapters {
+			if !e.adapterHasFootprint(a, t.State) {
+				continue // same isolation rule as the config-repo adapters
+			}
+			observed, oerr := a.ObserveHashes(t.State)
+			if oerr != nil {
+				e.Warnings = append(e.Warnings, fmt.Sprintf("%s drift skipped: %v", a.Name(), oerr))
 				continue
 			}
-			entry, _ := t.State.Get("opencode", key)
-			if h != entry.Applied {
-				drift = append(drift, fmt.Sprintf("%s %s drifted (will reset on apply)", t.Adapter.Name(), key))
-				mark(t.Adapter.Name(), key)
+			base := BaseToolID(a.Name())
+			for _, key := range t.State.Keys(base) {
+				h, ok := observed[key]
+				if !ok {
+					drift = append(drift, fmt.Sprintf("%s %s missing (deleted out of band)", a.Name(), key))
+					mark(a.Name(), key)
+					continue
+				}
+				entry, _ := t.State.Get(base, key)
+				if h != entry.Applied {
+					drift = append(drift, fmt.Sprintf("%s %s drifted (will reset on apply)", a.Name(), key))
+					mark(a.Name(), key)
+				}
 			}
 		}
 	}
@@ -122,9 +134,16 @@ func (e *Engine) Doctor() []string {
 	} else {
 		out = append(out, "ok: pass found")
 	}
-	for _, loc := range []struct{ label, path string }{
+	locations := []struct{ label, path string }{
 		{".config/opencode (OpenCode)", filepath.Join(e.Home, ".config", "opencode")},
-	} {
+	}
+	// The claude config location is checked only when the config targets
+	// claude: an OpenCode-only config has no claude projection, so a missing
+	// ~/.claude there would be a permanent, unactionable warning.
+	if e.Cfg.TargetsTool("claude") || len(e.State.Keys("claude")) > 0 {
+		locations = append(locations, struct{ label, path string }{".claude (Claude Code)", claude.ConfigDir(e.Home)})
+	}
+	for _, loc := range locations {
 		if _, err := os.Stat(loc.path); err != nil {
 			out = append(out, fmt.Sprintf("warn: %s config location %s not found", loc.label, loc.path))
 		} else {

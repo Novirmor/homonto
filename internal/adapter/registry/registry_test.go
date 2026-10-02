@@ -6,16 +6,18 @@ import (
 	"github.com/noviopenworks/homonto/internal/adapter"
 )
 
-// TestBuiltins_BuildsTheOpenCodeAdapter verifies the built-in registry builds
-// exactly the registered built-ins in order — OpenCode alone since v0.13.0,
-// which is also the assertion that no removed adapter quietly re-registers.
-func TestBuiltins_BuildsTheOpenCodeAdapter(t *testing.T) {
+// TestBuiltins_BuildsTheBuiltinAdapters verifies the built-in registry builds
+// exactly the registered built-ins in order — opencode (the default target)
+// then claude (the opt-in target, ADR 0066) — and nothing else. The engine
+// filters the built list down to the tools the config selects; the registry
+// itself registers every built-in adapter.
+func TestBuiltins_BuildsTheBuiltinAdapters(t *testing.T) {
 	adapters := Builtins().Build(Deps{Home: "/home/u", ContentDir: "/repo/content"})
 	got := make([]string, len(adapters))
 	for i, a := range adapters {
 		got[i] = a.Name()
 	}
-	want := []string{"opencode"}
+	want := []string{"opencode", "claude"}
 	if len(got) != len(want) {
 		t.Fatalf("built %d adapters %v, want %v", len(got), got, want)
 	}

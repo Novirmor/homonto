@@ -9,6 +9,7 @@ import (
 	"fmt"
 
 	"github.com/noviopenworks/homonto/internal/adapter"
+	"github.com/noviopenworks/homonto/internal/adapter/claude"
 	"github.com/noviopenworks/homonto/internal/adapter/opencode"
 )
 
@@ -60,11 +61,15 @@ func (r *Registry) Build(d Deps) []adapter.Adapter {
 	return out
 }
 
-// Builtins returns a fresh registry with the built-in adapters registered. This
-// is the single place built-in adapters are wired: adding one is one Register
-// line here. A fresh registry per call keeps it free of global mutable state.
-// OpenCode is the only adapter since v0.13.0 (Claude Code and the codex pilot
-// were removed — see docs/ROADMAP.md).
+// Builtins returns a fresh registry with the built-in adapters registered, in
+// deterministic order. This is the single place built-in adapters are wired:
+// adding one is one Register line here. A fresh registry per call keeps it
+// free of global mutable state.
+//
+// OpenCode is the default target (omitted targets mean opencode). Claude is
+// the opt-in claude target (ADR 0066): the engine builds its adapter only when
+// the config explicitly targets claude, so registering it here changes nothing
+// for OpenCode-only configs. The codex pilot stays removed.
 func Builtins() *Registry {
 	r := New()
 	r.Register("opencode", func(d Deps) adapter.Adapter {
@@ -74,6 +79,14 @@ func Builtins() *Registry {
 			WithCommandCatalogRoot(d.CommandCatalogDir).
 			WithSubagentCatalogRoot(d.SubagentCatalogDir).
 			WithPluginCatalogRoot(d.PluginCatalogDir).
+			WithRemoteSubagentRoot(d.RemoteSubagentDir)
+	})
+	r.Register("claude", func(d Deps) adapter.Adapter {
+		return claude.New(d.Home, d.ContentDir).
+			WithProjectRoot(d.ProjectRoot).
+			WithCatalogRoot(d.CatalogDir).
+			WithCommandCatalogRoot(d.CommandCatalogDir).
+			WithSubagentCatalogRoot(d.SubagentCatalogDir).
 			WithRemoteSubagentRoot(d.RemoteSubagentDir)
 	})
 	return r

@@ -1,0 +1,14 @@
+{
+  "mcpServers": {
+    "demoU": {
+      "type": "stdio",
+      "command": "srv",
+      "args": [
+        "--flag"
+      ],
+      "env": {
+        "K": "v"
+      }
+    }
+  }
+}

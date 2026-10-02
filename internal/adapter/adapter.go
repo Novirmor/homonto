@@ -89,6 +89,18 @@ type Describer interface {
 	Describe(c *config.Config) []ManagedResource
 }
 
+// KeyFiler is the optional interface an adapter implements to name the file a
+// recorded state key is managed in, for the structured namespaces whose
+// destination is fixed (mcp.* always lives in one document). The engine uses
+// it to detect two state partitions reconciling one physical file across a
+// declaration move — desired-destination overlap alone misses the transition
+// where one partition holds the stale record and the other now declares it.
+// An empty return means the key's destination is not fixed (links record
+// their own dst) or the key is not owned.
+type KeyFiler interface {
+	FileForKey(key string) string
+}
+
 // ChangeSet is one tool's planned changes.
 type ChangeSet struct {
 	Tool    string

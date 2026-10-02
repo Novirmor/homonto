@@ -49,7 +49,7 @@ func TestSnapshotRepoPartitionUsesBaseAdapterStateKey(t *testing.T) {
 	}
 	repoState.Set("opencode", "skill.demo", "/managed/link -> ../../catalog/demo", "")
 	e := &Engine{RepoTargets: []RepoTarget{{
-		Name: "svc", Adapter: snapshotRepoAdapter{name: "opencode@svc"}, State: repoState,
+		Name: "svc", Adapters: []adapter.Adapter{snapshotRepoAdapter{name: "opencode@svc"}}, State: repoState,
 	}}}
 	got, ok := recordedLinkDst(e, "opencode@svc", "skill.demo")
 	if !ok || got != "/managed/link" {

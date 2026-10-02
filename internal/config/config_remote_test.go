@@ -82,10 +82,11 @@ func TestRemoteRejectedForNonSubagentKinds(t *testing.T) {
 	}
 }
 
-// Claude Code and the codex pilot were removed in v0.13.0 — OpenCode is the
-// only adapter. A target naming a removed tool must fail closed with a removal
-// message naming the entry, for MCP entries and resources alike, while a
-// genuine unknown tool keeps its typo report.
+// The claude target is opt-in and currently supports MCPs only; the codex
+// pilot was removed in v0.13.0 and stays removed. A resource naming claude
+// must fail closed naming the current support boundary, a target naming a
+// removed tool keeps its removal message, and a genuine unknown tool keeps its
+// typo report.
 func TestRemovedToolTargetsRejected(t *testing.T) {
 	p := filepath.Join(t.TempDir(), "homonto.toml")
 	load := func(doc string) error {
@@ -95,20 +96,22 @@ func TestRemovedToolTargetsRejected(t *testing.T) {
 		_, err := Load(p)
 		return err
 	}
+	// An MCP targeting claude is exactly the supported claude surface: it must
+	// load, not be rejected.
+	if err := load("[mcps.demo]\ncommand=[\"srv\"]\ntargets=[\"claude\"]\n"); err != nil {
+		t.Fatalf("an MCP targeting claude must load: %v", err)
+	}
 	for _, tc := range []struct{ label, doc, want string }{
-		{"mcp targets claude", "[mcps.demo]\ncommand=[\"srv\"]\ntargets=[\"claude\"]\n", `targets "claude"`},
 		{"mcp targets codex", "[mcps.demo]\ncommand=[\"srv\"]\ntargets=[\"codex\"]\n", `targets "codex"`},
 		{"subagent targets claude", "[subagents.foo]\nsource=\"builtin:architect\"\nscope=\"project\"\ntargets=[\"claude\"]\n", `targets "claude"`},
 		{"skill targets codex", "[skills.foo]\nsource=\"local:foo\"\nscope=\"project\"\ntargets=[\"codex\"]\n", `targets "codex"`},
 	} {
 		err := load(tc.doc)
 		if err == nil {
-			t.Fatalf("%s: accepted; want the removal error", tc.label)
+			t.Fatalf("%s: accepted; want the rejection", tc.label)
 		}
-		for _, want := range []string{tc.want, "removed in v0.13.0"} {
-			if !strings.Contains(err.Error(), want) {
-				t.Fatalf("%s: error %v does not mention %q", tc.label, err, want)
-			}
+		if !strings.Contains(err.Error(), tc.want) {
+			t.Fatalf("%s: error %v does not mention %q", tc.label, err, tc.want)
 		}
 	}
 	if err := load("[mcps.demo]\ncommand=[\"srv\"]\ntargets=[\"nope\"]\n"); err == nil {

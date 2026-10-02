@@ -96,7 +96,8 @@ func sameResource(a, b Resource) bool {
 }
 
 // effectiveTargets normalizes a targets list for placement comparison:
-// omitted/empty means all supported tools (opencode is the only adapter).
+// omitted/empty means the default target set (opencode only; claude is
+// opt-in through an explicit targets entry).
 func effectiveTargets(t []string) []string {
 	if len(t) == 0 {
 		return []string{"opencode"}

@@ -1,12 +1,13 @@
 name: release
 
 # Build cross-platform binaries, checksum them, and attach them to a GitHub
-# release whenever a v* tag is pushed. Go cross-compiles from a single runner,
+# release whenever a v* or claude-experimental-rc.* tag is pushed. Go cross-compiles from a single runner,
 # so one job produces every target; the version string is stamped from the tag.
 on:
   push:
     tags:
       - "v*"
+      - "claude-experimental-rc.*"
 
 # Least-privilege: only the release job needs to write releases; everything
 # else is read-only.

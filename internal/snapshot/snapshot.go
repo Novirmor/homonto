@@ -24,8 +24,14 @@ import (
 	"github.com/noviopenworks/homonto/internal/state"
 )
 
-// SchemaVersion is the journal format version.
-const SchemaVersion = 1
+// SchemaVersion is the journal format version. Version 2 added per-key
+// change records to each changeset (RecordedChange) so undo and rollback can
+// reverse structured writes from the journal itself; version 1 journals load
+// for listing and inspection but cannot be reversed.
+const SchemaVersion = 2
+
+// OldestSchemaVersion is the oldest journal format this binary reads.
+const OldestSchemaVersion = 1
 
 // Status is a journal's lifecycle state.
 type Status string
@@ -98,6 +104,22 @@ type Journal struct {
 type ChangesetState struct {
 	Tool  string     `json:"tool"`
 	State EntryState `json:"state"`
+	// Changes are the per-key records needed to REVERSE the changeset: the
+	// action and the unresolved desired value as planned (secret references
+	// stay tokens; resolution happens at reverse time). Only disk-mutating
+	// actions are recorded — create, update, delete — and only for keys whose
+	// restoration is not already covered by the journal's disk facts (links,
+	// copies); adopt and noop touched nothing.
+	Changes []RecordedChange `json:"changes,omitempty"`
+}
+
+// RecordedChange is one planned mutation of a managed key, journaled so undo
+// and rollback can invert it without re-planning against a config that may
+// have changed since.
+type RecordedChange struct {
+	Action string `json:"action"`
+	Key    string `json:"key"`
+	New    string `json:"new,omitempty"`
 }
 
 // BlobStore stores content-addressed blobs under the journal directory.
@@ -162,7 +184,7 @@ func Load(stateDir, applyID string) (*Journal, bool, error) {
 	if err := json.Unmarshal(data, &j); err != nil {
 		return nil, false, fmt.Errorf("snapshot: malformed journal %s: %w", applyID, err)
 	}
-	if j.SchemaVersion != SchemaVersion {
+	if j.SchemaVersion > SchemaVersion || j.SchemaVersion < OldestSchemaVersion {
 		return nil, false, fmt.Errorf("snapshot: journal %s schema %d is not supported (%d)", applyID, j.SchemaVersion, SchemaVersion)
 	}
 	return &j, true, nil
@@ -252,10 +274,12 @@ func List(stateDir string) ([]string, error) {
 	return out, nil
 }
 
-// Retain keeps the latest n committed journals and drops older committed
-// ones plus their blobs. Incomplete journals are never dropped; that is
-// recovery's job. Unreferenced blobs of removed journals are removed with
-// their journal directory.
+// Retain keeps the latest n finished journals (committed or rolled-back) and
+// drops older finished ones plus their blobs — rolled-back journals are dead
+// records and accumulate one per apply/undo pair, so they count against the
+// same budget. Prepared journals are never dropped; that is recovery's job.
+// Unreferenced blobs of removed journals are removed with their journal
+// directory.
 func Retain(stateDir string, n int) error {
 	ids, err := List(stateDir)
 	if err != nil {
@@ -270,7 +294,7 @@ func Retain(stateDir string, n int) error {
 		if !ok {
 			continue
 		}
-		if j.Status == StatusCommitted {
+		if j.Status == StatusCommitted || j.Status == StatusRolledBack {
 			if kept >= n {
 				if err := os.RemoveAll(filepath.Join(Dir(stateDir), id)); err != nil {
 					return err

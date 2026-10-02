@@ -40,3 +40,22 @@ func filterChanges(changes []adapter.Change, prefix string) []adapter.Change {
 func readStandardized(path string) ([]byte, error) {
 	return baseadapter.ReadStandardizedJSON(path)
 }
+
+// FileForKey names the document a recorded structured key is managed in, for
+// the engine's cross-partition destination-conflict detection (see
+// adapter.KeyFiler). The tui.cli.* prefix (V2 cli.json) is included; the
+// legacy tui.* prefix recorded by pre-V2 installs has no live destination.
+func (a *Adapter) FileForKey(key string) string {
+	switch {
+	case hasPrefix(key, "mcp."), hasPrefix(key, "setting."), hasPrefix(key, "plugin."):
+		return a.cfgFile()
+	case hasPrefix(key, "projmcp."), hasPrefix(key, "projsetting."):
+		if a.ProjectRoot == "" {
+			return ""
+		}
+		return a.projectCfgFile()
+	case hasPrefix(key, cliStatePrefix):
+		return a.cliFile()
+	}
+	return ""
+}

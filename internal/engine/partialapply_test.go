@@ -44,6 +44,10 @@ func TestPartialApplyPersistsEarlierAdapterState(t *testing.T) {
 	}
 	e.Resolver = &secret.Resolver{Getenv: func(string) string { return "" }, Pass: func(string) (string, error) { return "", nil }}
 	e.Adapters = append(e.Adapters, failingAdapter{})
+	// The engine skips adapters whose tool has no footprint in the config
+	// (neither targeted nor recorded — ADR 0066 isolation), so the injected
+	// adapter needs a record to legitimately take part in this apply.
+	e.State.Set("boom", "mcp.probe", `"x"`, "h")
 
 	sets, err := e.Plan()
 	if err != nil {

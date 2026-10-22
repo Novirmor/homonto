@@ -8,7 +8,7 @@ import { tmpdir } from "node:os"
 
 const { createAuthorization } = await import(pathToFileURL(resolve(process.argv[2])).href)
 const events = [], replies = [], requests = [], timeouts = [], authorizations = []
-let result = "ask", identity = "same", intercept
+let result = "ask", identity = "same", intercept, expectedOrigin = "http://127.0.0.1:1234"
 const state = await mkdtemp(join(tmpdir(), "homonto-v2-authorization-"))
 const previousState = process.env.XDG_STATE_HOME
 process.env.XDG_STATE_HOME = state
@@ -32,7 +32,7 @@ const reply = (body, status = 200) => new Response(body === undefined ? null : J
 globalThis.fetch = async (url, options) => {
   const target = new URL(url)
   requests.push({ target, options })
-  assert.equal(target.origin, "http://127.0.0.1:1234")
+  assert.equal(target.origin, expectedOrigin)
   assert.equal(options.headers.authorization, "Basic " + Buffer.from("opencode:sandbox").toString("base64"))
   assert.equal(options.redirect, "error")
   assert.equal(options.signal.aborted, false)
@@ -131,10 +131,17 @@ try {
     { ...metadata, version: undefined }, { ...metadata, url: "sensitive-marker" },
     { ...metadata, url: "http://user:sensitive-marker@127.0.0.1:1234/" },
     { ...metadata, url: "https://sensitive-marker.invalid/" },
+    { ...metadata, url: "http://192.0.2.1:1234/" },
     { ...metadata, url: "http://127.0.0.1:1234/?sensitive-marker" }]) {
     await saveMetadata(value)
     await assert.rejects(auth.ask(call(), request), reason("service_metadata_invalid"))
   }
+  await saveMetadata({ ...metadata, url: "http://192.0.2.1:1234/" })
+  await assert.rejects(auth.ask(call(), request), error => {
+    reason("service_metadata_invalid")(error)
+    assert.match(error.message, /local HTTP listener/)
+    return true
+  })
   assert.equal(requests.length, 0)
   await saveMetadata({ ...metadata, version: "sensitive-marker" })
   await assert.rejects(auth.ask(call(), request), reason("service_binding_mismatch"))
@@ -160,6 +167,17 @@ try {
     () => Promise.reject(new Error("sensitive-marker")), () => new Promise(() => {})]) {
     await auth.ask(call(), request, report)
   }
+  for (const [url, origin] of [
+    ["http://[::1]:1234/", "http://[::1]:1234"],
+    ["http://0.0.0.0:1234/", "http://127.0.0.1:1234"],
+    ["http://[::]:1234/", "http://[::1]:1234"],
+  ]) {
+    await saveMetadata({ ...metadata, url })
+    expectedOrigin = origin
+    await auth.ask(call(), request)
+  }
+  await saveMetadata()
+  expectedOrigin = "http://127.0.0.1:1234"
   result = "ask"
   const approved = await waiting(auth)
   let approvedSettled = false

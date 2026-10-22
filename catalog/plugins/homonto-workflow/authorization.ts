@@ -59,8 +59,11 @@ async function service(ctx: Context, signal: AbortSignal) {
   if (value.version !== ctx.app.version) throw mismatch()
   let url: URL
   try { url = new URL(value.url) } catch { throw invalid() }
-  if (url.protocol !== "http:" || !["127.0.0.1", "[::1]"].includes(url.hostname) ||
-      url.username || url.password || url.pathname !== "/" || url.search || url.hash) throw invalid()
+  const unsupportedEndpoint = () => failure("service_metadata_invalid", "OpenCode service URL must be a local HTTP listener without credentials, query, or fragment; restart OpenCode in the selected workspace")
+  if (url.protocol !== "http:" || !["127.0.0.1", "[::1]", "0.0.0.0", "[::]"].includes(url.hostname) ||
+      url.username || url.password || url.pathname !== "/" || url.search || url.hash) throw unsupportedEndpoint()
+  if (url.hostname === "0.0.0.0") url.hostname = "127.0.0.1"
+  if (url.hostname === "[::]") url.hostname = "[::1]"
   const password = "password" in value ? value.password : undefined
   const authorization = typeof password === "string"
     ? "Basic " + Buffer.from("opencode:" + password).toString("base64") : undefined

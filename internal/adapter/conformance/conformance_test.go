@@ -2,7 +2,7 @@
 // exercises the adapter.Adapter contract uniformly against every registered
 // adapter, rather than relying only on per-adapter ad-hoc tests. A new adapter
 // (or a regression in an existing one) that diverges from the core contract is
-// caught here. The first slice (ROADMAP E3 / finding F55) asserted the create /
+// caught here. The first slice asserted the create /
 // observe-clean / idempotent-replan / unmanaged-preservation core. This second
 // slice extends the same shared harness with two further properties every
 // adapter must honor: drift detection + reset (an out-of-band change to a

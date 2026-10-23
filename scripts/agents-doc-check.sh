@@ -20,7 +20,7 @@ cd "$(dirname "$0")/.."
 # Scope is every tracked markdown doc, not just the agent-facing ones: the
 # first version checked AGENTS.md and docs/agents/ only, and promptly missed a
 # link to the deleted comet-workflow.md sitting in docs/guides/.
-DOCS=(README.md AGENTS.md)
+DOCS=(README.md AGENTS.md CHANGELOG.md)
 while IFS= read -r f; do DOCS+=("$f"); done < <(find docs -name '*.md' | sort)
 
 fails=0

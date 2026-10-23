@@ -1,9 +1,7 @@
 # Which workflow? — homonto, onto, to, and the h skill bundle
 
 This project ships more than one way to drive spec-driven work, which is
-confusing until you see the hierarchy. This page is the selection matrix (it
-exists because the 2026-07-13 review found no persona/selection guidance —
-F21).
+confusing until you see the hierarchy. This page is the selection matrix.
 
 ## The hierarchy
 
@@ -34,14 +32,9 @@ The shared `homonto` coordinator handles `/onto`, `/to`, and `/h-*`; the
 request or matching change determines which lifecycle dispatcher it loads
 ([ADR 0045](adr/0045-one-homonto-coordinator-for-both-workflows.md)).
 
-**Comet, OpenSpec, and Superpowers are unenforced alternative workflows.**
-They drive the same spec-driven shape (propose → design → build → verify →
-archive) through skills and prose, without a binary gate: more flexible and
-portable, but nothing mechanically prevents skipping a step. **homonto no
-longer ships them**: the catalog carries onto and to, the `h` GitHub skill
-bundle, and loose framework-agnostic skills. This repository no longer uses them
-either: development is direct — branches, tests, and ADRs
-([ADR 0023](adr/0023-develop-directly-without-comet.md)).
+**Third-party workflow stacks** (Comet, OpenSpec, Superpowers) are not shipped
+([ADR 0015](adr/0015-ship-only-onto-frameworks.md)). Vendor one through a
+`local:` framework or a digest-pinned `remote:` source if you want it.
 
 ## What onto enforces (and what it doesn't)
 
@@ -69,7 +62,6 @@ completion non-skippable (see [enforcement](guides/enforcement.md)).
 | A spec-driven change lifecycle with artifact/evidence checks on normal transitions | **onto** (needs the binary) |
 | A lightweight coding flow with one plan artifact and skill-led verification | **to** (needs its binary; can coexist with onto) |
 | GitHub issue investigation/resolution, PR review/continuation, or batch review | **h** GitHub skills (installs onto and to dependencies) |
-| A flexible, portable, prose-driven workflow with no binary gate | **Comet** / OpenSpec / Superpowers (external — not shipped by homonto) |
 
 ## Why onto is shipped but not self-used
 
@@ -80,7 +72,7 @@ maintainers work directly on branches — commits, tests, ADRs
 ([ADR 0023](adr/0023-develop-directly-without-comet.md)) — while onto's
 mechanical checks serve teams who want evidence-backed transitions and a
 reviewable handoff. Dogfooding onto here is
-deferred to v1 ([ROADMAP](ROADMAP.md)).
+deferred to v1.
 
 The cost of not eating our own dog food is that onto misses the feedback
 loop that hardened the projector. We offset it two ways, both intentional.

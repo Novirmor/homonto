@@ -31,6 +31,8 @@ User-facing documentation, one topic per file.
 - [`subagents.md`](subagents.md) — the `[subagents.*]` resource: sources,
   link vs. copy mode, scope and targets, per-agent models, and the tool-neutral
   `homonto:` frontmatter block.
+- [`opencode-v2.md`](opencode-v2.md) — OpenCode 2: the workflow context
+  plugin and terminal panel, terminal settings, and unimplemented V2 surfaces.
 - [`remote-source-trust.md`](remote-source-trust.md) — pinned, fail-closed
   remote installs: threat model, verification pipeline, and lifecycle.
 

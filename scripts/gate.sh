@@ -23,6 +23,16 @@ go mod tidy -diff
 step "go vet ./..."
 go vet ./...
 
+step "golangci-lint (.golangci.yml)"
+# Pinned like the toolchain so CI, release, and local runs lint identically.
+# A matching golangci-lint on PATH (from .mise.toml) skips the source build.
+GOLANGCI_LINT_VERSION=2.12.2
+if command -v golangci-lint >/dev/null && golangci-lint version 2>/dev/null | grep -q "version $GOLANGCI_LINT_VERSION "; then
+  golangci-lint run ./...
+else
+  GOTOOLCHAIN=go1.26.10 go run "github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v$GOLANGCI_LINT_VERSION" run ./...
+fi
+
 step "go build ./..."
 go build ./...
 

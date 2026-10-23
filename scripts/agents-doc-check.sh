@@ -55,15 +55,21 @@ done
 
 # 3. Paths ADR 0017 declares untracked must not be tracked. If one creeps back
 #    in, the "artifacts are scratch" rule has quietly stopped being true.
-for p in openspec docs/superpowers okf_bundle .superpowers; do
+for p in openspec docs/superpowers okf_bundle graphify-out .superpowers; do
   if git ls-files --error-unmatch "$p" >/dev/null 2>&1; then
     echo "tracked but must be untracked (ADR 0017): $p"
     fails=$((fails + 1))
   fi
 done
 
+# The CodeGraph index is per-machine (ADR 0066): only its own .gitignore is tracked.
+if git ls-files .codegraph | grep -qv '^\.codegraph/\.gitignore$'; then
+  echo "tracked but must be untracked (ADR 0066): .codegraph/ index data"
+  fails=$((fails + 1))
+fi
+
 # 4. The docs AGENTS.md points at must actually be there.
-for p in docs/agents/okf.md docs/agents/verification.md \
+for p in docs/agents/codegraph.md docs/agents/verification.md \
          docs/agents/adr.md docs/adr; do
   [ -e "$p" ] || { echo "missing required doc: $p"; fails=$((fails + 1)); }
 done

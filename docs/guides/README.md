@@ -70,7 +70,8 @@ package key installs onto and to as dependencies, plus the `h-spike` and
 Development instructions live in [`../../AGENTS.md`](../../AGENTS.md), with
 detail in [`../agents/`](../agents/):
 
-- [`../agents/okf.md`](../agents/okf.md) — grounding claims in OKF bundles.
+- [`../agents/codegraph.md`](../agents/codegraph.md) — grounding claims in the
+  CodeGraph index.
 - [`../agents/verification.md`](../agents/verification.md) — the gate and the
   traps worth knowing.
 - [`../agents/adr.md`](../agents/adr.md) — when a decision is owed an ADR.

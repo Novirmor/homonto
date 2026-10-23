@@ -39,9 +39,9 @@ grounding you used when it affects a conclusion.
 
 ## Tooling
 
-`task` lists the developer tasks ([`Taskfile.yml`](Taskfile.yml)). Tool versions
-are pinned in `.mise.toml` (`mise install`). Pre-commit hooks are in
-`.pre-commit-config.yaml` (`pre-commit install`).
+`task` lists the developer tasks ([`Taskfile.yml`](Taskfile.yml)). go.mod pins
+the Go toolchain; `task tools` installs the pinned golangci-lint. Pre-commit
+hooks are in `.pre-commit-config.yaml` (`pre-commit install`).
 
 ## Verification
 

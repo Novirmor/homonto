@@ -1,8 +1,11 @@
-# Developer entry points (https://taskfile.dev). `task` lists them. Tool
-# versions live in .mise.toml; the pre-tag gate is scripts/gate.sh (`task gate`).
+# Developer entry points (https://taskfile.dev). `task` lists them. The Go
+# toolchain is pinned by go.mod; `task tools` installs the pinned linter. The
+# pre-tag gate is scripts/gate.sh (`task gate`).
 version: "3"
 
 vars:
+  # Keep in step with GOLANGCI_LINT_VERSION in scripts/gate.sh.
+  GOLANGCI_LINT_VERSION: 2.12.2
   BIN: bin
   BASE: main
   VERSION:
@@ -23,6 +26,10 @@ tasks:
     desc: List tasks
     silent: true
     cmd: task --list
+
+  tools:
+    desc: Install the pinned golangci-lint into GOBIN
+    cmd: GOTOOLCHAIN=$(sed -n 's/^toolchain //p' go.mod) go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v{{.GOLANGCI_LINT_VERSION}}
 
   build:
     desc: Build homonto, onto, and to into ./bin (version-stamped)

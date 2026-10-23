@@ -40,7 +40,7 @@ CI — one of the few places where that inference is sound.
 
 **The lint config is part of the gate.** `.golangci.yml` is checked by
 `task lint`, the pre-commit hook, and the gate at the version pinned in
-`.mise.toml` and `scripts/gate.sh`; bump both together. Prefer fixing a
+`Taskfile.yml` (`task tools`) and `scripts/gate.sh`; bump both together. Prefer fixing a
 finding over excluding it. An exclusion carries a comment saying why.
 
 **The eof-fixer aborts your commit.** `.pre-commit-config.yaml` runs

@@ -30,7 +30,8 @@ go vet ./...
 
 step "golangci-lint (.golangci.yml)"
 # Pinned like the toolchain so CI, release, and local runs lint identically.
-# A matching golangci-lint on PATH (from .mise.toml) skips the source build.
+# A matching golangci-lint on PATH (`task tools`) skips the source build.
+# Keep in step with GOLANGCI_LINT_VERSION in Taskfile.yml.
 GOLANGCI_LINT_VERSION=2.12.2
 if command -v golangci-lint >/dev/null && golangci-lint version 2>/dev/null | grep -q "version $GOLANGCI_LINT_VERSION "; then
   golangci-lint run ./...

@@ -15,6 +15,28 @@ bookkeeper) — for every supported OS/arch as separate archives under one
 `SHA256SUMS`. `onto` and `to` each require `homonto` to have installed their
 framework first (`[frameworks.onto]` / `[frameworks.to]` + `homonto apply`).
 
+### v0.33.0 — OpenCode wildcard service bindings
+
+All three binaries are stamped v0.33.0. The embedded catalog is 0.33.0 (onto
+0.25.5, to 0.22.4, h 0.10.4).
+
+- **OpenCode V2 authorization (#26):** GitHub draft preparation accepts service
+  metadata registered with an IPv4 or IPv6 wildcard listener and connects only
+  through its corresponding loopback client address. Remote hosts, userinfo,
+  query strings, fragments, redirects, authentication, PID/version matching,
+  workspace plugin identity, cancellation, and request deadlines retain their
+  existing checks.
+
+**Upgrade:** install matching v0.33.0 binaries, run `homonto plan` and
+`homonto apply` in each configured project, then restart OpenCode. Existing
+workflow records do not migrate. A GitHub draft remains behind its existing
+native permission and approval flow.
+
+**Validation:** regression coverage includes IPv4/IPv6 loopback and wildcard
+registrations plus rejected remote endpoints. The complete pre-tag gate,
+including race tests, vulnerability scanning, Docker E2E, and release packaging,
+must pass before publication; the release workflow repeats it.
+
 ### v0.32.2 — workflow recovery and evidence-backed implementation
 
 This stable release includes all changes since v0.32.1: the owner-approved

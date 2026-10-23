@@ -729,17 +729,6 @@ func readMigrationOptionalRegular(root, path string) ([]byte, os.FileMode, bool,
 	return data, before.Mode().Perm(), true, nil
 }
 
-func readMigrationRegular(root, path string) ([]byte, error) {
-	data, _, exists, err := readMigrationOptionalRegular(root, path)
-	if err != nil {
-		return nil, err
-	}
-	if !exists {
-		return nil, os.ErrNotExist
-	}
-	return data, nil
-}
-
 func removeMigrationOptionalRegular(root, path string) error {
 	return removeMigrationOptionalRegularExpected(root, path, nil)
 }

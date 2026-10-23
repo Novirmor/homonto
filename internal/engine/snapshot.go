@@ -14,14 +14,6 @@ import (
 	"github.com/noviopenworks/homonto/internal/state"
 )
 
-// transactionOption selects snapshot-mode behaviors.
-type transactionOption int
-
-const (
-	transactionPlain transactionOption = iota
-	transactionSnapshot
-)
-
 // ApplySnapshot runs Apply under a journaled transaction (ADR 0030): every
 // state partition's before/after checkpoints and the managed disk before-
 // surface (links, copies, the remote lock) are recorded before the first

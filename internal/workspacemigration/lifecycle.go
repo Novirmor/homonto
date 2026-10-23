@@ -1175,7 +1175,7 @@ func cleanupPrivateJournalTemporaryArtifact(layout workspace.Layout, identity re
 	if err := validatePrivateJournalTemporary(layout, intent, current, candidate); err != nil {
 		return privateJournalTemporaryConflict()
 	}
-	expected := &migrationRegularExpectation{}
+	var expected *migrationRegularExpectation
 	initialCurrent := current != nil && privateJournalInitialTemporary(*current) && reflect.DeepEqual(*current, candidate)
 	if current == nil || initialCurrent {
 		statusData, err := journalStatusData(intent)
@@ -1933,21 +1933,6 @@ func capturePlanLogicalRecordsIndex(plan *Plan, root string) error {
 	}
 	plan.RecordsGit.LogicalIndex = append([]recordsIndexEntry(nil), entries...)
 	plan.RecordsGit.LogicalIndexSHA256 = logicalRecordsIndexDigest(entries)
-	return nil
-}
-
-func verifyPlanLogicalRecordsIndex(root string, plan Plan) error {
-	if err := validatePlanLogicalIndex(plan); err != nil {
-		return err
-	}
-	paths, err := plannedLogicalRecordsIndexPaths(plan)
-	if err != nil {
-		return err
-	}
-	actual, err := captureRecordsIndex(root, paths)
-	if err != nil || !sameRecordsIndex(actual, plan.RecordsGit.LogicalIndex) || logicalRecordsIndexDigest(actual) != plan.RecordsGit.LogicalIndexSHA256 {
-		return fmt.Errorf("workspace migration: migration-owned records index changed after planning")
-	}
 	return nil
 }
 
@@ -2864,10 +2849,6 @@ func applyJournalWrite(j privateJournal, write privateWrite, post bool) (bool, e
 	return true, nil
 }
 
-func removeOptionalRegular(root, path string) error {
-	return removeMigrationOptionalRegular(root, path)
-}
-
 func sortedJournalWrites(writes []privateWrite) []privateWrite {
 	out := append([]privateWrite(nil), writes...)
 	sort.Slice(out, func(i, j int) bool {
@@ -3586,10 +3567,6 @@ func migrationIgnoredLocks() map[string]bool {
 	return migrationGuardianArtifacts()
 }
 
-func verifyPlanInputs(l workspace.Layout, plan Plan, requireCleanRecords bool) error {
-	return verifyPlanInputsWithIgnored(l, plan, requireCleanRecords, migrationIgnoredLocks())
-}
-
 func migrationHeldLockArtifacts(configRoot, workflowRoot string) map[string]bool {
 	ignored := migrationIgnoredLocks()
 	controlRoot := filepath.Join(configRoot, ".homonto")
@@ -4142,10 +4119,6 @@ func discardPreparationLocked(layout workspace.Layout, runID string, intent *pre
 	// evidence. A small atomic retirement marker is published only after every
 	// preparation target is gone, so a kill before it remains safely resumable.
 	return publishRecoveryRetired(identity)
-}
-
-func verifyJournalInputs(layout workspace.Layout, journal privateJournal) error {
-	return verifyJournalInputsWithIgnored(layout, journal, migrationStatusIgnored(journal))
 }
 
 func verifyJournalInputsLocked(layout workspace.Layout, journal privateJournal) error {

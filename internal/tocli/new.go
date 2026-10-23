@@ -42,10 +42,6 @@ func newCmd() *cobra.Command {
 	return cmd
 }
 
-func runNew(cmd *cobra.Command, root, name string, jsonMode bool) error {
-	return runNewWithRepos(cmd, root, name, jsonMode, nil, nil)
-}
-
 // runNewWithRepos records a selected cross-repo scope without creating any
 // workflow files outside the config repository.
 func runNewWithRepos(cmd *cobra.Command, root, name string, jsonMode bool, repos, bases []string) error {

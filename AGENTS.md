@@ -29,7 +29,7 @@ documents to prove work happened.
 CodeGraph is the one local code index
 ([ADR 0066](docs/adr/0066-ground-development-in-codegraph.md)). Use it for
 "where is X", "who calls X", and "what does changing X touch" instead of
-guessing. `make index` builds or refreshes it, and `make affected` lists the
+guessing. `task index` builds or refreshes it, and `task affected` lists the
 tests your changes touch. `.codegraph/` is per-machine and gitignored; refresh
 it before trusting it, and treat a stale index as absent. See
 [`docs/agents/codegraph.md`](docs/agents/codegraph.md).
@@ -39,15 +39,15 @@ grounding you used when it affects a conclusion.
 
 ## Tooling
 
-`make help` lists the developer targets. Tool versions are pinned in
-`.mise.toml` (`mise install`). Pre-commit hooks are in
+`task` lists the developer tasks ([`Taskfile.yml`](Taskfile.yml)). Tool versions
+are pinned in `.mise.toml` (`mise install`). Pre-commit hooks are in
 `.pre-commit-config.yaml` (`pre-commit install`).
 
 ## Verification
 
 Add or update focused tests for any behavior change. Run the narrowest command
-that actually proves the change (`make test-changed` is a good default; run
-`make check` before pushing), and report its real result — including failures,
+that actually proves the change (`task test-changed` is a good default; run
+`task check` before pushing), and report its real result — including failures,
 skips, and what you did not run.
 
 `./scripts/gate.sh` is the full pre-tag gate; it needs Docker and takes a while,

@@ -1,8 +1,9 @@
-# Developer toolchain. `mise install` provisions everything `make help` uses
-# except Docker (needed by `make e2e` / `make gate`) and the optional CodeGraph
+# Developer toolchain. `mise install` provisions everything `task` uses
+# except Docker (needed by `task e2e` / `task gate`) and the optional CodeGraph
 # CLI (`npm install -g @colbymchenry/codegraph`, ADR 0066).
 [tools]
 go = "1.26.10"             # matches go.mod's toolchain pin and CI
 node = "24"                # V2 plugin runtime tests need native TypeScript stripping
 golangci-lint = "2.12.2"   # matches scripts/gate.sh
+task = "3.46.4"            # runs Taskfile.yml
 uv = "0.10.7"              # runs pre-commit: `uvx pre-commit install`

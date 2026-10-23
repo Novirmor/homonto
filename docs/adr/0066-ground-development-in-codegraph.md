@@ -15,8 +15,8 @@ had three conventions to learn and no single tool they could rely on.
 ## Decision
 
 We will use CodeGraph as the only local index for developing homonto. AGENTS.md
-and `docs/agents/codegraph.md` describe it. `make index` builds or refreshes
-it, and `make affected` uses it to choose tests. OKF and Graphify are no longer
+and `docs/agents/codegraph.md` describe it. `task index` builds or refreshes
+it, and `task affected` uses it to choose tests. OKF and Graphify are no longer
 mentioned in the contributor docs, and `docs/agents/okf.md` is removed.
 
 This concerns only how homonto itself is developed. The product's

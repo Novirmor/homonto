@@ -1,6 +1,6 @@
 version: "2"
 
-# Run with `make lint`. The gate runs it too, so a finding fails CI.
+# Run with `task lint`. The gate runs it too, so a finding fails CI.
 
 linters:
   default: standard # errcheck, govet, ineffassign, staticcheck, unused

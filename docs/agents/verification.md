@@ -5,18 +5,18 @@ what it actually said. "Should pass" is not a result.
 
 ## Pick the narrowest command that proves the change
 
-Routine work does not need the full gate. `make help` lists every target.
+Routine work does not need the full gate. `task` lists every task.
 
 | Scope | Command |
 |---|---|
 | One package | `go test ./internal/<pkg>/...` |
-| Packages you changed vs `main` | `make test-changed` |
-| Tests CodeGraph links to your changes | `make affected` (lists them; [codegraph.md](codegraph.md)) |
-| Concurrency-sensitive | add `-race`, or `make race` |
-| Compile-wide effect | `make vet` and `make lint` |
-| Formatting | `gofmt -l .` (empty output means clean), `make fmt` to fix |
-| Before pushing | `make check`: gofmt, vet, lint, doc references, all tests |
-| Everything, pre-tag | `make gate` (`./scripts/gate.sh`) |
+| Packages you changed vs `main` | `task test-changed` |
+| Tests CodeGraph links to your changes | `task affected` (lists them; [codegraph.md](codegraph.md)) |
+| Concurrency-sensitive | add `-race`, or `task race` |
+| Compile-wide effect | `task vet` and `task lint` |
+| Formatting | `gofmt -l .` (empty output means clean), `task fmt` to fix |
+| Before pushing | `task check`: gofmt, vet, lint, doc references, all tests |
+| Everything, pre-tag | `task gate` (`./scripts/gate.sh`) |
 
 ## The full gate
 
@@ -39,7 +39,7 @@ CI — one of the few places where that inference is sound.
 ## Traps
 
 **The lint config is part of the gate.** `.golangci.yml` is checked by
-`make lint`, the pre-commit hook, and the gate at the version pinned in
+`task lint`, the pre-commit hook, and the gate at the version pinned in
 `.mise.toml` and `scripts/gate.sh`; bump both together. Prefer fixing a
 finding over excluding it. An exclusion carries a comment saying why.
 

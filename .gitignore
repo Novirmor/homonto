@@ -5,7 +5,7 @@
 # Locally-built binaries (e.g. `go build ./cmd/onto`, `go build .`).
 /onto
 /homonto
-# `make build` output and `make cover` profile.
+# `task build` output and `task cover` profile.
 /bin/
 /cover.out
 __pycache__/

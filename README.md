@@ -238,7 +238,7 @@ in [troubleshooting](docs/guides/troubleshooting.md):
 The code and its tests define shipped behavior; durable rationale lives in
 [`docs/adr/`](docs/adr/). Start with [`AGENTS.md`](AGENTS.md) for how work is
 done here (directly on a branch, with focused commits, tests, and ADRs), then
-`make help` for the developer targets. [`docs/personas.md`](docs/personas.md)
+`task` for the developer tasks. [`docs/personas.md`](docs/personas.md)
 explains why onto and `to` are shipped but not used to develop this repo.
 Releases follow [`docs/release-checklist.md`](docs/release-checklist.md);
 history is in [`CHANGELOG.md`](CHANGELOG.md).

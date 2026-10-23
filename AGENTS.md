@@ -26,23 +26,29 @@ documents to prove work happened.
 
 ## Grounding
 
-Ground claims about this codebase in the OKF bundle rather than guesswork —
-`okf_lookup.py` for concepts, generate with `okf_generator.py`. The bundle is
-gitignored and may be absent or stale; treat stale as absent, and say which you
-used. See [`docs/agents/okf.md`](docs/agents/okf.md).
-
-CodeGraph (`.codegraph/`) and Graphify (`graphify-out/`) are per-developer
-artifacts, gitignored and often absent. Use them when present. Neither is
-required, and no instruction here depends on them.
+CodeGraph is the one local code index
+([ADR 0066](docs/adr/0066-ground-development-in-codegraph.md)). Use it for
+"where is X", "who calls X", and "what does changing X touch" instead of
+guessing. `task index` builds or refreshes it, and `task affected` lists the
+tests your changes touch. `.codegraph/` is per-machine and gitignored; refresh
+it before trusting it, and treat a stale index as absent. See
+[`docs/agents/codegraph.md`](docs/agents/codegraph.md).
 
 Falling back to reading files directly is always acceptable. State which
 grounding you used when it affects a conclusion.
 
+## Tooling
+
+`task` lists the developer tasks ([`Taskfile.yml`](Taskfile.yml)). go.mod pins
+the Go toolchain; `task tools` installs the pinned golangci-lint. Pre-commit
+hooks are in `.pre-commit-config.yaml` (`pre-commit install`).
+
 ## Verification
 
 Add or update focused tests for any behavior change. Run the narrowest command
-that actually proves the change, and report its real result — including
-failures, skips, and what you did not run.
+that actually proves the change (`task test-changed` is a good default; run
+`task check` before pushing), and report its real result — including failures,
+skips, and what you did not run.
 
 `./scripts/gate.sh` is the full pre-tag gate; it needs Docker and takes a while,
 so it is not the default for routine work. Details and the traps that waste the

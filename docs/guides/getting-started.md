@@ -55,9 +55,9 @@ Verify:
 
 ```console
 $ homonto version
-homonto v0.5.0
+homonto v0.33.0
 $ onto version
-onto v0.5.0
+onto v0.33.0
 ```
 
 ## 2. homonto in five commands
@@ -115,10 +115,10 @@ leaves secrets as unresolved tokens:
 ```console
 $ homonto plan
 opencode:
-  + mcp.brave = {"command":["npx","-y","@modelcontextprotocol/server-brave-search"],"env":{"BRAVE_API_KEY":"${BRAVE_API_KEY}"},"enabled":true,"type":"local"}
+  + mcp.brave = {"command":["npx","-y","@modelcontextprotocol/server-brave-search"],"enabled":true,"environment":{"BRAVE_API_KEY":"${BRAVE_API_KEY}"},"type":"local"}
   + mcp.codegraph = {"command":["codegraph","serve","--mcp"],"enabled":true,"type":"local"}
   + setting.model = "anthropic/claude-opus-4-8"
-  + skill.my-notes = …/.opencode/skills/my-notes -> …/homonto/skills/my-notes
+  + skill.my-notes = …/.opencode/skills/my-notes -> ../../homonto/skills/my-notes
 ```
 
 `apply` resolves every secret first and aborts before any write if one fails,

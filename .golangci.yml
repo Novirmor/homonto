@@ -1,0 +1,46 @@
+version: "2"
+
+# Run with `task lint`. The gate runs it too, so a finding fails CI.
+
+linters:
+  default: standard # errcheck, govet, ineffassign, staticcheck, unused
+  enable:
+    - misspell
+    - unconvert
+  settings:
+    errcheck:
+      exclude-functions:
+        # Best-effort writes to the CLI's own output stream. A failed write
+        # to stdout/stderr has nowhere better to be reported.
+        - fmt.Fprint
+        - fmt.Fprintf
+        - fmt.Fprintln
+        # Always deferred. The kernel hold drops when the process exits, and a
+        # later acquirer recovers a leftover claim (see applylock's package doc).
+        - (*github.com/noviopenworks/homonto/internal/applylock.Lock).Release
+    staticcheck:
+      checks:
+        - all
+        - -ST1000 # package comments are not required on every package
+        - -ST1003 # initialisms: renaming exported identifiers is churn
+        - -ST1005 # error strings may start with a proper noun ("Git index ...")
+        - -ST1020 # comment forms on exported identifiers are not enforced
+        - -ST1021
+        - -ST1022
+        - -QF* # quick-fix refactoring suggestions are style, not defects
+        - -S1016 # wire types are mapped field by field on purpose
+  exclusions:
+    presets:
+      - std-error-handling # deferred Close, os.Remove cleanup, and similar
+    rules:
+      - path: _test\.go
+        linters:
+          - errcheck
+      # Deliberate misspellings: these tests prove a typo'd key is rejected.
+      - path: internal/config/model_validation_test\.go
+        linters:
+          - misspell
+
+formatters:
+  enable:
+    - gofmt

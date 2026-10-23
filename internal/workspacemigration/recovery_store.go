@@ -3,9 +3,7 @@ package workspacemigration
 import (
 	"bytes"
 	"compress/flate"
-	"crypto/rand"
 	"encoding/base64"
-	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -447,15 +445,6 @@ func ensureRecoveryPayloadStore(identity recoveryIdentity) error {
 		}
 	}
 	return nil
-}
-
-func validRecoveryPayloadPurpose(purpose string) bool {
-	switch purpose {
-	case journalKindRecoveryStatus, journalKindRecoveryIntent, journalKindRecoveryBundle, journalKindRecoveryJournal, journalKindRecoveryCompletion:
-		return true
-	default:
-		return false
-	}
 }
 
 func recoveryDescriptorName(purpose string) (string, error) {
@@ -1157,19 +1146,6 @@ func recoveryPayloadTemporaryPath(identity recoveryIdentity, descriptor recovery
 	return filepath.Join(filepath.Dir(descriptor.Target), name), nil
 }
 
-func publishRecoveryPayloadDescriptor(identity recoveryIdentity, descriptor recoveryPayloadDescriptor, data []byte) error {
-	if err := descriptor.validate(identity, descriptor.Purpose, descriptor.Target); err != nil {
-		return err
-	}
-	if _, err := loadRecoveryPayloadBlob(identity, descriptor); err != nil {
-		return err
-	}
-	if err := stageRecoveryPayloadDescriptor(identity, descriptor); err != nil {
-		return err
-	}
-	return promoteRecoveryPayloadDescriptor(identity, descriptor)
-}
-
 func writePrivateRecoveryPayload(identity recoveryIdentity, purpose, target string, data []byte) error {
 	return writePrivateRecoveryPayloadExpected(identity, purpose, target, data, nil)
 }
@@ -1323,74 +1299,6 @@ func publishMigrationOpaqueSymlink(root, path, target, syncKind string) error {
 		}
 		return publishMigrationOpaqueSymlink(root, path, target, syncKind)
 	}
-	return syncPinnedMigrationDirectoryKind(parent, parentPath, syncKind)
-}
-
-func replaceMigrationOpaqueSymlink(root, path, target, syncKind string) error {
-	if len(target) == 0 || len(target) > recoveryLinkTargetLimit {
-		return fmt.Errorf("workspace migration: opaque recovery symlink target is invalid")
-	}
-	parent, name, parentPath, err := openPinnedMigrationParent(root, path)
-	if err != nil {
-		return err
-	}
-	defer parent.Close()
-	existing, err := parent.Lstat(name)
-	exists := err == nil
-	if err != nil && !errors.Is(err, os.ErrNotExist) {
-		return err
-	}
-	if exists && existing.Mode()&os.ModeSymlink == 0 {
-		return fmt.Errorf("workspace migration: opaque recovery symlink path is occupied")
-	}
-	if err := migrationPinnedParentStillCurrent(root, parentPath, parent); err != nil {
-		return err
-	}
-	var temporary string
-	for range 32 {
-		var token [16]byte
-		if _, err := rand.Read(token[:]); err != nil {
-			return err
-		}
-		candidate := migrationTempPrefix + hex.EncodeToString(token[:])
-		if err := migrationFS.symlink(parent, target, candidate); errors.Is(err, os.ErrExist) {
-			continue
-		} else if err != nil {
-			return err
-		}
-		temporary = candidate
-		break
-	}
-	if temporary == "" {
-		return fmt.Errorf("workspace migration: cannot allocate an opaque recovery descriptor temporary")
-	}
-	renamed := false
-	defer func() {
-		if !renamed {
-			_ = migrationFS.remove(parent, temporary)
-		}
-	}()
-	if err := syncPinnedMigrationDirectoryKind(parent, parentPath, syncKind); err != nil {
-		return err
-	}
-	if err := migrationPinnedParentStillCurrent(root, parentPath, parent); err != nil {
-		return err
-	}
-	if exists {
-		current, err := parent.Lstat(name)
-		if err != nil || current.Mode()&os.ModeSymlink == 0 || !os.SameFile(existing, current) {
-			return fmt.Errorf("workspace migration: opaque recovery symlink changed after classification")
-		}
-	} else if _, err := parent.Lstat(name); !errors.Is(err, os.ErrNotExist) {
-		if err != nil {
-			return err
-		}
-		return fmt.Errorf("workspace migration: opaque recovery symlink appeared after classification")
-	}
-	if err := migrationFS.rename(parent, temporary, name); err != nil {
-		return err
-	}
-	renamed = true
 	return syncPinnedMigrationDirectoryKind(parent, parentPath, syncKind)
 }
 

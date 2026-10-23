@@ -129,27 +129,6 @@ func blockingDirt(entries []dirtEntry) []dirtEntry {
 	return out
 }
 
-// dirtGateError renders a close-blocking dirt list as an actionable error
-// body: the first few offending paths verbatim, the count of the rest, how
-// much foreign-change dirt was tolerated, and the command that shows it all.
-func dirtGateError(blocking []dirtEntry, total int, change string) string {
-	const show = 5
-	var b strings.Builder
-	fmt.Fprintf(&b, "%d uncommitted path(s) must be committed or stashed first:", len(blocking))
-	for i, e := range blocking {
-		if i == show {
-			fmt.Fprintf(&b, "\n  … and %d more", len(blocking)-show)
-			break
-		}
-		fmt.Fprintf(&b, "\n  %s %s", e.Status, e.Path)
-	}
-	if ignored := total - len(blocking); ignored > 0 {
-		fmt.Fprintf(&b, "\n(%d path(s) under other changes' docs/changes/ do not block and were not counted)", ignored)
-	}
-	fmt.Fprintf(&b, "\nrun `onto dirt %s` for the full classified list", change)
-	return b.String()
-}
-
 // dirtCmd builds "onto dirt [change] [--json]": a read-only, classified report
 // of every uncommitted path — the deterministic half of the dirty-workspace
 // protocol. Skills attribute and decide; the binary owns what-is-dirty and

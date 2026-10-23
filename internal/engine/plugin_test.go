@@ -1040,7 +1040,7 @@ func TestWorkflowBindingRepairsAndConfigSwitchesAllSchemas(t *testing.T) {
 					if err != nil {
 						t.Fatal(err)
 					}
-					if string(jsonutil.Canonical(string(data))) != string(jsonutil.Canonical(string(want))) {
+					if jsonutil.Canonical(string(data)) != jsonutil.Canonical(string(want)) {
 						t.Fatalf("binding = %s, want %s", data, want)
 					}
 					if e.CatalogNeedsMaterialize() {

@@ -9,6 +9,11 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
+# Smoke binaries and configs go to a private temp dir, removed on exit, so
+# concurrent gates never share /tmp paths.
+work="$(mktemp -d)"
+trap 'rm -rf "$work"' EXIT
+
 step() { printf '\n============================================================\n=== gate: %s\n============================================================\n' "$1"; }
 
 step "gofmt -l"
@@ -23,6 +28,17 @@ go mod tidy -diff
 step "go vet ./..."
 go vet ./...
 
+step "golangci-lint (.golangci.yml)"
+# Pinned like the toolchain so CI, release, and local runs lint identically.
+# A matching golangci-lint on PATH (`task tools`) skips the source build.
+# Keep in step with GOLANGCI_LINT_VERSION in Taskfile.yml.
+GOLANGCI_LINT_VERSION=2.12.2
+if command -v golangci-lint >/dev/null && golangci-lint version 2>/dev/null | grep -q "version $GOLANGCI_LINT_VERSION "; then
+  golangci-lint run ./...
+else
+  GOTOOLCHAIN=go1.26.10 go run "github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v$GOLANGCI_LINT_VERSION" run ./...
+fi
+
 step "go build ./..."
 go build ./...
 
@@ -33,16 +49,16 @@ step "go test -race ./..."
 go test -race ./... -count=1 -timeout=20m
 
 step "version stamp smoke (homonto + onto + to)"
-go build -ldflags "-X github.com/noviopenworks/homonto/internal/cli.Version=gate-smoke" -o /tmp/gate-homonto .
-/tmp/gate-homonto version 2>&1 | grep -q "gate-smoke" || { echo "homonto version not stamped"; exit 1; }
-go build -ldflags "-X github.com/noviopenworks/homonto/internal/ontocli.Version=gate-smoke" -o /tmp/gate-onto ./cmd/onto
-/tmp/gate-onto version 2>&1 | grep -q "gate-smoke" || { echo "onto version not stamped"; exit 1; }
-go build -ldflags "-X github.com/noviopenworks/homonto/internal/tocli.Version=gate-smoke" -o /tmp/gate-to ./cmd/to
-/tmp/gate-to version 2>&1 | grep -q "gate-smoke" || { echo "to version not stamped"; exit 1; }
+go build -ldflags "-X github.com/noviopenworks/homonto/internal/cli.Version=gate-smoke" -o "$work/homonto" .
+"$work/homonto" version 2>&1 | grep -q "gate-smoke" || { echo "homonto version not stamped"; exit 1; }
+go build -ldflags "-X github.com/noviopenworks/homonto/internal/ontocli.Version=gate-smoke" -o "$work/onto" ./cmd/onto
+"$work/onto" version 2>&1 | grep -q "gate-smoke" || { echo "onto version not stamped"; exit 1; }
+go build -ldflags "-X github.com/noviopenworks/homonto/internal/tocli.Version=gate-smoke" -o "$work/to" ./cmd/to
+"$work/to" version 2>&1 | grep -q "gate-smoke" || { echo "to version not stamped"; exit 1; }
 
 step "cli smoke (plan on a current-format config)"
-printf '[mcps.demo]\ncommand = ["true"]\n' > /tmp/gate-homonto.toml
-/tmp/gate-homonto --config /tmp/gate-homonto.toml plan >/dev/null
+printf '[mcps.demo]\ncommand = ["true"]\n' > "$work/homonto.toml"
+"$work/homonto" --config "$work/homonto.toml" plan >/dev/null
 
 step "agent docs reference only things that exist"
 ./scripts/agents-doc-check.sh

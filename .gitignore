@@ -5,7 +5,9 @@
 # Locally-built binaries (e.g. `go build ./cmd/onto`, `go build .`).
 /onto
 /homonto
-graphify-out/
+# `task build` output and `task cover` profile.
+/bin/
+/cover.out
 __pycache__/
 # Per-developer tool state (machine-specific). The repo does not dogfood
 # homonto, so nothing here is projected — these hold each developer's own
@@ -26,5 +28,7 @@ test/e2e/.out/
 /openspec/
 /docs/superpowers/
 
-# OKF grounding bundle — generated from the code, regenerated on demand.
+# Retired local indexes (ADR 0066: CodeGraph is the one index, and .codegraph/
+# ignores itself). Kept ignored so leftover output is never committed.
 /okf_bundle/
+/graphify-out/

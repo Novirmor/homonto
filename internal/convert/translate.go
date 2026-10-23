@@ -143,7 +143,7 @@ func translateTasks(m manifest, snapDir string) (string, bool) {
 		}
 		num := 0
 		if mm[5] != "" {
-			fmt.Sscanf(mm[5], "%d", &num)
+			_, _ = fmt.Sscanf(mm[5], "%d", &num) // unparsable leaves 0, renumbered below
 		}
 		if num <= 0 || seen[num] {
 			num = len(tasks) + 1

@@ -31,6 +31,8 @@ User-facing documentation, one topic per file.
 - [`subagents.md`](subagents.md) — the `[subagents.*]` resource: sources,
   link vs. copy mode, scope and targets, per-agent models, and the tool-neutral
   `homonto:` frontmatter block.
+- [`opencode-v2.md`](opencode-v2.md) — OpenCode 2: the workflow context
+  plugin and terminal panel, terminal settings, and unimplemented V2 surfaces.
 - [`remote-source-trust.md`](remote-source-trust.md) — pinned, fail-closed
   remote installs: threat model, verification pipeline, and lifecycle.
 
@@ -70,7 +72,8 @@ package key installs onto and to as dependencies, plus the `h-spike` and
 Development instructions live in [`../../AGENTS.md`](../../AGENTS.md), with
 detail in [`../agents/`](../agents/):
 
-- [`../agents/okf.md`](../agents/okf.md) — grounding claims in OKF bundles.
+- [`../agents/codegraph.md`](../agents/codegraph.md) — grounding claims in the
+  CodeGraph index.
 - [`../agents/verification.md`](../agents/verification.md) — the gate and the
   traps worth knowing.
 - [`../agents/adr.md`](../agents/adr.md) — when a decision is owed an ADR.

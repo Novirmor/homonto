@@ -143,7 +143,8 @@ and the homonto that installed its framework have drifted apart.
 Reclaim entries in the content-addressed remote cache
 (`.homonto/cache/remote/`) that no `.homonto/remote.lock.json` entry
 references. Kept out of `apply` on purpose, so reverting a `digest` pin can
-still roll back from cache. See
+still roll back from cache. `--dry-run` reports what would be reclaimed
+without deleting anything. See
 [remote source trust](remote-source-trust.md).
 
 ## `homonto explain [kind] [name] [--repo <alias>] [--json]`

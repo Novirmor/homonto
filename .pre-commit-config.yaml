@@ -15,15 +15,11 @@ repos:
         entry: gofmt -l -w
         language: system
         files: \.go$
-      - id: go-vet
-        name: go vet
-        entry: bash -c 'go vet ./...'
-        language: system
-        pass_filenames: false
-        types: [go]
-      - id: go-build
-        name: go build
-        entry: bash -c 'go build ./...'
+      - id: golangci-lint
+        # Type-checks every package (so it also catches build errors) and runs
+        # go vet plus the linters in .golangci.yml. Cached runs are fast.
+        name: golangci-lint
+        entry: golangci-lint run ./...
         language: system
         pass_filenames: false
         types: [go]

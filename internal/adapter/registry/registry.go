@@ -64,7 +64,7 @@ func (r *Registry) Build(d Deps) []adapter.Adapter {
 // is the single place built-in adapters are wired: adding one is one Register
 // line here. A fresh registry per call keeps it free of global mutable state.
 // OpenCode is the only adapter since v0.13.0 (Claude Code and the codex pilot
-// were removed — see docs/ROADMAP.md).
+// were removed; see the v0.13.0 entry in CHANGELOG.md).
 func Builtins() *Registry {
 	r := New()
 	r.Register("opencode", func(d Deps) adapter.Adapter {

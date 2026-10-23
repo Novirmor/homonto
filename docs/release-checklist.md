@@ -6,8 +6,7 @@ decides *whether*.
 
 Releases are driven by the `release` GitHub workflow
 (`.github/workflows/release.yml`), which triggers on any pushed `v*` tag. Do
-not push a tag until the local gate and packaging rehearsal pass (or the
-version-specific CI substitutions below). After
+not push a tag until the local gate and packaging rehearsal pass. After
 the tag is pushed, the workflow must re-run the CI gates, cross-compile every
 target, write checksums for the archives, and publish a GitHub release.
 
@@ -22,8 +21,10 @@ gate than a pull request. It ends with `ALL GATE CHECKS PASSED`.
 ./scripts/gate.sh
 ```
 
-It covers gofmt, `go mod tidy -diff`, vet, build, test, `-race`, version
-stamps, a CLI smoke, govulncheck, and the triple-binary Docker E2E. That E2E
+It covers gofmt, `go mod tidy -diff`, vet, golangci-lint, build, test,
+`-race`, version stamps, a CLI smoke, the doc-reference, skill shell-out, and
+permission-telemetry checks, the installer tests, govulncheck, and the
+triple-binary Docker E2E. That E2E
 is where the old hand-written checks now live, done against a disposable
 `$HOME` so the host is never touched:
 
@@ -38,81 +39,42 @@ is where the old hand-written checks now live, done against a disposable
   refusal, the `--verified` requirement, archive, doctor and convergence,
   and onto/to coexistence with shared-resource deduplication.
 
-## OpenCode 2 release hold points
+## Live host checks
 
-The **v0.32.0-rc.1** preview accepted live-validation gaps. Do not carry those
-waivers into **v0.32.0**: the Go/Docker gate alone does not boot the real
-OpenCode 2 host or prove GitHub publication. The release owner reports passing
-the live terminal and throwaway-GitHub checks for stable v0.32.0; retain their
-evidence separately and do not describe the RC's fake-`gh` run as a real send.
+The gate does not boot a real OpenCode 2 host or publish to GitHub. When a
+release changes the workflow plugin, the GitHub draft tools, permission
+projection, or the V1 → V2 migration path, run these before choosing a tag
+commit, and keep the evidence:
 
-Before choosing a tag commit:
-
-1. Use a disposable home/config and **pinned OpenCode 2.0.16** to check the
-   actual project-local V2 plugin directory, terminal panel, reload/unload,
-   status/handoff tools, model context and compaction, idle notifications, and
-   the explicitly declared permission observer. Verify old V1 plugin links are
-   removed on apply; changing config alone does not hot-reload the client.
-2. Test GitHub draft **denial and approval** with the host's native question and
-   exact read/shell permission prompts. Confirm unknown sessions, moved
-   directories, changed bindings, cancellation, and a service mismatch fail
-   closed. A standalone/unregistered server intentionally cannot authorize
-   GitHub publication. The isolated local model + fake `gh` run proves no
-   external send occurred, not that real GitHub accepted a receipt.
-3. Before stable publication, run a **real GitHub sandbox**
-   using a throwaway repo/account: verify a denied send, a single permitted
-   send with matching receipt, changed actor/destination/PR OIDs, and uncertain
-   send reconciliation. Never use a production issue/PR for this check.
+1. With a disposable home/config and the **OpenCode version** the
+   [OpenCode 2 guide](guides/opencode-v2.md) links against, check the project-local V2 plugin directory, terminal panel,
+   reload/unload, status/handoff tools, model context and compaction, idle
+   notifications, and the declared permission observer. Verify old V1 plugin
+   links are removed on apply; changing config alone does not hot-reload the
+   client.
+2. Test GitHub draft **denial and approval** with the host's native question
+   and exact permission prompts. Unknown sessions, moved directories, changed
+   bindings, cancellation, and a service mismatch must fail closed. A
+   standalone, unregistered server intentionally cannot authorize publication.
+   A local-model plus fake-`gh` run proves no external send happened, not that
+   real GitHub accepted a receipt.
+3. Run a **real GitHub sandbox** in a throwaway repo and account: a denied
+   send, a single permitted send with a matching receipt, changed
+   actor/destination/PR OIDs, and uncertain-send reconciliation. Never use a
+   production issue or PR.
 4. Check both migration directions in throwaway projects. OpenCode 2 reads
-   supported V1 server config, but the native terminal file is global
-   `cli.json`; start V2 before homonto creates that file if relying on its
-   one-time `tui.json` preference import. V1 files remain untouched, and
-   snapshot undo does not restore their previous terminal values. A V1 binary
-   or OpenCode installation must use the saved V1 config/state, not native
-   V2-only settings.
-5. Review the candidate section in `docs/release-notes.md` against the final
-   tag and verification results. Re-run `./scripts/gate.sh` after the last
-   change; only a fully green gate, including the release-packaging Docker
-   suite, is a tag candidate. CI and the release workflow install Node 24 for
-   the V2 permission-observer contract check.
+   supported V1 server config, but its terminal settings live in global
+   `cli.json`; V1 files stay untouched and snapshot undo does not restore their
+   terminal values.
 
-For **v0.32.0 and v0.32.1**, the release owner separately approved a green CI run of the exact
-same `./scripts/gate.sh` on the final tag commit as the pre-tag gate when the
-local host has no Docker command. The local run must still pass its available
-steps; CI must finish the Docker E2E and release-packaging smoke **before**
-tagging. This is not a waiver of either check or a default for later releases.
-The v0.32.1 approval covers the workflow/skill repair release; it does not claim
-new live model-compliance or GitHub-publication validation.
+A check that was not run is not a pass. If the owner approves releasing
+without one, name every skipped check in the release notes, and do not claim
+it for that release. Such an approval covers one tag, never later ones.
 
-If a hold point is still open, keep the change on the branch. For an
-**explicitly owner-approved early prerelease only**, a green complete gate and
-packaging smoke remain mandatory; name every waived live-only check in the
-published release notes and do not claim production support.
-
-For **v0.32.2-rc.1**, the owner requested a user-testing release after disclosure
-of the missing live V2 and GitHub validation. This prerelease defers the live-only
-checks listed in its release notes, not the complete local pre-tag gate or the
-release workflow's repeated gate. Local Docker is available for this candidate;
-the earlier CI substitutions do not apply. Stable v0.32.1 remains the latest.
-
-For **v0.32.2-rc.2**, the owner requested a PR and another testing RC for #21.
-The same live-only deferrals apply and are listed in the new release notes.
-The complete local gate, PR checks, and repeated release-workflow gate are
-required; no stable-release support claim or CI substitution is introduced.
-
-The RC2 release gate encountered a reproduced Git 2.55 fixture-maintenance race
-in both its first run and one retry. **v0.32.2-rc.3** carries the test-setup fix
-through a follow-up PR; it retains the same live-only deferrals and complete
-gate requirements. The existing RC2 tag is immutable and is not retargeted.
-
-For **v0.32.2**, the owner approved the previous RC and requested a stable
-release including the subsequent shared debugging and implementer-report
-improvements. Record this as release acceptance, not as evidence that specific
-live checks were rerun. The release notes retain the disclosed live-only gaps;
-no new live OpenCode, real-GitHub sandbox, migration, or model-compliance results
-are claimed. This version-specific acceptance does not waive the complete local
-gate on the final candidate, Docker packaging rehearsal, or repeated release
-gate, and is not a default waiver for later releases.
+Then review the release section of `docs/release-notes.md` against the final
+tag and verification results, and re-run `./scripts/gate.sh` after the last
+change. Only a fully green gate, including the release-packaging Docker suite,
+makes a tag candidate.
 
 > **Dogfooding is deferred to v1.** This repository is developed directly
 > on branches, with no external workflow stack
@@ -128,19 +90,22 @@ gate, and is not a default waiver for later releases.
 ## Tag and publish
 
 1. Pick the version. Pre-releases use a suffix (for example,
-   `v0.32.0-rc.1`); a bare
+   `v1.2.0-rc.1`); a bare
    `vMAJOR.MINOR.PATCH` is a full release. The workflow marks any tag
    containing `-` as a GitHub pre-release automatically.
-2. Tag an annotated tag on the commit that passed verification, and push
+2. Move the previous release's section from `docs/release-notes.md` into
+   `CHANGELOG.md`, and write the new one in its place. The release workflow
+   publishes that file as the release body, so it must describe only this tag.
+3. Tag an annotated tag on the commit that passed verification, and push
    it:
 
    ```sh
-    TAG=v0.32.0 # replace for a later release
+    TAG=vX.Y.Z
     git tag -a "$TAG" -m "$TAG"
     git push origin "$TAG"
    ```
 
-3. The `release` workflow then:
+4. The `release` workflow then:
     - re-runs the full gate as a guard,
     - builds `homonto`, `onto`, and `to` for `linux`, `darwin`, and
       `windows` on `amd64` and `arm64`, stamping the tag into every version
@@ -159,7 +124,7 @@ release commit layout, and do not tag while this smoke covers only some of
 the binaries:
 
 ```sh
-TAG=v0.32.0 # replace for the tag being checked
+TAG=vX.Y.Z
 GOBIN=$(mktemp -d)
 export GOBIN
 go install "github.com/noviopenworks/homonto@$TAG"
@@ -177,7 +142,7 @@ must download the tagged script, verify the real release archives against
 binary, temp dir, decline initialization):
 
 ```sh
-TAG=v0.32.0 # replace for the tag being checked
+TAG=vX.Y.Z
 TMPBIN=$(mktemp -d)
 curl -fsSL -o /tmp/homonto-install.sh \
   "https://raw.githubusercontent.com/noviopenworks/homonto/$TAG/scripts/install.sh"
@@ -259,7 +224,7 @@ plus a follow-up, never a force-push:
    offered:
 
    ```sh
-   TAG=v0.32.0 # the affected tag; never reuse its version
+   TAG=vX.Y.Z
    gh release delete "$TAG" --yes
    ```
 
@@ -270,25 +235,22 @@ plus a follow-up, never a force-push:
    git push origin ":refs/tags/$TAG"
    ```
 
-3. `go install ...@v0.32.0` keeps working for anyone who already
+3. `go install ...@vX.Y.Z` keeps working for anyone who already
    resolved it (the module proxy caches tags), so a broken release is
    corrected by shipping a higher patch/rc tag, not by expecting the old
    one to vanish. Never re-point an existing tag at a different commit.
 
 ## Security scanning decision (CodeQL / dependency-review)
 
-For the v0.1.0 line, CodeQL and dependency-review are **deferred**, and
-this is intentional rather than an oversight:
+CodeQL and dependency-review are **deferred** on purpose:
 
-- `govulncheck` already runs in CI and scans both dependencies and the
-  standard library for *called* known vulnerabilities — the highest-signal
-  check for a small Go CLI with a tiny dependency set (`cobra`, `go-toml`,
-  `sjson`/`gjson`).
-- CodeQL's value grows with codebase size and untrusted input surfaces;
-  homonto reads a local TOML the user owns and writes local files, so the
-  marginal find rate over `go vet` + `govulncheck` is low for now.
+- `govulncheck` runs in the gate and reports *called* known vulnerabilities in
+  dependencies and the standard library, the highest-signal check for a Go CLI
+  with six direct dependencies. golangci-lint (staticcheck, govet, errcheck)
+  covers the static side.
 - dependency-review gates *new* dependencies in PRs; with a near-static
-  dependency list its overhead outweighs its signal today.
+  dependency list its overhead outweighs its signal.
 
-Revisit both when the dependency surface grows or the tool starts handling
-more untrusted remote input.
+Revisit both when the dependency surface grows. Remote sources are already
+untrusted input; they are verified fail-closed against a sha256 pin
+([ADR 0013](adr/0013-remote-source-trust-boundary.md)).

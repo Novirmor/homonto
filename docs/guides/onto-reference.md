@@ -294,7 +294,7 @@ by hand:
 | `base-ref [--repo <alias>]` | Immutable commit anchor used by `onto scale`. In explicit mode, validates the selected alias's frozen `repo_bases` value without rebasing it; legacy mode uses scalar `base_ref`. |
 | `base-branch [--repo <alias>]` | Immutable, syntax-checked integration target. In explicit mode, validates the selected alias's frozen target without retargeting; legacy mode uses scalar `base_branch`. Separate from commit-valued `base-ref`. |
 | `workflow <full>` | one-way preset upgrade from `fix`/`tweak` to the full workflow |
-| `supersedes`, `deviates-from` | cross-change relationships (surfaced by `onto graph`) |
+| `supersedes`, `deviates-from` | cross-change relationships (surfaced by `onto graph`); repeat `--change <name>` (supersedes) or `--from <name>` (deviates-from) per target |
 | `directive` | a verbatim pre-authorization directive on the change |
 
 ## Inspection (no install gate)

@@ -390,14 +390,14 @@ func latestEvent(dir string) (event, bool, error) {
 	if err != nil || !ok {
 		return event{}, false, err
 	}
-	for i := len(lin.Events) - 1; i >= 0; i-- {
-		e, ok, err := loadEvent(dir, lin.Events[i])
-		if err != nil || !ok {
-			return event{}, ok, err
-		}
-		return e, true, nil
+	if len(lin.Events) == 0 {
+		return event{}, false, nil
 	}
-	return event{}, false, nil
+	e, ok, err := loadEvent(dir, lin.Events[len(lin.Events)-1])
+	if err != nil || !ok {
+		return event{}, ok, err
+	}
+	return e, true, nil
 }
 
 // latestConversionEvent ignores restore receipts when looking for a snapshot

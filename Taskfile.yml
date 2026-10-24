@@ -119,7 +119,7 @@ tasks:
 
   affected:
     desc: Tests CodeGraph links to the Go files changed vs BASE
-    cmd: '{{if .CHANGED_GO}}codegraph affected --quiet {{.CHANGED_GO | catLines}}{{else}}echo "no changed Go files"{{end}}'
+    cmd: '{{if .CHANGED_GO}}codegraph affected --quiet --filter "**/*_test.go" {{.CHANGED_GO | catLines}}{{else}}echo "no changed Go files"{{end}}'
 
   clean:
     desc: Remove build and coverage output

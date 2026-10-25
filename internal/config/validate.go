@@ -51,6 +51,9 @@ func validate(c *Config) error {
 	if err := validateRepos(c); err != nil {
 		return err
 	}
+	if err := validateIntegration(c); err != nil {
+		return err
+	}
 	if err := validateRepoTargets(c); err != nil {
 		return err
 	}
@@ -128,13 +131,6 @@ func validateBuiltinPackageKinds(c *Config) error {
 			pkg, known := cl.Framework(catalogName)
 			if known && pkg.Kind != "" && pkg.Kind != kind {
 				return fmt.Errorf("parse config: %s.%s source %q is %s, not %s", kind+"s", name, r.Source, article(pkg.Kind), article(kind))
-			}
-			if kind == "engine" && known {
-				for _, excluded := range pkg.Excludes {
-					if _, installed := c.Engines[excluded]; installed {
-						return fmt.Errorf("parse config: engines.%s excludes engines.%s; install %s or lifecycle engines, not both", name, excluded, name)
-					}
-				}
 			}
 		}
 	}

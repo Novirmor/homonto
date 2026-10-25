@@ -420,19 +420,15 @@ func (e *Engine) subagentRenderContextFor(targets map[string]map[string]bool) (m
 	recordRoots := []string{records, permissionCanonicalPath(records)}
 	// Native record protection follows the builtin role even when installed
 	// directly rather than through a framework. It grants no external access.
-	for _, agent := range []string{"onto-implementer", "to-implementer"} {
+	for _, agent := range []string{"onto-implementer", "to-implementer", "no-implementer"} {
 		externalDirectoryDeniesByAgent[agent] = recordRoots
 	}
-	// ADR 0039/0045: the builtin workflow frameworks render declared-repo
-	// access for their writable agents only — the shared homonto primary
-	// (ADR 0045 replaced the per-framework onto/to primaries) and the two
-	// implementers. Declaring any one of onto, to, or the h companion
-	// installs the primary, so any of them enables the rule; read-only
-	// specialists never gain external access.
+	// ADR 0068: builtin workers may inspect all declared repositories. Directory
+	// access does not grant shell or edit capability to read-only specialists.
 	workflowFrameworkInstalled := false
 	for _, resource := range e.Cfg.Frameworks {
 		switch resource.Source {
-		case "builtin:onto", "builtin:to", "builtin:h":
+		case "builtin:onto", "builtin:to", "builtin:no", "builtin:h":
 			workflowFrameworkInstalled = true
 		}
 	}
@@ -461,7 +457,7 @@ func (e *Engine) subagentRenderContextFor(targets map[string]map[string]bool) (m
 				}
 			}
 		}
-		for _, agent := range []string{"homonto", "onto-implementer", "to-implementer"} {
+		for _, agent := range []string{"homonto", "onto-implementer", "to-implementer", "no-implementer", "onto-explorer", "onto-reviewer", "onto-skeptic", "to-explorer", "to-reviewer", "to-skeptic", "no-reviewer", "h-spike", "h-review"} {
 			externalDirectoriesByAgent[agent] = externalDirectories
 		}
 		externalDirectoriesByAgent["homonto"] = append(append([]string(nil), externalDirectories...), recordRoots...)

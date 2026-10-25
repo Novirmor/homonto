@@ -40,11 +40,11 @@ by side and the request decides which dispatcher the shared `homonto`
 coordinator loads (ADR 0045). Pick **onto**
 for changes that need spec deltas, dependency graphs, and artifact/evidence
 checks on normal transitions; pick **to** for simple development where that
-machinery costs more than it protects. Changes cross the boundary explicitly:
-`to promote <name> --yes` grows a `to` change into a full onto change
-(preserved in `.workflow/snapshots/`), and `onto demote <name> --yes` drops an
-onto change back into `to`'s lighter loop — converting back while nothing
-changed restores the previous workspace byte-for-byte.
+machinery costs more than it protects. `no` may also be installed. Each task
+selects exactly one engine and retains it on resume (ADR 0068). The existing
+promote/demote CLI bridges remain available for explicit legacy conversion;
+they are not part of the workspace-task flow and cannot preserve its recorded
+engine/generation identity. Task instructions never switch engines automatically.
 
 ## Install and enable
 
@@ -119,9 +119,9 @@ recovery, review, and final evidence.
 - **plan** (`/to-plan`) — ground the approach in reading (dispatch
   `to-explorer` for multi-file questions), write `plan.md` per the contract,
   de-slop it, then `to phase <name>`.
-- **do** (`/to-do`) — execute one task at a time: `to-implementer` writes it
-  (**one at a time — it is the only agent that edits, and `to` keeps a single
-  working tree**), the orchestrator verifies against the repository, one or
+- **do** (`/to-do`) — execute independent repositories in parallel, with exactly
+  one repository per `to-implementer` assignment and one writer per checkout.
+  The orchestrator verifies against the repository, one or
   more `to-reviewer` passes judge the diff, findings are fixed or declined in
   writing, the task is checked off in its own commit.
 - **done** (`/to-done`) — run `Final Verify:`, obtain at least one completed
@@ -149,13 +149,15 @@ agent writes, not by which agent it is:
 | Subagent | Role | Concurrency |
 |---|---|---|
 | `to-explorer` | Read-only, no-shell codebase questions; returns conclusions, not dumps. | Concurrent — one per question |
-| `to-implementer` | Executes one task from its written contract; reports (never does) discovered work. | **Serial** — the only agent that edits |
+| `to-implementer` | Executes one repository assignment; returns edits and evidence, leaving commits to the parent. | Parallel across repositories; serial per checkout |
 | `to-reviewer` | No-shell review of each supplied diff for correctness, security, contract, and clarity. | Concurrent — one per lens |
 | `to-skeptic` | No-shell fresh-context passes in `to-done`, prompted to refute the "it works" claim and request exact probes. | Concurrent — one per lens |
 
-Read-only agents cannot corrupt a shared tree, so `to` runs as many as the
-work justifies. The implementer is serial because `to` keeps one working
-tree; parallel implementers need a worktree each, which is onto's territory.
+Read-only agents may run concurrently, but reviewers need stable candidates:
+pause writers in reviewed checkouts. Workers may read all declared repositories.
+Per-repo reviews precede combined interface review and configured integration
+checks. The user chooses isolation once per task, with per-repo exceptions;
+shared workspace tasks preserve that choice and candidate-bound results.
 Bookkeeping — `plan.md` edits, checkoffs, commits — stays with the
 orchestrator and never runs concurrently.
 

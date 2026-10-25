@@ -1017,6 +1017,29 @@ func SourceDirsForLayout(l Layout, workflow, change string, aliases []string) (m
 	return out, nil
 }
 
+// SourceAnchor is a lifecycle-owned immutable source base and integration target.
+type SourceAnchor struct {
+	Commit string
+	Branch string
+}
+
+// SourceAnchors returns the recorded generation and bases without modifying state.
+// A supplied identity also permits terminal/archived resume of that generation.
+func SourceAnchors(l Layout, workflow, change, identity string) (string, map[string]SourceAnchor, error) {
+	if err := checkWorktreeNames(workflow, change); err != nil {
+		return "", nil, err
+	}
+	s, err := bindingState(l, workflow, change, identity, identity == "")
+	if err != nil {
+		return "", nil, err
+	}
+	anchors := make(map[string]SourceAnchor, len(s.RepoBases))
+	for alias, base := range s.RepoBases {
+		anchors[alias] = SourceAnchor{Commit: base.BaseRef, Branch: base.BaseBranch}
+	}
+	return s.identity, anchors, nil
+}
+
 func SourceDirsForActiveState(l Layout, workflow, change string) (map[string]string, error) {
 	if err := checkWorktreeNames(workflow, change); err != nil {
 		return nil, err

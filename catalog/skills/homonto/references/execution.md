@@ -1,11 +1,54 @@
 # Task execution and evidence
 
-Use this policy in both workflows. The dispatcher chooses the path; the phase
+Use this policy for the selected engine. The dispatcher chooses the path; the phase
 owns its actions; this reference owns dispatch fallback, task granularity, and
 evidence reuse. Follow [autonomy](autonomy.md) and the
 [workspace policy](workspace-policy.md) throughout.
 
 ## Dispatch capability
+
+### Parallel repository assignments
+
+Installations may contain onto, to and no together. A task selects exactly one
+engine; preserve it on resume and ignore the other engines for that task. No
+has no binary, plan or lifecycle state. Onto/to retain their native lifecycle
+gates and registered execution bindings. A preset escalation inside onto does
+not switch engines. Do not convert an active task into another engine.
+
+The parent model chooses dependencies and concurrency, across repositories
+first: exactly one repository per implementer assignment, one writer per
+checkout. Supply selected engine, writable alias, absolute checkout, base,
+contract and verification, plus all declared repository paths as readable
+context. Assignment scope governs writes; it is not a runtime sandbox. There
+is no scheduler or cross-session checkout reservation. Serialize same-repo work
+and parent-owned workflow mutations. Continue independent assignments around
+blockers while pausing their dependents.
+
+Ask the user once per task for existing checkouts versus worktrees, with per-repo
+exceptions; reuse that choice on resume. In schema 2, record it with
+`homonto workspace task create NAME --engine ENGINE --isolation MODE --repo ALIAS`
+(repeat `--repo`, add `--change CHANGE` for onto/to). Use the actual `--config`.
+Inspect/resume with `homonto workspace task inspect NAME`, not a new allocation.
+Dirty unchanged verification inputs require a user disposition; an approved
+committed snapshot uses `--isolation-override ALIAS=worktree`. Never transport
+dirty input silently. Shared metadata records checkout facts and results, not
+plans or lifecycle phases. Follow native allocation ordering under workspace policy.
+
+The parent owns all source commits, branch integration and publication. Workers
+return edits and verification evidence. Review completed per-repo candidates in
+parallel while those checkouts have no writers, then review the combined
+interfaces and integration results. Commit candidates before integration checks.
+Pause every participating writer; unrelated work may continue. Run
+`homonto workspace task check NAME --writers-paused`. Named configured checks
+match when ANY listed repo changes; unchanged participants stay pinned to their
+clean committed revisions. Commands receive `HOMONTO_INTEGRATION_CONTEXT`, a
+JSON file with actual checkout paths and revisions. Changes invalidate affected
+results. Model-selected fallback applies only when no configured check matches,
+never to a configured failure. Ask before delivering a partial subset.
+
+After authorized integration, task cleanup removes only clean integrated owned
+allocations; onto/to native bindings still require their terminal lifecycle and
+`homonto worktree remove`. No worker performs allocation or cleanup.
 
 Check actual host dispatch and the required worker before assigning work. Apply
 the following table to implementation, review, and final skepticism in both
@@ -76,9 +119,8 @@ is done. Include:
 
 - **Outcome:** complete, partial, or blocked for this assignment, not the whole workflow.
   Name the task and preserve any handed task ID and trace marker.
-- **Changes:** files changed, what changed and why. Give the commit SHA only if
-  committing was authorized; otherwise identify the uncommitted candidate with
-  its base and exact diff, including new files. Do not commit just to identify it.
+- **Changes:** files changed, what changed and why. Identify the uncommitted
+  candidate with its base and exact diff, including new files. The parent commits.
 - **Verification:** for each check, identify the tested candidate, absolute cwd,
   literal command, relevant inputs/environment, exit status, and literal verification
   output or a readable output path. State which expected passing signal was

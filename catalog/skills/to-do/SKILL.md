@@ -1,11 +1,11 @@
 ---
 name: to-do
-description: to phase 2 — do. Use when an active change has phase do — executes plan.md one task at a time through the implementer/reviewer loop, one implementer at a time with reviewers run concurrently, holding the code to onto-grade standards.
+description: to phase 2 — do. Executes plan.md through implementer/reviewer loops, parallel across repositories and serial within each checkout, holding code to onto-grade standards.
 ---
 
 # to-do — Phase 2: Do
 
-Execute the plan, one task at a time. This is the code-writing skill: the flow
+Execute the plan in dependency order, parallelizing independent repositories. This is the code-writing skill: the flow
 is simple, but the code written inside it is held to the full bar.
 Apply the shared [autonomous workflow policy](../homonto/references/autonomy.md),
 including workspace roots and dirty-work decisions, even on direct entry.
@@ -28,7 +28,8 @@ including workspace roots and dirty-work decisions, even on direct entry.
 
 ## The loop
 
-For each unchecked task in `plan.md`, in order:
+For each executable unchecked task in `plan.md`, respecting dependencies and
+serial order within its repository; independent repositories may run together:
 
 Route `Owner: coordinator` records tasks to the coordinator, however substantial.
 It edits and verifies those named workflow records serially and obtains read-only
@@ -39,9 +40,9 @@ source-only implementer to edit records. Source tasks use the loop below.
    When dispatch is available, send `to-implementer` the complete task verbatim: outcome,
    files and symbols, behavioral contract, verification command, and expected
    passing signal. Include any directly relevant conclusion from the plan's
-   grounding; do not silently add scope. One implementer at a time — **never in
-   parallel**: it is the only agent that edits, and `to` keeps a single working
-    tree per selected repo. Supply the exact source alias and validated execution
+   grounding; do not silently add scope. One implementer per repository and one
+   writer per checkout; independent repositories may run in parallel under the
+   shared execution policy. Supply the exact source alias and validated execution
     binding, plus the existing dirt decision; configRoot and records root are
     not substitute source directories. Same-repo tasks are serial until
     task-level bindings exist. Only the coordinator calls workspace/worktree

@@ -119,7 +119,7 @@ func TestHomontoPrimaryPromptIsComplete(t *testing.T) {
 		"## GitHub intake",
 		"without an explicit approval",
 		"homonto/references/workflow-selection.md",
-		"recommend and ask once among viable `to`",
+		"recommend and ask once among viable `no`, `to`",
 		"user's stated preference",
 		"any existing change, repository policy",
 		"risk, and evidence",

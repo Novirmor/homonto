@@ -16,8 +16,9 @@ sub-skill (`to-plan`, `to-do`, or `to-done`), continuing through later phases
 unless the user names an endpoint or asks to pause. Every state change goes through
 the `to` binary — never hand-edit `to-state.yaml`. The read-only subagents
 (`to-explorer`, `to-reviewer`, `to-skeptic`) are dispatched concurrently;
-`to-implementer` runs strictly one at a time, because it is the only agent
-that edits and `to` keeps a single working tree.
+`to-implementer` writes exactly one assigned repository. Independent repositories
+may run in parallel; each checkout has one writer. The parent owns commits and
+combined verification. Keep this task's selected engine on resume.
 
 `$ARGUMENTS`, if present, describes what to work on — use it to open a new
 change or to focus the current phase. If absent, resume the active change.

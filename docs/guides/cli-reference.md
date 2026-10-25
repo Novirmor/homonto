@@ -60,6 +60,22 @@ $ homonto plan --output json | jq .        # machine-readable
 $ homonto plan --exit-code && echo clean   # CI: fail when an apply is pending
 ```
 
+## `homonto workspace task`
+
+Shared schema-2 checkout bookkeeping and integration verification for a task
+using exactly one installed engine (`onto`, `to`, or `no`):
+
+| Command | Purpose |
+|---|---|
+| `create NAME --engine ENGINE --repo ALIAS --isolation existing\|worktree` | Record the selected engine and user-chosen isolation; repeat `--repo`, add `--change NAME` for onto/to and optional `--isolation-override ALIAS=MODE`. |
+| `inspect NAME` | Resume recorded checkout identities and report integration-result staleness as JSON. |
+| `check NAME --writers-paused` | Run matching named checks, optionally `--check NAME` and `--timeout 10m`; command output goes to stderr, JSON results to stdout. |
+| `cleanup NAME --yes` | Remove only clean integrated task-owned worktrees; retain branches and metadata. |
+
+All accept `--config PATH`. No has no executable or lifecycle; onto/to use
+their native lifecycle bindings. See [integration checks and workspace tasks](configuration.md#integration-checks)
+for configuration, checkout-aware context, dirty-input disposition, and native cleanup.
+
 ## `homonto apply`
 
 Project the config into the tools: print the plan, confirm (`[y/N]`), then

@@ -106,7 +106,7 @@ name).
 
 **`build_mode: subagent`** → follow `references/subagent-protocol.md`: the
 main session coordinates only — one fresh-context implementer agent per
-task, coordinator verifies commits and checkoffs against the repository
+task in one repository; the coordinator verifies edits, commits and checkoffs against the repository
 (never the agent's report), reviewer agent after `(risk: high)` tasks and
 the final task. If no real dispatch capability exists, fall back to
 `build_mode: direct`, record it, announce it.
@@ -121,7 +121,8 @@ mixed source/records task into linked tasks with distinct owners and roots.
 one binding per workflow/change/repo, not task-level bindings. Disjoint files do
 not permit unregistered raw/native task worktrees, even with existing history.
 
-**Legacy schema 0/1 combined:** parallel implementers remain supported for
+Independent repositories may run in parallel under the shared execution policy.
+**Legacy schema 0/1 combined:** isolated serial assignments remain supported for
 disjoint-file tasks with `build_mode: subagent` and `isolation: worktree`, under
 all five conditions in `references/subagent-protocol.md`: a worktree per worker,
 no worker task/state writes, coordinator joins in plan order, serial coordinator
@@ -157,11 +158,11 @@ gets lost. Four rules, no exceptions:
   Append-then-do, never do-then-maybe-note. A few lines inside the current
   task's stated scope belong to that task; anything more is a new task.
 - **Check off at landing.** In existing combined direct mode, the `tasks.md`
-  checkoff rides the task's implementation commit. In subagent mode, verify the returned source
-   commit, then check off in a separate coordinator-owned bookkeeping commit
+  checkoff rides the task's implementation commit. In subagent mode, verify and commit the returned source
+   edits, then check off in a separate coordinator-owned bookkeeping commit
    before the next dispatch. In managed mode use a records checkpoint instead
    of that manual bookkeeping commit; never put workflow records in source commits.
-   For a legacy parallel batch, joins finish first, then the coordinator records
+   For a legacy isolated batch, joins finish first, then the coordinator records
    every checkoff and bookkeeping commit serially before the next dispatch.
   Never check off unverified work or defer bookkeeping past the next task.
   `plan.md` has no checkbox to update.
@@ -187,14 +188,14 @@ always the final diff), rather than reviewing inline. Its findings are input to
 **evaluate, not execute**: apply `references/receiving-review.md` — verify each
 finding against the code before acting, and push back with evidence on a wrong
 one instead of implementing it. When `plan.md` marks tasks
-whose file sets **do not overlap**, dispatch their reviews (and any needed
+in independent repositories, dispatch their reviews (and any needed
 `onto-explorer` investigation) **concurrently** — one subagent invocation per
 task — through the Task tool; send several independent read-only tasks in one
 turn so OpenCode runs them as parallel child sessions. The reviews then
-proceed in parallel while you implement the next task. Tasks that share files
-stay serial (one commit each, in order).
+proceed in parallel while you implement in unrelated repositories. Pause writers
+in every reviewed checkout. Tasks in the same repository stay serial.
 
-Legacy parallel-batch reviews wait for the last join and inspect the integrated
+Legacy isolated-batch reviews wait for the last join and inspect the integrated
 candidate; the serial review timing above does not override that fifth condition.
 
 A diff worth more than one opinion gets **several reviewers at once, one per
@@ -208,8 +209,9 @@ skeptic pass.
 This is the concrete wiring of the dispatcher's "Delegation, parallelization,
 and dialogs" section. Under **`build_mode: direct`** the orchestrator (this
 session) owns every edit and commit and the subagents only read and report;
-under **`build_mode: subagent`** implementers edit and commit their own task's
-files. The orchestrator owns every `onto` binary call in both modes.
+under **`build_mode: subagent`** implementers return edits and evidence; the
+orchestrator commits. It owns every `onto` binary call in both modes. Per-repo
+reviews precede combined interface review and configured integration checks.
 Technical review findings and in-scope discovered work are resolved without a
 user round-trip. Ask only when a proposed change crosses the agreed product
 scope.

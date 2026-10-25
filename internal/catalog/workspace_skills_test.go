@@ -59,7 +59,7 @@ func TestWorkspacePromptAuditContracts(t *testing.T) {
 		{"skills/onto-open/references/preset-proposal.md", []string{"## Non-Goals", "## Capability Impact", "## Acceptance Scenarios", "## Grounding", "Scenario-ID: <id>", "Owner, Repo, Cwd, Files, Change, and Verify"}},
 		{"skills/onto-close/references/lint-checklist.md", []string{"preset-proposal.md", "Every preset Acceptance Scenario has current report evidence"}},
 		{"skills/onto-verify/SKILL.md", []string{"do not record receipts yet", "finalize `verification.md`", "Do not edit the report after receipts", "repository/task/scenario supersedes earlier claims", "Re-record all claims", "no separate round-reset command"}},
-		{"skills/to/SKILL.md", []string{"check bounded fit before allocation", "Registered bindings currently block promotion", "explicit handoff", "location-aware recovery", "to doctor"}},
+		{"skills/to/SKILL.md", []string{"check bounded fit before allocation", "keeps its selected engine", "ask for a scope decision", "location-aware recovery", "to doctor"}},
 		{"skills/to-do/SKILL.md", []string{"`Owner: coordinator` records tasks", "however substantial", "Owner/Repo/Cwd/Files/Change/Verify"}},
 		{"skills/onto-build/references/subagent-protocol.md", []string{"explicit separate lane", "Implementers remain prohibited from editing records", "Owner, Repo, absolute Cwd"}},
 		{"skills/onto-build/references/plan.md", []string{"- Owner:", "- Repo:", "- Cwd:", "never insert or reorder", "fresh final-validation task"}},
@@ -139,7 +139,7 @@ func TestWorkspaceSkillsAllocationModes(t *testing.T) {
 			if !ok {
 				t.Fatal("missing schema 2 allocation policy")
 			}
-			registered, legacy, ok := strings.Cut(modes, "## Legacy schema 0/1 combined parallel")
+			registered, legacy, ok := strings.Cut(modes, "## Legacy schema 0/1 combined isolation")
 			if !ok {
 				t.Fatal("missing legacy combined protocol")
 			}

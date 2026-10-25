@@ -41,19 +41,20 @@ identity. Missing declarations or several plausible matches require resolution,
 not an arbitrary external checkout. Validate registered bindings with
 `homonto worktree list --json`; only the coordinator allocates/removes them.
 
-For resolve and no-match continue, inspect the user's explicit preference,
+For resolve, inspect the user's explicit preference,
 existing matching change, and repository policy before applying the shared
 [new-change workflow selection](../../homonto/references/workflow-selection.md).
-Inspect both workflow inventories and the relevant proposal or plan before
-creating anything. Resume a unique match through its dispatcher; never duplicate
+Inspect recorded workspace-task identity and the selected engine's relevant
+proposal or plan before creating anything. Resume a unique match; never duplicate
 it. An explicit preference selects the workflow but does not authorize abandoning
-an existing match or rewriting its state: use the dispatcher's supported conversion
-when safe, and ask only if it would waive obligations or change material scope.
+an existing match or rewriting its state. Keep one engine per task and ask about
+incompatible scope; do not convert it into another engine.
 Several plausible matches require a user decision unless the request uniquely
 identifies one. A harmless name collision is solved with another unique name,
 not a new workflow-choice dialog.
 
-For a new change without an explicit path, recommend `to` for bounded solo
+For a new change without an explicit path, offer `no` for model-directed work
+without lifecycle records, `to` for bounded
 work, `onto fix` for a reproducible bug needing a handoff record, `onto tweak`
 for a small non-bug change needing that record, or full `onto` for design,
 security-sensitive, or cross-cutting work. Present viable options and ask once

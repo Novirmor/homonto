@@ -117,5 +117,5 @@ including workspace roots and dirty-work decisions, even on direct entry.
   arbitrary file count or by separate "code" and "tests" tasks.
 - Never hand-edit `to-state.yaml`; the binary owns it.
 - If the work turns out to need evidence-gated phases, spec deltas, or a
-  dependency graph, say so: that is onto-shaped work. `to promote <name> --yes`
-  converts the change; do not rebuild onto inside a plan.md.
+  dependency graph, report the incompatible scope and ask for a scope decision.
+  Preserve this task's selected engine; do not rebuild onto inside a plan.md.

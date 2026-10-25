@@ -155,8 +155,8 @@ func TestHAutonomyRoutingTrustAndSafety(t *testing.T) {
 				"genuinely missing material intent", "ambiguous change matches",
 				"unattributed dirty work that conflicts with safe progress",
 				"[new-change workflow selection](../../homonto/references/workflow-selection.md)",
-				"Resume a unique match through its dispatcher; never duplicate it",
-				"supported conversion", "Several plausible matches require a user decision",
+				"Resume a unique match; never duplicate it",
+				"Keep one engine per task", "Several plausible matches require a user decision",
 				"Present viable options and ask once",
 				"trusted arbitrary code execution", "contributor-controlled code on PR heads and forks",
 				"default to allowing task-relevant inspection",
@@ -179,7 +179,7 @@ func TestHAutonomyRoutingTrustAndSafety(t *testing.T) {
 			"skills/h-resolve-issue/SKILL.md",
 			[]string{
 				"**Spike first.**", "h-spike-issue` skill to completion",
-				"recommend a viable `to`",
+				"recommend a viable `no`, `to`",
 				"Ask for ambiguous matches or material scope conflicts",
 				"Only once the workflow's verification has passed",
 				"integration: pr", "onto complete-integration", "Reuse the single exact match",
@@ -364,13 +364,13 @@ func TestOntoSubagentProtocolCoordinatorOwnsBookkeeping(t *testing.T) {
 	text := hPromptText(t, "skills/onto-build/references/subagent-protocol.md")
 	for _, want := range []string{
 		"coordinator alone writes workflow and task records",
-		"one implementation commit containing only this task's assigned source and test files",
+		"return edits, leaving commits to the coordinator",
 		"do not edit `tasks.md`, `plan.md`, or workflow/state records",
 		"Preserve the handed dotted task ID and its `[trace #N]` marker",
 		"literal verification output", "reported, never done",
 		"unchecked `- [ ] N.M <task> [trace #K]`", "matching `## Task N.M` block",
 		"BEFORE the next dispatch",
-		"its diff contains only assigned source and test files with no task or workflow-state mutations",
+		"returned diff contains only assigned source and test files with no task or workflow-state mutations",
 		"Record completion only after verification",
 		"coordinator records the implementation commit SHA and verification commands/results",
 		"checks the task off in `tasks.md`, and commits the bookkeeping separately before the next dispatch",
@@ -382,9 +382,9 @@ func TestOntoSubagentProtocolCoordinatorOwnsBookkeeping(t *testing.T) {
 			t.Errorf("subagent protocol missing %q", want)
 		}
 	}
-	_, legacy, ok := strings.Cut(text, "## Legacy schema 0/1 combined parallel")
+	_, legacy, ok := strings.Cut(text, "## Legacy schema 0/1 combined isolation")
 	if !ok {
-		t.Fatal("missing legacy-only parallel protocol")
+		t.Fatal("missing legacy isolation protocol")
 	}
 	legacy, _, _ = strings.Cut(legacy, "## Coordinator duties")
 	for _, want := range []string{

@@ -81,10 +81,9 @@ func TestWorkspaceProjectionAndPermissions(t *testing.T) {
 						t.Fatal(err)
 					}
 					if name == "h-review" {
-						if fm.Permission["edit"] != "deny" || fm.Permission["bash"] != "deny" || fm.Permission["external_directory"] != nil {
+						if fm.Permission["edit"] != "deny" || fm.Permission["bash"] != "deny" {
 							t.Errorf("read-only %s permissions = %#v", name, fm.Permission)
 						}
-						continue
 					}
 					dirs, ok := fm.Permission["external_directory"].(map[string]any)
 					if !ok || dirs["*"] != "deny" {
@@ -99,10 +98,13 @@ func TestWorkspaceProjectionAndPermissions(t *testing.T) {
 					if name == "homonto" {
 						wantRecords = "allow"
 					}
-					if dirs[filepath.ToSlash(filepath.Join(records, "**"))] != wantRecords {
+					if name == "h-review" {
+						wantRecords = ""
+					}
+					if wantRecords != "" && dirs[filepath.ToSlash(filepath.Join(records, "**"))] != wantRecords {
 						t.Errorf("%s workflow rule = %#v, want %s", name, dirs, wantRecords)
 					}
-					if name != "homonto" {
+					if name != "homonto" && name != "h-review" {
 						edits, ok := fm.Permission["edit"].(map[string]any)
 						if !ok || edits[filepath.ToSlash(filepath.Join(records, "**"))] != "deny" {
 							t.Errorf("%s native edit can write workflow records inside a host workspace", name)

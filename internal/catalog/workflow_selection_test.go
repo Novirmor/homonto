@@ -13,9 +13,10 @@ func TestNewChangeWorkflowSelectionPolicy(t *testing.T) {
 	policy := hPromptText(t, "skills/homonto/references/workflow-selection.md")
 	plain := strings.Join(strings.Fields(policy), " ")
 	for _, want := range []string{
-		"Before creating a change, inspect both workflow inventories",
-		"Resume a unique matching active change",
-		"do not ask again on resume",
+		"Before creating a task, inspect the request and any recorded workspace task",
+		"Resume a matching task in its recorded engine",
+		"Do not ask again on resume",
+		"**`no`**", "Engine selection is one-way for this task",
 		"`/to`, `/onto-fix`, `/onto-tweak`, and",
 		"`/onto` selects the onto family, not its preset",
 		"ask **once before `to new` or `onto new`**",

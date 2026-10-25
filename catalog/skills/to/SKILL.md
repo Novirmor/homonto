@@ -32,7 +32,7 @@ that spans siblings is created once with `to new <name> --repo <declared-name>`;
 the selected aliases become a terminal `to done` clean-worktree gate; and onto
 is the heavier sibling framework (evidence-gated open → design → build →
 verify → close) — the two are complementary, the change picks its workflow by
-selecting its workflow through the homonto coordinator, and `to status --all` shows both inventories.
+selecting exactly one engine through the homonto coordinator and retaining it on resume.
 
 The dispatcher does three things, in order, and never performs phase work
 itself.
@@ -82,7 +82,7 @@ Run `to status --json` and find the active change.
   before `to new`. `/to` explicitly selects to; otherwise recommend viable
   paths and ask once when no workflow was specified; check bounded fit before allocation:
   design/spec/evidence-gated or cross-cutting work cannot silently
-  be routed to to after creating a binding that blocks promotion. Resolve
+   be routed to to and later switched to another engine. Resolve
   managed initialization and legacy isolation under
   the shared policy before scaffold writes. Derive source repositories in scope,
   create it with `to
@@ -103,18 +103,10 @@ When one change is active and the conversation adds work, continue it if the new
 request fits its recorded boundary. Ask only when it conflicts with that boundary
 or clearly describes an independent change.
 
-A change outgrowing `to` (design questions, evidence obligations, a second
-reader)? `to promote <name> --yes` converts it into a full onto change with
-the complete workspace preserved under `.workflow/snapshots/` — declare
-`[engines.onto]` alongside `to` if it is missing, `homonto apply --yes`,
-then `/onto` (ADR 0028). An onto change that no longer needs its gates goes
-back with `onto demote <name> --yes`; converting back while nothing changed
-restores the previous workspace byte-for-byte (ADR 0042).
-Check `homonto worktree list --json` before conversion. Registered bindings
-currently block promotion; if scope grows after allocation, stop implementation
-and provide an explicit handoff naming the binding, candidate, remaining scope,
-and conversion blocker. Do not remove an active binding, hand-edit state, or
-silently open a duplicate change to evade the conversion guard.
+A change outgrowing `to` keeps its selected engine. If new obligations cannot
+be met, report the candidate, bindings, remaining scope and exact conflict, then
+ask for a scope decision. Do not switch engines, install another engine, remove
+active bindings, hand-edit state or open a duplicate task to evade obligations.
 
 Resuming after a context compaction? `to handoff <name>` prints the recovery
 pack (phase, plan excerpt, next skill) — read it before doing anything.
@@ -172,7 +164,7 @@ worker is recorded before creation; it never becomes a fabricated completed pass
   `to-skeptic` deny both edits and shell commands, so they cannot race. Dispatch as many at once
   as the work justifies — several explorers on different questions, several
   reviewers or skeptics applying different lenses to the same diff.
-- **`to-implementer` runs strictly one at a time.** Use the selected source
+- **`to-implementer` runs once per repository, parallel across independent repos.** Use the selected source
   execution root, including a registered `--workflow to` binding for isolation.
   The allocator has one binding per workflow/change/repo, not per task; do not
   create unregistered task worktrees to parallelize implementers.
@@ -183,8 +175,7 @@ Subagent questions return to the coordinator. Resolve factual and technical
 questions from repository evidence or by running the requested probe; ask the
 user only when product intent or an explicit authorization is genuinely missing.
 
-onto and `to` are complementary: never mix their artifacts in one change, and
-route conversions through the promote/demote bridges — never by hand.
+Never mix engines' artifacts or convert this task into another engine.
 
 All prose the change keeps (`plan.md`, its notes and verification record, and
 commit messages) goes through the `to-no-slop` rules before it lands.

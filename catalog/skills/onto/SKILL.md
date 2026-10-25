@@ -42,7 +42,7 @@ transient evidence. Check actual dispatch using
 
 ### 2. Discover and select
 
-Inspect both workflow inventories before new work. Read
+Inspect the selected onto inventory before new work. Read
 [discovery](references/discovery.md) for active/archive matching, dependencies,
 dirty-work attribution and first-use bootstrap. Resume a unique matching change;
 ask through `question` only for unresolved identity or scope conflicts.

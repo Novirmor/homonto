@@ -86,7 +86,7 @@ type RenderContext struct {
 	// allows. Protected asks and trusted-shell denies also cover RTK without it.
 	ShellProxy string
 	// ExternalDirectoriesByAgent names the resolved workspace directories that each
-	// bundled writable workflow role may access. The engine owns this map so a
+	// bundled role may access; read-only roles retain shell/edit denials. The engine owns this map so a
 	// custom agent cannot self-grant access by declaring frontmatter.
 	ExternalDirectoriesByAgent map[string][]string
 	// ExternalDirectoryDeniesByAgent excludes coordinator-owned records even
@@ -427,7 +427,7 @@ func opencodePermission(h Homonto, additions, externalDirectories, externalDirec
 		}
 		lines = append(lines, "  webfetch: "+action, "  websearch: "+action)
 	}
-	if !h.ReadOnly && managesExternalDirectories {
+	if managesExternalDirectories {
 		lines = append(lines, "  external_directory:")
 		// Agent rules override inherited global permissions. Deny everything
 		// outside the declared paths before re-allowing those trusted roots.

@@ -267,6 +267,16 @@ func TestHomontoPrimaryRendersViaToFramework(t *testing.T) {
 	}
 }
 
+const noFrameworkTOML = `
+[engines.no]
+source = "builtin:no"
+scope = "project"
+[subagents.no-implementer.opencode]
+model = "test/model"
+[subagents.no-reviewer.opencode]
+model = "test/model"
+`
+
 func TestFrameworkAgentsAllowDeclaredRepoDirectories(t *testing.T) {
 	for _, tc := range []struct {
 		name      string
@@ -276,6 +286,7 @@ func TestFrameworkAgentsAllowDeclaredRepoDirectories(t *testing.T) {
 	}{
 		{"onto", ontoFrameworkTOML, []string{"homonto", "onto-implementer"}, []string{"onto-explorer", "onto-reviewer", "onto-skeptic"}},
 		{"to", toFrameworkTOML, []string{"homonto", "to-implementer"}, []string{"to-explorer", "to-reviewer", "to-skeptic"}},
+		{"no", noFrameworkTOML, []string{"no-implementer"}, []string{"no-reviewer"}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			home := t.TempDir()
@@ -308,8 +319,8 @@ func TestFrameworkAgentsAllowDeclaredRepoDirectories(t *testing.T) {
 				if err != nil {
 					t.Fatal(err)
 				}
-				if strings.Contains(string(data), "external_directory:") {
-					t.Errorf("%s must not receive external access:\n%s", agentName, data)
+				if !strings.Contains(string(data), want) || !strings.Contains(string(data), "  edit: deny") || !strings.Contains(string(data), "  bash: deny") {
+					t.Errorf("%s must read declared repositories while denying edits and shell:\n%s", agentName, data)
 				}
 			}
 		})
@@ -325,6 +336,7 @@ func TestFrameworkAgentsDenyExternalDirectoriesWithoutDeclaredRepos(t *testing.T
 	}{
 		{"onto", ontoFrameworkTOML, []string{"homonto", "onto-implementer"}, []string{"onto-explorer", "onto-reviewer", "onto-skeptic"}},
 		{"to", toFrameworkTOML, []string{"homonto", "to-implementer"}, []string{"to-explorer", "to-reviewer", "to-skeptic"}},
+		{"no", noFrameworkTOML, []string{"no-implementer"}, []string{"no-reviewer"}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			home := t.TempDir()
@@ -350,8 +362,8 @@ func TestFrameworkAgentsDenyExternalDirectoriesWithoutDeclaredRepos(t *testing.T
 				if err != nil {
 					t.Fatal(err)
 				}
-				if strings.Contains(string(data), "external_directory:") {
-					t.Errorf("%s must not gain an external-directory rule:\n%s", agentName, data)
+				if !strings.Contains(string(data), "  external_directory:\n    \"*\": deny") || !strings.Contains(string(data), "  edit: deny") || !strings.Contains(string(data), "  bash: deny") {
+					t.Errorf("%s must deny undeclared directories, edits and shell:\n%s", agentName, data)
 				}
 			}
 		})
@@ -541,8 +553,8 @@ func TestHWorkflowRendersCoordinatorAndReadonlyWorkers(t *testing.T) {
 			t.Fatal(err)
 		}
 		rendered := string(data)
-		if strings.Contains(rendered, "external_directory:") {
-			t.Errorf("%s must not gain an external-directory rule:\n%s", worker, rendered)
+		if !strings.Contains(rendered, fmt.Sprintf("    %q: allow", filepath.ToSlash(filepath.Join(sibling, "**")))) {
+			t.Errorf("%s must read the declared repository:\n%s", worker, rendered)
 		}
 		for _, want := range []string{"edit: deny", "bash: deny", "webfetch: allow", "websearch: allow"} {
 			if !strings.Contains(rendered, want) {

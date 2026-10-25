@@ -7,6 +7,14 @@ schema 0/1 configurations retain their legacy behavior; changing the version
 does not migrate their records. The layout decision is recorded in
 [ADR 0052](../adr/0052-separate-workflow-history-from-source-worktrees.md).
 
+All engines support parallel work across independent repositories. Each task
+selects exactly one engine and a user-chosen isolation mode, preserved on resume.
+Use `homonto workspace task` for shared checkout bookkeeping and named
+checkout-aware integration checks; see [integration checks](configuration.md#integration-checks)
+and [ADR 0068](../adr/0068-coordinate-parallel-work-by-repository.md). No uses
+these mechanics without native lifecycle records; the onto/to record and
+registered-binding procedures below apply only when one of those engines is selected.
+
 ## The four locations
 
 | Location | Purpose |

@@ -25,6 +25,16 @@ including workspace roots and dirty-work decisions, even on direct entry.
 
 ## Steps
 
+For a multirepository task, finish per-repository candidate reviews, then review
+the combined interfaces and integration results under the shared
+[parallel execution policy](../homonto/references/execution.md#parallel-repository-assignments).
+The parent commits candidates and pauses participating writers before running
+all matching `homonto workspace task check` checks. Inspect for stale results
+on resume. These results supplement onto's native evidence and receipt gates;
+they do not replace them. A configured failure blocks combined verification;
+model-selected fallback is allowed only when no check matches. Ask before
+delivering a partial subset.
+
 ### 1. Scale check → verification mode
 
 **Measure first, then apply the risk override.** Run `onto scale <name>` — it

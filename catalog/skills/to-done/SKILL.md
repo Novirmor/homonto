@@ -12,6 +12,14 @@ including workspace roots and dirty-work decisions, even on direct entry.
 
 ## Entry check
 
+For multirepository work, per-repository candidate reviews precede combined
+interface review and matching configured integration checks under the shared
+[execution policy](../homonto/references/execution.md#parallel-repository-assignments).
+Commit candidates and pause participating writers before checks. Inspect task
+results on resume and rerun stale evidence. Configured failures cannot be
+silently replaced by fallback; fallback applies only when no check matches.
+Ask before partial delivery. Native to completion requirements still apply.
+
 - `to status --json` shows the change at `phase: do` with every plan task
   checked.
 - Commit only verified assigned implementation changes in each selected source

@@ -1,12 +1,12 @@
 ---
 name: homonto
-description: Shared homonto reference. Use when reasoning about homonto configuration, catalog projection, or choosing between the onto and to workflows; it explains managed paths and workflow boundaries but does not dispatch work.
+description: Shared homonto reference for configuration, catalog projection, workspace tasks, and selecting an engine; it does not dispatch work.
 ---
 
 # homonto knowledge reference
 
 Use this skill when you need to explain or reason about homonto configuration,
-catalog projection, or the choice between the onto and to workflows. It is a
+catalog projection, or the choice between onto, to and no engines. It is a
 reference, not a workflow dispatcher and it does not authorize mutations.
 
 Follow the [workspace and dirty-work policy](references/workspace-policy.md),
@@ -21,8 +21,8 @@ tools. `homonto plan` previews changes; `homonto apply` reconciles them;
 `.homonto/` and projected `.opencode/` files as managed data. Change the source
 configuration and re-apply instead of editing projections.
 
-The catalog ships skills, commands, and agents with the binary. A framework
-declaration installs its complete surface. Each framework-expanded agent needs
+The catalog ships skills, commands, and agents with the binary. A `[workflows.*]`
+or `[engines.*]` declaration installs its package. Each expanded agent needs
 its own `[subagents.<name>.opencode]` model route.
 
 ## MCP servers and extra tools
@@ -35,10 +35,10 @@ never edit the projected `opencode.jsonc` MCP blocks by hand; homonto manages
 them and the next apply rewrites manual edits. `docs/guides/configuration.md`
 documents every field.
 
-`[repos]` names trusted sibling Git worktrees. For installed `onto` or `to`,
+`[repos]` names trusted sibling Git worktrees. For installed engines or h,
 apply renders those resolved paths as OpenCode external-directory permissions
-for the builtin writable primary and implementer, with a deny baseline for
-other external paths. Read-only specialists and custom agents receive no rule.
+for builtin workers and the coordinator, with a deny baseline for other external
+paths. Read-only specialists retain shell/edit denials. Custom agents receive no rule.
 Declared repositories and their symlinks are trusted rather than sandboxed;
 add a repo declaration rather than approving an arbitrary directory at runtime.
 
@@ -47,13 +47,16 @@ add a repo declaration rather than approving an arbitrary directory at runtime.
 - **onto** serves work that needs a reviewable handoff and evidence-backed
   transitions: `open -> design -> build -> verify -> close`.
 - **to** serves focused solo work with less ceremony: `plan -> do -> done`.
+- **no** provides an implementer and reviewer without a binary or lifecycle.
+- **h** is an independently installed GitHub workflow bundle.
 
-The frameworks are complementary: declare either or both, and pick per
-change using [new-change workflow selection](references/workflow-selection.md)
+All engines may coexist at installation. Pick exactly one per task using
+[new-change workflow selection](references/workflow-selection.md)
 — an explicit command selects its path, while an unspecified new change gets
-one recommended choice prompt. Do not mix their workspaces or move a
-change by hand. Use `to promote` when a to change must grow into an onto
-change, and `onto demote` for the way back.
+one recommended choice prompt. Preserve the selected engine on resume; do not
+mix artifacts or convert the task into another engine. Follow shared
+[execution policy](references/execution.md) for repository parallelism and
+checkout-aware integration checks; no's shared metadata is not lifecycle state.
 
 ## Agent Entry Points
 

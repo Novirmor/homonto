@@ -1,5 +1,5 @@
 ---
-description: Run the to do phase — execute plan.md one task at a time, one implementer then its reviewers.
+description: Run the to do phase — execute independent repositories in parallel, with serial writers and candidate review per checkout.
 agent: homonto
 ---
 

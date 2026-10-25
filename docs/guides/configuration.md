@@ -14,6 +14,7 @@ Quick map of every table:
 | `[workflow]` | Shared onto/to engine records root and Git mode | [Workflow root](#workflow-root--workflow) |
 | `[repos]` | Source repository aliases | [Repos](#repos--repos) |
 | `[worktrees]` | Optional execution-checkout allocation parent | [Worktrees](#worktrees) |
+| `[integration.<name>]` | Named checkout-aware integration checks | [Integration checks](#integration-checks) |
 | `[mcps.<name>]` | MCP servers | [MCP servers](#mcp-servers--mcpsname) |
 | `[skills.<name>]` | Skills (symlinked) | [Skills](#skills--skillsname) |
 | `[commands.<name>]` | Slash commands | [Commands](#commands--commandsname) |
@@ -156,6 +157,101 @@ native IDs or registered `stateID` values; it cannot override existing
 generation/binding evidence. Only execution `worktree create` is active-only.
 See [workspaces](workspaces.md#allocate-an-integration-receiver).
 
+## Integration checks
+
+Schema 2 supports named checks against a workspace task's actual checkouts:
+
+```toml
+[integration.api-web]
+repos = ["api", "web"]
+repo = "api"
+cwd = "tests/integration"
+command = ["./check.sh"]
+```
+
+`repos` lists unique declared aliases. Changing **any** participant selects the
+check. `repo` must be one of them; `cwd` is a required path inside its selected
+checkout (`"."` for the root). Absolute paths, parent escapes and symlink escapes
+are rejected. `command` is a nonempty argv array, not a shell string; use an
+explicit shell executable when required.
+
+The command receives `HOMONTO_INTEGRATION_CONTEXT`, the absolute path of a
+generated JSON file. For example:
+
+```json
+{
+  "version": 1,
+  "task": "api-contract",
+  "engine": "no",
+  "check": "api-web",
+  "repos": {
+    "api": {"path": "/work/api/workspace-api-contract", "revision": "<commit>", "git_dir": "<git-dir>"},
+    "web": {"path": "/work/web/workspace-api-contract", "revision": "<commit>", "git_dir": "<git-dir>"}
+  }
+}
+```
+
+Scripts must consume those paths rather than infer sibling locations. The
+parent commits candidate edits and pauses participating writers before running
+checks. Unchanged participants are pinned to their clean committed revision at
+task creation. Dirt in an unchanged input requires an explicit disposition,
+even when the default isolation is worktree: an approved committed snapshot
+uses `--isolation-override web=worktree`. Original edits are preserved.
+
+Results record command-definition identity, input revisions, output, exit code
+and timestamps under `.homonto/workspace-tasks/<name>/`. Inspect recalculates
+staleness after input or definition changes. Failed preflight and failed commands
+supersede an earlier pass. A command that changes participating tracked or
+untracked inputs fails verification. Keep build output ignored or outside them.
+Fallback is model-selected only when no configured check matches; a configured
+failure cannot be replaced silently.
+
+### Workspace task commands
+
+All engines may be installed together. A task selects exactly one and retains
+that choice on resume. Ask once for isolation, allowing per-repo overrides:
+
+```sh
+homonto workspace task create api-contract --engine no --repo api --isolation worktree --config /control/homonto.toml
+homonto workspace task inspect api-contract --config /control/homonto.toml
+homonto workspace task check api-contract --writers-paused --config /control/homonto.toml
+homonto workspace task cleanup api-contract --yes --config /control/homonto.toml
+```
+
+Create and inspect return JSON. Repeat `--repo` for changed repositories.
+Create includes unchanged inputs required by matching checks. Existing mode
+requires clean selected checkouts. Worktree mode requires `[worktrees].dir`.
+Repeating create resumes only matching engine/repository/isolation choices;
+inspect resumes without reselecting them. Task names use letters, digits,
+underscores and hyphens, beginning with a letter or digit.
+
+Onto/to additionally require `--change <active-native-name>` and reuse native
+source anchors and registered bindings. Allocate immediately after native
+creation, before records/source commits, as described in [workspaces](workspaces.md).
+No allocates independently and never invokes onto/to or creates lifecycle
+records. Shared metadata contains checkout bookkeeping and results, not plans,
+phases, a scheduler or cross-session reservations.
+
+`check` runs all matching checks (or one matching `--check NAME`), writes JSON
+results to stdout and command output to stderr, and returns an error for failed
+checks. Independent checks continue after failures. `--timeout` defaults to
+10 minutes per check. With no matching configuration it reports the need for
+model-selected verification; that message is not evidence of a passing check.
+
+Cleanup removes only clean, integrated task-owned allocations, retaining
+branches and metadata. It refuses ignored files too. Native onto/to allocations
+remain governed by `homonto worktree remove` and terminal lifecycle checks;
+clean up shared task allocations before removing their native bindings.
+Interrupted allocation fails closed with metadata retained for inspection; it
+does not adopt unknown worktrees or automatically discard partial work.
+
+The parent coordinates one writable repository per implementer assignment,
+with read access across declared repositories. Independent repositories may run
+in parallel; same-checkout writers and workflow-record mutations are serial.
+Write boundaries are instructions, not a sandbox. Per-repository reviews precede
+combined review; the parent owns commits, integration and publication and asks
+before delivering a partial subset.
+
 ## MCP servers — `[mcps.<name>]`
 
 MCP declarations exist so a server's command, scope, and secret references are
@@ -288,8 +384,8 @@ Engines provide a work model and may have a companion binary. The builtin
 catalog ships `onto`, `to`, and `no`. `onto` and `to` are complementary engines
 whose records remain in disjoint directories; either or both may be installed.
 `no` is catalog-only and provides its implementer and reviewer subagents,
-without a binary or durable lifecycle state. It excludes `onto` and `to`: an
-installation chooses `no` or lifecycle engines, not both. An engine is never
+without a binary or durable lifecycle state. All three engines may be installed;
+each task selects exactly one and ignores the others. An engine is never
 selected implicitly by declaring `h`; choose an installed engine only when the
 task needs it.
 
@@ -348,8 +444,8 @@ worktree creation must match both. See [workspaces](workspaces.md).
 
 ### Workflow access to declared repositories
 
-For builtin `onto`, `to`, and `h`, `homonto apply` renders OpenCode
-`external_directory` rules for the shared coordinator and implementers. Grants
+For builtin `onto`, `to`, `no`, and `h`, `homonto apply` renders OpenCode
+`external_directory` rules for installed builtin workers and the coordinator. Grants
 cover declared sources and, in schema 2, each alias's namespace under
 `worktrees.dir`, not the whole allocation parent. Only the coordinator receives
 the external records-root grant; implementer denies keep external records out
@@ -357,8 +453,9 @@ even when nested in an allowed source. The coordinator owns records/checkpoints,
 and implementers work on assigned source paths.
 
 A deny rule precedes these path allows so inherited global directory permission
-does not broaden the grants. Read-only specialists and custom agents receive
-no such grants. Paths containing `*` or `?` are rejected because OpenCode treats
+does not broaden the grants. Read-only specialists can inspect declared paths
+while retaining shell/edit denial. Custom agents receive no such grants.
+Paths containing `*` or `?` are rejected because OpenCode treats
 them as permission wildcards.
 
 OpenCode authorizes external paths lexically rather than resolving symlinks.

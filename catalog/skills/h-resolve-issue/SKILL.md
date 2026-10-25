@@ -44,25 +44,27 @@ candidate pinning, exact PR reuse, recovery, and repository-qualified issue inte
    looks tiny" is not a skip condition; a declined spike attempt is recorded
    in the final report, not acted on.
 2. **Select and explain the workflow.** Apply the shared workflow-selection
-    policy in h autonomy. Inspect both inventories (`to status --all`) and the
-    issue-linked records. Resume a unique match without prompting; honor an
-    explicit user path. Otherwise, after the spike, recommend a viable `to`,
+    policy in h autonomy. Inspect recorded workspace-task identity and the
+    selected engine's issue-linked records. Resume a unique match without prompting; honor an
+    explicit user path. Otherwise, after the spike, recommend a viable `no`, `to`,
     `onto fix`, `onto tweak`, or full `onto` path with brief reasons and ask
     once before creating the change. The question is not another publication
     approval or a reason to pause again at phase boundaries.
-    Verify the selected binary (`to version` or `onto version`);
+    Verify the selected binary for lifecycle engines (`to version` or `onto version`);
     `homonto doctor` diagnoses missing applied frameworks. Missing required
     tooling is a blocker, not grounds to silently switch workflows.
-3. **Open the change.** Load the selected dispatcher skill (`onto` or `to`)
+3. **Open the change.** For no, load its informational skill and use its
+    implementer/reviewer with the shared multirepository execution policy; no
+    never invokes onto/to or creates their records. For lifecycle engines,
+    load the selected dispatcher skill (`onto` or `to`)
     and open a change seeded from the issue and the brief. Suggest the name
     `issue-N-slug` and the branch `issue/N-slug`; the dispatcher's own naming
     and isolation rules decide. Before creating, check for an existing
     change for this issue (its proposal or plan references the same repository
     and issue, and its source scope contains the matching alias): an active
     match is resumed through its dispatcher — the phase decides the work —
-    never duplicated. Also check the sibling tree for the name
-    (`to status --all` shows both inventories; active names are globally
-    unique); choose a fresh name for a collision with a different change.
+    never duplicated. Native creation checks name conflicts; choose a fresh name
+    for a collision with a different change without invoking another engine.
     Ask for ambiguous matches or material scope conflicts, not routine naming.
     For a new schema 2 change, select source integration targets on `onto new`
     or `to new` with repeated `--base <alias>=<local-branch>` before worktree
@@ -75,8 +77,9 @@ candidate pinning, exact PR reuse, recovery, and repository-qualified issue inte
 4. **Drive the workflow.** Follow the dispatcher through its phases and
    gates to completion in this invocation, handing the implementers the
     spike brief as grounding. You own commit policy and every binary call;
-    source implementer commits follow the selected workflow's protocol.
-    Record the issue's canonical URL and host/repository ID in the proposal/plan.
+    implementers return edits and you own source commits.
+    Keep the issue's canonical URL and host/repository ID in the task context
+    (and the proposal/plan when the selected engine has one).
     Use `Closes: #N` only when publication is in that confirmed origin repository.
     Multi-repo work must suppress the bare marker for other repositories, including
     backend-generated merge messages; omit it before archive if it cannot be

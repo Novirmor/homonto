@@ -84,6 +84,17 @@ action into notes/handoff and delegated tasks. New conflicts need a new decision
   Never automatically stash, reset, delete, or commit user changes, even if they
   appear related or disposable. Attribution alone is not cleanup authorization.
 
+## Shared multirepository tasks
+
+Follow [parallel repository assignments](execution.md#parallel-repository-assignments)
+for all engines. Choose exactly one engine and user-selected isolation once per
+task. `homonto workspace task` records actual checkout paths, immutable bases,
+native generation when applicable, and integration evidence. No uses these
+shared mechanics without lifecycle records or onto/to calls. Other sections
+describing native records, gates, checkpoints and receivers apply only to the
+selected onto/to engine. All declared repos are readable; each worker writes
+only its assigned repository. Parent-owned commits precede combined verification.
+
 ## Schema 2 registered isolation
 
 Schema 2 uses registered allocation in both existing and managed history modes.
@@ -167,11 +178,11 @@ clean/integrated and exact-path authorization checks.
 
 ## Legacy schema 0/1 combined isolation
 
-Legacy schema 0/1 combined onto workflows retain parallel disjoint-task raw
+Legacy schema 0/1 combined onto workflows retain serial task-isolated raw
 worktrees under all five conditions in
 [`onto-build`'s subagent protocol](../../onto-build/references/subagent-protocol.md).
 The coordinator owns allocation, ordered joins, serial bookkeeping, and final
-review after the last join; workers commit only assigned source/test files and
+review after the last join; the parent commits assigned source/test files and workers
 never edit copied task or workflow records. The coordinator's combined change
 checkout remains configRoot and the sole state owner, including for `--dir`.
 Use the [legacy worktree protocol](../../onto-build/references/worktree-protocol.md)

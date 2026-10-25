@@ -482,6 +482,14 @@ func (s *Store) Cleanup(ctx context.Context, t *Task, yes bool) error {
 			if _, err := git(ctx, c.Path, "merge-base", "--is-ancestor", "HEAD", "refs/heads/"+c.BaseBranch); err != nil {
 				return fmt.Errorf("%s is not integrated into %s: %w", alias, c.BaseBranch, err)
 			}
+		} else {
+			head, err := git(ctx, c.Path, "rev-parse", "HEAD")
+			if err != nil {
+				return err
+			}
+			if head != c.Base {
+				return fmt.Errorf("verification input %s moved from pinned revision %s; preserve its commits before cleanup", alias, c.Base)
+			}
 		}
 		if _, err := git(ctx, c.Source, "worktree", "remove", c.Path); err != nil {
 			return err

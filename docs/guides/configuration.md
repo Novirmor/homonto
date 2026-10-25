@@ -239,7 +239,8 @@ checks. Independent checks continue after failures. `--timeout` defaults to
 model-selected verification; that message is not evidence of a passing check.
 
 Cleanup removes only clean, integrated task-owned allocations, retaining
-branches and metadata. It refuses ignored files too. Native onto/to allocations
+branches and metadata. It refuses ignored files and verification checkouts that
+moved from their pinned revision, preserving detached commits. Native onto/to allocations
 remain governed by `homonto worktree remove` and terminal lifecycle checks;
 clean up shared task allocations before removing their native bindings.
 Interrupted allocation fails closed with metadata retained for inspection; it

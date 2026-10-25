@@ -198,6 +198,33 @@ func TestDirtyVerificationInputNeedsExplicitDisposition(t *testing.T) {
 	}
 }
 
+func TestCleanupPreservesMovedVerificationCheckout(t *testing.T) {
+	s := fixture(t)
+	ctx := context.Background()
+	task, err := s.Create(ctx, "feature", "no", "", "existing", []string{"api"}, map[string]string{"web": "worktree"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	web := task.Checkouts["web"].Path
+	// Verification inputs are detached. A new clean commit has no branch keeping
+	// it reachable once its worktree is removed.
+	runGit(t, web, "commit", "--allow-empty", "-m", "work to preserve")
+	head := runGit(t, web, "rev-parse", "HEAD")
+	if _, err := s.RunCheck(ctx, task, "pair", nil); err == nil {
+		t.Fatal("moved verification input accepted")
+	}
+	if err := s.Cleanup(ctx, task, true); err == nil || !strings.Contains(err.Error(), "pinned") {
+		t.Fatalf("cleanup of moved verification input = %v, want pinned-revision refusal", err)
+	}
+	if got := runGit(t, web, "rev-parse", "HEAD"); got != head {
+		t.Fatalf("verification checkout changed: got %s, want %s", got, head)
+	}
+	resumed, err := s.Load(task.Name)
+	if err != nil || resumed.Checkouts["web"].Removed {
+		t.Fatalf("refused cleanup lost checkout metadata: %+v, %v", resumed, err)
+	}
+}
+
 func TestPinnedInputsMutationAndCwdEscape(t *testing.T) {
 	s := fixture(t)
 	task := createNo(t, s, "existing")

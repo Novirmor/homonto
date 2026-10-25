@@ -48,6 +48,15 @@ cat > "$HOME/framework.toml" <<'EOF'
 [workflows.h]
 source = "builtin:h"
 scope = "project"
+[engines.onto]
+source = "builtin:onto"
+scope = "project"
+[engines.to]
+source = "builtin:to"
+scope = "project"
+[engines.no]
+source = "builtin:no"
+scope = "project"
 [subagents.homonto.opencode]
 model = "anthropic/claude-opus-4-8"
 [subagents.h-spike.opencode]
@@ -70,6 +79,10 @@ model = "anthropic/claude-opus-4-8"
 model = "anthropic/claude-sonnet-4"
 [subagents.to-skeptic.opencode]
 model = "anthropic/claude-opus-4-8"
+[subagents.no-implementer.opencode]
+model = "anthropic/claude-sonnet-4"
+[subagents.no-reviewer.opencode]
+model = "anthropic/claude-opus-4-8"
 EOF
 cat > "$CFG/homonto.toml" <<'EOF'
 schema_version = 2
@@ -81,18 +94,47 @@ dir = "../execution"
 [repos]
 api = "../api"
 web = "../web"
+[integration.api-web]
+repos = ["api", "web"]
+repo = "api"
+cwd = "."
+command = ["sh", "-c", 'test -f "$HOMONTO_INTEGRATION_CONTEXT" && grep -F "$PWD" "$HOMONTO_INTEGRATION_CONTEXT" && grep -F "$(git rev-parse HEAD)" "$HOMONTO_INTEGRATION_CONTEXT"']
 EOF
 cat "$HOME/framework.toml" >> "$CFG/homonto.toml"
 cd "$CFG"
 
-log "apply h and inspect without implicitly initializing history"
+log "apply h and all three explicit engines without implicitly initializing history"
 "$HOMONTO" apply --yes > "$SNAP/apply.log" 2>&1 || { cat "$SNAP/apply.log" >&2; fail "apply failed"; }
 is_dir "$CFG/.homonto/catalog/skills/onto"
 is_dir "$CFG/.homonto/catalog/skills/to"
+is_file "$CFG/.homonto/catalog/skills/no/references/workspace.md"
 "$HOMONTO" workspace inspect --json > "$SNAP/before-init.json"
 in_file "$SNAP/before-init.json" '"initialized":false'
 absent "$RECORDS"
 absent "$CFG/.git"
+
+log "no allocates and verifies actual checkouts without lifecycle records"
+"$HOMONTO" workspace task create no-task --engine no --repo api --isolation worktree > "$SNAP/no-task.json"
+in_file "$SNAP/no-task.json" '"engine":"no"'
+for repo in api web; do
+    is_file "$WORKTREES/$repo/workspace-no-task/.git"
+    in_file "$SNAP/no-task.json" "\"path\":\"$WORKTREES/$repo/workspace-no-task\""
+done
+if "$HOMONTO" workspace task create no-task --engine to --repo api --isolation worktree > "$SNAP/engine-switch.log" 2>&1; then
+    fail "workspace task switched its selected engine"
+fi
+in_file "$SNAP/engine-switch.log" 'another engine'
+"$HOMONTO" workspace task check no-task --writers-paused > "$SNAP/no-check.json" 2> "$SNAP/no-check.log"
+in_file "$SNAP/no-check.json" '"status":"passed"'
+in_file "$SNAP/no-check.log" "$WORKTREES/api/workspace-no-task"
+"$HOMONTO" workspace task inspect no-task > "$SNAP/no-inspect.json"
+in_file "$SNAP/no-inspect.json" '"stale":false'
+absent "$RECORDS"
+absent "$CFG/.homonto/worktrees.json"
+"$HOMONTO" workspace task cleanup no-task --yes
+for repo in api web; do absent "$WORKTREES/$repo/workspace-no-task"; done
+ok "no uses shared bookkeeping, keeps its engine, and needs no native lifecycle"
+
 "$HOMONTO" workspace init --yes
 is_dir "$RECORDS/.git"
 is_file "$RECORDS/.homonto-workflow.json"

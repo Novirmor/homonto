@@ -287,10 +287,11 @@ scope  = "project"
 Engines provide a work model and may have a companion binary. The builtin
 catalog ships `onto`, `to`, and `no`. `onto` and `to` are complementary engines
 whose records remain in disjoint directories; either or both may be installed.
-`no` is catalog-only and supplies a model-directed implementer/reviewer loop
-without a binary or durable lifecycle state. An engine is never selected
-implicitly by declaring `h`; choose an installed engine only when the task
-needs it.
+`no` is catalog-only and provides its implementer and reviewer subagents,
+without a binary or durable lifecycle state. It excludes `onto` and `to`: an
+installation chooses `no` or lifecycle engines, not both. An engine is never
+selected implicitly by declaring `h`; choose an installed engine only when the
+task needs it.
 
 ```toml
 [engines.onto]        # and/or [engines.to], [engines.no]

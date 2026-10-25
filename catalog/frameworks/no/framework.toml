@@ -1,5 +1,6 @@
 name = "no"
 kind = "engine"
+excludes = ["onto", "to"]
 version = "0.1.0"
 description = "Minimal model-directed development and review engine"
 

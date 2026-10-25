@@ -94,6 +94,10 @@ func TestWorkspaceSkillsPolicyReachability(t *testing.T) {
 	// normally loads the policy for them. Direct invocation must be safe too.
 	for _, policy := range []string{"skills/homonto/references/workspace-policy.md", "skills/homonto/references/autonomy.md"} {
 		for _, file := range files {
+			if file == "skills/no/SKILL.md" {
+				// no is intentionally only an inventory of its two subagents.
+				continue
+			}
 			t.Run(path.Base(policy)+"/"+file, func(t *testing.T) {
 				seen := map[string]bool{}
 				var reachesPolicy func(string) bool

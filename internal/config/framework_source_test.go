@@ -1,6 +1,7 @@
 package config
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -173,6 +174,22 @@ func TestLoad_RejectsBuiltinPackageKindMismatch(t *testing.T) {
 			_, err := Load(p)
 			if err == nil || !strings.Contains(err.Error(), tc.want) {
 				t.Fatalf("Load() error = %v, want %q", err, tc.want)
+			}
+		})
+	}
+}
+
+func TestLoad_RejectsNoAlongsideLifecycleEngines(t *testing.T) {
+	for _, engine := range []string{"onto", "to"} {
+		t.Run(engine, func(t *testing.T) {
+			p := filepath.Join(t.TempDir(), "homonto.toml")
+			text := fmt.Sprintf("[engines.no]\nsource = \"builtin:no\"\nscope = \"project\"\n[engines.%s]\nsource = \"builtin:%s\"\nscope = \"project\"\n", engine, engine)
+			if err := os.WriteFile(p, []byte(text), 0o644); err != nil {
+				t.Fatal(err)
+			}
+			_, err := Load(p)
+			if err == nil || !strings.Contains(err.Error(), "engines.no excludes engines."+engine) {
+				t.Fatalf("Load() error = %v, want no exclusion for %s", err, engine)
 			}
 		})
 	}

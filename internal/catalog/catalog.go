@@ -21,6 +21,7 @@ import (
 type Framework struct {
 	Name         string
 	Kind         string // "workflow" or "engine" for shipped packages
+	Excludes     []string
 	Version      string
 	Description  string
 	Dependencies []string // framework names (version constraints stripped)
@@ -72,11 +73,12 @@ type Catalog struct {
 const CurrentManifestSchemaVersion = 1
 
 type frameworkTOML struct {
-	ManifestSchema int    `toml:"manifest_schema"`
-	Name           string `toml:"name"`
-	Kind           string `toml:"kind"`
-	Version        string `toml:"version"`
-	Description    string `toml:"description"`
+	ManifestSchema int      `toml:"manifest_schema"`
+	Name           string   `toml:"name"`
+	Kind           string   `toml:"kind"`
+	Excludes       []string `toml:"excludes"`
+	Version        string   `toml:"version"`
+	Description    string   `toml:"description"`
 	Dependencies   struct {
 		Frameworks   []string `toml:"frameworks"`
 		Capabilities []string `toml:"capabilities"`
@@ -480,6 +482,7 @@ func (c *Catalog) indexFramework(name string, src fs.FS, ft frameworkTOML) error
 		srcFS:                 src,
 		Name:                  ft.Name,
 		Kind:                  ft.Kind,
+		Excludes:              append([]string(nil), ft.Excludes...),
 		Version:               ft.Version,
 		Description:           ft.Description,
 		Dependencies:          depNames,

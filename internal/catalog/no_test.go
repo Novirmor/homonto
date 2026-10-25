@@ -17,6 +17,9 @@ func TestNoEngineHasMinimalCatalogSurface(t *testing.T) {
 	if no.Kind != "engine" {
 		t.Fatalf("no kind = %q, want engine", no.Kind)
 	}
+	if got := strings.Join(no.Excludes, ","); got != "onto,to" {
+		t.Fatalf("no excludes = %q, want onto,to", got)
+	}
 	if len(no.Skills) != 1 || no.Skills["no"] != "skills/no" {
 		t.Fatalf("no skills = %#v, want only no", no.Skills)
 	}
@@ -38,9 +41,9 @@ func TestNoEngineHasMinimalCatalogSurface(t *testing.T) {
 	}
 
 	skill := hPromptText(t, "skills/no/SKILL.md")
-	for _, want := range []string{"Do not invoke `onto` or `to` commands or binaries", "Do not create workflow state"} {
+	for _, want := range []string{"`no` provides exactly two subagents", "`no-implementer`", "`no-reviewer`"} {
 		if !strings.Contains(skill, want) {
-			t.Errorf("no skill missing prohibition %q", want)
+			t.Errorf("no skill missing %q", want)
 		}
 	}
 }

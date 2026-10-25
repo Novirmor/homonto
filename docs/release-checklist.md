@@ -187,7 +187,7 @@ since a missing block fails at load:
 
 ```sh
 cat >> homonto.toml <<'TOML'
-[frameworks.onto]
+[engines.onto]
 source = "builtin:onto"
 scope  = "project"
 
@@ -201,7 +201,7 @@ onto init
 onto doctor                 # expect: healthy
 ```
 
-Replace `[frameworks.onto]` and the four `onto-*` specialists with `[frameworks.to]` and the four
+Replace `[engines.onto]` and the four `onto-*` specialists with `[engines.to]` and the four
 `to-*` specialists (the shared `homonto` block stays). The two frameworks
 are complementary, so one config may cover both.
 

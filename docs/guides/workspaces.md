@@ -91,7 +91,7 @@ this installs onto; replace model identifiers with ones available in your
 OpenCode installation:
 
 ```toml
-[frameworks.onto]
+[engines.onto]
 source = "builtin:onto"
 scope = "project"
 

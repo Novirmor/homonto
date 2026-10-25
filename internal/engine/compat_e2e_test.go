@@ -16,7 +16,7 @@ func localFwCompat(t *testing.T, repo, compat string) {
 	man := "name = \"myfw\"\nversion = \"0.1.0\"\n[compat]\nhomonto = \"" + compat + "\"\n[skills]\nmyskill = \"skills/myskill\"\n"
 	os.WriteFile(filepath.Join(fw, "framework.toml"), []byte(man), 0o644)
 	os.WriteFile(filepath.Join(fw, "skills", "myskill", "SKILL.md"), []byte("s"), 0o644)
-	os.WriteFile(filepath.Join(repo, "homonto.toml"), []byte("[frameworks.myfw]\nsource = \"local:./myfw\"\nscope = \"user\"\n"), 0o644)
+	os.WriteFile(filepath.Join(repo, "homonto.toml"), []byte("[engines.myfw]\nsource = \"local:./myfw\"\nscope = \"user\"\n"), 0o644)
 }
 
 func TestPlan_IncompatibleFrameworkFailsFailClosed(t *testing.T) {

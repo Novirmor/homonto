@@ -22,7 +22,7 @@ targets = ["opencode"]
   and `file://…` (for local mirrors and offline use). Plain `http://` is
   rejected.
 - A remote **subagent** archive must contain `<name>.md` at its root.
-- Remote **frameworks** (`[frameworks.X]` with a `remote:` source) go through
+- Remote **frameworks** (`[engines.X]` with a `remote:` source) go through
   this same pipeline: the same required digest pin, the same verification
   before anything is materialized.
 

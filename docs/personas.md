@@ -26,7 +26,7 @@ change; see [the to workflow](guides/to-workflow.md).
 **h is the GitHub skill bundle over both lifecycle workflows.** It ships
 `h-spike-issue`, `h-resolve-issue`, `h-review-pr`, `h-continue-pr`, and
 `h-review-batch`, with matching `/h-*` commands and the read-only `h-spike`
-and `h-review` workers. `[frameworks.h]` with `source = "builtin:h"` remains
+and `h-review` workers. `[workflows.h]` with `source = "builtin:h"` remains
 the stable generic package key and installs onto and to as dependencies.
 The shared `homonto` coordinator handles `/onto`, `/to`, and `/h-*`; the
 request or matching change determines which lifecycle dispatcher it loads

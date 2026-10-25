@@ -11,7 +11,7 @@ Quick map of every table:
 | Table | Declares | Reference |
 |---|---|---|
 | `schema_version` | The config format version (top-level key, not a table) | [Schema version](#schema-version) |
-| `[workflow]` | Shared onto/to records root and Git mode | [Workflow root](#workflow-root--workflow) |
+| `[workflow]` | Shared onto/to engine records root and Git mode | [Workflow root](#workflow-root--workflow) |
 | `[repos]` | Source repository aliases | [Repos](#repos--repos) |
 | `[worktrees]` | Optional execution-checkout allocation parent | [Worktrees](#worktrees) |
 | `[mcps.<name>]` | MCP servers | [MCP servers](#mcp-servers--mcpsname) |
@@ -19,7 +19,8 @@ Quick map of every table:
 | `[commands.<name>]` | Slash commands | [Commands](#commands--commandsname) |
 | `[subagents.<name>]` | Agent definitions | [Subagents](#subagents--subagentsname) |
 | `[subagents.<name>.opencode]` | Per-subagent model override (required for every declared subagent) | [Subagent models](#subagent-models--subagentsnameopencode) |
-| `[frameworks.<name>]` | Package installs (lifecycle frameworks or skill bundles) | [Frameworks](#frameworks--frameworksname) |
+| `[workflows.<name>]` | User-facing workflow package installs | [Workflows](#workflows--workflowsname) |
+| `[engines.<name>]` | Work-model and optional-binary package installs | [Engines](#engines--enginesname) |
 | `[plugins.opencode.<name>]` | OpenCode plugins | [Plugins](#plugins--pluginsopencodename) |
 | `[settings.opencode]` | OpenCode settings | [Settings](#settings--settingsopencode) |
 | `[tui.opencode]` | OpenCode TUI settings | [TUI](#tui--tuiopencode) |
@@ -54,14 +55,14 @@ value is `"opencode"`, and omitting the list means every tool. A typo like
 `targets = ["opencod"]` fails at load, not silently; a target naming
 `"claude"` or `"codex"` fails at load citing the v0.13.0 removal.
 
-**Sources.** Skills, commands, subagents, and frameworks resolve their
+**Sources.** Skills, commands, subagents, workflows, and engines resolve their
 content through a `source` string:
 
 | Source | Resolves from | Available for |
 |---|---|---|
-| `builtin:<name>` | the catalog embedded in the binary, materialized under `.homonto/catalog/` | skills, commands, subagents, frameworks |
-| `local:<name>` | your own content next to `homonto.toml` (`homonto/skills/<name>/`, `homonto/subagents/<name>.md`, a framework root) | skills, commands, subagents, frameworks |
-| `remote:<url>` | a fetched, verified, pinned archive; requires `digest` (see [remote source trust](remote-source-trust.md)) | subagents, frameworks |
+| `builtin:<name>` | the catalog embedded in the binary, materialized under `.homonto/catalog/` | skills, commands, subagents, workflows, engines |
+| `local:<name>` | your own content next to `homonto.toml` (`homonto/skills/<name>/`, `homonto/subagents/<name>.md`, a package root) | skills, commands, subagents, workflows, engines |
+| `remote:<url>` | a fetched, verified, pinned archive; requires `digest` (see [remote source trust](remote-source-trust.md)) | subagents, workflows, engines |
 
 **Validation is fail-fast.** homonto rejects at load time and names the
 offender: an MCP with no command, an unknown target, a declared subagent
@@ -81,9 +82,9 @@ and supported-tool validation.
 
 **Config root and bootstrap.** The directory containing `homonto.toml` is the
 configuration root. Run `homonto init [dir]` to scaffold that configuration;
-it never runs `git init` and never installs a framework by itself. Add a
-`[frameworks.onto]` or `[frameworks.to]` table, inspect `homonto plan`, then
-run `homonto apply` to install the selected workflow. The config root need not
+it never runs `git init` and never installs a package by itself. Add an
+`[engines.onto]`, `[engines.to]`, or `[workflows.h]` table, inspect `homonto plan`, then
+run `homonto apply` to install the selected package. The config root need not
 be Git. Schema 2 source declarations must already be Git checkouts, and managed
 records require a separate explicit `homonto workspace init --yes` before
 workflow mutations. `apply` never initializes that repository.
@@ -225,7 +226,7 @@ scope  = "project"           # user | project
 repo   = "service-a"         # optional declared [repos] name
 ```
 
-Frameworks declare their own commands too (onto ships `/onto`, `/onto-open`,
+Packages declare their own commands too (onto ships `/onto`, `/onto-open`,
 …); those project the same way without being declared here.
 
 `repo` has the same rule as skills: it is optional, requires
@@ -254,7 +255,7 @@ digest = "sha256:<64 hex>"         # REQUIRED for remote:; verified before any w
 
 | Field | Type | Required | Notes |
 |---|---|---|---|
-| `source` | string | **yes** | `builtin:` ships the shared `homonto` coordinator plus the framework specialists (and the `h` workers); `local:` → `homonto/subagents/<name>.md`; `remote:` → pinned archive |
+| `source` | string | **yes** | `builtin:` ships the shared `homonto` coordinator plus engine specialists and h workers; `local:` → `homonto/subagents/<name>.md`; `remote:` → pinned archive |
 | `scope` | string | no | `user` \| `project` (default `project`) |
 | `mode` | string | no | `link` (default) or `copy` — see [subagents](subagents.md) |
 | `targets` | array | no | default: every tool |
@@ -266,41 +267,50 @@ Where they land, link vs. copy semantics, and the tool-neutral `homonto:`
 frontmatter block: [subagents](subagents.md). The remote pipeline:
 [remote source trust](remote-source-trust.md).
 
-## Frameworks — `[frameworks.<name>]`
+## Workflows — `[workflows.<name>]`
 
-A `[frameworks.<name>]` table is the generic package/dependency mechanism for
-skills, commands, subagents, and plugins that install together. The builtin
-catalog ships two lifecycle frameworks, `onto` and `to`, and the `h` GitHub
-skill bundle. onto and `to` are **complementary** (ADR 0042): declare either or
-both — the change picks its workflow by which dispatcher the shared
-`homonto` coordinator loads (ADR 0045), and both frameworks' agents project
-side by side.
-These builtin packages install the shared `homonto` knowledge skill and the
-one shared `homonto` coordinator agent. `h` depends on onto and to: declaring
-`[frameworks.h]` with `source = "builtin:h"` transitively installs both lifecycle
-frameworks and satisfies their binaries' install gates. It adds the five
-GitHub skills and matching commands (`/h-spike-issue`, `/h-resolve-issue`,
-`/h-review-pr`, `/h-continue-pr`, `/h-review-batch`) and the read-only `h-spike`
-/ `h-review` workers. `[frameworks.h]` remains the stable package key; the
-skill-bundle terminology does not rename it or introduce a third lifecycle.
-Beyond `builtin:`, a framework source may be `local:<path>` (a framework root
-in your repo) or `remote:<url>` with a required `digest = "sha256:…"` pin.
-Third-party workflow stacks are not bundled.
+Workflows provide user-facing coordination. The builtin catalog currently ships
+the standalone `h` GitHub workflow. It installs the shared `homonto` knowledge
+skill and coordinator plus its five GitHub skills and commands
+(`h-spike-issue`, `h-resolve-issue`, `h-review-pr`, `h-continue-pr`, and
+`h-review-batch`) and the read-only `h-spike` / `h-review` workers. It does
+not install or require an engine.
 
 ```toml
-[frameworks.onto]        # and/or [frameworks.to] — complementary (ADR 0042)
+[workflows.h]
+source = "builtin:h"
+scope  = "project"
+```
+
+## Engines — `[engines.<name>]`
+
+Engines provide a work model and may have a companion binary. The builtin
+catalog ships `onto`, `to`, and `no`. `onto` and `to` are complementary engines
+whose records remain in disjoint directories; either or both may be installed.
+`no` is catalog-only and supplies a model-directed implementer/reviewer loop
+without a binary or durable lifecycle state. An engine is never selected
+implicitly by declaring `h`; choose an installed engine only when the task
+needs it.
+
+```toml
+[engines.onto]        # and/or [engines.to], [engines.no]
 source = "builtin:onto"
 scope  = "project"
 ```
 
+`builtin:` packages have a fixed role: `h` belongs under `[workflows]`, while
+`onto`, `to`, and `no` belong under `[engines]`. A role mismatch fails at load.
+Legacy `[frameworks.*]` declarations are rejected; rewrite them using the new
+tables. Local and remote package roots may be declared in either table; their
+manifests define their content. Remote sources require `digest = "sha256:…"`.
+Third-party packages are not bundled.
+
 When the interactive installer creates a new `homonto.toml`, its project-setup
-step can write the selected onto/to lifecycle declarations and, with both
-binaries installed, the optional `h` GitHub skill bundle. Its model choice
-populates `[settings.opencode]` and every expanded agent's model block, including
-transitive dependencies. On apply the setting updates **global OpenCode
-settings**, affecting other projects. Next steps reflect the configured,
-installed workflows and whether `h` was selected. Review the generated values
-before `homonto apply`.
+step can write selected workflow and engine declarations. Its model choice
+populates `[settings.opencode]` and every expanded agent's model block. On
+apply the setting updates **global OpenCode settings**, affecting other
+projects. Next steps reflect the configured packages. Review the generated
+values before `homonto apply`.
 
 ## Repos — `[repos]`
 
@@ -473,7 +483,7 @@ reads as *tune this agent*, not *declare it*. It is required for every expanded
 agent, and is the only way a framework agent gets a model:
 
 ```toml
-[frameworks.onto]
+[engines.onto]
 source = "builtin:onto"
 scope  = "project"
 
@@ -688,7 +698,7 @@ artifact pointers, and validated source directories. The context cap is 16 KiB;
 the 1.5-second overall deadline reports omitted or unavailable details. There is
 no automatic phase advancement or resumption of a remembered publication approval.
 
-Declaring builtin `[frameworks.h]` additionally enables the shared GitHub draft
+Declaring builtin `[workflows.h]` additionally enables the shared GitHub draft
 tools: `homonto_github_draft`, `homonto_github_status`, and
 `homonto_github_publish`. These support issue comments, PR comments, and
 commit-bound `COMMENT`/`REQUEST_CHANGES` reviews, not pushes or PR creation.
@@ -759,7 +769,7 @@ env = { BRAVE_API_KEY = "${pass:ai/brave}" }
 source = "local:graphify"
 scope = "project"
 
-[frameworks.onto]
+[engines.onto]
 source = "builtin:onto"
 scope = "project"
 

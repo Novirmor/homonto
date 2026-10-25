@@ -7,62 +7,59 @@ import (
 	"testing"
 )
 
-// TestLoad_RejectsUnsupportedFrameworkSource: a framework source that is neither
+// TestLoad_RejectsUnsupportedPackageSource: a package source that is neither
 // builtin: nor local: (a bare name, or a remote: URL) expands nothing and is
 // rejected loudly at load (F35). local: frameworks are accepted post-E1 — see
 // TestLoad_AcceptsLocalFramework.
-func TestLoad_RejectsUnsupportedFrameworkSource(t *testing.T) {
+func TestLoad_RejectsUnsupportedPackageSource(t *testing.T) {
 	for _, src := range []string{"onto", "remote:https://example.com/onto"} {
 		p := filepath.Join(t.TempDir(), "homonto.toml")
-		if err := os.WriteFile(p, []byte("[frameworks.onto]\nsource = \""+src+"\"\nscope = \"user\"\n"), 0o644); err != nil {
+		if err := os.WriteFile(p, []byte("[engines.onto]\nsource = \""+src+"\"\nscope = \"user\"\n"), 0o644); err != nil {
 			t.Fatal(err)
 		}
 		_, err := Load(p)
 		if err == nil {
-			t.Fatalf("framework source %q accepted, want a load error", src)
+			t.Fatalf("package source %q accepted, want a load error", src)
 		}
 		if !strings.Contains(err.Error(), "onto") {
-			t.Errorf("error %q should name the framework", err.Error())
+			t.Errorf("error %q should name the package", err.Error())
 		}
 	}
 }
 
-// TestLoad_AcceptsLocalFramework: a [frameworks.X] source="local:<path>" is
+// TestLoad_AcceptsLocalPackage: an [engines.X] source="local:<path>" is
 // accepted at load post-E1. Validation checks only the source shape; the local
 // framework root is resolved later at expansion/materialization time.
-func TestLoad_AcceptsLocalFramework(t *testing.T) {
+func TestLoad_AcceptsLocalPackage(t *testing.T) {
 	p := filepath.Join(t.TempDir(), "homonto.toml")
-	if err := os.WriteFile(p, []byte("[frameworks.myfw]\nsource = \"local:./myfw\"\nscope = \"user\"\n"), 0o644); err != nil {
+	if err := os.WriteFile(p, []byte("[engines.myfw]\nsource = \"local:./myfw\"\nscope = \"user\"\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := Load(p); err != nil {
-		t.Fatalf("local: framework rejected at load: %v", err)
+		t.Fatalf("local: package rejected at load: %v", err)
 	}
 }
 
-func TestLoad_AcceptsBuiltinFramework(t *testing.T) {
+func TestLoad_AcceptsBuiltinEngine(t *testing.T) {
 	p := filepath.Join(t.TempDir(), "homonto.toml")
-	if err := os.WriteFile(p, []byte(`[frameworks.onto]
+	if err := os.WriteFile(p, []byte(`[engines.onto]
 source = "builtin:onto"
 scope = "user"
 `+ontoFrameworkModels()), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := Load(p); err != nil {
-		t.Fatalf("builtin: framework rejected at load: %v", err)
+		t.Fatalf("builtin: engine rejected at load: %v", err)
 	}
 }
 
-// TestLoad_AcceptsOntoAndToTogether: onto and to are complementary (ADR 0042)
-// — records in disjoint directories, namespaced agents and commands — so a
-// config that declares both frameworks loads; the shared coordinator chooses
-// the workflow per change through /onto or /to.
+// TestLoad_AcceptsOntoAndToTogether verifies that both engines may be installed.
 func TestLoad_AcceptsOntoAndToTogether(t *testing.T) {
 	p := filepath.Join(t.TempDir(), "homonto.toml")
-	if err := os.WriteFile(p, []byte(`[frameworks.onto]
+	if err := os.WriteFile(p, []byte(`[engines.onto]
 source = "builtin:onto"
 scope = "project"
-[frameworks.to]
+[engines.to]
 source = "builtin:to"
 scope = "project"
 `+ontoFrameworkModels()+toSpecialistsOnly()), 0o644); err != nil {
@@ -73,15 +70,15 @@ scope = "project"
 		t.Fatalf("onto+to rejected at load: %v", err)
 	}
 	if _, ok := cfg.Frameworks["onto"]; !ok {
-		t.Error("onto framework missing from loaded config")
+		t.Error("onto engine missing from loaded config")
 	}
 	if _, ok := cfg.Frameworks["to"]; !ok {
-		t.Error("to framework missing from loaded config")
+		t.Error("to engine missing from loaded config")
 	}
 }
 
 // toFrameworkModels is the per-agent override blocks required by the to
-// framework's five expanded subagents (the shared homonto primary plus four
+// engine's five expanded subagents (the shared homonto primary plus four
 // specialists). toSpecialistsOnly omits the primary for configs that already
 // carry ontoFrameworkModels() — TOML rejects the duplicate table, and the
 // shared primary needs exactly one block.
@@ -93,17 +90,90 @@ func toSpecialistsOnly() string {
 	return modelsFor("to-explorer", "to-implementer", "to-reviewer", "to-skeptic")
 }
 
-// TestLoad_AcceptsToAlone: [frameworks.to] on its own is a valid builtin
-// framework declaration.
+// TestLoad_AcceptsToAlone: [engines.to] on its own is a valid builtin
+// engine declaration.
 func TestLoad_AcceptsToAlone(t *testing.T) {
 	p := filepath.Join(t.TempDir(), "homonto.toml")
-	if err := os.WriteFile(p, []byte(`[frameworks.to]
+	if err := os.WriteFile(p, []byte(`[engines.to]
 source = "builtin:to"
 scope = "project"
 `+toFrameworkModels()), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := Load(p); err != nil {
-		t.Fatalf("to framework rejected at load: %v", err)
+		t.Fatalf("to engine rejected at load: %v", err)
+	}
+}
+
+func TestLoad_AcceptsStandaloneHWorkflow(t *testing.T) {
+	p := filepath.Join(t.TempDir(), "homonto.toml")
+	if err := os.WriteFile(p, []byte(`[workflows.h]
+source = "builtin:h"
+scope = "project"
+`+modelsFor("homonto", "h-spike", "h-review")), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := Load(p)
+	if err != nil {
+		t.Fatalf("standalone h workflow rejected at load: %v", err)
+	}
+	if _, ok := cfg.Workflows["h"]; !ok {
+		t.Fatal("h workflow missing from loaded config")
+	}
+	if len(cfg.Engines) != 0 {
+		t.Fatalf("h-only config unexpectedly has engines: %#v", cfg.Engines)
+	}
+}
+
+func TestLoad_AcceptsNoEngine(t *testing.T) {
+	p := filepath.Join(t.TempDir(), "homonto.toml")
+	if err := os.WriteFile(p, []byte(`[engines.no]
+source = "builtin:no"
+scope = "project"
+`+modelsFor("no-implementer", "no-reviewer")), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := Load(p)
+	if err != nil {
+		t.Fatalf("no engine rejected at load: %v", err)
+	}
+	if _, ok := cfg.Engines["no"]; !ok {
+		t.Fatal("no engine missing from loaded config")
+	}
+}
+
+func TestLoad_RejectsLegacyFrameworkDeclaration(t *testing.T) {
+	p := filepath.Join(t.TempDir(), "homonto.toml")
+	if err := os.WriteFile(p, []byte(`[frameworks.onto]
+source = "builtin:onto"
+scope = "project"
+`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	_, err := Load(p)
+	if err == nil || !strings.Contains(err.Error(), "frameworks") || !strings.Contains(err.Error(), "unknown configuration fields") {
+		t.Fatalf("legacy declaration error = %v, want strict rejection of [frameworks.*]", err)
+	}
+}
+
+func TestLoad_RejectsBuiltinPackageKindMismatch(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		text string
+		want string
+	}{
+		{"workflow as engine", "[engines.h]\nsource = \"builtin:h\"", "a workflow, not an engine"},
+		{"engine as workflow", "[workflows.onto]\nsource = \"builtin:onto\"", "an engine, not a workflow"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			p := filepath.Join(t.TempDir(), "homonto.toml")
+			if err := os.WriteFile(p, []byte(tc.text+"\nscope = \"project\"\n"), 0o644); err != nil {
+				t.Fatal(err)
+			}
+			_, err := Load(p)
+			if err == nil || !strings.Contains(err.Error(), tc.want) {
+				t.Fatalf("Load() error = %v, want %q", err, tc.want)
+			}
+		})
 	}
 }

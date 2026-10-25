@@ -221,10 +221,6 @@ func TestWorkspaceSkillsContracts(t *testing.T) {
 			"Config/OpenCode may be non-Git", "never require configRoot's origin to match",
 			"--dir \"<configRoot>\"", "--repo <alias> --receipt",
 		}},
-		{"skills/h-continue-pr/SKILL.md", []string{
-			"may be non-Git", "not configRoot's origin", "--dir \"<configRoot>\"",
-			"Do not retarget existing anchors", "Existing combined mode retains the post-archive pinned commit",
-		}},
 	} {
 		t.Run(tc.file, func(t *testing.T) {
 			content, err := fs.ReadFile(embedded.FS, tc.file)
@@ -242,7 +238,7 @@ func TestWorkspaceSkillsContracts(t *testing.T) {
 }
 
 func TestWorkspaceSkillsCreationBases(t *testing.T) {
-	for _, name := range []string{"onto-open", "onto-fix", "onto-tweak", "to", "to-plan", "h-resolve-issue", "h-continue-pr"} {
+	for _, name := range []string{"onto-open", "onto-fix", "onto-tweak", "to", "to-plan", "h-resolve-issue"} {
 		text := hPromptText(t, "skills/"+name+"/SKILL.md")
 		if !strings.Contains(text, "--base <alias>=<local-branch>") {
 			t.Errorf("%s must select per-repo bases at creation", name)
@@ -253,10 +249,6 @@ func TestWorkspaceSkillsCreationBases(t *testing.T) {
 		if !strings.Contains(policy, workflow+" new <change> --repo api --repo web --base api=main --base web=develop") {
 			t.Errorf("%s needs a multi-repo creation example with independent target branches", workflow)
 		}
-	}
-	continuation := hPromptText(t, "skills/h-continue-pr/SKILL.md")
-	if !strings.Contains(continuation, "--base <alias>=<local-PR-head-branch>") || strings.Contains(continuation, "invent base flags") {
-		t.Error("PR continuation must select its local PR-head base at creation, not reject the supported flag")
 	}
 }
 

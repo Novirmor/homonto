@@ -11,14 +11,14 @@ The mutating commands (`init`, `new`, `phase`, `bypass`, `done`, `abandon`) refu
 until, in order:
 
 1. `homonto.toml` exists at the workspace root,
-2. it declares `[frameworks.to]` or `[frameworks.h]` (the GitHub skill bundle
+2. it declares `[engines.to]` or `[workflows.h]` (the GitHub skill bundle
    installs to as a dependency), and
 3. `.homonto/catalog/skills/to` exists as a directory (the declaration has
    been applied).
 
-Each failure names the fix (`homonto init`, declare `[frameworks.to]`, run
+Each failure names the fix (`homonto init`, declare `[engines.to]`, run
 `homonto apply`). `promote` is the exception: it bridges the two frameworks,
-so an applied `[frameworks.to]`, `[frameworks.onto]`, or `[frameworks.h]`
+so an applied `[engines.to]`, `[engines.onto]`, or `[workflows.h]`
 passes its gate. Read-only forms never write, but resolve `homonto.toml` for
 the records root and selected source scope when needed. Legacy config-free
 recovery uses `docs`; a broken configured root is not an empty workspace.
@@ -142,7 +142,7 @@ complete source workspace moves unchanged into the neutral control plane
 (`<workflow-root>/changes/<name>/.workflow/snapshots/`), and a fresh
 proposal-only workspace starts at phase open — promotion claims no design or
 verification. The command prints the next steps: declare
-`[frameworks.onto]` in `homonto.toml` (alongside `to`, if not already),
+`[engines.onto]` in `homonto.toml` (alongside `to`, if not already),
 `homonto apply --yes`, then `/onto`. The frameworks are complementary, so
 nothing must be removed; a crash between the moves is recovered
 idempotently (receipt-verified) and tampered staging is refused. `onto

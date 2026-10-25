@@ -12,7 +12,7 @@ This release ships **three binaries**: `homonto` (config projector), `onto`
 (spec-driven workflow operator), and `to` (minimal coding-framework
 bookkeeper), for every supported OS/arch as separate archives under one
 `SHA256SUMS`. `onto` and `to` each require `homonto` to have installed their
-framework first (`[frameworks.onto]` / `[frameworks.to]` + `homonto apply`).
+framework first (`[engines.onto]` / `[engines.to]` + `homonto apply`).
 Earlier releases: [CHANGELOG.md](https://github.com/noviopenworks/homonto/blob/main/CHANGELOG.md).
 
 ### v0.33.0 — OpenCode wildcard service bindings

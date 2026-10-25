@@ -13,7 +13,7 @@ W="$(mktemp -d)"; cd "$W"
 
 log "framework-install gate: to init refuses before homonto apply"
 cat > homonto.toml <<'EOF'
-[frameworks.to]
+[engines.to]
 source = "builtin:to"
 scope = "project"
 
@@ -41,7 +41,7 @@ ok "to status answered without the framework"
 
 log "onto and to are complementary in one config (ADR 0042)"
 cp homonto.toml /tmp/to-only.toml
-printf '\n[frameworks.onto]\nsource = "builtin:onto"\nscope = "project"\n[subagents.onto-explorer.opencode]\nmodel = "openai/gpt-5-mini"\n[subagents.onto-reviewer.opencode]\nmodel = "anthropic/claude-opus-4-8"\n[subagents.onto-implementer.opencode]\nmodel = "anthropic/claude-sonnet-4"\n[subagents.onto-skeptic.opencode]\nmodel = "anthropic/claude-opus-4-8"\n' >> homonto.toml
+printf '\n[engines.onto]\nsource = "builtin:onto"\nscope = "project"\n[subagents.onto-explorer.opencode]\nmodel = "openai/gpt-5-mini"\n[subagents.onto-reviewer.opencode]\nmodel = "anthropic/claude-opus-4-8"\n[subagents.onto-implementer.opencode]\nmodel = "anthropic/claude-sonnet-4"\n[subagents.onto-skeptic.opencode]\nmodel = "anthropic/claude-opus-4-8"\n' >> homonto.toml
 "$HOMONTO" plan >/dev/null || fail "homonto must accept a config declaring both onto and to"
 "$HOMONTO" apply --yes >/dev/null || fail "homonto must apply both frameworks together"
 is_dir "$W/.homonto/catalog/skills/to"

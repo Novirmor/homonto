@@ -48,7 +48,7 @@ The mutating commands (`init`, `new`, `set`, `advance`, `bypass`, `close`, `aban
 through homonto first**. This is how the skills land in your tools:
 
 ```toml
-[frameworks.onto]
+[engines.onto]
 source = "builtin:onto"
 scope = "project"
 # plus a [subagents.<name>.<tool>] model block per onto agent — see the

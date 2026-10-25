@@ -45,7 +45,7 @@ for repo in api web; do
 done
 
 cat > "$HOME/framework.toml" <<'EOF'
-[frameworks.h]
+[workflows.h]
 source = "builtin:h"
 scope = "project"
 [subagents.homonto.opencode]

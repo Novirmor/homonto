@@ -11,7 +11,7 @@ import (
 )
 
 const ontoProjectTOML = `
-[frameworks.onto]
+[engines.onto]
 source = "builtin:onto"
 scope = "project"
 targets = ["opencode"]

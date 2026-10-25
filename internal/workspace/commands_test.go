@@ -45,7 +45,7 @@ func commandLayout(t *testing.T) workspace.Layout {
 	commandWrite(t, filepath.Join(root, "source", "source.txt"), "source\n")
 	commandGit(t, filepath.Join(root, "source"), "add", "source.txt")
 	commandGit(t, filepath.Join(root, "source"), "commit", "-m", "source seed")
-	commandWrite(t, filepath.Join(root, "homonto.toml"), "schema_version = 2\n[workflow]\nroot = 'records'\ngit = 'managed'\n[repos]\nsource = 'source'\n[frameworks.onto]\n[frameworks.to]\n")
+	commandWrite(t, filepath.Join(root, "homonto.toml"), "schema_version = 2\n[workflow]\nroot = 'records'\ngit = 'managed'\n[repos]\nsource = 'source'\n[engines.onto]\n[engines.to]\n")
 	for _, framework := range []string{"onto", "to"} {
 		if err := os.MkdirAll(filepath.Join(root, ".homonto", "catalog", "skills", framework), 0o755); err != nil {
 			t.Fatal(err)

@@ -14,9 +14,9 @@ real file state.
 Most commands take `--dir <root>` (default `.`) to select the configuration
 root. `<workflow-root>` below means `[workflow].root` from its
 `homonto.toml` (default `docs`). Phase/lifecycle mutations require the onto framework
-to be installed by homonto, directly through `[frameworks.onto]` or as a
-dependency of the `[frameworks.h]` GitHub skill bundle. `demote` bridges the
-frameworks and also accepts an applied `[frameworks.to]`. Read-only commands
+to be installed by homonto, directly through `[engines.onto]` or as a
+dependency of the `[workflows.h]` GitHub skill bundle. `demote` bridges the
+frameworks and also accepts an applied `[engines.to]`. Read-only commands
 do not write; `onto dirt <change>` reads
 configuration to resolve the records root and recorded source scope. Read-only
 does not mean config-independent; legacy config-free recovery uses `docs`.

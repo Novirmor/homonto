@@ -295,7 +295,7 @@ to the Git worktree root and then the host working directory. It does not ask
 where to work during a normal invocation and never initializes Git unless the
 user explicitly asks. It runs the evidence-gated onto lifecycle, the lighter
 `plan → do → done` counterpart, and the `h` GitHub intake skills. Lifecycle
-workflows are selected per change; `[frameworks.h]` is the stable package key
+workflows are selected per change; `[workflows.h]` is the stable package key
 that installs the skill bundle and both workflow dependencies.
 
 The `model:` and optional `variant:` lines come from the config's

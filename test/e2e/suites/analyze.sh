@@ -12,7 +12,7 @@ git init -q; git config user.email e2e@example.com; git config user.name e2e
 mkdir -p homonto/skills/e2e-demo
 printf -- '---\nname: e2e-demo\ndescription: d\n---\nbody\n' > homonto/skills/e2e-demo/SKILL.md
 cat > homonto.toml <<'EOF'
-[frameworks.onto]
+[engines.onto]
 source = "builtin:onto"
 scope = "project"
 

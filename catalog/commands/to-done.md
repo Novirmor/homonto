@@ -13,6 +13,6 @@ candidate, triage their findings, record the outcome in `plan.md`, then finish w
 assertion true before it is made; never pass it early. Commit the resulting
 archived directory and terminal state. Load and follow the
 `to-done` skill; if it is not installed, tell the user to install the to
-framework (declare `[frameworks.to]`, then run `homonto apply`) and stop.
+framework (declare `[engines.to]`, then run `homonto apply`) and stop.
 
 `$ARGUMENTS`, if present, focuses this phase on the described work.

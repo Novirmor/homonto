@@ -11,7 +11,7 @@ outcome, files and symbols, behavioral change, and exact verification command
 with its passing signal — then advance with `to phase <name>` and continue
 through do and done unless the user names an endpoint or asks to pause. Load and follow
 the `to-plan` skill; if it is not installed, tell the user to install the to
-framework (declare `[frameworks.to]`, then run `homonto apply`) and stop.
+framework (declare `[engines.to]`, then run `homonto apply`) and stop.
 Every workflow state change goes through the `to` binary — never hand-edit
 `to-state.yaml`.
 

@@ -28,7 +28,7 @@ model = "anthropic/claude-opus-4-8"
 `
 
 const ontoTOML = `
-[frameworks.onto]
+[engines.onto]
 source = "builtin:onto"
 scope = "user"
 targets = ["opencode"]
@@ -84,7 +84,7 @@ func mustPlan(t *testing.T, e *Engine) []adapter.ChangeSet {
 // links land under <projectRoot>/.opencode/skills — the layout where a catalog
 // symlink target computed relative to the wrong base dangles.
 const projectOntoTOML = `
-[frameworks.onto]
+[engines.onto]
 source = "builtin:onto"
 scope = "project"
 targets = ["opencode"]

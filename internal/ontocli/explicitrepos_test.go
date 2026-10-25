@@ -31,7 +31,7 @@ func explicitWorkspaceMode(t *testing.T, mode string) workspace.Layout {
 		runGit(t, dir, "init", "-b", branch)
 		commitAll(t, dir, "base "+alias)
 	}
-	writeFile(t, filepath.Join(root, "homonto.toml"), fmt.Sprintf("schema_version = 2\n[frameworks.onto]\nsource='builtin:onto'\nscope='project'\n[workflow]\nroot='records/deep/tree'\ngit=%q\n[worktrees]\ndir='execution'\n[repos]\na='source-a'\nb='source-b'\n", mode))
+	writeFile(t, filepath.Join(root, "homonto.toml"), fmt.Sprintf("schema_version = 2\n[engines.onto]\nsource='builtin:onto'\nscope='project'\n[workflow]\nroot='records/deep/tree'\ngit=%q\n[worktrees]\ndir='execution'\n[repos]\na='source-a'\nb='source-b'\n", mode))
 	if err := os.MkdirAll(filepath.Join(root, ".homonto", "catalog", "skills", "onto"), 0755); err != nil {
 		t.Fatal(err)
 	}

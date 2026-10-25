@@ -39,7 +39,7 @@ func validate(c *Config) error {
 	if err := validateResources("commands", c.Commands); err != nil {
 		return err
 	}
-	if err := validateFrameworks(c); err != nil {
+	if err := validatePackages(c); err != nil {
 		return err
 	}
 	if err := validateSubagents(c.Subagents); err != nil {
@@ -89,18 +89,56 @@ func validateWorkflow(c *Config) error {
 	return nil
 }
 
-// validateFrameworks checks the framework source rule.
-//
-// Frameworks have their own source rule: builtin:<name> (expanded from the
-// embedded catalog) or local:<path> (a local framework root). Every other
-// source expands nothing and is rejected loudly (F35).
-//
-// onto and to may be declared together (ADR 0042): their records live in
-// disjoint directories (changes/ vs tasks/), their agents and commands are
-// namespaced, and the workflow is chosen per change by selecting its primary
-// agent — not per repository.
-func validateFrameworks(c *Config) error {
-	return validateFrameworkResources(c.Frameworks)
+// validatePackages checks the workflow and engine source rules. A declaration
+// cannot occupy both namespaces: model selection is dynamic, but a catalog
+// package has one role.
+func validatePackages(c *Config) error {
+	for name := range c.Workflows {
+		if _, duplicate := c.Engines[name]; duplicate {
+			return fmt.Errorf("parse config: %q is declared as both a workflow and an engine", name)
+		}
+	}
+	if err := validateFrameworkResources("workflows", c.Workflows); err != nil {
+		return err
+	}
+	if err := validateFrameworkResources("engines", c.Engines); err != nil {
+		return err
+	}
+	return validateBuiltinPackageKinds(c)
+}
+
+// validateBuiltinPackageKinds makes the public split semantic rather than a
+// pair of aliases: a bundled workflow cannot be installed as an engine and
+// vice versa. Local and remote packages carry their kind in their own manifest
+// and are checked when that manifest is loaded for expansion.
+func validateBuiltinPackageKinds(c *Config) error {
+	cl, err := loadedCatalog()
+	if err != nil {
+		return err
+	}
+	for kind, resources := range map[string]map[string]Resource{
+		"workflow": c.Workflows,
+		"engine":   c.Engines,
+	} {
+		for name, r := range resources {
+			catalogName, builtin := strings.CutPrefix(r.Source, "builtin:")
+			if !builtin {
+				continue
+			}
+			pkg, known := cl.Framework(catalogName)
+			if known && pkg.Kind != "" && pkg.Kind != kind {
+				return fmt.Errorf("parse config: %s.%s source %q is %s, not %s", kind+"s", name, r.Source, article(pkg.Kind), article(kind))
+			}
+		}
+	}
+	return nil
+}
+
+func article(noun string) string {
+	if strings.HasPrefix(noun, "a") || strings.HasPrefix(noun, "e") || strings.HasPrefix(noun, "i") || strings.HasPrefix(noun, "o") || strings.HasPrefix(noun, "u") {
+		return "an " + noun
+	}
+	return "a " + noun
 }
 
 // validateRepos checks the shape of every [repos] entry: a plain name usable
@@ -434,7 +472,7 @@ func validateResources(kind string, resources map[string]Resource) error {
 	return nil
 }
 
-// validateFrameworkResources validates [frameworks.X] entries. A framework
+// validateFrameworkResources validates [workflows.X] or [engines.X] entries. A package
 // source must be builtin:<name> (expanded from the embedded catalog),
 // local:<path> (a local framework root resolved relative to the config dir), or
 // remote:<url> (a framework root fetched through the trust pipeline, which
@@ -442,12 +480,12 @@ func validateResources(kind string, resources map[string]Resource) error {
 // source MAY carry path components, so the plain-name guard is deliberately not
 // applied here. A bare name or a typo expands nothing and is rejected loudly
 // (F35); a digest on a builtin/local source is a no-op and rejected.
-func validateFrameworkResources(resources map[string]Resource) error {
+func validateFrameworkResources(kind string, resources map[string]Resource) error {
 	for name, r := range resources {
-		if err := validateResourceName("frameworks", name); err != nil {
+		if err := validateResourceName(kind, name); err != nil {
 			return err
 		}
-		label := "frameworks." + name
+		label := kind + "." + name
 		switch r.Scope {
 		case "user", "project":
 			// ok
@@ -798,7 +836,7 @@ func validateModels(c *Config) error {
 		// NO explicit declaration for this tool — or with only a tune-only retune
 		// — fall through here.
 		//
-		// Tolerate expansion errors (e.g. a stale [frameworks.comet] whose
+		// Tolerate expansion errors (e.g. a stale [engines.comet] whose
 		// catalog was removed): the engine and doctor already report them
 		// as warnings, the explicit walk above still catches must-declare
 		// failures for explicit declarations, and propagating here would

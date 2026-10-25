@@ -26,7 +26,7 @@ func TestGate_MissingHomontoToml(t *testing.T) {
 }
 
 // TestGate_MissingFrameworksOnto covers gate order step 2: homonto.toml
-// exists but declares no [frameworks.onto] table, so the error must tell
+// exists but declares no [engines.onto] table, so the error must tell
 // the user to declare it and run `homonto apply`.
 func TestGate_MissingFrameworksOnto(t *testing.T) {
 	dir := t.TempDir()
@@ -36,8 +36,8 @@ func TestGate_MissingFrameworksOnto(t *testing.T) {
 	if err == nil {
 		t.Fatal("gate() = nil, want error")
 	}
-	if !strings.Contains(err.Error(), "[frameworks.onto]") {
-		t.Errorf("gate() error = %q, want it to mention %q", err.Error(), "[frameworks.onto]")
+	if !strings.Contains(err.Error(), "[engines.onto]") {
+		t.Errorf("gate() error = %q, want it to mention %q", err.Error(), "[engines.onto]")
 	}
 	if !strings.Contains(err.Error(), "homonto apply") {
 		t.Errorf("gate() error = %q, want it to mention %q", err.Error(), "homonto apply")
@@ -46,13 +46,13 @@ func TestGate_MissingFrameworksOnto(t *testing.T) {
 	assertNoDocsFiles(t, dir)
 }
 
-// TestGate_MissingCatalog covers gate order step 3: [frameworks.onto] is
+// TestGate_MissingCatalog covers gate order step 3: [engines.onto] is
 // declared but has not been applied yet, so the onto skill catalog
 // directory doesn't exist. The error must tell the user to run
 // `homonto apply`.
 func TestGate_MissingCatalog(t *testing.T) {
 	dir := t.TempDir()
-	writeFile(t, filepath.Join(dir, "homonto.toml"), "[frameworks.onto]\nsource=\"builtin:onto\"\nscope=\"project\"\n")
+	writeFile(t, filepath.Join(dir, "homonto.toml"), "[engines.onto]\nsource=\"builtin:onto\"\nscope=\"project\"\n")
 
 	err := ontoFramework.Gate(dir)
 	if err == nil {
@@ -66,11 +66,11 @@ func TestGate_MissingCatalog(t *testing.T) {
 }
 
 // TestGate_AllPresent covers gate order step 4: homonto.toml declares
-// [frameworks.onto] and the catalog has been applied, so the gate must
+// [engines.onto] and the catalog has been applied, so the gate must
 // pass.
 func TestGate_AllPresent(t *testing.T) {
 	dir := t.TempDir()
-	writeFile(t, filepath.Join(dir, "homonto.toml"), "[frameworks.onto]\nsource=\"builtin:onto\"\nscope=\"project\"\n")
+	writeFile(t, filepath.Join(dir, "homonto.toml"), "[engines.onto]\nsource=\"builtin:onto\"\nscope=\"project\"\n")
 	if err := os.MkdirAll(filepath.Join(dir, ".homonto", "catalog", "skills", "onto"), 0o755); err != nil {
 		t.Fatalf("failed to create catalog dir: %v", err)
 	}
@@ -102,12 +102,12 @@ var docsDirs = []string{
 }
 
 // setUpGatedWorkspace prepares a temp workspace that passes gate(): a
-// homonto.toml declaring [frameworks.onto] plus an applied onto catalog
+// homonto.toml declaring [engines.onto] plus an applied onto catalog
 // directory.
 func setUpGatedWorkspace(t *testing.T) string {
 	t.Helper()
 	dir := t.TempDir()
-	writeFile(t, filepath.Join(dir, "homonto.toml"), "[frameworks.onto]\nsource=\"builtin:onto\"\nscope=\"project\"\n")
+	writeFile(t, filepath.Join(dir, "homonto.toml"), "[engines.onto]\nsource=\"builtin:onto\"\nscope=\"project\"\n")
 	if err := os.MkdirAll(filepath.Join(dir, ".homonto", "catalog", "skills", "onto"), 0o755); err != nil {
 		t.Fatalf("failed to create catalog dir: %v", err)
 	}
@@ -222,7 +222,7 @@ func TestInitCommand_GateFailureCreatesNothing(t *testing.T) {
 func TestInitAndNewRejectEscapingWorkflowRoot(t *testing.T) {
 	dir := t.TempDir()
 	outside := t.TempDir()
-	writeFile(t, filepath.Join(dir, "homonto.toml"), "[workflow]\nroot=\"workflow\"\n[frameworks.onto]\nsource=\"builtin:onto\"\nscope=\"project\"\n")
+	writeFile(t, filepath.Join(dir, "homonto.toml"), "[workflow]\nroot=\"workflow\"\n[engines.onto]\nsource=\"builtin:onto\"\nscope=\"project\"\n")
 	if err := os.MkdirAll(filepath.Join(dir, ".homonto", "catalog", "skills", "onto"), 0o755); err != nil {
 		t.Fatal(err)
 	}

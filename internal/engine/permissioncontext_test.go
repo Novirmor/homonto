@@ -83,7 +83,7 @@ func TestRenamedFrameworkProtectsNativeRecordsAndGrantsOnlyInstalledSkills(t *te
 	if err := os.WriteFile(filepath.Join(canonicalContent, "skills", "chosen", "SKILL.md"), []byte("---\nname: chosen\ndescription: test\n---\nbody\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	doc := strings.Replace(ontoFrameworkTOML, "[frameworks.onto]", "[frameworks.delivery]", 1)
+	doc := strings.Replace(ontoFrameworkTOML, "[engines.onto]", "[engines.delivery]", 1)
 	doc = strings.Replace(doc, `scope = "project"`, `scope = "user"`, 1)
 	doc += "\n[skills.chosen]\nsource = 'local:chosen'\nscope = 'user'\n"
 	if err := os.WriteFile(filepath.Join(root, "homonto.toml"), []byte(doc), 0o644); err != nil {
@@ -332,7 +332,7 @@ func TestNativeFrameworkNameMismatchDoesNotPublish(t *testing.T) {
 	write(filepath.Join(fw, "framework.toml"), "name = 'custom'\nversion = '1.0.0'\n[skills]\ncustom = 'skills/custom'\n[subagents]\nnav = 'native.md'\n")
 	write(filepath.Join(fw, "skills", "custom", "SKILL.md"), "original skill\n")
 	write(filepath.Join(fw, "native.md"), "---\nname: nav\npermission:\n  edit: deny\n---\noriginal prompt\n")
-	write(filepath.Join(root, "homonto.toml"), fmt.Sprintf("[frameworks.custom]\nsource = %q\nscope = 'project'\n[subagents.nav.opencode]\nmodel = 'provider/model'\n", "local:"+fw))
+	write(filepath.Join(root, "homonto.toml"), fmt.Sprintf("[engines.custom]\nsource = %q\nscope = 'project'\n[subagents.nav.opencode]\nmodel = 'provider/model'\n", "local:"+fw))
 	e := buildEngine(t, home, root)
 	if err := e.Apply(context.Background(), mustPlan(t, e)); err != nil {
 		t.Fatal(err)

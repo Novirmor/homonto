@@ -17,7 +17,7 @@ verification there is. Do not treat the checkbox as a guarantee.
 ## The tooling around you: homonto
 
 **homonto** is the declarative config projector that installed this
-framework: `[frameworks.to]` in `homonto.toml`, applied with
+framework: `[engines.to]` in `homonto.toml`, applied with
 `homonto apply`, is why `to` commands gate on an installed framework — the
 skills you route to were materialized by homonto. Three things to remember
 and nothing more: never hand-edit `.homonto/`, `to-state.yaml` outside `to`
@@ -106,7 +106,7 @@ or clearly describes an independent change.
 A change outgrowing `to` (design questions, evidence obligations, a second
 reader)? `to promote <name> --yes` converts it into a full onto change with
 the complete workspace preserved under `.workflow/snapshots/` — declare
-`[frameworks.onto]` alongside `to` if it is missing, `homonto apply --yes`,
+`[engines.onto]` alongside `to` if it is missing, `homonto apply --yes`,
 then `/onto` (ADR 0028). An onto change that no longer needs its gates goes
 back with `onto demote <name> --yes`; converting back while nothing changed
 restores the previous workspace byte-for-byte (ADR 0042).

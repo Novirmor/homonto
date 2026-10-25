@@ -163,9 +163,9 @@ func TestAuditTerminalDestinationFailuresPreserveState(t *testing.T) {
 				t.Run(layout+"/"+kind+"/"+op.args[0]+"-"+op.phase, func(t *testing.T) {
 					root := setUpGatedWorkspace(t)
 					if layout == "custom" {
-						writeFile(t, filepath.Join(root, "homonto.toml"), "[frameworks.to]\n[workflow]\nroot = 'workflow/records'\n")
+						writeFile(t, filepath.Join(root, "homonto.toml"), "[engines.to]\n[workflow]\nroot = 'workflow/records'\n")
 					} else if layout == "external-v2" {
-						writeFile(t, filepath.Join(root, "homonto.toml"), fmt.Sprintf("schema_version = 2\n[frameworks.to]\n[workflow]\nroot = %q\ngit = 'existing'\n", filepath.Join(t.TempDir(), "records")))
+						writeFile(t, filepath.Join(root, "homonto.toml"), fmt.Sprintf("schema_version = 2\n[engines.to]\n[workflow]\nroot = %q\ngit = 'existing'\n", filepath.Join(t.TempDir(), "records")))
 					}
 					if err := workcli.MarkWorkflowState(root); err != nil {
 						t.Fatal(err)

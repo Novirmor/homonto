@@ -225,7 +225,7 @@ func TestRepoTargetMustBeDeclaredAndProjectScoped(t *testing.T) {
 		t.Errorf("user-scope repo mcp = %v, want a scope error", err)
 	}
 	// Frameworks take no repo.
-	if err := load("[repos]\nsvc = \"" + svc + "\"\n\n[frameworks.onto]\nsource=\"builtin:onto\"\nscope=\"project\"\nrepo=\"svc\"\n"); err == nil || !strings.Contains(err.Error(), "config repository only") {
+	if err := load("[repos]\nsvc = \"" + svc + "\"\n\n[engines.onto]\nsource=\"builtin:onto\"\nscope=\"project\"\nrepo=\"svc\"\n"); err == nil || !strings.Contains(err.Error(), "config repository only") {
 		t.Errorf("repo on framework = %v, want a config-repo-only error", err)
 	}
 	// The legal shapes load.

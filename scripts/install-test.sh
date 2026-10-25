@@ -386,8 +386,8 @@ t20_guided_project_setup() {
   config="$s/homonto.toml"
   expect_exit "t20: guided project setup" 0
   expect_stderr "t20: configures a new project" "Configured homonto.toml"
-  expect_stderr "t20: h is a skill bundle" "h GitHub skill bundle"
-  expect_not_stderr "t20: h is not a lifecycle workflow" "h GitHub workflows"
+  expect_stderr "t20: h is standalone" "standalone h GitHub workflow"
+  expect_not_stderr "t20: h is not an engine" "h GitHub engine"
   expect_stderr "t20: lifecycle choices are named" "Lifecycle workflows to configure"
   expect_stderr "t20: model scope is disclosed" "global OpenCode settings"
   expect_next_steps present "t20: selected h commands are advertised" "/h-*"
@@ -395,16 +395,16 @@ t20_guided_project_setup() {
     && grep -qF 'root = "workflow"' "$config" \
     && grep -qF '[repos]' "$config" \
     && grep -qF "api = \"$s/repo-a\"" "$config" \
-    && grep -qF '[frameworks.onto]' "$config" \
-    && grep -qF '[frameworks.to]' "$config" \
-    && grep -qF '[frameworks.h]' "$config" \
+    && grep -qF '[engines.onto]' "$config" \
+    && grep -qF '[engines.to]' "$config" \
+    && grep -qF '[workflows.h]' "$config" \
     && grep -qF '[subagents.homonto.opencode]' "$config" \
     && grep -qF '[subagents.h-spike.opencode]' "$config" \
     && grep -qF 'model = "test-provider/test-model"' "$config" \
     && [ "$(grep -cF '[subagents.homonto.opencode]' "$config")" -eq 1 ]; then
-    ok "t20: writes selected repos, workflow root, frameworks, h bundle, and model"
+    ok "t20: writes selected repos, workflow root, engines, h workflow, and model"
   else
-    bad "t20: writes selected repos, workflow root, frameworks, h bundle, and model"
+    bad "t20: writes selected repos, workflow root, engines, h workflow, and model"
     cat "$config" >&2
   fi
   if (cd "$ROOT" && go build -o "$s/homonto-real" .) \
@@ -452,20 +452,21 @@ t23_forced_dialog_requires_binary() {
   expect_stderr "t23: names the recovery" "HOMONTO_UI=dialog requires dialog on PATH"
 }
 
-t24_h_with_onto_configures_transitive_models() {
+t24_h_with_onto_stays_independent() {
   local s="$1" config
   make_release v9.9.9 linux amd64 "$s/assets" homonto onto to
   run_install "$s" $'\nboth\n'"$s/bin"$'\ny\nonto\ny\n\nn\n\n' MOCK_INIT_WRITES_CONFIG=1
   config="$s/homonto.toml"
   expect_exit "t24: onto + h guided setup" 0
-  expect_next_steps present "t24: h's transitive to workflow is available" "/to"
-  if grep -qF '[frameworks.onto]' "$config" \
-    && grep -qF '[frameworks.h]' "$config" \
-    && ! grep -qF '[frameworks.to]' "$config" \
-    && grep -qF '[subagents.to-explorer.opencode]' "$config"; then
-    ok "t24: onto + h declares h's transitive to models"
+  expect_next_steps absent "t24: h does not enable to" "/to"
+  if grep -qF '[engines.onto]' "$config" \
+    && grep -qF '[workflows.h]' "$config" \
+    && ! grep -qF '[engines.to]' "$config" \
+    && ! grep -qF '[subagents.to-explorer.opencode]' "$config" \
+    && grep -qF '[subagents.h-spike.opencode]' "$config"; then
+    ok "t24: onto + h has only their own models"
   else
-    bad "t24: onto + h declares h's transitive to models"
+    bad "t24: onto + h has only their own models"
     cat "$config" >&2
   fi
   if (cd "$ROOT" && go build -o "$s/homonto-real" .) \
@@ -477,20 +478,21 @@ t24_h_with_onto_configures_transitive_models() {
   fi
 }
 
-t25_h_with_to_configures_transitive_models() {
+t25_h_with_to_stays_independent() {
   local s="$1" config
   make_release v9.9.9 linux amd64 "$s/assets" homonto onto to
   run_install "$s" $'\nboth\n'"$s/bin"$'\ny\nto\ny\n\nn\n\n' MOCK_INIT_WRITES_CONFIG=1
   config="$s/homonto.toml"
   expect_exit "t25: to + h guided setup" 0
-  expect_next_steps present "t25: h's transitive onto workflow is available" "/onto"
-  if grep -qF '[frameworks.to]' "$config" \
-    && grep -qF '[frameworks.h]' "$config" \
-    && ! grep -qF '[frameworks.onto]' "$config" \
-    && grep -qF '[subagents.onto-explorer.opencode]' "$config"; then
-    ok "t25: to + h declares h's transitive onto models"
+  expect_next_steps absent "t25: h does not enable onto" "/onto"
+  if grep -qF '[engines.to]' "$config" \
+    && grep -qF '[workflows.h]' "$config" \
+    && ! grep -qF '[engines.onto]' "$config" \
+    && ! grep -qF '[subagents.onto-explorer.opencode]' "$config" \
+    && grep -qF '[subagents.h-review.opencode]' "$config"; then
+    ok "t25: to + h has only their own models"
   else
-    bad "t25: to + h declares h's transitive onto models"
+    bad "t25: to + h has only their own models"
     cat "$config" >&2
   fi
   if (cd "$ROOT" && go build -o "$s/homonto-real" .) \
@@ -852,8 +854,8 @@ t20_guided_project_setup "$TMP/t20"
 t21_existing_config_is_unchanged "$TMP/t21"
 t22_dialog_ui "$TMP/t22"
 t23_forced_dialog_requires_binary "$TMP/t23"
-t24_h_with_onto_configures_transitive_models "$TMP/t24"
-t25_h_with_to_configures_transitive_models "$TMP/t25"
+ t24_h_with_onto_stays_independent "$TMP/t24"
+ t25_h_with_to_stays_independent "$TMP/t25"
 t26_guided_tmp_directory "$TMP/t26"
 t27_model_answer_is_validated "$TMP/t27"
 t28_checksum_requires_stdin_operand "$TMP/t28"

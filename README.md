@@ -53,31 +53,33 @@ homonto installs content it bundles (`builtin:`), content from your repo
 (`local:`), or pinned remote archives (`remote:`). The bundled catalog carries
 only what homonto authors:
 
-- **`onto`** — the native, binary-enforced workflow framework: skills, slash
+- **`onto`** — the native, binary-enforced engine: skills, slash
   commands, the shared `homonto` knowledge skill, the shared `homonto`
   coordinator, and four specialists.
-- **`to`** — the native minimal coding framework for LLMs: a dispatcher, three
+- **`to`** — the native minimal coding engine for LLMs: a dispatcher, three
   phase skills, `to-no-slop`, the shared `homonto` knowledge skill, the shared
   `homonto` coordinator, and four specialists. onto and `to` are complementary;
-  declare either or both and pick the workflow per change through `/onto` or
+  declare either or both and pick the engine per change through `/onto` or
   `/to` ([ADR 0042](docs/adr/0042-onto-and-to-are-complementary.md)).
-- **`h`** — the GitHub skill bundle: `h-spike-issue`, `h-resolve-issue`,
+- **`h`** — the standalone GitHub workflow: `h-spike-issue`, `h-resolve-issue`,
   `h-review-pr`, `h-continue-pr`, and `h-review-batch`, with matching `/h-*`
   commands and two read-only workers, `h-spike` and `h-review`. It installs
-  both onto and to as dependencies and uses the shared `homonto` coordinator.
-- **Loose skills and commands** (`handoff`, `grilling`, …) — framework-agnostic
+  its own `homonto` skill and uses the shared coordinator; it needs no engine.
+- **`no`** — a catalog-only development/review engine with one implementer and
+  one reviewer; the model chooses task detail and verification. It has no
+  binary or durable lifecycle state.
+- **Loose skills and commands** (`handoff`, `grilling`, …) — package-agnostic
   and installed individually.
 
-`[frameworks.h]` with `source = "builtin:h"` remains the stable configuration
-key: `frameworks` is the generic package/dependency mechanism, including skill
-bundles. There is no key rename or third lifecycle workflow. `/onto`, `/to`,
-and `/h-*` all route to the shared `homonto` coordinator
+Use `[workflows.h]` for the GitHub workflow and `[engines.onto]`,
+`[engines.to]`, or `[engines.no]` for engines. Legacy `[frameworks.*]`
+declarations are rejected. `/onto`, `/to`, and `/h-*` all route to the shared `homonto` coordinator
 ([ADR 0045](docs/adr/0045-one-homonto-coordinator-for-both-workflows.md)).
 
 Third-party workflow stacks are not bundled. As of v0.3.0 the `comet`,
-`openspec`, and `superpowers` frameworks are removed
+`openspec`, and `superpowers` packages are removed
 ([ADR 0015](docs/adr/0015-ship-only-onto-frameworks.md)); vendor such content
-through a `local:` framework or a digest-pinned `remote:` source.
+through a `local:` package or a digest-pinned `remote:` source.
 
 ## Install
 
@@ -93,12 +95,11 @@ archives against `SHA256SUMS`, installs into a directory you choose, and
 prints the PATH line for you to apply — it never edits your shell
 configuration. It can also run the non-destructive `homonto init` in the
 current directory when you explicitly confirm. For a new config, it also asks
-where workflow records belong, which sibling Git repositories to trust, which
-onto/to lifecycle workflows to enable, and whether to add the `h` GitHub skill
-bundle when both workflow binaries are installed. Its model choice is written
+where workflow records belong, which sibling Git repositories to trust, and
+which packages to enable. Its model choice is written
 to `[settings.opencode]` and every selected agent's model block: on apply, it
 updates **global OpenCode settings**, affecting other projects too. Next steps
-name only the configured, installed workflows and, when selected, `/h-*`.
+name only the configured, installed packages and, when selected, `/h-*`.
 Existing `homonto.toml` files remain unchanged. In an
 interactive terminal it uses Gum when available, then dialog, then text
 prompts:
@@ -114,15 +115,15 @@ checked-out repo, `go install .` installs the binary. If you have created a loca
 a name collision (see [troubleshooting](docs/guides/troubleshooting.md)).
 
 After installing a newer binary, run `homonto update` to bring the projected
-catalog content (frameworks, skills, commands, subagents) up to that version.
+catalog content (packages, skills, commands, subagents) up to that version.
 
 ## First steps
 
 Run these commands in the directory that will hold `homonto.toml`. `homonto
 init` scaffolds configuration only: it never runs `git init`, and no MCP server
-is required. Add MCPs only when a tool needs one; framework installation is a
-separate, declarative `[frameworks.onto]` or `[frameworks.to]` entry (or both
-through `[frameworks.h]`) followed by `homonto apply`. A `[tmp]` entry declares
+is required. Add MCPs only when a tool needs one; package installation is a
+separate, declarative `[workflows.h]`, `[engines.onto]`, `[engines.to]`, or
+`[engines.no]` entry followed by `homonto apply`. A `[tmp]` entry declares
 one gitignored scratch directory every agent can write to without prompts —
 apply creates it and generates the
 skill reference that names it

@@ -1,4 +1,5 @@
 name = "to"
+kind = "engine"
 version = "0.22.4"
 description = "to — minimal coding framework for LLMs (plan → do → done)"
 

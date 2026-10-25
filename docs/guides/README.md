@@ -45,7 +45,7 @@ someone else has to pick up or audit — it leaves an archived, gate-stamped
 record a stranger can read; `to` is for a fast solo loop that still wants a
 real verification pass. The `h` GitHub skill bundle adds intake skills and
 matching commands (`/h-spike-issue`, `/h-resolve-issue`, `/h-review-pr`,
-`/h-continue-pr`, `/h-review-batch`) over both. Its stable `[frameworks.h]`
+`/h-continue-pr`, `/h-review-batch`) over both. Its stable `[workflows.h]`
 package key installs onto and to as dependencies, plus the `h-spike` and
 `h-review` workers, using the same coordinator.
 

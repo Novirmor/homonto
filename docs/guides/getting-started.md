@@ -5,7 +5,7 @@ A hands-on walkthrough of `homonto` and `onto`. `homonto` projects your
 is the only adapter; Claude Code and codex support was removed in v0.13.0
 (configs naming them fail at load naming the key). `onto` gates a change
 through `open → design → build → verify → close`. onto's mutating commands
-need the onto framework installed *by* homonto first.
+need the onto engine installed *by* homonto first.
 
 > A third binary, `to`, is the lightweight alternative to onto (`plan → do →
 > done`, self-asserted verification). It checks installation, phase/state, and
@@ -33,11 +33,10 @@ prints PATH instructions without editing your shell configuration. It also
 offers to run the non-destructive `homonto init` in the current directory. For
 a newly created config, it asks for the workflow-record directory, an optional
 workspace tmp directory (`[tmp]`), sibling Git repositories, and onto/to
-lifecycle workflows. With both workflow binaries installed, it also offers the
-`h` GitHub skill bundle. One model is written to `[settings.opencode]` and each
+engines. It also offers the standalone `h` GitHub workflow. One model is written to `[settings.opencode]` and each
 selected agent's model block: applying it updates **global OpenCode settings**,
 affecting other projects. The printed next steps name the configured, installed
-lifecycle workflows and, if selected, the `/h-*` skills.
+packages and, if selected, the `/h-*` skills.
 The installer leaves an existing `homonto.toml` unchanged;
 it uses Gum when available, then dialog, then text prompts. Decline to
 initialize elsewhere later:
@@ -64,9 +63,9 @@ onto v0.33.0
 
 Run these commands from the directory that should contain `homonto.toml`.
 `homonto init` scaffolds configuration; it does not create a Git repository or
-install a workflow framework. Git remains your decision, and an MCP is optional
-until you need a server. Frameworks install declaratively after you add their
-`[frameworks.*]` table and apply the configuration.
+install a workflow or engine. Git remains your decision, and an MCP is optional
+until you need a server. Packages install declaratively after you add a
+`[workflows.*]` or `[engines.*]` table and apply the configuration.
 
 ```console
 $ homonto init            # scaffold homonto.toml + .gitignore + .env.example (never overwrites)
@@ -161,11 +160,11 @@ relocating, and `apply` removes the old link as it creates the new one.
 
 Install the framework via homonto, then apply. Every subagent the framework
 expands must declare **an explicit model** — including the shared `homonto`
-coordinator (ADR 0045; declaring `[frameworks.to]` alongside reuses the same
+coordinator (ADR 0045; declaring `[engines.to]` alongside reuses the same
 block, so write it once):
 
 ```toml
-[frameworks.onto]
+[engines.onto]
 source = "builtin:onto"
 scope = "project"
 
@@ -241,12 +240,12 @@ command and gate: [onto reference](onto-reference.md).
 | Supported | Notes |
 |---|---|
 | MCP servers, settings, skills, plugins, TUI settings | OpenCode, full — the only adapter (Claude Code and codex were removed in v0.13.0) |
-| Packages (`[frameworks.*]`) | builtin `onto` and `to` lifecycle workflows (complementary), and the `h` GitHub skill bundle; also `local:` roots and digest-pinned `remote:` sources |
+| Packages (`[workflows.*]`, `[engines.*]`) | builtin `h` workflow; `onto`, `to`, and `no` engines; also `local:` roots and digest-pinned `remote:` sources |
 | Commands, subagents (`builtin:` / `local:`) | subagents: `mode = link` (default) or `copy` |
 | Remote sources (`remote:…`) | subagents and frameworks; **require `digest = "sha256:…"`**; fetched, verified, pinned, cached |
 | Moving/renaming the repo | same-domain project links are relative; reapply repairs eligible state-recorded relocations through the normal plan/confirm path (see [projection & state](projection-and-state.md)) |
 
-`[frameworks.h]` with `source = "builtin:h"` is the stable generic package key
+`[workflows.h]` with `source = "builtin:h"` is the stable generic package key
 for the bundle. It installs both onto and to dependencies, the five `/h-*`
 skills/commands, and their two read-only workers; all commands use the shared
 `homonto` coordinator. Calling `h` a skill bundle does not rename the key.

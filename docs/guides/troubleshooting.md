@@ -115,7 +115,7 @@ in v0.13.0: a config naming them — `targets = ["claude"]` or
 at load, naming the key. The `homonto import` command (a Claude MCP
 bootstrap) went with them.
 
-- **Packages under `[frameworks.*]`** resolve from the builtin catalog (`onto`
+- **Packages under `[workflows.*]` or `[engines.*]`** resolve from the builtin catalog (`h`, `onto`
   and/or `to` lifecycle workflows, or the `h` GitHub skill bundle that depends
   on both), a `local:` root, or a digest-pinned `remote:` source.
 - **Remote sources** (subagents and frameworks) require a
@@ -127,7 +127,7 @@ bootstrap) went with them.
 
 **`onto new`/`advance`/`close` refuse to run.** The mutating commands
 require the onto framework to be installed *by homonto*
-(`[frameworks.onto]` or `[frameworks.h]` + `homonto apply`). The read-only commands (`status`,
+(`[engines.onto]` or `[workflows.h]` + `homonto apply`). The read-only commands (`status`,
 `state`, `gate`, `scale`, `graph`, `handoff`, `dirt`, `doctor`, `version`)
 always work.
 
@@ -186,7 +186,7 @@ resume without re-deriving state.
 
 **`to init`/`new`/`phase`/`done`/`abandon` refuse to run.** Same rule as
 onto: the mutating commands require the to framework installed *by homonto*
-(`[frameworks.to]` or `[frameworks.h]` + `homonto apply`). The read-only commands (`status`,
+(`[engines.to]` or `[workflows.h]` + `homonto apply`). The read-only commands (`status`,
 `handoff`, `doctor`, `version`) always work.
 
 **`to done` refuses a scoped change.** A change created with `to new --repo

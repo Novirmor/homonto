@@ -159,7 +159,7 @@ func TestCloseCommand_RecoveryRejectsDirtySelectedRepo(t *testing.T) {
 	runGit(t, api, "config", "user.name", "Test")
 	writeFile(t, filepath.Join(api, "tracked"), "clean\n")
 	commitAll(t, api, "init")
-	writeFile(t, filepath.Join(root, "homonto.toml"), `[frameworks.onto]
+	writeFile(t, filepath.Join(root, "homonto.toml"), `[engines.onto]
 source="builtin:onto"
 scope="project"
 [subagents.homonto.opencode]
@@ -354,7 +354,7 @@ func TestCloseCommand_SiblingDocsChangesDirtBlocks(t *testing.T) {
 	if err := os.MkdirAll(filepath.Join(root, ".homonto", "catalog", "skills", "onto"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	writeFile(t, filepath.Join(root, "homonto.toml"), `[frameworks.onto]
+	writeFile(t, filepath.Join(root, "homonto.toml"), `[engines.onto]
 source="builtin:onto"
 scope="project"
 [subagents.homonto.opencode]
@@ -410,7 +410,7 @@ func TestSetVerifyResult_LoudCaptureFailures(t *testing.T) {
 	if err := os.MkdirAll(filepath.Join(root, ".homonto", "catalog", "skills", "onto"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	writeFile(t, filepath.Join(root, "homonto.toml"), `[frameworks.onto]
+	writeFile(t, filepath.Join(root, "homonto.toml"), `[engines.onto]
 source="builtin:onto"
 scope="project"
 [subagents.homonto.opencode]
@@ -433,7 +433,7 @@ model="test/model"
 		t.Fatal(err)
 	}
 	runGit(t, filepath.Join(base, "api"), "init")
-	writeFile(t, filepath.Join(root, "homonto.toml"), `[frameworks.onto]
+	writeFile(t, filepath.Join(root, "homonto.toml"), `[engines.onto]
 source="builtin:onto"
 scope="project"
 [subagents.homonto.opencode]

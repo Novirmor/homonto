@@ -24,7 +24,7 @@ Per-cell logs and the internals analysis land in `test/e2e/.out/` (gitignored).
 |---|:---:|---|
 | **projection** | ✓ | `homonto apply` projects an MCP + setting + skill, then OpenCode reads it back (`opencode mcp list`), the setting lands in the tool's config, the skill is symlinked, re-apply is idempotent, and `doctor` is healthy. No account needed. |
 | **live** | ✓ | OpenCode authenticates with the mounted account and answers a trivial prompt (`PONG`) using a free model. |
-| **onto** | shared (tool-independent) | `homonto apply` installs `[frameworks.onto]`, then `onto` drives a change through the full `open → design → build → verify → close` lifecycle and archives it — exercising the framework-install gate, per-phase artifact gates, the tasks-checked gate, dirty-worktree blocking on the release-critical transitions, and `doctor`. |
+| **onto** | shared (tool-independent) | `homonto apply` installs `[engines.onto]`, then `onto` drives a change through the full `open → design → build → verify → close` lifecycle and archives it — exercising the framework-install gate, per-phase artifact gates, the tasks-checked gate, dirty-worktree blocking on the release-critical transitions, and `doctor`. |
 | **analyze** | — | Not pass/fail: dumps the container's internal state (projected config files, skill symlinks, materialized `.homonto/catalog`, state hashes, and OpenCode's MCP view) for inspection. |
 
 ## Credentials (reused, never stored)

@@ -115,7 +115,7 @@ func TestApplyRestoresDeletedRenderedVariant(t *testing.T) {
 // for every expanded subagent. The shared `homonto` agent is OpenCode-primary
 // (its homonto: block sets primary), rendered with mode: primary (ADR 0045).
 const ontoFrameworkTOML = `
-[frameworks.onto]
+[engines.onto]
 source = "builtin:onto"
 scope = "project"
 
@@ -136,7 +136,7 @@ model = "anthropic/claude-opus-4-8"
 `
 
 const toFrameworkTOML = `
-[frameworks.to]
+[engines.to]
 source = "builtin:to"
 scope = "project"
 
@@ -152,12 +152,10 @@ model = "anthropic/claude-sonnet-4"
 model = "anthropic/claude-opus-4-8"
 `
 
-// hFrameworkTOML installs the h companion alone: its catalog dependencies
-// transitively expand onto's and to's agents plus the two h workers, all
-// needing model blocks (active names are globally unique across frameworks —
-// homonto appears once).
+// hFrameworkTOML installs the standalone h workflow and only its coordinator
+// and two read-only workers.
 const hFrameworkTOML = `
-[frameworks.h]
+[workflows.h]
 source = "builtin:h"
 scope = "project"
 
@@ -168,24 +166,6 @@ model = "anthropic/claude-opus-4-8"
 model = "openai/gpt-5-mini"
 
 [subagents.h-review.opencode]
-model = "anthropic/claude-opus-4-8"
-
-[subagents.onto-explorer.opencode]
-model = "openai/gpt-5-mini"
-[subagents.onto-reviewer.opencode]
-model = "anthropic/claude-opus-4-8"
-[subagents.onto-implementer.opencode]
-model = "anthropic/claude-sonnet-4"
-[subagents.onto-skeptic.opencode]
-model = "anthropic/claude-opus-4-8"
-
-[subagents.to-explorer.opencode]
-model = "openai/gpt-5-mini"
-[subagents.to-reviewer.opencode]
-model = "anthropic/claude-opus-4-8"
-[subagents.to-implementer.opencode]
-model = "anthropic/claude-sonnet-4"
-[subagents.to-skeptic.opencode]
 model = "anthropic/claude-opus-4-8"
 `
 
@@ -417,13 +397,13 @@ func TestSubagentRenderFingerprintDistinguishesRoutes(t *testing.T) {
 
 func TestApplyRerendersSubagentPatternsWhenShellProxyChanges(t *testing.T) {
 	home, repo := t.TempDir(), t.TempDir()
-	agents := []string{"homonto", "onto-implementer", "to-implementer", "h-review"}
+	agents := []string{"homonto", "h-review"}
 	baseline := map[string]string{}
 	fingerprints := map[string]string{}
 	// Cover enabling, stable re-apply, disabling, and omitted == explicit none.
 	for _, proxy := range []string{"", "none", "rtk", "rtk", "none", ""} {
 		doc := hFrameworkTOML
-		for _, agent := range agents[:3] {
+		for _, agent := range agents[:1] {
 			header := "[subagents." + agent + ".opencode]\n"
 			doc = strings.Replace(doc, header, header+"bash_allow_add = [\"./scripts/task-check.sh\"]\n", 1)
 		}
@@ -523,13 +503,9 @@ func TestApplyRerendersSubagentPatternsWhenShellProxyChanges(t *testing.T) {
 	}
 }
 
-// TestHFrameworkRendersCoordinatorAndReadonlyWorkers: declaring [frameworks.h]
-// alone installs the shared homonto primary plus both frameworks' specialists
-// and the two h workers. Declared repos grant external access to the primary
-// and implementers only — the read-only workers must carry no
-// external_directory rule (ADR 0039/0045), and the workers' rendered
-// permission maps must deny both edits and bash.
-func TestHFrameworkRendersCoordinatorAndReadonlyWorkers(t *testing.T) {
+// TestHWorkflowRendersCoordinatorAndReadonlyWorkers ensures h projects only
+// its shared coordinator and its two read-only workers.
+func TestHWorkflowRendersCoordinatorAndReadonlyWorkers(t *testing.T) {
 	home := t.TempDir()
 	repo := t.TempDir()
 	sibling := filepath.Join(t.TempDir(), "service-a")
@@ -559,22 +535,7 @@ func TestHFrameworkRendersCoordinatorAndReadonlyWorkers(t *testing.T) {
 			t.Errorf("homonto must be able to record routine workflow evidence, but rendered %q:\n%s", deniedSetter, primary)
 		}
 	}
-	for _, implementer := range []string{"onto-implementer", "to-implementer"} {
-		data, err := os.ReadFile(filepath.Join(e.SubagentDir(), implementer+".opencode.md"))
-		if err != nil {
-			t.Fatal(err)
-		}
-		rendered := string(data)
-		if !strings.Contains(rendered, "external_directory:") {
-			t.Errorf("%s must inherit declared-repo access under h:\n%s", implementer, data)
-		}
-		for _, want := range []string{`"*": allow`, `"rm -r*": ask`, `"onto *": deny`, `"to *": deny`, `"gh api*": deny`, `"gh pr comment*": deny`, `"git push": deny`, `"git push *": deny`, "webfetch: allow", "websearch: allow"} {
-			if !strings.Contains(rendered, want) {
-				t.Errorf("%s must retain the delegated execution boundary %q:\n%s", implementer, want, rendered)
-			}
-		}
-	}
-	for _, worker := range []string{"h-spike", "h-review", "onto-explorer", "onto-reviewer", "onto-skeptic", "to-explorer", "to-reviewer", "to-skeptic"} {
+	for _, worker := range []string{"h-spike", "h-review"} {
 		data, err := os.ReadFile(filepath.Join(e.SubagentDir(), worker+".opencode.md"))
 		if err != nil {
 			t.Fatal(err)
@@ -590,6 +551,11 @@ func TestHFrameworkRendersCoordinatorAndReadonlyWorkers(t *testing.T) {
 		}
 		if !strings.Contains(rendered, "task: deny") {
 			t.Errorf("%s must not spawn:\n%s", worker, rendered)
+		}
+	}
+	for _, absent := range []string{"onto-implementer", "to-implementer", "onto-reviewer", "to-reviewer"} {
+		if _, err := os.Stat(filepath.Join(e.SubagentDir(), absent+".opencode.md")); !os.IsNotExist(err) {
+			t.Errorf("h must not install %s, stat error = %v", absent, err)
 		}
 	}
 }

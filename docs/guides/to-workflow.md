@@ -33,7 +33,7 @@ source cleanliness; it does not certify verification. Design rationale:
 ## onto and to — complementary by selection
 
 Pick the workflow per change, not per repository. Declaring both
-`[frameworks.onto]` and `[frameworks.to]` in one `homonto.toml` is valid
+`[engines.onto]` and `[engines.to]` in one `homonto.toml` is valid
 (ADR 0042): their records live in disjoint directories (`changes/` vs
 `tasks/`) and their agents and commands are namespaced, so both project side
 by side and the request decides which dispatcher the shared `homonto`
@@ -63,7 +63,7 @@ The mutating commands require the framework to be **declared and applied
 through homonto first** — this is how the skills land in your tools:
 
 ```toml
-[frameworks.to]
+[engines.to]
 source = "builtin:to"
 scope = "project"
 # plus a [subagents.<name>.<tool>] model block per to agent — see the

@@ -53,7 +53,7 @@ func TestWorkflowPromptCLISequences(t *testing.T) {
 		for _, early := range []bool{false, true} {
 			t.Run(fmt.Sprintf("combined/%s/early=%t", workflow, early), func(t *testing.T) {
 				root := filepath.Join(t.TempDir(), "combined")
-				write(t, filepath.Join(root, "homonto.toml"), fmt.Sprintf("schema_version=2\n[frameworks.%s]\nsource='builtin:%s'\nscope='project'\n[workflow]\nroot='docs'\ngit='existing'\n[repos]\napp='.'\n[worktrees]\ndir='../execution'\n", workflow, workflow))
+				write(t, filepath.Join(root, "homonto.toml"), fmt.Sprintf("schema_version=2\n[engines.%s]\nsource='builtin:%s'\nscope='project'\n[workflow]\nroot='docs'\ngit='existing'\n[repos]\napp='.'\n[worktrees]\ndir='../execution'\n", workflow, workflow))
 				write(t, filepath.Join(root, ".gitignore"), ".homonto/\n")
 				write(t, filepath.Join(root, "source.txt"), "baseline\n")
 				// Fixture only: materialized-directory presence is the CLI install gate.
@@ -162,7 +162,7 @@ func TestWorkflowPromptCLISequences(t *testing.T) {
 	for _, mode := range []string{"merge", "pr"} {
 		t.Run("integration/"+mode, func(t *testing.T) {
 			root := t.TempDir()
-			write(t, filepath.Join(root, "homonto.toml"), "schema_version=2\n[frameworks.onto]\nsource='builtin:onto'\nscope='project'\n[workflow]\nroot='records'\ngit='existing'\n[repos]\napp='app'\nuntouched='untouched'\n[worktrees]\ndir='execution'\n")
+			write(t, filepath.Join(root, "homonto.toml"), "schema_version=2\n[engines.onto]\nsource='builtin:onto'\nscope='project'\n[workflow]\nroot='records'\ngit='existing'\n[repos]\napp='app'\nuntouched='untouched'\n[worktrees]\ndir='execution'\n")
 			if err := os.MkdirAll(filepath.Join(root, ".homonto/catalog/skills/onto"), 0755); err != nil {
 				t.Fatal(err)
 			}
@@ -277,7 +277,7 @@ func TestWorkflowPromptCLISequences(t *testing.T) {
 	for _, preset := range []string{"fix", "tweak"} {
 		t.Run("preset-resume/"+preset, func(t *testing.T) {
 			root := t.TempDir()
-			write(t, filepath.Join(root, "homonto.toml"), "[frameworks.onto]\nsource='builtin:onto'\nscope='project'\n")
+			write(t, filepath.Join(root, "homonto.toml"), "[engines.onto]\nsource='builtin:onto'\nscope='project'\n")
 			write(t, filepath.Join(root, ".gitignore"), ".homonto/\n")
 			if err := os.MkdirAll(filepath.Join(root, ".homonto/catalog/skills/onto"), 0755); err != nil {
 				t.Fatal(err)
@@ -414,7 +414,7 @@ func TestWorkflowPromptCLISequences(t *testing.T) {
 	for _, missing := range []string{"", "Owner", "Repo", "Cwd"} {
 		t.Run("converted-contract/missing="+missing, func(t *testing.T) {
 			root := t.TempDir()
-			write(t, filepath.Join(root, "homonto.toml"), "[frameworks.onto]\nsource='builtin:onto'\nscope='project'\n[frameworks.to]\nsource='builtin:to'\nscope='project'\n")
+			write(t, filepath.Join(root, "homonto.toml"), "[engines.onto]\nsource='builtin:onto'\nscope='project'\n[engines.to]\nsource='builtin:to'\nscope='project'\n")
 			write(t, filepath.Join(root, ".gitignore"), ".homonto/\n")
 			for _, workflow := range []string{"onto", "to"} {
 				if err := os.MkdirAll(filepath.Join(root, ".homonto/catalog/skills", workflow), 0755); err != nil {

@@ -165,7 +165,7 @@ func Build(ctx context.Context, configPath, home, contentDir string) (*Engine, e
 		WorkspaceLayout:     layout,
 		Resolver:            secret.NewResolver(),
 	}
-	// Resolve any [frameworks.X] source="remote:<url>" through the trust pipeline
+	// Resolve any [engines.X] source="remote:<url>" through the trust pipeline
 	// now that the cache/lock/revocation paths are known, and inject the verified
 	// cache dirs so BOTH Plan (framework expansion) and materializeCatalog (which
 	// builds via Cfg.FrameworkCatalog()) overlay the remote framework roots. A

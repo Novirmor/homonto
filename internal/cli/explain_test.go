@@ -18,7 +18,7 @@ theme = "opencode-dark"
 command = ["npx", "-y", "@example/server-brave"]
 env = { BRAVE_API_KEY = "${EXPLAIN_SECRET_TOKEN}" }
 
-[frameworks.onto]
+[engines.onto]
 source = "builtin:onto"
 scope = "project"
 

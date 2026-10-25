@@ -69,7 +69,7 @@ func TestWorkspaceProjectionAndPermissions(t *testing.T) {
 			}
 			checkPermissions := func(e *Engine, parent, oldParent string) {
 				t.Helper()
-				for _, name := range []string{"homonto", "onto-implementer", "to-implementer", "onto-reviewer", "to-explorer", "h-review"} {
+				for _, name := range []string{"homonto", "h-review"} {
 					data, err := os.ReadFile(filepath.Join(e.SubagentDir(), name+".opencode.md"))
 					if err != nil {
 						t.Fatal(err)
@@ -80,7 +80,7 @@ func TestWorkspaceProjectionAndPermissions(t *testing.T) {
 					if err := yaml.Unmarshal(bytes.Split(data, []byte("---\n"))[1], &fm); err != nil {
 						t.Fatal(err)
 					}
-					if name == "onto-reviewer" || name == "to-explorer" || name == "h-review" {
+					if name == "h-review" {
 						if fm.Permission["edit"] != "deny" || fm.Permission["bash"] != "deny" || fm.Permission["external_directory"] != nil {
 							t.Errorf("read-only %s permissions = %#v", name, fm.Permission)
 						}
@@ -143,7 +143,7 @@ func TestWorkspaceProjectionAndPermissions(t *testing.T) {
 			e := build()
 			apply(e)
 			checkPermissions(e, parent, "")
-			for _, skill := range []string{"homonto", "onto", "to"} {
+			for _, skill := range []string{"homonto"} {
 				ref := filepath.Join(e.CatalogDir(), skill, catalog.WorkspaceReferencePath)
 				data, err := os.ReadFile(ref)
 				if err != nil || !bytes.Equal(data, catalog.RenderWorkspace(e.WorkspaceLayout)) {

@@ -1,0 +1,17 @@
+name = "no"
+kind = "engine"
+version = "0.1.0"
+description = "Minimal model-directed development and review engine"
+
+[dependencies]
+frameworks = []
+
+[skills]
+no = "skills/no"
+
+[commands]
+no = "commands/no.md"
+
+[subagents]
+no-implementer = "subagents/no-implementer.md"
+no-reviewer = "subagents/no-reviewer.md"

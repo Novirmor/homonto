@@ -8,7 +8,7 @@ agent: homonto
 Drive the **onto** five-phase workflow (open → design → build → verify → close)
 for this repository. If the `onto` skill is installed, load and follow it;
 otherwise tell the user the onto framework is not installed and stop (install it
-with `homonto apply` after declaring `[frameworks.onto]`).
+with `homonto apply` after declaring `[engines.onto]`).
 
 The `onto` skill is the dispatcher — it does exactly four things, in order, and
 never performs phase work itself:

@@ -21,7 +21,7 @@ func explicitScopeWorkspace(t *testing.T, mode string) workspace.Layout {
 		initRepo(t, filepath.Join(base, alias))
 	}
 	writeFile(t, filepath.Join(root, "homonto.toml"), fmt.Sprintf(`schema_version = 2
-[frameworks.to]
+[engines.to]
 source = "builtin:to"
 scope = "project"
 [workflow]
@@ -183,7 +183,7 @@ func TestExplicitScopeRefusesChangedAuthorityAndCorruption(t *testing.T) {
 			case "config-future":
 				writeFile(t, l.ConfigPath, strings.ReplaceAll(string(config), "schema_version = 2", "schema_version = 999"))
 			case "config-downgrade":
-				writeFile(t, l.ConfigPath, "schema_version = 1\n[frameworks.to]\nsource = 'builtin:to'\nscope = 'project'\n[workflow]\nroot = 'records'\n[repos]\napi = '../api'\n")
+				writeFile(t, l.ConfigPath, "schema_version = 1\n[engines.to]\nsource = 'builtin:to'\nscope = 'project'\n[workflow]\nroot = 'records'\n[repos]\napi = '../api'\n")
 			case "state-future":
 				writeFile(t, statePath(l.ConfigRoot, "guarded"), "schema_version: 999\nchange: guarded\nphase: do\n")
 			case "state-identity":
@@ -289,7 +289,7 @@ func TestNewLegacyScopeCapturesImplicitConfig(t *testing.T) {
 	initRepo(t, root)
 	api := filepath.Join(t.TempDir(), "api")
 	initRepo(t, api)
-	writeFile(t, filepath.Join(root, "homonto.toml"), fmt.Sprintf("[frameworks.to]\nsource = 'builtin:to'\nscope = 'project'\n[repos]\napi = %q\n", api))
+	writeFile(t, filepath.Join(root, "homonto.toml"), fmt.Sprintf("[engines.to]\nsource = 'builtin:to'\nscope = 'project'\n[repos]\napi = %q\n", api))
 	run(t, false, "new", "legacy", "--repo", "api", "--dir", root)
 	st, err := tostate.Load(statePath(root, "legacy"))
 	if err != nil || st.RepoMode != tostate.SourceLegacy || len(st.RepoBases) != 2 || st.RepoBases[""].GitCommonDir != filepath.Join(root, ".git") {
@@ -324,7 +324,7 @@ func TestExplicitNewRejectsInvalidSourcesAndConfig(t *testing.T) {
 			case "corrupt":
 				writeFile(t, l.ConfigPath, "not TOML [")
 			case "future":
-				writeFile(t, l.ConfigPath, "schema_version = 999\n[frameworks.to]\nsource = 'builtin:to'\n")
+				writeFile(t, l.ConfigPath, "schema_version = 999\n[engines.to]\nsource = 'builtin:to'\n")
 			}
 			runErr(t, "new", "invalid", "--repo", "api", "--dir", l.ConfigRoot)
 			if _, err := os.Stat(filepath.Join(l.WorkflowRoot, "tasks", "invalid")); !os.IsNotExist(err) {

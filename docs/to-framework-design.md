@@ -164,7 +164,7 @@ never silently dropped.
 ### Bootstrap: same gating as onto *(overruled)*
 
 Mutating commands (`init`, `new`, `phase`, `done`, `abandon`) refuse until
-`[frameworks.to]` is declared in `homonto.toml` and `homonto apply` has run.
+`[engines.to]` is declared in `homonto.toml` and `homonto apply` has run.
 Read-only commands (`status`, `handoff`, `doctor`, `version`) work anywhere,
 config-free.
 

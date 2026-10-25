@@ -81,7 +81,7 @@ func demoteCmd() *cobra.Command {
 			cmd.Printf("  fresh to workspace: %s\n", created)
 			cmd.Println("\nnext steps (onto and `to` are complementary — pick per change):")
 			cmd.Println("  1. /to   # resume the demoted change (phase plan, or do with carried tasks)")
-			cmd.Println("  2. declare [frameworks.to] in homonto.toml (alongside onto, if not")
+			cmd.Println("  2. declare [engines.to] in homonto.toml (alongside onto, if not")
 			cmd.Println("     already) and homonto apply, if the to framework is missing")
 			cmd.Println("  3. to promote <name> --yes converts back while nothing has changed")
 			return nil

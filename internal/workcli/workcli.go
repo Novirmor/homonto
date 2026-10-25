@@ -36,14 +36,14 @@ var ErrQuietFindings = errors.New("doctor: findings (quiet)")
 // hyphens. Compiled once and shared by every Framework.
 var changeNamePattern = regexp.MustCompile(`^[a-z0-9]+(-[a-z0-9]+)*$`)
 
-// Framework names the workflow framework this helper set is parameterized for.
+// Framework names the engine this helper set is parameterized for.
 // ontocli and tocli each construct one instance to drive the shared scaffolding
 // (the install gate and change-name validation) so the two stay in lockstep.
 type Framework struct {
-	// Name is the [frameworks.<name>] table key and the framework's own word:
+	// Name is the [engines.<name>] table key and the engine's own word:
 	// "onto" or "to".
 	Name string
-	// SkillsDir is the catalog subdirectory whose presence proves the framework
+	// SkillsDir is the catalog subdirectory whose presence proves the engine
 	// was applied: "skills/onto" or "skills/to".
 	SkillsDir string
 	// GatePrefix is the error prefix the install gate uses. ontocli historically
@@ -57,23 +57,16 @@ type Framework struct {
 	// alone would allow. tocli reserves "archive" (the archive directory itself);
 	// ontocli reserves nothing here (its archive name conflict is structural).
 	ReservedNames []string
-	// GateAliases are extra [frameworks.<name>] tables that satisfy this
-	// framework's install gate. The h companion hard-depends on onto and to,
-	// so an applied [frameworks.h] transitively installed this framework's
-	// skills — the gate accepts it as an alternative declaration (the
-	// catalog-dir check below still must pass, which an applied h does).
-	// Empty for direct use; both workflow CLIs set ["h"].
-	GateAliases []string
 }
 
 // HomontoConfig is the minimal shape of homonto.toml the gate needs: just
-// enough to detect whether a [frameworks.<name>] table is declared, plus the
+// enough to detect whether a [engines.<name>] table is declared, plus the
 // [repos] declarations for the multi-repo context lines (ADR 0024 stage 1).
 // It is intentionally a standalone struct, not homonto's own config type, so
 // each workflow CLI stays isolated from homonto's projection pipeline.
 type HomontoConfig struct {
 	SchemaVersion int               `toml:"schema_version"`
-	Frameworks    map[string]any    `toml:"frameworks"`
+	Engines       map[string]any    `toml:"engines"`
 	Repos         map[string]string `toml:"repos"`
 	Workflow      struct {
 		Root string  `toml:"root"`
@@ -338,12 +331,12 @@ func RepoContextLines(root string) []string {
 
 // Gate enforces the framework-install precondition every mutating command in
 // both frameworks requires: the project must have declared and applied
-// [frameworks.<name>] through Homonto. The skills are the product — the gate
+// [engines.<name>] through Homonto. The skills are the product — the gate
 // guarantees no agent works inside the framework without them. It checks, in
 // order, and returns on the first failure:
 //
 //  1. <root>/homonto.toml exists.
-//  2. it declares a [frameworks.<name>] table.
+//  2. it declares a [engines.<name>] table.
 //  3. <root>/.homonto/catalog/<skills-dir> exists as a directory (i.e. the
 //     declaration has been applied).
 //
@@ -352,18 +345,18 @@ func (f Framework) Gate(root string) error {
 	return f.GateAny(root)
 }
 
-// GateAny is Gate, satisfied when ANY of the given frameworks is declared and
-// applied. `to promote` uses it: promotion bridges the two frameworks, so it
-// must run both while [frameworks.to] is still declared (the documented
-// order) and after the declaration already moved to [frameworks.onto]
+// GateAny is Gate, satisfied when ANY of the given engines is declared and
+// applied. `to promote` uses it: promotion bridges the two engines, so it
+// must run both while [engines.to] is still declared (the documented
+// order) and after the declaration already moved to [engines.onto]
 // (promoting a leftover `to` change). When none is satisfied, the first
 // framework's error is reported — the most specific failure.
 func (f Framework) GateAny(root string, others ...Framework) error {
-	frameworks := make([]Framework, 0, 1+len(others))
-	frameworks = append(frameworks, f)
-	frameworks = append(frameworks, others...)
+	engines := make([]Framework, 0, 1+len(others))
+	engines = append(engines, f)
+	engines = append(engines, others...)
 	var firstErr error
-	for _, fw := range frameworks {
+	for _, fw := range engines {
 		if err := fw.gate(root); err == nil {
 			return nil
 		} else if firstErr == nil {
@@ -389,23 +382,9 @@ func (f Framework) gate(root string) error {
 		return fmt.Errorf("%s: parsing %s: %w", f.GatePrefix, tomlPath, err)
 	}
 
-	declared := false
-	if _, ok := cfg.Frameworks[f.Name]; ok {
-		declared = true
-	} else {
-		for _, alias := range f.GateAliases {
-			if _, ok := cfg.Frameworks[alias]; ok {
-				declared = true
-				break
-			}
-		}
-	}
+	_, declared := cfg.Engines[f.Name]
 	if !declared {
-		aliasHint := ""
-		for _, alias := range f.GateAliases {
-			aliasHint = fmt.Sprintf(" (or [frameworks.%s], which installs it transitively)", alias)
-		}
-		return fmt.Errorf("%s: %s has no [frameworks.%s] table; declare [frameworks.%s]%s and run `homonto apply`", f.GatePrefix, tomlPath, f.Name, f.Name, aliasHint)
+		return fmt.Errorf("%s: %s has no [engines.%s] table; declare [engines.%s] and run `homonto apply`", f.GatePrefix, tomlPath, f.Name, f.Name)
 	}
 	if _, err := WorkflowRoot(root); err != nil {
 		return fmt.Errorf("%s: invalid workflow.root: %w", f.GatePrefix, err)
@@ -417,7 +396,7 @@ func (f Framework) gate(root string) error {
 	catalogPath := filepath.Join(root, ".homonto", "catalog", f.SkillsDir)
 	info, err := os.Stat(catalogPath)
 	if err != nil || !info.IsDir() {
-		return fmt.Errorf("%s: %s not found; run `homonto apply` to install the %s framework", f.GatePrefix, catalogPath, f.Name)
+		return fmt.Errorf("%s: %s not found; run `homonto apply` to install the %s engine", f.GatePrefix, catalogPath, f.Name)
 	}
 
 	return nil

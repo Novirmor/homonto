@@ -54,7 +54,7 @@ func TestBundledPluginMaterializesAndProjects(t *testing.T) {
 	home := t.TempDir()
 	repo := t.TempDir()
 	os.WriteFile(filepath.Join(repo, "homonto.toml"), []byte(`
-[frameworks.onto]
+[engines.onto]
 source = "builtin:onto"
 scope = "project"
 
@@ -109,7 +109,7 @@ func TestWorkflowBridgeProjectsForFrameworkAndHonorsOptOut(t *testing.T) {
 	repo := t.TempDir()
 	configPath := filepath.Join(repo, "homonto.toml")
 	base := `
-[frameworks.onto]
+[engines.onto]
 source = "builtin:onto"
 scope = "project"
 
@@ -153,7 +153,7 @@ scope = "project"
 func TestBuiltinWorkflowDefaultsToV2Directory(t *testing.T) {
 	repo, home := t.TempDir(), t.TempDir()
 	configPath := filepath.Join(repo, "homonto.toml")
-	pluginTestWrite(t, configPath, "[frameworks.onto]\nsource = 'builtin:onto'\nscope = 'project'\n"+ontoFrameworkModels)
+	pluginTestWrite(t, configPath, "[engines.onto]\nsource = 'builtin:onto'\nscope = 'project'\n"+ontoFrameworkModels)
 	e, err := Build(context.Background(), configPath, home, "homonto")
 	if err != nil {
 		t.Fatal(err)
@@ -179,7 +179,7 @@ func TestWorkflowBridgeSurvivesProjectMove(t *testing.T) {
 			parent, home := t.TempDir(), t.TempDir()
 			repo := filepath.Join(parent, "old", "project")
 			configPath := filepath.Join(repo, "selected config.toml")
-			text := fmt.Sprintf("schema_version = %d\n[frameworks.onto]\nsource = 'builtin:onto'\nscope = 'project'\n", schema) + ontoFrameworkModels + "\n[integrations.opencode]\nworkflow_bridge = true\n"
+			text := fmt.Sprintf("schema_version = %d\n[engines.onto]\nsource = 'builtin:onto'\nscope = 'project'\n", schema) + ontoFrameworkModels + "\n[integrations.opencode]\nworkflow_bridge = true\n"
 			pluginTestWrite(t, configPath, text)
 			e, err := Build(context.Background(), configPath, home, "homonto")
 			if err != nil {
@@ -406,7 +406,7 @@ func TestWorkflowBridgeRefusesForeignPluginFile(t *testing.T) {
 	}
 	configPath := filepath.Join(repo, "homonto.toml")
 	if err := os.WriteFile(configPath, []byte(`
-[frameworks.onto]
+[engines.onto]
 source = "builtin:onto"
 scope = "project"
 
@@ -527,7 +527,7 @@ func TestWorkflowContextMaterializesAndRepairsWithoutFrameworks(t *testing.T) {
 func TestWorkflowContextSwitchesOwnedLinks(t *testing.T) {
 	repo, home := t.TempDir(), t.TempDir()
 	configPath := filepath.Join(repo, "homonto.toml")
-	base := "[frameworks.onto]\nsource = 'builtin:onto'\nscope = 'project'\n" + ontoFrameworkModels
+	base := "[engines.onto]\nsource = 'builtin:onto'\nscope = 'project'\n" + ontoFrameworkModels
 	for _, mode := range []string{"legacy", "context", "legacy", "context", "disabled"} {
 		text := base
 		switch mode {
@@ -1240,7 +1240,7 @@ func TestCatalogPreflightPreservesSymlinkedRootsAndEntries(t *testing.T) {
 		t.Run(rel, func(t *testing.T) {
 			repo, outside := t.TempDir(), t.TempDir()
 			configPath := filepath.Join(repo, "homonto.toml")
-			pluginTestWrite(t, configPath, "[frameworks.onto]\nsource = 'builtin:onto'\nscope = 'project'\n"+ontoFrameworkModels)
+			pluginTestWrite(t, configPath, "[engines.onto]\nsource = 'builtin:onto'\nscope = 'project'\n"+ontoFrameworkModels)
 			e, err := Build(context.Background(), configPath, t.TempDir(), "homonto")
 			if err != nil {
 				t.Fatal(err)

@@ -8,7 +8,7 @@ agent: homonto
 Drive the **to** three-phase workflow (plan → do → done) for this repository.
 If the `to` skill is installed, load and follow it; otherwise tell the user the
 to framework is not installed and stop (install it with `homonto apply` after
-declaring `[frameworks.to]`).
+declaring `[engines.to]`).
 
 The `to` skill is the dispatcher — it checks the `to` binary (`to version`),
 finds the active change via `to status --json`, and routes to the matching

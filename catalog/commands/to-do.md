@@ -11,7 +11,7 @@ on findings, check off, commit. One implementer at a time (it is the only
 agent that edits); read-only reviewers may run concurrently.
 Load and follow the `to-do` skill, then continue through done unless the user
 names an endpoint or asks to pause. If the skill is not installed, tell the user to
-install the to framework (declare `[frameworks.to]`, then run `homonto
+install the to framework (declare `[engines.to]`, then run `homonto
 apply`) and stop. Every workflow state change goes through the `to` binary —
 never hand-edit `to-state.yaml`.
 

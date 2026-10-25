@@ -1,14 +1,13 @@
 name = "h"
-version = "0.10.4"
-description = "GitHub skill bundle over onto and to — spike, resolve, review, continue, batch review"
+kind = "workflow"
+version = "0.11.0"
+description = "Standalone GitHub workflow skill bundle — spike, resolve, review, continue, batch review"
 
-# The h bundle drives both workflow frameworks, so it hard-depends on them:
-# declaring [frameworks.h] transitively installs onto's and to's skills,
-# commands, and specialists, and satisfies both binaries' install gates.
 [dependencies]
-frameworks = ["onto", "to"]
+frameworks = []
 
 [skills]
+homonto = "skills/homonto"
 h-spike-issue = "skills/h-spike-issue"
 h-resolve-issue = "skills/h-resolve-issue"
 h-review-pr = "skills/h-review-pr"

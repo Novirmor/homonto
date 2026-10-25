@@ -462,7 +462,7 @@ func TestAuditExplicitCombinedInterruptedArchive(t *testing.T) {
 				if nested {
 					root, sourcePath = filepath.Join(top, "control"), ".."
 				}
-				writeFile(t, filepath.Join(root, "homonto.toml"), fmt.Sprintf("schema_version=2\n[frameworks.onto]\nsource='builtin:onto'\nscope='project'\n[workflow]\nroot='records/deep/tree'\ngit='existing'\n[repos]\napp=%q\n", sourcePath))
+				writeFile(t, filepath.Join(root, "homonto.toml"), fmt.Sprintf("schema_version=2\n[engines.onto]\nsource='builtin:onto'\nscope='project'\n[workflow]\nroot='records/deep/tree'\ngit='existing'\n[repos]\napp=%q\n", sourcePath))
 				if err := os.MkdirAll(filepath.Join(root, ".homonto", "catalog", "skills", "onto"), 0755); err != nil {
 					t.Fatal(err)
 				}

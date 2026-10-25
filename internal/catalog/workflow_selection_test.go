@@ -47,7 +47,6 @@ func TestNewChangeWorkflowSelectionPolicy(t *testing.T) {
 		"commands/onto.md":                "`/onto` selects onto but not fix, tweak, or full",
 		"commands/h-resolve-issue.md":     "asks once before creating a change",
 		"skills/h-resolve-issue/SKILL.md": "Resume a unique match without prompting",
-		"skills/h-continue-pr/SKILL.md":   "Do not prompt when resuming a matching active change",
 	} {
 		if !strings.Contains(hPromptText(t, file), want) {
 			t.Errorf("%s missing %q", file, want)

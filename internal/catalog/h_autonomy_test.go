@@ -26,12 +26,12 @@ func TestHSkillBundleNamingAndEntryPoints(t *testing.T) {
 	if !ok {
 		t.Fatal("missing h bundle manifest")
 	}
-	if !strings.Contains(h.Description, "GitHub skill bundle") || strings.Contains(h.Description, "GitHub intake workflows") {
-		t.Errorf("h description must identify a GitHub skill bundle: %q", h.Description)
+	if !strings.Contains(h.Description, "GitHub workflow skill bundle") || strings.Contains(h.Description, "GitHub intake workflows") {
+		t.Errorf("h description must identify a GitHub workflow skill bundle: %q", h.Description)
 	}
 	entries := []string{"h-spike-issue", "h-resolve-issue", "h-review-pr", "h-continue-pr", "h-review-batch"}
-	if len(h.Skills) != len(entries) || len(h.Commands) != len(entries) {
-		t.Errorf("h must declare five skill/command entry points, got %d skills and %d commands", len(h.Skills), len(h.Commands))
+	if len(h.Skills) != len(entries)+1 || len(h.Commands) != len(entries) {
+		t.Errorf("h must declare its shared skill plus five skill/command entry points, got %d skills and %d commands", len(h.Skills), len(h.Commands))
 	}
 	for _, name := range entries {
 		t.Run(name, func(t *testing.T) {
@@ -41,7 +41,7 @@ func TestHSkillBundleNamingAndEntryPoints(t *testing.T) {
 			command := hPromptText(t, "commands/"+name+".md")
 			for _, want := range []string{
 				"required skill is unavailable", "install or reapply the `h` GitHub skill bundle",
-				"[frameworks.h]", "homonto apply",
+				"[workflows.h]", "homonto apply",
 			} {
 				if !strings.Contains(command, want) {
 					t.Errorf("command missing skill recovery guidance %q", want)
@@ -87,14 +87,14 @@ func TestHPublicationAuditContracts(t *testing.T) {
 			t.Errorf("publication policy missing %q", want)
 		}
 	}
-	for _, name := range []string{"h-resolve-issue", "h-continue-pr", "onto-close"} {
+	for _, name := range []string{"h-resolve-issue", "onto-close"} {
 		text := hPromptText(t, "skills/"+name+"/SKILL.md")
 		if !strings.Contains(text, "[verified source publication](../homonto/references/publication.md)") {
 			t.Errorf("%s missing shared publication contract", name)
 		}
 	}
 	continuation := hPromptText(t, "skills/h-continue-pr/SKILL.md")
-	for _, want := range []string{"Require `state: OPEN` before starting", "re-check `state: OPEN`", "every freshly collected feedback item", "never call onto state/receipt commands for a to change", "integration-mode/target conflict"} {
+	for _, want := range []string{"This workflow is self-contained", "Do not require an engine", "state: OPEN", "same PR", "verification commands and outcomes"} {
 		if !strings.Contains(continuation, want) {
 			t.Errorf("continuation missing %q", want)
 		}
@@ -113,7 +113,7 @@ func TestHAutonomySuccessEndpoints(t *testing.T) {
 	}{
 		{"h-spike-issue", "a citation-checked implementation brief in conversation"},
 		{"h-resolve-issue", "one verified PR closing the issue"},
-		{"h-continue-pr", "verified fixes pushed to the exact existing PR head"},
+		{"h-continue-pr", "verified fixes are pushed to the existing PR head"},
 		{"h-review-pr", "a validated draft shown with verification and residual risks"},
 		{"h-review-batch", "every selected PR accounted for by a validated draft or an explicit failure"},
 	} {
@@ -121,8 +121,7 @@ func TestHAutonomySuccessEndpoints(t *testing.T) {
 			skill := hPromptText(t, "skills/"+tc.name+"/SKILL.md")
 			for _, want := range []string{
 				"**Success endpoint:** " + tc.endpoint,
-				"same invocation", "earlier endpoint", "pause",
-				"[h GitHub skill autonomy]", "failure recovery", "trusted workspace execution",
+				"earlier endpoint", "pause",
 			} {
 				if !strings.Contains(skill, want) {
 					t.Errorf("skill missing %q", want)
@@ -191,19 +190,12 @@ func TestHAutonomyRoutingTrustAndSafety(t *testing.T) {
 		{
 			"skills/h-continue-pr/SKILL.md",
 			[]string{
-				"No match", "recommend among viable `to`",
-				"Several plausible matches", "dirty work conflicts with safe progress",
-				"OWNER, MEMBER, and COLLABORATOR feedback routes into the workflow",
-				"CONTRIBUTOR, FIRST_TIME_CONTRIBUTOR, NONE", "unknown, or other association require a user decision",
-				"core.hooksPath=/dev/null", "unexpected filter output as a stop",
-				"git rev-parse HEAD", "headRefOid", "exact repository and branch", "maintainerCanModify",
-				"completed-but-unpushed", "an unrecorded receipt finishes step 6",
-				"post-archive pinned commit", "integration: merge", "never `pr`",
-				"merge:<commit>", "Commit that receipt update on the PR head",
-				"a green workflow is the gate", "No `--force`, `--force-with-lease`, amend, or rebase",
-				"invocation authorizes the push, summary comment, and addressed thread resolutions",
-				"A thread is resolved only when a pushed commit demonstrably answers it",
-				"Reconcile existing comments before retrying a failed post",
+				"This workflow is self-contained", "Do not require an engine",
+				"dirty work conflicts", "unknown or untrusted association requires a user decision",
+				"git rev-parse HEAD", "canonical head repository and branch",
+				"never use force, force-with-lease, amend, or rebase",
+				"Resolve a thread only after the pushed commit demonstrably answers it",
+				"Reconcile before retrying a failed post",
 			},
 		},
 		{
@@ -235,12 +227,18 @@ func TestHAutonomyRoutingTrustAndSafety(t *testing.T) {
 }
 
 func TestHAutonomyInputAndPublication(t *testing.T) {
-	for _, name := range []string{"h-review-pr", "h-continue-pr", "h-review-batch"} {
+	for _, name := range []string{"h-review-pr", "h-review-batch"} {
 		text := hPromptText(t, "skills/"+name+"/SKILL.md")
 		for _, want := range []string{"unambiguous PR reference", "OWNER/REPO#NUMBER", "resolved against the repository", "gh pr view", "syntax-only rerun", "missing or ambiguous identity"} {
 			if !strings.Contains(text, want) {
 				t.Errorf("%s missing %q", name, want)
 			}
+		}
+	}
+	continuation := hPromptText(t, "skills/h-continue-pr/SKILL.md")
+	for _, want := range []string{"unambiguous GitHub PR URL", "OWNER/REPO#NUMBER", "gh pr view", "missing or ambiguous"} {
+		if !strings.Contains(continuation, want) {
+			t.Errorf("h-continue-pr missing %q", want)
 		}
 	}
 	for _, tc := range []struct {

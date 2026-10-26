@@ -57,3 +57,35 @@ func TestCheckCancellationStopsDescendants(t *testing.T) {
 		})
 	}
 }
+
+func TestCheckExitStopsBackgroundDescendants(t *testing.T) {
+	s := fixture(t)
+	task := createNo(t, s, "existing")
+	check := s.Config.Integration["pair"]
+	// The child detaches from the output pipe, so the check exits at once and
+	// passes; the child must still not write after RunCheck returns.
+	check.Command = []string{"sh", "-c", `(sleep 0.3; printf orphan > tracked) >/dev/null 2>&1 &`}
+	s.Config.Integration["pair"] = check
+	if r, err := s.RunCheck(context.Background(), task, "pair", nil); err != nil || r.Status != "passed" {
+		t.Fatalf("check = %+v, %v", r, err)
+	}
+	time.Sleep(600 * time.Millisecond)
+	data, err := os.ReadFile(filepath.Join(task.Checkouts["api"].Path, "tracked"))
+	if err != nil || strings.TrimSpace(string(data)) != "original" {
+		t.Fatalf("background child modified checkout after the check: %q, %v", data, err)
+	}
+}
+
+func TestTimedOutCheckStillDetectsMutation(t *testing.T) {
+	s := fixture(t)
+	task := createNo(t, s, "existing")
+	check := s.Config.Integration["pair"]
+	check.Command = []string{"sh", "-c", `printf mutated > tracked; printf ready; sleep 5`}
+	s.Config.Integration["pair"] = check
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	r, err := s.RunCheck(ctx, task, "pair", &checkStartedWriter{start: cancel})
+	if err == nil || !r.Stale || !strings.Contains(r.StaleReason, "uncommitted input") {
+		t.Fatalf("timed-out mutation = %+v, %v", r, err)
+	}
+}

@@ -231,7 +231,11 @@ func validateRepoTargets(c *Config) error {
 	}
 	for _, name := range sortedResourceNames(c.Frameworks) {
 		if r := c.Frameworks[name]; r.Repo != "" {
-			return fmt.Errorf("parse config: frameworks.%s repo %q — frameworks project into the config repository only; declare their skills/commands/subagents per repo instead", name, r.Repo)
+			table := "workflows"
+			if _, ok := c.Engines[name]; ok {
+				table = "engines"
+			}
+			return fmt.Errorf("parse config: %s.%s repo %q — workflows and engines project into the config repository only; declare their skills/commands/subagents per repo instead", table, name, r.Repo)
 		}
 	}
 	return nil

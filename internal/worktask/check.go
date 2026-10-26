@@ -61,14 +61,14 @@ func (s *Store) inputs(ctx context.Context, t *Task, check config.IntegrationChe
 		if !ok || c.Removed {
 			return nil, fmt.Errorf("%s has no active task checkout; integration inputs changed", alias)
 		}
-		if err := s.validateCheckout(t, alias, c); err != nil {
+		if !c.Ready {
+			return nil, fmt.Errorf("%s allocation is incomplete; rerun workspace task create to resume it or cleanup to abandon it", alias)
+		}
+		head, err := s.validateCheckout(ctx, t, alias, c)
+		if err != nil {
 			return nil, err
 		}
 		if err := clean(ctx, c.Path); err != nil {
-			return nil, err
-		}
-		head, err := git(ctx, c.Path, "rev-parse", "HEAD")
-		if err != nil {
 			return nil, err
 		}
 		if !c.Changed && head != c.Base {
@@ -104,6 +104,10 @@ func (s *Store) RefreshResults(ctx context.Context, t *Task) {
 	}
 }
 
+// snapshotTimeout bounds the post-run input snapshot, which cannot use the
+// check's own (possibly expired) deadline.
+const snapshotTimeout = time.Minute
+
 // RunCheck requires the parent to pause participating writers. Pre/post snapshots
 // detect observed changes; this deliberately does not reserve or sandbox checkouts.
 func (s *Store) RunCheck(ctx context.Context, t *Task, name string, output io.Writer) (Result, error) {
@@ -115,6 +119,11 @@ func (s *Store) RunCheck(ctx context.Context, t *Task, name string, output io.Wr
 	if err != nil {
 		return Result{}, err
 	}
+	// Merge only this check's result, so concurrent checks keep each other's.
+	record := func(r Result) error {
+		t.Results[name] = r
+		return s.update(t.Name, func(cur *Task) { cur.Results[name] = r })
+	}
 	// A failed preflight must supersede an earlier pass, too.
 	r := Result{Status: "failed", Definition: definition(check), Started: time.Now().UTC(), ExitCode: -1}
 	finish := func(runErr error) (Result, error) {
@@ -122,8 +131,7 @@ func (s *Store) RunCheck(ctx context.Context, t *Task, name string, output io.Wr
 		if runErr != nil {
 			r.Status, r.Error = "failed", runErr.Error()
 		}
-		t.Results[name] = r
-		return r, errors.Join(runErr, s.save(t))
+		return r, errors.Join(runErr, record(r))
 	}
 	r.Inputs, err = s.inputs(ctx, t, check)
 	if err != nil {
@@ -160,8 +168,7 @@ func (s *Store) RunCheck(ctx context.Context, t *Task, name string, output io.Wr
 	}
 	defer log.Close()
 	r.Status = "running"
-	t.Results[name] = r
-	if err := s.save(t); err != nil {
+	if err := record(r); err != nil {
 		return r, err
 	}
 	cmd := exec.CommandContext(ctx, check.Command[0], check.Command[1:]...)
@@ -185,7 +192,13 @@ func (s *Store) RunCheck(ctx context.Context, t *Task, name string, output io.Wr
 	if cmd.ProcessState != nil {
 		r.ExitCode = cmd.ProcessState.ExitCode()
 	}
-	after, inputErr := s.inputs(ctx, t, check)
+	// Background descendants must not outlive a check that exited by itself.
+	stopCheckProcess(cmd)
+	// A timeout or interrupt has already ended ctx; the mutation check must
+	// still run to report what the check did to its inputs.
+	snapshot, cancel := context.WithTimeout(context.WithoutCancel(ctx), snapshotTimeout)
+	defer cancel()
+	after, inputErr := s.inputs(snapshot, t, check)
 	if inputErr == nil && !reflect.DeepEqual(after, r.Inputs) {
 		inputErr = fmt.Errorf("participating checkout changed during integration check")
 	}

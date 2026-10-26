@@ -22,3 +22,11 @@ func prepareCheckProcess(cmd *exec.Cmd) error {
 	}
 	return nil
 }
+
+// stopCheckProcess kills descendants left in the check's process group after
+// its leader exited; the group outlives its leader while members remain.
+func stopCheckProcess(cmd *exec.Cmd) {
+	if cmd.Process != nil {
+		_ = syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL)
+	}
+}

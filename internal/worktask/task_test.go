@@ -122,7 +122,7 @@ func TestCheckUsesAllocatedCandidatesAndInvalidatesEvidence(t *testing.T) {
 	if err == nil || r.Status != "failed" || r.ExitCode != 7 {
 		t.Fatalf("failure = %+v, %v", r, err)
 	}
-	loaded, err := s.Load(task.Name)
+	loaded, err := s.Load(context.Background(), task.Name)
 	if err != nil || loaded.Results["pair"].Status != "failed" {
 		t.Fatalf("failure not persisted: %+v, %v", loaded, err)
 	}
@@ -149,22 +149,22 @@ func TestResumeEngineIsolationAndCleanup(t *testing.T) {
 	}
 	api := task.Checkouts["api"].Path
 	put(t, filepath.Join(api, "tracked"), "candidate\n")
-	if err := s.Cleanup(ctx, task, true); err == nil {
+	if _, err := s.Cleanup(ctx, task.Name, true); err == nil {
 		t.Fatal("removed dirty candidate")
 	}
 	runGit(t, api, "add", ".")
 	runGit(t, api, "commit", "-m", "candidate")
-	if err := s.Cleanup(ctx, task, true); err == nil {
+	if _, err := s.Cleanup(ctx, task.Name, true); err == nil {
 		t.Fatal("removed unintegrated candidate")
 	}
 	runGit(t, s.Layout.Repos["api"], "merge", "--ff-only", task.Checkouts["api"].Branch)
-	if err := s.Cleanup(ctx, task, false); err == nil {
+	if _, err := s.Cleanup(ctx, task.Name, false); err == nil {
 		t.Fatal("cleanup without confirmation")
 	}
-	if err := s.Cleanup(ctx, task, true); err != nil {
+	if _, err := s.Cleanup(ctx, task.Name, true); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := s.Load(task.Name); err != nil {
+	if _, err := s.Load(context.Background(), task.Name); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := os.Stat(api); !os.IsNotExist(err) {
@@ -213,13 +213,13 @@ func TestCleanupPreservesMovedVerificationCheckout(t *testing.T) {
 	if _, err := s.RunCheck(ctx, task, "pair", nil); err == nil {
 		t.Fatal("moved verification input accepted")
 	}
-	if err := s.Cleanup(ctx, task, true); err == nil || !strings.Contains(err.Error(), "pinned") {
+	if _, err := s.Cleanup(ctx, task.Name, true); err == nil || !strings.Contains(err.Error(), "pinned") {
 		t.Fatalf("cleanup of moved verification input = %v, want pinned-revision refusal", err)
 	}
 	if got := runGit(t, web, "rev-parse", "HEAD"); got != head {
 		t.Fatalf("verification checkout changed: got %s, want %s", got, head)
 	}
-	resumed, err := s.Load(task.Name)
+	resumed, err := s.Load(context.Background(), task.Name)
 	if err != nil || resumed.Checkouts["web"].Removed {
 		t.Fatalf("refused cleanup lost checkout metadata: %+v, %v", resumed, err)
 	}
@@ -271,6 +271,8 @@ func TestNativeEnginesReuseRecordedBasesAndBindings(t *testing.T) {
 			// The original may be on another branch than the frozen target.
 			runGit(t, api, "checkout", "-b", "unrelated")
 			runGit(t, api, "commit", "--allow-empty", "-m", "unrelated")
+			// The integration target moved on after the change recorded its base.
+			runGit(t, api, "branch", "-f", "main", "unrelated")
 			if err := workflowroot.WriteLayoutMarker(workflowroot.LayoutMarker{SchemaVersion: 2, ConfigPath: s.Layout.ConfigPath, WorkflowRoot: s.Layout.WorkflowRoot, GitMode: s.Layout.GitMode}); err != nil {
 				t.Fatal(err)
 			}
@@ -281,7 +283,7 @@ func TestNativeEnginesReuseRecordedBasesAndBindings(t *testing.T) {
 			statePath := filepath.Join(s.Layout.WorkflowRoot, kind, "native", engine+"-state.yaml")
 			state := fmt.Sprintf("change: native\nid: generation-one\nphase: %s\nrepo_mode: explicit\nrepos: [api]\nrepo_bases:\n  api:\n    base_ref: %s\n    base_branch: main\n    git_common_dir: %s\n", phase, base, common)
 			put(t, statePath, state)
-			task, err := s.Create(context.Background(), "feature", engine, "native", "worktree", []string{"api"}, nil)
+			task, err := s.Create(context.Background(), "feature", engine, "native", "worktree", []string{"api"}, map[string]string{"web": "worktree"})
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -293,14 +295,38 @@ func TestNativeEnginesReuseRecordedBasesAndBindings(t *testing.T) {
 			if err != nil || len(bindings) != 1 || bindings[0].Path != c.Path {
 				t.Fatalf("native binding missing: %+v, %v", bindings, err)
 			}
-			if _, err := s.Load(task.Name); err != nil {
+			if _, err := s.Load(context.Background(), task.Name); err != nil {
 				t.Fatal(err)
 			}
 			if _, err := s.RunCheck(context.Background(), task, "pair", nil); err != nil {
 				t.Fatal(err)
 			}
+			// Releasing the native binding through the workspace commands must
+			// not strand the task's own verification worktree.
+			terminal := state + "abandoned: true\n"
+			if engine == "to" {
+				terminal = strings.Replace(state, "phase: do", "phase: abandoned", 1)
+			}
+			put(t, statePath, terminal)
+			if _, err := workspace.RemoveWorktree(s.Layout, engine, "native", "api", true); err != nil {
+				t.Fatal(err)
+			}
+			released, err := s.Load(context.Background(), task.Name)
+			if err != nil || !released.Checkouts["api"].Removed {
+				t.Fatalf("released binding = %+v, %v", released, err)
+			}
+			if _, err := s.RunCheck(context.Background(), released, "pair", nil); err == nil {
+				t.Fatal("check ran without its native checkout")
+			}
+			web := task.Checkouts["web"].Path
+			if _, err := s.Cleanup(context.Background(), task.Name, true); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := os.Stat(web); !os.IsNotExist(err) {
+				t.Fatalf("task-owned verification worktree remains: %v", err)
+			}
 			put(t, statePath, strings.Replace(state, "generation-one", "generation-two", 1))
-			if _, err := s.Load(task.Name); err == nil {
+			if _, err := s.Load(context.Background(), task.Name); err == nil {
 				t.Fatal("resumed another lifecycle generation")
 			}
 		})
@@ -323,7 +349,7 @@ func TestFallbackAndMetadataIntegrity(t *testing.T) {
 	if err := s.save(task); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := s.Load(task.Name); err == nil {
+	if _, err := s.Load(context.Background(), task.Name); err == nil {
 		t.Fatal("rebound checkout accepted")
 	}
 }
@@ -349,11 +375,124 @@ func TestAllocationFailureRetainsExactIntent(t *testing.T) {
 	if c.Ready || !c.Owned || c.Path != filepath.Join(s.Layout.WorktreesDir, "api", "workspace-feature") {
 		t.Fatalf("lost pending allocation destination: %+v", c)
 	}
-	if _, err := s.Load("feature"); err == nil || !strings.Contains(err.Error(), "incomplete") {
-		t.Fatalf("partial allocation resumed: %v", err)
+	loaded, err := s.Load(context.Background(), "feature")
+	if err != nil {
+		t.Fatalf("partial allocation must stay inspectable: %v", err)
+	}
+	if _, err := s.RunCheck(context.Background(), loaded, "pair", nil); err == nil || !strings.Contains(err.Error(), "incomplete") {
+		t.Fatalf("check on partial allocation: %v", err)
 	}
 	if before != runGit(t, api, "rev-parse", "HEAD") || runGit(t, api, "status", "--porcelain") != "" {
 		t.Fatal("failed allocation changed original")
+	}
+	// Once the user resolves the collision, repeating create resumes it.
+	runGit(t, api, "branch", "-D", "work-feature-api")
+	task, err = s.Create(context.Background(), "feature", "no", "", "worktree", []string{"api"}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c := task.Checkouts["api"]; !c.Ready || c.Branch != "work-feature-api" {
+		t.Fatalf("resumed allocation = %+v", c)
+	}
+	if _, err := s.RunCheck(context.Background(), task, "pair", nil); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestResumeAdoptsAllocationGitFinished(t *testing.T) {
+	s := fixture(t)
+	api := s.Layout.Repos["api"]
+	runGit(t, api, "branch", "work-feature-api")
+	if _, err := s.Create(context.Background(), "feature", "no", "", "worktree", []string{"api"}, nil); err == nil {
+		t.Fatal("branch collision accepted")
+	}
+	// Simulate a command killed after Git created the worktree but before the
+	// task recorded it.
+	runGit(t, api, "branch", "-D", "work-feature-api")
+	dest := filepath.Join(s.Layout.WorktreesDir, "api", "workspace-feature")
+	runGit(t, api, "worktree", "add", "-b", "work-feature-api", dest, "HEAD")
+	task, err := s.Create(context.Background(), "feature", "no", "", "worktree", []string{"api"}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c := task.Checkouts["api"]; !c.Ready || c.Path != dest {
+		t.Fatalf("adopted allocation = %+v", c)
+	}
+}
+
+func TestResumeRefusesForeignDestination(t *testing.T) {
+	s := fixture(t)
+	api := s.Layout.Repos["api"]
+	runGit(t, api, "branch", "work-feature-api")
+	if _, err := s.Create(context.Background(), "feature", "no", "", "worktree", []string{"api"}, nil); err == nil {
+		t.Fatal("branch collision accepted")
+	}
+	dest := filepath.Join(s.Layout.WorktreesDir, "api", "workspace-feature")
+	runGit(t, api, "worktree", "add", "-b", "someone-else", dest, "HEAD")
+	if _, err := s.Create(context.Background(), "feature", "no", "", "worktree", []string{"api"}, nil); err == nil || !strings.Contains(err.Error(), "not this task's allocation") {
+		t.Fatalf("foreign destination adopted: %v", err)
+	}
+	if _, err := s.Cleanup(context.Background(), "feature", true); err == nil {
+		t.Fatal("cleanup removed a foreign destination")
+	}
+	if _, err := os.Stat(dest); err != nil {
+		t.Fatalf("foreign destination touched: %v", err)
+	}
+}
+
+func TestCleanupAbandonsUnallocatedCheckout(t *testing.T) {
+	s := fixture(t)
+	api := s.Layout.Repos["api"]
+	runGit(t, api, "branch", "work-feature-api")
+	if _, err := s.Create(context.Background(), "feature", "no", "", "worktree", []string{"api"}, nil); err == nil {
+		t.Fatal("branch collision accepted")
+	}
+	task, err := s.Cleanup(context.Background(), "feature", true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !task.Checkouts["api"].Removed {
+		t.Fatalf("pending allocation not released: %+v", task.Checkouts["api"])
+	}
+	if _, err := s.Load(context.Background(), "feature"); err != nil {
+		t.Fatal(err)
+	}
+	// The colliding branch belongs to the user; cleanup never deletes branches.
+	runGit(t, api, "rev-parse", "--verify", "refs/heads/work-feature-api")
+}
+
+func TestConcurrentChecksKeepEachOthersResults(t *testing.T) {
+	s := fixture(t)
+	createNo(t, s, "existing")
+	pair := s.Config.Integration["pair"]
+	pair.Command = []string{"sh", "-c", "sleep 0.3"}
+	s.Config.Integration["pair"] = pair
+	s.Config.Integration["other"] = pair
+	ctx := context.Background()
+	errs := make(chan error, 2)
+	for _, name := range []string{"pair", "other"} {
+		task, err := s.Load(ctx, "feature")
+		if err != nil {
+			t.Fatal(err)
+		}
+		go func() {
+			_, err := s.RunCheck(ctx, task, name, nil)
+			errs <- err
+		}()
+	}
+	for range 2 {
+		if err := <-errs; err != nil {
+			t.Fatal(err)
+		}
+	}
+	task, err := s.Load(ctx, "feature")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range []string{"pair", "other"} {
+		if task.Results[name].Status != "passed" {
+			t.Fatalf("lost concurrent result %s: %+v", name, task.Results)
+		}
 	}
 }
 
@@ -374,10 +513,29 @@ func TestDeclaredDottedAliasCanAllocate(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := s.Load(task.Name); err != nil {
+	if _, err := s.Load(context.Background(), task.Name); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := s.RunCheck(context.Background(), task, "pair", nil); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestCleanupRefusesHiddenIndexChanges(t *testing.T) {
+	s := fixture(t)
+	ctx := context.Background()
+	task, err := s.Create(ctx, "feature", "no", "", "existing", []string{"api"}, map[string]string{"web": "worktree"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	web := task.Checkouts["web"].Path
+	// skip-worktree hides this edit from git status; removal would discard it.
+	runGit(t, web, "update-index", "--skip-worktree", "tracked")
+	put(t, filepath.Join(web, "tracked"), "hidden work\n")
+	if _, err := s.Cleanup(ctx, task.Name, true); err == nil || !strings.Contains(err.Error(), "index flags") {
+		t.Fatalf("cleanup with hidden change = %v", err)
+	}
+	if data, err := os.ReadFile(filepath.Join(web, "tracked")); err != nil || string(data) != "hidden work\n" {
+		t.Fatalf("hidden work lost: %q, %v", data, err)
 	}
 }

@@ -47,7 +47,7 @@ func workspaceTaskCmd() *cobra.Command {
 		if err != nil {
 			return err
 		}
-		t, err := s.Load(args[0])
+		t, err := s.Load(cmd.Context(), args[0])
 		if err != nil {
 			return err
 		}
@@ -68,7 +68,7 @@ func workspaceTaskCmd() *cobra.Command {
 		if err != nil {
 			return err
 		}
-		t, err := s.Load(args[0])
+		t, err := s.Load(cmd.Context(), args[0])
 		if err != nil {
 			return err
 		}
@@ -109,11 +109,8 @@ func workspaceTaskCmd() *cobra.Command {
 		if err != nil {
 			return err
 		}
-		t, err := s.Load(args[0])
-		if err != nil {
-			return err
-		}
-		return s.Cleanup(cmd.Context(), t, yes)
+		_, err = s.Cleanup(cmd.Context(), args[0], yes)
+		return err
 	}}
 	cleanup.Flags().BoolVar(&yes, "yes", false, "confirm removal of task-owned worktrees")
 	cmd.AddCommand(create, inspect, check, cleanup)

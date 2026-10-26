@@ -1096,7 +1096,15 @@ func SourceDirsForActiveState(l Layout, workflow, change string) (map[string]str
 // declared checkout's HEAD, index, or working files. Repeating a ready binding is
 // idempotent; an interrupted operation remains visible and fails closed.
 func CreateWorktree(l Layout, workflow, change, repo, base, branch string) (Worktree, error) {
-	return createWorktree(l, workflow, change, repo, base, branch, "execution", "")
+	return createWorktree(l, workflow, change, repo, base, branch, "execution", "", false)
+}
+
+// AnchoredWorktree allocates an execution checkout at the state's recorded
+// base commit, integrating into its recorded local branch. Unlike an explicit
+// base, the branch may have moved on since the change began; it must still
+// contain the recorded commit.
+func AnchoredWorktree(l Layout, workflow, change, repo, branch string) (Worktree, error) {
+	return createWorktree(l, workflow, change, repo, "", branch, "execution", "", true)
 }
 
 // ReceiverWorktree allocates a clean checkout attached to the recorded local
@@ -1116,10 +1124,10 @@ func ReceiverWorktree(l Layout, workflow, change, repo string, stateID ...string
 	if identity != "" && !strings.HasPrefix(identity, "id:") && !strings.HasPrefix(identity, "legacy:") {
 		identity = "id:" + identity
 	}
-	return createWorktree(l, workflow, change, repo, "", "", "receiver", identity)
+	return createWorktree(l, workflow, change, repo, "", "", "receiver", identity, false)
 }
 
-func createWorktree(l Layout, workflow, change, repo, base, branch, role, identity string) (Worktree, error) {
+func createWorktree(l Layout, workflow, change, repo, base, branch, role, identity string, anchored bool) (Worktree, error) {
 	var w Worktree
 	if err := checkWorktreeNames(workflow, change); err != nil {
 		return w, err
@@ -1163,6 +1171,13 @@ func createWorktree(l Layout, workflow, change, repo, base, branch, role, identi
 	}
 	if !selected {
 		return w, fmt.Errorf("worktree: repository %q is not selected by state %s/%s", repo, workflow, change)
+	}
+	if anchored {
+		anchor := s.RepoBases[repo]
+		if anchor.BaseRef == "" || anchor.BaseBranch == "" {
+			return w, fmt.Errorf("worktree: repository %q has no recorded base commit and branch in state %s/%s", repo, workflow, change)
+		}
+		base = anchor.BaseRef
 	}
 	if role != "receiver" && (base == "" || strings.HasPrefix(base, "-") || branch == "" || strings.HasPrefix(branch, "-")) {
 		return w, fmt.Errorf("worktree: explicit --base REF and --branch NAME are required")
@@ -1234,6 +1249,12 @@ func createWorktree(l Layout, workflow, change, repo, base, branch, role, identi
 	target, targetErr := worktreeGit(authority, "rev-parse", "--symbolic-full-name", "--verify", "--end-of-options", base)
 	if targetErr != nil || !strings.HasPrefix(target, "refs/") || strings.ContainsAny(target, "\r\n") {
 		target = commit
+	}
+	if anchored {
+		target = "refs/heads/" + s.RepoBases[repo].BaseBranch
+		if _, err := worktreeGit(authority, "merge-base", "--is-ancestor", commit, target); err != nil {
+			return w, fmt.Errorf("worktree: integration target %s no longer contains the recorded base %s: %w", target, commit, err)
+		}
 	}
 	if role == "receiver" {
 		target = "refs/heads/" + branch
@@ -1482,6 +1503,10 @@ func RemoveWorktreeRole(l Layout, workflow, change, repo, role string, yes bool)
 	}
 	return w, nil
 }
+
+// CleanWorktree applies the removal rules: no hidden index flags, untracked
+// or ignored files, or in-progress Git operations.
+func CleanWorktree(path string) error { return cleanWorktree(path) }
 
 func cleanWorktree(path string) error {
 	// Status trusts index flags that hide modified files. Refuse those flags

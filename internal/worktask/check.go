@@ -61,6 +61,9 @@ func (s *Store) inputs(ctx context.Context, t *Task, check config.IntegrationChe
 		if !ok || c.Removed {
 			return nil, fmt.Errorf("%s has no active task checkout; integration inputs changed", alias)
 		}
+		if c.Removing {
+			return nil, fmt.Errorf("%s cleanup is pending; resume workspace task cleanup", alias)
+		}
 		if !c.Ready {
 			return nil, fmt.Errorf("%s allocation is incomplete; rerun workspace task create to resume it or cleanup to abandon it", alias)
 		}

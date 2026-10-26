@@ -32,6 +32,7 @@ type Checkout struct {
 	Changed    bool   `json:"changed"`
 	Owned      bool   `json:"owned"`
 	Ready      bool   `json:"ready"`
+	Removing   bool   `json:"removing,omitempty"`
 	Removed    bool   `json:"removed"`
 }
 
@@ -281,7 +282,7 @@ func (s *Store) Create(ctx context.Context, name, engine, change, isolation stri
 			if overrides[alias] != "" {
 				mode = overrides[alias]
 			}
-			if t.Checkouts[alias].Isolation != mode || t.Checkouts[alias].Removed {
+			if t.Checkouts[alias].Isolation != mode || t.Checkouts[alias].Removed || t.Checkouts[alias].Removing {
 				return nil, fmt.Errorf("task isolation differs or checkout was removed; resume its recorded choice")
 			}
 		}
@@ -474,6 +475,9 @@ func (s *Store) validateCheckout(ctx context.Context, t *Task, alias string, c C
 	if c.Isolation != "existing" && c.Isolation != "worktree" {
 		return "", fmt.Errorf("invalid isolation for %s", alias)
 	}
+	if c.Removing && (!c.Owned || !c.Ready) {
+		return "", fmt.Errorf("invalid removal intent for %s", alias)
+	}
 	if c.Owned {
 		if s.Layout.WorktreesDir == "" || c.Path != filepath.Join(s.Layout.WorktreesDir, alias, "workspace-"+t.Name) {
 			return "", fmt.Errorf("owned checkout path changed for %s", alias)
@@ -497,6 +501,11 @@ func (s *Store) validateCheckout(ctx context.Context, t *Task, alias string, c C
 		}
 	} else if c.Path != c.Source {
 		return "", fmt.Errorf("unowned checkout path changed for %s", alias)
+	}
+	if c.Removing {
+		if complete, err := removalComplete(ctx, c); err != nil || complete {
+			return "", err
+		}
 	}
 	if !c.Ready {
 		return "", nil
@@ -556,6 +565,23 @@ func identity(ctx context.Context, dir string) (head, common, gd, branch string,
 }
 
 func clean(ctx context.Context, dir string) error {
+	// Status trusts these flags even when the working contents differ from HEAD.
+	// Refuse them without changing the user's index or sparse checkout.
+	files, err := git(ctx, dir, "ls-files", "-v", "-z")
+	if err != nil {
+		return err
+	}
+	for _, entry := range strings.Split(files, "\x00") {
+		if entry == "" {
+			continue
+		}
+		if len(entry) < 3 || entry[1] != ' ' {
+			return fmt.Errorf("cannot verify index flags at %s", dir)
+		}
+		if entry[0] == 'S' || (entry[0] >= 'a' && entry[0] <= 'z') {
+			return fmt.Errorf("nondefault index flags (assume-unchanged or skip-worktree) for %q at %s", entry[2:], dir)
+		}
+	}
 	status, err := git(ctx, dir, "status", "--porcelain=v1", "--untracked-files=all")
 	if err != nil {
 		return err
@@ -564,6 +590,39 @@ func clean(ctx context.Context, dir string) error {
 		return fmt.Errorf("uncommitted input at %s:\n%s", dir, status)
 	}
 	return nil
+}
+
+// removalComplete reconciles only a journaled removal. Both the checkout and its
+// Git registration must be gone from the same repository. A missing directory
+// alone could be a moved worktree or a partial removal and is not completion.
+func removalComplete(ctx context.Context, c Checkout) (bool, error) {
+	if _, err := os.Lstat(c.Path); err == nil {
+		return false, nil
+	} else if !os.IsNotExist(err) {
+		return false, err
+	}
+	_, common, _, _, err := identity(ctx, c.Source)
+	if err != nil {
+		return false, err
+	}
+	if common != c.CommonDir || filepath.Dir(c.GitDir) != filepath.Join(common, "worktrees") {
+		return false, fmt.Errorf("removal repository identity changed for %s", c.Path)
+	}
+	if _, err := os.Lstat(c.GitDir); err == nil {
+		return false, fmt.Errorf("checkout %s is missing but its Git registration remains; inspect before recovery", c.Path)
+	} else if !os.IsNotExist(err) {
+		return false, err
+	}
+	listed, err := git(ctx, c.Source, "worktree", "list", "--porcelain", "-z")
+	if err != nil {
+		return false, err
+	}
+	for _, field := range strings.Split(listed, "\x00") {
+		if field == "worktree "+c.Path {
+			return false, fmt.Errorf("checkout %s is still registered; inspect before recovery", c.Path)
+		}
+	}
+	return true, nil
 }
 
 // Cleanup removes only this task's clean, integrated allocations, never source
@@ -589,6 +648,20 @@ func (s *Store) cleanup(ctx context.Context, t *Task) error {
 		c := t.Checkouts[alias]
 		if !c.Owned || c.Removed {
 			continue
+		}
+		if c.Removing {
+			complete, err := removalComplete(ctx, c)
+			if err != nil {
+				return err
+			}
+			if complete {
+				c.Removing, c.Removed = false, true
+				t.Checkouts[alias] = c
+				if err := s.save(t); err != nil {
+					return err
+				}
+				continue
+			}
 		}
 		if !c.Ready {
 			if _, err := os.Lstat(c.Path); os.IsNotExist(err) {
@@ -633,10 +706,17 @@ func (s *Store) cleanup(ctx context.Context, t *Task) error {
 		} else if head != c.Base {
 			return fmt.Errorf("verification input %s moved from pinned revision %s; preserve its commits before cleanup", alias, c.Base)
 		}
+		// Persist intent before Git removes either the directory or registration.
+		// A retry revalidates a surviving checkout or reconciles a completed removal.
+		c.Removing = true
+		t.Checkouts[alias] = c
+		if err := s.save(t); err != nil {
+			return err
+		}
 		if _, err := git(ctx, c.Source, "worktree", "remove", c.Path); err != nil {
 			return err
 		}
-		c.Removed = true
+		c.Removing, c.Removed = false, true
 		t.Checkouts[alias] = c
 		if err := s.save(t); err != nil {
 			return err

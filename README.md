@@ -83,6 +83,18 @@ through a `local:` package or a digest-pinned `remote:` source.
 
 ## Install
 
+With [mise](https://mise.jdx.dev/), install the prebuilt release:
+
+```bash
+mise use -g 'github:Novirmor/homonto[matching=homonto_]@latest'
+mise exec -- homonto version
+```
+
+See [installing with mise](docs/guides/mise.md) for project-local versions,
+pinning, upgrades, and installing `onto` and `to` alongside `homonto`.
+
+With a Go toolchain:
+
 ```bash
 go install github.com/noviopenworks/homonto@latest           # homonto
 go install github.com/noviopenworks/homonto/cmd/onto@latest  # onto (optional)

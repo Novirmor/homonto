@@ -22,6 +22,16 @@ a records migration.
 
 ## 1. Install
 
+With [mise](https://mise.jdx.dev/):
+
+```bash
+mise use -g 'github:Novirmor/homonto[matching=homonto_]@latest'
+mise exec -- homonto version
+```
+
+For this walkthrough, also install `onto` using the
+[mise companion-binary configuration](mise.md#install-onto-and-to), or use Go:
+
 ```bash
 go install github.com/noviopenworks/homonto@latest           # homonto
 go install github.com/noviopenworks/homonto/cmd/onto@latest  # onto

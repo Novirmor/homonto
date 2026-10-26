@@ -150,6 +150,12 @@ printf '%s\nnone\n%s\nn\n' "$TAG" "$TMPBIN" | bash /tmp/homonto-install.sh
 "$TMPBIN"/homonto version   # expect the tagged version string
 ```
 
+Also smoke the [mise installation](guides/mise.md) from a clean environment.
+Use the companion-binary configuration with all three versions pinned to the
+new tag's version (without its leading `v`), run `mise install`, and run each
+binary's `version` through `mise exec --`. Confirm the selected assets are the
+corresponding `homonto_`, `onto_`, and `to_` archives and all three report the tag.
+
 Then exercise the binaries against a disposable home:
 
 ```sh

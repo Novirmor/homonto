@@ -44,6 +44,8 @@ Follow the shared [workspace and dirty-work policy](../homonto/references/worksp
    untrusted association requires a user decision; do not implement it by
    default.
 4. **Check out the exact head safely.** Prefer an already matching clean branch.
+    Follow the shared [engine-free checkout protocol](../homonto/references/workspace-policy.md#engine-free-h-continuation-checkouts),
+    reusing the user's isolation choice or asking once when absent.
    Otherwise create an isolated worktree when configured, or check out the PR
    head with `gh pr checkout`. Never overwrite a dirty branch. Confirm
    `git rev-parse HEAD` equals the collected head OID before editing. Record the

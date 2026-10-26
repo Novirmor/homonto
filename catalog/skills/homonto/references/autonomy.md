@@ -63,14 +63,17 @@ questions to the coordinator rather than prompting the user themselves.
 
 Investigate repository evidence first. Then choose the safest reversible option
 that satisfies the request and repository policy. This includes implementation
-approach, workspace name, branch or worktree isolation, build mode, test mode,
+approach, workspace name, build mode, test mode,
 task decomposition, and local integration mechanics.
 
-The new-change workflow choice is the one deliberate exception: follow
+Engine selection and task isolation are explicit user choices: follow
 [workflow selection](workflow-selection.md) before creating a change when the
-user has not selected its path. This does not reopen a recorded choice on resume.
+user has not selected its path, and [execution policy](execution.md) for the
+once-per-task isolation decision. Reuse both recorded choices on resume; never
+replace them with phase defaults. Branch names and local integration mechanics
+remain technical choices within the selected isolation mode.
 
-Ask the user only when (apart from the new-change choice above) the missing
+Ask the user only when (apart from engine selection and task isolation) the missing
 answer cannot be recovered from the request, code, tests, documentation, or
 established repository policy and different answers would materially change
 one of these:
@@ -92,9 +95,11 @@ The shipped coordinator and implementers default to allowing shell execution
 within the authorized task: inspection, setup, cloning, repository scripts,
 Python/Node programs, command chains, and pipes need no generic command or
 composition approval. This includes contributor-controlled PR checkouts.
-Known `git push`, GitHub publication, and raw `gh api` patterns ask for the
-coordinator but are denied for implementers. The coordinator auto-allows local Git
-operations; `git push` still asks. Implementers retain prompts for destructive commands.
+The coordinator auto-allows local Git, ordinary pushes, raw `gh api`, routine
+PR/issue publication and CI reruns. Implementers still deny pushes, GitHub
+publication and raw `gh api`. Implementers retain prompts for destructive commands.
+Coordinator merge, recognized forced/deleting pushes, administrative operations,
+destruction and privilege escalation retain asks; see [publication](publication.md).
 Direct workflow bypasses ask the coordinator for confirmation and remain denied for
 implementers. A tool prompt cannot override role ownership or publication approval. Honor
 any actual tool prompt or denial without adding a redundant conversational approval or
@@ -106,8 +111,8 @@ directory grants, delegation limits, and assigned write scope are unchanged.
 Reviewers, explorers, skeptics, and h review/spike workers remain shell- and
 edit-denied. Implementers may perform task-authorized Git/gh setup and reads
 within their write scope, but the coordinator owns authoritative GitHub intake,
-workflow state/checkpoints, integration, and publication. Implementation commits
-still require the task's explicit authorization.
+workflow state/checkpoints, integration, and publication. Workers return edits
+and evidence; the parent owns all implementation commits.
 
 Allowed execution is not workflow authorization. Never use an allowed command,
 script, interpreter, wrapper, or API payload to evade gates, publish without

@@ -26,13 +26,13 @@ func TestMultirepoCoordinationContract(t *testing.T) {
 	}
 	for _, file := range []string{"commands/to.md", "commands/to-do.md", "skills/to-do/SKILL.md", "skills/to/SKILL.md", "subagents/to-implementer.md", "skills/onto-build/SKILL.md"} {
 		text := hPromptText(t, file)
-		for _, forbidden := range []string{"strictly one at a time", "never in parallel", "implementers edit and commit", "parallel implementers remain supported for disjoint-file tasks"} {
+		for _, forbidden := range []string{"strictly one at a time", "One implementer at a time", "never in parallel", "implementers edit and commit", "parallel implementers remain supported for disjoint-file tasks"} {
 			if strings.Contains(text, forbidden) {
 				t.Errorf("%s retains obsolete contract %q", file, forbidden)
 			}
 		}
 	}
-	no := hPromptText(t, "commands/no.md")
+	no := hPromptText(t, "skills/no/references/execution.md")
 	for _, want := range []string{"selects `no` exclusively", "Never invoke onto/to", "one repository per implementer assignment", "combined interfaces and integration evidence", "Ask before partial delivery"} {
 		if !strings.Contains(no, want) {
 			t.Errorf("no entry missing %q", want)

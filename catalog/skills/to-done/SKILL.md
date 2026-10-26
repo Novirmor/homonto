@@ -12,6 +12,12 @@ including workspace roots and dirty-work decisions, even on direct entry.
 
 ## Entry check
 
+For an archived done change, first follow
+[delivery recovery](../to/references/recovery.md). Validate its recorded candidate
+and evidence, then resume at step 6 or 7 as needed; the active-do checks and
+steps 1–5 below apply only before archive. Never rerun archival or edit the archive
+to record new delivery evidence. An abandoned archive is not completion input.
+
 For multirepository work, per-repository candidate reviews precede combined
 interface review and matching configured integration checks under the shared
 [execution policy](../homonto/references/execution.md#parallel-repository-assignments).
@@ -43,10 +49,12 @@ Ask before partial delivery. Native to completion requirements still apply.
    pass in `## Verification`. Explicit independent-review requirements still block;
    denial, blocked evidence, or an unsuccessful worker are not absence. Never
    label direct review a completed skeptic pass.
+   Apply shared [review triage and bounded rechecks](../homonto/references/review-triage.md).
    Hand it a complete evidence pack: the complete `plan.md` (including `## Notes`),
    each source alias and absolute cwd, frozen base and final candidate OIDs,
    exact diff and supporting files, literal Final Verify command, exit status
-   and full output, prior findings/dispositions, and coverage gaps. Materialize
+   and full output, supported scenarios, explicit non-goals, accepted decisions,
+   prior finding IDs/dispositions, and coverage gaps. Materialize
    worker-readable absolute paths or paste the full contents; a claim or the
    coordinator's earlier tool output is not a pack. Require confirmation that
    it read the pack. Skeptics are read-only, so dispatch
@@ -61,14 +69,17 @@ Ask before partial delivery. Native to completion requirements still apply.
       `Status: complete`.
    - If accepted findings change code, the previous verdict describes an old
      tree. Re-run `Final Verify:`, then re-dispatch once against the new final
-     candidate. Keep only the completed verdict for the tree being archived.
+     candidate with a bounded repair recheck under the shared triage policy.
+     Keep only the completed verdict for the tree being archived.
 3. **Triage its findings.** Verify each finding against the candidate. A real
 in-scope source defect becomes a new unchecked repair task with the complete
 Owner/Repo/Cwd/Files/Change/Verify contract, appended to `plan.md` before code
-changes. **Load `to-do` and continue in the same invocation**; its serial loop
+changes. **Load `to-do` and continue in the same invocation**; its per-repository loop
 re-dispatches `to-implementer` for the repair. Do not stop at a skeptic finding
 or ask the user to continue when the repair is technically clear and in scope.
-Decline only findings refuted by evidence, with a written reason. A code change
+The coordinator owns scope and severity. Dismiss unsupported, duplicate or
+out-of-scope findings with the contract/evidence or prior ID justifying the
+disposition; this does not waive a confirmed in-scope defect. A code change
 invalidates both the previous `Final Verify:` result and skeptic verdict; repeat
 steps 1–2 on the new candidate before finishing.
    Before archival, identify each receiver needed for authorized integration.
@@ -127,6 +138,11 @@ its candidate with local receiving and remote heads, reconcile latest feedback,
 and resume integration, verification, or delivery at the first missing step.
 Only remaining authorized feedback needs a new continuation; do not duplicate
 the archived work or edit the archive to absorb it.
+
+Before reporting completion, confirm the requested endpoint under
+[delivery recovery](../to/references/recovery.md), including exact-head remote
+checks when a review-ready PR was requested. Local verification and archival
+alone do not establish remote readiness.
 
 ## Rules
 

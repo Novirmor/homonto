@@ -19,7 +19,7 @@ func TestNewChangeWorkflowSelectionPolicy(t *testing.T) {
 		"**`no`**", "Engine selection is one-way for this task",
 		"`/to`, `/onto-fix`, `/onto-tweak`, and",
 		"`/onto` selects the onto family, not its preset",
-		"ask **once before `to new` or `onto new`**",
+		"ask **once before task creation**",
 		"short task-specific recommendation",
 		"**`to`**", "**`onto fix`**", "**`onto tweak`**", "**Full `onto`**",
 		"A small bug may fit either `to` or `onto fix`",
@@ -46,7 +46,7 @@ func TestNewChangeWorkflowSelectionPolicy(t *testing.T) {
 	}
 	for file, want := range map[string]string{
 		"commands/onto.md":                "`/onto` selects onto but not fix, tweak, or full",
-		"commands/h-resolve-issue.md":     "asks once before creating a change",
+		"commands/h-resolve-issue.md":     "skill owns spike, engine selection, execution and publication",
 		"skills/h-resolve-issue/SKILL.md": "Resume a unique match without prompting",
 	} {
 		if !strings.Contains(hPromptText(t, file), want) {

@@ -74,7 +74,10 @@ put transient files there instead of `mktemp`.
 
 ## 2. Discover
 
-Run `to status --json` and find the active change.
+Run `to status --json` and find the active change. Before creating new work,
+follow [delivery recovery](references/recovery.md) to inspect matching archives:
+status omits them, and a done archive may still need integration or publication.
+Recover a uniquely matched interrupted delivery before creating another task.
 
 - **One active change** → that is the change; note its phase.
 - **No active change** and `$ARGUMENTS` (or the conversation) describes new
@@ -139,7 +142,9 @@ move needs `to doctor` and the workflow-specific retry (`to done` with its
 previously verified evidence, or `to abandon` with existing explicit intent).
 Recover pending managed history first with `homonto workspace recover`. Never
 assert new verification merely to finish a move. Confirm the archive exists and
-active path is gone; only then report archived and route new work separately.
+active path is gone, then follow [delivery recovery](references/recovery.md).
+Route done archives to `to-done` at the first missing authorized integration or
+publication step; report completion only after the requested endpoint is observed.
 An abandoned archive is unsuccessful history, never verified completion or
 publication input. Do not resume abandoned work without new explicit user intent.
 

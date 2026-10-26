@@ -35,8 +35,8 @@ targets = ["opencode"]
 ` + ontoFrameworkModels
 
 const commandTOML = `
-[commands.example-command]
-source = "builtin:example-command"
+[commands.grill]
+source = "builtin:grill"
 scope = "user"
 targets = ["opencode"]
 `
@@ -268,9 +268,9 @@ func TestApplyMaterializesBuiltinCommand(t *testing.T) {
 		t.Fatalf("apply: %v", err)
 	}
 
-	got := filepath.Join(repo, ".homonto", "catalog", "commands", "example-command.md")
+	got := filepath.Join(repo, ".homonto", "catalog", "commands", "grill.md")
 	if _, err := os.Stat(got); err != nil {
-		t.Fatalf("example-command not materialized: %v", err)
+		t.Fatalf("grill not materialized: %v", err)
 	}
 	if e.State.CatalogVersionRecorded() == "" {
 		t.Fatal("catalog version not recorded after command materialization")
@@ -287,7 +287,7 @@ func TestApplyRematerializesWhenCommandFileMissing(t *testing.T) {
 	if err := e.Apply(context.Background(), sets); err != nil {
 		t.Fatalf("apply: %v", err)
 	}
-	cmdFile := filepath.Join(e.CommandDir(), "example-command.md")
+	cmdFile := filepath.Join(e.CommandDir(), "grill.md")
 	if err := os.Remove(cmdFile); err != nil {
 		t.Fatal(err)
 	}

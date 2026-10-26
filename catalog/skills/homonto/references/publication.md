@@ -1,21 +1,30 @@
 # Verified source publication
 
 Publication authorization does not expand the verified candidate. Apply this
-contract to h resolve/continue and onto/to integration, including retries.
+contract to h resolve/continue and all selected engines, including retries.
 
 ## Authority before execution
 
-Default-allow shell execution is not automatic publishing permission. It permits
-task-local execution, not a new external commitment. The coordinator alone owns
+Execution permission does not establish publication authority. The coordinator alone owns
 publication and authoritative GitHub intake; implementer Git/gh setup or reads
 do not transfer that authority. Follow the invocation's exact publication scope
 and the workflow's verification gates, even for publication inside a script,
-interpreter, wrapper, or API payload. Known `git push`, GitHub publication, and
-raw `gh api` patterns ask for the coordinator but are denied for implementers.
-The coordinator auto-allows local Git operations; `git push` still asks. Implementers
-retain prompts for destructive commands. These protected rules follow exact allow
-additions, but cannot detect every hidden operation. A tool prompt cannot override role
-ownership or publication approval.
+interpreter, wrapper, or API payload. The coordinator auto-allows local Git,
+ordinary pushes, raw `gh api`, routine PR/issue publication and CI reruns.
+Implementers still deny pushes, GitHub publication and raw `gh api`.
+Implementers retain prompts for destructive commands. Coordinator asks remain for
+recognized forced/deleting pushes, PR merge, repository/release administration,
+workflow controls, non-Git destruction, privilege escalation and workflow recovery/bypass.
+These protected asks follow exact config additions, but cannot detect every hidden
+operation. A tool prompt cannot override role ownership or publication approval.
+
+Raw API queries and mutations share this trusted coordinator capability; command
+globs do not inspect payload semantics. Check authority and gates before sending
+either, and never move a protected operation into an API call or wrapper to evade
+a prompt or denial. OpenCode saved approvals may satisfy an `ask`; they cannot
+override a configured `deny`. They are host execution grants, not fresh task or
+draft approval. Do not import saved patterns into generated policy or delete user
+approvals automatically.
 
 Resolve authorizes its verified push and PR creation; continue authorizes its
 verified push, summary comment, and demonstrably addressed thread resolutions.
@@ -73,6 +82,26 @@ tool absence. Formal `APPROVE` reviews remain on the existing commit-bound
 review path, only when explicitly selected and with no critical or major findings.
 
 ## Pin and reconcile
+
+### Engine-free publication
+
+For no and direct h continuation, retain the exact verified source candidate and
+tree OIDs, base, receiving target, canonical repository/PR identities and literal
+verification evidence in the session/handoff. Workspace-task metadata, when
+present, supplies checkout identities and configured check results; it is not a
+lifecycle record or publication receipt. No archive, onto receipt or to plan is
+required. Parent-owned commits and the exact PR identity and non-force push rules
+below still apply.
+
+Before delivery, compare the recorded candidate with local and remote heads.
+Reverify a changed receiving tree and affected integration inputs before pinning
+the delivery OID. Reuse one exact matching open PR or create one only when the
+invocation authorizes creation and complete enumeration proves absence. Direct
+continuation updates only its existing PR. Reconcile uncertain pushes/comments
+before retrying. Resume the first missing delivery step; missing candidate evidence
+requires investigation and fresh verification, not assumed completion.
+
+### Lifecycle candidates
 
 For onto, read each source commit, target, mode, and receipt from the archived
 integration record. Use the exact recorded verified candidate, never the source
@@ -183,8 +212,9 @@ Completed-but-unpushed recovery is workflow-specific: onto reconciles its actual
 integration receipt; to reconciles its archived plan, candidate, and integration
 history without calling `onto state` or `onto complete-integration`. In either
 case compare the freshly collected feedback against delivered commits. Finish
-pending publication, but every remaining authorized feedback item still routes
-through an active or new continuation change. Never shortcut past new feedback.
+pending publication, then route remaining authorized feedback through the caller's
+contract: direct h continuation by default, or active/new lifecycle work when
+explicitly selected. Never shortcut past new feedback.
 Discover matching to archives independently of whether local PR HEAD is ahead
 of upstream. Match canonical PR host/repository ID/number plus source alias,
 verified candidate/tree and recorded target evidence. This catches completed

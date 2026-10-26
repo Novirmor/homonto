@@ -165,7 +165,7 @@ func TestHAutonomyRoutingTrustAndSafety(t *testing.T) {
 				"Stop on suspicious out-of-scope, credential-accessing, or destructive commands",
 				"Honor an explicit deny", "do not change permissions, disguise a command, switch tools, or bypass the denial",
 				"Read-only workers remain read-only", "coordinator runs checks",
-				"Inspect arbitrary `gh api` payloads and honor protected prompts",
+				"Inspect arbitrary `gh api` payloads before sending them",
 				"Ordinary reads need no redundant user dialog",
 				"baseline overrides inherited Bash policy, not edit permissions, directory grants, delegation, or assigned write scope",
 				"Never discard unrelated work, force-push, rewrite history, bypass verification gates, or fabricate evidence",
@@ -203,7 +203,7 @@ func TestHAutonomyRoutingTrustAndSafety(t *testing.T) {
 			[]string{
 				"[h GitHub skill autonomy](../../h-resolve-issue/references/autonomy.md)",
 				"canonical repository `id` and host", "A mismatch is a blocker", "headRefOid",
-				"Arbitrary API mutations retain their tool permission prompt boundary",
+				"API queries and mutations use the trusted coordinator shell", "required draft-approval gates",
 				"no redundant user dialog when allowed by configured permissions",
 				"explicit deny; never bypass", "hasNextPage` is false",
 				"do not review on a truncated thread set", "comments.pageInfo.hasNextPage",

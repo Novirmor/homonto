@@ -24,6 +24,28 @@ before the derived phase becomes `done`. Each change
 tracks its phase and gate evidence in an `onto-state.yaml` inside its
 workspace directory, always written through the binary and never by hand.
 
+## Delivery is the endpoint
+
+The coordinator continues through implementation → verification → skeptic triage
+→ repair/evidence → re-verification → close → publication → endpoint confirmation.
+Failing tests, skeptic findings and unchecked verification are remaining work.
+It stops for completion, an explicit earlier endpoint or pause, or a concrete
+missing decision, permission or external blocker after permitted recovery.
+
+For a requested **review-ready PR**, it verifies delivery to the intended open,
+non-draft PR, passing required checks on the current head, and no confirmed
+in-scope blocking findings. Human approval and merge come afterward. Native
+`derived_phase: done` and a PR receipt do not prove remote CI or readiness.
+Post-archive source repairs use linked follow-up changes, preserving archives.
+
+Skeptics receive complete evidence packs and bounded repair rechecks. The
+coordinator decides scope and severity from supported scenarios, requirements
+and evidence; reviewer labels cannot add unrelated production requirements to
+local-development work. Real data loss and credential exposure remain blocking.
+Living-spec targets, source mappings and publication prerequisites are inspected
+before final verification, then rechecked at close. See
+[ADR 0069](../adr/0069-drive-onto-to-the-requested-delivery-endpoint.md).
+
 This guide covers the concepts. The precise command surface and every gate:
 [onto reference](onto-reference.md). Diagnostics at the tool boundary and the
 limits of observers: [enforcement](enforcement.md).

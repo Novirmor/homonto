@@ -183,7 +183,7 @@ func TestRenderOpenCode_NoAdditionsKeepsBase(t *testing.T) {
 // test. Inputs are permission requests, which need not be whole shell commands.
 func TestShippedWorkspaceExecutionRenderedPatterns(t *testing.T) {
 	for _, shellProxy := range []string{"", "none", "rtk"} {
-		for _, name := range []string{"homonto", "onto-implementer", "to-implementer"} {
+		for _, name := range []string{"homonto", "onto-implementer", "to-implementer", "no-implementer"} {
 			t.Run(name+"/proxy="+shellProxy, func(t *testing.T) {
 				content, err := fs.ReadFile(embedded.FS, "subagents/"+name+".md")
 				if err != nil {
@@ -320,7 +320,7 @@ func TestShippedWorkspaceExecutionRenderedPatterns(t *testing.T) {
 				}
 				// Explicit parsed-request fixtures based on OpenCode 1.18.29's
 				// shell.ts collect behavior. We supply the segments, not a parser.
-				publication := "ask"
+				publication := "allow"
 				if name != "homonto" {
 					publication = "deny"
 				}
@@ -412,18 +412,46 @@ func TestShippedWorkspaceExecutionRenderedPatterns(t *testing.T) {
 					check(command, publication)
 				}
 				for _, route := range []string{
-					"api", "pr comment", "pr create", "pr review", "pr merge", "pr edit", "pr close", "pr reopen", "pr ready", "pr lock", "pr unlock",
-					"issue comment", "issue create", "issue edit", "issue close", "issue reopen", "issue delete", "issue transfer", "issue lock", "issue unlock",
-					"release create", "release edit", "release delete", "release delete-asset", "release upload",
-					"run rerun", "run cancel", "run delete", "workflow run", "workflow enable", "workflow disable",
-					"repo create", "repo delete", "repo edit", "repo archive", "repo rename",
+					"api", "pr comment", "pr create", "pr review", "pr edit", "pr close", "pr reopen", "pr ready",
+					"issue comment", "issue create", "issue edit", "issue close", "issue reopen", "run rerun",
 				} {
 					for _, prefix := range []string{"gh ", "gh -R example/service ", "gh --repo=example/service "} {
 						check(prefix+route, publication)
 						check(prefix+route+" example", publication)
 					}
 				}
+				protected := "ask"
+				if name != "homonto" {
+					protected = "deny"
+				}
+				for _, route := range []string{
+					"pr merge", "pr lock", "pr unlock", "issue delete", "issue transfer", "issue lock", "issue unlock",
+					"release create", "release edit", "release delete", "release delete-asset", "release upload",
+					"run cancel", "run delete", "workflow run", "workflow enable", "workflow disable",
+					"repo create", "repo delete", "repo edit", "repo archive", "repo rename",
+				} {
+					for _, prefix := range []string{"gh ", "gh -R example/service ", "gh --repo=example/service "} {
+						check(prefix+route, protected)
+						check(prefix+route+" example", protected)
+					}
+				}
 				check("gh api repos/example/service --method GET", publication)
+				// Anonymized vend2 saved approvals: raw API calls are trusted for
+				// the parent, including GraphQL mutations, not guessed read-only.
+				for _, command := range []string{
+					`gh api "repos/$REPO/issues/$PR/timeline" --paginate`,
+					`gh api --hostname github.com graphql -f query='query { viewer { login } }'`,
+					`gh api -H 'Accept: application/vnd.github+json' repos/example/service/pulls/17`,
+					`gh api graphql -f query='mutation { resolveReviewThread(input:{threadId:"fixture"}) { thread { isResolved } } }'`,
+				} {
+					check(command, publication)
+				}
+				for _, prefix := range []string{"git push", "git -C /workspace push"} {
+					for _, flag := range []string{"--force", "--force-with-lease", "-f", "--delete", "-d", "--mirror"} {
+						check(prefix+" "+flag+" origin HEAD", protected)
+						check(prefix+" origin "+flag+" HEAD", protected)
+					}
+				}
 				if name == "homonto" {
 					for _, command := range []string{"onto new bypass-fix", "to new bypass-fix", "onto evidence record bypass-fix --file bypass-evidence.json", "onto set verify-result bypass-fix pass"} {
 						check(command, "allow")
@@ -475,6 +503,33 @@ func TestShippedWorkspaceExecutionRenderedPatterns(t *testing.T) {
 				check("rm -rf build", "ask")
 			})
 		}
+	}
+}
+
+func TestShippedReadOnlyWorkersKeepCoordinatorToolsDenied(t *testing.T) {
+	for _, name := range []string{"onto-explorer", "onto-reviewer", "onto-skeptic", "to-explorer", "to-reviewer", "to-skeptic", "no-reviewer", "h-spike", "h-review"} {
+		t.Run(name, func(t *testing.T) {
+			content, err := fs.ReadFile(embedded.FS, "subagents/"+name+".md")
+			if err != nil {
+				t.Fatal(err)
+			}
+			out, err := Render(name, content, "opencode", &RenderContext{Overrides: map[string]ModelSpec{name: {Model: "test/model"}}})
+			if err != nil {
+				t.Fatal(err)
+			}
+			fm, _, _ := split(out)
+			var header struct {
+				Permission map[string]string `yaml:"permission"`
+			}
+			if err := yaml.Unmarshal(fm, &header); err != nil {
+				t.Fatal(err)
+			}
+			for _, action := range []string{"bash", "edit", "question", "task", "homonto_status", "homonto_handoff", "homonto_read", "homonto_github_draft", "homonto_github_status", "homonto_github_publish", "homonto_github_read"} {
+				if header.Permission[action] != "deny" {
+					t.Errorf("%s must deny %s; got %q", name, action, header.Permission[action])
+				}
+			}
+		})
 	}
 }
 

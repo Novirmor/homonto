@@ -5,14 +5,11 @@ agent: homonto
 
 # /to-done
 
-Run to phase 3 (done): run the plan's `Final Verify:` command, dispatch
-one or more `to-skeptic` passes concurrently against the unchanged final
-candidate, triage their findings, record the outcome in `plan.md`, then finish with
-`to done <name> --verified`. The
-`--verified` flag is self-asserted by design — this skill is what makes the
-assertion true before it is made; never pass it early. Commit the resulting
-archived directory and terminal state. Load and follow the
-`to-done` skill; if it is not installed, tell the user to install the to
+Load and follow the `to-done` skill; if it is not installed, tell the user to install the to
 framework (declare `[engines.to]`, then run `homonto apply`) and stop.
+The skill owns final verification, review, archival and delivery recovery.
+Continue to its success endpoint in the same invocation, including any pending
+authorized integration/publication after archive, unless the user names an
+earlier endpoint or asks to pause.
 
 `$ARGUMENTS`, if present, focuses this phase on the described work.

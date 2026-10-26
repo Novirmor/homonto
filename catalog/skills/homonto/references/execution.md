@@ -25,7 +25,12 @@ and parent-owned workflow mutations. Continue independent assignments around
 blockers while pausing their dependents.
 
 Ask the user once per task for existing checkouts versus worktrees, with per-repo
-exceptions; reuse that choice on resume. In schema 2, record it with
+exceptions, unless the request or recorded decision already selects them; reuse
+that choice on resume and at every phase. Clean checkouts do not waive the choice.
+Native onto `branch` means execution in the existing checkout on a safe source
+branch; `worktree` uses registered allocations. Preserve per-repo exceptions in
+workspace-task metadata rather than overwriting them with a phase default.
+In schema 2, record it with
 `homonto workspace task create NAME --engine ENGINE --isolation MODE --repo ALIAS`
 (repeat `--repo`, add `--change CHANGE` for onto/to). Use the actual `--config`.
 Inspect/resume with `homonto workspace task inspect NAME`, not a new allocation.

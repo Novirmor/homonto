@@ -1285,8 +1285,8 @@ func ontoFrameworkModels() string {
 // targeted tool with source and scope preserved.
 func TestExpandedCommandsExplicit(t *testing.T) {
 	c := loadTOML(t, `
-[commands.example-command]
-source = "builtin:example-command"
+[commands.grill]
+source = "builtin:grill"
 scope = "project"
 targets = ["opencode"]
 `)
@@ -1295,11 +1295,11 @@ targets = ["opencode"]
 	if err != nil {
 		t.Fatalf("expand opencode: %v", err)
 	}
-	if len(got) != 1 || got[0].Name != "example-command" {
+	if len(got) != 1 || got[0].Name != "grill" {
 		t.Fatalf("opencode commands = %v", got)
 	}
-	if got[0].Resource.Source != "builtin:example-command" || got[0].Resource.Scope != "project" {
-		t.Fatalf("example-command resource = %+v", got[0].Resource)
+	if got[0].Resource.Source != "builtin:grill" || got[0].Resource.Scope != "project" {
+		t.Fatalf("grill resource = %+v", got[0].Resource)
 	}
 }
 
@@ -1355,8 +1355,8 @@ source = "local:skillsonly"
 scope = "user"
 targets = ["opencode"]
 
-[commands.example-command]
-source = "builtin:example-command"
+[commands.grill]
+source = "builtin:grill"
 scope = "user"
 targets = ["opencode"]
 `
@@ -1372,8 +1372,8 @@ targets = ["opencode"]
 	if err != nil {
 		t.Fatalf("expand: %v", err)
 	}
-	if len(got) != 1 || got[0].Name != "example-command" {
-		t.Fatalf("commands = %v, want only example-command", got)
+	if len(got) != 1 || got[0].Name != "grill" {
+		t.Fatalf("commands = %v, want only grill", got)
 	}
 }
 

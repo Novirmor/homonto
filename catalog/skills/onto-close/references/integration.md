@@ -85,8 +85,11 @@ onto complete-integration <name> --receipt "pr:<https-url>" --head <observed-hea
 
 `--head` is the observed remote OID, not guessed local HEAD. Onto stores an external
 claim, not proof of GitHub delivery. Review/merge on the hosting platform remain
-outside onto. Missing gh/remote or denied/unresolved publication leaves integration
-pending; report the destination-specific body path and blocker, never claim done.
+human-owned. For a requested review-ready PR, continue through the
+[delivery loop](../../onto/references/delivery.md#confirm-review-readiness-after-publication)
+to observe current-head required checks and non-draft status. Missing gh/remote or
+denied/unresolved publication leaves integration pending; report the
+destination-specific body path and blocker, never claim done.
 
 ## Record and clean up
 
@@ -95,7 +98,8 @@ in its records owner and pushes it only when applicable and authorized. Legacy
 combined mode omits `--repo` for its implicit config receipt, plus records each
 selected sibling separately. Receipt completion is one-way and idempotent.
 
-After terminal integration and authorized cleanup, use registered
+After terminal integration, requested delivery checks and authorized cleanup, use
+registered
 `homonto worktree remove <name> --workflow onto --repo <alias> --yes`.
 A newly opened PR can still leave a source unintegrated for removal: retain it on
 refusal. Legacy raw worktrees use

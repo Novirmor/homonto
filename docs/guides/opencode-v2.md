@@ -19,6 +19,14 @@ wholesale JSON rewrite is not required. Explicitly enabling the old
 and `doctor` report that opt-in and flag external plugins as unverified; these
 are advisory findings, not a successful runtime compatibility test.
 
+Generated worker record-edit restrictions use V2's path rules: paths inside the
+projection's launch directory are location-relative, and external records use
+absolute canonical paths. They no longer use V1's Git-worktree-relative base
+(or `/` for non-Git workspaces). Mixing those bases can deny unrelated source
+files in nested layouts. Worker shell/edit ownership rules are still separate
+from directory access. Generated permission paths target V2; the accepted legacy
+frontmatter spelling does not imply V1 runtime path compatibility.
+
 ## Read-only workflow context and panel
 
 ```toml

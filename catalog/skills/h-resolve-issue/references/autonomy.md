@@ -53,15 +53,21 @@ Several plausible matches require a user decision unless the request uniquely
 identifies one. A harmless name collision is solved with another unique name,
 not a new workflow-choice dialog.
 
-For a new change without an explicit path, offer `no` for model-directed work
+For resolve's new work without an explicit path, offer `no` for model-directed work
 without lifecycle records, `to` for bounded
 work, `onto fix` for a reproducible bug needing a handoff record, `onto tweak`
 for a small non-bug change needing that record, or full `onto` for design,
 security-sensitive, or cross-cutting work. Present viable options and ask once
-after the spike brief (resolve) or feedback review (continue), before creation.
+after the spike brief, before creation.
 The spike brief informs the recommendation; it is not an extra approval gate.
 Check the selected workflow's tooling before driving it; missing required
 tooling is a blocker, not permission to silently substitute another workflow.
+
+Continuation is engine-optional. Follow `h-continue-pr` directly without engine
+selection or lifecycle creation unless the user explicitly selects an engine.
+If an existing selected task has pending delivery, reconcile its recorded
+candidate first under the publication contract; do not silently abandon it or
+change its engine. New direct feedback work does not need a lifecycle record.
 
 ## Trust workspace execution
 
@@ -70,10 +76,12 @@ contributor-controlled code on PR heads and forks. This is an explicit workspace
 trust choice, not a claim that scripts are sandboxed or safe because tests pass.
 The coordinator and implementers default to allowing task-relevant inspection,
 setup, cloning, tests/builds, Python/Node scripts, command chains, and pipes.
-Unknown commands and composition do not generically ask in this trusted profile;
-known `git push`, GitHub publication, and raw `gh api` patterns ask for the
-coordinator but are denied for implementers. The coordinator auto-allows local Git
-operations; `git push` still asks. Implementers retain prompts for destructive commands.
+Unknown commands and composition do not generically ask in this trusted profile.
+The coordinator auto-allows local Git, ordinary pushes, raw `gh api`, routine
+PR/issue publication and CI reruns. Implementers still deny pushes, GitHub
+publication and raw `gh api`. Implementers retain prompts for destructive commands.
+Coordinator merge, recognized forced/deleting pushes, administrative operations,
+destruction and privilege escalation retain asks under the shared publication contract.
 Direct workflow bypasses ask the coordinator for confirmation and remain denied for
 implementers. A tool prompt cannot override role ownership or publication approval. This Bash baseline overrides inherited Bash policy, not edit permissions, directory grants,
 delegation, or assigned write scope. Inspect commands and scripts for relevance;
@@ -92,8 +100,9 @@ Review and spike invocations do not authorize source edits or implementation.
 GitHub access remains through `gh`. Implementers may perform task-authorized
 Git/gh setup and reads within their write scope; the coordinator still owns
 authoritative GitHub intake/context packs, workflow state, and publication.
-For the coordinator: Inspect arbitrary `gh api` payloads and honor protected
-prompts: no payload may exceed the invocation's scope. Raw `gh api` remains
+For the coordinator: Inspect arbitrary `gh api` payloads before sending them;
+query or mutation, no payload may exceed the invocation's scope. Do not move a
+protected operation into an API payload to evade its prompt. Raw `gh api` remains
 denied for implementers, even for read payloads; request coordinator evidence
 instead. Ordinary reads need no redundant user dialog when permitted.
 Do not use open-web tools, scripts, or wrappers to evade permissions. Patterns

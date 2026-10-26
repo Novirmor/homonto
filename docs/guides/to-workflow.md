@@ -30,6 +30,25 @@ change. The binary still checks installation, phase/state, and applicable
 source cleanliness; it does not certify verification. Design rationale:
 [to-framework-design.md](../to-framework-design.md).
 
+The coordinator triages review findings against supported scenarios and agreed
+scope, retains finding IDs/dispositions, and bounds repair rechecks to affected
+claims and adjacent risks. Proven data loss, credential exposure and failed core
+acceptance remain blocking. Review reports and unfinished checks are remaining
+work, not completion.
+
+### Recovery after archive
+
+`to status --json` lists only active tasks. The dispatcher also inspects matching
+archives before creating another task, using recorded identity, candidate/tree
+OIDs and targets (plus canonical PR identity for PR work). An archived done task
+may still need integration or publication. Resume the first missing authorized
+action through `to-done` without rerunning archival or modifying the archive;
+retain post-archive evidence in the handoff. Abandoned archives are not verified
+delivery inputs. A requested review-ready PR additionally needs observed
+OPEN/non-draft state and required checks passing on the delivered head; local
+verification and `--verified` do not prove that. See
+[ADR 0071](../adr/0071-align-entrypoints-and-delivery-recovery.md).
+
 ## onto and to — complementary by selection
 
 Pick the workflow per change, not per repository. Declaring both

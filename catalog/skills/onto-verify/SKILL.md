@@ -9,6 +9,8 @@ Prove — with fresh evidence, not recollection — that the implementation does
 what the design and specs say. **Evidence before assertions, always.**
 Apply the shared [autonomous workflow policy](../homonto/references/autonomy.md),
 including workspace roots and dirty-work decisions, even on direct entry.
+Follow the [delivery loop](../onto/references/delivery.md): check delivery
+prerequisites before final verification and keep executing after skeptic returns.
 
 ## Entry check
 
@@ -132,6 +134,12 @@ policy: perform the claim/gap checks directly and record the missing independent
 pass in Adversarial. An explicit independent-review requirement remains a blocker;
 denial and blocked workers are not absence. Direct review never counts as an
 independent skeptic, and surfaced non-waivable defects still block.
+
+Apply those classes to confirmed defects in supported scenarios, not a reviewer's
+label alone. The coordinator establishes requirement, evidence, scope and impact
+under the adversarial protocol before deciding severity. An evidence request is
+work to execute; an unsupported production-hardening demand does not expand a
+local-development contract. Real data loss and credential exposure still block.
 
 ### 4. Write the report
 

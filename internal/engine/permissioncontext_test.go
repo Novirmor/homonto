@@ -119,17 +119,15 @@ func TestRenamedFrameworkProtectsNativeRecordsAndGrantsOnlyInstalledSkills(t *te
 				if permissionAction(permissions["edit"], filepath.Join(root, "record-store", "changes", "task", "tasks.md")) != "deny" {
 					t.Fatal("native edits can reach records through their canonical path")
 				}
-				// OpenCode edit/write/apply_patch ask with path.relative(worktree,
-				// filePath); non-Git hosts use "/" as their worktree.
-				for _, base := range []string{string(filepath.Separator)} {
-					for _, file := range []string{record, filepath.Join(root, "record-store", "changes", "task", "tasks.md")} {
-						request, err := filepath.Rel(base, file)
-						if err != nil {
-							t.Fatal(err)
-						}
-						if permissionAction(permissions["edit"], request) != "deny" {
-							t.Errorf("native relative request %q allowed from %s", request, base)
-						}
+				// V2 internal paths are location-relative, including non-Git
+				// workspaces and both lexical/canonical record directory names.
+				for _, file := range []string{record, filepath.Join(root, "record-store", "changes", "task", "tasks.md")} {
+					request, err := filepath.Rel(root, file)
+					if err != nil {
+						t.Fatal(err)
+					}
+					if permissionAction(permissions["edit"], request) != "deny" {
+						t.Errorf("native relative request %q allowed from %s", request, root)
 					}
 				}
 			} else if permissionAction(permissions["edit"], record) == "deny" {
@@ -221,14 +219,9 @@ func TestRecordEditDeniesUseResolvedRootAndProjectionHost(t *testing.T) {
 					t.Fatal(err)
 				}
 			}
-			host := parent
 			gitRoot := parent
 			if placement == "non-git-control" || placement == "repo-projected" {
 				gitRoot = source
-				host = string(filepath.Separator) // OpenCode's non-Git worktree.
-				if placement == "repo-projected" {
-					host = source
-				}
 			} else {
 				source = parent
 			}
@@ -265,14 +258,17 @@ func TestRecordEditDeniesUseResolvedRootAndProjectionHost(t *testing.T) {
 			permissions := projectedPermissions(t, path)
 			request := func(file string) string {
 				t.Helper()
-				rel, err := filepath.Rel(host, file)
+				rel, err := filepath.Rel(projection, file)
 				if err != nil {
 					t.Fatal(err)
+				}
+				if rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+					return file // V2 external edits use canonical absolute paths.
 				}
 				return rel
 			}
 			// Model the host's inherited rules followed by the agent's rules.
-			// Source command cwd never changes edit's host-worktree-relative base.
+			// Source command cwd never changes V2's location-relative base.
 			for _, defaultAction := range []string{"allow", "ask", "deny"} {
 				var inherited yaml.Node
 				if err := yaml.Unmarshal([]byte(fmt.Sprintf("\"*\": %s\n\"*src/ask/*\": ask\n\"*src/deny/*\": deny\n", defaultAction)), &inherited); err != nil {
@@ -282,11 +278,14 @@ func TestRecordEditDeniesUseResolvedRootAndProjectionHost(t *testing.T) {
 					{filepath.Join(records, "changes", "task", "tasks.md"), "deny"},
 					{filepath.Join(source, "docs", "api.md"), defaultAction},
 					{filepath.Join(source, "src", "app.go"), defaultAction},
+					// A nested launch must not inherit the old Git-relative
+					// "control/docs" deny for this unrelated internal directory.
+					{filepath.Join(projection, "control", "docs", "api.md"), defaultAction},
 					{filepath.Join(source, "src", "ask", "app.go"), "ask"},
 					{filepath.Join(source, "src", "deny", "secret.go"), "deny"},
 				} {
 					if got := permissionAction(permissions["edit"], request(tc.file), *inherited.Content[0]); got != tc.want {
-						t.Errorf("host=%s inherited=%s edit(%q) = %s, want %s", host, defaultAction, request(tc.file), got, tc.want)
+						t.Errorf("location=%s inherited=%s edit(%q) = %s, want %s", projection, defaultAction, request(tc.file), got, tc.want)
 					}
 				}
 			}
@@ -306,14 +305,6 @@ func TestRecordEditDeniesUseResolvedRootAndProjectionHost(t *testing.T) {
 				}
 			}
 		})
-	}
-}
-
-func TestPermissionHostProbeDoesNotGuessAfterFailure(t *testing.T) {
-	for _, name := range []string{"missing", "not a git repository"} {
-		if _, err := permissionHostWorktree(filepath.Join(t.TempDir(), name)); err == nil {
-			t.Fatal("failed Git probe must not silently select a guessed host base")
-		}
 	}
 }
 

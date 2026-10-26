@@ -62,7 +62,8 @@ source-only implementer to edit records. Source tasks use the loop below.
    at once with distinct lenses (correctness, security, completeness) rather
    than one after another. Always **after** the implementer returns, never
    alongside it: reviewing a tree still being written reviews nothing.
-4. **Act on findings.** Fix critical/major findings before moving on
+4. **Act on findings.** Apply shared [review triage](../homonto/references/review-triage.md).
+   Fix confirmed in-scope findings before moving on
    (re-dispatch the implementer for substantial fixes; apply trivial ones
    directly). Declined findings are recorded with a reason under `## Notes` in
    `plan.md` — never silently dropped.

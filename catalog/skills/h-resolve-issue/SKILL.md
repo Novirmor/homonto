@@ -5,8 +5,8 @@ description: Use when the user asks to implement, fix, or resolve a GitHub issue
 
 # h-resolve-issue
 
-Resolve one GitHub issue by driving a real workflow — never by patching
-around one.
+Resolve one GitHub issue through research, the selected engine's implementation
+and verification contract, and delivery to the intended PR.
 
 Invoking `/h-resolve-issue <issue>` is consent to: run the spike, select a
 workflow with the user if no path was specified, drive it to completion under
@@ -16,8 +16,8 @@ spike, push before verification, or
 force-push.
 
 **Success endpoint:** one verified PR closing the issue, the completed workflow
-record (including its integration receipt where required), and a report with the
-PR URL and verification evidence. Continue to this endpoint in the same
+record when the engine has one (including its integration receipt where required),
+and a report with the PR URL and verification evidence. Continue to this endpoint in the same
 invocation unless the user names an earlier endpoint or asks to pause. Follow
 [h GitHub skill autonomy](references/autonomy.md) for routing, failure recovery,
 trusted workspace execution, and permission boundaries.
@@ -53,8 +53,12 @@ candidate pinning, exact PR reuse, recovery, and repository-qualified issue inte
     Verify the selected binary for lifecycle engines (`to version` or `onto version`);
     `homonto doctor` diagnoses missing applied frameworks. Missing required
     tooling is a blocker, not grounds to silently switch workflows.
-3. **Open the change.** For no, load its informational skill and use its
-    implementer/reviewer with the shared multirepository execution policy; no
+    For a selected to task, inspect matching archives under
+    [to delivery recovery](../to/references/recovery.md) before creating anything;
+    an empty active inventory does not prove previous delivery finished.
+3. **Open the change.** For no, load its informational skill and follow
+    [no task execution](../no/references/execution.md), including its
+    implementer/reviewer and shared multirepository execution policy; no
     never invokes onto/to or creates their records. For lifecycle engines,
     load the selected dispatcher skill (`onto` or `to`)
     and open a change seeded from the issue and the brief. Suggest the name
@@ -74,7 +78,8 @@ candidate pinning, exact PR reuse, recovery, and repository-qualified issue inte
     branch are frozen. Preserve dirty originals: select `api=main` at creation
     rather than checking out `main` or trying to retarget setters afterwards.
     Registered worktrees must match each alias's frozen commit and target.
-4. **Drive the workflow.** Follow the dispatcher through its phases and
+4. **Drive the workflow.** For no, execute and review under its parent contract;
+   for lifecycle engines, follow the dispatcher through its phases and
    gates to completion in this invocation, handing the implementers the
     spike brief as grounding. You own commit policy and every binary call;
     implementers return edits and you own source commits.
@@ -90,29 +95,41 @@ candidate pinning, exact PR reuse, recovery, and repository-qualified issue inte
     `onto complete-integration <name> --receipt "unchanged:<receivingSHA>" --repo <alias> --dir "<configRoot>"`
     lets the binary prove completion without an empty PR or merge. Do not add
     `--head` to unchanged/merge receipts. For changed repos continue below.
-     - **onto:** prefer `integration: pr` at close — the `onto-close` skill
-       prepares, pushes, and opens the PR after `onto close` archives; then record the receipt
+    - **onto:** prefer `integration: pr` at close — the `onto-close` skill
+      prepares, pushes, and opens the PR after `onto close` archives; then record the receipt
       (`onto complete-integration <name> --repo <alias> --receipt "pr:<URL>" --head <observed-headOID> --dir "<configRoot>"`
       for schema 2; legacy implicit config omits only `--repo`). The observed
       full headOID must come from independently verified canonical remote head
       and target metadata after delivery, not local HEAD. Onto stores an external
       claim, not proof that it verified GitHub. Do not open a
-     second PR on top of the one close opened.
+      second PR on top of the one close opened.
+    - **no:** no archival or lifecycle receipt is required. Review each source
+      candidate with `no-reviewer`, run its verification and matching configured
+      integration checks, and retain base/candidate/tree OIDs, target and canonical
+      issue/PR identity in session evidence and the handoff. The parent commits.
+      Integrate only within the authorized target, reverify any changed receiving
+      tree and affected combined checks, then pin the delivery OID. Follow the
+      shared [engine-free publication](../homonto/references/publication.md#engine-free-publication)
+      contract. Continue with the common PR steps below, using the verified
+      outcome/evidence instead of an archived plan. On resume reconcile task
+      checkouts, the recorded candidate and remote state before repeating work.
     - **to:** after `to done` archives the change, integrate and reverify the
-      actual receiving tree per `to-done`, pin the verified delivery OID, and push
-      only that OID with the publication contract's explicit non-force refspec.
-      Then look for an existing open PR for
-      that head and base before creating one:
+      actual receiving tree per `to-done` and pin the verified delivery OID.
+
+    **Common no/to PR publication:** reconcile any prior delivery first. If not
+    already delivered, push the pinned delivery OID using the shared explicit
+    non-force refspec and confirm the remote head. Look for an existing open PR
+    for that head and base before creating one:
       `gh pr list --repo HOST/OWNER/REPO --head "$BRANCH" --base "$BASE" --state
       open --json number,url` (paginate; this is a candidate filter only).
       Fetch canonical head repo/owner/ref/headRefOid and base identity for every
       candidate as specified in the publication contract, not branch-name-only
       reuse. Reuse the single exact match instead of creating a
       second PR; several matches → stop and report. Otherwise open one PR
-      with a fresh per-repo session-tmp body built from archived `plan.md` on
+      with a fresh per-repo session-tmp body built from archived `plan.md` for to,
+      or the verified no outcome and session/handoff evidence, on
       every attempt, never a cached origin-specific body reused across repos:
-      goal, what
-      changed, the `## Verification` record, plus `Closes #NUMBER` only for the
+      goal, what changed, the verification evidence, plus `Closes #NUMBER` only for the
       confirmed issue origin repository; otherwise a non-closing canonical URL.
       Validate destination canonical ID/host, target, observed headOID, body path
       and hash against the publication evidence before creating or reusing a PR.
@@ -122,30 +139,32 @@ candidate pinning, exact PR reuse, recovery, and repository-qualified issue inte
       `--title "$TITLE"`, with the body via `--body-file` (a transient file:
       keep it under the workspace tmp directory when the shared `homonto`
       skill's generated `references/tmp.md` declares one).
-    In managed mode, binary archival/receipt mutations checkpoint automatically;
-    manual Markdown uses named `homonto workspace checkpoint --path ... --message ...`
+    For lifecycle engines in managed mode, binary archival/receipt mutations
+    checkpoint automatically; manual Markdown uses named
+    `homonto workspace checkpoint --path ... --message ...`
     before the next mutation. Existing combined mode retains manual archive and
     receipt commits. Push source branches only, never workflow history as source
     integration. For multi-repo work, receipts and evidence belong to each source;
     do not reuse the issue repo's PR as another repo's receipt or assume additional
     publication scope. Investigate push or PR failures and recover in scope; reconcile remote
     state before retrying creation. A denied permission or unrecoverable failure
-    is a blocker: report it exactly and leave the branch and archived change
+    is a blocker: report it exactly and leave the branch and any archived change
     intact. The invocation already authorizes this publication; honor tool
     prompts without asking for a second conversational approval.
-6. **Report.** PR URL, the workflow chosen and its record path, the
+6. **Report.** PR URL, the engine chosen and its record path when applicable, the
    verification evidence, and anything the spike flagged that the change did
-   not address.
+   not address. For no, report candidate OIDs, check results and task identity
+   when present instead of inventing a lifecycle record path.
    If every selected repo is proven unchanged, report verified no-op completion
-   with the per-repo receipts and issue disposition instead of inventing a PR URL
-   or claiming the issue was closed. No-op completion is not permission to post
+   with per-repo evidence (receipts where the engine has them) and issue disposition
+   instead of inventing a PR URL or claiming the issue was closed.
+   No-op completion is not permission to post
    an empty PR or silently close an already-satisfied issue.
 
 ## Common mistakes
 
-- Do not patch the issue directly, however small — the workflow is the
-  product here; a spikeless or workflowless resolve is the failure this
-  skill exists to prevent.
+- Do not skip the spike, the selected engine's verification or authorized delivery.
+  No is a valid record-free route; do not add onto/to lifecycle obligations to it.
 - Use the built-in `question` tool once for unselected new work; never repeat
   workflow selection on resume or add routine phase-approval dialogs.
 - Do not push or open the PR before the workflow's verification passes; a

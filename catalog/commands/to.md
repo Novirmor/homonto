@@ -10,15 +10,10 @@ If the `to` skill is installed, load and follow it; otherwise tell the user the
 to framework is not installed and stop (install it with `homonto apply` after
 declaring `[engines.to]`).
 
-The `to` skill is the dispatcher — it checks the `to` binary (`to version`),
-finds the active change via `to status --json`, and routes to the matching
-sub-skill (`to-plan`, `to-do`, or `to-done`), continuing through later phases
-unless the user names an endpoint or asks to pause. Every state change goes through
-the `to` binary — never hand-edit `to-state.yaml`. The read-only subagents
-(`to-explorer`, `to-reviewer`, `to-skeptic`) are dispatched concurrently;
-`to-implementer` writes exactly one assigned repository. Independent repositories
-may run in parallel; each checkout has one writer. The parent owns commits and
-combined verification. Keep this task's selected engine on resume.
+The skill owns discovery of active work and interrupted archived delivery,
+phase routing and repository-scoped execution. Continue to its success endpoint
+in the same invocation unless the user names an earlier endpoint or asks to pause.
+Every state change goes through the `to` binary — never hand-edit `to-state.yaml`.
 
 `$ARGUMENTS`, if present, describes what to work on — use it to open a new
-change or to focus the current phase. If absent, resume the active change.
+change or to focus recovery. If absent, follow the skill's identity discovery.

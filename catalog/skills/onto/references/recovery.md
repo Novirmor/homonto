@@ -3,6 +3,8 @@
 Read on mismatch, compaction, interrupted close, preset upgrade, or a defect
 found after a passing report. Binary state remains authoritative for recorded
 decisions; artifact evidence determines what work remains.
+Follow the [delivery loop](delivery.md) across recovery. Native done routes to
+the requested endpoint check, including remote PR readiness when requested.
 
 ## Derive and reconcile
 
@@ -79,6 +81,8 @@ decision through OpenCode's built-in `question` tool.
 An archived pending change only finishes its recorded integration. A defect in
 completed history is new work, referencing that archive and following normal
 selection/intent rules. Never modify immutable archives to absorb a repair.
+Remote CI failure after archive follows that linked follow-up route; completed
+native integration does not finish an outstanding review-ready PR request.
 `onto abandon` always requires explicit user intent; it retains an unsuccessful
 workspace in place, with no spec merge or successful archive move.
 

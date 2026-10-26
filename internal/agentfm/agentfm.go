@@ -92,8 +92,8 @@ type RenderContext struct {
 	// ExternalDirectoryDeniesByAgent excludes coordinator-owned records even
 	// when they lie beneath an otherwise trusted source root. Denies render last.
 	ExternalDirectoryDeniesByAgent map[string][]string
-	// EditDirectoryDeniesByAgent additionally carries worktree-relative paths,
-	// which native edit/write/apply_patch use instead of absolute paths.
+	// EditDirectoryDeniesByAgent additionally carries V2 location-relative paths
+	// used for internal edits instead of the absolute external-path form.
 	EditDirectoryDeniesByAgent map[string][]string
 	// Targets names actually projected to this tool. It lets materialization skip
 	// an unselected tool variant without weakening validation for selected agents.
@@ -286,7 +286,7 @@ func Render(name string, content []byte, tool string, ctx *RenderContext) ([]byt
 			h.BashDeny = rtkPatterns(h.BashDeny, true)
 		}
 		if perm := opencodePermission(h, spec.BashAllowAdd, externalDirectories, externalDirectoryDenies, editDirectoryDenies, managesExternalDirectories); perm != "" {
-			if name == "homonto" || strings.HasPrefix(name, "onto-") || strings.HasPrefix(name, "to-") || name == "h-spike" || name == "h-review" {
+			if name == "homonto" || strings.HasPrefix(name, "onto-") || strings.HasPrefix(name, "to-") || strings.HasPrefix(name, "no-") || name == "h-spike" || name == "h-review" {
 				action := "deny"
 				if name == "homonto" && !h.ReadOnly && (h.Bash == nil || *h.Bash) {
 					action = "allow"

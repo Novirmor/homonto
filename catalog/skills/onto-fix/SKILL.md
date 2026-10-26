@@ -11,6 +11,8 @@ non-negotiable.
 Apply the shared [autonomous workflow policy](../homonto/references/autonomy.md),
 including workspace roots and dirty-work decisions, even on direct entry. Continue
 through the entire preset unless the user names an endpoint or asks to pause.
+Follow the [delivery loop](../onto/references/delivery.md), including endpoint
+capture and early delivery checks during setup, bounded repairs and PR readiness.
 
 ## Entry check
 
@@ -33,6 +35,7 @@ through the entire preset unless the user names an endpoint or asks to pause.
    | build with setup complete | step 2, first executable unchecked task under recorded dependencies; reconcile partial work, never redo a committed task |
   | verify | step 3 |
   | close | step 4 |
+  | done | delivery loop's endpoint check; do not rerun archive |
 
   Only a brand-new request runs `onto new`. An existing empty preset scaffold
   may derive build while recorded open; it still needs setup and gated advancement.
@@ -49,7 +52,8 @@ Minimal clarification: reproduction steps, expected vs actual behavior,
 suspected blast radius. Create `<workflow-root>/changes/<name>/` with:
 
 Before any scaffold, initialize the authorized empty managed records root.
-Choose isolation before `new`; allocate schema-2 bindings immediately after
+Reuse the user's recorded isolation choice, or ask once before `new` under the
+shared execution policy; allocate schema-2 bindings immediately after
 creation, before any records/source commit. Resume validated isolation instead
 of allocating again; a frozen-base mismatch blocks, never retarget it.
 
@@ -208,3 +212,5 @@ trigger "because it's almost done".
       in its own commit
 - [ ] Prose edited for clarity with `onto-no-slop`; preserve machine-read markers,
       normative wording and literal evidence; no style receipt required
+- [ ] Integration, authorized publication and the requested delivery endpoint
+      confirmed under the delivery loop; archive alone is not completion

@@ -36,9 +36,10 @@ including workspace roots and dirty-work decisions, even on direct entry.
    owner/source binding. Do not drop ownership/root fields during translation.
    Missing or ambiguous fields require plan repair before execution, not defaults
    inferred from a converted phase or a doctor's partial contract check.
-2. **Validate isolation and fit.** Check bounded fit before allocation; if onto
-   obligations emerge after a binding exists, follow the dispatcher's explicit
-   conversion-blocker handoff, not an unsupported promotion attempt.
+2. **Validate isolation and fit.** Reuse the user's recorded task isolation and
+   per-repo exceptions; if absent, ask once under the shared execution policy.
+   Check selected-engine fit before allocation; incompatible obligations need
+   a scope decision while retaining to, not an engine conversion.
    Schema 2 allocation belongs immediately after `new`, before any records/source
    commit. Reuse that binding here. Inspect before writes and present exact dirty paths.
    Honor an existing preserve/isolate/cleanup decision; ask once if none exists.

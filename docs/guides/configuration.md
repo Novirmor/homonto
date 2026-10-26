@@ -512,14 +512,20 @@ variant = "thinking"      # optional
 
 The shipped coordinator and implementers use a trusted-workspace shell baseline:
 inspection, setup, cloning, scripts (including Python/Node), chains, and pipes
-are allowed without generic command/composition prompts. Known `git push`, GitHub
-publication, and raw `gh api` patterns ask for the coordinator but are denied for
-implementers, including read-only API payloads. The coordinator auto-allows local Git
-operations; `git push` still asks. When `[tooling] shell_proxy = "rtk"`, it also receives
-an explicit `rtk *` allow. Implementers retain prompts for destructive commands. Direct
+are allowed without generic command/composition prompts. The coordinator also
+allows ordinary pushes, raw `gh api` queries/mutations, routine PR/issue publication
+and CI reruns within task authority. Implementers still deny pushes, publication
+and raw `gh api`, including read-only payloads. The coordinator auto-allows local
+Git operations. Recognized forced/deleting pushes, PR merge, repository/release
+administration, workflow controls, non-Git destruction and privilege escalation
+retain prompts. When `[tooling] shell_proxy = "rtk"`, it also receives an explicit
+`rtk *` allow followed by those remaining asks. Implementers retain prompts for destructive commands. Direct
 workflow bypasses ask the coordinator for confirmation; bypasses remain denied for
 implementers. Protected asks and denies follow exact additions, so `bash_allow_add`
 cannot override them.
+OpenCode's saved approvals can satisfy `ask`, but cannot override `deny`; they
+remain user-owned and are not imported or deleted by homonto. See
+[ADR 0070](../adr/0070-trust-authorized-coordinator-delivery.md).
 This Bash baseline deliberately overrides inherited Bash asks/denies, not edit
 permissions, declared directory grants, delegation, or task write scope. Read-only
 specialists remain shell- and edit-denied.

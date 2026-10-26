@@ -9,6 +9,8 @@ Turn the confirmed design into a plan, then the plan into committed code —
 one small, verified task at a time.
 Apply the shared [autonomous workflow policy](../homonto/references/autonomy.md),
 including workspace roots and dirty-work decisions, even on direct entry.
+Follow the [delivery loop](../onto/references/delivery.md); checked tasks lead to
+verification, repairs and the requested endpoint in the same invocation.
 
 ## Entry check
 
@@ -77,9 +79,9 @@ configuration without asking:
 - `onto set tdd-mode <name> tdd` for testable behavior; use `direct` for
   content, configuration values, and documentation-only deliverables
 
-Isolation was chosen before entering build. If unset, resolve dirty work under
-the shared policy first; then choose worktree isolation under the applicable
-config-mode protocol, or a safe source branch. Build work must never run unisolated.
+Isolation was chosen before entering build. Reuse the recorded task choice and
+per-repo exceptions. If absent, ask once under the shared execution policy before
+allocation, then resolve uncovered dirty work. Build work must never run unisolated.
 
 Pause only when the user explicitly asks to stop after the plan. In that case,
 run `onto set build-pause <name> plan-ready` and end the invocation before

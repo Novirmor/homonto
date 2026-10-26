@@ -1,6 +1,6 @@
 # Allow coordinator RTK commands
 
-- **Status:** Accepted
+- **Status:** Partially superseded by 0070 (routine publication asks)
 - **Date:** 2026-09-11
 
 ## Context

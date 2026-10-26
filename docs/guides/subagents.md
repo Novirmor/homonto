@@ -193,15 +193,25 @@ The coordinator and both implementers allow routine verification commands for
 Go, JavaScript package scripts, pytest, Cargo, Make, and CMake/CTest. These
 defaults also apply to checked-out PR code: individual test/build approvals are
 not required, and observed allowed runs count as verification evidence.
-Known `git push`, GitHub publication, and raw `gh api` patterns ask for the
-coordinator but are denied for implementers, even for read-only API payloads.
-The coordinator auto-allows local Git operations; `git push` still asks. Implementers
-retain prompts for destructive commands. Direct workflow bypasses ask the coordinator for
+The coordinator allows local Git operations, ordinary pushes, raw `gh api`
+queries/mutations, routine PR/issue publication and CI reruns. Implementers still
+deny pushes, publication and raw API calls, even read-only payloads. Recognized
+forced/deleting pushes, PR merge, repository/release administration, workflow
+controls, non-Git destruction and privilege escalation retain coordinator asks.
+Implementers retain prompts for destructive commands. Direct workflow bypasses ask the coordinator for
 confirmation and remain denied for implementers. These protected rules follow exact allow
 additions. Unknown commands and
 shell composition otherwise inherit the allow baseline. **This deliberately
 overrides inherited Bash policy, including Bash asks and denies.** It does not
 change inherited edit behavior, declared directory grants, or delegation limits.
+
+Shell allows do not authorize a new destination, unverified candidate or unapproved
+review draft. Raw API payloads are not classified by permission globs; the
+coordinator checks their purpose and authority before sending them. Never move an
+operation into a wrapper or API call to evade a prompt. OpenCode saved approvals
+may satisfy `ask`, but never override a configured `deny`. Homonto neither imports
+these saved approvals into generated rules nor deletes them automatically.
+See [ADR 0070](../adr/0070-trust-authorized-coordinator-delivery.md).
 
 **This trusts workspace execution, not a sandbox.** Scripts, interpreters,
 wrappers, and build targets can execute arbitrary code with access to the

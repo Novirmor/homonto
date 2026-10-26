@@ -7,7 +7,43 @@ homonto:
   read_only: false
   network: true
   bash_default: allow
-  bash_deny: ["onto", "onto *", "to", "to *"]
+  bash_ask: [
+    "rm -r*", "rm -R*", "rm -f*", "rm --recursive*", "rm --force*",
+    "rm * -r*", "rm * -R*", "rm * -f*", "rm * --recursive*", "rm * --force*",
+    "sudo", "sudo *", "doas", "doas *", "dd", "dd *", "mkfs", "mkfs *", "mkfs.*",
+    "git reset", "git reset *", "git clean", "git clean *", "git rebase", "git rebase *",
+    "git -* reset", "git -* reset *", "git -* clean", "git -* clean *", "git -* rebase", "git -* rebase *",
+    "git commit --amend*", "git commit * --amend*", "git -* commit --amend*", "git -* commit * --amend*",
+    "git checkout -- *", "git checkout * -- *", "git checkout -f*", "git checkout * -f*",
+    "git checkout --force*", "git checkout * --force*",
+    "git checkout .", "git checkout . *", "git checkout ./*", "git checkout --ours*", "git checkout --theirs*",
+    "git -* checkout -- *", "git -* checkout * -- *", "git -* checkout -f*", "git -* checkout * -f*",
+    "git -* checkout --force*", "git -* checkout * --force*",
+    "git -* checkout .", "git -* checkout . *", "git -* checkout ./*", "git -* checkout --ours*", "git -* checkout --theirs*",
+    "git restore", "git restore *", "git -* restore", "git -* restore *",
+    "git branch -d*", "git branch -D*", "git branch --delete*", "git branch * -d*", "git branch * -D*", "git branch * --delete*",
+    "git -* branch -d*", "git -* branch -D*", "git -* branch --delete*",
+    "git worktree remove*", "git worktree prune*", "git -* worktree remove*", "git -* worktree prune*"
+  ]
+  bash_deny: [
+    "onto", "onto *", "to", "to *", "homonto", "homonto *",
+    "git push", "git push *", "git -* push", "git -* push *",
+    "gh api*", "gh -* api*",
+    "gh pr comment*", "gh pr create*", "gh pr review*", "gh pr merge*",
+    "gh pr edit*", "gh pr close*", "gh pr reopen*", "gh pr ready*", "gh pr lock*", "gh pr unlock*",
+    "gh -* pr comment*", "gh -* pr create*", "gh -* pr review*", "gh -* pr merge*",
+    "gh -* pr edit*", "gh -* pr close*", "gh -* pr reopen*", "gh -* pr ready*", "gh -* pr lock*", "gh -* pr unlock*",
+    "gh issue comment*", "gh issue create*", "gh issue edit*", "gh issue close*",
+    "gh issue reopen*", "gh issue delete*", "gh issue transfer*", "gh issue lock*", "gh issue unlock*",
+    "gh -* issue comment*", "gh -* issue create*", "gh -* issue edit*", "gh -* issue close*",
+    "gh -* issue reopen*", "gh -* issue delete*", "gh -* issue transfer*", "gh -* issue lock*", "gh -* issue unlock*",
+    "gh release create*", "gh release edit*", "gh release delete*", "gh release upload*",
+    "gh -* release create*", "gh -* release edit*", "gh -* release delete*", "gh -* release upload*",
+    "gh run rerun*", "gh run cancel*", "gh run delete*", "gh workflow run*", "gh workflow enable*", "gh workflow disable*",
+    "gh -* run rerun*", "gh -* run cancel*", "gh -* run delete*", "gh -* workflow run*", "gh -* workflow enable*", "gh -* workflow disable*",
+    "gh repo create*", "gh repo delete*", "gh repo edit*", "gh repo archive*", "gh repo rename*",
+    "gh -* repo create*", "gh -* repo delete*", "gh -* repo edit*", "gh -* repo archive*", "gh -* repo rename*"
+  ]
   dialogs: false
   spawn: []
 ---

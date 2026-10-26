@@ -463,7 +463,6 @@ func (e *Engine) subagentRenderContextFor(targets map[string]map[string]bool) (m
 		externalDirectoriesByAgent["homonto"] = append(append([]string(nil), externalDirectories...), recordRoots...)
 	}
 	names := map[string]string{}
-	hosts := map[string]string{}
 	if entries, err := e.Cfg.ExpandedSubagentEntriesForTool("opencode"); err == nil {
 		for _, entry := range entries {
 			if source, ok := config.SubagentCatalogName(entry.Resource.Source); ok {
@@ -477,21 +476,21 @@ func (e *Engine) subagentRenderContextFor(targets map[string]map[string]bool) (m
 				if entry.Resource.Scope == "project" && entry.Repo != "" {
 					directory = e.Cfg.RepoDirs()[entry.Repo]
 				}
-				host, known := hosts[directory]
-				if !known {
-					var err error
-					host, err = permissionHostWorktree(directory)
-					if err != nil {
-						return nil, err
-					}
-					hosts[directory] = host
-				}
 				for _, root := range recordRoots {
-					rel, err := filepath.Rel(host, root)
-					if err != nil {
-						return nil, fmt.Errorf("permission host %q records %q: %w", host, root, err)
+					// V2 checks internal edits relative to the active Location,
+					// and external files by absolute canonical path (already
+					// included in recordRoots). Mixing in V1 worktree-relative
+					// paths would deny unrelated source files in nested layouts.
+					for _, base := range []string{directory, permissionCanonicalPath(directory)} {
+						rel, err := filepath.Rel(base, root)
+						if err != nil {
+							return nil, fmt.Errorf("permission host %q records %q: %w", base, root, err)
+						}
+						if rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+							continue
+						}
+						editDirectoryDeniesByAgent[source] = append(editDirectoryDeniesByAgent[source], rel)
 					}
-					editDirectoryDeniesByAgent[source] = append(editDirectoryDeniesByAgent[source], rel)
 				}
 			}
 		}

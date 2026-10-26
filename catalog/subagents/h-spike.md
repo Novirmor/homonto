@@ -54,9 +54,10 @@ Return, in this order:
   the change would carry.
 - **Approach sketch** — one short paragraph, prose only. No code, no diffs;
   a spike that writes the fix has stopped being a spike.
-- **Workflow fit** — whether the work suits `to` (focused, few files, no
-  spec impact) or onto (design questions, evidence obligations, interface
-  changes), with the deciding facts named.
+- **Workflow fit** — whether the work suits `no` (model-directed implementation
+  and review without lifecycle records), `to` (bounded plan/do/done), or onto
+  (design or evidence obligations), with the deciding facts named. The parent
+  checks installed options and owns selection.
 - **Questions:** — unresolved items the coordinator must answer or ask the
   user; empty when nothing blocks.
 

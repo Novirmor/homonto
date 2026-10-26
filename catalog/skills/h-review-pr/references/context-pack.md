@@ -69,8 +69,9 @@ fetching the diff and before dispatch. If either changed, discard the mixed
 snapshot and rebuild; a worker must never combine an old diff with new metadata.
 
 Inspect raw `gh api` payloads because that surface can mutate as well as read.
-Arbitrary API mutations retain their tool permission prompt boundary and must
-stay within the invocation's authorized scope. Ordinary read-only context
+API queries and mutations use the trusted coordinator shell, but must stay
+within the invocation's authorized scope and required draft-approval gates.
+Ordinary read-only context
 fetches, including the paginated GraphQL queries below, need no redundant user
 dialog when allowed by configured permissions. Honor any required tool prompt
 and explicit deny; never bypass either with another tool or command wrapper.

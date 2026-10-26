@@ -3,7 +3,10 @@
 Agent-run checks (grep/read — no scripts), staged: sections run at the
 points onto-close names (§0–2 before the merge, §3 after it, §4 before
 archiving). Findings block the archive step exactly like the guides
-obligation: fix them or stop.
+obligation: investigate and repair them; stop only for a concrete decision,
+permission or external blocker under the delivery loop. Inspect delta target
+existence/names while drafting and before final verification as well; early
+read-only inspection does not authorize spec merging before close.
 
 ## 0. Delta coverage (behavior changes have specs — the central check)
 

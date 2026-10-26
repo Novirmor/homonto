@@ -537,9 +537,14 @@ func TestHWorkflowRendersCoordinatorAndReadonlyWorkers(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, want := range []string{"mode: primary", `"h-spike": allow`, `"h-review": allow`, "external_directory:", "webfetch: allow", "websearch: allow", `"*": allow`, `"git push *": ask`, `"gh pr comment*": ask`, `"onto bypass*": ask`} {
+	for _, want := range []string{"mode: primary", `"h-spike": allow`, `"h-review": allow`, "external_directory:", "webfetch: allow", "websearch: allow", `"*": allow`, `"gh pr merge*": ask`, `"onto bypass*": ask`} {
 		if !strings.Contains(string(primary), want) {
 			t.Errorf("homonto primary (via h) missing %q:\n%s", want, primary)
+		}
+	}
+	for _, obsolete := range []string{`"git push *": ask`, `"gh pr comment*": ask`, `"gh api*": ask`} {
+		if strings.Contains(string(primary), obsolete) {
+			t.Errorf("coordinator must trust task-authorized delivery, found %s", obsolete)
 		}
 	}
 	for _, deniedSetter := range []string{`"onto set verify-result*": deny`, `"onto set close-confirmed*": deny`, `"onto set proposal-approved*": deny`, `"onto set approach-confirmed*": deny`} {

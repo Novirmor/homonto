@@ -5,6 +5,9 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"os"
+	"os/signal"
+	"syscall"
 	"time"
 
 	"github.com/noviopenworks/homonto/internal/worktask"
@@ -64,11 +67,17 @@ func workspaceTaskCmd() *cobra.Command {
 		if timeout <= 0 {
 			return fmt.Errorf("timeout must be positive")
 		}
+		// A check runs in its own process group, so a terminal interrupt reaches
+		// only this process. Turn it into cancellation, which kills the group and
+		// still records the result; a second signal falls back to the default.
+		ctx, stop := signal.NotifyContext(cmd.Context(), os.Interrupt, syscall.SIGTERM, syscall.SIGHUP)
+		defer stop()
+		context.AfterFunc(ctx, stop)
 		s, err := open(cmd)
 		if err != nil {
 			return err
 		}
-		t, err := s.Load(cmd.Context(), args[0])
+		t, err := s.Load(ctx, args[0])
 		if err != nil {
 			return err
 		}
@@ -82,8 +91,8 @@ func workspaceTaskCmd() *cobra.Command {
 		}
 		var failures []error
 		for _, name := range names {
-			ctx, cancel := context.WithTimeout(cmd.Context(), timeout)
-			result, err := s.RunCheck(ctx, t, name, cmd.ErrOrStderr())
+			checkCtx, cancel := context.WithTimeout(ctx, timeout)
+			result, err := s.RunCheck(checkCtx, t, name, cmd.ErrOrStderr())
 			cancel()
 			if encErr := json.NewEncoder(cmd.OutOrStdout()).Encode(struct {
 				Name   string          `json:"name"`
@@ -94,7 +103,7 @@ func workspaceTaskCmd() *cobra.Command {
 			if err != nil {
 				failures = append(failures, fmt.Errorf("%s: %w", name, err))
 			}
-			if cmd.Context().Err() != nil {
+			if ctx.Err() != nil {
 				break
 			}
 		}

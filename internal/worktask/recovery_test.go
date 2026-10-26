@@ -134,7 +134,11 @@ func TestCleanupRecoversCompletedRemoval(t *testing.T) {
 			t.Fatalf("%s checkout remains after recovery: %v", alias, err)
 		}
 	}
-	runGit(t, api.Source, "rev-parse", "--verify", "refs/heads/"+api.Branch)
+	// The removal finished before the interruption; recovery still releases
+	// the integrated task branch.
+	if out := runGit(t, api.Source, "branch", "--list", api.Branch); out != "" {
+		t.Fatalf("integrated task branch survived recovered cleanup: %q", out)
+	}
 }
 
 func TestCleanupRevalidatesPendingRemoval(t *testing.T) {

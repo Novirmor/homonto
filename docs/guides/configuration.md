@@ -230,11 +230,15 @@ source anchors and registered bindings. New bindings start at the recorded base
 commit and integrate into its recorded branch, so allocation still succeeds after
 that branch advances, provided it still contains the base.
 
-If allocation is interrupted or fails (for example, the task branch already
-exists), resolve the cause and repeat the identical `create` to resume; a
-destination Git already created is adopted only if it is exactly this task's
-checkout. `check` refuses an incomplete task. `cleanup` releases allocations Git
-never created and retains the colliding branch. A native onto/to binding removed
+If allocation is interrupted or fails (for example, the task branch
+`work-<name>/<alias>` already exists), resolve the cause and repeat the identical
+`create` to resume; a destination Git already created is adopted only if it is
+exactly this task's checkout. An existing branch is never adopted, even one an
+interrupted `create` left behind: delete it yourself if it is that leftover.
+`check` refuses an incomplete task. `cleanup` releases allocations Git never
+created and retains the colliding branch. After removing a task-created
+worktree it deletes that worktree's branch, only while the branch still points
+at a commit already integrated into its recorded target. A native onto/to binding removed
 with `homonto worktree remove` leaves the task's other checkouts usable for cleanup.
 No allocates independently and never invokes onto/to or creates lifecycle
 records. Shared metadata contains checkout bookkeeping and results, not plans,

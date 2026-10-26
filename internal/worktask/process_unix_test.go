@@ -76,6 +76,33 @@ func TestCheckExitStopsBackgroundDescendants(t *testing.T) {
 	}
 }
 
+func TestCheckPassesWhenBackgroundDescendantKeepsOutput(t *testing.T) {
+	s := fixture(t)
+	task := createNo(t, s, "existing")
+	check := s.Config.Integration["pair"]
+	// A test server started in the background inherits the check's output and
+	// outlives the check's last command, which passes.
+	check.Command = []string{"sh", "-c", `(sleep 3; printf orphan > tracked) & echo tests passed`}
+	s.Config.Integration["pair"] = check
+	var output strings.Builder
+	started := time.Now()
+	r, err := s.RunCheck(context.Background(), task, "pair", &output)
+	if err != nil || r.Status != "passed" || r.ExitCode != 0 {
+		t.Fatalf("check = %+v, %v", r, err)
+	}
+	if elapsed := time.Since(started); elapsed > 2*time.Second {
+		t.Fatalf("check waited for its background descendant: %s", elapsed)
+	}
+	if !strings.Contains(output.String(), "tests passed") {
+		t.Fatalf("check output lost: %q", output.String())
+	}
+	time.Sleep(3500 * time.Millisecond)
+	data, err := os.ReadFile(filepath.Join(task.Checkouts["api"].Path, "tracked"))
+	if err != nil || strings.TrimSpace(string(data)) != "original" {
+		t.Fatalf("background child modified checkout after the check: %q, %v", data, err)
+	}
+}
+
 func TestTimedOutCheckStillDetectsMutation(t *testing.T) {
 	s := fixture(t)
 	task := createNo(t, s, "existing")

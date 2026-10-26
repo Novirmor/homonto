@@ -7,7 +7,6 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"regexp"
 	"slices"
@@ -83,11 +82,20 @@ func (s *Store) dir(name string) (string, error) {
 }
 
 // lockWait bounds how long one command waits for another to finish its
-// task.json update; allocation can hold the lock across git worktree add.
-const lockWait = time.Minute
+// task.json update; allocation and cleanup hold the lock across Git worktree
+// operations. resultLockWait is longer: a finished check's result cannot be
+// produced again without rerunning it. Variables only so tests can shorten them.
+var (
+	lockWait       = time.Minute
+	resultLockWait = 30 * time.Minute
+)
 
 // lock serializes every task.json read-modify-write for one task.
 func (s *Store) lock(name string) (func(), error) {
+	return s.lockFor(name, lockWait)
+}
+
+func (s *Store) lockFor(name string, wait time.Duration) (func(), error) {
 	dir, err := s.dir(name)
 	if err != nil {
 		return nil, err
@@ -95,7 +103,7 @@ func (s *Store) lock(name string) (func(), error) {
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return nil, err
 	}
-	deadline := time.Now().Add(lockWait)
+	deadline := time.Now().Add(wait)
 	for {
 		lock, err := applylock.AcquirePath(filepath.Join(dir, "task.lock"), filepath.Join(s.Layout.ConfigRoot, ".homonto"))
 		if err == nil {
@@ -123,8 +131,8 @@ func (s *Store) save(t *Task) error {
 
 // update applies one mutation to the recorded task under its lock, so
 // concurrent commands keep each other's results and removal markers.
-func (s *Store) update(name string, mutate func(*Task)) error {
-	unlock, err := s.lock(name)
+func (s *Store) update(name string, wait time.Duration, mutate func(*Task)) error {
+	unlock, err := s.lockFor(name, wait)
 	if err != nil {
 		return err
 	}
@@ -416,7 +424,13 @@ func (s *Store) allocate(ctx context.Context, t *Task, inputs []string) error {
 					args = []string{"worktree", "add", "-b", taskBranch(t.Name, alias), c.Path, c.Base}
 				}
 				if _, err := git(ctx, c.Source, args...); err != nil {
-					return fmt.Errorf("%w; resolve the cause and rerun create to resume, or run cleanup to abandon %s", err, alias)
+					hint := ""
+					if c.Changed {
+						// An interrupted add can leave the branch behind; it may
+						// also be the user's, so it is never adopted or deleted.
+						hint = fmt.Sprintf(" (if %s is a leftover from an interrupted create, delete it)", taskBranch(t.Name, alias))
+					}
+					return fmt.Errorf("%w; resolve the cause%s and rerun create to resume, or run cleanup to abandon %s", err, hint, alias)
 				}
 			} else if err != nil {
 				return err
@@ -434,7 +448,9 @@ func (s *Store) allocate(ctx context.Context, t *Task, inputs []string) error {
 	return nil
 }
 
-func taskBranch(name, alias string) string { return "work-" + name + "-" + alias }
+// taskBranch separates name and alias with "/", which neither may contain, so
+// distinct (name, alias) pairs never share a branch.
+func taskBranch(name, alias string) string { return "work-" + name + "/" + alias }
 
 // adopt records the identity of an allocated checkout. A task-owned checkout
 // must still be exactly what this task asked Git to create.
@@ -524,21 +540,6 @@ func (s *Store) validateCheckout(ctx context.Context, t *Task, alias string, c C
 	return head, nil
 }
 
-func git(ctx context.Context, dir string, args ...string) (string, error) {
-	cmd := exec.CommandContext(ctx, "git", append([]string{"-C", dir}, args...)...)
-	for _, env := range os.Environ() {
-		if !strings.HasPrefix(env, "GIT_") {
-			cmd.Env = append(cmd.Env, env)
-		}
-	}
-	cmd.Env = append(cmd.Env, "GIT_OPTIONAL_LOCKS=0", "GIT_TERMINAL_PROMPT=0")
-	data, err := cmd.CombinedOutput()
-	if err != nil {
-		return "", fmt.Errorf("git %s in %s: %w: %s", strings.Join(args, " "), dir, err, data)
-	}
-	return strings.TrimSpace(string(data)), nil
-}
-
 // identity reads a checkout's root, HEAD, and Git directories in one process;
 // branch is empty when HEAD is detached.
 func identity(ctx context.Context, dir string) (head, common, gd, branch string, err error) {
@@ -564,32 +565,13 @@ func identity(ctx context.Context, dir string) (head, common, gd, branch string,
 	return fields[3], fields[1], fields[2], branch, nil
 }
 
+// git runs one Git probe without inheriting the caller's repository overrides.
+var git = workspace.Git
+
+// clean refuses hidden index flags and uncommitted input; ignored build output
+// may remain in a verification input.
 func clean(ctx context.Context, dir string) error {
-	// Status trusts these flags even when the working contents differ from HEAD.
-	// Refuse them without changing the user's index or sparse checkout.
-	files, err := git(ctx, dir, "ls-files", "-v", "-z")
-	if err != nil {
-		return err
-	}
-	for _, entry := range strings.Split(files, "\x00") {
-		if entry == "" {
-			continue
-		}
-		if len(entry) < 3 || entry[1] != ' ' {
-			return fmt.Errorf("cannot verify index flags at %s", dir)
-		}
-		if entry[0] == 'S' || (entry[0] >= 'a' && entry[0] <= 'z') {
-			return fmt.Errorf("nondefault index flags (assume-unchanged or skip-worktree) for %q at %s", entry[2:], dir)
-		}
-	}
-	status, err := git(ctx, dir, "status", "--porcelain=v1", "--untracked-files=all")
-	if err != nil {
-		return err
-	}
-	if status != "" {
-		return fmt.Errorf("uncommitted input at %s:\n%s", dir, status)
-	}
-	return nil
+	return workspace.CheckoutClean(ctx, dir, false)
 }
 
 // removalComplete reconciles only a journaled removal. Both the checkout and its
@@ -655,6 +637,9 @@ func (s *Store) cleanup(ctx context.Context, t *Task) error {
 				return err
 			}
 			if complete {
+				if err := s.releaseBranch(ctx, c); err != nil {
+					return err
+				}
 				c.Removing, c.Removed = false, true
 				t.Checkouts[alias] = c
 				if err := s.save(t); err != nil {
@@ -684,17 +669,10 @@ func (s *Store) cleanup(ctx context.Context, t *Task) error {
 		if err != nil {
 			return err
 		}
-		ignored, err := git(ctx, c.Path, "ls-files", "--others", "--ignored", "--exclude-standard")
-		if err != nil {
-			return err
-		}
-		if ignored != "" {
-			return fmt.Errorf("%s has ignored files; inspect and remove them explicitly before cleanup", alias)
-		}
-		// The same cleanliness rules as worktree remove, including hidden index
-		// flags and in-progress Git operations.
-		if err := workspace.CleanWorktree(c.Path); err != nil {
-			return err
+		// The same cleanliness rules as worktree remove, including ignored files,
+		// hidden index flags, and in-progress Git operations.
+		if err := workspace.CheckoutClean(ctx, c.Path, true); err != nil {
+			return fmt.Errorf("%s: %w", alias, err)
 		}
 		if c.Changed {
 			if c.BaseBranch == "" {
@@ -716,6 +694,9 @@ func (s *Store) cleanup(ctx context.Context, t *Task) error {
 		if _, err := git(ctx, c.Source, "worktree", "remove", c.Path); err != nil {
 			return err
 		}
+		if err := s.releaseBranch(ctx, c); err != nil {
+			return err
+		}
 		c.Removing, c.Removed = false, true
 		t.Checkouts[alias] = c
 		if err := s.save(t); err != nil {
@@ -723,6 +704,25 @@ func (s *Store) cleanup(ctx context.Context, t *Task) error {
 		}
 	}
 	return nil
+}
+
+// releaseBranch deletes the branch of a removed, task-created worktree. It
+// deletes only a tip already integrated into the recorded target, and only if
+// the branch still points there, so no commit becomes unreachable.
+func (s *Store) releaseBranch(ctx context.Context, c Checkout) error {
+	if !c.Owned || !c.Changed || c.Branch == "" || c.BaseBranch == "" {
+		return nil
+	}
+	ref := "refs/heads/" + c.Branch
+	tip, err := git(ctx, c.Source, "for-each-ref", "--format=%(objectname)", ref)
+	if err != nil || tip == "" {
+		return err
+	}
+	if _, err := git(ctx, c.Source, "merge-base", "--is-ancestor", tip, "refs/heads/"+c.BaseBranch); err != nil {
+		return fmt.Errorf("task branch %s is not integrated into %s; preserve its commits before cleanup: %w", c.Branch, c.BaseBranch, err)
+	}
+	_, err = git(ctx, c.Source, "update-ref", "-d", ref, tip)
+	return err
 }
 
 func sortedCheckouts(t *Task) []string {

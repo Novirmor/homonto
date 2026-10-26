@@ -123,9 +123,9 @@ func (s *Store) RunCheck(ctx context.Context, t *Task, name string, output io.Wr
 		return Result{}, err
 	}
 	// Merge only this check's result, so concurrent checks keep each other's.
-	record := func(r Result) error {
+	record := func(r Result, wait time.Duration) error {
 		t.Results[name] = r
-		return s.update(t.Name, func(cur *Task) { cur.Results[name] = r })
+		return s.update(t.Name, wait, func(cur *Task) { cur.Results[name] = r })
 	}
 	// A failed preflight must supersede an earlier pass, too.
 	r := Result{Status: "failed", Definition: definition(check), Started: time.Now().UTC(), ExitCode: -1}
@@ -134,7 +134,7 @@ func (s *Store) RunCheck(ctx context.Context, t *Task, name string, output io.Wr
 		if runErr != nil {
 			r.Status, r.Error = "failed", runErr.Error()
 		}
-		return r, errors.Join(runErr, record(r))
+		return r, errors.Join(runErr, record(r, resultLockWait))
 	}
 	r.Inputs, err = s.inputs(ctx, t, check)
 	if err != nil {
@@ -171,7 +171,7 @@ func (s *Store) RunCheck(ctx context.Context, t *Task, name string, output io.Wr
 	}
 	defer log.Close()
 	r.Status = "running"
-	if err := record(r); err != nil {
+	if err := record(r, lockWait); err != nil {
 		return r, err
 	}
 	cmd := exec.CommandContext(ctx, check.Command[0], check.Command[1:]...)
@@ -188,15 +188,38 @@ func (s *Store) RunCheck(ctx context.Context, t *Task, name string, output io.Wr
 	if output == nil {
 		output = io.Discard
 	}
-	writer := io.MultiWriter(log, output)
-	cmd.Stdout, cmd.Stderr = writer, writer
+	// The check writes to a pipe this process owns, so Wait returns when the
+	// check exits, not when every background descendant closes its inherited
+	// output. Exec would otherwise copy through its own pipe and report
+	// ErrWaitDelay for a check that passed.
+	read, write, err := os.Pipe()
+	if err != nil {
+		return finish(err)
+	}
+	defer read.Close()
+	copied := make(chan error, 1)
+	go func() {
+		_, err := io.Copy(io.MultiWriter(log, output), read)
+		copied <- err
+	}()
+	cmd.Stdout, cmd.Stderr = write, write
 	cmd.WaitDelay = time.Second
 	runErr := cmd.Run()
+	write.Close()
 	if cmd.ProcessState != nil {
 		r.ExitCode = cmd.ProcessState.ExitCode()
 	}
 	// Background descendants must not outlive a check that exited by itself.
 	stopCheckProcess(cmd)
+	// Killed descendants close the pipe. One that left the process group could
+	// hold it open, so bound the drain rather than wait for it.
+	var copyErr error
+	select {
+	case copyErr = <-copied:
+	case <-time.After(time.Second):
+		read.Close()
+		<-copied
+	}
 	// A timeout or interrupt has already ended ctx; the mutation check must
 	// still run to report what the check did to its inputs.
 	snapshot, cancel := context.WithTimeout(context.WithoutCancel(ctx), snapshotTimeout)
@@ -209,5 +232,5 @@ func (s *Store) RunCheck(ctx context.Context, t *Task, name string, output io.Wr
 		r.Stale, r.StaleReason = true, inputErr.Error()
 	}
 	r.Status = "passed"
-	return finish(errors.Join(runErr, inputErr, log.Sync()))
+	return finish(errors.Join(runErr, inputErr, copyErr, log.Sync()))
 }

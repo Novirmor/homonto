@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/noviopenworks/homonto/internal/config"
 	"github.com/noviopenworks/homonto/internal/workflowroot"
@@ -169,6 +170,9 @@ func TestResumeEngineIsolationAndCleanup(t *testing.T) {
 	}
 	if _, err := os.Stat(api); !os.IsNotExist(err) {
 		t.Fatalf("owned checkout remains: %v", err)
+	}
+	if out := runGit(t, s.Layout.Repos["api"], "branch", "--list", task.Checkouts["api"].Branch); out != "" {
+		t.Fatalf("integrated task branch survived cleanup: %q", out)
 	}
 	for _, path := range []string{s.Layout.WorkflowRoot, filepath.Join(s.Layout.ConfigRoot, ".git")} {
 		if _, err := os.Stat(path); !os.IsNotExist(err) {
@@ -357,7 +361,7 @@ func TestFallbackAndMetadataIntegrity(t *testing.T) {
 func TestAllocationFailureRetainsExactIntent(t *testing.T) {
 	s := fixture(t)
 	api := s.Layout.Repos["api"]
-	runGit(t, api, "branch", "work-feature-api")
+	runGit(t, api, "branch", "work-feature/api")
 	before := runGit(t, api, "rev-parse", "HEAD")
 	task, err := s.Create(context.Background(), "feature", "no", "", "worktree", []string{"api"}, nil)
 	if err == nil || task == nil {
@@ -386,12 +390,12 @@ func TestAllocationFailureRetainsExactIntent(t *testing.T) {
 		t.Fatal("failed allocation changed original")
 	}
 	// Once the user resolves the collision, repeating create resumes it.
-	runGit(t, api, "branch", "-D", "work-feature-api")
+	runGit(t, api, "branch", "-D", "work-feature/api")
 	task, err = s.Create(context.Background(), "feature", "no", "", "worktree", []string{"api"}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if c := task.Checkouts["api"]; !c.Ready || c.Branch != "work-feature-api" {
+	if c := task.Checkouts["api"]; !c.Ready || c.Branch != "work-feature/api" {
 		t.Fatalf("resumed allocation = %+v", c)
 	}
 	if _, err := s.RunCheck(context.Background(), task, "pair", nil); err != nil {
@@ -402,15 +406,15 @@ func TestAllocationFailureRetainsExactIntent(t *testing.T) {
 func TestResumeAdoptsAllocationGitFinished(t *testing.T) {
 	s := fixture(t)
 	api := s.Layout.Repos["api"]
-	runGit(t, api, "branch", "work-feature-api")
+	runGit(t, api, "branch", "work-feature/api")
 	if _, err := s.Create(context.Background(), "feature", "no", "", "worktree", []string{"api"}, nil); err == nil {
 		t.Fatal("branch collision accepted")
 	}
 	// Simulate a command killed after Git created the worktree but before the
 	// task recorded it.
-	runGit(t, api, "branch", "-D", "work-feature-api")
+	runGit(t, api, "branch", "-D", "work-feature/api")
 	dest := filepath.Join(s.Layout.WorktreesDir, "api", "workspace-feature")
-	runGit(t, api, "worktree", "add", "-b", "work-feature-api", dest, "HEAD")
+	runGit(t, api, "worktree", "add", "-b", "work-feature/api", dest, "HEAD")
 	task, err := s.Create(context.Background(), "feature", "no", "", "worktree", []string{"api"}, nil)
 	if err != nil {
 		t.Fatal(err)
@@ -423,7 +427,7 @@ func TestResumeAdoptsAllocationGitFinished(t *testing.T) {
 func TestResumeRefusesForeignDestination(t *testing.T) {
 	s := fixture(t)
 	api := s.Layout.Repos["api"]
-	runGit(t, api, "branch", "work-feature-api")
+	runGit(t, api, "branch", "work-feature/api")
 	if _, err := s.Create(context.Background(), "feature", "no", "", "worktree", []string{"api"}, nil); err == nil {
 		t.Fatal("branch collision accepted")
 	}
@@ -443,7 +447,7 @@ func TestResumeRefusesForeignDestination(t *testing.T) {
 func TestCleanupAbandonsUnallocatedCheckout(t *testing.T) {
 	s := fixture(t)
 	api := s.Layout.Repos["api"]
-	runGit(t, api, "branch", "work-feature-api")
+	runGit(t, api, "branch", "work-feature/api")
 	if _, err := s.Create(context.Background(), "feature", "no", "", "worktree", []string{"api"}, nil); err == nil {
 		t.Fatal("branch collision accepted")
 	}
@@ -458,7 +462,7 @@ func TestCleanupAbandonsUnallocatedCheckout(t *testing.T) {
 		t.Fatal(err)
 	}
 	// The colliding branch belongs to the user; cleanup never deletes branches.
-	runGit(t, api, "rev-parse", "--verify", "refs/heads/work-feature-api")
+	runGit(t, api, "rev-parse", "--verify", "refs/heads/work-feature/api")
 }
 
 func TestConcurrentChecksKeepEachOthersResults(t *testing.T) {
@@ -493,6 +497,51 @@ func TestConcurrentChecksKeepEachOthersResults(t *testing.T) {
 		if task.Results[name].Status != "passed" {
 			t.Fatalf("lost concurrent result %s: %+v", name, task.Results)
 		}
+	}
+}
+
+func TestTaskBranchesAreDistinctPerNameAndAlias(t *testing.T) {
+	// Names and aliases may both contain "-", so joining them with "-" collides.
+	if taskBranch("a-b", "c") == taskBranch("a", "b-c") {
+		t.Fatalf("distinct tasks share branch %s", taskBranch("a", "b-c"))
+	}
+}
+
+func TestFinishedCheckWaitsForBusyTaskToRecord(t *testing.T) {
+	oldWait, oldResultWait := lockWait, resultLockWait
+	lockWait, resultLockWait = 100*time.Millisecond, 10*time.Second
+	t.Cleanup(func() { lockWait, resultLockWait = oldWait, oldResultWait })
+	s := fixture(t)
+	task := createNo(t, s, "existing")
+	pair := s.Config.Integration["pair"]
+	pair.Command = []string{"sh", "-c", "printf ready; sleep 0.2"}
+	s.Config.Integration["pair"] = pair
+	// Another command (allocation or cleanup) holds the lock across Git work
+	// for longer than an ordinary update waits, from the check's start to after
+	// it finished.
+	held := make(chan func(), 1)
+	output := &checkStartedWriter{start: func() {
+		unlock, err := s.lock(task.Name)
+		if err != nil {
+			t.Error(err)
+			unlock = func() {}
+		}
+		held <- unlock
+	}}
+	go func() {
+		unlock := <-held
+		time.Sleep(time.Second)
+		unlock()
+	}()
+	if r, err := s.RunCheck(context.Background(), task, "pair", output); err != nil || r.Status != "passed" {
+		t.Fatalf("check = %+v, %v", r, err)
+	}
+	loaded, err := s.Load(context.Background(), task.Name)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if r := loaded.Results["pair"]; r.Status != "passed" {
+		t.Fatalf("finished result lost while the task was busy: %+v", r)
 	}
 }
 

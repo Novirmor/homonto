@@ -70,7 +70,7 @@ using exactly one installed engine (`onto`, `to`, or `no`):
 | `create NAME --engine ENGINE --repo ALIAS --isolation existing\|worktree` | Record the selected engine and user-chosen isolation; repeat `--repo`, add `--change NAME` for onto/to and optional `--isolation-override ALIAS=MODE`. |
 | `inspect NAME` | Resume recorded checkout identities and report integration-result staleness as JSON. |
 | `check NAME --writers-paused` | Run matching named checks, optionally `--check NAME` and `--timeout 10m`; command output goes to stderr, JSON results to stdout. |
-| `cleanup NAME --yes` | Remove only clean integrated task-owned worktrees; retain branches and metadata. |
+| `cleanup NAME --yes` | Remove only clean integrated task-owned worktrees and their integrated task branches; retain metadata. |
 
 All accept `--config PATH`. No has no executable or lifecycle; onto/to use
 their native lifecycle bindings. See [integration checks and workspace tasks](configuration.md#integration-checks)

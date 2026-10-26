@@ -1,6 +1,7 @@
 package workspace
 
 import (
+	"context"
 	"crypto/rand"
 	"crypto/sha256"
 	"encoding/hex"
@@ -183,9 +184,17 @@ func realWorktreePath(path string, directory bool) error {
 }
 
 func worktreeGit(dir string, args ...string) (string, error) {
-	cmd := exec.Command("git", append([]string{"-C", dir}, args...)...)
-	// Do not inherit a caller's repository/index override. Read-only Git probes
-	// must not refresh the original checkout's index either.
+	out, err := Git(context.Background(), dir, args...)
+	if err != nil {
+		return "", fmt.Errorf("worktree: %w", err)
+	}
+	return out, nil
+}
+
+// Git runs one Git probe in dir. It does not inherit a caller's repository or
+// index override, refresh the checkout's index, or prompt for credentials.
+func Git(ctx context.Context, dir string, args ...string) (string, error) {
+	cmd := exec.CommandContext(ctx, "git", append([]string{"-C", dir}, args...)...)
 	for _, env := range os.Environ() {
 		if !strings.HasPrefix(env, "GIT_") {
 			cmd.Env = append(cmd.Env, env)
@@ -194,7 +203,7 @@ func worktreeGit(dir string, args ...string) (string, error) {
 	cmd.Env = append(cmd.Env, "GIT_OPTIONAL_LOCKS=0", "GIT_TERMINAL_PROMPT=0")
 	out, err := cmd.CombinedOutput()
 	if err != nil {
-		return "", fmt.Errorf("worktree: git %s in %s: %w: %s", strings.Join(args, " "), dir, err, strings.TrimSpace(string(out)))
+		return "", fmt.Errorf("git %s in %s: %w: %s", strings.Join(args, " "), dir, err, strings.TrimSpace(string(out)))
 	}
 	return strings.TrimSpace(string(out)), nil
 }
@@ -1504,14 +1513,20 @@ func RemoveWorktreeRole(l Layout, workflow, change, repo, role string, yes bool)
 	return w, nil
 }
 
-// CleanWorktree applies the removal rules: no hidden index flags, untracked
-// or ignored files, or in-progress Git operations.
-func CleanWorktree(path string) error { return cleanWorktree(path) }
-
 func cleanWorktree(path string) error {
+	if err := CheckoutClean(context.Background(), path, true); err != nil {
+		return fmt.Errorf("worktree: %w", err)
+	}
+	return nil
+}
+
+// CheckoutClean refuses hidden index flags and uncommitted or untracked files.
+// For removal it also refuses ignored files and in-progress Git operations; a
+// verification input may keep ignored build output.
+func CheckoutClean(ctx context.Context, path string, removal bool) error {
 	// Status trusts index flags that hide modified files. Refuse those flags
 	// rather than clearing them or materializing sparse files in a user's tree.
-	files, err := worktreeGit(path, "ls-files", "-v", "-z")
+	files, err := Git(ctx, path, "ls-files", "-v", "-z")
 	if err != nil {
 		return err
 	}
@@ -1520,26 +1535,36 @@ func cleanWorktree(path string) error {
 			continue
 		}
 		if len(entry) < 3 || entry[1] != ' ' {
-			return fmt.Errorf("worktree: cannot verify index flags at %s", path)
+			return fmt.Errorf("cannot verify index flags at %s", path)
 		}
 		if entry[0] == 'S' || (entry[0] >= 'a' && entry[0] <= 'z') {
-			return fmt.Errorf("worktree: nondefault index flags (assume-unchanged or skip-worktree) for %q at %s", entry[2:], path)
+			return fmt.Errorf("nondefault index flags (assume-unchanged or skip-worktree) for %q at %s", entry[2:], path)
 		}
 	}
-	dirt, err := worktreeGit(path, "status", "--porcelain=v1", "--untracked-files=all", "--ignored", "--ignore-submodules=none")
+	if !removal {
+		status, err := Git(ctx, path, "status", "--porcelain=v1", "--untracked-files=all")
+		if err != nil {
+			return err
+		}
+		if status != "" {
+			return fmt.Errorf("uncommitted input at %s:\n%s", path, status)
+		}
+		return nil
+	}
+	dirt, err := Git(ctx, path, "status", "--porcelain=v1", "--untracked-files=all", "--ignored", "--ignore-submodules=none")
 	if err != nil {
 		return err
 	}
 	if dirt != "" {
-		return fmt.Errorf("worktree: dirty registered path %s (including untracked/ignored files)", path)
+		return fmt.Errorf("dirty registered path %s (including untracked/ignored files)", path)
 	}
-	gitDir, err := worktreeGit(path, "rev-parse", "--absolute-git-dir")
+	gitDir, err := Git(ctx, path, "rev-parse", "--absolute-git-dir")
 	if err != nil {
 		return err
 	}
 	for _, state := range []string{"MERGE_HEAD", "CHERRY_PICK_HEAD", "REVERT_HEAD", "rebase-merge", "rebase-apply", "sequencer", "index.lock", "locked"} {
 		if _, err := os.Lstat(filepath.Join(gitDir, state)); err == nil {
-			return fmt.Errorf("worktree: Git operation or locked worktree at %s: %s", path, state)
+			return fmt.Errorf("in-progress Git operation or locked worktree at %s: %s", path, state)
 		} else if !os.IsNotExist(err) {
 			return err
 		}

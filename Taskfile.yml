@@ -4,8 +4,9 @@
 version: "3"
 
 vars:
-  # Keep in step with GOLANGCI_LINT_VERSION in scripts/gate.sh.
-  GOLANGCI_LINT_VERSION: 2.12.2
+  # scripts/gate.sh pins the linter; CI and release run that gate.
+  GOLANGCI_LINT_VERSION:
+    sh: sed -n 's/^GOLANGCI_LINT_VERSION=//p' scripts/gate.sh
   BIN: bin
   BASE: main
   VERSION:
@@ -14,12 +15,6 @@ vars:
     -X github.com/noviopenworks/homonto/internal/cli.Version={{.VERSION}}
     -X github.com/noviopenworks/homonto/internal/ontocli.Version={{.VERSION}}
     -X github.com/noviopenworks/homonto/internal/tocli.Version={{.VERSION}}
-  # Go files changed on this branch plus uncommitted work, relative to BASE.
-  CHANGED_GO:
-    sh: |
-      { git diff --name-only {{.BASE}}...HEAD; git diff --name-only HEAD;
-        git ls-files --others --exclude-standard; } 2>/dev/null \
-        | grep '\.go$' | sort -u | while read -r f; do [ -e "$f" ] && echo "$f"; done || true
 
 tasks:
   default:
@@ -67,8 +62,12 @@ tasks:
     cmd: go test -race ./... -timeout=20m
 
   test-changed:
-    desc: Test only the packages with Go changes vs BASE (default main)
+    desc: Test only the packages with Go changes vs BASE (default main, else origin/main)
     vars:
+      # Task-local: Task evaluates global sh vars for every task, and an
+      # unresolvable BASE must fail only the tasks that need it.
+      CHANGED_GO:
+        sh: ./scripts/changed-go.sh {{.BASE}}
       PKGS:
         sh: |
           for f in {{.CHANGED_GO | catLines}}; do echo "./$(dirname "$f")"; done | sort -u | tr '\n' ' '
@@ -119,6 +118,9 @@ tasks:
 
   affected:
     desc: Tests CodeGraph links to the Go files changed vs BASE
+    vars:
+      CHANGED_GO:
+        sh: ./scripts/changed-go.sh {{.BASE}}
     cmd: '{{if .CHANGED_GO}}codegraph affected --quiet --filter "**/*_test.go" {{.CHANGED_GO | catLines}}{{else}}echo "no changed Go files"{{end}}'
 
   clean:

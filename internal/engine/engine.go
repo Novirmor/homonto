@@ -418,10 +418,16 @@ func (e *Engine) subagentRenderContextFor(targets map[string]map[string]bool) (m
 		records = filepath.Join(e.ProjectRoot, records)
 	}
 	recordRoots := []string{records, permissionCanonicalPath(records)}
+	roles, err := agentfm.BuiltinRoles()
+	if err != nil {
+		return nil, err
+	}
 	// Native record protection follows the builtin role even when installed
 	// directly rather than through a framework. It grants no external access.
-	for _, agent := range []string{"onto-implementer", "to-implementer", "no-implementer"} {
-		externalDirectoryDeniesByAgent[agent] = recordRoots
+	for agent, role := range roles {
+		if role.Writer {
+			externalDirectoryDeniesByAgent[agent] = recordRoots
+		}
 	}
 	// ADR 0068: builtin workers may inspect all declared repositories. Directory
 	// access does not grant shell or edit capability to read-only specialists.
@@ -457,10 +463,11 @@ func (e *Engine) subagentRenderContextFor(targets map[string]map[string]bool) (m
 				}
 			}
 		}
-		for _, agent := range []string{"homonto", "onto-implementer", "to-implementer", "no-implementer", "onto-explorer", "onto-reviewer", "onto-skeptic", "to-explorer", "to-reviewer", "to-skeptic", "no-reviewer", "h-spike", "h-review"} {
-			externalDirectoriesByAgent[agent] = externalDirectories
+		// Every builtin role may read workflow records, even outside the
+		// project. A writer's record denies render last and remove that allow.
+		for agent := range roles {
+			externalDirectoriesByAgent[agent] = append(append([]string(nil), externalDirectories...), recordRoots...)
 		}
-		externalDirectoriesByAgent["homonto"] = append(append([]string(nil), externalDirectories...), recordRoots...)
 	}
 	names := map[string]string{}
 	if entries, err := e.Cfg.ExpandedSubagentEntriesForTool("opencode"); err == nil {

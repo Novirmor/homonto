@@ -285,10 +285,14 @@ func Render(name string, content []byte, tool string, ctx *RenderContext) ([]byt
 		if h.BashDefault == "allow" || (ctx != nil && ctx.ShellProxy == "rtk") {
 			h.BashDeny = rtkPatterns(h.BashDeny, true)
 		}
+		roles, err := BuiltinRoles()
+		if err != nil {
+			return nil, err
+		}
 		if perm := opencodePermission(h, spec.BashAllowAdd, externalDirectories, externalDirectoryDenies, editDirectoryDenies, managesExternalDirectories); perm != "" {
-			if name == "homonto" || strings.HasPrefix(name, "onto-") || strings.HasPrefix(name, "to-") || strings.HasPrefix(name, "no-") || name == "h-spike" || name == "h-review" {
+			if role, builtin := roles[name]; builtin {
 				action := "deny"
-				if name == "homonto" && !h.ReadOnly && (h.Bash == nil || *h.Bash) {
+				if role.Coordinator && !h.ReadOnly && (h.Bash == nil || *h.Bash) {
 					action = "allow"
 				}
 				for _, tool := range []string{"homonto_status", "homonto_handoff", "homonto_read", "homonto_github_draft", "homonto_github_status", "homonto_github_publish", "homonto_github_read"} {

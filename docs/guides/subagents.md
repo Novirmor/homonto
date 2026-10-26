@@ -269,11 +269,13 @@ grants and write scope. They cannot replace execution bindings or receivers,
 create extra implementation lanes, or recreate the live workflow/control plane.
 Dirty-input transport and exact-path cleanup authorization remain unchanged.
 
-When `[repos]` declares sibling Git worktrees, `homonto apply` gives only the
-`homonto` coordinator and the two implementers an `external_directory` rule. It
-denies all other external paths before allowing the declared roots. The other
-specialists and custom agents receive no rule. Repository paths containing `*`
-or `?` are rejected because OpenCode treats them as permission wildcards.
+When `[repos]` declares sibling Git worktrees, `homonto apply` gives every
+bundled workflow role an `external_directory` rule. It denies all other external
+paths before allowing the declared repositories and worktrees, the selected
+skill roots, and the resolved workflow records root. Implementers are denied the
+records root instead. Read-only specialists keep their shell and edit denials.
+Custom agents receive no rule. Repository paths containing `*` or `?` are
+rejected because OpenCode treats them as permission wildcards.
 
 OpenCode matches these permissions lexically, not through `realpath`. Treat a
 declared repository and its symlinks as trusted: a link beneath an allowed root
@@ -281,14 +283,18 @@ may resolve outside it. Do not use `[repos]` as a filesystem sandbox.
 
 Implementers also receive native `edit` denies for the resolved workflow records
 root. These add no blanket edit grant: inherited asks and path restrictions
-remain in force. Relative rules use the Git top-level of the agent's projection
-destination, not every ancestor or declared source checkout. Repo-targeted
-project agents use that repo's host; user-scoped workflow agents are rendered
-for this configuration's launch directory. OpenCode v1.18.29 uses `/` as the
-edit-permission base in a non-Git instance. Changing a source command's working
-directory does not change the host instance's base. These static relative rules
-do not guarantee protection when a user-scoped agent is launched in an unrelated
-host workspace.
+remain in force. OpenCode v2 reports an edit inside the instance relative to
+its active location (the launch directory), and an edit outside it by absolute
+path. Relative rules therefore use the agent's projection destination, both as
+written and with symlinks resolved, and cover records only beneath it. Records
+elsewhere are covered by absolute rules. Repo-targeted project agents use that
+repo's directory; user-scoped workflow agents are rendered for this
+configuration's launch directory. OpenCode v1's Git-top-level base is not
+emitted, because in a nested layout it would deny unrelated source paths.
+Changing a source command's working directory does not change the host
+instance's location. These static relative rules do not guarantee protection
+when a user-scoped agent is launched in an unrelated host workspace or a
+different subdirectory.
 
 The denies cover **reported permission paths** in OpenCode's `edit`, `write`, and
 `apply_patch` tools, not every possible filesystem mutation. In OpenCode v1.18.29,

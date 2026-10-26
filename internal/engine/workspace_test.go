@@ -94,13 +94,9 @@ func TestWorkspaceProjectionAndPermissions(t *testing.T) {
 							t.Errorf("%s missing source grant %s", name, source)
 						}
 					}
-					wantRecords := "deny"
-					if name == "homonto" {
-						wantRecords = "allow"
-					}
-					if name == "h-review" {
-						wantRecords = ""
-					}
+					// Read-only roles read records as evidence, even outside the
+					// project; only writers are denied them.
+					wantRecords := "allow"
 					if wantRecords != "" && dirs[filepath.ToSlash(filepath.Join(records, "**"))] != wantRecords {
 						t.Errorf("%s workflow rule = %#v, want %s", name, dirs, wantRecords)
 					}

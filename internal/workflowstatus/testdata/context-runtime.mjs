@@ -183,6 +183,7 @@ const request = (agent = "custom-agent") => ({
   tools: { read: { description: "Read", input: { type: "object" } } }, options: { temperature: 0.2 }, result: undefined,
 })
 async function invoke(instance, response, kind = "context", outcome = "policy", agent = "custom-agent") {
+  const invocation = new Error("context invocation").stack
   if (response) responses.push(response)
   const event = request(agent)
   const original = structuredClone(event)
@@ -198,7 +199,7 @@ async function invoke(instance, response, kind = "context", outcome = "policy", 
     assert.ok(!added[0].text.includes(CONTINUATION_POLICY))
   } else {
     assert.ok(added.length === 1 || added.length === 2)
-    assert.deepEqual(added[0], { type: "text", text: CONTINUATION_POLICY })
+    assert.deepEqual(added[0], { type: "text", text: CONTINUATION_POLICY }, invocation)
     if (added[1]) {
       assert.match(added[1].text, /untrusted, read-only snapshot data/)
       assert.ok(!added[1].text.includes(CONTINUATION_POLICY))
@@ -704,21 +705,32 @@ try {
   }
   sessionValue = session
 
-  responses.push({ hold: true, value: snap([change]) })
-  held = undefined
-  const first = invoke(instance)
-  await until(() => held)
-  const beforeConcurrent = calls
-  let lookups = 0
-  getSession = async () => { lookups++; return session }
-  const second = invoke(instance, undefined, "compaction")
-  await until(() => lookups === 1)
-  await delay(20)
-  held(); held = undefined
-  assert.deepEqual(await first, await second)
-  assert.equal(calls, beforeConcurrent)
-  assert.equal(maxLive, 1)
-  getSession = undefined
+  for (const lookupDelay of [0, 50]) {
+    responses.push({ hold: true, value: snap([change]) })
+    held = undefined
+    const first = invoke(instance)
+    await until(() => held)
+    const beforeConcurrent = calls
+    let lookups = 0
+    getSession = async () => { lookups++; if (lookupDelay) await delay(lookupDelay); return session }
+    // Hooks overlap, but async session/binding preflight can finish after the
+    // first snapshot. Supply a second response for that legitimate serial read.
+    // If both reach snapshot while it is held, they must share one subprocess.
+    responses.push({ value: snap([change]) })
+    const second = invoke(instance, undefined, "compaction")
+    const completed = Promise.all([first, second])
+    void completed.catch(() => {}) // observe failures now; await/rethrow below
+    await until(() => lookups === 1)
+    await delay(20)
+    held(); held = undefined
+    const [firstOutput, secondOutput] = await completed
+    assert.deepEqual(firstOutput, secondOutput)
+    assert.ok(calls === beforeConcurrent || calls === beforeConcurrent + 1)
+    assert.equal(maxLive, 1, "overlapping snapshot reads must share a subprocess")
+    assert.equal(responses.length, calls === beforeConcurrent ? 1 : 0)
+    responses = []
+    getSession = undefined
+  }
   assert.match(await invoke(instance, { value: snap([{ ...change, identity: "fresh-generation" }]) }), /fresh-generation/)
 
   responses.push({ hold: true })

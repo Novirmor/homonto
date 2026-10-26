@@ -179,6 +179,57 @@ func TestLoad_RejectsBuiltinPackageKindMismatch(t *testing.T) {
 	}
 }
 
+func TestExpansionValidatesLocalAndRemotePackageKinds(t *testing.T) {
+	for _, sourceType := range []string{"local", "remote"} {
+		for _, namespace := range []string{"workflows", "engines"} {
+			for _, kind := range []string{"workflow", "engine", ""} {
+				t.Run(sourceType+"/"+namespace+"/"+kind, func(t *testing.T) {
+					root := t.TempDir()
+					pkg := filepath.Join(root, "package")
+					if err := os.MkdirAll(filepath.Join(pkg, "skills", "probe"), 0o755); err != nil {
+						t.Fatal(err)
+					}
+					manifest := fmt.Sprintf("name = 'demo'\nkind = %q\nversion = '0.1.0'\n[skills]\nprobe = 'skills/probe'\n", kind)
+					for path, text := range map[string]string{
+						"framework.toml":        manifest,
+						"skills/probe/SKILL.md": "Probe skill.\n",
+					} {
+						if err := os.WriteFile(filepath.Join(pkg, path), []byte(text), 0o644); err != nil {
+							t.Fatal(err)
+						}
+					}
+					source, pin := "local:./package", ""
+					if sourceType == "remote" {
+						source = "remote:https://example.invalid/package.tar.gz"
+						pin = "digest = 'sha256:" + strings.Repeat("a", 64) + "'\n"
+					}
+					path := filepath.Join(root, "homonto.toml")
+					text := fmt.Sprintf("[%s.demo]\nsource = %q\nscope = 'project'\n%s", namespace, source, pin)
+					if err := os.WriteFile(path, []byte(text), 0o644); err != nil {
+						t.Fatal(err)
+					}
+					c, err := Load(path)
+					if err != nil {
+						t.Fatal(err)
+					}
+					if sourceType == "remote" {
+						// The resolver supplies the verified cache root before expansion.
+						c.SetRemoteFrameworkDirs(map[string]string{"demo": pkg})
+					}
+					entries, err := c.ExpandedSkillEntriesForTool("opencode")
+					if kind != "" && kind+"s" != namespace {
+						if err == nil || !strings.Contains(err.Error(), namespace+".demo") || !strings.Contains(err.Error(), "not "+article(strings.TrimSuffix(namespace, "s"))) {
+							t.Fatalf("kind mismatch accepted or misreported: %v", err)
+						}
+					} else if err != nil || len(entries) != 1 || entries[0].Name != "probe" {
+						t.Fatalf("matching or legacy package failed: %+v, %v", entries, err)
+					}
+				})
+			}
+		}
+	}
+}
+
 func TestLoad_AllEnginesMayBeInstalled(t *testing.T) {
 	var text string
 	for _, engine := range []string{"no", "onto", "to"} {

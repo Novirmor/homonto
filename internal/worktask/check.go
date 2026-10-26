@@ -165,6 +165,9 @@ func (s *Store) RunCheck(ctx context.Context, t *Task, name string, output io.Wr
 		return r, err
 	}
 	cmd := exec.CommandContext(ctx, check.Command[0], check.Command[1:]...)
+	if err := prepareCheckProcess(cmd); err != nil {
+		return finish(err)
+	}
 	cmd.Dir = cwd
 	for _, env := range cmd.Environ() {
 		if !strings.HasPrefix(env, "GIT_") && !strings.HasPrefix(env, "HOMONTO_INTEGRATION_CONTEXT=") {

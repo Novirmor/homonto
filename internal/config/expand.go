@@ -57,7 +57,14 @@ func (c *Config) FrameworkCatalog() (*catalog.Catalog, error) {
 	if len(locals) == 0 {
 		return loadedCatalog()
 	}
-	return catalog.NewWithLocal(locals)
+	cl, err := catalog.NewWithLocal(locals)
+	if err != nil {
+		return nil, err
+	}
+	if err := validatePackageKinds(c, cl, false); err != nil {
+		return nil, err
+	}
+	return cl, nil
 }
 
 // frameworkCatalogName maps a [engines.X] declaration to the catalog

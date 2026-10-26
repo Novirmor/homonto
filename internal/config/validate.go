@@ -8,6 +8,7 @@ import (
 	"strings"
 	"unicode"
 
+	"github.com/noviopenworks/homonto/internal/catalog"
 	"github.com/noviopenworks/homonto/internal/remote"
 )
 
@@ -119,18 +120,26 @@ func validateBuiltinPackageKinds(c *Config) error {
 	if err != nil {
 		return err
 	}
-	for kind, resources := range map[string]map[string]Resource{
-		"workflow": c.Workflows,
-		"engine":   c.Engines,
-	} {
-		for name, r := range resources {
-			catalogName, builtin := strings.CutPrefix(r.Source, "builtin:")
-			if !builtin {
+	return validatePackageKinds(c, cl, true)
+}
+
+func validatePackageKinds(c *Config, cl *catalog.Catalog, builtinOnly bool) error {
+	for _, group := range []struct {
+		kind      string
+		resources map[string]Resource
+	}{{"workflow", c.Workflows}, {"engine", c.Engines}} {
+		for _, name := range sortedResourceNames(group.resources) {
+			r := group.resources[name]
+			if builtinOnly && !strings.HasPrefix(r.Source, "builtin:") {
+				continue
+			}
+			catalogName, expandable := FrameworkCatalogName(name, r.Source)
+			if !expandable {
 				continue
 			}
 			pkg, known := cl.Framework(catalogName)
-			if known && pkg.Kind != "" && pkg.Kind != kind {
-				return fmt.Errorf("parse config: %s.%s source %q is %s, not %s", kind+"s", name, r.Source, article(pkg.Kind), article(kind))
+			if known && pkg.Kind != "" && pkg.Kind != group.kind {
+				return fmt.Errorf("parse config: %s.%s source %q is %s, not %s", group.kind+"s", name, r.Source, article(pkg.Kind), article(group.kind))
 			}
 		}
 	}

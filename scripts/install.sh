@@ -546,10 +546,8 @@ configure_new_project() {
   ui_section "Configure project"
   ui_hint "Choose onto and/or to engines for this new repository."
   ask_setup_frameworks
-  if [ "$SETUP_FRAMEWORKS" != none ] && [ "$WORKFLOW_BIN" = both ]; then
-    if ui_confirm "Also configure the standalone h GitHub workflow? ([workflows.h]: /h-spike-issue, /h-resolve-issue, /h-review-pr, /h-continue-pr, /h-review-batch)"; then
-      SETUP_H=yes
-    fi
+  if ui_confirm "Configure the standalone h GitHub workflow? ([workflows.h]: /h-spike-issue, /h-resolve-issue, /h-review-pr, /h-continue-pr, /h-review-batch)"; then
+    SETUP_H=yes
   fi
   ask_workflow_root
   if ui_confirm "Declare a workspace tmp directory? ([tmp] dir = \".tmp\": scratch every agent can write; apply creates it and keeps it gitignored; homonto never deletes content)"; then

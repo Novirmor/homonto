@@ -454,8 +454,8 @@ t23_forced_dialog_requires_binary() {
 
 t24_h_with_onto_stays_independent() {
   local s="$1" config
-  make_release v9.9.9 linux amd64 "$s/assets" homonto onto to
-  run_install "$s" $'\nboth\n'"$s/bin"$'\ny\nonto\ny\n\nn\n\n' MOCK_INIT_WRITES_CONFIG=1
+  make_release v9.9.9 linux amd64 "$s/assets" homonto onto
+  run_install "$s" $'\nonto\n'"$s/bin"$'\ny\nonto\ny\n\nn\n\n' MOCK_INIT_WRITES_CONFIG=1
   config="$s/homonto.toml"
   expect_exit "t24: onto + h guided setup" 0
   expect_next_steps absent "t24: h does not enable to" "/to"
@@ -480,8 +480,8 @@ t24_h_with_onto_stays_independent() {
 
 t25_h_with_to_stays_independent() {
   local s="$1" config
-  make_release v9.9.9 linux amd64 "$s/assets" homonto onto to
-  run_install "$s" $'\nboth\n'"$s/bin"$'\ny\nto\ny\n\nn\n\n' MOCK_INIT_WRITES_CONFIG=1
+  make_release v9.9.9 linux amd64 "$s/assets" homonto to
+  run_install "$s" $'\nto\n'"$s/bin"$'\ny\nto\ny\n\nn\n\n' MOCK_INIT_WRITES_CONFIG=1
   config="$s/homonto.toml"
   expect_exit "t25: to + h guided setup" 0
   expect_next_steps absent "t25: h does not enable onto" "/onto"
@@ -607,14 +607,12 @@ t29_directory_binary_targets() {
 }
 
 t30_selection_aware_next_steps() {
-  local s="$1" bins setup d h_answer cmd wanted
+  local s="$1" bins setup d cmd wanted
   for bins in both onto to none; do
     for setup in both onto to none; do
       d="$s/$bins-$setup"
       make_release v9.9.9 linux amd64 "$d/assets" homonto onto to
-      h_answer=""
-      if [ "$bins" = both ] && [ "$setup" != none ]; then h_answer=$'n\n'; fi
-      run_install "$d" $'\n'"$bins"$'\n'"$d/bin"$'\ny\n'"$setup"$'\n'"$h_answer"$'docs\nn\n\n\n' \
+      run_install "$d" $'\n'"$bins"$'\n'"$d/bin"$'\ny\n'"$setup"$'\nn\ndocs\nn\n\n\n' \
         MOCK_INIT_WRITES_CONFIG=1
       expect_exit "t30: $bins binaries + $setup configuration" 0
       # Inspect only the final advice, not prompts describing available choices.
@@ -650,7 +648,7 @@ t31_repository_validation() {
       duplicate) path="$d/repo"$'\napi\n'"$d/repo-alias"; message="repository path already selected" ;;
       numeric) path="$d/repo"$'\n123'; message="repository name must not be numeric-only" ;;
     esac
-    run_install "$d" $'\nnone\n'"$d/bin"$'\ny\nnone\ndocs\nn\n'"$path"$'\n\n' MOCK_INIT_WRITES_CONFIG=1
+    run_install "$d" $'\nnone\n'"$d/bin"$'\ny\nnone\nn\ndocs\nn\n'"$path"$'\n\n' MOCK_INIT_WRITES_CONFIG=1
     expect_exit "t31: $kind input recovers" 0
     expect_stderr "t31: rejects $kind repository" "$message"
     if [ "$kind" = duplicate ]; then
@@ -678,11 +676,11 @@ t32_workflow_root_validation() {
     # EOF retries use docs; tmp is accepted only for roots that reach its prompt.
     case "$root" in
       *tmp*)
-        run_install "$d" $'\nnone\n'"$d/bin"$'\ny\nnone\n'"$root"$'\ny\ndocs\n\n' MOCK_INIT_WRITES_CONFIG=1
+        run_install "$d" $'\nnone\n'"$d/bin"$'\ny\nnone\nn\n'"$root"$'\ny\ndocs\n\n' MOCK_INIT_WRITES_CONFIG=1
         expect_stderr "t32: rejects records/tmp collision $root" "overlaps the workspace tmp directory"
         ;;
       *)
-        run_install "$d" $'\nnone\n'"$d/bin"$'\ny\nnone\n'"$root"$'\ndocs\nn\n\n' MOCK_INIT_WRITES_CONFIG=1
+        run_install "$d" $'\nnone\n'"$d/bin"$'\ny\nnone\nn\n'"$root"$'\ndocs\nn\n\n' MOCK_INIT_WRITES_CONFIG=1
         expect_stderr "t32: rejects root alias $root" "must be a relative path below this repository"
         ;;
     esac
@@ -699,7 +697,7 @@ t33_relative_repository_with_git_file() {
   local s="$1"
   make_release v9.9.9 linux amd64 "$s/assets" homonto
   git init -q --separate-git-dir "$s/git-metadata" "$s/service a"
-  run_install "$s" $'\nnone\n'"$s/bin"$'\ny\nnone\n./records//nested/\ny\n./service a\napi-2\nservice a/.\n\n' \
+  run_install "$s" $'\nnone\n'"$s/bin"$'\ny\nnone\nn\n./records//nested/\ny\n./service a\napi-2\nservice a/.\n\n' \
     MOCK_INIT_WRITES_CONFIG=1
   expect_exit "t33: relative repo with spaces and .git file accepted" 0
   expect_stderr "t33: rejects lexical duplicate" "repository path already selected"
@@ -717,7 +715,7 @@ t34_workflow_root_whitespace() {
   for root in ' ./ ' ' .tmp ' $'\tdocs' $'docs\t'; do
     i=$((i + 1)); d="$s/$i"
     make_release v9.9.9 linux amd64 "$d/assets" homonto
-    run_install "$d" $'\nnone\n'"$d/bin"$'\ny\nnone\n'"$root"$'\ndocs\ny\n\n' MOCK_INIT_WRITES_CONFIG=1
+    run_install "$d" $'\nnone\n'"$d/bin"$'\ny\nnone\nn\n'"$root"$'\ndocs\ny\n\n' MOCK_INIT_WRITES_CONFIG=1
     expect_exit "t34: whitespace input $i recovers" 0
     expect_stderr "t34: whitespace input $i rejected" "must not have surrounding whitespace"
     if grep -qF 'root = "docs"' "$d/homonto.toml" && grep -qF '[tmp]' "$d/homonto.toml"; then
@@ -733,7 +731,7 @@ t35_unrecoverable_directories() {
   for kind in tmp-self tmp-outside docs-file docs-overlap; do
     d="$s/$kind"
     make_release v9.9.9 linux amd64 "$d/assets" homonto
-    answers=$'\nnone\n'"$d/bin"$'\ny\nnone'
+    answers=$'\nnone\n'"$d/bin"$'\ny\nnone\nn'
     case "$kind" in
       tmp-self | tmp-outside)
         if [ "$kind" = tmp-self ]; then ln -s . "$d/.tmp"; else ln -s .. "$d/.tmp"; fi
@@ -771,7 +769,7 @@ t36_cdpath_repository_resolution() {
   make_release v9.9.9 linux amd64 "$s/assets" homonto
   mkdir -p "$s/repo" "$s/elsewhere/repo"
   git -C "$s/repo" init -q
-  run_install "$s" $'\nnone\n'"$s/bin"$'\ny\nnone\ndocs\nn\nrepo\napi\n\n' \
+  run_install "$s" $'\nnone\n'"$s/bin"$'\ny\nnone\nn\ndocs\nn\nrepo\napi\n\n' \
     CDPATH="$s/elsewhere:." MOCK_INIT_WRITES_CONFIG=1
   expect_exit "t36: inherited CDPATH does not affect setup" 0
   if grep -qF 'api = "repo"' "$s/homonto.toml"; then
@@ -793,7 +791,7 @@ t37_invalid_detected_model_recovers() {
     [ "$answer" != replacement ] || expected=provider/replacement
     input=""
     [ "$answer" != replacement ] || input="$expected"
-    run_install "$d" $'\nonto\n'"$d/bin"$'\ny\nonto\ndocs\nn\n'"$input"$'\n\n' \
+    run_install "$d" $'\nonto\n'"$d/bin"$'\ny\nonto\nn\ndocs\nn\n'"$input"$'\n\n' \
       HOME="$d/home" XDG_CONFIG_HOME="$d/home/.config" MOCK_INIT_WRITES_CONFIG=1
     expect_exit "t37: invalid detected model allows $answer" 0
     if grep -qF "model = \"$expected\"" "$d/homonto.toml" && ! grep -qF '#high' "$d/homonto.toml"; then
@@ -812,7 +810,7 @@ t38_eof_validation_retries() {
     case "$kind" in
       version) answers=banana ;;
       selection) answers=$'\nbanana' ;;
-      model) answers=$'\nonto\n'"$d/bin"$'\ny\nonto\ndocs\nn\ny' ;;
+      model) answers=$'\nonto\n'"$d/bin"$'\ny\nonto\nn\ndocs\nn\ny' ;;
       valid-defaults) answers=$'\nnone\n'"$d/bin"$'\ny\nnone' ;;
     esac
     run_install "$d" "$answers" MOCK_INIT_WRITES_CONFIG=1
@@ -824,6 +822,35 @@ t38_eof_validation_retries() {
       expect_stderr "t38: $kind retry explains EOF" "end of input while retrying"
     fi
   done
+}
+
+t39_standalone_h_without_lifecycle_binaries() {
+  local s="$1" config
+  make_release v9.9.9 linux amd64 "$s/assets" homonto
+  run_install "$s" $'\nnone\n'"$s/bin"$'\ny\nnone\ny\ndocs\nn\nprovider/model\n\n' MOCK_INIT_WRITES_CONFIG=1
+  config="$s/homonto.toml"
+  expect_exit "t39: standalone h guided setup" 0
+  expect_next_steps present "t39: standalone h commands advertised" '/h-*'
+  expect_next_steps absent "t39: no onto advice" '/onto'
+  expect_next_steps absent "t39: no to advice" '/to'
+  if grep -qF '[workflows.h]' "$config" \
+    && grep -qF '[subagents.homonto.opencode]' "$config" \
+    && grep -qF '[subagents.h-spike.opencode]' "$config" \
+    && grep -qF '[subagents.h-review.opencode]' "$config" \
+    && ! grep -qF '[engines.' "$config" \
+    && [ ! -e "$s/bin/onto" ] && [ ! -e "$s/bin/to" ]; then
+    ok "t39: h configured without any engine or lifecycle binary"
+  else
+    bad "t39: h configured without any engine or lifecycle binary"
+    cat "$config" >&2
+  fi
+  if (cd "$ROOT" && go build -o "$s/homonto-real" .) \
+    && (cd "$s" && "$s/homonto-real" plan >/dev/null 2>"$s/plan.stderr"); then
+    ok "t39: standalone h configuration passes homonto plan"
+  else
+    bad "t39: standalone h configuration passes homonto plan"
+    cat "$s/plan.stderr" >&2
+  fi
 }
 
 # --- run -------------------------------------------------------------------
@@ -869,6 +896,7 @@ t35_unrecoverable_directories "$TMP/t35"
 t36_cdpath_repository_resolution "$TMP/t36"
 t37_invalid_detected_model_recovers "$TMP/t37"
 t38_eof_validation_retries "$TMP/t38"
+t39_standalone_h_without_lifecycle_binaries "$TMP/t39"
 
 printf '\n'
 for line in "${SUMMARY[@]}"; do printf '%s\n' "$line"; done

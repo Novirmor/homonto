@@ -50,12 +50,22 @@ PVAR="$W/.homonto/catalog/subagents/homonto.opencode.md"
 in_file "$PVAR" 'mode: primary'
 in_file "$PVAR" '  webfetch: allow'
 in_file "$PVAR" '  websearch: allow'
-# Trusted shell has finite publication/destruction exceptions, not composition
-# guards. in_file regex-matches (BRE): escape the literal asterisks.
-in_file "$PVAR" '"git push \*": ask'
-in_file "$PVAR" '"gh pr comment\*": ask'
+# ADR 0070 trusts ordinary coordinator delivery; protected operations still ask.
+# in_file regex-matches (BRE): escape the literal asterisks.
+in_file "$PVAR" '"git push --force\*": ask'
+in_file "$PVAR" '"git push --delete\*": ask'
+in_file "$PVAR" '"gh pr merge\*": ask'
 in_file "$PVAR" '"onto bypass\*": ask'
 in_file "$PVAR" '"to bypass\*": ask'
+for prefix in '' 'rtk ' 'rtk proxy '; do
+	for pattern in 'git push *' 'gh pr comment*' 'gh pr create*' 'gh api*' 'gh run rerun*'; do
+		for action in ask deny; do
+			if grep -Fq "\"${prefix}${pattern}\": $action" "$PVAR"; then
+				fail "coordinator routine delivery must inherit allow: ${prefix}${pattern}"
+			fi
+		done
+	done
+done
 is_link "$W/.opencode/agent/homonto.md"; is_file "$W/.opencode/agent/homonto.md"
 for agent in homonto; do
 	RVAR="$W/.homonto/catalog/subagents/$agent.opencode.md"

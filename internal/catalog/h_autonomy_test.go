@@ -29,9 +29,9 @@ func TestHSkillBundleNamingAndEntryPoints(t *testing.T) {
 	if !strings.Contains(h.Description, "GitHub workflow skill bundle") || strings.Contains(h.Description, "GitHub intake workflows") {
 		t.Errorf("h description must identify a GitHub workflow skill bundle: %q", h.Description)
 	}
-	entries := []string{"h-spike-issue", "h-resolve-issue", "h-review-pr", "h-continue-pr", "h-review-batch"}
+	entries := []string{"h-spike-issue", "h-resolve-issue", "h-review-pr", "h-continue-pr", "h-resolve-conflicts", "h-review-batch"}
 	if len(h.Skills) != len(entries)+1 || len(h.Commands) != len(entries) {
-		t.Errorf("h must declare its shared skill plus five skill/command entry points, got %d skills and %d commands", len(h.Skills), len(h.Commands))
+		t.Errorf("h must declare its shared skill plus %d skill/command entry points, got %d skills and %d commands", len(entries), len(h.Skills), len(h.Commands))
 	}
 	for _, name := range entries {
 		t.Run(name, func(t *testing.T) {
@@ -114,6 +114,7 @@ func TestHAutonomySuccessEndpoints(t *testing.T) {
 		{"h-spike-issue", "a citation-checked implementation brief in conversation"},
 		{"h-resolve-issue", "one verified PR closing the issue"},
 		{"h-continue-pr", "verified fixes are pushed to the existing PR head"},
+		{"h-resolve-conflicts", "verified conflict-resolution commits are pushed to the existing PR head"},
 		{"h-review-pr", "a validated draft shown with verification and residual risks"},
 		{"h-review-batch", "every selected PR accounted for by a validated draft or an explicit failure"},
 	} {

@@ -46,6 +46,8 @@ skipped rather than failing.
 
 ## Relation to the smoke test
 
-`scripts/docker-test.sh` (`test/docker/`) is the fast `homonto`-only smoke image
-with stub target files. This matrix is the heavier, real-tool counterpart for
-the OpenCode adapter and onto lifecycle.
+`scripts/docker-test.sh` (`test/docker/`) runs the triple-binary suites that
+are part of `scripts/gate.sh`; they assert on files, links, and state without a
+real OpenCode. This matrix is the heavier, real-tool counterpart: it is not in
+the gate, needs network access to install OpenCode, and its `live` cell needs
+an account.

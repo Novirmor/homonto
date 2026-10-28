@@ -79,6 +79,53 @@ or diff, and readable evidence. The coordinator owns records and workflow calls.
 Source-only workers never edit records. Existing permissions and write scopes
 remain binding in direct mode.
 
+## Focused exploration
+
+With dispatch available, default to `onto-explorer` or `to-explorer` for meaningful
+codebase discovery in the selected engine, rather than doing all investigation
+inline or waiting for a skeptic to find the missing context. Use them throughout
+the workflow, including presets and resumed repairs:
+
+- **Before planning:** map unfamiliar code, behavior ownership, existing tests and
+  integration points before choosing affected files or an approach.
+- **Before implementation:** resolve unclear call paths, dependencies, impact or
+  competing existing patterns before handing an implementer an uncertain contract.
+- **During finding triage:** investigate disputed behavior, whether a defect was
+  introduced by this assignment, and the smallest repair boundary before accepting
+  a review demand. Use fresh exploration when an unexpected failure's cause is
+  unclear, not only after repeated speculative fixes.
+
+Assign one bounded question per explorer with the current request, explicit
+non-goals, Repo/absolute Cwd, candidate and relevant evidence. Request a concise
+answer with file/line citations, impact and remaining uncertainty, not a raw file
+dump or a general audit. Dispatch independent questions concurrently; do not
+duplicate the same investigation across workers or read mutable implementation as
+final-candidate evidence. The coordinator validates and synthesizes the answers,
+runs requested shell-only probes, and owns scope and decisions. Explorers remain
+read-only and do not replace review or final skepticism.
+
+Reuse grounded answers while their candidate and inputs remain valid; do not add
+an explorer pass solely because the phase changed. Trivial, already-grounded work
+may proceed directly. When dispatch is unavailable, investigate directly and state
+the fallback; honor denials rather than routing around them. Exploration never
+authorizes extra implementation or expands the user's request.
+
+## Terminal cleanup
+
+After terminal onto/to delivery, inspect `<engine> cleanup list --dir "<configRoot>" --json`
+and preview the selected generation with `<engine> cleanup preview <name> --identity
+<identity> --dir "<configRoot>" --json`. Use `homonto workflow cleanup list --config
+"<config>" --json` for a cross-engine inventory. The binaries own eligibility,
+blockers and cleanup-pending/complete state; never infer them from checked tasks.
+
+When removal is authorized, run `<engine> cleanup apply <name> --identity <identity>
+--yes --dir "<configRoot>" --json` and inspect its result. Honor required tool approval;
+if a scope/authority decision is missing, use the native question dialog. Do not
+delete workflow directories, edit registries or force-remove checkouts yourself.
+Blocked cleanup remains reported and preserved, never relabeled complete. Retry
+the same identity after resolving the blocker; archives and native branches remain.
+No-task allocations retain `homonto workspace task cleanup`, not onto/to cleanup.
+
 ## Reviewable tasks and commits
 
 Tasks describe independently verifiable outcomes. Split distinct outcomes or

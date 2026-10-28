@@ -1,7 +1,7 @@
 name = "h"
 kind = "workflow"
-version = "0.11.0"
-description = "Standalone GitHub workflow skill bundle — spike, resolve, review, continue, batch review"
+version = "0.12.0"
+description = "Standalone GitHub workflow skill bundle — spike, resolve, review, continue, conflict resolution, batch review"
 
 [dependencies]
 frameworks = []
@@ -12,6 +12,7 @@ h-spike-issue = "skills/h-spike-issue"
 h-resolve-issue = "skills/h-resolve-issue"
 h-review-pr = "skills/h-review-pr"
 h-continue-pr = "skills/h-continue-pr"
+h-resolve-conflicts = "skills/h-resolve-conflicts"
 h-review-batch = "skills/h-review-batch"
 
 [commands]
@@ -19,6 +20,7 @@ h-spike-issue = "commands/h-spike-issue.md"
 h-resolve-issue = "commands/h-resolve-issue.md"
 h-review-pr = "commands/h-review-pr.md"
 h-continue-pr = "commands/h-continue-pr.md"
+h-resolve-conflicts = "commands/h-resolve-conflicts.md"
 h-review-batch = "commands/h-review-batch.md"
 
 [plugins]

@@ -27,9 +27,10 @@ running `init` on a clone that has none.
 
 | Question | CLI | MCP tool |
 |---|---|---|
-| Where is a symbol, and what is around it? | `codegraph query <name>` / `codegraph explore <query>` | `codegraph_explore` |
+| Where is a symbol? | `codegraph query <name>` | `codegraph_search` |
+| How does an area work? | `codegraph explore <query>` | `codegraph_explore` |
 | One symbol's source plus callers and callees | `codegraph node <name>` | `codegraph_node` |
-| Who calls it / what does it call? | `codegraph callers <sym>` / `codegraph callees <sym>` | — |
+| Who calls it / what does it call? | `codegraph callers <sym>` / `codegraph callees <sym>` | `codegraph_callers` / `codegraph_node` |
 | What breaks if it changes? | `codegraph impact <sym>` | — |
 | Which tests cover the files I changed? | `task affected` (`codegraph affected`) | — |
 

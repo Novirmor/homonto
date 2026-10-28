@@ -29,9 +29,11 @@ log "homonto apply installs only standalone h resources"
 "$HOMONTO" apply --yes >/dev/null
 test ! -e "$W/.homonto/catalog/skills/onto" || fail "h must not install onto"
 test ! -e "$W/.homonto/catalog/skills/to" || fail "h must not install to"
-for c in h-spike-issue h-resolve-issue h-review-pr h-continue-pr h-review-batch; do
+for c in h-spike-issue h-resolve-issue h-review-pr h-continue-pr h-resolve-conflicts h-review-batch; do
 	is_link "$W/.opencode/command/$c.md"; is_file "$W/.opencode/command/$c.md"
 done
+is_file "$W/.homonto/catalog/skills/h-resolve-conflicts/SKILL.md"
+in_file "$W/.homonto/catalog/skills/h-resolve-conflicts/SKILL.md" 'conflict-resolution-only'
 ok "h commands project without onto or to"
 
 log "read-only workers allow supporting web research without write or shell access"

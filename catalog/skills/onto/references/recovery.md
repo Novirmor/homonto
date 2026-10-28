@@ -62,7 +62,10 @@ now requires a user-owned decision. Never downgrade full to a preset automatical
 
 ## Active repairs versus new work
 
-A confirmed defect before archive, within the existing acceptance criteria, is
+Apply shared [proportionality and scope approval](../../homonto/references/review-triage.md#proportionality-before-repair)
+before invalidating evidence or appending tasks. Existing PR acceptance criteria
+do not override a narrower current user assignment.
+A confirmed defect before archive, within the authorized proportionate scope, is
 an autonomous repair even after verification passed. No new consent is needed.
 First invalidate `verification.md` to `Result: superseded (repair <date>)`, run
 `onto set verify-result <name> pending` (or retain this round's recorded fail),

@@ -125,14 +125,14 @@ func TestCommandHistoryClassification(t *testing.T) {
 		writers, readers []string
 	}{
 		{"onto", ontocli.NewRootCmd,
-			[]string{"init", "new", "advance", "bypass", "close", "complete-integration", "abandon", "demote", "merge-deltas", "evidence record",
+			[]string{"init", "new", "advance", "bypass", "close", "complete-integration", "abandon", "demote", "merge-deltas", "evidence record", "cleanup apply",
 				"set isolation", "set integration", "set build-mode", "set tdd-mode", "set verify-scale", "set verify-result", "set build-pause",
 				"set proposal-approved", "set approach-confirmed", "set close-confirmed", "set close-merged", "set directive", "set base-ref",
 				"set base-branch", "set workflow", "set deps", "set supersedes", "set deviates-from", "set guides"},
-			[]string{"version", "status", "graph", "doctor", "state", "gate", "dirt", "trace"}},
+			[]string{"version", "status", "graph", "doctor", "state", "gate", "dirt", "trace", "cleanup list", "cleanup preview"}},
 		{"to", tocli.NewRootCmd,
-			[]string{"init", "new", "phase", "bypass", "done", "abandon", "promote"},
-			[]string{"version", "status", "doctor"}},
+			[]string{"init", "new", "phase", "bypass", "done", "abandon", "promote", "cleanup apply"},
+			[]string{"version", "status", "doctor", "cleanup list", "cleanup preview"}},
 	} {
 		t.Run(workflow.name, func(t *testing.T) {
 			l := commandLayout(t)
@@ -188,6 +188,13 @@ func TestCommandHistoryClassification(t *testing.T) {
 							t.Fatal(err)
 						}
 						wantWriter := writer
+						if path == "cleanup apply" {
+							// Cleanup validates explicit confirmation and generation before
+							// entering its own history boundary. This deliberately invalid
+							// invocation must stay read-only. Valid cleanup history and
+							// partial-progress recovery are covered by workflowcleanup tests.
+							wantWriter = false
+						}
 						if flag != "" {
 							wantWriter, _ = leaf.Flags().GetBool(flag)
 							jsonMode, _ := leaf.Flags().GetBool("json")

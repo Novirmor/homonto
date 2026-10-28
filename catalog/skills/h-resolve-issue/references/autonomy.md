@@ -68,6 +68,10 @@ selection or lifecycle creation unless the user explicitly selects an engine.
 If an existing selected task has pending delivery, reconcile its recorded
 candidate first under the publication contract; do not silently abandon it or
 change its engine. New direct feedback work does not need a lifecycle record.
+Conflict-only PR requests use `h-resolve-conflicts` without engine selection or
+lifecycle creation. Its invocation authorizes only the verified same-head push,
+not feedback fixes, comments or thread resolutions; all user questions use the
+shared native-dialog policy.
 
 ## Trust workspace execution
 

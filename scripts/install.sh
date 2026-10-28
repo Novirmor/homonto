@@ -546,7 +546,7 @@ configure_new_project() {
   ui_section "Configure project"
   ui_hint "Choose onto and/or to engines for this new repository."
   ask_setup_frameworks
-  if ui_confirm "Configure the standalone h GitHub workflow? ([workflows.h]: /h-spike-issue, /h-resolve-issue, /h-review-pr, /h-continue-pr, /h-review-batch)"; then
+  if ui_confirm "Configure the standalone h GitHub workflow? ([workflows.h]: /h-spike-issue, /h-resolve-issue, /h-review-pr, /h-continue-pr, /h-resolve-conflicts, /h-review-batch)"; then
     SETUP_H=yes
   fi
   ask_workflow_root

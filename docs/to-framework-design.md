@@ -1,9 +1,20 @@
 # `to` — design document
 
 Status: implemented. The `to` binary (`cmd/to/`, `internal/tocli`,
-`internal/tostate`) and the `builtin:to` catalog framework ship from this
-repository. ADR 0042 supersedes this document's original exclusivity and
-no-escalation decisions.
+`internal/tostate`) and the `builtin:to` engine ship from this repository.
+Later decisions override parts of this document, and the affected sections
+say so:
+
+- [ADR 0042](adr/0042-onto-and-to-are-complementary.md) made onto and `to`
+  complementary (originally mutually exclusive) and added promotion between
+  them.
+- [ADR 0067](adr/0067-separate-workflows-from-engines.md) renamed
+  `[frameworks.to]` to `[engines.to]`.
+- [ADR 0068](adr/0068-coordinate-parallel-work-by-repository.md) allows
+  parallel implementers across repositories, one writer per checkout.
+
+User documentation: [to workflow](guides/to-workflow.md) and
+[to CLI reference](guides/to-reference.md).
 Origin: interview-driven design session (2026-07-18). Each decision below was
 made explicitly; the two marked **overruled** went against the interviewer's
 recommendation and carry recorded consequences.
@@ -87,23 +98,25 @@ compactions, sessions, and agents.
 
 Surface (`init`, `new`, `status`, `phase`, `done`, `abandon`, and `handoff`
 support `--json`; `doctor` uses `--quiet` for hook-friendly exit-code-only
-checks, and `version` prints plain text):
+checks; `version` prints plain text; every command takes `--dir`):
 
 | Command | Role |
 |---|---|
 | `to init` | Scaffold `docs/tasks/` in a repo. |
-| `to new <name> [--repo <declared-name>]` | Create a change: state YAML + empty `plan.md`. Selected repo names are recorded in the config repo; only an active change blocks a name. |
+| `to new <name> [--repo <alias>]… [--base <alias>=<branch>]…` | Create a change: state YAML + empty `plan.md`. Selected repo aliases and their integration bases are recorded in the config repo; only an active change blocks a name. |
 | `to status` | All active changes and their phases; scoped changes include their selected aliases. Read-only. |
 | `to phase <name>` | Advance the change one phase forward. |
 | `to done <name> --verified [--evidence "<text>"]` | Mark done and archive to `docs/tasks/archive/<date>-<name>/`. A scoped change also requires clean, determinable Git state for the config repo and every selected declared repo. |
 | `to abandon <name>` | Terminal exit without done. |
+| `to bypass <name> --to <phase\|archive> --reason "<text>"` | Explicit, user-confirmed skip forward, recorded with its reason (ADRs 0034, 0055). |
+| `to promote <name> [--as <onto-name>] --yes` | Hand the change to onto when it outgrows `to` (ADRs 0028, 0042). Accepts either installed engine. |
 | `to handoff <name>` | Compact context-recovery pack (phase, plan head + complete unchecked task contracts, final check, bounded notes, safe next skill) for resuming after compaction. Read-only, config-independent. |
 | `to doctor [--quiet]` | Workspace health: invalid state, wedged terminal-but-active changes, missing plans, incomplete `Files:`/`Change:`/`Verify:` task contracts or `Final Verify:`, version skew, and unavailable selected repos for active scoped changes. Findings are diagnostic, not phase gates. `--quiet` is exit-code-only — the enforcement hook primitive. Read-only. |
 | `to version` | Print the release-stamped binary version as plain text. |
 
 Crash safety: `done`/`abandon` write terminal state then archive; re-running
 the same command converges an interrupted finish, and doctor reports it.
-Change-mutating commands (`new`, `phase`, `done`, `abandon`) take a fail-fast
+Change-mutating commands (`new`, `phase`, `bypass`, `done`, `abandon`) take a fail-fast
 workspace lock so concurrent sessions cannot interleave writes. `init` only
 creates the fixed task directories with idempotent `mkdir` operations and does
 not take the lock.
@@ -118,7 +131,7 @@ or Git facts, so current `[repos]` remains authoritative and facts do not rot.
 
 ### Skills: dispatcher + three phase skills + quality skills
 
-Catalog framework `builtin:to`:
+Catalog engine `builtin:to`:
 
 - `/to` — dispatcher: runs `to status --json`, derives the active change's
   phase, routes to the matching phase skill.
@@ -139,14 +152,17 @@ edits, a judge reviews, neither plans.
 **Concurrency follows write capability, not agent identity** (ADR 0035). Three
 of the four deny edit and shell tools, so they cannot corrupt a shared tree and
 run concurrently: several explorers on different questions and several
-reviewers or skeptics applying different lenses. `to-implementer` runs one at a
-time because it is the only writer and `to` keeps a single working tree.
-Parallel implementers need a worktree each, which is onto's machinery and out
-of scope here.
+reviewers or skeptics applying different lenses. `to-implementer` is the only
+writer, so there is one implementer per checkout. Since ADR 0068, independent
+repositories may each have their own implementer at the same time; within
+one checkout, implementers still run one at a time.
 
-*Superseded:* this section originally read "no parallelization — `to` never
-runs subagents in parallel." That rule was broader than its own justification,
-which was only ever about the shared working tree and `plan.md`.
+*Superseded twice:* this section originally read "no parallelization — `to`
+never runs subagents in parallel." That rule was broader than its own
+justification, which was only ever about a shared working tree and
+`plan.md`. It then read "parallel implementers are onto's machinery and out
+of scope", which ADR 0068 replaced with one writer per checkout for every
+engine.
 
 | Subagent | From | Role in `to` |
 |---|---|---|
@@ -163,8 +179,9 @@ never silently dropped.
 
 ### Bootstrap: same gating as onto *(overruled)*
 
-Mutating commands (`init`, `new`, `phase`, `done`, `abandon`) refuse until
-`[engines.to]` is declared in `homonto.toml` and `homonto apply` has run.
+Mutating commands (`init`, `new`, `phase`, `bypass`, `done`, `abandon`)
+refuse until `[engines.to]` is declared in `homonto.toml` and `homonto apply`
+has run; `promote` accepts either `[engines.to]` or `[engines.onto]`.
 Read-only commands (`status`, `handoff`, `doctor`, `version`) work anywhere,
 config-free.
 

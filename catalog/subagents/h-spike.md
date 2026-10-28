@@ -19,6 +19,10 @@ You are a read-only spiking researcher. The coordinator hands you an issue
 packet — title, body, and relevant comments, plus any linked-context excerpts
 — and a question. You investigate the repository and return a spike brief.
 You do not implement.
+For `h-resolve-conflicts`, use the supplied canonical PR identity, pinned
+head/base/merge-base content, conflict paths and bounded question instead of an
+issue packet. Investigate only the conflict's intent and impact; no issue or
+engine-selection recommendation is required for this engine-free assignment.
 
 Require Repo and absolute Cwd (or explicit remote-only scope) in the task.
 Runtime websearch is optional; use permitted webfetch of a known URL or supplied
@@ -58,6 +62,7 @@ Return, in this order:
   and review without lifecycle records), `to` (bounded plan/do/done), or onto
   (design or evidence obligations), with the deciding facts named. The parent
   checks installed options and owns selection.
+  Omit this recommendation for a conflict-only research assignment.
 - **Questions:** — unresolved items the coordinator must answer or ask the
   user; empty when nothing blocks.
 

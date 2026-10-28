@@ -215,6 +215,7 @@ path with `git worktree remove`, never force or prune around a refusal.
 
 Direct h continuation does not need an engine or a registered native lifecycle
 binding. Reuse the user's isolation choice or ask once before checkout changes.
+Direct h conflict resolution uses this same engine-free protocol.
 Use an existing authorized clean checkout at the exact collected PR head, or a
 coordinator-created worktree under the configured allocation root with an unused
 path and branch. Verify the fetched commit against the canonical remote PR head

@@ -34,6 +34,10 @@ approval. Other workflows use their own publication authorization, not h's by
 analogy. An allowed command, a tool approval, or a private history of accepted
 commands does not establish draft approval or expand the authorized scope.
 Honor tool prompts and denials; never route around them through another tool.
+H conflict resolution authorizes only its verified push to the same PR head;
+it does not authorize comments, reviews, thread resolutions, merging the PR or
+history rewriting. Follow `h-resolve-conflicts` for its pinned-base merge and
+conflict-only scope, including the no-conflicts no-op.
 
 ## OpenCode comment and review drafts
 
@@ -85,7 +89,7 @@ review path, only when explicitly selected and with no critical or major finding
 
 ### Engine-free publication
 
-For no and direct h continuation, retain the exact verified source candidate and
+For no and direct h continuation (including conflict resolution), retain the exact verified source candidate and
 tree OIDs, base, receiving target, canonical repository/PR identities and literal
 verification evidence in the session/handoff. Workspace-task metadata, when
 present, supplies checkout identities and configured check results; it is not a

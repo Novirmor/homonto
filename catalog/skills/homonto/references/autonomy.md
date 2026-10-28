@@ -51,7 +51,11 @@ retry or route around an explicit denial, or blindly resend an uncertain publica
 ## Decide before asking
 
 Whenever user input is required, the coordinator uses OpenCode's built-in
-`question` tool. Present a focused prompt with viable choices, short trade-offs,
+`question` tool to display a native dialog box. Every question to the user goes
+through this tool: clarifications, free-form questions, confirmations and approval
+requests, even a single yes/no question. This applies throughout all workflows
+and direct skill entry, not only at decision gates.
+Present a focused prompt with viable choices, short trade-offs,
 and the recommended choice first when one exists; free-form answers remain
 available. Do not substitute a question in ordinary chat, a shell prompt, or an
 invented dialog. This applies to workflow selection, scope, dirty-work treatment,
@@ -83,6 +87,12 @@ one of these:
 - acceptance of a known deviation or waiver of a required obligation
 - abandonment, destructive recovery, or treatment of unattributed work that
   blocks safe progress
+
+If a proposed fix or cumulative repair loop becomes materially disproportionate
+to the request, ask for scope approval before adding repair tasks or editing beyond
+the boundary. Apply the [proportionality check](review-triage.md#proportionality-before-repair),
+including for conflict-only requests. Do not infer approval from a failing check,
+a skeptic's severity label, or the goal of making the whole PR green.
 
 Do not ask for approval of a summary, proposal, plan, diff, phase transition, or
 close plan that already matches the request. Present important decisions and
@@ -200,7 +210,10 @@ permission to guess a checkout or assume earlier tool results were shared.
 
 A subagent's `Questions:` section is input to the coordinator, not automatically
 a user question. Resolve factual and technical uncertainty by reading, testing,
-or dispatching focused exploration. Ask the user only if the unresolved part
+or dispatching [focused exploration](execution.md#focused-exploration). Use the
+selected engine's explorer for meaningful discovery before guessing or repeatedly
+patching; reserve direct investigation for already-grounded work or the permitted
+dispatch fallback. Ask the user only if the unresolved part
 meets the test above.
 
 On a failure, investigate and fix the root cause. A hard prerequisite or safety

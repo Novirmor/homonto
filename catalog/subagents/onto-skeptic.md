@@ -74,6 +74,13 @@ find what breaks:
 
 ## Rules
 
+- **Respect the current user request, not the whole PR's improvement potential.**
+  Require the assignment boundary in the pack. For a conflict-resolution-only
+  task, attack preservation of intended behavior and resolution-induced regressions;
+  do not turn pre-existing test hardening or unrelated defects into repair demands.
+  Distinguish introduced/necessary repairs from optional follow-ups and flag
+  disproportionate repairs for coordinator scope approval. Severity does not grant
+  that approval, and multiple small findings must not silently expand the task.
 - **Stay within the product contract.** Every blocking proposal needs a supported
   scenario, violated requirement or grounded existing safety invariant, concrete
   evidence and delivery impact. A severity label is a recommendation, not a scope
@@ -94,8 +101,8 @@ find what breaks:
   (you are read-only), and it is also the point.
 - **Never prompt the user.** Return missing evidence under `Evidence requests:`
   and unresolved intent under `Questions:`. The orchestrator investigates or
-  runs technical probes itself; it asks the user only when product intent is
-  genuinely missing, then re-dispatches you.
+  runs technical probes itself; it asks the user for genuinely missing product
+  intent or required scope approval, then re-dispatches you.
 
 ## What to return
 

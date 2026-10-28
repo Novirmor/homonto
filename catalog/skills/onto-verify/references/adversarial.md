@@ -32,7 +32,8 @@ Both get a complete worker-readable evidence pack: Repo and absolute Cwd for
 every source, frozen base and candidate OIDs, exact diff/supporting files,
 delta specs and design (or preset proposal scenarios), task/notes context,
 literal commands, exit statuses and full output, evidence table, regression
-results, supported environments/scenarios, explicit non-goals, accepted decisions,
+results, the current user request and assignment boundary (even when narrower than
+the original PR), supported environments/scenarios, explicit non-goals, accepted decisions,
 and known gaps/findings with their dispositions. Run regression before the final skeptic
 dispatch so that it can attack the complete claim. Confirm pack consumption;
 coordinator tool output is not automatically shared. A summary or one-line pack

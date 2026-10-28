@@ -53,7 +53,8 @@ Ask before partial delivery. Native to completion requirements still apply.
    Hand it a complete evidence pack: the complete `plan.md` (including `## Notes`),
    each source alias and absolute cwd, frozen base and final candidate OIDs,
    exact diff and supporting files, literal Final Verify command, exit status
-   and full output, supported scenarios, explicit non-goals, accepted decisions,
+   and full output, the current user request and assignment boundary (even when
+   narrower than the original PR), supported scenarios, explicit non-goals, accepted decisions,
    prior finding IDs/dispositions, and coverage gaps. Materialize
    worker-readable absolute paths or paste the full contents; a claim or the
    coordinator's earlier tool output is not a pack. Require confirmation that
@@ -71,7 +72,8 @@ Ask before partial delivery. Native to completion requirements still apply.
      tree. Re-run `Final Verify:`, then re-dispatch once against the new final
      candidate with a bounded repair recheck under the shared triage policy.
      Keep only the completed verdict for the tree being archived.
-3. **Triage its findings.** Verify each finding against the candidate. A real
+3. **Triage its findings.** Apply shared [proportionality and scope approval](../homonto/references/review-triage.md#proportionality-before-repair)
+before creating repair tasks. Verify each finding against the candidate. A real
 in-scope source defect becomes a new unchecked repair task with the complete
 Owner/Repo/Cwd/Files/Change/Verify contract, appended to `plan.md` before code
 changes. **Load `to-do` and continue in the same invocation**; its per-repository loop

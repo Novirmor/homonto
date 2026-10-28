@@ -1,83 +1,56 @@
-# Guides
+# homonto documentation
 
-User-facing documentation, one topic per file.
+## Start here
 
-## First steps
+1. [Installation](installation.md) — mise (recommended), the installer,
+   release archives, or Go.
+2. [Getting started](getting-started.md) — scaffold, plan, apply, and run one
+   change through each engine, with real output.
+3. [Concepts](concepts.md) — the mental model and a glossary.
+4. [Examples](examples.md) — 24 copy-ready configs and sessions.
 
-- [`getting-started.md`](getting-started.md) — hands-on walkthrough with real
-  command output, plus a supported / not-supported matrix. **Start here.**
+## Configure
 
-## Reference
+| Guide | Covers |
+|---|---|
+| [Configuration](configuration.md) | Every `homonto.toml` table and field |
+| [Catalog](catalog.md) | Every package, skill, command, agent, and plugin — and what it's for |
+| [Subagents and permissions](subagents.md) | Agent files, model blocks, permission rendering, what shipped agents may do |
+| [Secrets](secrets.md) | `${pass:…}` and `${ENV}` references |
+| [Projection and state](projection-and-state.md) | How apply writes, drift vs. pending, adoption, pruning, snapshots |
+| [Remote sources](remote-sources.md) | Pinned, verified `remote:` installs |
+| [OpenCode integration](opencode.md) | Workflow plugin, status panel, GitHub draft tools, terminal settings, V1 upgrade |
 
-- [`configuration.md`](configuration.md) — every `homonto.toml` table and
-  field, defaults, and the fail-fast validation rules.
-- [`cli-reference.md`](cli-reference.md) — every `homonto` command: flags,
-  exit codes, and examples.
-- [`onto-reference.md`](onto-reference.md) — every `onto` command, the phase
-  flow, and every entry/exit gate the binary enforces.
-- [`to-reference.md`](to-reference.md) — every `to` command: installation and
-  state checks, verification assertions, archive naming, and crash safety.
+## Work
 
-## Concepts
+| Guide | Covers |
+|---|---|
+| [Workflows](workflows.md) | Choosing onto / to / no / h, routing, and the behavior they share |
+| [onto workflow](onto-workflow.md) | The evidence-gated lifecycle, phase by phase |
+| [to workflow](to-workflow.md) | The minimal plan → do → done loop |
+| [no engine](no-workflow.md) | Implement and review without records |
+| [h GitHub workflow](h-workflow.md) | Issues and pull requests |
+| [Workspaces](workspaces.md) | Several repositories, worktrees, managed records, workspace tasks |
+| [Cleaning up terminal workflows](workflow-cleanup.md) | Archive abandoned records and remove finished worktrees safely |
+| [Principles](principles.md) | YAGNI and KISS as the skills apply them |
 
-- [`workspaces.md`](workspaces.md) - combined or separate records and source
-  repositories, explicit source selection, managed checkpoints, and registered
-  worktree isolation and cleanup.
-- [`secrets.md`](secrets.md) — `${pass:…}` / `${ENV_VAR}` references and the
-  referenced-never-stored guarantees.
-- [`projection-and-state.md`](projection-and-state.md) — the apply pipeline:
-  surgical merge, symlinked content, state, drift vs. pending, adoption, and
-  pruning.
-- [`subagents.md`](subagents.md) — the `[subagents.*]` resource: sources,
-  link vs. copy mode, scope and targets, per-agent models, and the tool-neutral
-  `homonto:` frontmatter block.
-- [`opencode-v2.md`](opencode-v2.md) — OpenCode 2: the workflow context
-  plugin and terminal panel, terminal settings, and unimplemented V2 surfaces.
-- [`remote-source-trust.md`](remote-source-trust.md) — pinned, fail-closed
-  remote installs: threat model, verification pipeline, and lifecycle.
+## Look up
 
-## The workflow frameworks
+| Reference | Covers |
+|---|---|
+| [homonto CLI](cli-reference.md) | Every `homonto` command and flag |
+| [onto CLI](onto-reference.md) | Every `onto` command and gate |
+| [to CLI](to-reference.md) | Every `to` command |
+| [Troubleshooting](troubleshooting.md) | Symptoms and fixes |
 
-onto and `to` are **complementary** (ADR 0042): declare either or both and
-pick per change — the request or command decides which dispatcher the shared
-`homonto` coordinator loads (ADR 0045). onto is for work that
-someone else has to pick up or audit — it leaves an archived, gate-stamped
-record a stranger can read; `to` is for a fast solo loop that still wants a
-real verification pass. The `h` GitHub skill bundle adds intake skills and
-matching commands (`/h-spike-issue`, `/h-resolve-issue`, `/h-review-pr`,
-`/h-continue-pr`, `/h-review-batch`) over both. Its stable `[workflows.h]`
-package key installs onto and to as dependencies, plus the `h-spike` and
-`h-review` workers, using the same coordinator.
+## Beyond the guides
 
-- [`onto-workflow.md`](onto-workflow.md) — concepts: the binary/skills split,
-  the five phases, presets, and the specialist subagents.
-- [`to-workflow.md`](to-workflow.md) — concepts: the bookkeeper/skills split,
-  `plan → do → done`, the plan contract, and the subagents (read-only ones
-  concurrent, the single implementer serial).
-- [`enforcement.md`](enforcement.md) — read-only diagnostics (`onto doctor
-  --quiet` / `to doctor --quiet`), the bundled OpenCode observer, and why
-  notifications and logging do not block session completion.
-- [`yagni.md`](yagni.md) — you aren't gonna need it: where each framework
-  enforces building only what the change needs now.
-- [`kiss.md`](kiss.md) — keep it simple: the simplicity mechanics both
-  frameworks encode, for code, plans, and prose.
-
-## When something looks wrong
-
-- [`troubleshooting.md`](troubleshooting.md) — known limitations, gotchas, and
-  workarounds for all three binaries.
-
-## Developing homonto itself
-
-Development instructions live in [`../../AGENTS.md`](../../AGENTS.md), with
-detail in [`../agents/`](../agents/):
-
-- [`../agents/codegraph.md`](../agents/codegraph.md) — grounding claims in the
-  CodeGraph index.
-- [`../agents/verification.md`](../agents/verification.md) — the gate and the
-  traps worth knowing.
-- [`../agents/adr.md`](../agents/adr.md) — when a decision is owed an ADR.
-
-See also [`../personas.md`](../personas.md) for why onto is shipped but not
-self-used, [`../adr/`](../adr/) for durable architecture decisions, and
-[`../release-checklist.md`](../release-checklist.md) for the release gate.
+- [`../adr/`](../adr/) — architecture decision records: why things are the
+  way they are.
+- [`../to-framework-design.md`](../to-framework-design.md) — the design
+  interview behind `to`.
+- [`../release-checklist.md`](../release-checklist.md) — how releases are
+  cut.
+- [`../../CHANGELOG.md`](../../CHANGELOG.md) — release history.
+- [`../../AGENTS.md`](../../AGENTS.md) and [`../agents/`](../agents/) —
+  developing homonto itself.

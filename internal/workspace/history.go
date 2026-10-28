@@ -273,6 +273,18 @@ func runMutation(configRoot, label string, resolve func(Layout) (MutationScope, 
 	if err != nil {
 		return err
 	}
+	return runLayoutMutation(l, label, resolve, mutate)
+}
+
+// RunLayoutMutation preserves an explicitly selected config filename while
+// sharing the same scoped managed-history boundary as native workflow commands.
+func RunLayoutMutation(l Layout, label string, mutate func() error, scope MutationScope) error {
+	return runLayoutMutation(l, label, func(Layout) (MutationScope, error) {
+		return scope, scope.validate()
+	}, mutate)
+}
+
+func runLayoutMutation(l Layout, label string, resolve func(Layout) (MutationScope, error), mutate func() error) error {
 	if l.GitMode != "managed" {
 		return mutate()
 	}

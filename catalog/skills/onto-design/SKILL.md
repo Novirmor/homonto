@@ -51,6 +51,9 @@ available (the preflight may have recorded a direct-file-reading fallback),
 then the actual files. Map the
 integration points the proposal touches. Never design against an imagined
 codebase.
+Use `onto-explorer` under the shared [focused exploration policy](../homonto/references/execution.md#focused-exploration)
+to map unfamiliar behavior, ownership and integration impact before proposing an
+approach; dispatch independent discovery questions concurrently.
 
 ### 2. Question until clear
 

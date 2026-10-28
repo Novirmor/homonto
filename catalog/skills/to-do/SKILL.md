@@ -37,6 +37,10 @@ review, then checkpoints/commits them in their records owner. Never ask a
 source-only implementer to edit records. Source tasks use the loop below.
 
 1. **Execute under the shared [dispatch policy](../homonto/references/execution.md#dispatch-capability).**
+   Apply shared [focused exploration](../homonto/references/execution.md#focused-exploration)
+   before dispatching implementation when ownership, call paths or impact remain
+   unclear. Reuse valid plan grounding; otherwise resolve the gap with `to-explorer`
+   rather than asking the implementer to invent the contract.
    When dispatch is available, send `to-implementer` the complete task verbatim: outcome,
    files and symbols, behavioral contract, verification command, and expected
    passing signal. Include any directly relevant conclusion from the plan's

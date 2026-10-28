@@ -71,6 +71,52 @@ func TestEntryPathPolicyConsistency(t *testing.T) {
 			forbid: []string{"may commit only with explicit task authorization", "Implementation commits still require the task's explicit authorization"},
 		},
 		{
+			name: "binary owned terminal cleanup",
+			files: map[string][]string{
+				"skills/homonto/references/execution.md": {"## Terminal cleanup", "cleanup list", "cleanup preview", "cleanup apply", "--identity", "native question dialog", "never relabeled complete", "archives and native branches remain"},
+				"subagents/homonto.md":                   {"execution.md#terminal-cleanup", "not manual deletion", "onto cleanup apply*", "to cleanup apply*", "homonto workflow cleanup apply*"},
+			},
+		},
+		{
+			name: "all user questions use native dialogs",
+			files: map[string][]string{
+				"skills/homonto/references/autonomy.md": {"Every question to the user", "native dialog box", "clarifications, free-form questions", "even a single yes/no question", "unavailable, denied, or dismissed", "never infer consent or switch channels"},
+				"subagents/homonto.md":                  {"every question to the user", "clarifications and free-form input", "native dialog box"},
+				"skills/no/references/execution.md":     {"every question to the user", "OpenCode's built-in `question` tool", "native dialog box", "do not fall back to chat or shell prompts"},
+				"skills/grilling/SKILL.md":              {"every question to the user", "clarifications and free-form input", "native dialog box", "standalone mode"},
+				"skills/handoff/SKILL.md":               {"every question to the user", "clarifications and free-form input", "native dialog box", "standalone mode"},
+			},
+		},
+		{
+			name: "proportionate skeptic repairs",
+			files: map[string][]string{
+				"skills/homonto/references/review-triage.md":   {"## Proportionality before repair", "current user request", "conflict-resolution-only", "tightening otherwise unchanged PR tests", "cumulative repair scope", "before appending or dispatching repair tasks", "OpenCode's built-in `question` tool", "A blocking finding does not authorize its repair"},
+				"skills/homonto/references/autonomy.md":        {"materially disproportionate", "review-triage.md#proportionality-before-repair", "Do not infer approval from a failing check"},
+				"skills/onto-verify/SKILL.md":                  {"proportionality and scope approval", "before creating repair tasks", "For an authorized in-scope repair, ask"},
+				"skills/to-done/SKILL.md":                      {"proportionality and scope approval", "before creating repair tasks", "current user request and assignment boundary"},
+				"skills/onto-verify/references/adversarial.md": {"current user request and assignment boundary"},
+				"skills/onto/references/delivery.md":           {"proportionality and scope approval", "pre-existing failures do not authorize repairs"},
+				"skills/onto/references/recovery.md":           {"proportionality and scope approval", "before invalidating evidence or appending tasks"},
+				"subagents/homonto.md":                         {"proportionality and scope approval", "before appending or dispatching repairs"},
+				"subagents/onto-skeptic.md":                    {"current user request", "conflict-resolution-only", "test hardening", "scope approval"},
+				"subagents/to-skeptic.md":                      {"current user request", "conflict-resolution-only", "test hardening", "scope approval"},
+			},
+			forbid: []string{"Ask the user only if accepting a known lower-severity deviation", "it asks the user only when product intent is genuinely missing"},
+		},
+		{
+			name: "explorers before guessing",
+			files: map[string][]string{
+				"skills/homonto/references/execution.md":     {"## Focused exploration", "default to `onto-explorer` or `to-explorer`", "Before planning", "Before implementation", "During finding triage", "one bounded question per explorer", "Reuse grounded answers", "Trivial, already-grounded work may proceed directly", "do not replace review or final skepticism"},
+				"skills/homonto/references/autonomy.md":      {"execution.md#focused-exploration"},
+				"skills/homonto/references/review-triage.md": {"execution.md#focused-exploration", "introduced by the assigned change"},
+				"skills/onto-design/SKILL.md":                {"execution.md#focused-exploration", "onto-explorer"},
+				"skills/onto-build/SKILL.md":                 {"execution.md#focused-exploration", "before dispatching implementation"},
+				"skills/to-plan/SKILL.md":                    {"execution.md#focused-exploration", "unfamiliar code"},
+				"skills/to-do/SKILL.md":                      {"execution.md#focused-exploration", "before dispatching implementation"},
+				"subagents/homonto.md":                       {"execution.md#focused-exploration", "not only after repeated failures"},
+			},
+		},
+		{
 			name: "bounded to skepticism",
 			files: map[string][]string{
 				"skills/to-done/SKILL.md":                      {"references/review-triage.md", "bounded repair recheck", "coordinator owns scope and severity"},

@@ -28,9 +28,11 @@ including workspace roots and dirty-work decisions, even on direct entry.
 
 1. **Understand before writing.** Ground every claim about the codebase in
    reading. Read the repository's relevant ADRs and nearby design documents
-   before planning a behavior or architecture change. For questions that span
-   many files, dispatch `to-explorer` — read-only, so run one per question
-   concurrently rather than serializing them — and work from its conclusions.
+   before planning a behavior or architecture change. Use `to-explorer` for
+   unfamiliar code, unclear ownership or integration impact under the shared
+   [focused exploration policy](../homonto/references/execution.md#focused-exploration),
+   not only for questions spanning many files. Run independent questions
+   concurrently and validate the cited conclusions before choosing task boundaries.
    For converted work, carry Owner/Repo/Cwd and Files/Change/Verify from the
    preserved snapshot when concrete, then validate against the actual records
    owner/source binding. Do not drop ownership/root fields during translation.

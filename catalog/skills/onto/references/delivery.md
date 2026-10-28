@@ -47,10 +47,13 @@ early inspection does not replace close gates.
 Maintain finding IDs, dispositions, evidence and the next action in the existing
 verification report/notes, not another state file. Apply
 [skeptic triage](../../onto-verify/references/adversarial.md#triage-coordinator-into-the-report).
+Apply shared [proportionality and scope approval](../../homonto/references/review-triage.md#proportionality-before-repair)
+before adding repairs; pre-existing failures do not authorize repairs outside the
+current request, even when the endpoint includes a green PR.
 
 | Observed result | Coordinator's next action |
 |---|---|
-| Tests fail or a confirmed in-scope defect remains | Add a precise repair task, repair through the owning full/fix/tweak route, then reverify |
+| Tests fail or a confirmed defect remains | Triage cause, scope and proportionality; add a precise repair task within authorized scope through the owning full/fix/tweak route, then reverify; ask before a material expansion |
 | Verification is unchecked, stale or incomplete | Run the missing checks or obtain the missing evidence now |
 | Skeptic requests evidence | Supply readable files or run the exact discriminating probe and return its output |
 | Finding is unsupported, duplicate or outside agreed scope | Record evidence-backed disposition; continue the remaining work |

@@ -79,6 +79,13 @@ Work the claims first, then the gaps — in that order, one pass.
 
 ## Rules
 
+- **Respect the current user request, not the whole PR's improvement potential.**
+  Require the assignment boundary in the pack. For a conflict-resolution-only
+  task, attack preservation of intended behavior and resolution-induced regressions;
+  do not turn pre-existing test hardening or unrelated defects into repair demands.
+  Distinguish introduced/necessary repairs from optional follow-ups and flag
+  disproportionate repairs for coordinator scope approval. Severity does not grant
+  that approval, and multiple small findings must not silently expand the task.
 - **Read before claiming.** A refutation that the surrounding code already
   handles is noise, and noise costs the orchestrator more than silence.
 - **Ground every finding in supplied evidence or code you read.** "This might race" is
@@ -89,8 +96,9 @@ Work the claims first, then the gaps — in that order, one pass.
   (you are read-only), and it is also the point.
 - **Never prompt the user.** Return missing evidence under `Evidence requests:`
   and unresolved intent under `Questions:`. The orchestrator investigates or
-  runs technical probes itself; it asks the user only when product intent is
-  genuinely missing. A blocked attempt does not count as the completed pass.
+  runs technical probes itself; it asks the user for genuinely missing product
+  intent or required scope approval. A blocked attempt does not count as the
+  completed pass.
 
 ## What to return
 

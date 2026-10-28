@@ -1,224 +1,246 @@
 # The to workflow
 
-**to** is the minimal coding framework for LLMs that homonto ships as a
-bundled framework. It has two halves that work together:
+`to` is the minimal engine: three phases, one artifact, and a small
+bookkeeper binary. It keeps onto's coding standards — grounded plans,
+reviewed diffs, real verification, an adversarial pass — without onto's
+evidence gates, spec deltas, or dependency graph.
 
-- the **`to` binary** (built from `cmd/to/`, installed beside `homonto`) — the
-  bookkeeper: it creates change workspaces, records the one phase transition,
-  archives finished changes, and answers `status`/`handoff`/`doctor` from
-  state only it writes; and
-- the **`to-*` skills** (materialized from the builtin catalog by
-  `homonto apply`) — the agent-facing process prose that drives the work
-  inside each phase.
-
-The binary owns the *state*; the skills own the *discipline*. A change moves
-through three phases in a fixed order:
-
-```
-plan → do → done
-```
-
-`done` and `abandoned` are terminal (the change is then archived). Each change
-tracks its phase in a `to-state.yaml` inside its workspace directory,
-always written through the binary and never by hand.
-
-Unlike onto, **to enforces no evidence gates**: `to done --verified` records a
-self-asserted checkbox, not observed proof. The verification rigor lives
-entirely in the `to-done` skill (a real verify run plus at least one
-adversarial skeptic pass). That trade is the product: much less ceremony per
-change. The binary still checks installation, phase/state, and applicable
-source cleanliness; it does not certify verification. Design rationale:
+Use it for focused work where nobody needs an audit trail beyond a plan file
+and Git history. Comparison: [workflows](workflows.md). Command details:
+[to reference](to-reference.md). Design rationale:
 [to-framework-design.md](../to-framework-design.md).
 
-The coordinator triages review findings against supported scenarios and agreed
-scope, retains finding IDs/dispositions, and bounds repair rechecks to affected
-claims and adjacent risks. Proven data loss, credential exposure and failed core
-acceptance remain blocking. Review reports and unfinished checks are remaining
-work, not completion.
+## Two halves
 
-### Recovery after archive
+| | Owns |
+|---|---|
+| **`to` binary** | `to-state.yaml`, the one forward transition, archiving, status, handoff, doctor. |
+| **`to-*` skills** | Planning, implementation loops, review, verification, delivery. |
 
-`to status --json` lists only active tasks. The dispatcher also inspects matching
-archives before creating another task, using recorded identity, candidate/tree
-OIDs and targets (plus canonical PR identity for PR work). An archived done task
-may still need integration or publication. Resume the first missing authorized
-action through `to-done` without rerunning archival or modifying the archive;
-retain post-archive evidence in the handoff. Abandoned archives are not verified
-delivery inputs. A requested review-ready PR additionally needs observed
-OPEN/non-draft state and required checks passing on the delivered head; local
-verification and `--verified` do not prove that. See
-[ADR 0071](../adr/0071-align-entrypoints-and-delivery-recovery.md).
+The binary does **not** check verification: `to done --verified` records your
+assertion. The rigor lives in the `to-done` skill, which requires a real
+verification run and at least one completed skeptic pass.
 
-## onto and to — complementary by selection
-
-Pick the workflow per change, not per repository. Declaring both
-`[engines.onto]` and `[engines.to]` in one `homonto.toml` is valid
-(ADR 0042): their records live in disjoint directories (`changes/` vs
-`tasks/`) and their agents and commands are namespaced, so both project side
-by side and the request decides which dispatcher the shared `homonto`
-coordinator loads (ADR 0045). Pick **onto**
-for changes that need spec deltas, dependency graphs, and artifact/evidence
-checks on normal transitions; pick **to** for simple development where that
-machinery costs more than it protects. `no` may also be installed. Each task
-selects exactly one engine and retains it on resume (ADR 0068). The existing
-promote/demote CLI bridges remain available for explicit legacy conversion;
-they are not part of the workspace-task flow and cannot preserve its recorded
-engine/generation identity. Task instructions never switch engines automatically.
-
-## Install and enable
-
-```bash
-go install github.com/noviopenworks/homonto/cmd/to@latest
-to version
-```
-
-Or install `to` together with `homonto` through the [interactive
-installer](getting-started.md#1-install): it asks which binaries you want,
-verifies the release archives against `SHA256SUMS`, and prints PATH
-instructions without editing your shell configuration. On confirmation, it can
-also scaffold the current directory with `homonto init`.
-
-The mutating commands require the framework to be **declared and applied
-through homonto first** — this is how the skills land in your tools:
+## Install
 
 ```toml
 [engines.to]
 source = "builtin:to"
-scope = "project"
-# plus a [subagents.<name>.<tool>] model block per to agent — see the
-# configuration reference
+scope  = "project"
+
+[subagents.homonto.opencode]
+model = "anthropic/claude-opus-5-5"
+[subagents.to-explorer.opencode]
+model = "anthropic/claude-haiku-5-5"
+[subagents.to-implementer.opencode]
+model = "anthropic/claude-sonnet-5-5"
+[subagents.to-reviewer.opencode]
+model = "anthropic/claude-opus-5-5"
+[subagents.to-skeptic.opencode]
+model = "anthropic/claude-opus-5-5"
 ```
 
-Then `homonto apply`. It also installs the slash commands: `/to` (the
-dispatcher — it finds the active change via `to status --json` and routes),
-the command-only explicit-user `/to-bypass`, plus `/to-plan`, `/to-do`, `/to-done`,
-and `/to-no-slop`.
+```sh
+homonto apply
+to init          # creates docs/tasks/ and docs/tasks/archive/
+```
 
-The install also adds the shared `homonto` knowledge skill and the shared
-`homonto` coordinator agent (ADR 0045 — one primary serves both workflows).
-It owns each workflow mutation, decision, commit, and delegation. Every
-`to-*` workflow command routes to it.
+## The flow
 
-## The layout
+```text
+ to new ─▶ plan ──to phase──▶ do ──to done --verified──▶ done (archived)
+            │                  │
+            │                  └ tasks implemented, reviewed, committed, checked off
+            └ plan.md written
 
-Each change is a directory `<workflow-root>/tasks/<name>/` holding `to-state.yaml`
-(written **only** by the binary) and `plan.md` (written by the agent during
-plan). Finished changes move to `<workflow-root>/tasks/archive/<date>-<name>/`; the date
-prefix frees the name for reuse. By default `to` is git-blind. For one change
-spanning declared repositories, create it in the config repo with repeatable
-`--repo` aliases, for example `to new release --repo api --repo web`. The
-state and plan still live only in the config repo; before `to done`, the
-config repo and each selected repo must be clean and Git-readable.
+ any phase ──to abandon──▶ abandoned (archived)
+```
+
+From OpenCode:
+
+```text
+/to cap the note cache at 100 entries
+```
+
+The coordinator runs plan, do, and done in one invocation, through
+verification, archive, integration, and authorized publication, stopping only
+for an endpoint you named, a real decision, or a hard blocker.
 
 ## The plan contract
 
-`plan.md` is the change's single durable human-authored record. It starts
-with the goal, approach, and scope boundary, followed by ordered tasks:
+`plan.md` is the change's single durable record — planning, decisions, review
+outcomes, and final evidence all live here. Keep it under a screen.
 
 ```markdown
-- [ ] <Concrete outcome>
-  - Files: `<paths and, when useful, symbols>`
-  - Change: <behavior or contract to add, remove, or preserve>
-  - Verify: `<exact command>` — <specific passing signal>
+# tune-cache
+
+Goal: cap the note cache at 100 entries.
+Approach: evict the oldest entry on insert past the cap.
+Boundary: no other eviction policy changes; no config knob.
+
+- [ ] Cap cache size
+  - Files: `cache.go` (`Cache.Put`), `cache_test.go`
+  - Change: drop the oldest entry when the 101st is added
+  - Verify: `go test ./... -run TestCacheCap` — ok
+- [ ] Log evictions at debug level
+  - Files: `cache.go`
+  - Change: one debug line per eviction with the evicted key
+  - Verify: `go test ./...` — ok
+
+Final Verify: `go test ./... && go vet ./...` — both exit 0
+
+## Notes
+- Considered LRU; rejected: access order isn't tracked today.
+
+## Verification
 ```
 
-Implementation and its focused tests stay in the same task. **The task list
-is live during `do`**: discovered work is appended with the same contract
-(outcome suffixed `(discovered <date>)`, placed before `Final Verify:`)
-before its code is written; tasks are checked off in the commit that
-completes them; a task made unnecessary is checked as
-`- [x] SUPERSEDED: <reason>` rather than deleted. Decisions and declined
-review findings go under `## Notes`. A distinct `Final Verify:` line names
-the whole-change command; its literal result, coverage gaps, and the skeptic
-verdict go under `## Verification`. One archived artifact carries planning,
-recovery, review, and final evidence.
+Rules:
 
-## Phase walkthrough
+- One concrete outcome per task. Code and its focused tests stay in the same
+  task.
+- Every task has `Files:`, `Change:`, and `Verify:` (exact command and passing
+  signal). Multi-repository tasks also name `Repo:` and an absolute `Cwd:`.
+- **The list is live during `do`.** Discovered work is appended with the same
+  contract, suffixed `(discovered <date>)`, before `Final Verify:` and
+  before its code is written.
+- A task made unnecessary is checked as `- [x] SUPERSEDED: <reason>`, never
+  deleted.
+- Each task is checked off in the commit that completes it.
+- Declined review findings and decisions go under `## Notes`.
+- `## Verification` gets the literal `Final Verify:` result, coverage gaps,
+  the skeptic verdict, and the verified commit and tree IDs.
 
-- **plan** (`/to-plan`) — ground the approach in reading (dispatch
-  `to-explorer` for multi-file questions), write `plan.md` per the contract,
-  de-slop it, then `to phase <name>`.
-- **do** (`/to-do`) — execute independent repositories in parallel, with exactly
-  one repository per `to-implementer` assignment and one writer per checkout.
-  The orchestrator verifies against the repository, one or
-  more `to-reviewer` passes judge the diff, findings are fixed or declined in
-  writing, the task is checked off in its own commit.
-- **done** (`/to-done`) — run `Final Verify:`, obtain at least one completed
-  `to-skeptic` pass on the final candidate, record the outcome under
-  `## Verification`, then `to done <name> --verified --evidence "…"` archives
-  the change.
+More task examples ship in the `to-plan` skill's `references/task-examples.md`.
 
-Starting or resuming `to` continues across these phase boundaries in the same
-invocation through the full success endpoint, including required verification,
-archival, integration, and authorized publication. A finished plan checklist
-still routes to `to-done`, not a completion report. The orchestrator stops earlier
-when the user names an endpoint or asks to pause, a genuine question blocks
-progress, or a hard blocker remains after permitted recovery is exhausted or
-unavailable. It reports hard blockers with evidence and the next action, without
-inventing a question or claiming completion. It chooses reversible technical
-defaults and asks only when product intent, scope, or authorization is missing.
+## Phase by phase
 
-`to abandon <name>` is the terminal exit without done, from any phase.
+### plan (`/to-plan`)
 
-## Specialist subagents
+The coordinator grounds the approach in the code (dispatching `to-explorer`
+for multi-file questions), writes `plan.md`, de-slops it, and advances:
 
-onto's cast, adapted. Delegate heavily — concurrency is decided by what an
-agent writes, not by which agent it is:
+```console
+$ to new tune-cache
+created change "tune-cache" at docs/tasks/tune-cache
+  docs/tasks/tune-cache/to-state.yaml
+  docs/tasks/tune-cache/plan.md
+$ to phase tune-cache
+change "tune-cache" advanced plan → do
+```
 
-| Subagent | Role | Concurrency |
+If planning starts growing design documents, cross-change dependencies, or
+evidence tables, that's onto-shaped work — the skill says so rather than
+rebuilding onto inside a plan.
+
+### do (`/to-do`)
+
+For each unchecked task:
+
+1. `to-implementer` makes the change in **one repository** and runs the
+   task's `Verify:`; it returns edits and evidence, never commits.
+2. The coordinator re-runs the check against the repository.
+3. One or more `to-reviewer` passes (distinct lenses, in parallel) judge the
+   diff.
+4. Findings are fixed or declined in writing (`## Notes`).
+5. The coordinator commits the code and the checkoff together.
+
+Independent repositories run in parallel; each checkout has one writer.
+
+### done (`/to-done`)
+
+1. Run `Final Verify:` on the final candidate (reusing earlier output only if
+   inputs are unchanged).
+2. Obtain at least one **completed** `to-skeptic` pass on that exact
+   candidate, with a complete evidence pack. Several lenses may run
+   concurrently: does it do what it claims, what breaks it, does the evidence
+   hold. If dispatch is unavailable, a direct review is recorded as such —
+   never labelled a skeptic pass.
+3. Triage findings. An in-scope defect becomes a new task, and the flow goes
+   back to `do` in the same invocation; any code change invalidates the
+   previous verification and verdict.
+4. Record the outcome under `## Verification`.
+5. Finish:
+
+```console
+$ to done tune-cache --verified --evidence "go test ./... && go vet ./... ok; to-skeptic: no blocking findings"
+change "tune-cache" done, archived at docs/tasks/archive/2026-10-27-tune-cache
+```
+
+6. Complete authorized integration and publication. An archived task may
+   still owe a merge or PR; the dispatcher detects that on the next `/to` and
+   resumes the first missing action without re-archiving.
+
+## Specialists in to
+
+| Agent | Role | Concurrency |
 |---|---|---|
-| `to-explorer` | Read-only, no-shell codebase questions; returns conclusions, not dumps. | Concurrent — one per question |
-| `to-implementer` | Executes one repository assignment; returns edits and evidence, leaving commits to the parent. | Parallel across repositories; serial per checkout |
-| `to-reviewer` | No-shell review of each supplied diff for correctness, security, contract, and clarity. | Concurrent — one per lens |
-| `to-skeptic` | No-shell fresh-context passes in `to-done`, prompted to refute the "it works" claim and request exact probes. | Concurrent — one per lens |
+| `to-explorer` | Read-only codebase questions with cited conclusions | one per question |
+| `to-implementer` | One repository assignment; returns edits and evidence | parallel across repos, serial per checkout |
+| `to-reviewer` | Diff review for correctness, security, contract, clarity | one per lens |
+| `to-skeptic` | Fresh-context attempt to refute "it works" | one per lens, ≥1 completed |
 
-Read-only agents may run concurrently, but reviewers need stable candidates:
-pause writers in reviewed checkouts. Workers may read all declared repositories.
-Per-repo reviews precede combined interface review and configured integration
-checks. The user chooses isolation once per task, with per-repo exceptions;
-shared workspace tasks preserve that choice and candidate-bound results.
 Bookkeeping — `plan.md` edits, checkoffs, commits — stays with the
-orchestrator and never runs concurrently.
+coordinator and is never concurrent.
 
-## Surviving context loss
+## Multi-repository changes
 
-`to handoff <name>` prints a compact recovery pack — identity, phase, the
-safe next skill, and a plan excerpt built for resuming: the head, every
-unchecked task contract, `Final Verify:`, and bounded notes/verification
-sections. A fresh session reads it, then continues from the first unchecked
-task. `to doctor` is the read-only health check; `--quiet` reports diagnostics
-through its exit code for scripts or custom hooks. It does not block session
-completion — see [enforcement](enforcement.md).
-
-## Tooling providers
-
-Like onto, `to` names no tool of its own. Declare what you use in `[tooling]`
-and `homonto apply` renders it into the dispatcher's generated
-`references/tooling.md`:
-
-```toml
-[tooling]
-shell_proxy = "rtk"       # or "none" (default)
-code_intel  = "graphify"  # or "okf", or "none" (default)
+```console
+$ to new release-2 --repo api --repo web --dir /work/control
 ```
 
-Both default to `none`, so declaring nothing means the preflight names
-nothing. A declared-but-missing provider warns and the workflow proceeds; it
-never halts. homonto never installs or runs a provider. Full reference:
-[configuration](configuration.md#tooling).
+State and `plan.md` live in the records root; tasks name their `Repo:` and
+`Cwd:`. Before `to done`, every selected repository must be clean and its Git
+state readable. Schema 2 adds frozen bases (`--base api=main`) and
+registered worktrees. See [workspaces](workspaces.md).
 
-## Workspace tmp
+A change created without `--repo` in a schema 0/1 config is Git-blind: `to
+done` doesn't check cleanliness.
 
-A `[tmp]` table declares one gitignored scratch directory (default `.tmp`)
-that every writable agent uses without prompts: `homonto apply` creates it
-and renders `references/tmp.md` into the dispatcher and the shared `homonto`
-skill naming the path. Transient files a later step must find again —
-handoff drafts, fetched packets — belong there, not in anonymous `mktemp`
-paths. homonto never deletes its content. Full reference:
-[configuration](configuration.md#workspace-tmp--tmp).
+## Recovering
 
-## Where the details live
+```console
+$ to handoff tune-cache
+change: tune-cache
+phase: do
+created: 2026-10-27
+next: resume implementation with `/to-do` for tune-cache
+next argv: ["to" "status" "--json" "--dir" "…"]
 
-Every command, flag, and crash-safety behavior:
-[to reference](to-reference.md). The principles the skills enforce:
-[YAGNI](yagni.md) and [KISS](kiss.md).
+plan.md:
+# tune-cache
+…
+```
+
+The pack contains the plan head, every unchecked task contract, `Final
+Verify:`, and bounded notes/verification. A fresh session resumes at the
+first unchecked task.
+
+An interrupted `to done` / `to abandon` leaves the change terminal but not
+archived; `to doctor` reports it, and re-running the same finishing command
+completes the move.
+
+## Growing out of to
+
+Engine choice is fixed per task. If a `to` change turns out to need onto's
+record, the coordinator asks you for a scope decision. You can convert
+explicitly:
+
+```console
+$ to promote tune-cache --yes
+```
+
+The whole to workspace is preserved under the new onto change's
+`.workflow/snapshots/`, and a fresh proposal-only onto change starts at
+`open`. `onto demote` converts back.
+
+## Emergency bypass
+
+Only when you ask, via `/to-bypass`:
+
+```sh
+to bypass tune-cache --to done --reason "released manually during outage"
+```
+
+`done` and `archive` record `verified: false`; every use is logged in
+`.to/bypass.json`.

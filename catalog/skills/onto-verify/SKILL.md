@@ -173,7 +173,9 @@ after recording to confirm current claims and resolve stale or unknown-ID findin
 On any failure, record `onto set verify-result <name> fail` once per round, which increments
 `observed.verify_rounds`, and note the date and failing items in `notes.md`.
 If step 4 already recorded fail, do not increment it again here.
-Default to **fix**: verify each finding against the candidate, then turn every
+Apply shared [proportionality and scope approval](../homonto/references/review-triage.md#proportionality-before-repair)
+before creating repair tasks; a verification failure does not authorize broader work.
+Default to **fix** within that boundary: verify each finding against the candidate, then turn every
 real in-scope source defect into an unchecked repair task before changing code.
 Invalidate a previous passing report (`Result: superseded (repair <date>)`) and
 record pending unless this round already recorded fail. Preserve the recorded
@@ -191,7 +193,8 @@ tasks remain coordinator-owned. Return here for fresh verification of the change
 candidate. Do not stop at a skeptic finding or ask whether to continue a clear
 in-scope repair. Escalation follows the shared eligibility table, not failure alone.
 
-Ask the user only if accepting a known lower-severity deviation is a real option
+For an authorized in-scope repair, ask the user only if accepting a known
+lower-severity deviation is a real option
 and fixing it would cross a user-owned constraint. Never recommend acceptance,
 auto-accept it, or offer it for security defects, data loss, or failed core
 acceptance scenarios. If authorized, record each deviation and rationale in

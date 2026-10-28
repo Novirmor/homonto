@@ -1,6 +1,6 @@
 name = "onto"
 kind = "engine"
-version = "0.25.5"
+version = "0.26.0"
 description = "Onto self-contained development workflow"
 
 [dependencies]

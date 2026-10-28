@@ -311,7 +311,7 @@ func EnsureNameAvailable(l Layout, workflow, change string) error {
 	}
 	for _, w := range r.Entries {
 		if w.Workflow == workflow && w.Change == change {
-			return fmt.Errorf("worktree: ownership: %s/%s still has a registered binding for repository %q at %s; remove or recover it before reusing the change name", workflow, change, w.Repo, w.Path)
+			return fmt.Errorf("worktree: ownership: %s/%s still has a registered binding for repository %q at %s; remove or recover it before reusing the change name; inspect `%s cleanup preview %s`", workflow, change, w.Repo, w.Path, workflow, change)
 		}
 	}
 	return nil
@@ -1428,7 +1428,7 @@ func RemoveWorktree(l Layout, workflow, change, repo string, yes bool) (Worktree
 
 // RemoveWorktreeRole removes only the selected owned role. Receiver removal
 // obeys the same terminal, clean, and integrated checks as execution removal.
-func RemoveWorktreeRole(l Layout, workflow, change, repo, role string, yes bool) (Worktree, error) {
+func RemoveWorktreeRole(l Layout, workflow, change, repo, role string, yes bool, expectedStateID ...string) (Worktree, error) {
 	var w Worktree
 	if role != "execution" && role != "receiver" {
 		return w, fmt.Errorf("worktree: role must be execution or receiver")
@@ -1466,29 +1466,16 @@ func RemoveWorktreeRole(l Layout, workflow, change, repo, role string, yes bool)
 	if index < 0 {
 		return w, fmt.Errorf("worktree: ownership: no registered binding for %s/%s repository %q", workflow, change, repo)
 	}
-	if err := validateWorktree(l, w); err != nil {
-		return w, err
+	if len(expectedStateID) > 1 || (len(expectedStateID) == 1 && (expectedStateID[0] == "" || w.StateID != expectedStateID[0])) {
+		return w, fmt.Errorf("worktree: cleanup generation changed; preview again")
 	}
-	s, err := bindingState(l, workflow, change, w.StateID, false)
+	_, _, removed, err := checkWorktreeRemoval(l, w)
 	if err != nil {
 		return w, err
 	}
-	if !s.terminal(workflow) {
-		return w, fmt.Errorf("worktree: active binding cannot be removed; complete or abandon %s/%s first", workflow, change)
-	}
-	if err := cleanWorktree(w.Path); err != nil {
-		return w, err
-	}
-	head, err := worktreeGit(w.Path, "rev-parse", "--verify", "HEAD^{commit}")
-	if err != nil {
-		return w, err
-	}
-	base, err := worktreeGit(w.Path, "rev-parse", "--verify", "--end-of-options", w.BaseTarget+"^{commit}")
-	if err != nil {
-		return w, err
-	}
-	if _, err := worktreeGit(w.Path, "merge-base", "--is-ancestor", head, base); err != nil {
-		return w, fmt.Errorf("worktree: unmerged source commit %s is not integrated into configured base %q; refusing removal: %w", head, w.BaseRef, err)
+	if removed {
+		r.Entries = append(r.Entries[:index], r.Entries[index+1:]...)
+		return w, saveWorktreeRegistry(l, r)
 	}
 	r.Entries[index].Status = "removing"
 	if err := saveWorktreeRegistry(l, r); err != nil {

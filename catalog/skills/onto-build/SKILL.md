@@ -106,6 +106,11 @@ name).
 
 ### 3. Execute task by task
 
+Apply shared [focused exploration](../homonto/references/execution.md#focused-exploration)
+before dispatching implementation (or writing directly) when ownership, call paths
+or impact remain unclear. Reuse design grounding when still valid rather than
+re-exploring each task; an implementer should not have to guess the contract.
+
 **`build_mode: subagent`** → follow `references/subagent-protocol.md`: the
 main session coordinates only — one fresh-context implementer agent per
 task in one repository; the coordinator verifies edits, commits and checkoffs against the repository

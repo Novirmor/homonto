@@ -205,7 +205,7 @@ func TestHWorkflowInstallsOnlyItsOwnResources(t *testing.T) {
 	}
 	wantSkills := map[string]bool{
 		"h-spike-issue": false, "h-resolve-issue": false, "h-review-pr": false,
-		"h-continue-pr": false, "h-review-batch": false,
+		"h-continue-pr": false, "h-resolve-conflicts": false, "h-review-batch": false,
 		"homonto": false,
 	}
 	for _, skill := range skills {
@@ -247,7 +247,7 @@ func TestHWorkflowInstallsOnlyItsOwnResources(t *testing.T) {
 	for _, cmd := range cmds {
 		gotCmds[cmd.Name] = true
 	}
-	for _, want := range []string{"h-spike-issue", "h-resolve-issue", "h-review-pr", "h-continue-pr", "h-review-batch"} {
+	for _, want := range []string{"h-spike-issue", "h-resolve-issue", "h-review-pr", "h-continue-pr", "h-resolve-conflicts", "h-review-batch"} {
 		if !gotCmds[want] {
 			t.Errorf("h expansion missing command %q", want)
 		}

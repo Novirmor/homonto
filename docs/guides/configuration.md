@@ -1,917 +1,715 @@
 # Configuration reference — `homonto.toml`
 
-One file, parsed into a tool-agnostic desired state. All sections are
-optional; an empty config is valid and projects nothing. `homonto plan`,
-`apply`, `status`, and `doctor` accept `--config <path>` (default
-`homonto.toml`). OpenCode is the only adapter; Claude Code and codex support
-was removed in v0.13.0 (configs naming them fail at load naming the key).
+Every table and field, with defaults, rules, and an example for each. For
+complete configs by situation, see [examples](examples.md).
 
-Quick map of every table:
+`homonto plan`, `apply`, `status`, `doctor`, `explain`, `update`, `workspace`,
+`worktree`, and `workflow` read `homonto.toml` from the current directory, or
+the file named by `--config <path>`. The directory containing it is the
+**config root**; relative paths in the file resolve from there, not from your
+shell's working directory.
 
-| Table | Declares | Reference |
+## Contents
+
+| Table | Declares |
+|---|---|
+| [`schema_version`](#schema_version) | Config format version (top-level key) |
+| [`[mcps.<name>]`](#mcp-servers--mcpsname) | MCP servers |
+| [`[skills.<name>]`](#skills--skillsname) | Skills |
+| [`[commands.<name>]`](#commands--commandsname) | Slash commands |
+| [`[subagents.<name>]`](#subagents--subagentsname) | Agent definitions |
+| [`[subagents.<name>.opencode]`](#agent-models--subagentsnameopencode) | Each agent's model, variant, step budget, extra allowed commands |
+| [`[engines.<name>]`](#engines--enginesname) | Work-model packages: `onto`, `to`, `no` |
+| [`[workflows.<name>]`](#workflows--workflowsname) | User-facing packages: `h` |
+| [`[plugins.opencode.<name>]`](#plugins--pluginsopencodename) | OpenCode plugins |
+| [`[settings.opencode]`](#settings--settingsopencode) | OpenCode settings |
+| [`[tui.opencode]`](#terminal-settings--tuiopencode) | OpenCode terminal settings |
+| [`[integrations.opencode]`](#integrations--integrationsopencode) | The bundled workflow plugin |
+| [`[tooling]`](#tooling--tooling) | Shell proxy and code-intelligence providers |
+| [`[tmp]`](#scratch-directory--tmp) | One shared scratch directory |
+| [`[workflow]`](#workflow-records--workflow) | Where lifecycle records live |
+| [`[repos]`](#repositories--repos) | Source repositories |
+| [`[worktrees]`](#worktrees--worktrees) | Parent directory for registered worktrees |
+| [`[integration.<name>]`](#integration-checks--integrationname) | Cross-repository checks |
+
+## General rules
+
+**Everything is optional.** An empty file is valid and projects nothing.
+
+**Validation is strict and fails at load,** naming the offender. Unknown keys
+in typed tables are errors, so typos never pass silently:
+
+```console
+$ homonto plan
+Error: config "…/homonto.toml": parse config: unknown configuration fields:
+1| [frameworks.onto]
+ |  ~~~~~~~~~~~~~~~ missing table
+```
+
+Free-form maps (`[settings.opencode]`, `[tui.opencode]`) are passed through,
+subject to reserved keys and the V2 terminal schema.
+
+**Names** must be non-empty and not index-like (`"0"`, `"-1"`), so they can
+safely become JSON keys and file names.
+
+**Targets.** Resources accept an optional `targets` list. The only valid
+value is `"opencode"`; omitting it means every tool. `"claude"` and `"codex"`
+fail at load (support removed in v0.13.0).
+
+**Scope.** `"project"` writes into the config root (`.opencode/`,
+`opencode.jsonc`). `"user"` writes into your global OpenCode config
+(`~/.config/opencode/`) and affects every project.
+
+| Resource | `scope` |
+|---|---|
+| skills, commands, engines, workflows | required |
+| subagents | optional, default `project` |
+| MCP servers | optional, default `user` |
+
+**Sources.**
+
+| Source | Resolves from | Valid for |
 |---|---|---|
-| `schema_version` | The config format version (top-level key, not a table) | [Schema version](#schema-version) |
-| `[workflow]` | Shared onto/to engine records root and Git mode | [Workflow root](#workflow-root--workflow) |
-| `[repos]` | Source repository aliases | [Repos](#repos--repos) |
-| `[worktrees]` | Optional execution-checkout allocation parent | [Worktrees](#worktrees) |
-| `[integration.<name>]` | Named checkout-aware integration checks | [Integration checks](#integration-checks) |
-| `[mcps.<name>]` | MCP servers | [MCP servers](#mcp-servers--mcpsname) |
-| `[skills.<name>]` | Skills (symlinked) | [Skills](#skills--skillsname) |
-| `[commands.<name>]` | Slash commands | [Commands](#commands--commandsname) |
-| `[subagents.<name>]` | Agent definitions | [Subagents](#subagents--subagentsname) |
-| `[subagents.<name>.opencode]` | Per-subagent model override (required for every declared subagent) | [Subagent models](#subagent-models--subagentsnameopencode) |
-| `[workflows.<name>]` | User-facing workflow package installs | [Workflows](#workflows--workflowsname) |
-| `[engines.<name>]` | Work-model and optional-binary package installs | [Engines](#engines--enginesname) |
-| `[plugins.opencode.<name>]` | OpenCode plugins | [Plugins](#plugins--pluginsopencodename) |
-| `[settings.opencode]` | OpenCode settings | [Settings](#settings--settingsopencode) |
-| `[tui.opencode]` | OpenCode TUI settings | [TUI](#tui--tuiopencode) |
-| `[agents.<name>]` | Legacy — folds into `[subagents.<name>]` | [Legacy agents](#legacy-agents--agentsname) |
+| `builtin:<name>` | The catalog in the binary, materialized to `.homonto/catalog/` | skills, commands, subagents, engines, workflows |
+| `local:<name>` | `homonto/skills/<name>/`, `homonto/commands/<name>.md`, `homonto/subagents/<name>.md`, or a package root path | skills, commands, subagents, engines, workflows |
+| `remote:<url>` | A fetched archive; requires `digest` ([remote sources](remote-sources.md)) | subagents, engines, workflows |
 
-## Schema version
+**Secrets** are written as `${pass:path}` or `${ENV_VAR}` and resolved only
+during apply. See [secrets](secrets.md).
 
-`schema_version` is an optional top-level key (not a table) naming the
-`homonto.toml` format version. The current version is **2**.
+## `schema_version`
+
+A top-level key (not a table). Current version: **2**.
 
 ```toml
 schema_version = 2
 ```
 
-Omitting it, setting `0`, or retaining `1` preserves legacy implicit-config-repo
-semantics. Existing files do not opt into schema 2 on load. Schema 2 makes
-`[repos]` the complete source declaration, permits external records roots,
-and enables `workflow.git` and `[worktrees]`. Those last two declarations
-require an explicit `schema_version = 2`.
+| Value | Meaning |
+|---|---|
+| omitted, `0`, `1` | Legacy layout: the config root's Git checkout is the implicit source repository; `[repos]` adds siblings. |
+| `2` | Explicit layout: `[repos]` lists every source; config root need not be Git; records may live elsewhere; `workflow.git` and `[worktrees]` are available. |
 
-Negative versions and versions newer than the binary supports fail at load.
-Upgrade the binary for a newer config; lowering the number is not a migration.
-Schema/layout and Git-mode changes while workflow state exists are guarded,
-not automatically migrated. There is no workspace migration command yet.
-See [workspaces](workspaces.md) before changing an existing layout.
+A version newer than the binary supports fails at load: upgrade the binary.
+Changing the version of a config that already has workflow records is
+guarded, not migrated. See [workspaces](workspaces.md) before switching.
 
-## Common concepts
+## MCP servers — `[mcps.<name>]`
 
-**Targets.** Most resources take an optional `targets` list selecting which
-tools they project into. OpenCode is the only adapter, so the only valid
-value is `"opencode"`, and omitting the list means every tool. A typo like
-`targets = ["opencod"]` fails at load, not silently; a target naming
-`"claude"` or `"codex"` fails at load citing the v0.13.0 removal.
+```toml
+[mcps.codegraph]
+command = ["codegraph", "serve", "--mcp"]
 
-**Sources.** Skills, commands, subagents, workflows, and engines resolve their
-content through a `source` string:
+[mcps.github]
+command = ["github-mcp-server", "stdio"]
+env     = { GITHUB_PERSONAL_ACCESS_TOKEN = "${pass:dev/github-token}" }
+scope   = "project"
+```
 
-| Source | Resolves from | Available for |
+| Field | Required | Notes |
 |---|---|---|
-| `builtin:<name>` | the catalog embedded in the binary, materialized under `.homonto/catalog/` | skills, commands, subagents, workflows, engines |
-| `local:<name>` | your own content next to `homonto.toml` (`homonto/skills/<name>/`, `homonto/subagents/<name>.md`, a package root) | skills, commands, subagents, workflows, engines |
-| `remote:<url>` | a fetched, verified, pinned archive; requires `digest` (see [remote source trust](remote-source-trust.md)) | subagents, workflows, engines |
+| `command` | yes | Non-empty argv array. First element is the executable. |
+| `env` | no | String map; values may be secret references. |
+| `scope` | no | `user` (default) → global `opencode.jsonc`; `project` → `<config-root>/opencode.jsonc`. |
+| `repo` | no | A `[repos]` alias; requires `scope = "project"`; writes that repository's `opencode.jsonc`. |
+| `targets` | no | `["opencode"]`. |
 
-**Validation is fail-fast.** homonto rejects at load time and names the
-offender: an MCP with no command, an unknown target, a declared subagent
-without a `[subagents.<name>.opencode]` model block, a settings key that
-collides with a structure homonto manages (`settings.opencode.mcp`,
-`settings.opencode.plugin`), a skill without a `scope`, a `remote:` source
-without a `digest`, a legacy `[models.<tool>.<tier>]` block (tiers were
-removed), and names that would corrupt a JSON file (empty, or index-like such
-as `"0"`/`"-1"`).
+Projected as an OpenCode `mcp` entry with `"type": "local"` and
+`"enabled": true`. Changing `scope` moves the server on the next apply (pruned
+from the old file, written to the new one).
 
-Unknown fields in typed configuration sections are errors, not ignored tuning:
-`workflow.rooot`, `subagents.audit.opencode.varaint`, or
-`subagents.audit.step` fails at load. Diagnostics identify the selected absolute
-config filename; strict unknown-field errors include the offending TOML location.
-Arbitrary OpenCode settings/TUI maps remain passthrough, subject to reserved-key
-and supported-tool validation.
+## Skills — `[skills.<name>]`
 
-**Config root and bootstrap.** The directory containing `homonto.toml` is the
-configuration root. Run `homonto init [dir]` to scaffold that configuration;
-it never runs `git init` and never installs a package by itself. Add an
-`[engines.onto]`, `[engines.to]`, or `[workflows.h]` table, inspect `homonto plan`, then
-run `homonto apply` to install the selected package. The config root need not
-be Git. Schema 2 source declarations must already be Git checkouts, and managed
-records require a separate explicit `homonto workspace init --yes` before
-workflow mutations. `apply` never initializes that repository.
+```toml
+[skills.house-style]
+source = "local:house-style"   # → homonto/skills/house-style/SKILL.md
+scope  = "project"
 
-## Workflow root — `[workflow]`
+[skills.handoff]
+source = "builtin:handoff"     # a catalog skill
+scope  = "user"                # available in every project
+```
 
-`[workflow]` selects the shared records root for onto and to. Omit `root` to
-use `docs` relative to the config file. This schema-2 example uses a separate
-records repository:
+| Field | Required | Notes |
+|---|---|---|
+| `source` | yes | `builtin:<name>` or `local:<name>`. |
+| `scope` | yes | `user` → `~/.config/opencode/skills/`; `project` → `.opencode/skills/`. |
+| `repo` | no | A `[repos]` alias; requires `scope = "project"`. |
+| `targets` | no | `["opencode"]`. |
+
+Skills are **symlinked**, so editing the source is live immediately. homonto
+never creates `homonto/skills/<name>/` for you — write the `SKILL.md` before
+applying. Changing `scope` relocates the link.
+
+Builtin skills you can declare on their own: `handoff`, `grilling`. Package
+skills (`onto-*`, `to-*`, `h-*`, `homonto`, `no`) come with their package;
+don't declare them individually.
+
+## Commands — `[commands.<name>]`
+
+```toml
+[commands.grill]
+source = "builtin:grill"     # /grill
+scope  = "project"
+
+[commands.release-notes]
+source = "local:release-notes"   # → homonto/commands/release-notes.md
+scope  = "user"
+```
+
+Same fields as skills. A command lands at `.opencode/command/<name>.md` (or
+the user-scope equivalent). Packages bring their own commands (`/onto`,
+`/to`, `/h-*`, `/no`, …); don't redeclare them. Builtin standalone commands:
+`grill`, `handoff`.
+
+## Subagents — `[subagents.<name>]`
+
+```toml
+# Your own agent file, projected verbatim (put model: in its frontmatter).
+[subagents.security-review]
+source = "local:security-review"       # → homonto/subagents/security-review.md
+scope  = "project"
+
+# A catalog agent under your own name; builtin agents need a model block.
+[subagents.audit]
+source = "builtin:onto-reviewer"
+[subagents.audit.opencode]
+model = "anthropic/claude-opus-5-5"
+```
+
+| Field | Required | Notes |
+|---|---|---|
+| `source` | yes* | `builtin:`, `local:`, or `remote:`. *Omit it entirely to [tune a package agent](#tuning-a-package-agent). |
+| `scope` | no | `project` (default) → `.opencode/agent/`; `user` → `~/.config/opencode/agent/`. |
+| `mode` | no | `link` (default, symlink) or `copy` (managed real file; local edits are backed up to `.bak`). |
+| `repo` | no | A `[repos]` alias; project scope only. |
+| `digest` | remote only | `sha256:<64 hex>`. |
+| `version` | no | Informational. |
+| `targets` | no | `["opencode"]`. |
+
+Agent file format, permission rendering, and link vs. copy:
+[subagents](subagents.md). Legacy `[agents.<name>]` still parses and becomes a
+copy-mode subagent.
+
+## Agent models — `[subagents.<name>.opencode]`
+
+**Every builtin agent needs a model** — whether a package installs it or you
+declare it with a `builtin:` source. There are no defaults, tiers, or
+inheritance. `local:` and `remote:` agents are projected verbatim and may
+**not** have this block; set `model:` in their own frontmatter instead:
+
+```text
+parse config: subagents.security-review declares a model override, but its source "local:security-review" is not builtin: — local:/remote: agents are projected verbatim and never rendered, so the override could never apply
+```
+
+```toml
+[subagents.onto-skeptic.opencode]
+model   = "anthropic/claude-opus-5-5"   # required, provider/model
+variant = "high"                        # optional provider variant
+steps   = 160                           # optional step budget
+bash_allow_add = ["make lint"]          # optional exact-command allows
+```
+
+| Field | Required | Notes |
+|---|---|---|
+| `model` | yes | `provider/model`. No control characters, line breaks, or `#variant` suffix. |
+| `variant` | no | A provider-defined variant (`high`, `xhigh`, `max`, `thinking`, …). Letters, digits, `.`, `_`, `-`. |
+| `steps` | no | Positive integer overriding the agent's iteration budget. |
+| `bash_allow_add` | no | Exact commands appended to the agent's allowlist. See below. |
+
+A missing block fails at load:
+
+```text
+parse config: subagents.homonto.opencode model is required
+```
+
+A setting OpenCode cannot express is an error, not a no-op:
+
+```text
+parse config: subagents.onto-reviewer.opencode sets effort "high", but OpenCode has no effort setting — use variant, or drop it
+```
+
+Default step budgets of builtin agents: **1200** coordinator, **300**
+implementers, **160** `no-reviewer`, **120** other read-only specialists.
+
+homonto checks a model ID's shape, not whether your provider offers it.
+
+### Tuning a package agent
+
+Package agents can't be redeclared (the names would collide). A
+`[subagents.<name>.opencode]` block **without** a `[subagents.<name>]`
+`source` means "tune the installed agent":
+
+```toml
+[engines.onto]
+source = "builtin:onto"
+scope  = "project"
+
+[subagents.onto-reviewer.opencode]    # tunes the package's onto-reviewer
+model = "anthropic/claude-opus-5-5"
+steps = 180
+```
+
+Tuning an agent nothing installs is an error:
+
+```text
+parse config: subagents.onto-skeptic tunes an agent that is not installed — no framework or [subagents.*] declaration provides builtin:onto-skeptic …
+```
+
+A tune-only entry cannot set `scope`, `repo`, `mode`, `targets`, `version`,
+or `digest`. Put `steps` in the `.opencode` block, not under
+`[subagents.<name>]`.
+
+One builtin agent can be installed under one name only. Declaring
+`builtin:onto-reviewer` as `[subagents.audit]` is fine on its own, but not
+alongside `[engines.onto]`, which already installs it.
+
+### `bash_allow_add`
+
+Appends **exact** commands to an agent's shell allowlist. Patterns, shell
+composition, environment assignments, credentials, and destructive or
+privilege-escalating commands are rejected at load. Protected asks and denies
+in the agent's profile still win. Generate candidates with
+`homonto permissions suggest`:
+
+```console
+$ printf 'go test ./...\nrm -rf build\nmake lint\n' | homonto permissions suggest
+# rejected: … "rm -rf build" is a wrapper, destructive, privilege-escalating, shell, or network-fetching command; refusing
+# reviewed suggestions — paste under the agent's [subagents.<name>.opencode] block
+bash_allow_add = [
+  "go test ./...",
+  "make lint",
+]
+```
+
+Like the rest of this block, it applies to builtin agents only. The shipped
+coordinator and implementers already allow general shell use, and protected
+asks/denies still win over additions, so an addition changes little there; an
+agent whose profile denies shell (`bash: false`, every read-only specialist)
+cannot gain additions at all.
+
+## Engines — `[engines.<name>]`
+
+```toml
+[engines.onto]
+source = "builtin:onto"
+scope  = "project"
+
+[engines.to]
+source = "builtin:to"
+scope  = "project"
+
+[engines.no]
+source = "builtin:no"
+scope  = "project"
+```
+
+| Builtin | Installs | Agents that need a model |
+|---|---|---|
+| `builtin:onto` | 10 skills, 10 commands, workflow plugin | `homonto`, `onto-explorer`, `onto-implementer`, `onto-reviewer`, `onto-skeptic` |
+| `builtin:to` | 6 skills, 6 commands, workflow plugin | `homonto`, `to-explorer`, `to-implementer`, `to-reviewer`, `to-skeptic` |
+| `builtin:no` | `no` skill, `/no` command | `no-implementer`, `no-reviewer` |
+
+Engines coexist; `homonto` is declared once even when several packages
+install it. The full inventory is in the [catalog](catalog.md). A `local:` or
+`remote:` package root may be declared too; its `framework.toml` defines its
+content. `remote:` requires `digest`.
+
+## Workflows — `[workflows.<name>]`
+
+```toml
+[workflows.h]
+source = "builtin:h"
+scope  = "project"
+
+[subagents.homonto.opencode]
+model = "anthropic/claude-opus-5-5"
+[subagents.h-spike.opencode]
+model = "anthropic/claude-sonnet-5-5"
+[subagents.h-review.opencode]
+model = "anthropic/claude-opus-5-5"
+```
+
+`builtin:h` installs the `homonto` skill and coordinator, five `h-*` skills
+and commands, the `h-spike` and `h-review` workers, the workflow plugin, and
+the GitHub draft tools. It installs **no** engine. `/h-resolve-issue` needs
+one installed engine to implement with; the other `h` commands do not.
+
+Builtin roles are fixed. `builtin:h` under `[engines]` fails:
+
+```text
+parse config: engines.h source "builtin:h" is a workflow, not an engine
+```
+
+Legacy `[frameworks.*]` tables are rejected; rename them to `[engines.*]` or
+`[workflows.*]`.
+
+## Plugins — `[plugins.opencode.<name>]`
+
+```toml
+[plugins.opencode.opencode-quota]
+source = "@slkiser/opencode-quota"   # npm package → OpenCode's plugin array
+
+[plugins.opencode.experimental]
+source  = "@acme/opencode-experiment"
+enabled = false                       # declared but not loaded
+```
+
+| Field | Required | Notes |
+|---|---|---|
+| `source` | yes | The npm package or plugin path. Two plugins may not share a source. |
+| `enabled` | no | Default `true`. |
+
+OpenCode has no per-plugin configuration on disk, so a `config` table is
+rejected. The bundled `permission-observer` plugin is declared like this:
+
+```toml
+[plugins.opencode.permission-observer]
+source = "permission-observer"
+```
+
+It watches shell permission approvals in memory and, after two explicit
+approvals of the same exact command, suggests adding it with
+`homonto permissions suggest`. It never edits config.
+
+## Settings — `[settings.opencode]`
+
+Arbitrary keys merged into the **global** OpenCode config
+(`~/.config/opencode/opencode.jsonc`):
+
+```toml
+[settings.opencode]
+model       = "anthropic/claude-opus-5-5"
+small_model = "anthropic/claude-haiku-5-5"
+autoupdate  = false
+```
+
+homonto sets the main session model only when you declare it here.
+
+Reserved keys fail at load:
+
+| Key | Use instead |
+|---|---|
+| `mcp` | `[mcps.<name>]` |
+| `plugin`, `plugins` | `[plugins.opencode.<name>]` |
+| `model_variant` | `variant` on a specific agent |
+
+## Terminal settings — `[tui.opencode]`
+
+Projects into the OpenCode **V2** terminal config,
+`$XDG_CONFIG_HOME/opencode/cli.json` (default `~/.config/opencode/cli.json`).
+There is no project-level terminal file.
+
+```toml
+[tui.opencode]
+theme  = { name = "gruvbox", mode = "system" }
+scroll = { speed = 3, acceleration = false }
+tabs   = { mode = "auto" }
+
+[tui.opencode.keybinds]
+"app.exit"  = ["ctrl+c", "<leader>q"]
+"help.show" = false
+```
+
+Supported groups follow the [V2 CLI config](https://opencode.ai/v2/docs/cli/config/):
+`theme`, `cursor`, `scroll`, `leader`, `prompt`, `session`, `tabs`, `diffs`,
+`attention`, `terminal`, `mini`, `keybinds`, `debug`, `experimental`,
+`animations`, `mouse`, `$schema`. Quote keybinding IDs that contain dots.
+Unknown fields and invalid values fail before projection.
+
+Four V1 spellings are mapped: `theme = "x"` → `theme.name`, `scroll_speed` →
+`scroll.speed`, `scroll_acceleration.enabled` → `scroll.acceleration`,
+`leader_timeout` → `leader.timeout`. Declaring both a V1 alias and its V2
+destination is an error. Other V1-only keys need an explicit V2 replacement.
+More in [OpenCode integration](opencode.md#terminal-settings).
+
+## Integrations — `[integrations.opencode]`
+
+Controls the bundled `homonto-workflow` plugin.
+
+```toml
+[integrations.opencode]
+workflow_context = true    # V2 read-only context + status panel
+workflow_bridge  = false   # legacy V1 bridge
+```
+
+| Key | Default | Meaning |
+|---|---|---|
+| `workflow_context` | `true` when `builtin:onto`, `builtin:to`, or `builtin:h` is declared; else `false` | Links `.opencode/plugins/homonto-workflow-context`: workflow context for model requests and compaction, the **Open workflow status** panel, `homonto_status` / `homonto_handoff` tools, and (with `h`) GitHub draft tools. |
+| `workflow_bridge` | `false` | The legacy V1 plugin. Not OpenCode 2 compatible. |
+
+Enabling both, or enabling `workflow_context` alongside an enabled plugin with
+`source = "homonto-workflow"`, is an error. Opt out of the plugin entirely:
+
+```toml
+[integrations.opencode]
+workflow_context = false
+```
+
+Details: [OpenCode integration](opencode.md).
+
+## Tooling — `[tooling]`
+
+Declares which optional developer tools the workflow skills should use.
+
+```toml
+[tooling]
+shell_proxy = "rtk"        # rtk | none
+code_intel  = "graphify"   # graphify | okf | none
+```
+
+| Key | Values | Default | Effect |
+|---|---|---|---|
+| `shell_proxy` | `rtk`, `none` | `none` | Workflows route shell commands through rtk, a token-optimizing CLI proxy. The coordinator also gets an `rtk *` allow. |
+| `code_intel` | `graphify`, `okf`, `none` | `none` | Open/design phases ground code claims in that index ([okf](https://github.com/UmairBaig8/okf-generator)). |
+
+homonto **never installs, updates, or runs** a provider. Apply writes a
+generated `references/tooling.md` into each dispatcher skill naming exactly
+what you declared; the skills warn and continue when a declared provider is
+missing. `homonto doctor` probes `PATH` and reports a missing provider as a
+warning. Unknown values fail:
+
+```text
+tooling.code_intel "ctags" is not a known provider (accepted: graphify, okf, none)
+```
+
+## Scratch directory — `[tmp]`
+
+One directory, inside the config root, that every writable agent may use
+without prompts.
+
+```toml
+[tmp]
+dir = ".tmp"   # default when the table is present
+```
+
+Apply creates the directory, adds an anchored `/.tmp/` line to `.gitignore`,
+and writes `references/tmp.md` into the dispatcher skills and the shared
+`homonto` skill so agents put handoff drafts, fetched packets, and scratch
+output there instead of random `mktemp` paths. Removing the table withdraws
+the references. **homonto never deletes the directory's contents.**
+
+`dir` must be relative, below the config root, and may not overlap `.git`,
+`.opencode/`, `homonto/`, the workflow root, or `.homonto/{catalog,remote,cache}`.
+`[tmp]` takes only `dir`:
+
+```text
+tmp.path ".tmp" is an unknown key — [tmp] takes only dir
+```
+
+## Workflow records — `[workflow]`
 
 ```toml
 [workflow]
-root = "../workflow-records"
-git = "managed"
+root = "docs"        # default
 ```
 
-| Field | Default | Contract |
+| Field | Default | Notes |
 |---|---|---|
-| `root` | `docs` | In schema 2, a dedicated directory relative to the config file or an explicit absolute path, including outside the config root. |
-| `git` | `existing` | Schema 2 only: `existing` uses the records' existing Git owner and manual commit policy; `managed` uses an explicitly initialized, homonto-owned standalone records repository. |
+| `root` | `docs` | Relative to the config root. Schema 2 also accepts external and absolute paths. |
+| `git` | `existing` | Schema 2 only. `existing`: records use their Git owner's normal commit policy. `managed`: a homonto-owned records repository with automatic, path-scoped checkpoints. |
 
-In schema 0/1, `root` must remain below the config directory; absolute paths
-and `..` escapes, including through symlinks, fail at load. These legacy rules
-remain unchanged.
+In schema 0/1 the root must stay below the config root (no absolute paths, no
+`..`, no escaping symlinks). Schema 2 rules and the managed mode are in
+[workspaces](workspaces.md). Changing `root`, `git`, or the schema while
+records exist fails closed rather than moving anything.
 
-In schema 2, records cannot contain or equal the config root, overlap its
-Git/tool control paths, or overlap `worktrees.dir`. In `existing` mode they
-may live in a dedicated subdirectory of a declared source, outside its control
-paths. In `managed` mode they cannot overlap sources or sit inside another Git
-repository. Managed initialization refuses populated or unowned repositories;
-it requires your configured Git identity and runs your commit hooks without
-pushing. Managed workflow mutations checkpoint their own record changes;
-manual Markdown edits need a path-scoped `homonto workspace checkpoint`.
+## Repositories — `[repos]`
 
-In documentation, `<workflow-root>` means this configured directory: onto uses
-`changes`, `specs`, `adr`, and `guides`; to uses `tasks`. Archives remain under
-the same root. Changing schema, root, or Git mode while state exists fails
-closed rather than moving records, archives, locks, receipts, or recovery
-packs. Ownership metadata also guards rebinding. See
-[workspaces](workspaces.md) for setup, checkpoints, recovery, and current limits.
+Name source repositories with aliases. Paths are relative to the config root
+or absolute, and must be the top level of a Git worktree.
 
-## Worktrees
+```toml
+# schema 0/1: the config checkout is implicit; list only siblings
+[repos]
+api = "../api"
+web = "../web"
+```
 
-Optional, schema 2 only. Declare an allocation parent before using registered
-worktrees:
+```toml
+# schema 2: list every source, including the config checkout if it has code
+schema_version = 2
+
+[repos]
+app = "."
+api = "../api"
+```
+
+Two aliases may not point at the same repository (same Git common directory),
+even through symlinks or linked worktrees. Paths containing `*`, `?`,
+backslashes, or control characters are rejected.
+
+What declaring a repository does:
+
+- **Agent access.** For builtin packages, apply grants the coordinator and
+  implementers OpenCode `external_directory` access to declared repositories
+  (and their worktree namespaces), after a deny rule for every other external
+  path. Read-only specialists can read them. Implementers are denied the
+  records root. Custom agents get nothing.
+- **Per-repo resources.** Project-scoped skills, commands, subagents, and MCP
+  servers can target one repository with `repo = "<alias>"`. Each repository
+  gets its own state partition (`.homonto/state.<alias>.json`) and is
+  labelled `opencode@<alias>` in `plan` and `status`.
+- **Change scope.** `onto new` / `to new` select sources with `--repo <alias>`
+  (required in schema 2).
+
+```toml
+[repos]
+api = "../api"
+
+[skills.api-conventions]
+source = "local:api-conventions"
+scope  = "project"
+repo   = "api"          # links into ../api/.opencode/skills/
+
+[mcps.api-db]
+command = ["pg-mcp", "--dsn", "${pass:api/dev-dsn}"]
+scope   = "project"
+repo    = "api"          # writes ../api/opencode.jsonc
+```
+
+These grants are **not a sandbox**: OpenCode matches paths lexically, so a
+symlink inside a declared repository can lead outside it, and allowed scripts
+run with your privileges. Declare only repositories you trust.
+
+## Worktrees — `[worktrees]`
+
+Schema 2 only. The parent directory for registered per-change checkouts:
 
 ```toml
 [worktrees]
 dir = "../execution"
 ```
 
-`dir` accepts a config-relative or absolute path. Omitted or empty means no
-allocation parent, not a default directory. It must not contain/equal the
-config root or overlap source repositories, workflow records, or reserved
-control paths. Paths containing permission wildcards (`*`, `?`), backslashes,
-or control characters are rejected for both `worktrees.dir` and schema-2
-`workflow.root`.
+No default: without `dir`, no worktrees are allocated. Apply renders
+instructions and per-alias permissions; it creates no worktree. Allocation is
+`homonto worktree create` (onto/to) or `homonto workspace task create`
+(shared tasks). See [workspaces](workspaces.md).
 
-`apply` renders this declaration into workspace instructions and bounded
-per-alias permissions; it does not create execution checkouts. Use
-`homonto worktree create` after selecting the source aliases in active workflow
-state. A binding changes that change's execution path, not its `[repos]`
-declaration. Changing `dir` does not retarget existing bindings.
+## Integration checks — `[integration.<name>]`
 
-`homonto worktree receiver` allocates a separate integration-target checkout.
-Prefer early allocation, but matching terminal/archive state is supported too.
-Its optional `--state-id` disambiguates archived generations from inspected
-native IDs or registered `stateID` values; it cannot override existing
-generation/binding evidence. Only execution `worktree create` is active-only.
-See [workspaces](workspaces.md#allocate-an-integration-receiver).
-
-## Integration checks
-
-Schema 2 supports named checks against a workspace task's actual checkouts:
+Schema 2 only. Named checks that run against a task's actual checkouts when
+any listed repository changed:
 
 ```toml
-[integration.api-web]
-repos = ["api", "web"]
-repo = "api"
-cwd = "tests/integration"
-command = ["./check.sh"]
+[integration.api-web-contract]
+repos   = ["api", "web"]           # changing any of these selects the check
+repo    = "web"                    # which checkout the command runs in
+cwd     = "tests/contract"         # path inside that checkout ("." = root)
+command = ["npm", "run", "contract"]
 ```
 
-`repos` lists unique declared aliases. Changing **any** participant selects the
-check. `repo` must be one of them; `cwd` is a required path inside its selected
-checkout (`"."` for the root). Absolute paths, parent escapes and symlink escapes
-are rejected. `command` is a nonempty argv array, not a shell string; use an
-explicit shell executable when required.
+| Field | Notes |
+|---|---|
+| `repos` | Unique declared aliases. |
+| `repo` | One of `repos`. |
+| `cwd` | Required; relative, no `..`, no symlink escape. |
+| `command` | Non-empty argv array (not a shell string). Use `["bash", "-c", "…"]` if you need a shell. |
 
-The command receives `HOMONTO_INTEGRATION_CONTEXT`, the absolute path of a
-generated JSON file. For example:
+The command receives `HOMONTO_INTEGRATION_CONTEXT`, the path of a JSON file
+with every participating checkout:
 
 ```json
 {
   "version": 1,
   "task": "api-contract",
   "engine": "no",
-  "check": "api-web",
+  "check": "api-web-contract",
   "repos": {
-    "api": {"path": "/work/api/workspace-api-contract", "revision": "<commit>", "git_dir": "<git-dir>"},
-    "web": {"path": "/work/web/workspace-api-contract", "revision": "<commit>", "git_dir": "<git-dir>"}
+    "api": {"path": "/work/execution/api/…", "revision": "<commit>", "git_dir": "<git-dir>"},
+    "web": {"path": "/work/execution/web/…", "revision": "<commit>", "git_dir": "<git-dir>"}
   }
 }
 ```
 
-Scripts must consume those paths rather than infer sibling locations. The
-parent commits candidate edits and pauses participating writers before running
-checks. Unchanged participants are pinned to their clean committed revision at
-task creation. Dirt in an unchanged input requires an explicit disposition,
-even when the default isolation is worktree: an approved committed snapshot
-uses `--isolation-override web=worktree`. Original edits are preserved.
+Scripts must read those paths, not guess sibling locations. Run checks with
+`homonto workspace task check`; see [workspaces](workspaces.md#workspace-tasks).
 
-Results record command-definition identity, input revisions, output, exit code
-and timestamps under `.homonto/workspace-tasks/<name>/`. Inspect recalculates
-staleness after input or definition changes. Failed preflight and failed commands
-supersede an earlier pass. A command that changes participating tracked or
-untracked inputs fails verification. Keep build output ignored or outside them.
-Fallback is model-selected only when no configured check matches; a configured
-failure cannot be replaced silently.
+## Removed and legacy tables
 
-### Workspace task commands
+| Table | Status |
+|---|---|
+| `[frameworks.*]` | Rejected. Use `[engines.*]` / `[workflows.*]`. |
+| `[models.<tool>.<tier>]` | Rejected. Model tiers were removed; use per-agent `[subagents.<name>.opencode]`. |
+| `[agents.<name>]` | Parses; folds into a copy-mode `[subagents.<name>]`. |
+| `[settings.claude]`, `[plugins.claude.*]`, `[marketplaces.claude.*]`, `[subagents.<name>.claude]` | Rejected since v0.13.0. |
 
-All engines may be installed together. A task selects exactly one and retains
-that choice on resume. Ask once for isolation, allowing per-repo overrides:
-
-```sh
-homonto workspace task create api-contract --engine no --repo api --isolation worktree --config /control/homonto.toml
-homonto workspace task inspect api-contract --config /control/homonto.toml
-homonto workspace task check api-contract --writers-paused --config /control/homonto.toml
-homonto workspace task cleanup api-contract --yes --config /control/homonto.toml
-```
-
-Create and inspect return JSON. Repeat `--repo` for changed repositories.
-Create includes unchanged inputs required by matching checks. Existing mode
-requires clean selected checkouts. Worktree mode requires `[worktrees].dir`.
-Repeating create resumes only matching engine/repository/isolation choices;
-inspect resumes without reselecting them. Task names use letters, digits,
-underscores and hyphens, beginning with a letter or digit.
-
-Onto/to additionally require `--change <active-native-name>` and reuse native
-source anchors and registered bindings. New bindings start at the recorded base
-commit and integrate into its recorded branch, so allocation still succeeds after
-that branch advances, provided it still contains the base.
-
-If allocation is interrupted or fails (for example, the task branch
-`work-<name>/<alias>` already exists), resolve the cause and repeat the identical
-`create` to resume; a destination Git already created is adopted only if it is
-exactly this task's checkout. An existing branch is never adopted, even one an
-interrupted `create` left behind: delete it yourself if it is that leftover.
-`check` refuses an incomplete task. `cleanup` releases allocations Git never
-created and retains the colliding branch. After removing a task-created
-worktree it deletes that worktree's branch, only while the branch still points
-at a commit already integrated into its recorded target. A native onto/to binding removed
-with `homonto worktree remove` leaves the task's other checkouts usable for cleanup.
-No allocates independently and never invokes onto/to or creates lifecycle
-records. Shared metadata contains checkout bookkeeping and results, not plans,
-phases, a scheduler or cross-session reservations.
-
-`check` runs all matching checks (or one matching `--check NAME`), writes JSON
-results to stdout and command output to stderr, and returns an error for failed
-checks. Independent checks continue after failures. `--timeout` defaults to
-10 minutes per check. With no matching configuration it reports the need for
-model-selected verification; that message is not evidence of a passing check.
-
-Cleanup removes only clean, integrated task-owned allocations, retaining
-branches and metadata. It refuses ignored files and verification checkouts that
-moved from their pinned revision, preserving detached commits. Native onto/to allocations
-remain governed by `homonto worktree remove` and terminal lifecycle checks;
-clean up shared task allocations before removing their native bindings.
-Interrupted allocation fails closed with metadata retained for inspection; it
-does not adopt unknown worktrees or automatically discard partial work.
-
-The parent coordinates one writable repository per implementer assignment,
-with read access across declared repositories. Independent repositories may run
-in parallel; same-checkout writers and workflow-record mutations are serial.
-Write boundaries are instructions, not a sandbox. Per-repository reviews precede
-combined review; the parent owns commits, integration and publication and asks
-before delivering a partial subset.
-
-## MCP servers — `[mcps.<name>]`
-
-MCP declarations exist so a server's command, scope, and secret references are
-reviewable and reproducible rather than hand-edited into `opencode.jsonc`. They
-are optional: no MCP declarations means no MCP servers are projected.
+## A complete annotated example
 
 ```toml
-[mcps.codegraph]
-command = ["codegraph", "serve", "--mcp"]   # required, non-empty
-env     = { API_KEY = "${pass:ai/key}" }    # optional; values may be secret references
-targets = ["opencode"]                      # optional; default: every tool
-scope   = "project"                         # optional; user (default) | project
-```
+schema_version = 2
 
-| Field | Type | Required | Notes |
-|---|---|---|---|
-| `command` | array of strings | **yes** | first element is the executable, the rest are args |
-| `env` | table of strings | no | values may hold `${pass:…}` / `${ENV_VAR}` references — never plaintext secrets |
-| `targets` | array | no | default: every tool; `"opencode"` is the only valid value |
-| `scope` | string | no | `user` (default) → global tool config; `project` → the project-level config the tool merges over it |
-| `repo` | string | no | a declared `[repos]` name; requires `scope = "project"` and writes only that repo's project config |
+[workflow]
+root = "docs"
 
-Projection at user scope: OpenCode global `opencode.jsonc` `mcp`
-(`type: local`). At project scope: OpenCode `<repo>/opencode.jsonc` `mcp` —
-the server runs only in that repository's sessions instead of everywhere.
-Switching an applied server's scope migrates it on the next `apply` (pruned
-from the old file, written to the new one).
-
-## Skills — `[skills.<name>]`
-
-```toml
-[skills.graphify]
-source = "local:graphify"    # local:<name> → homonto/skills/<name>/, or builtin:<name>
-scope  = "project"           # REQUIRED: user | project (no default)
-targets = ["opencode"]       # optional; default: every tool
-```
-
-| Field | Type | Required | Notes |
-|---|---|---|---|
-| `source` | string | **yes** | `local:<name>` or `builtin:<name>` |
-| `scope` | string | **yes** | `user` → `~/.config/opencode/skills/`; `project` → `<repo>/.opencode/skills/` |
-| `targets` | array | no | default: every tool |
-| `repo` | string | no | a declared `[repos]` name; requires `scope = "project"` and links only into that repo |
-
-Skills are **symlinked**, not copied, so editing `homonto/skills/<name>/` is
-instantly live in every tool. Switching a skill's `scope` relocates the link
-cleanly: `plan` shows the move, and `apply` removes the old link as it
-creates the new one. `scope` affects skills, commands, subagents, and
-[MCP servers](#mcp-servers--mcpsname) directly; explicit `[settings.<tool>]`
-keys always project into the global tool files. Subagent models are declared
-per agent — see
-[subagent models](#subagent-models--subagentsnametool).
-
-`homonto init` does not create local skill directories. For `local:graphify`
-above, create `homonto/skills/graphify/` and its `SKILL.md` before planning or
-applying. Local content remains supported and user-owned.
-
-## Commands — `[commands.<name>]`
-
-Slash commands, materialized as single files under
-`.homonto/catalog/commands/` and linked into OpenCode's command directory,
-`.opencode/command/<name>.md` (or the user-scope equivalent).
-
-```toml
-[commands.grill]
-source = "builtin:grill"     # builtin:<name> | local:<name>
-scope  = "project"           # user | project
-repo   = "service-a"         # optional declared [repos] name
-```
-
-Packages declare their own commands too (onto ships `/onto`, `/onto-open`,
-…); those project the same way without being declared here.
-
-`repo` has the same rule as skills: it is optional, requires
-`scope = "project"`, and links the command only into the named declared
-repository's `.opencode/command/` directory.
-
-## Subagents — `[subagents.<name>]`
-
-Agent definitions (markdown with frontmatter), projected into each tool's
-agent directory. Fully declarative: reconciled by
-`plan`/`apply`/`status`/`doctor` like every other resource. There is no
-imperative "agents" command group.
-
-```toml
-[subagents.review]
-source = "builtin:onto-reviewer"   # builtin:<name> | local:<name> | remote:<url>
-scope  = "project"                 # user | project (default: project)
-mode   = "copy"                    # link (symlink, default) | copy (managed file)
-targets = ["opencode"]             # optional; default: every tool
-repo = "service-a"                 # optional declared [repos] name
-
-[subagents.reviewer]               # a remote, pinned agent
-source = "remote:https://example.com/reviewer.tar.gz"
-digest = "sha256:<64 hex>"         # REQUIRED for remote:; verified before any write
-```
-
-| Field | Type | Required | Notes |
-|---|---|---|---|
-| `source` | string | **yes** | `builtin:` ships the shared `homonto` coordinator plus engine specialists and h workers; `local:` → `homonto/subagents/<name>.md`; `remote:` → pinned archive |
-| `scope` | string | no | `user` \| `project` (default `project`) |
-| `mode` | string | no | `link` (default) or `copy` — see [subagents](subagents.md) |
-| `targets` | array | no | default: every tool |
-| `repo` | string | no | a declared `[repos]` name; requires `scope = "project"` and writes only that repo's agent directory |
-| `digest` | string | remote only | `sha256:<64 hex>` content pin, required for `remote:` |
-| `version` | string | no | informational until pinning is wired |
-
-Where they land, link vs. copy semantics, and the tool-neutral `homonto:`
-frontmatter block: [subagents](subagents.md). The remote pipeline:
-[remote source trust](remote-source-trust.md).
-
-## Workflows — `[workflows.<name>]`
-
-Workflows provide user-facing coordination. The builtin catalog currently ships
-the standalone `h` GitHub workflow. It installs the shared `homonto` knowledge
-skill and coordinator plus its five GitHub skills and commands
-(`h-spike-issue`, `h-resolve-issue`, `h-review-pr`, `h-continue-pr`, and
-`h-review-batch`) and the read-only `h-spike` / `h-review` workers. It does
-not install or require an engine.
-
-```toml
-[workflows.h]
-source = "builtin:h"
-scope  = "project"
-```
-
-## Engines — `[engines.<name>]`
-
-Engines provide a work model and may have a companion binary. The builtin
-catalog ships `onto`, `to`, and `no`. `onto` and `to` are complementary engines
-whose records remain in disjoint directories; either or both may be installed.
-`no` is catalog-only and provides its implementer and reviewer subagents,
-without a binary or durable lifecycle state. All three engines may be installed;
-each task selects exactly one and ignores the others. An engine is never
-selected implicitly by declaring `h`; choose an installed engine only when the
-task needs it.
-
-```toml
-[engines.onto]        # and/or [engines.to], [engines.no]
-source = "builtin:onto"
-scope  = "project"
-```
-
-`builtin:` packages have a fixed role: `h` belongs under `[workflows]`, while
-`onto`, `to`, and `no` belong under `[engines]`. A role mismatch fails at load.
-Legacy `[frameworks.*]` declarations are rejected; rewrite them using the new
-tables. Local and remote package roots may be declared in either table; their
-manifests define their content. Remote sources require `digest = "sha256:…"`.
-Third-party packages are not bundled.
-
-When the interactive installer creates a new `homonto.toml`, its project-setup
-step can write selected workflow and engine declarations. Its model choice
-populates `[settings.opencode]` and every expanded agent's model block. On
-apply the setting updates **global OpenCode settings**, affecting other
-projects. Next steps reflect the configured packages. Review the generated
-values before `homonto apply`.
-
-## Repos — `[repos]`
-
-Declares source aliases as `name = "<path>"`, with paths relative to the config
-file or absolute. In **schema 2**, this is the complete set of available source
-repositories: the config directory is not implicit. Declare it as `app = "."`
-if it contains source. Each entry must exist at an exact Git worktree top-level;
-two aliases may not share the same canonical Git common directory, including
-through symlinks or linked worktrees. Validation fails at load.
-
-```toml
 [repos]
-app = "."                  # schema 2: explicitly include the config checkout
-service-a = "../service-a"
-service-b = "../libs/service-b"
-```
+app = "."
 
-In **schema 0/1**, entries name only additional repositories; the config repo
-remains implicit and cannot appear in `[repos]`. Existing unversioned and
-version-1 files retain that behavior.
-
-Projection state in `.homonto/` stays at the config root. Workflow state lives
-at `workflow.root`, which can be external in schema 2. `homonto plan` names
-the declared repos and `homonto doctor` reports their health. `onto new` and
-`to new` select the complete change-specific source set with repeatable
-`--repo <alias>` flags in schema 2; at least one is required. They do not
-automatically select all declarations or infer source from the current directory.
-
-Both `new` commands also accept repeatable `--base <alias>=<branch>` in schema 2
-only. Without an override, each source contributes its current HEAD and local
-branch. Select another local integration branch before record creation to leave
-a dirty checkout untouched. The commit and target are frozen; subsequent
-worktree creation must match both. See [workspaces](workspaces.md).
-
-### Workflow access to declared repositories
-
-For builtin `onto`, `to`, `no`, and `h`, `homonto apply` renders OpenCode
-`external_directory` rules for installed builtin workers and the coordinator. Grants
-cover declared sources and, in schema 2, each alias's namespace under
-`worktrees.dir`, not the whole allocation parent. Only the coordinator receives
-the external records-root grant; implementer denies keep external records out
-even when nested in an allowed source. The coordinator owns records/checkpoints,
-and implementers work on assigned source paths.
-
-A deny rule precedes these path allows so inherited global directory permission
-does not broaden the grants. Read-only specialists can inspect declared paths
-while retaining shell/edit denial. Custom agents receive no such grants.
-Paths containing `*` or `?` are rejected because OpenCode treats
-them as permission wildcards.
-
-OpenCode authorizes external paths lexically rather than resolving symlinks.
-Treat a declared repository and its links as trusted; a symlink within it can
-lead outside the declared root. `[repos]` constrains agent workspace selection,
-not filesystem containment against a hostile repository. Allowed scripts run
-with the process's privileges; these grants and shell rules are not a sandbox
-or a guarantee that every host prompt is enforced.
-
-Changing a declared path and re-running `homonto apply` re-renders affected
-agent files, but it does not migrate recorded source identities or registered
-worktree ownership. Those checks can refuse a different clone or moved layout.
-
-For a project-scoped skill, command, subagent, or MCP, `repo = "<name>"`
-projects that one resource into the named declared repo. A repo-tagged skill,
-command, or subagent links under that repo's `.opencode/`; a repo-tagged MCP
-writes that repo's `opencode.jsonc`. The config root receives untagged
-project-scoped resources. User-scoped resources, settings, TUI configuration,
-plugins, and frameworks cannot target another repo. Each declared repo has a
-separate `.homonto/state.<name>.json` partition at the config root, so prune,
-adoption, and drift remain isolated; `status` labels findings as
-`opencode@<name>`.
-
-Framework-declared commands and subagents project exactly like top-level
-ones. Do **not** also declare a framework's subagent in a `[subagents.*]`
-table; the names collide. `homonto update` re-materializes installed
-frameworks at the running binary's version.
-
-## Subagent models — `[subagents.<name>.opencode]`
-
-Every declared subagent must declare a `[subagents.<name>.opencode]` block
-with a non-empty `model`. There are no tiers, no roles, no defaults
-inherited from a shared route — model selection is explicit per agent. A
-declared subagent that lacks the block (or supplies one with an empty
-`model`) fails at load naming the offender.
-
-```toml
-[subagents.onto-reviewer]
-source = "builtin:onto-reviewer"
-scope  = "project"
-
-[subagents.onto-reviewer.opencode]
-model   = "anthropic/claude-opus-4-8"
-variant = "thinking"      # optional
-```
-
-| Field | Required | Notes |
-|---|---|---|
-| `model` | **yes** | the tool's model identifier (`provider/model`) |
-| `variant` | no | which variant of the model |
-| `steps` | no | Positive integer overriding this agent's OpenCode iteration budget; zero and negative values are invalid. |
-| `bash_allow_add` | no | Reviewed exact-command additions; see [Settings](#settings--settingsopencode). |
-
-The shipped coordinator and implementers use a trusted-workspace shell baseline:
-inspection, setup, cloning, scripts (including Python/Node), chains, and pipes
-are allowed without generic command/composition prompts. The coordinator also
-allows ordinary pushes, raw `gh api` queries/mutations, routine PR/issue publication
-and CI reruns within task authority. Implementers still deny pushes, publication
-and raw `gh api`, including read-only payloads. The coordinator auto-allows local
-Git operations. Recognized forced/deleting pushes, PR merge, repository/release
-administration, workflow controls, non-Git destruction and privilege escalation
-retain prompts. When `[tooling] shell_proxy = "rtk"`, it also receives an explicit
-`rtk *` allow followed by those remaining asks. Implementers retain prompts for destructive commands. Direct
-workflow bypasses ask the coordinator for confirmation; bypasses remain denied for
-implementers. Protected asks and denies follow exact additions, so `bash_allow_add`
-cannot override them.
-OpenCode's saved approvals can satisfy `ask`, but cannot override `deny`; they
-remain user-owned and are not imported or deleted by homonto. See
-[ADR 0070](../adr/0070-trust-authorized-coordinator-delivery.md).
-This Bash baseline deliberately overrides inherited Bash asks/denies, not edit
-permissions, declared directory grants, delegation, or task write scope. Read-only
-specialists remain shell- and edit-denied.
-
-For stricter execution, use guarded custom agent definitions. `bash_default`
-(`allow` or `ask`) and `bash_ask` are neutral `homonto:` frontmatter fields only,
-not `homonto.toml` model-route settings; adding either to this table is an error.
-An omitted baseline retains custom profiles' old guarded behavior rather than
-opting them into general shell trust. See the
-[neutral profile reference](subagents.md#rendered-frontmatter-the-homonto-block).
-
-Shell permission is not publication authority. Implementers may perform
-task-authorized Git/gh setup and reads within their scope; authoritative GitHub
-intake, workflow state, and publication stay coordinator-owned. Verified-candidate
-and shown-review-draft approval rules still bind operations inside scripts.
-A tool prompt cannot override role ownership or publication approval.
-Command patterns cover finite recognizable exceptions, not every risky tool;
-they cannot sandbox scripts/wrappers or contain arbitrary shell directory access.
-
-Builtin defaults are finite: **1200** steps for the shared coordinator, **300**
-for implementers, and **120** for read-only specialists (including h workers).
-Override in the same model block, not the declaration table:
-
-```toml
-[subagents.onto-reviewer.opencode]
-model = "provider/model"
-variant = "1"  # a string, if this variant exists in your provider
-steps = 180
-```
-
-Rendered model and variant values are quoted YAML strings, so values such as
-`"1"` stay strings rather than YAML numbers. Model identifiers reject controls
-and line breaks (including escaped tabs/newlines) and `#variant` suffixes;
-variants use a plain letter/digit/dot/underscore/hyphen token. Homonto checks
-shape and host expressibility, not whether your provider offers that model.
-
-Each value is validated against what OpenCode can actually express, so a
-setting the tool would silently ignore becomes a load error naming the
-offender:
-
-```
-parse config: subagents.onto-reviewer.opencode sets effort "high", but OpenCode has no effort setting — use variant, or drop it
-```
-
-### Declared subagent must declare its model
-
-A subagent that supplies no `[subagents.<name>.opencode]` block (or supplies
-one with an empty `model`) fails at load:
-
-```
-parse config: subagents.onto-reviewer.opencode model is required
-```
-
-### Framework agents tune in place
-
-A framework's subagents may not be re-declared explicitly (that collision is an
-error), so without a tune-only form there would be no way to supply a model for
-a framework-installed agent. A block with **no `source`** therefore
-reads as *tune this agent*, not *declare it*. It is required for every expanded
-agent, and is the only way a framework agent gets a model:
-
-```toml
-[engines.onto]
-source = "builtin:onto"
-scope  = "project"
-
-# Required: onto framework expands onto-skeptic.
-[subagents.onto-skeptic.opencode]
-model   = "anthropic/claude-opus-4-8"
-variant = "thinking"      # optional tune on top of the model
-```
-
-For a subagent you declare yourself, add the block under your own
-`[subagents.<name>]` entry the same way.
-
-A tune-only entry cannot set declaration fields (`scope`, `repo`, `mode`,
-`targets`, `version`, or `digest`) without a `source`; they are rejected rather
-than silently ignored. For example, tune `steps` under
-`[subagents.onto-reviewer.opencode]`, not `step` or `steps` under
-`[subagents.onto-reviewer]`.
-
-One builtin definition can have only one host identity. Installing
-`builtin:onto-reviewer` as both `audit` and `review` is unsupported, as is
-declaring an alias for it alongside an onto framework that already installs
-`onto-reviewer`. Tune the framework's existing name instead. A standalone alias
-is valid when that builtin is not otherwise installed:
-
-```toml
-# Standalone, not alongside a framework that installs onto-reviewer.
-[subagents.audit]
-source = "builtin:onto-reviewer"
-scope = "project"
-[subagents.audit.opencode]
-model = "provider/model"
-steps = 180
-```
-
-### Legacy `[models.<tool>.<tier>]` blocks are rejected
-
-Model tiers (`architectural`, `coding`, `review`, `trivial`) and the role
-frontmatter that mapped to them were removed. A config edited for the old
-system fails at load naming the offending table:
-
-```
-parse config: models.opencode.architectural is an unknown table — model tiers were removed; declare per-agent models via [subagents.<name>.opencode]
-```
-
-### The main session model is operator-controlled
-
-homonto no longer derives a default `model` (or `small_model`) from any route.
-Each tool uses its own default unless the operator pins one explicitly via
-`[settings.<tool>].model` (see [Settings](#settings--settingstool)).
-
-## Tooling — `[tooling]`
-
-Which optional developer tools the shipped workflow frameworks (`onto`, `to`)
-ground against. Both keys are optional and both default to `none`.
-
-```toml
-[tooling]
-shell_proxy = "rtk"       # "rtk" | "none"
-code_intel  = "graphify"  # "graphify" | "okf" | "none"
-```
-
-| Key | Accepted | Meaning |
-|---|---|---|
-| `shell_proxy` | `rtk`, `none` | Routes workflow shell operations through a token-optimizing proxy. Purely a cost optimization. |
-| `code_intel` | `graphify`, `okf`, `none` | The code-intelligence provider the open and design phases ground codebase claims in. |
-
-`okf` is [okf-generator](https://github.com/UmairBaig8/okf-generator).
-
-**Both default to `none`.** A config with no `[tooling]` table gets a
-preflight that names no tool at all, and grounding falls back to direct file
-reading. This is deliberate: before this table existed the frameworks named
-`rtk` and `graphify` in their shipped prose, so every user was told about two
-tools they might never run.
-
-**homonto never installs, updates, version-checks, or executes a provider.**
-Declaring one only changes the rendered instructions. Install it yourself.
-
-**How it reaches the skills.** `homonto apply` writes a generated
-`references/tooling.md` into each framework's dispatcher skill describing
-exactly the declared pair. The shipped `SKILL.md` files name no provider and
-defer to that file, so a provider you did not declare is never mentioned. The
-generated file is overwritten on every apply — do not hand-edit it.
-
-Unknown keys and unknown provider names fail at load, naming the offender:
-
-```
-tooling.code_intel "ctags" is not a known provider (accepted: graphify, okf, none)
-```
-
-`homonto doctor` reports a declared-but-undetected provider as a warning. It
-probes `PATH` and index/bundle directories only; it never runs the provider.
-
-## Workspace tmp — `[tmp]`
-
-One declared scratch directory the whole projection shares
-([ADR 0048](../adr/0048-one-declared-workspace-tmp-directory.md)). Opt-in: no
-`[tmp]` table, no behavior change.
-
-```toml
-[tmp]
-dir = ".tmp"   # relative, below the workspace root; default when omitted
-```
-
-| Key | Accepted | Meaning |
-|---|---|---|
-| `dir` | relative path | The scratch directory. Must stay below the workspace root, must name a dedicated subdirectory, and may not live inside `.git`. Defaults to `.tmp`. |
-
-**What apply does.** Creates the directory, keeps it gitignored (an anchored
-`/.tmp/` entry, or nothing under `.homonto/`, which init already ignores), and
-generates `references/tmp.md` into the framework dispatchers and the shared
-`homonto` knowledge skill naming the path and the contract. Editing `dir`
-re-projects; removing the table withdraws the references.
-
-**Who can write.** Every writable agent — the coordinator, the implementers,
-and any custom agent — writes there with no prompts and no permission-map
-changes, because the directory sits inside the workspace. Read-only workers
-stay read-only by design and hand scratch to the coordinator.
-
-**homonto never deletes tmp content.** Disabling `[tmp]` leaves the directory,
-its files, and the gitignore entry in place; cleanup is a human decision.
-
-Unknown keys and unusable paths fail at load, naming the offender:
-
-```
-tmp.path ".tmp" is an unknown key — [tmp] takes only dir
-```
-
-**Reserved paths.** The dir may not overlap the workflow records root
-(`[workflow] root`), `.git`, `.opencode/` (the projection target), `homonto/`
-(the local skills root), or the managed `.homonto` subtrees (`catalog`,
-`remote`, `cache`) — equal to, above, or inside. A colliding scratch dir
-would be gitignored or rebuilt over, taking real content with it.
-
-**One workspace, one tmp.** The directory lives in the config repository
-only; repositories declared under `[repos]` do not get one.
-
-## Plugins — `[plugins.opencode.<name>]`
-
-```toml
-[plugins.opencode.opencode-quota]
-source = "@slkiser/opencode-quota" # npm package name → the `plugin` array entry
-# enabled = false                  # optional; omit → enabled
-```
-
-| Field | Type | Required | Notes |
-|---|---|---|---|
-| `source` | string | **yes** | npm package name; two plugins sharing a source fail at load |
-| `enabled` | bool | no | omit → enabled |
-
-`[plugins.claude.<name>]` was removed with the Claude Code adapter in
-v0.13.0; a config naming it fails at load naming the key.
-
-## Settings — `[settings.opencode]`
-
-Arbitrary keys merged surgically into OpenCode's settings file
-(`opencode.jsonc`):
-
-```toml
-[settings.opencode]
-model = "anthropic/claude-opus-4-8"
-```
-
-OpenCode has no global model-variant setting. Configure a variant on a
-specific agent with `[subagents.<name>.opencode]`; `model_variant` and a
-`#variant` suffix on `model` are rejected.
-
-`bash_allow_add` in a `[subagents.<name>.opencode]` block appends exact
-commands to the agent's allowlist — the reviewed output of `homonto
-permissions suggest` (ADR 0029). Exact commands only; entries with pattern
-metacharacters, shell composition, environment assignments, or destructive
-content fail at load. Protected `bash_ask` and `bash_deny` rules in the agent's
-neutral profile take precedence over these additions. A private history of
-executed or accepted commands is not a permission grant, and redacted placeholders
-are not valid exact additions. Review real arguments locally; do not publish
-private command values as examples. Even an explicitly accepted command does
-not authorize posting an unapproved review draft or expanding workflow scope.
-
-Bundled plugins (`permission-observer`) are owned catalog content: declaring
-`[plugins.opencode.permission-observer]` with `source = "permission-observer"`
-projects the materialized plugin path. homonto never executes it; it observes
-explicit Bash approvals in memory and suggests allowlist additions exactly
-once per candidate.
-
-It reads the runtime producer's `permission.asked` request (`id`, `sessionID`,
-`permission = "bash"`, `metadata.command`) and correlates `permission.replied`
-by `sessionID` and `requestID`. Replies `once` and `always` count as explicit
-approvals; `reject` disqualifies the command for that session. Two approvals
-trigger one suggestion through `homonto permissions suggest`, whose stdin is
-implicit (no `--stdin` flag). No execution event is treated as an approval.
-
-## OpenCode integrations — `[integrations.opencode]`
-
-The shipped `onto`/`to` lifecycle frameworks and `h` GitHub skill bundle install
-a project-local, homonto-managed `.opencode/plugins/homonto-workflow.ts` link
-by default. The plugin resolves the config from its materialized catalog and binding metadata,
-not the session's launch directory, then reads
-`homonto workflow snapshot --json --config <path>` on idle, debounced file-watcher
-updates, and compaction. Reads share one in-flight request with a trailing
-refresh when needed. It shows phase/task/lifecycle and health toasts; disappearance
-alone is not completion. Transient subprocess, binding-discovery, or output
-failures are reported separately
-without discarding the last successful comparison, and a later success clears
-the error. Compaction awaits a fresh result and includes pending status/findings,
-or the observation error rather than stale success. This is not enforcement:
-its observation hooks never run doctor, block completion, advance a phase,
-record evidence, write workflow state, or send workflow data to a remote service.
-
-The coordinator also gets `homonto_status` and `homonto_handoff` tools bound to
-the exact config filename. Compaction and model-context preparation read bounded
-handoffs for up to three nonterminal generations, including tasks, decisions,
-artifact pointers, and validated source directories. The context cap is 16 KiB;
-the 1.5-second overall deadline reports omitted or unavailable details. There is
-no automatic phase advancement or resumption of a remembered publication approval.
-
-Declaring builtin `[workflows.h]` additionally enables the shared GitHub draft
-tools: `homonto_github_draft`, `homonto_github_status`, and
-`homonto_github_publish`. These support issue comments, PR comments, and
-commit-bound `COMMENT`/`REQUEST_CHANGES` reviews, not pushes or PR creation.
-Stage a batch, show the complete returned preview, pass its question arguments
-unchanged to the native question tool, then publish the approved items by draft ID.
-Decline and Revise do not publish; permissions or model-supplied approval flags
-cannot replace the matching question response. Tools are denied to shipped
-workers and checked against the installed coordinator name at runtime.
-
-Drafts remain in memory, with at most ten items, 8 KiB per body, 32 KiB per batch,
-and a 15-minute lifetime. Restaging invalidates older unpublished approvals;
-restarting requires fresh approval and reconciliation of any interrupted send.
-Headless clients without native questions cannot approve drafts. A question reply
-is host-channel confirmation, not human-only attestation; trusted API clients can
-answer it. The integration uses the raw-schema custom-tool compatibility and
-question/context hook contracts verified against OpenCode 1.18.29/1.18.30.
-
-Disable only that managed bridge when a project needs no runtime workflow
-status, recovery tools, or GitHub draft tools:
-
-```toml
-[integrations.opencode]
-workflow_bridge = false
-```
-
-The opt-out removes homonto's link but never replaces a non-homonto file at
-that path. Remove or rename a hand-managed file yourself before enabling the
-bridge.
-
-Keys that collide with structures homonto manages fail at load:
-`settings.opencode.mcp`, `settings.opencode.plugin`. `[settings.claude]` was
-removed with the Claude Code adapter in v0.13.0; a config naming it fails at
-load naming the key.
-
-## TUI — `[tui.opencode]`
-
-OpenCode keeps TUI settings in a separate file
-(`~/.config/opencode/tui.json`):
-
-```toml
-[tui.opencode]
-theme = "gruvbox"
-scroll_speed = 3
-```
-
-## Marketplaces — `[marketplaces.claude.<name>]`
-
-Removed in v0.13.0: marketplaces were a Claude-only feature and went with
-the adapter. A config declaring `[marketplaces.claude.<name>]` fails at load
-naming the key; delete the block.
-
-## Legacy agents — `[agents.<name>]`
-
-The legacy `[agents.<name>]` table still parses but folds into a copy-mode
-`[subagents.<name>]` at load. Use `[subagents.<name>]` in new configs.
-
-## A complete example
-
-```toml
 [mcps.codegraph]
 command = ["codegraph", "serve", "--mcp"]
+scope   = "project"
 
 [mcps.brave]
 command = ["npx", "-y", "@modelcontextprotocol/server-brave-search"]
-env = { BRAVE_API_KEY = "${pass:ai/brave}" }
+env     = { BRAVE_API_KEY = "${pass:ai/brave}" }
 
-[skills.graphify]
-source = "local:graphify"
-scope = "project"
+[skills.house-style]
+source = "local:house-style"
+scope  = "project"
+
+[commands.grill]
+source = "builtin:grill"
+scope  = "user"
 
 [engines.onto]
 source = "builtin:onto"
-scope = "project"
+scope  = "project"
 
-[plugins.opencode.opencode-quota]
-source = "@slkiser/opencode-quota"
+[engines.to]
+source = "builtin:to"
+scope  = "project"
+
+[workflows.h]
+source = "builtin:h"
+scope  = "project"
+
+[tooling]
+shell_proxy = "rtk"
+
+[tmp]
+dir = ".tmp"
+
+[plugins.opencode.permission-observer]
+source = "permission-observer"
 
 [settings.opencode]
-model = "anthropic/claude-opus-4-8"
+model = "anthropic/claude-opus-5-5"
 
 [tui.opencode]
-theme = "gruvbox"
+theme = { name = "gruvbox", mode = "system" }
 
-# Required: every framework-expanded subagent needs a model.
+# Every installed agent needs a model.
 [subagents.homonto.opencode]
-model = "anthropic/claude-opus-4-8"
-
+model = "anthropic/claude-opus-5-5"
 [subagents.onto-explorer.opencode]
-model = "openai/gpt-5-mini"
-
-[subagents.onto-reviewer.opencode]
-model = "anthropic/claude-opus-4-8"
-
+model = "anthropic/claude-haiku-5-5"
 [subagents.onto-implementer.opencode]
-model = "anthropic/claude-sonnet-5"
-
+model = "anthropic/claude-sonnet-5-5"
+[subagents.onto-reviewer.opencode]
+model = "anthropic/claude-opus-5-5"
 [subagents.onto-skeptic.opencode]
-model = "anthropic/claude-opus-4-8"
+model = "anthropic/claude-opus-5-5"
+variant = "high"
+[subagents.to-explorer.opencode]
+model = "anthropic/claude-haiku-5-5"
+[subagents.to-implementer.opencode]
+model = "anthropic/claude-sonnet-5-5"
+[subagents.to-reviewer.opencode]
+model = "anthropic/claude-opus-5-5"
+[subagents.to-skeptic.opencode]
+model = "anthropic/claude-opus-5-5"
+[subagents.h-spike.opencode]
+model = "anthropic/claude-sonnet-5-5"
+[subagents.h-review.opencode]
+model = "anthropic/claude-opus-5-5"
 ```

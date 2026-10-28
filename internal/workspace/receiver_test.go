@@ -287,19 +287,19 @@ func TestWorktreeConcurrentRoleAllocation(t *testing.T) {
 	}
 }
 
-func TestReceiverAcceptedLegacyStateFilename(t *testing.T) {
+func TestReceiverRefusesLegacyStateFilename(t *testing.T) {
 	l := wtFixture(t, "onto")
 	dir := l.Repos["a"]
 	wtRecordBase(t, l, "onto", "a", "main")
-	base := wtGit(t, dir, "rev-parse", "HEAD")
 	stateDir := filepath.Join(worktreeStatesDir(l, "onto"), "feature")
 	if err := os.Rename(filepath.Join(stateDir, "onto-state.yaml"), filepath.Join(stateDir, "state.yaml")); err != nil {
 		t.Fatal(err)
 	}
 	wtGit(t, dir, "switch", "-c", "original-work")
-	w, err := ReceiverWorktree(l, "onto", "feature", "a")
-	if err != nil || w.BaseCommit != base || w.BaseTarget != "refs/heads/main" {
-		t.Fatalf("legacy independent receiver: %+v %v", w, err)
+	_, err := ReceiverWorktree(l, "onto", "feature", "a")
+	wtError(t, err, "pre-binary state.yaml")
+	if _, err := os.Lstat(registryPath(l)); !os.IsNotExist(err) {
+		t.Fatalf("refused receiver wrote registry: %v", err)
 	}
 }
 

@@ -19,6 +19,7 @@ import (
 
 	"github.com/noviopenworks/homonto/internal/applylock"
 	"github.com/noviopenworks/homonto/internal/fsutil"
+	"github.com/noviopenworks/homonto/internal/schema"
 	"github.com/noviopenworks/homonto/internal/workflowroot"
 	"github.com/pelletier/go-toml/v2"
 	"gopkg.in/yaml.v3"
@@ -371,15 +372,17 @@ func lockBindingLifecycle(l Layout, workflow string) (func(), error) {
 // Decode only identity/scope/terminal fields here to avoid a cycle through
 // ontostate -> workcli -> workspace. This reader never writes workflow state.
 type worktreeState struct {
-	Change    string   `yaml:"change"`
-	ID        string   `yaml:"id"`
-	Created   string   `yaml:"created"`
-	Repos     []string `yaml:"repos"`
-	RepoMode  string   `yaml:"repo_mode"`
-	Phase     string   `yaml:"phase"`
-	Archived  bool     `yaml:"archived"`
-	Abandoned bool     `yaml:"abandoned"`
-	RepoBases map[string]struct {
+	SchemaVersion *int     `yaml:"schema_version"`
+	Workflow      string   `yaml:"workflow"`
+	Change        string   `yaml:"change"`
+	ID            string   `yaml:"id"`
+	Created       string   `yaml:"created"`
+	Repos         []string `yaml:"repos"`
+	RepoMode      string   `yaml:"repo_mode"`
+	Phase         string   `yaml:"phase"`
+	Archived      bool     `yaml:"archived"`
+	Abandoned     bool     `yaml:"abandoned"`
+	RepoBases     map[string]struct {
 		BaseRef      string `yaml:"base_ref"`
 		BaseBranch   string `yaml:"base_branch"`
 		GitCommonDir string `yaml:"git_common_dir"`
@@ -415,17 +418,20 @@ func readWorktreeState(dir, workflow string) (worktreeState, error) {
 	}
 	b, err := os.ReadFile(path)
 	if os.IsNotExist(err) && workflow == "onto" {
-		path = filepath.Join(dir, "state.yaml")
-		if err := realWorktreePath(path, false); err != nil {
-			return s, err
+		if _, legacyErr := os.Lstat(filepath.Join(dir, "state.yaml")); !os.IsNotExist(legacyErr) {
+			return s, fmt.Errorf("worktree: %s holds only a pre-binary state.yaml, which is no longer supported; finish or abandon the change with the onto release that created it", dir)
 		}
-		b, err = os.ReadFile(path)
 	}
 	if err != nil {
 		return s, err
 	}
 	if err := yaml.Unmarshal(b, &s); err != nil {
 		return s, fmt.Errorf("worktree: invalid state %s: %w", path, err)
+	}
+	if workflow == "onto" {
+		if err := schema.ValidateOntoState(s.SchemaVersion, s.Workflow, path); err != nil {
+			return s, err
+		}
 	}
 	switch workflow + "/" + s.Phase {
 	case "onto/open", "onto/design", "onto/build", "onto/verify", "onto/close", "to/plan", "to/do", "to/done", "to/abandoned":

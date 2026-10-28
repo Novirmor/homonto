@@ -14,25 +14,16 @@ import (
 // fail with the fix instead of being converted on read.
 func parseCurrent(b []byte, sourceName string) (State, error) {
 	var probe struct {
-		SchemaVersion *int `yaml:"schema_version"`
+		SchemaVersion *int   `yaml:"schema_version"`
+		Workflow      string `yaml:"workflow"`
 	}
 	if err := yaml.Unmarshal(b, &probe); err != nil {
 		return State{}, fmt.Errorf("onto-state: %s: %w", sourceName, err)
 	}
-	if probe.SchemaVersion == nil {
-		return State{}, fmt.Errorf("onto-state: %s: unversioned state is no longer supported; finish or abandon the change with the onto release that created it", sourceName)
-	}
-	st, err := Parse(b)
-	if err != nil {
+	if err := schema.ValidateOntoState(probe.SchemaVersion, probe.Workflow, sourceName); err != nil {
 		return State{}, err
 	}
-	if st.SchemaVersion > CurrentSchemaVersion {
-		return State{}, fmt.Errorf("onto-state: %s: unknown schema_version %d (this binary supports %d) — upgrade onto: %w", sourceName, st.SchemaVersion, CurrentSchemaVersion, schema.ErrTooNew)
-	}
-	if st.SchemaVersion != CurrentSchemaVersion {
-		return State{}, fmt.Errorf("onto-state: %s: schema_version %d is no longer supported (this binary reads only %d); finish or abandon the change with the onto release that created it", sourceName, st.SchemaVersion, CurrentSchemaVersion)
-	}
-	return st, nil
+	return Parse(b)
 }
 
 // LoadChange loads a change's state from changeDir's onto-state.yaml.

@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/noviopenworks/homonto/internal/config"
+	"github.com/noviopenworks/homonto/internal/schema"
 	"github.com/noviopenworks/homonto/internal/workflowroot"
 	"github.com/noviopenworks/homonto/internal/workspace"
 )
@@ -286,6 +287,9 @@ func TestNativeEnginesReuseRecordedBasesAndBindings(t *testing.T) {
 			}
 			statePath := filepath.Join(s.Layout.WorkflowRoot, kind, "native", engine+"-state.yaml")
 			state := fmt.Sprintf("change: native\nid: generation-one\nphase: %s\nrepo_mode: explicit\nrepos: [api]\nrepo_bases:\n  api:\n    base_ref: %s\n    base_branch: main\n    git_common_dir: %s\n", phase, base, common)
+			if engine == "onto" {
+				state = fmt.Sprintf("schema_version: %d\n", schema.OntoStateVersion) + state
+			}
 			put(t, statePath, state)
 			task, err := s.Create(context.Background(), "feature", engine, "native", "worktree", []string{"api"}, map[string]string{"web": "worktree"})
 			if err != nil {

@@ -305,7 +305,9 @@ journal.
 ## Migrating legacy records
 
 One narrow, one-time path moves supported legacy records into schema-2
-ownership. Preconditions: schema-2 non-Git control directory,
+ownership. Its scope is frozen
+([ADR 0080](../adr/0080-freeze-workspace-migration.md)): later breaking changes
+come with a load error and upgrade notes, not new migrations. Preconditions: schema-2 non-Git control directory,
 `workflow.git = "existing"`, an existing records Git root with the legacy
 marker, and an explicit manifest.
 

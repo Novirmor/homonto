@@ -7,6 +7,9 @@ list. Release candidates are folded into their stable release.
 
 ## Unreleased
 
+- **Workspace migration is frozen (ADR 0080).** `homonto workspace migrate`
+  keeps its current scope and still gets fixes; future breaking record or
+  config changes ship a load error and upgrade notes, not new migrations.
 - **Breaking: the OpenCode 1 workflow plugin is removed (ADR 0079).**
   `integrations.opencode.workflow_bridge = true` and an enabled
   `source = "homonto-workflow"` plugin declaration now fail at load; use

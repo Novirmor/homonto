@@ -1,5 +1,9 @@
 // Package workspacemigration provides the deliberately read-only inventory for
 // the one supported legacy-records to schema-2 ownership transition.
+//
+// Its scope is frozen (ADR 0080): fix defects, but add no new source formats,
+// layouts, or migration actions. A later breaking change ships a load error and
+// upgrade notes instead.
 package workspacemigration
 
 import (

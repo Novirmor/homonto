@@ -1,12 +1,24 @@
 # homonto
 
-**Declarative configuration and agent workflows for OpenCode.**
+**Agent workflows for OpenCode, installed from one declarative config.**
 
-Describe your MCP servers, skills, commands, agents, plugins, and settings once
-in `homonto.toml`. homonto shows you the diff, asks, and writes exactly that
-into OpenCode — and removes it again when you delete it. On top, it ships
-ready-made agent workflows that take a change from request to a verified,
-integrated result.
+homonto gives OpenCode a coordinator agent and four workflows that take a
+change from request to a verified, integrated result: evidence-gated (`onto`),
+minimal (`to`), record-free (`no`), and GitHub (`h`). The coordinator asks you
+once which workflow fits, then drives implementation, review, verification,
+archive, integration, and authorized publication. It stops only for a decision
+that is yours, an endpoint you named, or a real blocker.
+
+```text
+/onto-light search crashes on an empty query
+/to add a --json flag to the list command
+/h-resolve-issue 142
+```
+
+Underneath is a declarative projector. You describe the workflows, MCP servers,
+skills, commands, agents, plugins, and settings once in `homonto.toml`; homonto
+shows you the diff, asks, and writes exactly that into OpenCode. When you
+delete a declaration, it removes it again.
 
 ```console
 $ homonto plan
@@ -20,19 +32,31 @@ Applied.
 
 ## Why
 
+**The workflows**
+
+- **Driven to the endpoint.** A checked-off task list or a passing test is a
+  checkpoint, not completion. The coordinator continues through review,
+  repair, re-verification, and integration in one invocation.
+- **State the agent can't fake.** The `onto` and `to` binaries own workflow
+  state; `onto` refuses a transition that lacks its evidence.
+- **Separation of duties.** Implementers edit; explorers, reviewers, and
+  skeptics are read-only and try to prove the result wrong. Only the
+  coordinator commits, publishes, or asks you anything.
+- **Pick the rigor.** Full onto for work someone else must audit, `onto light`
+  for bounded fixes without skeptics, `to` for a fast verified loop, `no` for
+  no records at all.
+
+**The foundation**
+
 - **Plan, then apply.** Every change is a reviewable diff (`+` `~` `-`)
   before anything is written. Writes are atomic.
-- **Surgical.** homonto touches only the keys it manages. Your hand-written
-  OpenCode settings survive.
-- **Reversible.** Delete a declaration and the next apply prunes it. Drift
-  from out-of-band edits is detected and reported.
+- **Surgical and reversible.** homonto touches only the keys it manages, and
+  your hand-written OpenCode settings survive. Delete a declaration and the
+  next apply prunes it; out-of-band drift is detected and reported.
 - **Secrets stay out.** `${pass:…}` and `${ENV}` references resolve only at
   apply time; state keeps a hash, never a value.
 - **Pinned remote content.** `remote:` sources need a sha256 digest and are
   verified before anything is written.
-- **Workflows included.** Evidence-gated (`onto`), minimal (`to`), record-free
-  (`no`), and GitHub (`h`) workflows, run by one coordinator agent with
-  read-only reviewers and skeptics.
 
 ## Install
 
@@ -187,8 +211,8 @@ Everything else: [docs index](docs/guides/README.md).
 
 - **OpenCode only.** Claude Code and Codex support was removed in v0.13.0;
   configs naming them fail to load.
-- **OpenCode 2 by default.** Supported V1 config keeps working; see
-  [OpenCode integration](docs/guides/opencode.md).
+- **OpenCode 2.** Supported V1 config keys keep working; the V1 workflow
+  plugin is removed. See [OpenCode integration](docs/guides/opencode.md).
 - Applies that rewrite `opencode.jsonc` drop its comments.
 - Workflow permissions trust the workspace; they are not a sandbox.
 - CLI output goes to stderr.

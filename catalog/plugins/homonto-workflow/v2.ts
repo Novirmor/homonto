@@ -238,6 +238,7 @@ export default {
       })
       const timer = setTimeout(() => controller.abort(), 1500)
       timer.unref?.()
+      const unavailable = "## Homonto workflow context\nWorkflow observation unavailable; completion is not established. Inspect the selected config and run homonto workflow snapshot --json --config <selected-config>. No stale workflow context was reused."
       const inScope = async () => {
         const session = await ctx.session.get({ sessionID: event.sessionID }, { signal })
         if (signal.aborted || disposed) return false
@@ -248,22 +249,25 @@ export default {
         if (!await inScope()) return
         await checkBinding(signal)
         if (signal.aborted || disposed) return
-        const next = await snapshot()
+        // A failed snapshot must not hide an independently observed refusal.
+        // Revalidate scope and binding before releasing either kind of context.
+        let next: Snapshot | undefined
+        try { next = await snapshot() } catch {}
         await checkBinding(signal)
         if (signal.aborted || disposed || !await inScope()) return
-        return { text: render(next, binding) }
+        return { text: next ? render(next, binding) : unavailable, unavailable: !next }
       }
       try {
         const result = await Promise.race([work(), interrupted])
         if (!disposed && !signal.aborted && result) {
           const blocked = handback.take(event.sessionID)
-          event.system.push({ type: "text", text: CONTINUATION_POLICY })
+          if (!result.unavailable) event.system.push({ type: "text", text: CONTINUATION_POLICY })
           if (result.text) event.system.push({ type: "text", text: bounded(result.text, CONTEXT_SNAPSHOT_LIMIT - (blocked ? HANDBACK_LIMIT : 0)) })
           if (blocked) event.system.push({ type: "text", text: blocked })
         }
         if (!disposed && !signal.aborted && github) event.system.push({ type: "text", text: github.context(event.sessionID) })
       } catch {
-        if (!disposed) event.system.push({ type: "text", text: "## Homonto workflow context\nWorkflow observation unavailable; completion is not established. Inspect the selected config and run homonto workflow snapshot --json --config <selected-config>. No stale workflow context was reused." })
+        if (!disposed) event.system.push({ type: "text", text: unavailable })
       } finally {
         clearTimeout(timer)
         signal.removeEventListener("abort", interrupt)
@@ -272,18 +276,47 @@ export default {
       }
     }
 
-    // Child sessions come from session.created; only their rejected prompts are kept.
-    function observeHandback(event: { type: string; data?: unknown }) {
+    const agentName = (agent: unknown) => text(agent) ? agent : object(agent) && text(agent.name) ? agent.name
+      : object(agent) && text(agent.id) ? agent.id : undefined
+
+    // Creation events are not replayed after reload. Resolve a resumed worker
+    // on demand, with a deadline so an unavailable host cannot stall the stream.
+    async function recoverChild(sessionID: string) {
+      if (handback.hasSession(sessionID)) return
+      const controller = new AbortController()
+      const signal = AbortSignal.any([controller.signal, lifetime.signal])
+      const timer = setTimeout(() => controller.abort(), 1000)
+      timer.unref?.()
+      let interrupt!: () => void
+      const interrupted = new Promise<never>((_resolve, reject) => {
+        interrupt = () => reject(new Error("worker lookup interrupted"))
+        signal.addEventListener("abort", interrupt, { once: true })
+      })
+      try {
+        signal.throwIfAborted()
+        const session = await Promise.race([ctx.session.get({ sessionID }, { signal }), interrupted])
+        if (disposed || signal.aborted || session.id !== sessionID || session.projectID !== ctx.location.project.id ||
+            !text(session.parentID)) return
+        handback.session(sessionID, session.parentID, agentName(session.agent))
+      } catch {} finally {
+        clearTimeout(timer)
+        signal.removeEventListener("abort", interrupt)
+        controller.abort()
+      }
+    }
+
+    // Only child sessions' rejected prompts are kept. Await discovery before
+    // correlating asked/replied events so replies cannot overtake a lookup.
+    async function observeHandback(event: { type: string; data?: unknown }) {
       const data = event.data
       if (!object(data)) return
       if (event.type === "session.created" && text(data.sessionID) && text(data.parentID) &&
           (data.projectID === undefined || data.projectID === ctx.location.project.id)) {
-        const agent = text(data.agent) ? data.agent : object(data.agent) && text(data.agent.name) ? data.agent.name
-          : object(data.agent) && text(data.agent.id) ? data.agent.id : undefined
-        handback.session(data.sessionID, data.parentID, agent)
+        handback.session(data.sessionID, data.parentID, agentName(data.agent))
       } else if (event.type === "permission.asked" && text(data.sessionID) && text(data.id) && text(data.action) &&
           Array.isArray(data.resources)) {
-        handback.asked(data.sessionID, data.id, data.action, data.resources.filter(text))
+        await recoverChild(data.sessionID)
+        if (!disposed) handback.asked(data.sessionID, data.id, data.action, data.resources.filter(text))
       } else if (event.type === "permission.replied" && text(data.sessionID) && text(data.requestID) && text(data.reply)) {
         handback.replied(data.sessionID, data.requestID, data.reply)
       } else if (event.type === "session.deleted") {
@@ -440,7 +473,7 @@ export default {
           for await (const event of subscriber) {
             if (disposed) return
             if (github) github.event({ event })
-            observeHandback(event)
+            await observeHandback(event)
             if (event.type !== "session.idle" || !object(event.data) || typeof event.data.sessionID !== "string") continue
             const sessionID = event.data.sessionID
             try {

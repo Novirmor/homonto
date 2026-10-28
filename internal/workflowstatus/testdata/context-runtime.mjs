@@ -141,9 +141,10 @@ async function setup(overrides = {}) {
     session: {
       async get(input, { signal } = {}) {
         sessionGets++
-        assert.equal(input.sessionID, "ses_one")
         lastSignal = signal
-        return getSession ? getSession(input, signal) : sessionValue
+        if (getSession) return getSession(input, signal)
+        assert.equal(input.sessionID, "ses_one")
+        return sessionValue
       },
       async hook(name, callback) {
         assert.ok(["context", "compaction"].includes(name))
@@ -850,6 +851,92 @@ try {
   assert.ok(listed >= 1 && listed < 10)
   assert.ok(many.endsWith(`- ${10 - listed} more refused request(s) omitted; ask the workers for their permission blocks`), many)
   observing.dispose()
+
+  // Reloaded plugins have no session.created history. Resolve the existing
+  // child's parent before its reply, but never adopt foreign/mismatched roots.
+  const resumedBus = stream(), resumed = await setup({ event: resumedBus })
+  const lookups = []
+  getSession = async ({ sessionID }) => {
+    lookups.push(sessionID)
+    if (sessionID === "ses_one") return sessionValue
+    const child = { ...session, id: sessionID, parentID: "ses_one", agent: "to-implementer" }
+    if (sessionID === "foreign") return { ...child, projectID: "other" }
+    if (sessionID === "mismatched") return { ...child, id: "wrong" }
+    if (sessionID === "root") return { ...child, parentID: undefined }
+    if (sessionID === "missing") throw new Error("session removed")
+    return child
+  }
+  const rejectWorker = (id, requestID = id) => {
+    resumedBus.push({ type: "permission.asked", data: { sessionID: id, id: requestID, action: "shell", resources: [`test ${id}`] } })
+    resumedBus.push({ type: "permission.replied", data: { sessionID: id, requestID, reply: "reject" } })
+  }
+  for (const id of ["resumed-child", "foreign", "mismatched", "root", "missing"]) rejectWorker(id)
+  await resumedBus.flush()
+  assert.deepEqual(lookups, ["resumed-child", "foreign", "mismatched", "root", "missing"])
+  const handbackContext = async (response, kind = "context") => {
+    responses.push(response)
+    const event = request("homonto")
+    await resumed.hooks.get(kind)(event)
+    const added = event.system.slice(2)
+    assert.ok(added.reduce((n, block) => n + Buffer.byteLength(block.text), 0) <= 16384)
+    return added.map(block => block.text).join("\n")
+  }
+  const resumedNotice = await handbackContext({ value: snap() })
+  assert.match(resumedNotice, /worker permission blocks/)
+  assert.match(resumedNotice, /test resumed-child/)
+  for (const id of ["foreign", "mismatched", "root", "missing"]) assert.ok(!resumedNotice.includes(`test ${id}`))
+  assert.doesNotMatch(await handbackContext({ value: snap() }), /worker permission blocks/)
+
+  // Snapshot failures must still deliver the known refusal once, in either
+  // hook. Invalid binding or moved parent must keep it pending, not expose it.
+  for (const kind of ["context", "compaction"]) {
+    for (const response of [{ code: 1 }, { raw: "malformed snapshot" }, { hold: true }]) {
+      rejectWorker("resumed-child", `failure-${kind}`)
+      await resumedBus.flush()
+      const delivered = handbackContext(response, kind)
+      if (response.hold) { await until(() => held); expire(1000) }
+      const output = await delivered
+      held = undefined
+      assert.match(output, /observation unavailable/)
+      assert.match(output, /worker permission blocks/)
+      assert.match(output, /test resumed-child/)
+      assert.doesNotMatch(await handbackContext({ value: snap() }, kind), /worker permission blocks/)
+    }
+  }
+  rejectWorker("resumed-child", "scope-change")
+  await resumedBus.flush()
+  await writeFile(bindingPath, JSON.stringify({ ...binding, configPath: join(root, "other.toml") }))
+  const invalid = request("homonto")
+  await resumed.hooks.get("context")(invalid)
+  assert.doesNotMatch(JSON.stringify(invalid.system), /worker permission blocks/)
+  await writeFile(bindingPath, bindingBytes)
+  sessionValue = { ...session, projectID: "other" }
+  const foreignContext = request("homonto")
+  await resumed.hooks.get("context")(foreignContext)
+  assert.equal(foreignContext.system.length, 2)
+  sessionValue = session
+  assert.match(await handbackContext({ code: 1 }), /worker permission blocks/)
+
+  // A stuck host lookup is bounded even if it ignores cancellation. The
+  // event stream continues and a late lookup cannot populate the cache.
+  const normalLookup = getSession
+  let releaseChild, childSignal
+  getSession = (input, signal) => input.sessionID === "hung-child"
+    ? new Promise(resolve => { releaseChild = resolve; childSignal = signal }) : normalLookup(input, signal)
+  rejectWorker("hung-child")
+  await until(() => releaseChild)
+  expire(1000)
+  await resumedBus.flush()
+  assert.equal(childSignal.aborted, true)
+  releaseChild({ ...session, id: "hung-child", parentID: "ses_one" })
+  getSession = normalLookup
+  assert.doesNotMatch(await handbackContext({ value: snap() }), /worker permission blocks/)
+  rejectWorker("hung-child", "retry-after-timeout")
+  await resumedBus.flush()
+  assert.match(await handbackContext({ value: snap() }), /test hung-child/)
+  resumed.dispose()
+  getSession = undefined
+  assert.equal(timers.size, 0)
   await githubIntegration()
   const afterGithub = calls
 

@@ -44,57 +44,57 @@ candidate pinning, exact PR reuse, recovery, and repository-qualified issue inte
    looks tiny" is not a skip condition; a declined spike attempt is recorded
    in the final report, not acted on.
 2. **Select and explain the workflow.** Apply the shared workflow-selection
-    policy in h autonomy. Inspect recorded workspace-task identity and the
-    selected engine's issue-linked records. Resume a unique match without prompting; honor an
-    explicit user path. Otherwise, after the spike, recommend a viable `no`, `to`,
-    `onto light`, or full `onto` path with brief reasons and ask
-    once before creating the change. The question is not another publication
-    approval or a reason to pause again at phase boundaries.
-    Verify the selected binary for lifecycle engines (`to version` or `onto version`);
-    `homonto doctor` diagnoses missing applied frameworks. Missing required
-    tooling is a blocker, not grounds to silently switch workflows.
-    For a selected to task, inspect matching archives under
-    [to delivery recovery](../to/references/recovery.md) before creating anything;
-    an empty active inventory does not prove previous delivery finished.
+   policy in h autonomy. Inspect recorded workspace-task identity and the
+   selected engine's issue-linked records. Resume a unique match without prompting; honor an
+   explicit user path. Otherwise, after the spike, recommend a viable `no`, `to`,
+   `onto light`, or full `onto` path with brief reasons and ask
+   once before creating the change. The question is not another publication
+   approval or a reason to pause again at phase boundaries.
+   Verify the selected binary for lifecycle engines (`to version` or `onto version`);
+   `homonto doctor` diagnoses missing applied frameworks. Missing required
+   tooling is a blocker, not grounds to silently switch workflows.
+   For a selected to task, inspect matching archives under
+   [to delivery recovery](../to/references/recovery.md) before creating anything;
+   an empty active inventory does not prove previous delivery finished.
 3. **Open the change.** For no, load its informational skill and follow
-    [no task execution](../no/references/execution.md), including its
-    implementer/reviewer and shared multirepository execution policy; no
-    never invokes onto/to or creates their records. For lifecycle engines,
-    load the selected dispatcher skill (`onto` or `to`)
-    and open a change seeded from the issue and the brief. Suggest the name
-    `issue-N-slug` and the branch `issue/N-slug`; the dispatcher's own naming
-    and isolation rules decide. Before creating, check for an existing
-    change for this issue (its proposal or plan references the same repository
-    and issue, and its source scope contains the matching alias): an active
-    match is resumed through its dispatcher — the phase decides the work —
-    never duplicated. Native creation checks name conflicts; choose a fresh name
-    for a collision with a different change without invoking another engine.
-    Ask for ambiguous matches or material scope conflicts, not routine naming.
-    For a new schema 2 change, select source integration targets on `onto new`
-    or `to new` with repeated `--base <alias>=<local-branch>` before worktree
-    allocation. Use each repo's intended local branch, for example
-    `--base api=main --base web=develop`; do not assume all repos use the same
-    branch. Without overrides each source's current committed HEAD and local
-    branch are frozen. Preserve dirty originals: select `api=main` at creation
-    rather than checking out `main` or trying to retarget setters afterwards.
-    Registered worktrees must match each alias's frozen commit and target.
+   [no task execution](../no/references/execution.md), including its
+   implementer/reviewer and shared multirepository execution policy; no
+   never invokes onto/to or creates their records. For lifecycle engines,
+   load the selected dispatcher skill (`onto` or `to`)
+   and open a change seeded from the issue and the brief. Suggest the name
+   `issue-N-slug` and the branch `issue/N-slug`; the dispatcher's own naming
+   and isolation rules decide. Before creating, check for an existing
+   change for this issue (its proposal or plan references the same repository
+   and issue, and its source scope contains the matching alias): an active
+   match is resumed through its dispatcher — the phase decides the work —
+   never duplicated. Native creation checks name conflicts; choose a fresh name
+   for a collision with a different change without invoking another engine.
+   Ask for ambiguous matches or material scope conflicts, not routine naming.
+   For a new schema 2 change, select source integration targets on `onto new`
+   or `to new` with repeated `--base <alias>=<local-branch>` before worktree
+   allocation. Use each repo's intended local branch, for example
+   `--base api=main --base web=develop`; do not assume all repos use the same
+   branch. Without overrides each source's current committed HEAD and local
+   branch are frozen. Preserve dirty originals: select `api=main` at creation
+   rather than checking out `main` or trying to retarget setters afterwards.
+   Registered worktrees must match each alias's frozen commit and target.
 4. **Drive the workflow.** For no, execute and review under its parent contract;
    for lifecycle engines, follow the dispatcher through its phases and
    gates to completion in this invocation, handing the implementers the
-    spike brief as grounding. You own commit policy and every binary call;
-    implementers return edits and you own source commits.
-    Keep the issue's canonical URL and host/repository ID in the task context
-    (and the proposal/plan when the selected engine has one).
-    Use `Closes: #N` only when publication is in that confirmed origin repository.
-    Multi-repo work must suppress the bare marker for other repositories, including
-    backend-generated merge messages; omit it before archive if it cannot be
-    scoped safely. Never invent cross-repo marker syntax the parser cannot read.
+   spike brief as grounding. You own commit policy and every binary call;
+   implementers return edits and you own source commits.
+   Keep the issue's canonical URL and host/repository ID in the task context
+   (and the proposal/plan when the selected engine has one).
+   Use `Closes: #N` only when publication is in that confirmed origin repository.
+   Multi-repo work must suppress the bare marker for other repositories, including
+   backend-generated merge messages; omit it before archive if it cannot be
+   scoped safely. Never invent cross-repo marker syntax the parser cannot read.
 5. **Integrate after verification.** Only once the workflow's verification
    has passed:
-    After archival, first route each onto repo through the shared no-op check: if unchanged,
-    `onto complete-integration <name> --receipt "unchanged:<receivingSHA>" --repo <alias> --dir "<configRoot>"`
-    lets the binary prove completion without an empty PR or merge. Do not add
-    `--head` to unchanged/merge receipts. For changed repos continue below.
+   After archival, first route each onto repo through the shared no-op check: if unchanged,
+   `onto complete-integration <name> --receipt "unchanged:<receivingSHA>" --repo <alias> --dir "<configRoot>"`
+   lets the binary prove completion without an empty PR or merge. Do not add
+   `--head` to unchanged/merge receipts. For changed repos continue below.
     - **onto:** prefer `integration: pr` at close — the `onto-close` skill
       prepares, pushes, and opens the PR after `onto close` archives; then record the receipt
       (`onto complete-integration <name> --repo <alias> --receipt "pr:<URL>" --head <observed-headOID> --dir "<configRoot>"`

@@ -85,7 +85,7 @@ Recover a uniquely matched interrupted delivery before creating another task.
   before `to new`. `/to` explicitly selects to; otherwise recommend viable
   paths and ask once when no workflow was specified; check bounded fit before allocation:
   design/spec/evidence-gated or cross-cutting work cannot silently
-   be routed to to and later switched to another engine. Resolve
+  be routed to to and later switched to another engine. Resolve
   managed initialization and legacy isolation under
   the shared policy before scaffold writes. Derive source repositories in scope,
   create it with `to

@@ -118,7 +118,7 @@ Rules:
 - **Do not delegate.** You spawn no subagents; you do the work yourself.
 - **Do not commit** — the orchestrator
   owns commits, and verifies your work against the repository, not against your
-   report.
+  report.
 - **Do not operate the workflow or publish.** `onto`, `to`, `homonto`, authoritative
   GitHub intake, publication, and workflow bookkeeping belong to the coordinator.
   Task-authorized source Git operations, cloning, setup, and Git/GitHub inspection

@@ -22,9 +22,9 @@ never performs phase work itself:
 3. **Derive** — cross-check the recorded phase against real file state; the state
    file is a cache of truth, not truth.
 4. **Route** — load the matching sub-skill (`onto-open`, `onto-design`,
-    `onto-build`, `onto-verify`, `onto-close`, or the `onto-light`
-    preset) for the derived phase and continue through later phases unless the
-    user names an endpoint or asks to pause.
+   `onto-build`, `onto-verify`, `onto-close`, or the `onto-light`
+   preset) for the derived phase and continue through later phases unless the
+   user names an endpoint or asks to pause.
 
 Every state mutation goes through the `onto` binary (`onto new`, `onto set …`,
 `onto advance`, `onto close`, `onto complete-integration`) — never hand-edit

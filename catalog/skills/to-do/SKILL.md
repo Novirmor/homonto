@@ -22,8 +22,8 @@ including workspace roots and dirty-work decisions, even on direct entry.
   If any contract field is missing or ambiguous, route to `to-plan` for repair
   without changing recorded do; never infer ownership merely from conversion.
 - On resume (fresh session, context loss): run `to handoff <name>` first, then
-   find the first executable unchecked task in `plan.md`, honoring recorded
-   prerequisites under the execution policy, and continue from there; never
+  find the first executable unchecked task in `plan.md`, honoring recorded
+  prerequisites under the execution policy, and continue from there; never
   redo completed tasks.
 
 ## The loop
@@ -47,10 +47,10 @@ source-only implementer to edit records. Source tasks use the loop below.
    grounding; do not silently add scope. One implementer per repository and one
    writer per checkout; independent repositories may run in parallel under the
    shared execution policy. Supply the exact source alias and validated execution
-    binding, plus the existing dirt decision; configRoot and records root are
-    not substitute source directories. Same-repo tasks are serial until
-    task-level bindings exist. Only the coordinator calls workspace/worktree
-    commands, and all workflow calls retain `--dir "<configRoot>"`.
+   binding, plus the existing dirt decision; configRoot and records root are
+   not substitute source directories. Same-repo tasks are serial until
+   task-level bindings exist. Only the coordinator calls workspace/worktree
+   commands, and all workflow calls retain `--dir "<configRoot>"`.
    Supply the shared [implementer return contract](../homonto/references/execution.md#implementer-return)
    and [debugging protocol](../homonto/references/debugging.md), pasted or at a
    worker-readable absolute path; do not assume inherited context. The latter

@@ -69,7 +69,7 @@ prompt contains:
    records. Preserve the handed dotted task ID and its `[trace #N]` marker in
    the return; the coordinator records completion after verifying the task
 8. The shared [implementer return contract](../../homonto/references/execution.md#implementer-return),
-    pasted or at a worker-readable absolute path: assignment outcome, base and exact diff
+   pasted or at a worker-readable absolute path: assignment outcome, base and exact diff
    and diff summary, candidate-bound literal verification output, gaps and any
    **discovered work** (needed work outside this task's stated scope) — reported,
    never done. The coordinator appends each

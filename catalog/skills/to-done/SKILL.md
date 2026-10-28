@@ -127,8 +127,8 @@ steps 1–2 on the new candidate before finishing.
    After joining isolated source commits,
    rerun `Final Verify:` in the actual receiving checkout and inspect the final
    tree before any push. If target changes or conflict resolution changes the
-    reviewed tree, repeat final review under the same capability policy with the
-    full evidence pack for that integrated candidate. Pin its commit/tree and push only that
+   reviewed tree, repeat final review under the same capability policy with the
+   full evidence pack for that integrated candidate. Pin its commit/tree and push only that
    reverified candidate. Do not treat pre-merge tests or `--verified` as proof
    of a new integration tree. Record recovery evidence outside immutable archives
    in the handoff/publication report; never invent an onto receipt for to.

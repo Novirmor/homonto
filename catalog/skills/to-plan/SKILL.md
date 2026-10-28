@@ -81,8 +81,8 @@ including workspace roots and dirty-work decisions, even on direct entry.
      with the same full contract, its outcome line suffixed
      `(discovered <date>)`, placed after the existing tasks and before
      `Final Verify:`. Plan for that by writing tasks other sessions can trust
-      — a fresh session resumes from the first executable unchecked task, honoring
-      recorded prerequisites under the [execution policy](../homonto/references/execution.md).
+     — a fresh session resumes from the first executable unchecked task, honoring
+     recorded prerequisites under the [execution policy](../homonto/references/execution.md).
    - Substantial records tasks (ADRs, guides, specs, plans) remain coordinator-owned
      and serial, not implementer work. Split mixed-root source/records work into
      linked tasks, each with its own Owner/Repo/Cwd and verification.

@@ -79,7 +79,7 @@ func ResultLineIsPass(line string) bool {
 //  2. design.md marked "Status: Under revision"                  → design
 //  3. verification.md with a "Result: pass" line                 → close
 //  4. tasks.md has ≥1 checkbox and none unchecked                → verify
-//  5. design.md marked "Status: Confirmed", or a preset          → build
+//  5. design.md marked "Status: Confirmed", or a light change    → build
 //  6. full: tasks.md (incomplete) or an unconfirmed design draft → design
 //  7. full: proposal.md only, claimed phase open|design          → claimed
 //  8. otherwise                                                  → open
@@ -118,8 +118,7 @@ func DeriveWorkingPhase(changeDir string, st State) string {
 	if done, err := TasksAllChecked(filepath.Join(changeDir, "tasks.md")); err == nil && done {
 		return "verify"
 	}
-	preset := st.Workflow == "fix" || st.Workflow == "tweak"
-	if fileHasLine(designPath, "Status: Confirmed") || preset {
+	if fileHasLine(designPath, "Status: Confirmed") || st.Workflow == "light" {
 		return "build"
 	}
 	if fileExists(filepath.Join(changeDir, "tasks.md")) || fileExists(designPath) {

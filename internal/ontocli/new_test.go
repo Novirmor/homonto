@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"strings"
 	"testing"
 
 	"github.com/noviopenworks/homonto/internal/ontostate"
@@ -105,14 +106,14 @@ func TestCustomWorkflowRootLifecycle(t *testing.T) {
 	}
 }
 
-// A fix/tweak preset skips design and decomposes at open-lite, so `new` DOES
+// A light preset skips design and decomposes at open-lite, so `new` DOES
 // scaffold tasks.md for it.
 func TestNewCommand_PresetScaffoldsTasks(t *testing.T) {
 	dir := setUpGatedWorkspace(t)
 	cmd := NewRootCmd()
 	cmd.SetOut(&bytes.Buffer{})
 	cmd.SetErr(&bytes.Buffer{})
-	cmd.SetArgs([]string{"new", "bug-y", "--workflow", "fix", "--dir", dir})
+	cmd.SetArgs([]string{"new", "bug-y", "--workflow", "light", "--dir", dir})
 	if err := cmd.Execute(); err != nil {
 		t.Fatalf("execute: %v", err)
 	}
@@ -199,7 +200,7 @@ func TestNewCommand_GateFailureCreatesNothing(t *testing.T) {
 }
 
 func TestNewCommand_WorkflowFlag_SetsWorkflow(t *testing.T) {
-	for _, wf := range []string{"full", "fix", "tweak"} {
+	for _, wf := range []string{"full", "light"} {
 		t.Run(wf, func(t *testing.T) {
 			dir := setUpGatedWorkspace(t)
 			if _, err := runOnto(t, "new", "feature-x", "--workflow", wf, "--dir", dir); err != nil {
@@ -213,6 +214,16 @@ func TestNewCommand_WorkflowFlag_SetsWorkflow(t *testing.T) {
 				t.Errorf("Workflow = %q, want %q", st.Workflow, wf)
 			}
 		})
+	}
+}
+
+func TestNewCommand_RejectsRemovedPresets(t *testing.T) {
+	for _, wf := range []string{"fix", "tweak"} {
+		dir := setUpGatedWorkspace(t)
+		_, err := runOnto(t, "new", "feature-x", "--workflow", wf, "--dir", dir)
+		if err == nil || !strings.Contains(err.Error(), "full|light") {
+			t.Errorf("new --workflow %s: err = %v, want full|light rejection", wf, err)
+		}
 	}
 }
 

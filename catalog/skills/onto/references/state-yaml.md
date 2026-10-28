@@ -28,7 +28,7 @@ after a config upgrade. Never convert state by hand.
 schema_version: 3
 change: <name>             # must equal directory name
 id: <stable-id>            # assigned once at `onto new`, never rewritten
-workflow: full             # full | fix | tweak
+workflow: full             # full | light
 phase: open                # open | design | build | verify | close
 created: YYYY-MM-DD
 repo_mode: explicit
@@ -82,7 +82,7 @@ observed:                  # observational only — never a gate, never blocking
   <evidence>`. The binary refuses the transition while the token is empty, so a
   review cannot disappear between sessions. Git records who wrote each token.
   `onto gate <change> --json` lists pending decisions with the exact setter. The two full-only
-  tokens are not required of `fix`/`tweak` presets; `close_confirmed` is
+  tokens are not required of the light preset; `close_confirmed` is
   required of every workflow.
 - `deps` names other changes under `<workflow-root>/changes/`; a legacy archive resolves a
   dependency, while a tracked archive resolves it only after

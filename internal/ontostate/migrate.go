@@ -108,7 +108,9 @@ func parseAndMigrate(b []byte, sourceName string) (State, error) {
 		if err := yaml.Unmarshal(b, &l); err != nil {
 			return State{}, fmt.Errorf("onto-state: %s: %w", sourceName, err)
 		}
-		return migrateLegacy(l), nil
+		st := migrateLegacy(l)
+		st.Workflow = migrateWorkflow(st.Workflow)
+		return st, nil
 	}
 	st, err := Parse(b)
 	if err != nil {
@@ -123,8 +125,19 @@ func parseAndMigrate(b []byte, sourceName string) (State, error) {
 	if st.SchemaVersion < 3 && (st.RepoMode != "" || len(st.RepoBases) != 0) {
 		return State{}, fmt.Errorf("onto-state: repo_mode and repo_bases require schema_version 3")
 	}
+	st.Workflow = migrateWorkflow(st.Workflow)
 	st.SchemaVersion = CurrentSchemaVersion
 	return st, nil
+}
+
+// migrateWorkflow maps the removed fix and tweak presets onto light (ADR 0078):
+// they differed only in skill wording, so in-flight changes keep their records
+// and the next write records light.
+func migrateWorkflow(workflow string) string {
+	if workflow == "fix" || workflow == "tweak" {
+		return "light"
+	}
+	return workflow
 }
 
 // coreAgrees reports an error if the gated core fields that matter for the

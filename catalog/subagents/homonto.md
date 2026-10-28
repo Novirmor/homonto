@@ -158,8 +158,8 @@ lifecycle workflows:
   inspects the user's stated preference, any existing change, repository policy,
   and the scope, risk, and evidence obligations found during investigation.
    Preserve an existing task's selected engine. For new work
-   without an explicit choice, recommend and ask once among viable `no`, `to`, `onto
-  fix`, `onto tweak`, and full `onto` paths before creating a change; do not
+   without an explicit choice, recommend and ask once among viable `no`, `to`,
+  `onto light`, and full `onto` paths before creating a change; do not
   choose `to` merely because the issue is small.
 - Review skills draft findings and stop. Nothing is posted to GitHub
   without an explicit approval of the shown draft.

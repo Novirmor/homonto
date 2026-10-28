@@ -126,7 +126,7 @@ Four packages in the bundled catalog:
 
 | Package | Declare | What you get |
 |---|---|---|
-| **onto** | `[engines.onto]` | `open → design → build → verify → close`, plus `fix` and `tweak` presets. Proposals, designs, delta specs, task plans, verification evidence, ≥2 skeptics, receipt-bound integration. For work someone else must pick up or audit. |
+| **onto** | `[engines.onto]` | `open → design → build → verify → close`, plus the `light` preset (no design, no skeptics). Proposals, designs, delta specs, task plans, verification evidence, ≥2 skeptics, receipt-bound integration. For work someone else must pick up or audit. |
 | **to** | `[engines.to]` | `plan → do → done` with one `plan.md`. Real verification and a skeptic pass, recorded as a self-asserted claim. For fast focused work. |
 | **no** | `[engines.no]` | An implementer and a reviewer. No binary, no records. |
 | **h** | `[workflows.h]` | `/h-spike-issue`, `/h-resolve-issue`, `/h-review-pr`, `/h-continue-pr`, `/h-resolve-conflicts`, `/h-review-batch`. Comments and reviews require approval of the shown draft; conflict resolution authorizes only its verified same-PR push. |

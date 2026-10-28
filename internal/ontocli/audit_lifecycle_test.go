@@ -29,7 +29,7 @@ func TestAuditNoSpecRepeatedVerificationAndUnchangedCompletion(t *testing.T) {
 		}
 		return out
 	}
-	run("new", name, "--workflow", "tweak", "--repo", "a,b")
+	run("new", name, "--workflow", "light", "--repo", "a,b")
 	changeDir := filepath.Join(l.WorkflowRoot, "changes", name)
 	writeFile(t, filepath.Join(changeDir, "proposal.md"), "Fix a small source defect; b is inspected but unchanged.\n")
 	writeFile(t, filepath.Join(changeDir, "tasks.md"), "- [ ] 1.1 Correct and verify [trace #1]\n\nScenario-ID: SC-retry\nThe corrected source must pass its regression check.\n")
@@ -126,7 +126,7 @@ func TestAuditEvidenceSupersessionDoesNotHideOtherClaims(t *testing.T) {
 }
 
 func TestAuditScenarioContractSources(t *testing.T) {
-	for _, workflow := range []string{"full", "", "fix", "tweak"} {
+	for _, workflow := range []string{"full", "", "light"} {
 		for _, specs := range []string{"absent", "empty", "README-only", "empty-delta", "delta-without-IDs", "delta-with-ID"} {
 			t.Run(fmt.Sprintf("workflow=%s/specs=%s", workflow, specs), func(t *testing.T) {
 				root := prepWorkspace(t)
@@ -476,7 +476,7 @@ func TestAuditExplicitCombinedInterruptedArchive(t *testing.T) {
 				}
 				run("init")
 				commitAll(t, top, "explicit combined config")
-				run("new", "combined", "--workflow", "tweak", "--repo", "app")
+				run("new", "combined", "--workflow", "light", "--repo", "app")
 				runGit(t, top, "checkout", "-b", "work/combined")
 				writeFile(t, filepath.Join(top, "source with spaces.txt"), "small source edit\n")
 				commitAll(t, top, "source")

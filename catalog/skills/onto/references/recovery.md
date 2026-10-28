@@ -48,13 +48,13 @@ required grammar, tokens or evidence to clear a gate.
 ## Workflow identity and upgrade
 
 Use proposal `Preset:` first (an upgrade annotation means full), then confirmed
-or under-revision design (full), then a legacy `fix/` or `tweak/` branch prefix,
+or under-revision design (full), then a `light/` branch prefix,
 otherwise full. A branch prefix cannot downgrade a designed change. Preserve an
 explicit full choice and surface mismatches. Objective preset escalation uses
 the shared [eligibility table](../../homonto/references/workflow-selection.md#eligibility-and-escalation).
 
 Record an upgrade with `onto set workflow <name> full`, annotate
-`Preset: fix|tweak (upgraded to full YYYY-MM-DD)`, expand the reduced proposal,
+`Preset: light (upgraded to full YYYY-MM-DD)`, expand the reduced proposal,
 and create `design.md` marked `Status: Under revision`. Invalidate any old passing
 report and set verify-result pending before design is reconfirmed. Backfill design
 without moving the recorded phase backward. Continue automatically unless scope
@@ -74,8 +74,7 @@ and append the repair task. Keep the recorded phase and existing isolation.
 | Workflow | Repair route |
 |---|---|
 | full | Paired tasks/plan contract; `onto-build` |
-| fix | Inline task contract; `onto-fix` step 2, failing test first |
-| tweak | Inline task contract; `onto-tweak` step 2 |
+| light | Inline task contract; `onto-light` step 2, a bug's failing test first |
 
 Return through verification before close. Preset repairs do not require a new
 plan or design unless eligibility triggers escalation. Scope expansion needs a

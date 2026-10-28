@@ -14,7 +14,7 @@ func TestOntoDeliveryPolicyScenarios(t *testing.T) {
 	}{
 		{"skeptic returns executable repairs", "skills/onto/references/delivery.md", []string{
 			"A skeptic report, failing test, unchecked final verification or recorded repair task is remaining work, not a stopping condition",
-			"Execute the next action in the same invocation", "precise repair task", "owning full/fix/tweak route",
+			"Execute the next action in the same invocation", "precise repair task", "owning full or light route",
 		}},
 		{"missing evidence is actionable", "skills/onto-verify/references/adversarial.md", []string{
 			"A summary or one-line pack is insufficient", "checking access", "Run the discriminating probe",
@@ -82,7 +82,7 @@ func TestOntoDeliveryPolicyScenarios(t *testing.T) {
 }
 
 func TestOntoEntriesLoadDeliveryLoop(t *testing.T) {
-	for _, skill := range []string{"onto", "onto-open", "onto-design", "onto-build", "onto-verify", "onto-close", "onto-fix", "onto-tweak"} {
+	for _, skill := range []string{"onto", "onto-open", "onto-design", "onto-build", "onto-verify", "onto-close", "onto-light"} {
 		text := hPromptText(t, "skills/"+skill+"/SKILL.md")
 		if !strings.Contains(text, "references/delivery.md") {
 			t.Errorf("%s direct entry does not load the delivery loop", skill)
@@ -93,7 +93,7 @@ func TestOntoEntriesLoadDeliveryLoop(t *testing.T) {
 			t.Errorf("%s loses the delivery loop", file)
 		}
 	}
-	for _, skill := range []string{"onto", "onto-fix", "onto-tweak"} {
+	for _, skill := range []string{"onto", "onto-light"} {
 		text := hPromptText(t, "skills/"+skill+"/SKILL.md")
 		if !strings.Contains(text, "| done |") || !strings.Contains(text, "delivery loop's endpoint check") {
 			t.Errorf("%s must route native done to endpoint confirmation", skill)

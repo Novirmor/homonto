@@ -25,9 +25,10 @@ func TestWorkflowPolicyScenarios(t *testing.T) {
 			[]string{"autonomous repair even after verification passed", "No new consent is needed", "Result: superseded", "verify-result <name> pending", "Keep the recorded phase"},
 			[]string{"both need explicit user intent"}},
 		{"preset verify repair", "skills/onto-verify/SKILL.md",
-			[]string{"| fix |", "`onto-fix` step 2", "| tweak |", "`onto-tweak` step 2", "Do not create a plan or design for a preset repair"}, nil},
+			[]string{"| light |", "`onto-light` step 2", "failing-test-first execution for a bug", "Do not create a plan or design for a preset repair"},
+			[]string{"| fix |", "| tweak |"}},
 		{"preset direct build entry", "skills/onto-build/SKILL.md",
-			[]string{"return to `onto-fix` or `onto-tweak` step 2", "no new design or plan requirement"},
+			[]string{"return to `onto-light` step 2", "no new design or plan requirement"},
 			[]string{"~200 lines"}},
 		{"unavailable to skeptic", "skills/to-done/SKILL.md",
 			[]string{"dispatch or the worker is unavailable", "perform the claim/gap checks directly", "Explicit independent-review requirements still block", "Never label direct review a completed skeptic pass"}, nil},
@@ -45,16 +46,21 @@ func TestWorkflowPolicyScenarios(t *testing.T) {
 		{"configuration and test-count eligibility", "skills/homonto/references/workflow-selection.md",
 			[]string{"Test count alone never forces escalation", "private implementation detail need not", "new public contract or migration requires full onto", "Informational questions"},
 			[]string{"5+ new test cases"}},
-		{"tweak entry does not promise light verification", "skills/onto-tweak/SKILL.md",
-			[]string{"explicitly selected", "active tweak change", "workflow-selection.md#eligibility-and-escalation", "onto-verify`'s scale and risk check"},
-			[]string{"≤5 files", "light verify"}},
-		{"tweak command defers eligibility and risk", "commands/onto-tweak.md",
-			[]string{"eligibility", "verification scale", "`onto-tweak` skill"},
-			[]string{"≤5 files", "light verify"}},
+		{"light never runs a skeptic and escalates instead", "skills/onto-light/SKILL.md",
+			[]string{"explicitly selected", "`workflow: light`", "workflow-selection.md#eligibility-and-escalation",
+				"Light verification never dispatches a skeptic", "measures `full`", "security-sensitive surface",
+				"The binary refuses `verify-scale full` for a light change", "Never default a bug to `tdd-mode direct`"},
+			[]string{"≤5 files", "optional skeptic", "uses full verification and its required skeptics"}},
+		{"light command defers eligibility and verification", "commands/onto-light.md",
+			[]string{"eligibility", "verification", "`onto-light` skill", "without skeptics"},
+			[]string{"≤5 files"}},
+		{"light verify scale has no skeptic", "skills/onto-verify/references/adversarial.md",
+			[]string{"no skeptic", "escalates to the full workflow"}, []string{"one skeptic, optional"}},
 		{"two source files and six tests", "skills/homonto/references/workflow-selection.md",
 			[]string{"at most five non-test files", "excluding tests and workflow bookkeeping", "Test count alone never forces escalation"}, nil},
 		{"one security-sensitive file", "skills/homonto/references/workflow-selection.md",
-			[]string{"security-sensitive surface needs full verification even if its preset still fits"}, nil},
+			[]string{"needs skeptic review, so it is not light", "escalate a light change that reaches one"},
+			[]string{"needs full verification even if its preset still fits"}},
 		{"intermittent and multi-component failures", "skills/homonto/references/debugging.md",
 			[]string{"If reproduction is unreliable", "gather evidence", "inputs, outputs", "without exposing secrets", "working path", "one variable at a time", "3 failed hypotheses", "outside the assigned scope"}, nil},
 		{"native decision channel", "skills/homonto/references/autonomy.md",
@@ -78,8 +84,8 @@ func TestWorkflowPolicyScenarios(t *testing.T) {
 
 func TestExecutionPathsLoadSharedDebuggingOnFailure(t *testing.T) {
 	for _, file := range []string{
-		"skills/onto-build/SKILL.md", "skills/onto-fix/SKILL.md",
-		"skills/onto-tweak/SKILL.md", "skills/to-do/SKILL.md",
+		"skills/onto-build/SKILL.md", "skills/onto-light/SKILL.md",
+		"skills/to-do/SKILL.md",
 	} {
 		text := hPromptText(t, file)
 		if !strings.Contains(text, "../homonto/references/debugging.md") {
@@ -89,7 +95,7 @@ func TestExecutionPathsLoadSharedDebuggingOnFailure(t *testing.T) {
 }
 
 func TestPresetPoliciesShareEligibilityAndKeepRepairContracts(t *testing.T) {
-	for _, preset := range []string{"fix", "tweak"} {
+	for _, preset := range []string{"light"} {
 		text := hPromptText(t, "skills/onto-"+preset+"/SKILL.md")
 		for _, want := range []string{"workflow-selection.md#eligibility-and-escalation", "execution.md", "inline Owner/Repo/Cwd/Files/Change/Verify repair task", "recorded phase", "Invalidate the old passing result", "no style receipt required"} {
 			if !strings.Contains(text, want) {
@@ -155,7 +161,7 @@ func TestExtractedWorkflowPoliciesMaterialize(t *testing.T) {
 			files := []string{"homonto/references/execution.md", "homonto/references/workflow-selection.md", "homonto/references/autonomy.md", "homonto/references/debugging.md", "homonto/references/review-triage.md"}
 			if workflow == "onto" {
 				files = append(files, "onto/references/delivery.md", "onto/SKILL.md", "onto-open/SKILL.md", "onto-design/SKILL.md", "onto-verify/SKILL.md", "onto-verify/references/adversarial.md", "onto-close/SKILL.md")
-				files = append(files, "onto/references/discovery.md", "onto/references/recovery.md", "onto-close/references/integration.md", "onto-build/SKILL.md", "onto-build/references/subagent-protocol.md", "onto-fix/SKILL.md", "onto-tweak/SKILL.md")
+				files = append(files, "onto/references/discovery.md", "onto/references/recovery.md", "onto-close/references/integration.md", "onto-build/SKILL.md", "onto-build/references/subagent-protocol.md", "onto-light/SKILL.md")
 			} else {
 				files = append(files, "to-do/SKILL.md", "to-done/SKILL.md", "to/references/recovery.md")
 			}

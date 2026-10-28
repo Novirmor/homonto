@@ -66,7 +66,7 @@ func TestWorkflowPromptCLISequences(t *testing.T) {
 				base := run(t, root, "git", "rev-parse", "HEAD")
 				args := []string{"new", "sequence", "--repo", "app", "--base", "app=main", "--dir", root}
 				if workflow == "onto" {
-					args = append(args, "--workflow", "tweak")
+					args = append(args, "--workflow", "light")
 				}
 				run(t, root, filepath.Join(bins, workflow), args...)
 				commitRecords := func() {
@@ -205,7 +205,7 @@ func TestWorkflowPromptCLISequences(t *testing.T) {
 					t.Fatalf("expected %q for %v: %v\n%s", want, args, err, out)
 				}
 			}
-			call("new", "deliver", "--workflow", "tweak", "--repo", "app", "--repo", "untouched")
+			call("new", "deliver", "--workflow", "light", "--repo", "app", "--repo", "untouched")
 			out := run(t, root, homonto, "worktree", "create", "deliver", "--workflow", "onto", "--repo", "app", "--base", "refs/heads/main", "--branch", "work/deliver", "--json")
 			var binding struct{ Path string }
 			if err := json.Unmarshal([]byte(out), &binding); err != nil {
@@ -221,7 +221,7 @@ func TestWorkflowPromptCLISequences(t *testing.T) {
 				}
 			}
 			change := filepath.Join(root, "records/changes/deliver")
-			write(t, filepath.Join(change, "proposal.md"), "# Proposal\nPreset: tweak\nVerify a fixture source commit; untouched needs no delivery.\n")
+			write(t, filepath.Join(change, "proposal.md"), "# Proposal\nPreset: light\nVerify a fixture source commit; untouched needs no delivery.\n")
 			write(t, filepath.Join(change, "tasks.md"), "- [ ] 1.1 Write and verify fixture [trace #1]\n")
 			call("set", "isolation", "deliver", "worktree")
 			call("advance", "deliver", "--to", "build")
@@ -302,7 +302,7 @@ func TestWorkflowPromptCLISequences(t *testing.T) {
 			}
 		})
 	}
-	for _, preset := range []string{"fix", "tweak"} {
+	for _, preset := range []string{"light"} {
 		t.Run("preset-resume/"+preset, func(t *testing.T) {
 			root := t.TempDir()
 			write(t, filepath.Join(root, "homonto.toml"), "[engines.onto]\nsource='builtin:onto'\nscope='project'\n")
@@ -333,9 +333,6 @@ func TestWorkflowPromptCLISequences(t *testing.T) {
 			write(t, filepath.Join(change, "proposal.md"), "# Proposal: resume\nPreset: "+preset+"\n\n## Why\nCheck resume.\n\n## What Changes\nOne file.\n\n## Non-Goals\nNo new capability.\n\n## Capability Impact\nNo spec-level change.\n\n## Acceptance Scenarios\n- resumed: setup reaches build.\n\n## Grounding\nDirect fixture reads.\n")
 			write(t, filepath.Join(change, "tasks.md"), "# Tasks: resume\n\n## 1. Implementation\n- [ ] 1.1 Complete bounded work [trace #1]\n  - Owner: coordinator\n  - Repo: config\n  - Cwd: "+root+"\n  - Files: source.txt\n  - Change: bounded fixture\n  - Verify: git diff --check; exit 0\n")
 			for _, pair := range [][2]string{{"isolation", "branch"}, {"build-mode", "direct"}, {"tdd-mode", "direct"}, {"proposal-approved", "2026-09-08 reviewed bounded scope"}} {
-				if preset == "fix" && pair[0] == "tdd-mode" {
-					pair[1] = "tdd"
-				}
 				run(t, root, onto, "set", pair[0], "resume", pair[1], "--dir", root)
 			}
 			run(t, root, "git", "add", "docs")
@@ -481,9 +478,9 @@ func TestWorkflowPromptCLISequences(t *testing.T) {
 			run(t, root, "git", "init", "-b", "main")
 			run(t, root, "git", "add", "homonto.toml", ".gitignore")
 			run(t, root, "git", "commit", "-m", "baseline")
-			run(t, root, filepath.Join(bins, "onto"), "new", "carry", "--workflow", "tweak", "--dir", root)
+			run(t, root, filepath.Join(bins, "onto"), "new", "carry", "--workflow", "light", "--dir", root)
 			change := filepath.Join(root, "docs/changes/carry")
-			write(t, filepath.Join(change, "proposal.md"), "# Proposal\nPreset: tweak\nCarry a concrete task into to.\n")
+			write(t, filepath.Join(change, "proposal.md"), "# Proposal\nPreset: light\nCarry a concrete task into to.\n")
 			write(t, filepath.Join(change, "tasks.md"), "- [ ] 1.1 Inspect baseline [trace #1]\n")
 			plan := "# Plan\n\n## Task 1.1 Inspect baseline\n"
 			for _, field := range [][2]string{{"Owner", "coordinator"}, {"Repo", "config"}, {"Cwd", root}, {"Files", "homonto.toml"}, {"Do", "preserve the configuration"}, {"Verify", "git diff --check"}} {

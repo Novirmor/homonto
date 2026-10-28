@@ -53,7 +53,7 @@ findings, not footnotes>
 
 <For a repair round, identify changed claims and adjacent regression risks;
 carry prior dispositions forward unless new evidence or changed scope reopens them.>
-<!-- Or record a light-mode optional skip / unavailable independent pass here,
+<!-- Or record "light: no skeptic pass" / an unavailable independent pass here,
      with reason and direct checks performed. Explicit independent-review
      requirements still block; denial or a blocked worker is not absence.
      Direct review is never labeled a completed skeptic verdict. -->
@@ -75,7 +75,7 @@ stays present reading "none">
   Reuse only under the execution policy's provenance/input rules; no bare "passed
   earlier" or stale logs. Finalize the report before recording artifact-bound receipts.
 - A scenario that cannot be demonstrated is a **fail**, not a skip.
-- With no delta files, full, fix, and tweak changes declare each scenario once
+- With no delta files, full and light changes declare each scenario once
   in `tasks.md` or `verification.md`, on an unfenced standalone line such as
   `Scenario-ID: handoff-content`. Describe the observable check and cite that ID
   in the evidence table; table mentions and fenced examples are not declarations.

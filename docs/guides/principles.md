@@ -21,8 +21,8 @@ full workflow when the work demands it.
 
 ### In onto
 
-- **Presets first.** A bug fix is `onto fix`, a small non-bug change is
-  `onto tweak`; both skip design. Scope growth upgrades them.
+- **Presets first.** A small bug fix or non-bug change is `onto light`: it
+  skips design and skeptics. Scope or risk growth escalates it to full.
 - **The proposal says what it won't do.** Work outside that boundary during
   build is a scope decision, not a quiet expansion.
 - **Tasks are outcomes with proof.** "Add extension points for later" can't

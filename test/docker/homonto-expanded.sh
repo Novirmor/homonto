@@ -111,7 +111,7 @@ is_link "$W/.opencode/agent/homonto.md"; is_file "$W/.opencode/agent/homonto.md"
 # The onto framework ships a command per phase/preset — the dispatcher plus every
 # onto-* skill — so each phase is directly invocable. Assert the whole set links
 # and resolves, not just the dispatcher.
-for c in onto onto-open onto-design onto-build onto-verify onto-close onto-fix onto-tweak onto-no-slop; do
+for c in onto onto-open onto-design onto-build onto-verify onto-close onto-light onto-no-slop; do
 	is_link "$W/.opencode/command/$c.md"; is_file "$W/.opencode/command/$c.md"
 done
 ok "skill, full command set, and subagent links resolve to the catalog"

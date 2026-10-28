@@ -211,7 +211,7 @@ func TestStatusCommand_ReportsSkeletonMissingArtifact(t *testing.T) {
 	dir := t.TempDir()
 	// A fix preset requires tasks.md from the open exit, so an open preset with
 	// only proposal.md is a reported skeleton gap.
-	writeFile(t, filepath.Join(dir, "docs", "changes", "alpha", "onto-state.yaml"), "change: alpha\nworkflow: fix\nphase: open\n")
+	writeFile(t, filepath.Join(dir, "docs", "changes", "alpha", "onto-state.yaml"), "change: alpha\nworkflow: light\nphase: open\n")
 	writeFile(t, filepath.Join(dir, "docs", "changes", "alpha", "proposal.md"), "proposal")
 
 	cmd := NewRootCmd()

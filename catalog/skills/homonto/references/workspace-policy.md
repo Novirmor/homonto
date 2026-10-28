@@ -63,7 +63,7 @@ ownership evidence, and the effects of **preserve**, **isolate**, and **cleanup*
 Honor an existing user choice or explicit recorded policy. If none covers these
 paths, ask one concrete question before writes, for example: "Preserve
 `/src/api/handler.go` in place, isolate this change from `main` under
-`/worktrees/api/onto-fix-handler`, or approve a named cleanup action?"
+`/worktrees/api/onto-light-handler`, or approve a named cleanup action?"
 Read-only research proceeds while the decision is pending. Do not repeatedly
 ask about the same unchanged dirt decision; carry paths, choice, and any approved
 action into notes/handoff and delegated tasks. New conflicts need a new decision.

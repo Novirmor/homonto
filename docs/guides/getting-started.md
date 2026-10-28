@@ -215,11 +215,11 @@ command runs in the `homonto` coordinator agent:
 ```text
 /onto add full-text search to the notes CLI
 /to cap the note cache at 100 entries
-/onto-fix search crashes on an empty query
+/onto-light search crashes on an empty query
 ```
 
 For new work with no explicit path, the coordinator asks **once** which
-workflow fits (`to`, `onto fix`, `onto tweak`, or full `onto`) and recommends
+workflow fits (`to`, `onto light`, or full `onto`) and recommends
 one. After that it drives the change to its endpoint — implementation,
 review, verification, archive, integration — and stops only for a real
 decision, an endpoint you named, or a hard blocker. See

@@ -52,7 +52,7 @@ read-only inspection does not authorize spec merging before close.
 - [ ] Every template-based artifact **that exists** follows its
       template's section structure — proposal, design, tasks, notes,
       plan, verification — checked against their references (deviation
-      anywhere is a finding). Unupgraded fix/tweak proposals use
+      anywhere is a finding). Unupgraded light proposals use
       `onto-open/references/preset-proposal.md`, including non-empty Grounding,
       Capability Impact and Acceptance Scenarios, not the full proposal template.
       Presets legitimately lack design/plan and possibly notes; without plan,

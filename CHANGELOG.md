@@ -7,6 +7,15 @@ list. Release candidates are folded into their stable release.
 
 ## Unreleased
 
+- **Breaking: `onto fix` and `onto tweak` are now one preset, `onto light`
+  (ADR 0078).** Use `onto new --workflow light` and `/onto-light`; the `fix`
+  and `tweak` workflow values, skills, and commands are removed. The preset
+  classifies the request itself: a bug still starts from a failing
+  reproduction test. **Light never runs a skeptic.** A light change that
+  measures over five non-test files, adds a capability, or touches a
+  security-sensitive surface escalates to full onto, and `onto set
+  verify-scale` / `onto scale --set` refuse `full` for a light change.
+  Existing changes recorded as `fix` or `tweak` load as `light`.
 - **Worker permission blocks return to the coordinator (ADR 0077).** An
   implementer, reviewer, skeptic, explorer, or h worker whose tool call is
   denied, or whose prompt you reject, stops and hands back a `Permission block`

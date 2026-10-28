@@ -111,7 +111,7 @@ func TestCompleteIntegrationRejectsUnprovenMergeReceipts(t *testing.T) {
 func TestCompleteIntegrationRejectsWrongReceiptKind(t *testing.T) {
 	root := prepWorkspace(t)
 	st := ontostate.State{
-		Change: "demo", Workflow: "tweak", Phase: "close", BaseRef: "abc123",
+		Change: "demo", Workflow: "light", Phase: "close", BaseRef: "abc123",
 		Verify: ontostate.Verify{Result: "pass"}, Close: ontostate.Close{Merged: true},
 		Integration: "pr", CloseConfirmed: "reviewed",
 	}

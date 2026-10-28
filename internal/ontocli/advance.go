@@ -67,8 +67,8 @@ func runAdvanceTo(cmd *cobra.Command, root, name, target string) error {
 	if st.Change != name {
 		return fmt.Errorf("onto advance: state change %q does not match directory %q", st.Change, name)
 	}
-	if st.Workflow != "fix" && st.Workflow != "tweak" {
-		return fmt.Errorf("onto advance --to build: workflow %q advances one gate at a time; --to is preset-only (fix/tweak skip design)", st.Workflow)
+	if st.Workflow != "light" {
+		return fmt.Errorf("onto advance --to build: workflow %q advances one gate at a time; --to is light-only (light skips design)", st.Workflow)
 	}
 	// Only a change BEFORE build may walk to build — the loop must never carry
 	// a change past its declared target (a preset at verify running --to build

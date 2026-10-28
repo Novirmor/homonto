@@ -54,8 +54,7 @@ func TestWorkspacePromptAuditContracts(t *testing.T) {
 			"homonto worktree receiver <change> --workflow onto --repo <alias> --json",
 			"never switch a dirty original automatically", "--role receiver",
 		}},
-		{"skills/onto-fix/SKILL.md", []string{"recorded open/design", "setup resume", "never rerun `new`", "reduced preset template", "proposal-approved", "before any records/source commit"}},
-		{"skills/onto-tweak/SKILL.md", []string{"recorded open/design", "setup resume", "never rerun `new`", "reduced preset template", "proposal-approved", "before any records/source commit"}},
+		{"skills/onto-light/SKILL.md", []string{"recorded open/design", "setup resume", "never rerun `new`", "reduced preset template", "proposal-approved", "before any records/source commit"}},
 		{"skills/onto-open/references/preset-proposal.md", []string{"## Non-Goals", "## Capability Impact", "## Acceptance Scenarios", "## Grounding", "Scenario-ID: <id>", "Owner, Repo, Cwd, Files, Change, and Verify"}},
 		{"skills/onto-close/references/lint-checklist.md", []string{"preset-proposal.md", "Every preset Acceptance Scenario has current report evidence"}},
 		{"skills/onto-verify/SKILL.md", []string{"do not record receipts yet", "finalize `verification.md`", "Do not edit the report after receipts", "repository/task/scenario supersedes earlier claims", "Re-record all claims", "no separate round-reset command"}},
@@ -242,7 +241,7 @@ func TestWorkspaceSkillsContracts(t *testing.T) {
 }
 
 func TestWorkspaceSkillsCreationBases(t *testing.T) {
-	for _, name := range []string{"onto-open", "onto-fix", "onto-tweak", "to", "to-plan", "h-resolve-issue"} {
+	for _, name := range []string{"onto-open", "onto-light", "to", "to-plan", "h-resolve-issue"} {
 		text := hPromptText(t, "skills/"+name+"/SKILL.md")
 		if !strings.Contains(text, "--base <alias>=<local-branch>") {
 			t.Errorf("%s must select per-repo bases at creation", name)

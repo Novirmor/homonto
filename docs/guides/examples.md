@@ -262,8 +262,8 @@ $ git add -A && git commit -m "Adopt onto"
 
 ```text
 /onto-open add per-user rate limiting to the public API
-/onto-fix login fails when the email has uppercase letters
-/onto-tweak reword the 429 error message
+/onto-light login fails when the email has uppercase letters
+/onto-light reword the 429 error message
 ```
 
 ## 7. Everything: onto + to + no + h
@@ -750,8 +750,8 @@ From OpenCode, with the packages installed:
 
 # Explicit paths
 /onto-open redesign the permission model for shared notebooks
-/onto-fix the importer drops the last row when the file has no trailing newline
-/onto-tweak rename "Workspace" to "Project" in the UI copy
+/onto-light the importer drops the last row when the file has no trailing newline
+/onto-light rename "Workspace" to "Project" in the UI copy
 /to add a --dry-run flag to the sync command
 /no bump the Go toolchain to 1.26.10 and fix any vet findings
 

@@ -10,8 +10,9 @@ defects self-review missed).
 - `verify.scale: full` → REQUIRED: **at least** two skeptics, dispatched in
   parallel, after the self-evidence table is drafted. Two is the floor, not
   the ceiling — see "More than two" below.
-- `verify.scale: light` → one skeptic, optional; a skip is recorded in the
-  report's Adversarial section with its reason.
+- `verify.scale: light` (a light change) → no skeptic. Record "light: no
+  skeptic pass" in the report's Adversarial section. Work that needs a skeptic
+  escalates to the full workflow; it is never added inside a light change.
 - Unavailable dispatch/worker → apply the shared
   [capability policy](../../homonto/references/execution.md#dispatch-capability).
   Perform claim/gap checks directly and record the missing independent pass in

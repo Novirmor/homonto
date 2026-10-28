@@ -33,7 +33,7 @@ func handoffFixture(t *testing.T, workflow string) (string, string) {
 	dir, state := "records/tasks/demo", "id: generation\nchange: demo\nphase: do\n"
 	if workflow == "onto" {
 		dir = "records/changes/demo"
-		state = "schema_version: 2\nid: generation\nchange: demo\nworkflow: fix\nphase: build\nisolation: branch\nintegration: pr\nbuild_mode: direct\ntdd_mode: tdd\nverify:\n  scale: light\n  result: pending\n"
+		state = "schema_version: 2\nid: generation\nchange: demo\nworkflow: light\nphase: build\nisolation: branch\nintegration: pr\nbuild_mode: direct\ntdd_mode: tdd\nverify:\n  scale: light\n  result: pending\n"
 	}
 	handoffWrite(t, root, dir+"/"+workflow+"-state.yaml", state)
 	return root, dir
@@ -251,7 +251,7 @@ func TestReadHandoffExplicitBindingAndScopeValidation(t *testing.T) {
 			handoffLayoutMarker(t, root)
 			schema, phase, extra := 1, "do", ""
 			if workflow == "onto" {
-				schema, phase, extra = 3, "build", "workflow: fix\n"
+				schema, phase, extra = 3, "build", "workflow: light\n"
 			}
 			state := fmt.Sprintf("schema_version: %d\nid: generation\nchange: demo\nphase: %s\n%srepo_mode: explicit\nrepos: [app]\nrepo_bases:\n  app:\n    base_ref: %s\n    base_branch: main\n    git_common_dir: %q\n", schema, phase, extra, base, common)
 			handoffWrite(t, root, dir+"/"+workflow+"-state.yaml", state)

@@ -347,7 +347,7 @@ func TestCommandHistoryArchiveAndConversionWriteSets(t *testing.T) {
 func TestCommandHistoryAdvancePartialProgress(t *testing.T) {
 	l := commandLayout(t)
 	requireCommand(t, cli.NewRootCmd(), "workspace", "init", "--yes", "--config", l.ConfigPath)
-	requireCommand(t, ontocli.NewRootCmd(), "new", "partial", "--workflow", "fix", "--repo", "source", "--dir", l.ConfigRoot)
+	requireCommand(t, ontocli.NewRootCmd(), "new", "partial", "--workflow", "light", "--repo", "source", "--dir", l.ConfigRoot)
 	head := commandGit(t, l.WorkflowRoot, "rev-parse", "HEAD")
 	out, err := executeCommand(ontocli.NewRootCmd(), "advance", "partial", "--to", "build", "--dir", l.ConfigRoot)
 	if err == nil || !strings.Contains(err.Error(), "isolation") || !strings.Contains(out, "design") {

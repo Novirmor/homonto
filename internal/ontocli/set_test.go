@@ -198,7 +198,7 @@ func TestSetBaseBranch_HappyPathAndEmptyRejected(t *testing.T) {
 func TestSetWorkflow_OnlyUpgradesPresets(t *testing.T) {
 	root := prepWorkspace(t)
 	seedChange(t, root, "c", "build")
-	mutateState(t, root, "c", func(st *ontostate.State) { st.Workflow = "fix" })
+	mutateState(t, root, "c", func(st *ontostate.State) { st.Workflow = "light" })
 
 	if _, err := runOnto(t, "set", "workflow", "c", "full", "--dir", root); err != nil {
 		t.Fatalf("set workflow full: %v", err)
@@ -207,7 +207,7 @@ func TestSetWorkflow_OnlyUpgradesPresets(t *testing.T) {
 	if st.Workflow != "full" || !st.Observed.PresetEscalated {
 		t.Fatalf("upgraded state = %+v, want full with preset_escalated", st)
 	}
-	if _, err := runOnto(t, "set", "workflow", "c", "tweak", "--dir", root); err == nil {
+	if _, err := runOnto(t, "set", "workflow", "c", "light", "--dir", root); err == nil {
 		t.Fatal("workflow downgrade accepted, want rejection")
 	}
 }
@@ -216,7 +216,7 @@ func TestSetWorkflow_InvalidatesPresetEvidence(t *testing.T) {
 	root := prepWorkspace(t)
 	seedChange(t, root, "c", "close")
 	mutateState(t, root, "c", func(st *ontostate.State) {
-		st.Workflow = "fix"
+		st.Workflow = "light"
 		st.BuildMode = "direct"
 		st.TDDMode = "tdd"
 		st.Verify = ontostate.Verify{Scale: "light", Result: "pass"}
@@ -314,5 +314,27 @@ func TestSetEvidenceTokens(t *testing.T) {
 				t.Errorf("set %s with empty evidence must refuse", tc.setter)
 			}
 		})
+	}
+}
+
+// A light change never records full verification; it escalates instead (ADR 0078).
+func TestSetVerifyScale_LightRefusesFull(t *testing.T) {
+	root := prepWorkspace(t)
+	seedChange(t, root, "c", "verify")
+	mutateState(t, root, "c", func(st *ontostate.State) { st.Workflow = "light" })
+
+	_, err := runOnto(t, "set", "verify-scale", "c", "full", "--dir", root)
+	if err == nil || !strings.Contains(err.Error(), "onto set workflow c full") {
+		t.Fatalf("light verify-scale full: err = %v, want escalation hint", err)
+	}
+	if _, err := runOnto(t, "set", "verify-scale", "c", "light", "--dir", root); err != nil {
+		t.Fatalf("light verify-scale light: %v", err)
+	}
+	if _, err := runOnto(t, "set", "verify-scale", "c", "medium", "--dir", root); err == nil {
+		t.Fatal("unknown verify-scale accepted")
+	}
+	mutateState(t, root, "c", func(st *ontostate.State) { st.Workflow = "full" })
+	if _, err := runOnto(t, "set", "verify-scale", "c", "full", "--dir", root); err != nil {
+		t.Fatalf("full verify-scale full: %v", err)
 	}
 }

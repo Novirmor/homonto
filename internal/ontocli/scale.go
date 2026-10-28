@@ -162,6 +162,11 @@ func scaleCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
+			if doSet && level == "full" {
+				if err := lightFullScale("onto scale --set", name, st); err != nil {
+					return err
+				}
+			}
 			if doSet {
 				st.Verify.Scale = level
 				if err := ontostate.Save(filepath.Join(changeDir, "onto-state.yaml"), st); err != nil {

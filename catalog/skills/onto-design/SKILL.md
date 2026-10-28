@@ -22,7 +22,7 @@ targets when drafting deltas so missing requirements are repaired before verify.
   missing) — resume from Pending; never re-ask Confirmed. After
   compaction, notes.md is the *why*-recovery; the derivation table is the
   *where*-recovery.
-- Presets never enter this phase — except a preset **upgraded** to full,
+- Light changes never enter this phase — except one **escalated** to full,
   which arrives here to backfill the design it skipped.
 - **Revision entry**: if `design.md` exists marked `Status: Under
   revision`, this is a mid-build design revisit. Re-evaluate the approach for

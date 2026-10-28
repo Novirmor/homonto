@@ -10,7 +10,7 @@ share. Each has its own page: [onto](onto-workflow.md), [to](to-workflow.md),
 | | **onto** | **to** | **no** | **h** |
 |---|---|---|---|---|
 | Kind | engine | engine | engine | workflow (GitHub) |
-| Phases | `open → design → build → verify → close` (+ `fix`, `tweak` presets) | `plan → do → done` | none | per skill |
+| Phases | `open → design → build → verify → close` (+ `light` preset) | `plan → do → done` | none | per skill |
 | Binary | `onto` (owns state, enforces gates) | `to` (owns state, light gates) | — | — |
 | Records | `changes/<name>/`: proposal, design, delta specs, tasks, plan, verification, evidence, notes; living `specs/`, `adr/`, `guides/` | `tasks/<name>/plan.md` | none (optional shared task bookkeeping) | none of its own |
 | Verification | evidence tokens, scenario evidence, `verify-result`, ≥2 skeptics, receipt-bound integration | real verify + ≥1 skeptic, recorded as a self-asserted `--verified` | model-chosen verification + reviewer | per engine used |
@@ -29,9 +29,9 @@ flowchart TD
     A[Your request or slash command] --> B{Existing task or change matches?}
     B -- yes --> R[Resume in its recorded engine<br/>no new question]
     B -- no --> C{Path chosen explicitly?}
-    C -- "/to, /no, /onto-fix, /onto-tweak, /onto-open" --> E[Use that path]
-    C -- "/onto (family only)" --> F[Ask once: fix, tweak, or full]
-    C -- "no choice" --> G[Ask once: recommend among viable<br/>no, to, onto fix, onto tweak, full onto]
+    C -- "/to, /no, /onto-light, /onto-open" --> E[Use that path]
+    C -- "/onto (family only)" --> F[Ask once: light or full]
+    C -- "no choice" --> G[Ask once: recommend among viable<br/>no, to, onto light, full onto]
     F --> E
     G --> E
     E --> H[Load the engine's dispatcher<br/>drive to the endpoint]
@@ -43,7 +43,7 @@ Rules behind the diagram:
   **before** any task is created — never again on resume, after compaction,
   at a phase boundary, or on automatic preset upgrade.
 - The recommendation follows inspected scope and risk, not "shortest path".
-  A small bug may fit `to` or `onto fix`; both are offered.
+  Small work may fit `to` or `onto light`; both are offered.
 - Options that can't be used are excluded with a reason (engine not
   installed, repository policy, preset limit). Answering never installs an
   engine or waives a gate.
@@ -54,8 +54,7 @@ Rules behind the diagram:
 
 | Path | Fits when | Upgrades to full onto when |
 |---|---|---|
-| `onto fix` | Broken existing behavior reproducible with a failing test; one module; ≤5 non-test files | >5 non-test files, cross-module, architecture/schema/dependency change, new public API or capability |
-| `onto tweak` | Non-bug edit (copy, config, docs, prompts, small feature); one module; ≤5 non-test files; no new capability or changed requirement | same, or a new capability / changed requirement |
+| `onto light` | A bug fix reproduced by a failing test, or a non-bug edit (copy, config, docs, prompts, small feature); one module; ≤5 non-test files; no new capability, changed requirement, or security-sensitive surface. No skeptics. | >5 non-test files, cross-module, architecture/schema/dependency change, new public API or capability, changed requirement, or a security-sensitive surface |
 | full `onto` | You ask for its record, or design/evidence obligations require it | never downgraded |
 | `to` | Bounded work without onto's design/spec/evidence requirements | incompatible scope → asks you; stays `to` |
 | `no` | Implementation and review without lifecycle records | incompatible scope → asks you; stays `no` |

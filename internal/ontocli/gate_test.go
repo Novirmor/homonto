@@ -23,7 +23,7 @@ func TestPendingGates_ByPhaseAndState(t *testing.T) {
 		t.Errorf("full open gates = %v, want [proposal-approved]", ids)
 	}
 	// a preset open never gates proposal approval.
-	if ids := gateIDs(pendingGates("c", ontostate.State{Phase: "open", Workflow: "fix"})); len(ids) != 0 {
+	if ids := gateIDs(pendingGates("c", ontostate.State{Phase: "open", Workflow: "light"})); len(ids) != 0 {
 		t.Errorf("fix open gates = %v, want none", ids)
 	}
 	// full design with nothing recorded → approach first, then isolation.
@@ -35,7 +35,7 @@ func TestPendingGates_ByPhaseAndState(t *testing.T) {
 		t.Errorf("design/answered gates = %v, want none", ids)
 	}
 	// a preset design gates isolation only.
-	if ids := gateIDs(pendingGates("c", ontostate.State{Phase: "design", Workflow: "tweak"})); strings.Join(ids, ",") != "isolation" {
+	if ids := gateIDs(pendingGates("c", ontostate.State{Phase: "design", Workflow: "light"})); strings.Join(ids, ",") != "isolation" {
 		t.Errorf("tweak design gates = %v, want [isolation]", ids)
 	}
 	// build with nothing recorded → build-mode + tdd-mode.
@@ -48,11 +48,11 @@ func TestPendingGates_ByPhaseAndState(t *testing.T) {
 		t.Errorf("full close gates = %v, want [verify-result guides base-ref base-branch integration close-confirmed close-merged]", ids)
 	}
 	// a tweak close does not gate guides but does gate confirmation.
-	tweak := ontostate.State{Phase: "close", Workflow: "tweak", BaseRef: "abc123", BaseBranch: "main", Verify: ontostate.Verify{Result: "pass"}, Close: ontostate.Close{Merged: true}, Integration: "merge"}
+	tweak := ontostate.State{Phase: "close", Workflow: "light", BaseRef: "abc123", BaseBranch: "main", Verify: ontostate.Verify{Result: "pass"}, Close: ontostate.Close{Merged: true}, Integration: "merge"}
 	if ids := gateIDs(pendingGates("c", tweak)); strings.Join(ids, ",") != "close-confirmed" {
 		t.Errorf("resolved tweak close gates = %v, want [close-confirmed]", ids)
 	}
-	if ids := gateIDs(pendingGates("c", ontostate.State{Phase: "close", Workflow: "tweak", BaseRef: "abc123", BaseBranch: "main", Verify: ontostate.Verify{Result: "pass"}, Close: ontostate.Close{Merged: true}, Integration: "merge", CloseConfirmed: "2026-07-22 ok"})); len(ids) != 0 {
+	if ids := gateIDs(pendingGates("c", ontostate.State{Phase: "close", Workflow: "light", BaseRef: "abc123", BaseBranch: "main", Verify: ontostate.Verify{Result: "pass"}, Close: ontostate.Close{Merged: true}, Integration: "merge", CloseConfirmed: "2026-07-22 ok"})); len(ids) != 0 {
 		t.Errorf("fully answered tweak close gates = %v, want none", ids)
 	}
 }
@@ -91,7 +91,7 @@ func TestPendingGatesExposeAutonomousDefaults(t *testing.T) {
 		t.Fatalf("build mode must recommend subagent execution when available: %#v", build)
 	}
 	close := pendingGates("demo", ontostate.State{
-		Phase: "close", Workflow: "tweak", BaseRef: "abc123", BaseBranch: "main", CloseConfirmed: "reviewed",
+		Phase: "close", Workflow: "light", BaseRef: "abc123", BaseBranch: "main", CloseConfirmed: "reviewed",
 		Verify: ontostate.Verify{Result: "pass"}, Close: ontostate.Close{Merged: true},
 	})
 	if len(close) != 1 || close[0].ID != "integration" || !close[0].Options[0].Recommended {
@@ -118,7 +118,7 @@ func TestGateCommand_UnreceiptedMergedMarkerRemainsPending(t *testing.T) {
 	dir := prepWorkspace(t)
 	changeDir := filepath.Join(dir, "docs", "changes", "demo")
 	seedCloseState(t, dir, ontostate.State{
-		Change: "demo", Workflow: "tweak", Phase: "close", BaseRef: "abc123", BaseBranch: "main",
+		Change: "demo", Workflow: "light", Phase: "close", BaseRef: "abc123", BaseBranch: "main",
 		Verify: ontostate.Verify{Result: "pass"}, Close: ontostate.Close{Merged: true},
 		Integration: "merge", CloseConfirmed: "reviewed",
 	})

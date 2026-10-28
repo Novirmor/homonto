@@ -22,8 +22,8 @@ never performs phase work itself:
 3. **Derive** — cross-check the recorded phase against real file state; the state
    file is a cache of truth, not truth.
 4. **Route** — load the matching sub-skill (`onto-open`, `onto-design`,
-    `onto-build`, `onto-verify`, `onto-close`, or the `onto-fix` / `onto-tweak`
-    presets) for the derived phase and continue through later phases unless the
+    `onto-build`, `onto-verify`, `onto-close`, or the `onto-light`
+    preset) for the derived phase and continue through later phases unless the
     user names an endpoint or asks to pause.
 
 Every state mutation goes through the `onto` binary (`onto new`, `onto set …`,
@@ -32,6 +32,6 @@ Every state mutation goes through the `onto` binary (`onto new`, `onto set …`,
 
 `$ARGUMENTS`, if present, describes what to work on — use it to open a new change
 or to focus the current phase. If absent, resume the active change. When
-creating a change, `/onto` selects onto but not fix, tweak, or full: if the
+creating a change, `/onto` selects onto but not light or full: if the
 user did not specify a path, recommend viable onto paths and ask once before
 `onto new`. Never re-ask on resume.

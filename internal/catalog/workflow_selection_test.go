@@ -17,13 +17,12 @@ func TestNewChangeWorkflowSelectionPolicy(t *testing.T) {
 		"Resume a matching task in its recorded engine",
 		"Do not ask again on resume",
 		"**`no`**", "Engine selection is one-way for this task",
-		"`/to`, `/onto-fix`, `/onto-tweak`, and",
+		"`/to`, `/onto-light`, and `/onto-open`",
 		"`/onto` selects the onto family, not its preset",
 		"ask **once before task creation**",
 		"short task-specific recommendation",
-		"**`to`**", "**`onto fix`**", "**`onto tweak`**", "**Full `onto`**",
-		"A small bug may fit either `to` or `onto fix`",
-		"a small non-bug edit may fit `to` or `onto tweak`",
+		"**`to`**", "**`onto light`**", "**Full `onto`**", "**without skeptics**",
+		"Small work may fit either `to` or `onto light`",
 		"Exclude unavailable or invalid options",
 		"follow its normal upgrade to full onto without another selection prompt",
 		"not permission to publish, skip verification",
@@ -45,7 +44,7 @@ func TestNewChangeWorkflowSelectionPolicy(t *testing.T) {
 		}
 	}
 	for file, want := range map[string]string{
-		"commands/onto.md":                "`/onto` selects onto but not fix, tweak, or full",
+		"commands/onto.md":                "`/onto` selects onto but not light or full",
 		"commands/h-resolve-issue.md":     "skill owns spike, engine selection, execution and publication",
 		"skills/h-resolve-issue/SKILL.md": "Resume a unique match without prompting",
 	} {

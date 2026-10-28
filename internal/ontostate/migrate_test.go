@@ -77,7 +77,7 @@ func TestParseAndMigrate_LegacyBinary_ToV1(t *testing.T) {
 	if got.SchemaVersion != CurrentSchemaVersion {
 		t.Errorf("SchemaVersion = %d, want %d", got.SchemaVersion, CurrentSchemaVersion)
 	}
-	if got.Change != "legacy-bin" || got.Workflow != "fix" || got.Phase != "build" {
+	if got.Change != "legacy-bin" || got.Workflow != "light" || got.Phase != "build" {
 		t.Errorf("core mismatch: %+v", got)
 	}
 	if !reflect.DeepEqual(got.Deps, []string{"dep-a"}) {
@@ -137,5 +137,22 @@ func TestParseAndMigrate_CurrentVersion_IsNoOp(t *testing.T) {
 	}
 	if !reflect.DeepEqual(once, orig) {
 		t.Errorf("current-version doc changed on migrate:\n got  %+v\n want %+v", once, orig)
+	}
+}
+
+// The removed fix and tweak presets load as light, so in-flight changes keep
+// working, and nothing else is rewritten (ADR 0078).
+func TestParseAndMigrate_RemovedPresetsLoadAsLight(t *testing.T) {
+	for _, workflow := range []string{"fix", "tweak"} {
+		got, err := parseAndMigrate([]byte("schema_version: 3\nchange: c\nworkflow: "+workflow+"\nphase: verify\nverify:\n  scale: light\n"), "onto-state.yaml")
+		if err != nil {
+			t.Fatalf("%s: %v", workflow, err)
+		}
+		if got.Workflow != "light" || got.Phase != "verify" || got.Verify.Scale != "light" {
+			t.Errorf("%s: got %+v", workflow, got)
+		}
+		if err := got.Validate(); err != nil {
+			t.Errorf("%s: migrated state invalid: %v", workflow, err)
+		}
 	}
 }

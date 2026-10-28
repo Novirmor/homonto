@@ -9,7 +9,7 @@ item is for. How the pieces work together is in [workflows](workflows.md).
 
 | Package | Table | Skills | Commands | Agents | Binary |
 |---|---|---|---|---|---|
-| `onto` | `[engines.onto]` | `homonto`, `onto`, `onto-open`, `onto-design`, `onto-build`, `onto-verify`, `onto-close`, `onto-fix`, `onto-tweak`, `onto-no-slop` | `/onto`, `/onto-open`, `/onto-design`, `/onto-build`, `/onto-verify`, `/onto-close`, `/onto-fix`, `/onto-tweak`, `/onto-no-slop`, `/onto-bypass` | `homonto`, `onto-explorer`, `onto-implementer`, `onto-reviewer`, `onto-skeptic` | `onto` |
+| `onto` | `[engines.onto]` | `homonto`, `onto`, `onto-open`, `onto-design`, `onto-build`, `onto-verify`, `onto-close`, `onto-light`, `onto-no-slop` | `/onto`, `/onto-open`, `/onto-design`, `/onto-build`, `/onto-verify`, `/onto-close`, `/onto-light`, `/onto-no-slop`, `/onto-bypass` | `homonto`, `onto-explorer`, `onto-implementer`, `onto-reviewer`, `onto-skeptic` | `onto` |
 | `to` | `[engines.to]` | `homonto`, `to`, `to-plan`, `to-do`, `to-done`, `to-no-slop` | `/to`, `/to-plan`, `/to-do`, `/to-done`, `/to-no-slop`, `/to-bypass` | `homonto`, `to-explorer`, `to-implementer`, `to-reviewer`, `to-skeptic` | `to` |
 | `no` | `[engines.no]` | `no` | `/no` | `no-implementer`, `no-reviewer` | — |
 | `h` | `[workflows.h]` | `homonto`, `h-spike-issue`, `h-resolve-issue`, `h-review-pr`, `h-continue-pr`, `h-resolve-conflicts`, `h-review-batch` | `/h-spike-issue`, `/h-resolve-issue`, `/h-review-pr`, `/h-continue-pr`, `/h-resolve-conflicts`, `/h-review-batch` | `homonto`, `h-spike`, `h-review` | — |
@@ -39,8 +39,7 @@ Standalone items: skills `handoff` and `grilling`; commands `/handoff` and
 | `onto-build` | **Phase 3.** Writes `plan.md` (one `## Task N.M` per `tasks.md` item: files, steps, verification), then executes task by task — implementer, review, one commit per task, checkoff in the same commit. Root-cause-first debugging on failure; discovered work is appended before it is coded. References: subagent, worktree, TDD, and receiving-review protocols. |
 | `onto-verify` | **Phase 4.** Measures the diff (`onto scale`), applies risk overrides (security-sensitive → full), checks every delta-spec scenario with fresh command output, runs the regression suite, dispatches at least two skeptics (conformance + robustness), triages findings into repairs or justified dismissals, writes `verification.md`, records evidence and `verify-result`. |
 | `onto-close` | **Phase 5.** Validates the close plan, merges delta specs (`onto merge-deltas`), numbers and accepts ADRs, resolves the guides obligation, archives (`onto close`), integrates (merge or PR), and records the receipt (`onto complete-integration`). |
-| `onto-fix` | **Preset: bug fix.** Open-lite (proposal + tasks), then build starting from a failing test that reproduces the bug, verify, close. Upgrades to full onto when the fix outgrows the preset. |
-| `onto-tweak` | **Preset: small change.** Copy, configuration, docs, prompts, or a small feature within the preset limits; open-lite, lightweight build, risk-scaled verify, close. Upgrades when scope grows. |
+| `onto-light` | **Preset: light.** A bounded bug fix (failing reproduction test first) or a small non-bug change: open-lite (proposal + tasks), build, verify without skeptics, close. Escalates to full onto when scope or risk outgrows it. |
 | `onto-no-slop` | Edits onto prose (proposals, designs, ADRs, guides, reports, commit messages) for clarity while keeping technical meaning, evidence, and machine-read markers intact. Adapted from stop-slop (MIT). |
 
 ### to engine
@@ -64,7 +63,7 @@ Standalone items: skills `handoff` and `grilling`; commands `/handoff` and
 | Skill | Purpose |
 |---|---|
 | `h-spike-issue` | Research one GitHub issue without changing code: fetch it, dispatch `h-spike` workers, validate their citations, and produce an implementation brief (findings, candidate code paths, unknowns, risks, approach, workflow fit). Optionally posts the brief as an issue comment after you approve the shown draft. |
-| `h-resolve-issue` | Take an issue to a verified PR: spike first, select an engine (`no`, `to`, `onto fix`, `onto tweak`, full `onto`), drive it to completion, push, and open one PR that closes the issue. |
+| `h-resolve-issue` | Take an issue to a verified PR: spike first, select an engine (`no`, `to`, `onto light`, full `onto`), drive it to completion, push, and open one PR that closes the issue. |
 | `h-review-pr` | Review one PR with full context (metadata, every review thread, diff, linked issues, checks), delegate analysis to `h-review`, validate findings, show a draft. Posts only after explicit approval of that draft. References: `context-pack.md`, `draft-format.md`. |
 | `h-continue-pr` | Address feedback on an existing PR: collect requested changes and unresolved threads, check out the exact head, make the smallest verified fixes, push to the same branch, post one summary comment, resolve only threads actually addressed. Needs no engine. |
 | `h-resolve-conflicts` | Resolve only an existing PR's merge conflicts: pin base/head, preserve both sides' intent, verify and push normally to the same head. No engine, unrelated hardening or implicit comments. A conflict-free pair is a no-op; broader repairs need native-dialog scope approval. |
@@ -85,11 +84,10 @@ Arguments after the command describe the work.
 
 | Command | What it does |
 |---|---|
-| `/onto [work]` | Start or resume onto. New work without a chosen path gets one question: fix, tweak, or full. |
+| `/onto [work]` | Start or resume onto. New work without a chosen path gets one question: light or full. |
 | `/onto-open [work]` | Select **full** onto for new work, even if a preset would fit. |
 | `/onto-design`, `/onto-build`, `/onto-verify`, `/onto-close` | Run or resume that phase, then continue through the rest. |
-| `/onto-fix [bug]` | Run the bug-fix preset end to end. |
-| `/onto-tweak [change]` | Run the small-change preset end to end. |
+| `/onto-light [work]` | Run the light preset end to end. |
 | `/onto-no-slop [artifact]` | De-slop an onto prose artifact. |
 | `/onto-bypass` | User-only emergency: `onto bypass <change> --to <phase\|archive> --reason "…"`. Never suggested by other skills. |
 | `/to [work]` | Start or resume to. |

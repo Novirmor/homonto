@@ -63,10 +63,10 @@ func TestExplicitReposManagedLifecycle(t *testing.T) {
 	if inGitRepository(root) {
 		t.Fatal("fixture config root must not be Git")
 	}
-	if _, err := runOnto(t, "new", "cross", "--workflow", "tweak", "--dir", root); err == nil || !strings.Contains(err.Error(), "--repo") {
+	if _, err := runOnto(t, "new", "cross", "--workflow", "light", "--dir", root); err == nil || !strings.Contains(err.Error(), "--repo") {
 		t.Fatalf("missing selection: %v", err)
 	}
-	if _, err := runOnto(t, "new", "cross", "--workflow", "tweak", "--repo", "a,b", "--dir", root); err != nil {
+	if _, err := runOnto(t, "new", "cross", "--workflow", "light", "--repo", "a,b", "--dir", root); err != nil {
 		t.Fatal(err)
 	}
 	changeDir := filepath.Join(l.WorkflowRoot, "changes", "cross")

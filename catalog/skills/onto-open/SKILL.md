@@ -18,7 +18,7 @@ and supported scope, and validate delivery targets before freezing source bases.
   reports `phase: open` or a dispatcher-routed `derived_phase: open`, with
   `workflow: full`.
 - An explicit `/onto-open` or full-onto choice stays full, even for a small bug
-  or tweak. Never redirect selected full work to a preset. For unselected new
+  or edit. Never redirect selected full work to a preset. For unselected new
   work, return to the dispatcher for the shared workflow-selection decision.
 - If the workspace has a `notes.md`, read it first — resume from its
   Pending items; never re-ask what Confirmed already answers.

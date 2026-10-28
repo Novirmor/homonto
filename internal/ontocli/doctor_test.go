@@ -354,7 +354,7 @@ func TestDoctorCommand_TaskPlanDrift(t *testing.T) {
 }
 
 // 13. A preset has no plan.md, and that must not read as drift — otherwise
-// doctor is permanently unhappy on every fix/tweak change.
+// doctor is permanently unhappy on every light change.
 func TestDoctorCommand_PresetWithoutPlanIsHealthy(t *testing.T) {
 	tmp := t.TempDir()
 	seedDocsLayout(t, tmp)

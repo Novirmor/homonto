@@ -228,9 +228,9 @@ git merge --no-ff -q -m "merge change/feat-b" change/feat-b
 git add -A && git commit -q -m "record feat-b integration"
 ok "feat-a integrated; feat-b closed once its dependency resolved"
 
-log "preset (fix) advances mechanically open->build->verify->close (N2 regression)"
+log "preset (light) advances mechanically open->build->verify->close (N2 regression)"
 git add -A && git commit -q -m "archive feat-b" || true
-"$ONTO" new feat-fix --workflow fix >/dev/null
+"$ONTO" new feat-fix --workflow light >/dev/null
 "$ONTO" set base-ref feat-fix "$BASE_REF" >/dev/null
 "$ONTO" set base-branch feat-fix "$BASE_BRANCH" >/dev/null
 FX="$W/docs/changes/feat-fix"

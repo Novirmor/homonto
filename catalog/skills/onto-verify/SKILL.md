@@ -41,22 +41,25 @@ delivering a partial subset.
 
 **Measure first, then apply the risk override.** Run `onto scale <name>` — it
 measures the `base_ref..HEAD` diff (non-test file count, changed lines) and
-derives `light`/`full` from size (the same >5-non-test-file threshold the preset
-upgrade gates use). That is the *measured* floor. Then **upgrade to full** on any
+derives `light`/`full` from size (the same >5-non-test-file threshold the light
+escalation gates use). That is the *measured* floor. Then **upgrade to full** on any
 risk trigger below regardless of what the measurement said, and record the final
 level with `onto set verify-scale <name> light|full` (or `onto scale <name>
 --set` when size alone decides):
 
-- **full** — `workflow: full`, any upgraded preset, the measured size is `full`,
+- **full** — `workflow: full`, any escalated light change, the measured size is `full`,
   a new capability, **or a diff touching a security-sensitive surface** — secret
   resolution, remote fetch/verify, file deletion/pruning, or permission/ownership
   — regardless of file count. Scale keys on risk, not just size: a one-file
   security change is never under-scrutinized. Checks every delta-spec scenario,
   the full design, and the regression suite.
-- **light** — a preset within its limits (≤5 non-test files, by
-  construction under the upgrade gates) **and touching no security-sensitive
-  surface** (else full applies). Checks the changed behavior's scenarios plus
-  the regression suite; the report may be brief but never absent.
+- **light** — a light change within its limits (≤5 non-test files, by
+  construction under the escalation gates) **and touching no security-sensitive
+  surface**. Checks the changed behavior's scenarios plus the regression suite,
+  with no skeptic; the report may be brief but never absent. A light change that
+  measures `full` or hits a risk trigger does not verify at full scale in place:
+  it escalates to the full workflow under `onto-light`'s escalation rules, and
+  the binary refuses `verify-scale full` for it.
 
 ### 2. Check against design and specs
 
@@ -69,9 +72,10 @@ Walk `design.md`'s key decisions and confirm the implementation matches —
 deviations are findings, not footnotes. Re-run stated verifications from
 `plan.md` where they are cheap.
 
-For presets without design/plan/deltas, verify every proposal Acceptance Scenario
-and the inline tasks' Verify contracts. No deltas does not mean zero scenarios;
-include the fix reproduction or tweak's observable result and regression cases.
+For light changes without design/plan/deltas, verify every proposal Acceptance
+Scenario and the inline tasks' Verify contracts. No deltas does not mean zero
+scenarios; include a bug's reproduction or the edit's observable result and
+regression cases.
 For a full change with a reviewed no-spec justification, verify the proposal's
 acceptance criteria, design decisions, and plan's Verify contracts without
 inventing behavioral spec deltas. Full verification still applies.
@@ -122,8 +126,8 @@ skeptics — one per capability, each dispatch naming its capability's scenarios
 names differ from build's reviewer lenses on purpose, because a skeptic attacks
 the running system, not the diff. All deny edits and shell commands, so they go
 in the same parallel batch without mutating the candidate. Both mandatory lenses are prompted to
-refute, never approve; light mode uses one optional skeptic with skips
-recorded. Triage
+refute, never approve; light mode runs no skeptic and records that in
+Adversarial. Triage
 findings per the protocol: a refuted claim fails its scenario; new defects
 are CRITICAL-fix or gate-decided deviations. **Non-waivable classes:** a
 security defect, data loss, or a failed core-acceptance scenario is CRITICAL
@@ -184,8 +188,7 @@ phase; unchecked tasks route back to build. Select the repair route by workflow:
 | Workflow | Repair contract and route |
 |---|---|
 | full | Append a matching `plan.md` detail block with Owner/Repo/Cwd/Files/Change/Verify; load `onto-build` and continue in the same invocation |
-| fix | Append the inline contract to `tasks.md`; load `onto-fix` step 2, retaining failing-test-first execution |
-| tweak | Append the inline contract to `tasks.md`; load `onto-tweak` step 2 |
+| light | Append the inline contract to `tasks.md`; load `onto-light` step 2, retaining failing-test-first execution for a bug |
 
 Do not create a plan or design for a preset repair. `onto-build` re-dispatches
 `onto-implementer` when its recorded mode and actual capability permit it; records

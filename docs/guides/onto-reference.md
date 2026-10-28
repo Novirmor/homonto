@@ -67,7 +67,7 @@ Idempotent: existing paths are reported as skipped.
 ## `onto new <change>`
 
 ```text
-onto new <change> [--workflow full|fix|tweak] [--repo <alias>]... [--base <alias>=<branch>]...
+onto new <change> [--workflow full|light] [--repo <alias>]... [--base <alias>=<branch>]...
 ```
 
 Creates `<workflow-root>/changes/<change>/` with `onto-state.yaml` (phase
@@ -76,7 +76,7 @@ existing name.
 
 | Flag | Notes |
 |---|---|
-| `--workflow` | `full` (default), `fix`, or `tweak`. |
+| `--workflow` | `full` (default) or `light`. Changes recorded as the removed `fix` or `tweak` presets load as `light`. |
 | `--repo` | Repeatable `[repos]` alias. Schema 2: required, and the list is the complete source set. Schema 0/1: optional extra siblings beside the implicit config repository. |
 | `--base` | Schema 2 only, repeatable, once per selected alias: integrate into this existing **local** branch, anchored at its current tip. Default: each source's current branch and HEAD. The dirty checkout is not switched. |
 
@@ -96,7 +96,7 @@ this order:
 3. The current phase has a next phase.
 4. **Required artifacts** (cumulative):
 
-   | Leaving | full | fix / tweak |
+   | Leaving | full | light |
    |---|---|---|
    | open | `proposal.md` | `proposal.md`, `tasks.md` |
    | design | + `design.md`, `tasks.md` | (pass-through) |

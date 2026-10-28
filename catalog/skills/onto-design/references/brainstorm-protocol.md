@@ -10,7 +10,7 @@ full workflow from the presets.
 Every full change goes through this. Truly simple changes get a short design (a
 few sentences), but you still explore and record the selected approach. "Simple" is
 exactly where an unexamined assumption wastes the most work; if it is genuinely
-that simple, it was probably a `tweak`.
+that simple, it was probably `onto light`.
 
 ## The process
 

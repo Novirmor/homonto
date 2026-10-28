@@ -39,7 +39,7 @@ func closeCmd() *cobra.Command {
 // and well-formed, not merely artifact files on disk). Every workflow requires
 // a passing verify result that agrees with verification.md, integration,
 // close-plan review, and close.merged==true; a full workflow additionally
-// requires guides resolved (updated or waived:<reason>). fix/tweak presets use
+// requires guides resolved (updated or waived:<reason>). The light preset uses
 // the reduced guide set. An empty workflow is treated as full (strictest,
 // fail-safe). Each missing token yields an error naming what is absent; the
 // caller archives nothing.
@@ -65,8 +65,8 @@ func closeEvidenceGate(root, changeDir string, st ontostate.State) error {
 	if err := passingVerificationEvidence(changeDir, st); err != nil {
 		return fmt.Errorf("onto close: %w", err)
 	}
-	// guides are required only for the full workflow; the reduced fix/tweak
-	// presets never produce them. Empty workflow is treated as full.
+	// guides are required only for the full workflow; the reduced light
+	// preset never produces them. Empty workflow is treated as full.
 	if st.Workflow == "full" || st.Workflow == "" {
 		if !ontostate.GuidesResolved(st.Guides) {
 			guides := st.Guides

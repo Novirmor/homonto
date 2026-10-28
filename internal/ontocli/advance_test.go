@@ -602,7 +602,7 @@ func TestAdvanceCommand_LeavingOpenRequiresProposalApproved(t *testing.T) {
 func TestAdvanceCommand_PresetLeavesOpenWithoutProposalApproved(t *testing.T) {
 	dir := prepWorkspace(t)
 	changeDir := filepath.Join(dir, "docs", "changes", "fix-y")
-	st := ontostate.State{Change: "fix-y", Workflow: "fix", Phase: "open", Created: "2026-07-10"}
+	st := ontostate.State{Change: "fix-y", Workflow: "light", Phase: "open", Created: "2026-07-10"}
 	if err := ontostate.Save(filepath.Join(changeDir, "onto-state.yaml"), st); err != nil {
 		t.Fatal(err)
 	}
@@ -702,7 +702,7 @@ func TestAdvanceCommand_LeavingVerifyCrossChecksReport(t *testing.T) {
 func TestAdvanceCommand_ToBuildPresetOneCall(t *testing.T) {
 	dir := prepWorkspace(t)
 	changeDir := filepath.Join(dir, "docs", "changes", "fix-y")
-	st := ontostate.State{Change: "fix-y", Workflow: "fix", Phase: "open", Created: "2026-07-10", Isolation: "branch"}
+	st := ontostate.State{Change: "fix-y", Workflow: "light", Phase: "open", Created: "2026-07-10", Isolation: "branch"}
 	if err := ontostate.Save(filepath.Join(changeDir, "onto-state.yaml"), st); err != nil {
 		t.Fatal(err)
 	}
@@ -762,7 +762,7 @@ func TestAdvanceCommand_ToBuildRefusalCases(t *testing.T) {
 	t.Run("failing hop surfaces its gate", func(t *testing.T) {
 		dir := prepWorkspace(t)
 		changeDir := filepath.Join(dir, "docs", "changes", "fix-y")
-		st := ontostate.State{Change: "fix-y", Workflow: "fix", Phase: "open", Created: "2026-07-10"} // no isolation
+		st := ontostate.State{Change: "fix-y", Workflow: "light", Phase: "open", Created: "2026-07-10"} // no isolation
 		if err := ontostate.Save(filepath.Join(changeDir, "onto-state.yaml"), st); err != nil {
 			t.Fatal(err)
 		}
@@ -796,7 +796,7 @@ func TestAdvanceCommand_ToBuildRefusesAtOrPastBuild(t *testing.T) {
 	for _, phase := range []string{"build", "verify"} {
 		dir := prepWorkspace(t)
 		changeDir := filepath.Join(dir, "docs", "changes", "fix-y")
-		st := ontostate.State{Change: "fix-y", Workflow: "fix", Phase: phase, Created: "2026-07-10", Isolation: "branch"}
+		st := ontostate.State{Change: "fix-y", Workflow: "light", Phase: phase, Created: "2026-07-10", Isolation: "branch"}
 		if err := ontostate.Save(filepath.Join(changeDir, "onto-state.yaml"), st); err != nil {
 			t.Fatal(err)
 		}

@@ -1,6 +1,6 @@
 ---
 name: onto-build
-description: Build an active full onto change from its confirmed design with reviewable tasks, focused commits and candidate-bound verification. Preset work returns to onto-fix or onto-tweak; pause after planning only on explicit request.
+description: Build an active full onto change from its confirmed design with reviewable tasks, focused commits and candidate-bound verification. Light work returns to onto-light; pause after planning only on explicit request.
 ---
 
 # onto-build — Phase 3: Plan and Build
@@ -18,8 +18,8 @@ verification, repairs and the requested endpoint in the same invocation.
   phase `build`.
 - `workflow: full` → a `design.md` marked `Status: Confirmed` must exist; if
   it doesn't, the design phase isn't done — route back through `/onto`.
-- Presets (`fix`/`tweak`) enter build directly after open-lite.
-- If dispatched here for a preset, return to `onto-fix` or `onto-tweak` step 2.
+- Light changes enter build directly after open-lite.
+- If dispatched here for a light change, return to `onto-light` step 2.
   The planning steps below are full-workflow steps; preset repairs retain their
   inline contracts and existing mode, with no new design or plan requirement.
 - On a downward mismatch, repair the build artifacts while leaving the later
@@ -100,7 +100,7 @@ Checkpoint owned Markdown records in managed mode; retain named manual records
 commits in existing mode. Never copy `.env` or untracked input automatically.
 For branch isolation, create the source branch `<type>/YYYYMMDD/<change-name>`
 only in its safe selected execution root. Type prefix: `feature` for full,
-`fix`/`tweak` for presets; an upgraded preset keeps its original branch
+`light` for light; an escalated light change keeps its original branch
 (the proposal's upgrade annotation records the lifecycle, not the branch
 name).
 

@@ -58,7 +58,7 @@ applied (the install gate). Read-only commands always work.
               │        └ design.md, tasks.md, approach-confirmed, isolation
               └ proposal.md, proposal-approved
 
- presets (fix / tweak):  open-lite ─▶ build ─▶ verify ─▶ close     (design skipped)
+ light:                  open-lite ─▶ build ─▶ verify ─▶ close     (design and skeptics skipped)
  failure:                onto abandon <change>  → abandoned
  afterwards:             onto cleanup preview|apply <change>  → archive, remove worktrees
 ```
@@ -66,7 +66,7 @@ applied (the install gate). Read-only commands always work.
 Each phase's requirements **accumulate**: leaving verify still needs the
 proposal, design, tasks, and plan.
 
-| Leaving | full workflow needs | fix / tweak need |
+| Leaving | full workflow needs | light needs |
 |---|---|---|
 | open | `proposal.md`, `proposal-approved` | `proposal.md`, `tasks.md` |
 | design | + `design.md`, `tasks.md`, `approach-confirmed`, `isolation`, deps complete, no dependency cycle | (pass-through) + `isolation` |
@@ -215,15 +215,16 @@ add-search: 1 non-test file(s), 11 changed line(s) → verify-scale light
 ```
 
 `scale` measures the committed diff since `base-ref`. The skill then applies
-risk overrides — full verification for the full workflow, upgraded presets,
-new capabilities, or **any security-sensitive surface** (secrets, remote
-fetch, deletion, permissions) regardless of size.
+risk overrides — full verification for the full workflow, escalated light
+changes, new capabilities, or **any security-sensitive surface** (secrets,
+remote fetch, deletion, permissions) regardless of size. A light change that
+hits one of those escalates to full instead.
 
 Then:
 
 1. Every scenario is checked with **fresh** command output.
 2. The regression suite runs.
-3. At least **two skeptics** run in parallel from fresh context — a
+3. In the full workflow, at least **two skeptics** run in parallel from fresh context — a
    *conformance* lens (refute each scenario's evidence) and a *robustness*
    lens (attack what the scenarios don't cover) — prompted to refute, never
    approve. They have no shell; they request probes the coordinator runs.
@@ -305,32 +306,37 @@ candidate), `pr:<url>` (an opened PR; an external assertion), or
 `unchanged:<sha>` (a proven no-op). Only after every repository's receipt is
 the change `done`.
 
-## Presets: fix and tweak
+## The light preset
 
 ```console
-$ onto new fix-empty-query --workflow fix
+$ onto new fix-empty-query --workflow light
 $ onto set isolation fix-empty-query branch
 $ onto advance fix-empty-query --to build
 fix-empty-query: open → design
 fix-empty-query: design → build
 ```
 
-- **fix** — a bug: open-lite (`proposal.md` + `tasks.md`), then build
-  **starting from a failing test that reproduces it**, verify, close.
-- **tweak** — a small non-bug change: copy, config, docs, prompts, a small
-  feature.
+`onto light` covers a bounded bug fix or a small non-bug change: copy, config,
+docs, prompts, a small feature. Open-lite writes `proposal.md` + `tasks.md`.
+A bug then builds **starting from a failing test that reproduces it**; other
+testable changes use TDD, and content edits implement then verify.
 
-Both skip design and `plan.md`, are exempt from `proposal-approved` and
-`approach-confirmed`, and still need `close-confirmed`. `--to build` walks
-the gated hops in one call. When scope outgrows the preset (see
-[eligibility](workflows.md#preset-eligibility)), the change upgrades:
+Light skips design and `plan.md`, is exempt from `proposal-approved` and
+`approach-confirmed`, and still needs `close-confirmed`. **It never runs a
+skeptic**: that is the main difference from full onto. Verification stays at
+light scale, and the binary refuses `onto set verify-scale <change> full` for
+a light change. `--to build` walks the gated hops in one call.
+
+When the change outgrows light — more than five non-test files, a new
+capability, or a security-sensitive surface (see
+[eligibility](workflows.md#preset-eligibility)) — it escalates:
 
 ```console
 $ onto set workflow fix-empty-query full
 ```
 
-…which returns it to design and invalidates build, verify, and close
-evidence.
+…which returns it to design, invalidates build, verify, and close evidence,
+and brings in full verification with its two skeptics.
 
 Changes **without delta specs** (presets, documentation-only changes) declare
 each scenario once, on its own line, in either `tasks.md` or
@@ -362,7 +368,7 @@ committed, so `git log` over the change directory attributes each answer.
 | `onto-explorer` | open, design, triage | one per independent question |
 | `onto-implementer` | build, repairs | one per checkout; parallel across repositories or worktrees |
 | `onto-reviewer` | build (per task), verify (whole diff) | one per lens |
-| `onto-skeptic` | verify | ≥2 per round |
+| `onto-skeptic` | verify (full only) | ≥2 per round; none in light |
 
 ## Working with a dirty tree
 

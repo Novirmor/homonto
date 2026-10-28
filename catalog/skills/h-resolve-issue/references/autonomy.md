@@ -55,9 +55,9 @@ not a new workflow-choice dialog.
 
 For resolve's new work without an explicit path, offer `no` for model-directed work
 without lifecycle records, `to` for bounded
-work, `onto fix` for a reproducible bug needing a handoff record, `onto tweak`
-for a small non-bug change needing that record, or full `onto` for design,
-security-sensitive, or cross-cutting work. Present viable options and ask once
+work, `onto light` for a small bug or non-bug change needing a handoff record
+without skeptic review, or full `onto` for design, security-sensitive, or
+cross-cutting work. Present viable options and ask once
 after the spike brief, before creation.
 The spike brief informs the recommendation; it is not an extra approval gate.
 Check the selected workflow's tooling before driving it; missing required

@@ -734,7 +734,7 @@ func TestCoResidentStatesEqualComparesSourceScope(t *testing.T) {
 			name: "workflow",
 			other: func() ontostate.RawInspection {
 				other := base
-				other.Workflow = "fix"
+				other.Workflow = "light"
 				return other
 			}(),
 		},

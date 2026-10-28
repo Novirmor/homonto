@@ -19,7 +19,7 @@ Entry requires recorded close and a current `verification.md` with exactly one
 canonical passing `Result:` line, optionally `pass (N accepted deviations)`.
 Read state and notes. Otherwise return to the dispatcher. An in-scope defect
 before archive follows [active repair](../onto/references/recovery.md#active-repairs-versus-new-work),
-including fix/tweak's own build steps; do not ask merely whether to repair it.
+including light's own build steps; do not ask merely whether to repair it.
 
 ## Required inputs
 

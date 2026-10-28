@@ -1,6 +1,6 @@
 ---
 name: onto
-description: Dispatch an explicitly selected onto workflow or resume an existing onto change. Discover state and route full, fix, or tweak phases. Unselected new work goes through homonto workflow selection; informational questions do not start a change.
+description: Dispatch an explicitly selected onto workflow or resume an existing onto change. Discover state and route full or light phases. Unselected new work goes through homonto workflow selection; informational questions do not start a change.
 ---
 
 # onto — Workflow Dispatcher
@@ -8,7 +8,7 @@ description: Dispatch an explicitly selected onto workflow or resume an existing
 ## Purpose and entry
 
 Route a selected onto change through open → design → build → verify → close.
-Fix and tweak own their preset lifecycles. The dispatcher performs no phase work.
+Light owns its preset lifecycle. The dispatcher performs no phase work.
 Use it for an explicit onto choice or a matching existing onto change. Answer
 informational questions without creating workflow state.
 
@@ -50,9 +50,9 @@ dirty-work attribution and first-use bootstrap. Resume a unique matching change;
 ask through `question` only for unresolved identity or scope conflicts.
 
 For genuinely new work, apply [workflow selection](../homonto/references/workflow-selection.md).
-`/onto` selects the onto family, not fix/tweak/full: recommend viable paths and
-ask once unless a path was specified. `/onto-open`, `/onto-fix` and `/onto-tweak`
-select explicit paths. Never reopen selection on resume or silently downgrade
+`/onto` selects the onto family, not light or full: recommend the viable path and
+ask once unless a path was specified. `/onto-open` and `/onto-light` select
+explicit paths. Never reopen selection on resume or silently downgrade
 full onto to a preset. Selection and escalation use that reference's eligibility
 table; verification risk is assessed separately by `onto-verify`.
 
@@ -73,8 +73,7 @@ hand-edit state or use a backward phase write.
 
 | Selected workflow / derived state | Load |
 |---|---|
-| fix, any phase | `onto-fix`; its resume map selects setup/build/verify/close |
-| tweak, any phase | `onto-tweak`; its resume map selects setup/build/verify/close |
+| light, any phase | `onto-light`; its resume map selects setup/build/verify/close |
 | full, open | `onto-open` |
 | full, design | `onto-design` |
 | full, build | `onto-build` |

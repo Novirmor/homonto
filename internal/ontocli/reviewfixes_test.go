@@ -36,7 +36,7 @@ The system SHALL verify its selected source.
 
 func reviewCloseReady(t *testing.T, l workspace.Layout, delta bool) string {
 	t.Helper()
-	if _, err := runOnto(t, "new", "review", "--workflow", "tweak", "--repo", "a", "--dir", l.ConfigRoot); err != nil {
+	if _, err := runOnto(t, "new", "review", "--workflow", "light", "--repo", "a", "--dir", l.ConfigRoot); err != nil {
 		t.Fatal(err)
 	}
 	runGit(t, l.Repos["a"], "checkout", "-b", "review")
@@ -211,7 +211,7 @@ func TestReviewDirtNeverRefreshesSourceIndex(t *testing.T) {
 
 func TestReviewHandoffCarriesEveryBoundSource(t *testing.T) {
 	l := explicitWorkspace(t)
-	if _, err := runOnto(t, "new", "pack", "--workflow", "tweak", "--repo", "a,b", "--dir", l.ConfigRoot); err != nil {
+	if _, err := runOnto(t, "new", "pack", "--workflow", "light", "--repo", "a,b", "--dir", l.ConfigRoot); err != nil {
 		t.Fatal(err)
 	}
 	changeDir := filepath.Join(l.WorkflowRoot, "changes", "pack")

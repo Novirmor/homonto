@@ -681,7 +681,7 @@ func TestCloseCommand_TweakClosesWithoutGuides(t *testing.T) {
 	dir := prepWorkspace(t)
 	seedCloseState(t, dir, ontostate.State{
 		Change:         "demo",
-		Workflow:       "tweak",
+		Workflow:       "light",
 		Phase:          "close",
 		Created:        "2026-07-10",
 		BaseRef:        "abc123",
@@ -760,7 +760,7 @@ func TestCloseCommand_MalformedWorkflowBypassesGuides(t *testing.T) {
 	dir := prepWorkspace(t)
 	seedCloseState(t, dir, ontostate.State{
 		Change:   "demo",
-		Workflow: "epic", // not full/fix/tweak — validation rejects this
+		Workflow: "epic", // not full/light — validation rejects this
 		Phase:    "close",
 		Created:  "2026-07-10",
 		Verify:   ontostate.Verify{Result: "pass"},

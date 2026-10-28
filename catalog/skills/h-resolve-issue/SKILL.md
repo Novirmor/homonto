@@ -47,7 +47,7 @@ candidate pinning, exact PR reuse, recovery, and repository-qualified issue inte
     policy in h autonomy. Inspect recorded workspace-task identity and the
     selected engine's issue-linked records. Resume a unique match without prompting; honor an
     explicit user path. Otherwise, after the spike, recommend a viable `no`, `to`,
-    `onto fix`, `onto tweak`, or full `onto` path with brief reasons and ask
+    `onto light`, or full `onto` path with brief reasons and ask
     once before creating the change. The question is not another publication
     approval or a reason to pause again at phase boundaries.
     Verify the selected binary for lifecycle engines (`to version` or `onto version`);

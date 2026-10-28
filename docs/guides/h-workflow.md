@@ -79,8 +79,8 @@ spike (research endpoint) ─▶ choose engine ─▶ open change ─▶ impleme
 1. **Spike first**, always — "the issue looks tiny" is not a reason to skip.
    The brief isn't posted unless you separately ask.
 2. **Choose the engine.** An existing matching change resumes. Otherwise the
-   coordinator recommends among the installed `no`, `to`, `onto fix`,
-   `onto tweak`, and full `onto` paths and asks once.
+   coordinator recommends among the installed `no`, `to`, `onto light`,
+   and full `onto` paths and asks once.
 3. **Run it** under the chosen engine's full contract (see
    [onto](onto-workflow.md), [to](to-workflow.md), [no](no-workflow.md)).
 4. **Publish** only after verification passes: push the branch (never

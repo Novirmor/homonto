@@ -37,7 +37,7 @@ func newCmd() *cobra.Command {
 		},
 	}
 	cmd.Flags().StringVar(&dir, "dir", ".", "workspace root to create the change in")
-	cmd.Flags().StringVar(&workflow, "workflow", "full", "workflow for the change: full, fix, or tweak")
+	cmd.Flags().StringVar(&workflow, "workflow", "full", "workflow for the change: full or light")
 	cmd.Flags().StringSliceVar(&repos, "repo", nil, "declared repository to include (repeatable; required with config schema 2)")
 	cmd.Flags().StringArrayVar(&bases, "base", nil, "schema-2 source base alias=branch (repeat per repo; default: current branch and HEAD)")
 	return cmd
@@ -46,7 +46,7 @@ func newCmd() *cobra.Command {
 // runNewWithBases enforces ontoFramework.Gate(root) then
 // ontoFramework.ValidChangeName(name), refuses to clobber an existing
 // docs/changes/<name> directory, and only then scaffolds onto-state.yaml plus an
-// empty proposal.md (and, for the fix/tweak presets, tasks.md — full derives its
+// empty proposal.md (and, for the light preset, tasks.md — full derives its
 // task list in design). Each file is written only if absent. It reports the
 // created change and its files. Declared-repo aliases are validated before any
 // scaffold write; the config repository is implicit and therefore never
@@ -65,7 +65,7 @@ func runNewWithBases(cmd *cobra.Command, root, name, workflow string, repos, bas
 	}
 
 	if !ontostate.ValidWorkflow(workflow) {
-		return fmt.Errorf("onto new: workflow %q is not one of full|fix|tweak", workflow)
+		return fmt.Errorf("onto new: workflow %q is not one of full|light", workflow)
 	}
 	names, _, err := scopeDirs(root, repos)
 	if err != nil {
@@ -190,10 +190,10 @@ func runNewWithBases(cmd *cobra.Command, root, name, workflow string, repos, bas
 
 	// Scaffold the open-phase skeleton. A full change writes its task list from
 	// the confirmed design (onto-design creates tasks.md), so `new` only lays down
-	// proposal.md; the fix/tweak presets skip design and decompose at open-lite,
-	// so they also get tasks.md now. This matches RequiredArtifacts(open, …).
+	// proposal.md; the light preset skips design and decomposes at open-lite,
+	// so it also gets tasks.md now. This matches RequiredArtifacts(open, …).
 	files := []string{"proposal.md"}
-	if workflow == "fix" || workflow == "tweak" {
+	if workflow == "light" {
 		files = append(files, "tasks.md")
 	}
 	for _, f := range files {

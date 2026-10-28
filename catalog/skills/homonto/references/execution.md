@@ -55,6 +55,8 @@ After authorized integration, task cleanup removes only clean integrated owned
 allocations; onto/to native bindings still require their terminal lifecycle and
 `homonto worktree remove`. No worker performs allocation or cleanup.
 
+### Worker availability
+
 Check actual host dispatch and the required worker before assigning work. Apply
 the following table to implementation, review, and final skepticism in both
 workflows, including re-verification after integration:

@@ -13,10 +13,23 @@ Follow the [workspace and dirty-work policy](references/workspace-policy.md),
 including for direct skill entry. The generated `references/workspace.md` names
 the exact config, records, source, and worktree roots; inspect before writes.
 
+## References
+
+Engine and h skills link these shared policies; load the one the step needs.
+
+| Reference | Read it when |
+|---|---|
+| [autonomy](references/autonomy.md) | Deciding whether to ask, what the trusted shell allows, bootstrap, uncertainty, preserving state |
+| [workflow selection](references/workflow-selection.md) | Choosing `no`, `to`, `onto light`, or full onto for new work; light eligibility and escalation |
+| [execution](references/execution.md) | Dispatching workers, parallel repositories, exploration, permission blocks, terminal cleanup, task and evidence rules |
+| [workspace policy](references/workspace-policy.md) | Roots, dirty work, worktrees and receivers, source anchors, records checkpoints |
+| [review triage](references/review-triage.md) | Deciding what a review or skeptic finding becomes, and whether a repair is proportionate |
+| [debugging](references/debugging.md) | An unexpected failure during implementation or verification |
+| [publication](references/publication.md) | Pushing, opening or updating PRs, and posting approved comments or reviews |
+
 ## homonto
 
-homonto reads `homonto.toml` and projects declared resources into AI coding
-tools. `homonto plan` previews changes; `homonto apply` reconciles them;
+homonto reads `homonto.toml` and projects declared resources into OpenCode. `homonto plan` previews changes; `homonto apply` reconciles them;
 `homonto status`, `homonto doctor`, and `homonto explain` inspect state. Treat
 `.homonto/` and projected `.opencode/` files as managed data. Change the source
 configuration and re-apply instead of editing projections.
@@ -27,8 +40,7 @@ its own `[subagents.<name>.opencode]` model route.
 
 ## MCP servers and extra tools
 
-`[mcps.<name>]` tables project MCP servers (command, env, scope) into the
-tools that support them, and `[tooling]` declares shared providers such as a
+`[mcps.<name>]` tables project MCP servers (command, env, scope) into OpenCode, and `[tooling]` declares shared providers such as a
 shell proxy or code intelligence. When a user asks for one, edit
 `homonto.toml`, then `homonto plan` (preview) and `homonto apply` (project) —
 never edit the projected `opencode.jsonc` MCP blocks by hand; homonto manages
@@ -45,7 +57,8 @@ add a repo declaration rather than approving an arbitrary directory at runtime.
 ## Choose A Workflow
 
 - **onto** serves work that needs a reviewable handoff and evidence-backed
-  transitions: `open -> design -> build -> verify -> close`.
+  transitions: `open -> design -> build -> verify -> close`. Its `light` preset
+  skips design and skeptics for bounded work.
 - **to** serves focused solo work with less ceremony: `plan -> do -> done`.
 - **no** provides an implementer and reviewer without a binary or lifecycle.
 - **h** is an independently installed GitHub workflow bundle.

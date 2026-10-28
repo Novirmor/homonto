@@ -102,6 +102,9 @@ and managed history modes. No uses the workspace-task allocator above; direct h
 continuation uses the engine-free checkout protocol below.
 Choose each source base at `onto new` or `to new` with repeated
 `--base <alias>=<local-branch>` as described below, before allocating worktrees.
+
+### Allocate
+
 After creating the active state with its selected aliases, the coordinator runs:
 
 ```sh
@@ -134,6 +137,8 @@ disjoint files. Read-only specialists may run concurrently. Separate selected
 repos may execute independently only with disjoint write scope and validated
 bindings; coordinator state/history operations remain serial.
 
+### Remove
+
 After terminal state and source integration, with removal authorized, run:
 
 ```sh
@@ -144,10 +149,11 @@ Use `--workflow to` as appropriate. Removal refuses dirty (including ignored
 files), active, unowned, or unintegrated worktrees; `--yes` is not a force flag.
 Branches are retained. Report a refusal; never force-remove or prune around it.
 
-For integration when the recorded target has no suitable checkout, allocate a
-separate registered receiver, not an unregistered worktree or a retargeted source:
+### Integration receivers
 
-Prefer preallocation before archive while the change is active; record the
+When the recorded target has no suitable checkout for integration, allocate a
+separate registered receiver, not an unregistered worktree or a retargeted
+source. Prefer preallocation before archive while the change is active; record the
 receiver identity, alias, target and absolute path, then validate and reuse that
 path after archive. For already archived recovery without a receiver, invoke
 the identity-checked terminal receiver API when supported by the installed
@@ -318,6 +324,8 @@ bookkeeping can still ride its source commit. In managed or separate-root mode,
 source commits belong only in the source repo; coordinator bookkeeping is a
 separate records checkpoint/commit. Never merge workflow history as source
 integration or use a records archive/checkpoint SHA as the source merge target.
+
+## Who may write
 
 Workflow workspace/registered-worktree writes belong only to the coordinator.
 The trusted shell default removes generic execution prompts, not lifecycle,

@@ -13,7 +13,7 @@ const WorkspaceReferencePath = "references/workspace.md"
 
 // HasWorkspaceReference limits layout instructions to shared workflow entry points.
 func HasWorkspaceReference(name string) bool {
-	return name == SharedKnowledgeSkill || name == "onto" || name == "to"
+	return name == SharedKnowledgeSkill || name == "onto" || name == "to" || name == "no"
 }
 
 // RenderWorkspace describes only resolved configuration, never allocation or
@@ -45,6 +45,10 @@ func RenderWorkspace(l workspace.Layout) []byte {
 	}
 	b.WriteString("\n## Runtime commands\n\nInspect current history and registered worktrees rather than treating this static reference as allocation state. Replace uppercase placeholders with the selected workflow, change, declared alias, explicit base ref, and new branch.\n\n```sh\n")
 	fmt.Fprintf(&b, "homonto workspace inspect --config %s --json\n", quote(l.ConfigPath))
+	fmt.Fprintf(&b, "homonto workspace task create TASK --engine ENGINE --repo ALIAS --isolation MODE --config %s\n", quote(l.ConfigPath))
+	fmt.Fprintf(&b, "homonto workspace task inspect TASK --config %s\n", quote(l.ConfigPath))
+	fmt.Fprintf(&b, "homonto workspace task check TASK --writers-paused --config %s\n", quote(l.ConfigPath))
+	b.WriteString("```\n\nSelect exactly one installed ENGINE (onto, to, no) per task and keep it on resume. Ask the user once for MODE (existing or worktree); per-repo exceptions use --isolation-override ALIAS=MODE. Repeat --repo for changed inputs. Onto/to additionally require --change naming their active native lifecycle record. No never invokes onto/to or creates lifecycle records. Inspect returns recorded paths, bases and integration results. Parent-owned candidate commits precede checks; pause participating writers, then rerun stale results. All declared repositories are readable; each implementer writes only its assigned checkout.\n\nThe following native lifecycle commands apply only when onto or to was selected:\n\n```sh\n")
 	fmt.Fprintf(&b, "homonto worktree list --config %s --json\n", quote(l.ConfigPath))
 	fmt.Fprintf(&b, "homonto worktree create CHANGE --workflow onto --repo ALIAS --base BASE --branch BRANCH --config %s --json\n", quote(l.ConfigPath))
 	fmt.Fprintf(&b, "homonto workspace checkpoint --config %s --message 'Describe the workflow edits' --path changes/CHANGE\n", quote(l.ConfigPath))
@@ -56,7 +60,7 @@ func RenderWorkspace(l workspace.Layout) []byte {
 	}
 	b.WriteString("## Working directories\n\nWorkflow commands use the config root, not the workflow root or a source checkout:\n\n```sh\n")
 	fmt.Fprintf(&b, "onto status --dir %s\nto status --dir %s\n", quote(l.ConfigRoot), quote(l.ConfigRoot))
-	b.WriteString("```\n\nonto/to currently load homonto.toml under `--dir`. If the actual config filename above differs, these commands do not select it: report that limitation rather than silently using a different config or creating homonto.toml.\n\nRun source Git, build, test, and edit operations in the selected source checkout or the exact registered worktree returned by create/list. Pass that working directory explicitly; never use the config root or workflow records root as a source fallback. Do not guess an allocation path from WorktreesDir.\n\nThe coordinator owns workflow records and checkpoints. Implementers receive declared source roots and only the explicitly trusted per-alias namespaces under WorktreesDir, not external workflow records. These path grants are not a shell sandbox. Read-only workers gain no shell or edit permission. The h entry points use this shared homonto reference and the onto/to dispatchers.\n")
+	b.WriteString("```\n\nRun only the selected engine's status command, never both. No does not run either. Onto/to currently load homonto.toml under `--dir`. If the actual config filename above differs, these commands do not select it: report that limitation rather than silently using a different config or creating homonto.toml.\n\nRun source Git, build, test, and edit operations in the selected source checkout or the exact registered worktree returned by create/list. Pass that working directory explicitly; never use the config root or workflow records root as a source fallback. Do not guess an allocation path from WorktreesDir.\n\nThe coordinator owns workflow records and checkpoints. Implementers receive declared source roots and only the explicitly trusted per-alias namespaces under WorktreesDir, not external workflow records. These path grants are not a shell sandbox. Read-only workers gain no shell or edit permission. The h entry points use this shared homonto reference independently of engine installation.\n")
 	b.WriteString("\nNative edit denies cover workflow paths reported by the host's edit, write, and apply_patch permission requests. OpenCode v1.18.29 omits a move destination from apply_patch's edit-permission paths: an in-workspace move into records cannot be guaranteed blocked by these rules. Coordinator ownership remains binding even when the host omits a path; implementers must not edit or move files into workflow records. Routine scripts remain trusted execution, not a sandbox.\n")
 	return b.Bytes()
 }

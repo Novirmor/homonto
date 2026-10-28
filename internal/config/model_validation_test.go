@@ -41,7 +41,7 @@ func TestSubagentGuideBudgetExampleTunesInstalledAgent(t *testing.T) {
 	if !found {
 		t.Fatal("guide model example fence missing")
 	}
-	doc := "[frameworks.onto]\nsource = 'builtin:onto'\nscope = 'project'\n" + header + model + modelsFor("homonto", "onto-explorer", "onto-reviewer", "onto-implementer")
+	doc := "[engines.onto]\nsource = 'builtin:onto'\nscope = 'project'\n" + header + model + modelsFor("homonto", "onto-explorer", "onto-reviewer", "onto-implementer")
 	c, err := loadDocCfg(t, doc)
 	if err != nil {
 		t.Fatalf("documented tune block must pass strict config loading: %v", err)

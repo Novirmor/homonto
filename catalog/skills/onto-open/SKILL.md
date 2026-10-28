@@ -9,6 +9,8 @@ Turn an idea, feature request, or problem statement into a change workspace
 with an unambiguous proposal. Nothing is designed and nothing is built here.
 Apply the shared [autonomous workflow policy](../homonto/references/autonomy.md),
 including workspace roots and dirty-work decisions, even on direct entry.
+Follow the [delivery loop](../onto/references/delivery.md): capture the endpoint
+and supported scope, and validate delivery targets before freezing source bases.
 
 ## Entry check
 
@@ -72,7 +74,8 @@ the smallest cohesive changes yourself and continue.
 ### 3. Create the workspace
 
 Initialize an authorized empty managed records root before any scaffold write.
-Choose isolation before `onto new`; immediately after creation allocate schema-2
+Reuse the user's recorded isolation choice, or ask once before `onto new` under
+the shared execution policy; immediately after creation allocate schema-2
 bindings (or create the safe source branch), before any records/source commit.
 Do not defer allocation to build: combined records commits advance frozen bases.
 

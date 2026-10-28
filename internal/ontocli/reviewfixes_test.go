@@ -372,7 +372,7 @@ func TestReviewLegacyEmptyScopeIgnoresUnavailableRepos(t *testing.T) {
 	for _, version := range []int{0, 1} {
 		t.Run(fmt.Sprint(version), func(t *testing.T) {
 			root := prepWorkspace(t)
-			writeFile(t, filepath.Join(root, "homonto.toml"), fmt.Sprintf("schema_version=%d\n[frameworks.onto]\nsource='builtin:onto'\nscope='project'\n[repos]\nunavailable='/missing/source-repo'\n", version))
+			writeFile(t, filepath.Join(root, "homonto.toml"), fmt.Sprintf("schema_version=%d\n[engines.onto]\nsource='builtin:onto'\nscope='project'\n[repos]\nunavailable='/missing/source-repo'\n", version))
 			if _, err := runOnto(t, "new", "local", "--dir", root); err != nil {
 				t.Fatal(err)
 			}

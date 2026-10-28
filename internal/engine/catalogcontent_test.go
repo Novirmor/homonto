@@ -11,7 +11,7 @@ import (
 // localFrameworkTOML declares a local single-framework root whose one skill the
 // tests edit between applies.
 const localFrameworkTOML = `
-[frameworks.myfw]
+[engines.myfw]
 source = "local:./myfw"
 scope = "project"
 targets = ["opencode"]

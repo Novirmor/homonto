@@ -37,7 +37,7 @@ func TestIntegrationPromptReceiptExamples(t *testing.T) {
 		}
 		return nil
 	})
-	if err != nil || prExamples < 5 {
+	if err != nil || prExamples < 4 {
 		t.Fatalf("receipt inventory: examples=%d err=%v", prExamples, err)
 	}
 }
@@ -71,12 +71,6 @@ func TestIntegrationPromptRecoveryContracts(t *testing.T) {
 			"Archived `ship.md` contains no closing directive", "For every destination and every retry",
 			"sanitize that text only in the temporary rendering", "never mutate history",
 			"destination canonical ID/host, target, observed headOID, body path and body hash",
-		}},
-		{"skills/h-continue-pr/SKILL.md", []string{
-			"archives independently of whether local PR HEAD is ahead of upstream",
-			"canonical PR host/repository ID/number plus source alias", "before local integration",
-			"every freshly collected feedback item", "Resume the first missing integration/verification/delivery step",
-			"skip `to new`, planning/build, and `to done`", "read the archive directly",
 		}},
 		{"skills/to-done/SKILL.md", []string{
 			"Before archival", "preallocating", "reuse the receiver path recorded before archive",

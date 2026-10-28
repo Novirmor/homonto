@@ -1,208 +1,182 @@
-# Troubleshooting & caveats
+# Troubleshooting
 
-Known limitations of the beta line, common gotchas, and their workarounds.
+Symptoms, causes, and fixes, grouped by area. Start with:
 
-## Building & installing
-
-**`go build .` fails with `build output "homonto" already exists and is a
-directory`.** This happens if a local `homonto/` content directory exists
-next to `main.go`; init no longer creates it by default. The output name collides
-with that directory, and `go build -o homonto .` silently deposits the binary
-*inside* that directory. Use `go install .`, `go run .`, or build to an
-explicit path outside the content dir:
-
-```bash
-go build -o ./bin/homonto .
+```sh
+homonto doctor        # environment and projection health
+homonto status        # drift vs. pending
+onto doctor           # onto workspace health
+to doctor             # to workspace health
 ```
 
-**Version prints empty or wrong after `go install`.** Release builds stamp
-the version at link time:
+## Installing
 
-```bash
-go install -ldflags "-X github.com/noviopenworks/homonto/internal/cli.Version=1.2.3" .
-```
+**`homonto: command not found` after the installer.** The installer never
+edits your shell profile; it prints an `export PATH=…` line. Run it, add it
+to `~/.bashrc` / `~/.zshrc`, and open a new shell.
 
-**The installer finished but `homonto: command not found`.** The installer
-never edits your shell configuration — it only prints the export line. Run it
-in this session (`export PATH="/path/to/dir:$PATH"`) or add it to your profile
-(`~/.bashrc`, `~/.zshrc`, `~/.profile`), then start a new shell.
+**mise installed `homonto` but `onto`/`to` print the wrong version or are
+missing.** Your mise is too old to honor `matching_regex` and installed the
+`homonto` archive under every alias. Run `mise self-update` (2026.10.19 is
+verified), then `mise install`. Check with `mise exec -- onto version`.
 
-**The installer refuses to install ("checksum mismatch").** The download did
-not match the release's `SHA256SUMS`, so nothing was installed. Re-run it;
-the GitHub release page hosts the official `SHA256SUMS` if you want to verify
-manually.
+**Checksum mismatch.** The download didn't match `SHA256SUMS`, so nothing was
+installed. Retry; compare against the release page's `SHA256SUMS` if it
+persists.
 
-**Installed a newer binary but tools still have old content.** Installing a
-binary does not touch projected content. Run `homonto update`; it
-re-materializes the embedded catalog at the running version and re-projects
-it. `onto doctor` and `to doctor` report a **version skew** finding when a
-workflow binary and the homonto that installed its framework have drifted
-apart.
+**`go build .` fails: output "homonto" already exists and is a directory.**
+A local `homonto/` content directory sits next to `main.go`. Build to a path:
+`go build -o ./bin/homonto .`, or use `go install .` / `task build`.
 
-**I changed a model but my agents still show the old one.** Fixed in
-v0.2.0. A subagent's `model:` is stamped from its configured model block
-(today `[subagents.<name>.<tool>]`; tier routes before v0.8.0) at
-materialization, and materialization used to be gated on the catalog version
-alone — so a route change left the rendered agents frozen while the tool's
-own `setting.model` moved, giving two different answers from one config.
-Upgrade and run `homonto apply`. On an older binary, force a
-re-materialization:
+**Version prints a development string.** Plain `go install` doesn't stamp
+versions. Use a release, mise, or `task install`.
 
-```bash
-rm -rf .homonto/catalog && homonto apply --yes
-```
+**New binary, old skills.** Installing a binary doesn't touch projected
+content. Run `homonto update` in each workspace. `onto doctor` / `to doctor`
+report version skew until you do.
+
+## Loading the config
+
+Errors name the file, the key, and usually the fix:
+
+| Error contains | Fix |
+|---|---|
+| `subagents.<name>.opencode model is required` | Add a model block for that agent; every builtin agent a package installs needs one. |
+| `declares a model override, but its source "local:…" is not builtin:` | Remove the block; put `model:` in the local agent file. |
+| `is a workflow, not an engine` | Move `builtin:h` to `[workflows.h]` (or `onto`/`to`/`no` to `[engines]`). |
+| `unknown configuration fields` + `[frameworks.…]` | Rename to `[engines.*]` / `[workflows.*]`. |
+| `models.opencode.<tier> is an unknown table` | Model tiers were removed; use per-agent `[subagents.<name>.opencode]`. |
+| `is missing required scope` | Add `scope = "project"` or `"user"`. |
+| `is tune-only; scope, repo, mode… would be ignored` | A block without `source` tunes an installed agent; remove declaration fields or add a `source`. |
+| `settings.opencode key "mcp" is reserved` | Use `[mcps.<name>]` (or `[plugins.opencode.*]` for `plugin`/`plugins`). |
+| `OpenCode has no effort setting` | Use `variant`. |
+| `targets … claude` / `codex` | Those adapters were removed in v0.13.0; delete the key. |
+| `[tmp] takes only dir` | `[tmp]` has one key, `dir`. |
+
+## Applying
+
+**`error: env var X is not set` / pass errors.** A secret couldn't resolve;
+nothing was written. Set the variable, install `pass`, or add the entry.
+
+**Conflict on a skill, command, or agent link.** A real file or a foreign
+symlink is at the target. homonto never overwrites it. Move it away and
+re-apply.
+
+**A tool file is "unparseable".** Fix or restore the JSON; homonto won't
+overwrite what it can't parse.
+
+**Comments disappeared from `opencode.jsonc`.** Any apply that rewrites that
+file normalizes it to JSON. No-op and link-only applies keep comments.
+
+**Something I added by hand was pruned.** A declared resource that exactly
+matched disk was adopted; removing the declaration then prunes it. The TOML
+is the source of truth for what it declares.
+
+**Moved the repository; links look broken.** Run `homonto plan` and
+`homonto apply` from the new path; eligible links are repaired. If a
+conflict remains, inspect the link and `.homonto/state.json`.
+
+**Changed a model, agent didn't change.** Run `homonto apply`. If a very old
+`.homonto/catalog` persists, `rm -rf .homonto/catalog && homonto apply --yes`
+re-materializes it.
+
+**Plan says `No projection changes; catalog re-materialization pending`.**
+Expected after a binary upgrade, a model change, or a `[tmp]`/`[tooling]`
+change: generated catalog content must be rewritten but no projected link
+moves. Run `homonto apply`; it reports
+`No projection changes; catalog re-materialized.`
 
 ## Scripting
 
-**"My script captures nothing."** homonto, onto, and to print through
-cobra, which writes to **stderr**. Redirect with `2>&1`.
+**Captured nothing.** Output is on stderr; add `2>&1`.
 
-**Exit codes.** By default commands exit `0`/non-zero. The richer taxonomy
-is opt-in: `plan --exit-code` exits `2` on pending changes; `status
---exit-code` exits `2` on pending and `3` on drift. `--output json` on
-`plan`, `status`, and `doctor` gives machine-readable output; on the onto
-side, `state --json`, `gate --json`, `scale --json`, and `graph --json` do,
-and to's workflow commands take `--json`.
-
-## Projection
-
-**OpenCode comments disappeared.** OpenCode's `opencode.jsonc` supports
-comments — and any apply that *writes* that file rewrites it as normalized
-JSON, removing all comments. A skills-only or otherwise no-op apply does not
-write the file, so comments survive those. Accepted for beta.
-
-**"Conflict" reported on a skill or subagent link.** homonto never clobbers
-a file that is not its own symlink. A real file, or a link pointing
-elsewhere at the target path, is reported instead of overwritten. Move the
-conflicting file out of the way and re-apply.
-
-**I moved/renamed my homonto repo.** Same-domain project symlinks use relative
-targets and move with the repository. From the new location, run `homonto plan`
-and `homonto apply`. They repair eligible stale absolute links when the on-disk
-target exactly matches the state-recorded prior target and the old/new path
-positions satisfy the relocation checks. Eligible user-scoped links can also
-be repaired when only their source moved; user-scoped and cross-repository
-targets remain absolute. Cross-repository links do not qualify for same-domain
-repair. If a conflict remains, inspect the link and `.homonto/state.json` to
-understand the ownership mismatch; keep managed links and state intact for
-diagnosis. See [projection & state](projection-and-state.md).
-
-**A tool file was reported unparseable.** That adapter aborts and reports;
-homonto never overwrites a file it cannot parse. Fix the JSON by hand (or
-restore it) and re-apply. The other tool's apply is unaffected.
-
-**Something I configured by hand got pruned.** Only resources homonto
-recorded in state are ever pruned — but note that a declared resource
-matching disk is *adopted* into state (see
-[projection & state](projection-and-state.md)), after which removing it
-from `homonto.toml` removes it from the tool too. That is the contract: the
-TOML is the source of truth for everything it declares.
-
-## Secrets
-
-**`apply` aborts with a resolution error.** `${pass:…}` needs
-[`pass`](https://www.passwordstore.org/) on `PATH` (and the entry present);
-`${ENV_VAR}` needs the variable set at apply time. Nothing was written —
-apply resolves all secrets before touching any file. `homonto doctor` flags
-a missing `pass`.
-
-## Scope of the adapter
-
-**OpenCode is the only adapter.** Claude Code and codex support was removed
-in v0.13.0: a config naming them — `targets = ["claude"]` or
-`targets = ["codex"]`, `[settings.claude]`, `[plugins.claude.*]`,
-`[marketplaces.claude.*]`, or a `[subagents.<name>.claude]` block — fails
-at load, naming the key. The `homonto import` command (a Claude MCP
-bootstrap) went with them.
-
-- **Packages under `[frameworks.*]`** resolve from the builtin catalog (`onto`
-  and/or `to` lifecycle workflows, or the `h` GitHub skill bundle that depends
-  on both), a `local:` root, or a digest-pinned `remote:` source.
-- **Remote sources** (subagents and frameworks) require a
-  `digest = "sha256:…"` pin (see
-  [remote source trust](remote-source-trust.md)). homonto never re-resolves
-  a pin to newer content; updating is a config edit you make.
+**Exit codes.** `plan --exit-code`: `2` pending. `status --exit-code`: `2`
+pending, `3` drift. `onto doctor --quiet` / `to doctor --quiet`: non-zero on
+findings.
 
 ## onto
 
-**`onto new`/`advance`/`close` refuse to run.** The mutating commands
-require the onto framework to be installed *by homonto*
-(`[frameworks.onto]` or `[frameworks.h]` + `homonto apply`). The read-only commands (`status`,
-`state`, `gate`, `scale`, `graph`, `handoff`, `dirt`, `doctor`, `version`)
-always work.
+**Mutating commands refuse: "has no [engines.onto] table" / "run `homonto apply`".**
+Declare `[engines.onto]` and apply. `[workflows.h]` alone doesn't install
+onto.
 
-**`advance` fails.** The error names the gate: a missing artifact for the
-current phase, an unset evidence token (`isolation` before build), an
-unchecked `tasks.md` item leaving build, or a dirty worktree entering
-close. Run `onto gate <change>` to see the pending decision(s) and the
-exact `onto set` that records each one.
+**`advance` refuses.** The message names the gate. `onto gate <change>`
+lists every pending decision with its exact command.
 
-**`close` fails.** Check, in order: the change is at phase `close`;
-all cumulative artifacts exist; `verify.result == pass` and the report has one
-canonical result line; no source commit landed after that pass (close names
-the path — re-verify and record a fresh pass, or reopen for a real fix);
-`close.merged == true` with a matching receipt (run `onto merge-deltas`);
-`base_ref`, `base_branch`, and integration are recorded; the current branch is
-a change branch, not `base_branch` itself; guides resolved (full workflow);
-every `deps` entry completed; config repo and every selected `--repo` worktree
-clean and Git-readable.
+**`advance` to close refuses: dirty worktree.** `onto dirt <change>` shows
+each path classified. Commit this change's own records and resolve `source`
+paths; another change's records never block.
 
-**`complete-integration` rejects the receipt.** A merge receipt must name a
-real `--no-ff` merge commit that contains the recorded source commit and is
-reachable from the recorded base branch. Squash merges, rebased-and-merged
-branches, and fast-forwards all fail this by design — the audit trail would
-not identify what landed. Merge the change branch again with
-`git merge --no-ff`, or open a PR and record `pr:<url>` instead.
+**`close` refuses.** Check in order: phase is `close`; artifacts exist;
+`verify-result pass` with one passing `Result:` line; no source commits since
+that pass (re-verify, or reopen for a real fix); `onto merge-deltas` done;
+`guides`, `integration`, `close-confirmed`, base anchors recorded;
+dependencies integrated; clean source.
 
-**An archived change still appears at close.** Its Git integration is pending,
-incomplete for some repository, or its `.onto/integration.json` is invalid.
-Complete the recorded local merge (`git merge --no-ff <change-branch>` into
-`base_branch` — the receipt must name that real merge commit) or open the
-recorded PR, then run `onto complete-integration <change> --receipt
-merge:<commit>` or `--receipt pr:<https-url>` per repository — once for the
-config repository and once per selected sibling with `--repo <alias>`; the
-change derives `done` only when all of them are complete. If archival stopped
-before the state flag was written, rerun `onto close <change>` first. `onto
-doctor` prints the applicable recovery command.
+**`complete-integration` rejects `merge:<sha>`.** It must be a real two-parent
+merge containing the verified candidate, reachable from the recorded base
+branch. Squash, rebase, and fast-forward merges don't qualify. Merge with
+`git merge --no-ff`, or open a PR and record `pr:<url>`.
 
-**"dirty worktree blocks close."** The error lists the first few offending
-paths; `onto dirt <change>` shows all of them, classified. Paths under
-*another* change's `<workflow-root>/changes/<other>/` never block (they are that
-change's obligation). What blocks is this change's own uncommitted
-artifacts and any uncommitted source path. For a scoped change, every dirty
-selected sibling path blocks too and the error labels its repo. Commit what
-belongs to the change, stash or attribute what doesn't, and retry.
+**Archived change still shows "integration pending".** Record a receipt for
+**every** selected repository (`--repo <alias>` each). If archiving was
+interrupted, rerun `onto close <change>` first.
 
-**Repeated verify failures.** `onto set verify-result fail` increments a
-counter; at ≥3 rounds `onto doctor` reports it. The workflow expects a
-human decision at that point (accept the deviation or keep fixing), not an
-endless loop.
+**`evidence record`: unknown Scenario-ID.** Declare it once: in a delta spec
+under a scenario, or — with no delta files — on its own line in `tasks.md` or
+`verification.md`. Delta files live at `specs/<capability>.md`.
 
-**Recovering after context compaction.** `onto handoff <change>` emits a
-compact recovery pack (`--write` persists it) so a fresh agent session can
-resume without re-deriving state.
+**Repeated verify failures.** Three or more failed rounds while still failing
+is a doctor finding: decide to accept the deviation or keep fixing.
 
 ## to
 
-**`to init`/`new`/`phase`/`done`/`abandon` refuse to run.** Same rule as
-onto: the mutating commands require the to framework installed *by homonto*
-(`[frameworks.to]` or `[frameworks.h]` + `homonto apply`). The read-only commands (`status`,
-`handoff`, `doctor`, `version`) always work.
+**Mutating commands refuse.** Declare `[engines.to]` and apply.
 
-**`to done` refuses a scoped change.** A change created with `to new --repo
-<declared-name>` cannot finish until the config repo and every selected repo
-are clean and Git-readable. Commit or stash the listed repo, restore a removed
-`[repos]` alias, then run `to done` again. `to abandon` remains available.
+**`to done` refuses a scoped change.** Every selected repository must be clean
+and Git-readable. Commit or resolve the listed paths, or restore a removed
+`[repos]` alias.
 
-**A change shows a terminal phase but still sits in `<workflow-root>/tasks/`.** An
-interrupted finish (a crash between the state write and the archive move).
-`to doctor` reports it; re-run the same finishing command
-(`to done <name> --verified` or `to abandon <name>`) to complete the
-archive.
+**Change is `done` but still in `tasks/`.** An interrupted archive. Re-run
+the same finishing command (`to done <name> --verified` or
+`to abandon <name>`).
 
 **"another to command is in progress (lock held at …)".** A concurrent
-session holds `<workflow-root>/tasks/.to.lock`, or a killed process left it behind. The
-file records the holder's pid; when that pid is provably no longer running,
-the next mutating `to` command reclaims the lock itself. A lock with no
-readable pid (a crash between creating the file and writing it) is the one
-case for hand removal — a live session's lock is never stolen.
+command, or a killed one. A lock whose pid is gone is reclaimed
+automatically; a lock with no readable pid must be removed by hand.
+
+## Workspaces
+
+**`worktree create` refuses the base.** It must match the change's frozen
+commit **and** target branch. Choose targets at `onto new` / `to new` with
+`--base alias=branch`.
+
+**Can't reuse a change name.** An abandoned onto record still in
+`changes/<name>/`, or a retained worktree binding, reserves it. Run
+`onto cleanup preview <name>` (or `to cleanup preview <name>`), resolve any
+blocker it lists, then `cleanup apply <name> --identity <id> --yes`.
+
+**`cleanup apply` refuses.** `ineligible` means the change is still active or
+an onto integration receipt is missing: finish or abandon it. `blocked` names
+the reason: uncommitted or ignored record files (commit them), a dirty or
+unintegrated worktree, or two generations with one name (pass the
+`--identity` from `cleanup list`).
+
+**Managed mutation blocked: pending checkpoint.** Fix the Git identity or hook
+problem, run `homonto workspace recover`, inspect state, then continue.
+
+**`worktree remove` refuses although `git status` is clean.** Check for
+ignored files, submodule changes, `assume-unchanged` / `skip-worktree`
+entries, and whether the target branch locally contains the worktree HEAD.
+
+## OpenCode
+
+**No workflow panel or context.** You need OpenCode 2, a builtin
+onto/to/h package (or `workflow_context = true`), and a session started
+inside the config root. Restart OpenCode after apply.
+
+**GitHub draft tools fail.** They need `[workflows.h]`, OpenCode 2's bound
+local service, and native question support; headless clients can't approve.
+
+**`workflow_context` conflicts with `workflow_bridge`.** Choose one; the V1
+bridge isn't OpenCode 2 compatible.

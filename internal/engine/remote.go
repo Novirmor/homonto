@@ -226,7 +226,7 @@ func (e *Engine) materializeRemotes(ctx context.Context) error {
 	return lock.Save(e.remoteLockPath())
 }
 
-// resolveRemoteFrameworks resolves every declared [frameworks.X]
+// resolveRemoteFrameworks resolves every declared [engines.X]
 // source="remote:<url>" through the SAME trust pipeline as remote subagents
 // (resolver + revocation list), returning name → verified cache dir. Each cache
 // dir is a framework root (framework.toml + resources) that FrameworkCatalog

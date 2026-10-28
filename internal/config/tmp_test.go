@@ -7,7 +7,7 @@ import (
 
 // [tmp] is opt-in: absent table means the feature is off.
 func TestTmpAbsent(t *testing.T) {
-	c := loadTOML(t, `[frameworks.onto]
+	c := loadTOML(t, `[engines.onto]
 source = "builtin:onto"
 scope = "project"
 `+ontoFrameworkModels())
@@ -18,7 +18,7 @@ scope = "project"
 
 // A bare [tmp] enables with the default dir — presence, not a key, is the switch.
 func TestTmpBareTableEnablesDefault(t *testing.T) {
-	c := loadTOML(t, `[frameworks.onto]
+	c := loadTOML(t, `[engines.onto]
 source = "builtin:onto"
 scope = "project"
 

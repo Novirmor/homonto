@@ -76,7 +76,7 @@ func TestNewCommand_CreatesSkeleton(t *testing.T) {
 
 func TestCustomWorkflowRootLifecycle(t *testing.T) {
 	dir := t.TempDir()
-	writeFile(t, filepath.Join(dir, "homonto.toml"), "[workflow]\nroot=\"workflow/records\"\n[frameworks.onto]\nsource=\"builtin:onto\"\nscope=\"project\"\n")
+	writeFile(t, filepath.Join(dir, "homonto.toml"), "[workflow]\nroot=\"workflow/records\"\n[engines.onto]\nsource=\"builtin:onto\"\nscope=\"project\"\n")
 	if err := os.MkdirAll(filepath.Join(dir, ".homonto", "catalog", "skills", "onto"), 0o755); err != nil {
 		t.Fatal(err)
 	}

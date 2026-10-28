@@ -67,7 +67,7 @@ func TestPromoteRetainsPreImplementationAnchorsAndScale(t *testing.T) {
 		t.Run(fmt.Sprintf("detached=%v", detached), func(t *testing.T) {
 			l := explicitWorkspace(t)
 			configPath := filepath.Join(l.ConfigRoot, "homonto.toml")
-			writeFile(t, configPath, readFile(t, configPath)+"\n[frameworks.to]\nsource='builtin:to'\nscope='project'\n")
+			writeFile(t, configPath, readFile(t, configPath)+"\n[engines.to]\nsource='builtin:to'\nscope='project'\n")
 			if err := os.MkdirAll(filepath.Join(l.ConfigRoot, ".homonto", "catalog", "skills", "to"), 0755); err != nil {
 				t.Fatal(err)
 			}
@@ -149,7 +149,7 @@ func TestLegacyScopedPromotionPreservesAuthorityAndInverse(t *testing.T) {
 					runGit(t, dir, "init", "-b", "main")
 					commitAll(t, dir, "base")
 				}
-				config := "[frameworks.onto]\nsource='builtin:onto'\nscope='project'\n[frameworks.to]\nsource='builtin:to'\nscope='project'\n[repos]\napi='../api'\n"
+				config := "[engines.onto]\nsource='builtin:onto'\nscope='project'\n[engines.to]\nsource='builtin:to'\nscope='project'\n[repos]\napi='../api'\n"
 				if version >= 0 {
 					config = fmt.Sprintf("schema_version=%d\n", version) + config
 				}
@@ -326,7 +326,7 @@ func TestDemoteExplicitSourcesRoundTripAndGates(t *testing.T) {
 		runGit(t, dir, "init", "-b", branch)
 		commitAll(t, dir, "base "+alias)
 	}
-	writeFile(t, filepath.Join(root, "homonto.toml"), "schema_version=2\n[frameworks.onto]\nsource='builtin:onto'\nscope='project'\n[workflow]\nroot='records/deep/tree'\ngit='existing'\n[repos]\na='source-a'\nb='source-b'\n")
+	writeFile(t, filepath.Join(root, "homonto.toml"), "schema_version=2\n[engines.onto]\nsource='builtin:onto'\nscope='project'\n[workflow]\nroot='records/deep/tree'\ngit='existing'\n[repos]\na='source-a'\nb='source-b'\n")
 	if err := os.MkdirAll(filepath.Join(root, ".homonto", "catalog", "skills", "onto"), 0755); err != nil {
 		t.Fatal(err)
 	}
@@ -593,7 +593,7 @@ func TestPromoteThenDemoteRestores(t *testing.T) {
 	dir := setUpGatedWorkspace(t)
 	// Both frameworks declared and applied: complementarity is the premise.
 	writeFile(t, filepath.Join(dir, "homonto.toml"),
-		"[frameworks.onto]\nsource=\"builtin:onto\"\nscope=\"project\"\n[frameworks.to]\nsource=\"builtin:to\"\nscope=\"project\"\n")
+		"[engines.onto]\nsource=\"builtin:onto\"\nscope=\"project\"\n[engines.to]\nsource=\"builtin:to\"\nscope=\"project\"\n")
 	os.MkdirAll(filepath.Join(dir, ".homonto", "catalog", "skills", "to"), 0o755)
 
 	toRun(t, false, "new", "grower", "--dir", dir)
@@ -646,12 +646,12 @@ func TestPromoteThenDemoteRestores(t *testing.T) {
 }
 
 // TestDemoteAcceptsEitherFramework pins the bridge gate: demotion works with
-// [frameworks.onto] applied (the change lives there) and with
-// [frameworks.to] applied (the destination framework, ADR 0042).
+// [engines.onto] applied (the change lives there) and with
+// [engines.to] applied (the destination framework, ADR 0042).
 func TestDemoteAcceptsEitherFramework(t *testing.T) {
 	dir := setUpGatedWorkspace(t)
 	seedDemotable(t, dir, "shrinker", "open", "")
-	writeFile(t, filepath.Join(dir, "homonto.toml"), "[frameworks.to]\nsource=\"builtin:to\"\nscope=\"project\"\n")
+	writeFile(t, filepath.Join(dir, "homonto.toml"), "[engines.to]\nsource=\"builtin:to\"\nscope=\"project\"\n")
 	if err := os.MkdirAll(filepath.Join(dir, ".homonto", "catalog", "skills", "to"), 0o755); err != nil {
 		t.Fatal(err)
 	}

@@ -1,5 +1,5 @@
 ---
-description: Resolve a GitHub issue — spike it, pick to or onto, drive the workflow, open a verified PR.
+description: Resolve a GitHub issue — spike it, select an installed no/to/onto engine, and deliver a verified PR.
 agent: homonto
 ---
 
@@ -7,16 +7,12 @@ agent: homonto
 
 Load and follow the `h-resolve-issue` skill. If it is unavailable, say the
 required skill is unavailable, direct the user to install or reapply the `h`
-GitHub skill bundle (declare `[frameworks.h]` if needed and run `homonto apply`),
+GitHub skill bundle (declare `[workflows.h]` if needed and run `homonto apply`),
 and stop.
 
 `$ARGUMENTS` is the GitHub issue to resolve: one issue URL
 (`https://github.com/OWNER/REPO/issues/NUMBER`) or `OWNER/REPO#NUMBER`.
 
-Continue in the same invocation to one verified PR closing the issue and a
-completed workflow record, unless the user names an earlier endpoint or asks
-to pause. The skill spikes first, resumes a matching change or honors an explicit
-workflow choice; otherwise it recommends viable `to`, `onto fix`, `onto tweak`,
-or full `onto` paths and asks once before creating a change. It publishes only
-after verification passes. This choice is not a second conversational push/PR
-approval; configured tool permissions and material-intent questions still apply.
+The skill owns spike, engine selection, execution and publication, including the
+record-free `no` route. Continue in the same invocation to its success endpoint
+unless the user names an earlier endpoint or asks to pause.

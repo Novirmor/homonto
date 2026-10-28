@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Suite: onto — the standalone onto binary's full spec-driven workflow, end to
 # end, against a real materialized framework install. homonto applies
-# [frameworks.onto] (the gate onto init/new/advance/close require), then onto
+# [engines.onto] (the gate onto init/new/advance/close require), then onto
 # drives a change from open through close and archives it. Tool-independent, no
 # account/network needed.
 set -uo pipefail
@@ -18,7 +18,7 @@ log "homonto apply installs the onto framework"
 # adapter). Materialization of .homonto/catalog/skills/onto is
 # target-independent, so the onto gate is satisfied either way.
 cat > homonto.toml <<'EOF'
-[frameworks.onto]
+[engines.onto]
 source = "builtin:onto"
 scope = "project"
 

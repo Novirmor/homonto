@@ -142,11 +142,12 @@ func TestExtractedWorkflowPoliciesMaterialize(t *testing.T) {
 			if err := c.Materialize(dir, names, "none", "none", "", nil); err != nil {
 				t.Fatal(err)
 			}
-			files := []string{"homonto/references/execution.md", "homonto/references/workflow-selection.md", "homonto/references/autonomy.md", "homonto/references/debugging.md"}
+			files := []string{"homonto/references/execution.md", "homonto/references/workflow-selection.md", "homonto/references/autonomy.md", "homonto/references/debugging.md", "homonto/references/review-triage.md"}
 			if workflow == "onto" {
+				files = append(files, "onto/references/delivery.md", "onto/SKILL.md", "onto-open/SKILL.md", "onto-design/SKILL.md", "onto-verify/SKILL.md", "onto-verify/references/adversarial.md", "onto-close/SKILL.md")
 				files = append(files, "onto/references/discovery.md", "onto/references/recovery.md", "onto-close/references/integration.md", "onto-build/SKILL.md", "onto-build/references/subagent-protocol.md", "onto-fix/SKILL.md", "onto-tweak/SKILL.md")
 			} else {
-				files = append(files, "to-do/SKILL.md")
+				files = append(files, "to-do/SKILL.md", "to-done/SKILL.md", "to/references/recovery.md")
 			}
 			for _, file := range files {
 				data, err := os.ReadFile(filepath.Join(dir, filepath.FromSlash(file)))

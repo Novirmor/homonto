@@ -43,23 +43,14 @@ func newCmd() *cobra.Command {
 	return cmd
 }
 
-// runNew enforces ontoFramework.Gate(root) then
+// runNewWithBases enforces ontoFramework.Gate(root) then
 // ontoFramework.ValidChangeName(name), refuses to clobber an existing
 // docs/changes/<name> directory, and only then scaffolds onto-state.yaml plus an
 // empty proposal.md (and, for the fix/tweak presets, tasks.md — full derives its
 // task list in design). Each file is written only if absent. It reports the
-// created change and its files.
-func runNew(cmd *cobra.Command, root, name, workflow string) error {
-	return runNewWithRepos(cmd, root, name, workflow, nil)
-}
-
-// runNewWithRepos records the selected declared-repo aliases with a new
-// change. Names are validated before any scaffold write; the config repository
-// is implicit and therefore never accepted as an alias.
-func runNewWithRepos(cmd *cobra.Command, root, name, workflow string, repos []string) error {
-	return runNewWithBases(cmd, root, name, workflow, repos, nil)
-}
-
+// created change and its files. Declared-repo aliases are validated before any
+// scaffold write; the config repository is implicit and therefore never
+// accepted as an alias.
 func runNewWithBases(cmd *cobra.Command, root, name, workflow string, repos, bases []string) error {
 	root, err := filepath.Abs(root)
 	if err != nil {
@@ -171,7 +162,7 @@ func runNewWithBases(cmd *cobra.Command, root, name, workflow string, repos, bas
 	defer unlock()
 
 	if _, err := os.Stat(changeDir); err == nil {
-		return fmt.Errorf("onto new: change %q already exists at %s", name, changeDir)
+		return fmt.Errorf("onto new: change %q already exists at %s; resume it, or inspect terminal cleanup with `onto cleanup preview %s --dir %q`", name, changeDir, name, root)
 	}
 	// Global-name uniqueness (ADR 0042): the same active name in the `to`
 	// workflow is resolved by promotion, not duplication.
@@ -181,7 +172,7 @@ func runNewWithBases(cmd *cobra.Command, root, name, workflow string, repos, bas
 		}
 	}
 	if archiveDir, archivedState, err := locateArchive(root, name); err == nil {
-		if !archivedState.Archived || !ontostate.ArchiveIntegrationComplete(archiveDir, archivedState) {
+		if !archivedState.Abandoned && (!archivedState.Archived || !ontostate.ArchiveIntegrationComplete(archiveDir, archivedState)) {
 			return fmt.Errorf("onto new: latest archive for %q has not completed integration", name)
 		}
 	} else if !errors.Is(err, errArchiveNotFound) {

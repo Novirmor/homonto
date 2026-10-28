@@ -84,9 +84,22 @@ action into notes/handoff and delegated tasks. New conflicts need a new decision
   Never automatically stash, reset, delete, or commit user changes, even if they
   appear related or disposable. Attribution alone is not cleanup authorization.
 
+## Shared multirepository tasks
+
+Follow [parallel repository assignments](execution.md#parallel-repository-assignments)
+for all engines. Choose exactly one engine and user-selected isolation once per
+task. `homonto workspace task` records actual checkout paths, immutable bases,
+native generation when applicable, and integration evidence. No uses these
+shared mechanics without lifecycle records or onto/to calls. Other sections
+describing native records, gates, checkpoints and receivers apply only to the
+selected onto/to engine. All declared repos are readable; each worker writes
+only its assigned repository. Parent-owned commits precede combined verification.
+
 ## Schema 2 registered isolation
 
-Schema 2 uses registered allocation in both existing and managed history modes.
+Selected onto/to tasks in schema 2 use registered allocation in both existing
+and managed history modes. No uses the workspace-task allocator above; direct h
+continuation uses the engine-free checkout protocol below.
 Choose each source base at `onto new` or `to new` with repeated
 `--base <alias>=<local-branch>` as described below, before allocating worktrees.
 After creating the active state with its selected aliases, the coordinator runs:
@@ -167,11 +180,11 @@ clean/integrated and exact-path authorization checks.
 
 ## Legacy schema 0/1 combined isolation
 
-Legacy schema 0/1 combined onto workflows retain parallel disjoint-task raw
+Legacy schema 0/1 combined onto workflows retain serial task-isolated raw
 worktrees under all five conditions in
 [`onto-build`'s subagent protocol](../../onto-build/references/subagent-protocol.md).
 The coordinator owns allocation, ordered joins, serial bookkeeping, and final
-review after the last join; workers commit only assigned source/test files and
+review after the last join; the parent commits assigned source/test files and workers
 never edit copied task or workflow records. The coordinator's combined change
 checkout remains configRoot and the sole state owner, including for `--dir`.
 Use the [legacy worktree protocol](../../onto-build/references/worktree-protocol.md)
@@ -197,6 +210,28 @@ workflow records. This is not schema-2 registered allocation or a denial fallbac
 After terminal state, integrate the pinned candidate into the recorded original
 target, verify the resulting tree, and remove only the authorized clean integrated
 path with `git worktree remove`, never force or prune around a refusal.
+
+## Engine-free h continuation checkouts
+
+Direct h continuation does not need an engine or a registered native lifecycle
+binding. Reuse the user's isolation choice or ask once before checkout changes.
+Direct h conflict resolution uses this same engine-free protocol.
+Use an existing authorized clean checkout at the exact collected PR head, or a
+coordinator-created worktree under the configured allocation root with an unused
+path and branch. Verify the fetched commit against the canonical remote PR head
+before allocation; create from that exact OID, never from an inferred default
+branch. Keep original HEAD, index and dirty files untouched.
+
+Record source identity, absolute checkout, branch, base/head OID and the isolation
+decision in session evidence/handoff. On resume validate those facts against Git
+and the PR before writes. No onto/to state or workspace task with a fictitious
+engine is needed. Missing configured space or directory access is a concrete
+isolation blocker, not permission to ignore the choice. This exception cannot
+replace an existing selected engine's binding or evade a lifecycle refusal.
+
+After confirmed delivery, remove only an explicitly authorized, clean, owned
+worktree whose commits are preserved on the verified destination. Retain branches
+and report any refusal; never force-remove or prune around it.
 
 ## Task-local Git fixtures
 

@@ -1,0 +1,128 @@
+# Developer entry points (https://taskfile.dev). `task` lists them. The Go
+# toolchain is pinned by go.mod; `task tools` installs the pinned linter. The
+# pre-tag gate is scripts/gate.sh (`task gate`).
+version: "3"
+
+vars:
+  # scripts/gate.sh pins the linter; CI and release run that gate.
+  GOLANGCI_LINT_VERSION:
+    sh: sed -n 's/^GOLANGCI_LINT_VERSION=//p' scripts/gate.sh
+  BIN: bin
+  BASE: main
+  VERSION:
+    sh: git describe --tags --always --dirty 2>/dev/null || echo dev
+  LDFLAGS: >-
+    -X github.com/noviopenworks/homonto/internal/cli.Version={{.VERSION}}
+    -X github.com/noviopenworks/homonto/internal/ontocli.Version={{.VERSION}}
+    -X github.com/noviopenworks/homonto/internal/tocli.Version={{.VERSION}}
+
+tasks:
+  default:
+    desc: List tasks
+    silent: true
+    cmd: task --list
+
+  tools:
+    desc: Install the pinned golangci-lint into GOBIN
+    cmd: GOTOOLCHAIN=$(sed -n 's/^toolchain //p' go.mod) go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v{{.GOLANGCI_LINT_VERSION}}
+
+  build:
+    desc: Build homonto, onto, and to into ./bin (version-stamped)
+    cmds:
+      - go build -ldflags "{{.LDFLAGS}}" -o {{.BIN}}/homonto .
+      - go build -ldflags "{{.LDFLAGS}}" -o {{.BIN}}/onto ./cmd/onto
+      - go build -ldflags "{{.LDFLAGS}}" -o {{.BIN}}/to ./cmd/to
+
+  install:
+    desc: go install all three binaries (version-stamped)
+    cmd: go install -ldflags "{{.LDFLAGS}}" . ./cmd/onto ./cmd/to
+
+  fmt:
+    desc: Format Go sources in place
+    cmd: gofmt -w .
+
+  vet:
+    desc: go vet
+    cmd: go vet ./...
+
+  lint:
+    desc: golangci-lint (config in .golangci.yml)
+    cmd: golangci-lint run ./...
+
+  tidy:
+    desc: go mod tidy
+    cmd: go mod tidy
+
+  test:
+    desc: Unit tests (extra args after --, e.g. task test -- -run TestX ./internal/cli)
+    cmd: go test {{if .CLI_ARGS}}{{.CLI_ARGS}}{{else}}./...{{end}}
+
+  race:
+    desc: Unit tests under the race detector
+    cmd: go test -race ./... -timeout=20m
+
+  test-changed:
+    desc: Test only the packages with Go changes vs BASE (default main, else origin/main)
+    vars:
+      # Task-local: Task evaluates global sh vars for every task, and an
+      # unresolvable BASE must fail only the tasks that need it.
+      CHANGED_GO:
+        sh: ./scripts/changed-go.sh {{.BASE}}
+      PKGS:
+        sh: |
+          for f in {{.CHANGED_GO | catLines}}; do echo "./$(dirname "$f")"; done | sort -u | tr '\n' ' '
+    cmd: '{{if .PKGS}}go test {{.PKGS}}{{else}}echo "no changed Go packages"{{end}}'
+
+  cover:
+    desc: Coverage profile to cover.out, then print the total
+    cmds:
+      - go test -coverprofile=cover.out ./... >/dev/null
+      - go tool cover -func=cover.out | tail -1
+
+  check:
+    desc: "Fast pre-push check: gofmt, vet, lint, doc references, tests"
+    cmds:
+      - cmd: |
+          unformatted="$(gofmt -l .)"
+          [ -z "$unformatted" ] || { echo "$unformatted"; echo "run: task fmt"; exit 1; }
+        silent: true
+      - task: vet
+      - task: lint
+      - task: docs-check
+      - task: test
+
+  docs-check:
+    desc: Agent docs and catalog reference only things that exist
+    cmd: ./scripts/agents-doc-check.sh
+
+  vuln:
+    desc: govulncheck under the pinned toolchain
+    cmd: GOTOOLCHAIN=$(sed -n 's/^toolchain //p' go.mod) go run golang.org/x/vuln/cmd/govulncheck@latest ./...
+
+  e2e:
+    desc: Triple-binary Docker E2E suites (needs Docker)
+    cmd: ./scripts/docker-test.sh
+
+  gate:
+    desc: The full pre-tag gate, identical to CI (needs Docker; slow)
+    cmd: ./scripts/gate.sh
+
+  index:
+    desc: Build or refresh the CodeGraph index (ADR 0066)
+    cmd: |
+      if ls -A .codegraph 2>/dev/null | grep -qv '^\.gitignore$'; then
+        codegraph sync
+      else
+        codegraph init
+      fi
+
+  affected:
+    desc: Tests CodeGraph links to the Go files changed vs BASE
+    vars:
+      CHANGED_GO:
+        sh: ./scripts/changed-go.sh {{.BASE}}
+    cmd: '{{if .CHANGED_GO}}codegraph affected --quiet --filter "**/*_test.go" {{.CHANGED_GO | catLines}}{{else}}echo "no changed Go files"{{end}}'
+
+  clean:
+    desc: Remove build and coverage output
+    cmd: rm -rf {{.BIN}} dist cover.out

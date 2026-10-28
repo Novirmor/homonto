@@ -1,6 +1,7 @@
 package workspace
 
 import (
+	"context"
 	"crypto/rand"
 	"crypto/sha256"
 	"encoding/hex"
@@ -183,9 +184,17 @@ func realWorktreePath(path string, directory bool) error {
 }
 
 func worktreeGit(dir string, args ...string) (string, error) {
-	cmd := exec.Command("git", append([]string{"-C", dir}, args...)...)
-	// Do not inherit a caller's repository/index override. Read-only Git probes
-	// must not refresh the original checkout's index either.
+	out, err := Git(context.Background(), dir, args...)
+	if err != nil {
+		return "", fmt.Errorf("worktree: %w", err)
+	}
+	return out, nil
+}
+
+// Git runs one Git probe in dir. It does not inherit a caller's repository or
+// index override, refresh the checkout's index, or prompt for credentials.
+func Git(ctx context.Context, dir string, args ...string) (string, error) {
+	cmd := exec.CommandContext(ctx, "git", append([]string{"-C", dir}, args...)...)
 	for _, env := range os.Environ() {
 		if !strings.HasPrefix(env, "GIT_") {
 			cmd.Env = append(cmd.Env, env)
@@ -194,7 +203,7 @@ func worktreeGit(dir string, args ...string) (string, error) {
 	cmd.Env = append(cmd.Env, "GIT_OPTIONAL_LOCKS=0", "GIT_TERMINAL_PROMPT=0")
 	out, err := cmd.CombinedOutput()
 	if err != nil {
-		return "", fmt.Errorf("worktree: git %s in %s: %w: %s", strings.Join(args, " "), dir, err, strings.TrimSpace(string(out)))
+		return "", fmt.Errorf("git %s in %s: %w: %s", strings.Join(args, " "), dir, err, strings.TrimSpace(string(out)))
 	}
 	return strings.TrimSpace(string(out)), nil
 }
@@ -302,7 +311,7 @@ func EnsureNameAvailable(l Layout, workflow, change string) error {
 	}
 	for _, w := range r.Entries {
 		if w.Workflow == workflow && w.Change == change {
-			return fmt.Errorf("worktree: ownership: %s/%s still has a registered binding for repository %q at %s; remove or recover it before reusing the change name", workflow, change, w.Repo, w.Path)
+			return fmt.Errorf("worktree: ownership: %s/%s still has a registered binding for repository %q at %s; remove or recover it before reusing the change name; inspect `%s cleanup preview %s`", workflow, change, w.Repo, w.Path, workflow, change)
 		}
 	}
 	return nil
@@ -1017,6 +1026,29 @@ func SourceDirsForLayout(l Layout, workflow, change string, aliases []string) (m
 	return out, nil
 }
 
+// SourceAnchor is a lifecycle-owned immutable source base and integration target.
+type SourceAnchor struct {
+	Commit string
+	Branch string
+}
+
+// SourceAnchors returns the recorded generation and bases without modifying state.
+// A supplied identity also permits terminal/archived resume of that generation.
+func SourceAnchors(l Layout, workflow, change, identity string) (string, map[string]SourceAnchor, error) {
+	if err := checkWorktreeNames(workflow, change); err != nil {
+		return "", nil, err
+	}
+	s, err := bindingState(l, workflow, change, identity, identity == "")
+	if err != nil {
+		return "", nil, err
+	}
+	anchors := make(map[string]SourceAnchor, len(s.RepoBases))
+	for alias, base := range s.RepoBases {
+		anchors[alias] = SourceAnchor{Commit: base.BaseRef, Branch: base.BaseBranch}
+	}
+	return s.identity, anchors, nil
+}
+
 func SourceDirsForActiveState(l Layout, workflow, change string) (map[string]string, error) {
 	if err := checkWorktreeNames(workflow, change); err != nil {
 		return nil, err
@@ -1073,7 +1105,15 @@ func SourceDirsForActiveState(l Layout, workflow, change string) (map[string]str
 // declared checkout's HEAD, index, or working files. Repeating a ready binding is
 // idempotent; an interrupted operation remains visible and fails closed.
 func CreateWorktree(l Layout, workflow, change, repo, base, branch string) (Worktree, error) {
-	return createWorktree(l, workflow, change, repo, base, branch, "execution", "")
+	return createWorktree(l, workflow, change, repo, base, branch, "execution", "", false)
+}
+
+// AnchoredWorktree allocates an execution checkout at the state's recorded
+// base commit, integrating into its recorded local branch. Unlike an explicit
+// base, the branch may have moved on since the change began; it must still
+// contain the recorded commit.
+func AnchoredWorktree(l Layout, workflow, change, repo, branch string) (Worktree, error) {
+	return createWorktree(l, workflow, change, repo, "", branch, "execution", "", true)
 }
 
 // ReceiverWorktree allocates a clean checkout attached to the recorded local
@@ -1093,10 +1133,10 @@ func ReceiverWorktree(l Layout, workflow, change, repo string, stateID ...string
 	if identity != "" && !strings.HasPrefix(identity, "id:") && !strings.HasPrefix(identity, "legacy:") {
 		identity = "id:" + identity
 	}
-	return createWorktree(l, workflow, change, repo, "", "", "receiver", identity)
+	return createWorktree(l, workflow, change, repo, "", "", "receiver", identity, false)
 }
 
-func createWorktree(l Layout, workflow, change, repo, base, branch, role, identity string) (Worktree, error) {
+func createWorktree(l Layout, workflow, change, repo, base, branch, role, identity string, anchored bool) (Worktree, error) {
 	var w Worktree
 	if err := checkWorktreeNames(workflow, change); err != nil {
 		return w, err
@@ -1140,6 +1180,13 @@ func createWorktree(l Layout, workflow, change, repo, base, branch, role, identi
 	}
 	if !selected {
 		return w, fmt.Errorf("worktree: repository %q is not selected by state %s/%s", repo, workflow, change)
+	}
+	if anchored {
+		anchor := s.RepoBases[repo]
+		if anchor.BaseRef == "" || anchor.BaseBranch == "" {
+			return w, fmt.Errorf("worktree: repository %q has no recorded base commit and branch in state %s/%s", repo, workflow, change)
+		}
+		base = anchor.BaseRef
 	}
 	if role != "receiver" && (base == "" || strings.HasPrefix(base, "-") || branch == "" || strings.HasPrefix(branch, "-")) {
 		return w, fmt.Errorf("worktree: explicit --base REF and --branch NAME are required")
@@ -1211,6 +1258,12 @@ func createWorktree(l Layout, workflow, change, repo, base, branch, role, identi
 	target, targetErr := worktreeGit(authority, "rev-parse", "--symbolic-full-name", "--verify", "--end-of-options", base)
 	if targetErr != nil || !strings.HasPrefix(target, "refs/") || strings.ContainsAny(target, "\r\n") {
 		target = commit
+	}
+	if anchored {
+		target = "refs/heads/" + s.RepoBases[repo].BaseBranch
+		if _, err := worktreeGit(authority, "merge-base", "--is-ancestor", commit, target); err != nil {
+			return w, fmt.Errorf("worktree: integration target %s no longer contains the recorded base %s: %w", target, commit, err)
+		}
 	}
 	if role == "receiver" {
 		target = "refs/heads/" + branch
@@ -1375,7 +1428,7 @@ func RemoveWorktree(l Layout, workflow, change, repo string, yes bool) (Worktree
 
 // RemoveWorktreeRole removes only the selected owned role. Receiver removal
 // obeys the same terminal, clean, and integrated checks as execution removal.
-func RemoveWorktreeRole(l Layout, workflow, change, repo, role string, yes bool) (Worktree, error) {
+func RemoveWorktreeRole(l Layout, workflow, change, repo, role string, yes bool, expectedStateID ...string) (Worktree, error) {
 	var w Worktree
 	if role != "execution" && role != "receiver" {
 		return w, fmt.Errorf("worktree: role must be execution or receiver")
@@ -1413,29 +1466,16 @@ func RemoveWorktreeRole(l Layout, workflow, change, repo, role string, yes bool)
 	if index < 0 {
 		return w, fmt.Errorf("worktree: ownership: no registered binding for %s/%s repository %q", workflow, change, repo)
 	}
-	if err := validateWorktree(l, w); err != nil {
-		return w, err
+	if len(expectedStateID) > 1 || (len(expectedStateID) == 1 && (expectedStateID[0] == "" || w.StateID != expectedStateID[0])) {
+		return w, fmt.Errorf("worktree: cleanup generation changed; preview again")
 	}
-	s, err := bindingState(l, workflow, change, w.StateID, false)
+	_, _, removed, err := checkWorktreeRemoval(l, w)
 	if err != nil {
 		return w, err
 	}
-	if !s.terminal(workflow) {
-		return w, fmt.Errorf("worktree: active binding cannot be removed; complete or abandon %s/%s first", workflow, change)
-	}
-	if err := cleanWorktree(w.Path); err != nil {
-		return w, err
-	}
-	head, err := worktreeGit(w.Path, "rev-parse", "--verify", "HEAD^{commit}")
-	if err != nil {
-		return w, err
-	}
-	base, err := worktreeGit(w.Path, "rev-parse", "--verify", "--end-of-options", w.BaseTarget+"^{commit}")
-	if err != nil {
-		return w, err
-	}
-	if _, err := worktreeGit(w.Path, "merge-base", "--is-ancestor", head, base); err != nil {
-		return w, fmt.Errorf("worktree: unmerged source commit %s is not integrated into configured base %q; refusing removal: %w", head, w.BaseRef, err)
+	if removed {
+		r.Entries = append(r.Entries[:index], r.Entries[index+1:]...)
+		return w, saveWorktreeRegistry(l, r)
 	}
 	r.Entries[index].Status = "removing"
 	if err := saveWorktreeRegistry(l, r); err != nil {
@@ -1461,9 +1501,19 @@ func RemoveWorktreeRole(l Layout, workflow, change, repo, role string, yes bool)
 }
 
 func cleanWorktree(path string) error {
+	if err := CheckoutClean(context.Background(), path, true); err != nil {
+		return fmt.Errorf("worktree: %w", err)
+	}
+	return nil
+}
+
+// CheckoutClean refuses hidden index flags and uncommitted or untracked files.
+// For removal it also refuses ignored files and in-progress Git operations; a
+// verification input may keep ignored build output.
+func CheckoutClean(ctx context.Context, path string, removal bool) error {
 	// Status trusts index flags that hide modified files. Refuse those flags
 	// rather than clearing them or materializing sparse files in a user's tree.
-	files, err := worktreeGit(path, "ls-files", "-v", "-z")
+	files, err := Git(ctx, path, "ls-files", "-v", "-z")
 	if err != nil {
 		return err
 	}
@@ -1472,26 +1522,36 @@ func cleanWorktree(path string) error {
 			continue
 		}
 		if len(entry) < 3 || entry[1] != ' ' {
-			return fmt.Errorf("worktree: cannot verify index flags at %s", path)
+			return fmt.Errorf("cannot verify index flags at %s", path)
 		}
 		if entry[0] == 'S' || (entry[0] >= 'a' && entry[0] <= 'z') {
-			return fmt.Errorf("worktree: nondefault index flags (assume-unchanged or skip-worktree) for %q at %s", entry[2:], path)
+			return fmt.Errorf("nondefault index flags (assume-unchanged or skip-worktree) for %q at %s", entry[2:], path)
 		}
 	}
-	dirt, err := worktreeGit(path, "status", "--porcelain=v1", "--untracked-files=all", "--ignored", "--ignore-submodules=none")
+	if !removal {
+		status, err := Git(ctx, path, "status", "--porcelain=v1", "--untracked-files=all")
+		if err != nil {
+			return err
+		}
+		if status != "" {
+			return fmt.Errorf("uncommitted input at %s:\n%s", path, status)
+		}
+		return nil
+	}
+	dirt, err := Git(ctx, path, "status", "--porcelain=v1", "--untracked-files=all", "--ignored", "--ignore-submodules=none")
 	if err != nil {
 		return err
 	}
 	if dirt != "" {
-		return fmt.Errorf("worktree: dirty registered path %s (including untracked/ignored files)", path)
+		return fmt.Errorf("dirty registered path %s (including untracked/ignored files)", path)
 	}
-	gitDir, err := worktreeGit(path, "rev-parse", "--absolute-git-dir")
+	gitDir, err := Git(ctx, path, "rev-parse", "--absolute-git-dir")
 	if err != nil {
 		return err
 	}
 	for _, state := range []string{"MERGE_HEAD", "CHERRY_PICK_HEAD", "REVERT_HEAD", "rebase-merge", "rebase-apply", "sequencer", "index.lock", "locked"} {
 		if _, err := os.Lstat(filepath.Join(gitDir, state)); err == nil {
-			return fmt.Errorf("worktree: Git operation or locked worktree at %s: %s", path, state)
+			return fmt.Errorf("in-progress Git operation or locked worktree at %s: %s", path, state)
 		} else if !os.IsNotExist(err) {
 			return err
 		}

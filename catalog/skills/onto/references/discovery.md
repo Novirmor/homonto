@@ -6,7 +6,7 @@ dirty-work choices, initialization and isolation.
 
 ## Inventory and identity
 
-Inspect both workflow inventories. An onto change is active when its directory
+Inspect the onto inventory. An onto change is active when its directory
 is directly under `<workflow-root>/changes/`, contains `proposal.md` or
 `onto-state.yaml`, and its state is not archived or abandoned. Ignore scratch and
 template directories; never reconstruct state in a directory with neither artifact.
@@ -27,9 +27,9 @@ inside the archive.
 | Several plausible identities or independent/conflicting scope | Ask the concrete identity/scope question |
 
 Names are globally unique across onto/to. Inspect identity, not just a name:
-a name collision with unrelated work needs a fresh name; a genuine conversion
-uses promote/demote and respects active-binding restrictions. Never duplicate or
-silently convert an existing change to satisfy a new command.
+a name collision with unrelated work needs a fresh name. Native creation checks
+cross-engine conflicts without invoking the other engine. Preserve an existing
+task's selected engine; never duplicate or convert it to satisfy a new command.
 
 ## Dependencies and dirt
 

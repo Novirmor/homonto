@@ -1,11 +1,59 @@
 # Task execution and evidence
 
-Use this policy in both workflows. The dispatcher chooses the path; the phase
+Use this policy for the selected engine. The dispatcher chooses the path; the phase
 owns its actions; this reference owns dispatch fallback, task granularity, and
 evidence reuse. Follow [autonomy](autonomy.md) and the
 [workspace policy](workspace-policy.md) throughout.
 
 ## Dispatch capability
+
+### Parallel repository assignments
+
+Installations may contain onto, to and no together. A task selects exactly one
+engine; preserve it on resume and ignore the other engines for that task. No
+has no binary, plan or lifecycle state. Onto/to retain their native lifecycle
+gates and registered execution bindings. A preset escalation inside onto does
+not switch engines. Do not convert an active task into another engine.
+
+The parent model chooses dependencies and concurrency, across repositories
+first: exactly one repository per implementer assignment, one writer per
+checkout. Supply selected engine, writable alias, absolute checkout, base,
+contract and verification, plus all declared repository paths as readable
+context. Assignment scope governs writes; it is not a runtime sandbox. There
+is no scheduler or cross-session checkout reservation. Serialize same-repo work
+and parent-owned workflow mutations. Continue independent assignments around
+blockers while pausing their dependents.
+
+Ask the user once per task for existing checkouts versus worktrees, with per-repo
+exceptions, unless the request or recorded decision already selects them; reuse
+that choice on resume and at every phase. Clean checkouts do not waive the choice.
+Native onto `branch` means execution in the existing checkout on a safe source
+branch; `worktree` uses registered allocations. Preserve per-repo exceptions in
+workspace-task metadata rather than overwriting them with a phase default.
+In schema 2, record it with
+`homonto workspace task create NAME --engine ENGINE --isolation MODE --repo ALIAS`
+(repeat `--repo`, add `--change CHANGE` for onto/to). Use the actual `--config`.
+Inspect/resume with `homonto workspace task inspect NAME`, not a new allocation.
+Dirty unchanged verification inputs require a user disposition; an approved
+committed snapshot uses `--isolation-override ALIAS=worktree`. Never transport
+dirty input silently. Shared metadata records checkout facts and results, not
+plans or lifecycle phases. Follow native allocation ordering under workspace policy.
+
+The parent owns all source commits, branch integration and publication. Workers
+return edits and verification evidence. Review completed per-repo candidates in
+parallel while those checkouts have no writers, then review the combined
+interfaces and integration results. Commit candidates before integration checks.
+Pause every participating writer; unrelated work may continue. Run
+`homonto workspace task check NAME --writers-paused`. Named configured checks
+match when ANY listed repo changes; unchanged participants stay pinned to their
+clean committed revisions. Commands receive `HOMONTO_INTEGRATION_CONTEXT`, a
+JSON file with actual checkout paths and revisions. Changes invalidate affected
+results. Model-selected fallback applies only when no configured check matches,
+never to a configured failure. Ask before delivering a partial subset.
+
+After authorized integration, task cleanup removes only clean integrated owned
+allocations; onto/to native bindings still require their terminal lifecycle and
+`homonto worktree remove`. No worker performs allocation or cleanup.
 
 Check actual host dispatch and the required worker before assigning work. Apply
 the following table to implementation, review, and final skepticism in both
@@ -30,6 +78,53 @@ Every worker receives Owner, Repo, absolute Cwd, relevant contract, exact candid
 or diff, and readable evidence. The coordinator owns records and workflow calls.
 Source-only workers never edit records. Existing permissions and write scopes
 remain binding in direct mode.
+
+## Focused exploration
+
+With dispatch available, default to `onto-explorer` or `to-explorer` for meaningful
+codebase discovery in the selected engine, rather than doing all investigation
+inline or waiting for a skeptic to find the missing context. Use them throughout
+the workflow, including presets and resumed repairs:
+
+- **Before planning:** map unfamiliar code, behavior ownership, existing tests and
+  integration points before choosing affected files or an approach.
+- **Before implementation:** resolve unclear call paths, dependencies, impact or
+  competing existing patterns before handing an implementer an uncertain contract.
+- **During finding triage:** investigate disputed behavior, whether a defect was
+  introduced by this assignment, and the smallest repair boundary before accepting
+  a review demand. Use fresh exploration when an unexpected failure's cause is
+  unclear, not only after repeated speculative fixes.
+
+Assign one bounded question per explorer with the current request, explicit
+non-goals, Repo/absolute Cwd, candidate and relevant evidence. Request a concise
+answer with file/line citations, impact and remaining uncertainty, not a raw file
+dump or a general audit. Dispatch independent questions concurrently; do not
+duplicate the same investigation across workers or read mutable implementation as
+final-candidate evidence. The coordinator validates and synthesizes the answers,
+runs requested shell-only probes, and owns scope and decisions. Explorers remain
+read-only and do not replace review or final skepticism.
+
+Reuse grounded answers while their candidate and inputs remain valid; do not add
+an explorer pass solely because the phase changed. Trivial, already-grounded work
+may proceed directly. When dispatch is unavailable, investigate directly and state
+the fallback; honor denials rather than routing around them. Exploration never
+authorizes extra implementation or expands the user's request.
+
+## Terminal cleanup
+
+After terminal onto/to delivery, inspect `<engine> cleanup list --dir "<configRoot>" --json`
+and preview the selected generation with `<engine> cleanup preview <name> --identity
+<identity> --dir "<configRoot>" --json`. Use `homonto workflow cleanup list --config
+"<config>" --json` for a cross-engine inventory. The binaries own eligibility,
+blockers and cleanup-pending/complete state; never infer them from checked tasks.
+
+When removal is authorized, run `<engine> cleanup apply <name> --identity <identity>
+--yes --dir "<configRoot>" --json` and inspect its result. Honor required tool approval;
+if a scope/authority decision is missing, use the native question dialog. Do not
+delete workflow directories, edit registries or force-remove checkouts yourself.
+Blocked cleanup remains reported and preserved, never relabeled complete. Retry
+the same identity after resolving the blocker; archives and native branches remain.
+No-task allocations retain `homonto workspace task cleanup`, not onto/to cleanup.
 
 ## Reviewable tasks and commits
 
@@ -76,9 +171,8 @@ is done. Include:
 
 - **Outcome:** complete, partial, or blocked for this assignment, not the whole workflow.
   Name the task and preserve any handed task ID and trace marker.
-- **Changes:** files changed, what changed and why. Give the commit SHA only if
-  committing was authorized; otherwise identify the uncommitted candidate with
-  its base and exact diff, including new files. Do not commit just to identify it.
+- **Changes:** files changed, what changed and why. Identify the uncommitted
+  candidate with its base and exact diff, including new files. The parent commits.
 - **Verification:** for each check, identify the tested candidate, absolute cwd,
   literal command, relevant inputs/environment, exit status, and literal verification
   output or a readable output path. State which expected passing signal was

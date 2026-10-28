@@ -14,7 +14,7 @@ git config user.name e2e
 
 log "framework-install gate: onto init refuses before homonto apply"
 cat > homonto.toml <<'EOF'
-[frameworks.onto]
+[engines.onto]
 source = "builtin:onto"
 scope = "project"
 

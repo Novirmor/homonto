@@ -13,12 +13,13 @@ func TestNewChangeWorkflowSelectionPolicy(t *testing.T) {
 	policy := hPromptText(t, "skills/homonto/references/workflow-selection.md")
 	plain := strings.Join(strings.Fields(policy), " ")
 	for _, want := range []string{
-		"Before creating a change, inspect both workflow inventories",
-		"Resume a unique matching active change",
-		"do not ask again on resume",
+		"Before creating a task, inspect the request and any recorded workspace task",
+		"Resume a matching task in its recorded engine",
+		"Do not ask again on resume",
+		"**`no`**", "Engine selection is one-way for this task",
 		"`/to`, `/onto-fix`, `/onto-tweak`, and",
 		"`/onto` selects the onto family, not its preset",
-		"ask **once before `to new` or `onto new`**",
+		"ask **once before task creation**",
 		"short task-specific recommendation",
 		"**`to`**", "**`onto fix`**", "**`onto tweak`**", "**Full `onto`**",
 		"A small bug may fit either `to` or `onto fix`",
@@ -45,9 +46,8 @@ func TestNewChangeWorkflowSelectionPolicy(t *testing.T) {
 	}
 	for file, want := range map[string]string{
 		"commands/onto.md":                "`/onto` selects onto but not fix, tweak, or full",
-		"commands/h-resolve-issue.md":     "asks once before creating a change",
+		"commands/h-resolve-issue.md":     "skill owns spike, engine selection, execution and publication",
 		"skills/h-resolve-issue/SKILL.md": "Resume a unique match without prompting",
-		"skills/h-continue-pr/SKILL.md":   "Do not prompt when resuming a matching active change",
 	} {
 		if !strings.Contains(hPromptText(t, file), want) {
 			t.Errorf("%s missing %q", file, want)

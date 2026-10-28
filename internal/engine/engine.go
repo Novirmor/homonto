@@ -165,7 +165,7 @@ func Build(ctx context.Context, configPath, home, contentDir string) (*Engine, e
 		WorkspaceLayout:     layout,
 		Resolver:            secret.NewResolver(),
 	}
-	// Resolve any [frameworks.X] source="remote:<url>" through the trust pipeline
+	// Resolve any [engines.X] source="remote:<url>" through the trust pipeline
 	// now that the cache/lock/revocation paths are known, and inject the verified
 	// cache dirs so BOTH Plan (framework expansion) and materializeCatalog (which
 	// builds via Cfg.FrameworkCatalog()) overlay the remote framework roots. A
@@ -418,21 +418,23 @@ func (e *Engine) subagentRenderContextFor(targets map[string]map[string]bool) (m
 		records = filepath.Join(e.ProjectRoot, records)
 	}
 	recordRoots := []string{records, permissionCanonicalPath(records)}
+	roles, err := agentfm.BuiltinRoles()
+	if err != nil {
+		return nil, err
+	}
 	// Native record protection follows the builtin role even when installed
 	// directly rather than through a framework. It grants no external access.
-	for _, agent := range []string{"onto-implementer", "to-implementer"} {
-		externalDirectoryDeniesByAgent[agent] = recordRoots
+	for agent, role := range roles {
+		if role.Writer {
+			externalDirectoryDeniesByAgent[agent] = recordRoots
+		}
 	}
-	// ADR 0039/0045: the builtin workflow frameworks render declared-repo
-	// access for their writable agents only — the shared homonto primary
-	// (ADR 0045 replaced the per-framework onto/to primaries) and the two
-	// implementers. Declaring any one of onto, to, or the h companion
-	// installs the primary, so any of them enables the rule; read-only
-	// specialists never gain external access.
+	// ADR 0068: builtin workers may inspect all declared repositories. Directory
+	// access does not grant shell or edit capability to read-only specialists.
 	workflowFrameworkInstalled := false
 	for _, resource := range e.Cfg.Frameworks {
 		switch resource.Source {
-		case "builtin:onto", "builtin:to", "builtin:h":
+		case "builtin:onto", "builtin:to", "builtin:no", "builtin:h":
 			workflowFrameworkInstalled = true
 		}
 	}
@@ -461,13 +463,13 @@ func (e *Engine) subagentRenderContextFor(targets map[string]map[string]bool) (m
 				}
 			}
 		}
-		for _, agent := range []string{"homonto", "onto-implementer", "to-implementer"} {
-			externalDirectoriesByAgent[agent] = externalDirectories
+		// Every builtin role may read workflow records, even outside the
+		// project. A writer's record denies render last and remove that allow.
+		for agent := range roles {
+			externalDirectoriesByAgent[agent] = append(append([]string(nil), externalDirectories...), recordRoots...)
 		}
-		externalDirectoriesByAgent["homonto"] = append(append([]string(nil), externalDirectories...), recordRoots...)
 	}
 	names := map[string]string{}
-	hosts := map[string]string{}
 	if entries, err := e.Cfg.ExpandedSubagentEntriesForTool("opencode"); err == nil {
 		for _, entry := range entries {
 			if source, ok := config.SubagentCatalogName(entry.Resource.Source); ok {
@@ -481,21 +483,21 @@ func (e *Engine) subagentRenderContextFor(targets map[string]map[string]bool) (m
 				if entry.Resource.Scope == "project" && entry.Repo != "" {
 					directory = e.Cfg.RepoDirs()[entry.Repo]
 				}
-				host, known := hosts[directory]
-				if !known {
-					var err error
-					host, err = permissionHostWorktree(directory)
-					if err != nil {
-						return nil, err
-					}
-					hosts[directory] = host
-				}
 				for _, root := range recordRoots {
-					rel, err := filepath.Rel(host, root)
-					if err != nil {
-						return nil, fmt.Errorf("permission host %q records %q: %w", host, root, err)
+					// V2 checks internal edits relative to the active Location,
+					// and external files by absolute canonical path (already
+					// included in recordRoots). Mixing in V1 worktree-relative
+					// paths would deny unrelated source files in nested layouts.
+					for _, base := range []string{directory, permissionCanonicalPath(directory)} {
+						rel, err := filepath.Rel(base, root)
+						if err != nil {
+							return nil, fmt.Errorf("permission host %q records %q: %w", base, root, err)
+						}
+						if rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+							continue
+						}
+						editDirectoryDeniesByAgent[source] = append(editDirectoryDeniesByAgent[source], rel)
 					}
-					editDirectoryDeniesByAgent[source] = append(editDirectoryDeniesByAgent[source], rel)
 				}
 			}
 		}

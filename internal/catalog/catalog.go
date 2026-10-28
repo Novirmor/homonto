@@ -20,6 +20,7 @@ import (
 // Framework is one catalog framework's parsed metadata.
 type Framework struct {
 	Name         string
+	Kind         string // "workflow" or "engine" for shipped packages
 	Version      string
 	Description  string
 	Dependencies []string // framework names (version constraints stripped)
@@ -73,6 +74,7 @@ const CurrentManifestSchemaVersion = 1
 type frameworkTOML struct {
 	ManifestSchema int    `toml:"manifest_schema"`
 	Name           string `toml:"name"`
+	Kind           string `toml:"kind"`
 	Version        string `toml:"version"`
 	Description    string `toml:"description"`
 	Dependencies   struct {
@@ -97,7 +99,7 @@ func New() (*Catalog, error) { return Load(embedded.FS) }
 // NewWithLocal loads the production catalog from the embedded filesystem, then
 // merges each local single-framework root in locals (keyed by framework name).
 // It is LoadWithLocal with the embedded base, the constructor a config uses to
-// resolve its [frameworks.X] source="local:<path>" entries.
+// resolve its [engines.X] source="local:<path>" entries.
 func NewWithLocal(locals map[string]fs.FS) (*Catalog, error) {
 	return LoadWithLocal(embedded.FS, locals)
 }
@@ -477,6 +479,7 @@ func (c *Catalog) indexFramework(name string, src fs.FS, ft frameworkTOML) error
 	c.frameworks[name] = Framework{
 		srcFS:                 src,
 		Name:                  ft.Name,
+		Kind:                  ft.Kind,
 		Version:               ft.Version,
 		Description:           ft.Description,
 		Dependencies:          depNames,

@@ -1,6 +1,6 @@
 # Default to trusted workspace shell
 
-- **Status:** Partially superseded by 0055, 0056, 0057, and 0059
+- **Status:** Partially superseded by 0055, 0056, 0057, 0059, and 0070 (coordinator delivery prompts)
 - **Date:** 2026-09-08
 
 ## Context

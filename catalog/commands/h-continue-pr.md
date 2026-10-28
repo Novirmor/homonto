@@ -1,5 +1,5 @@
 ---
-description: Continue a GitHub PR — collect review feedback, drive the matching to/onto change, push verified fixes.
+description: Continue a GitHub PR — address feedback, verify fixes, and update the same PR without requiring an engine.
 agent: homonto
 ---
 
@@ -7,18 +7,15 @@ agent: homonto
 
 Load and follow the `h-continue-pr` skill. If it is unavailable, say the
 required skill is unavailable, direct the user to install or reapply the `h`
-GitHub skill bundle (declare `[frameworks.h]` if needed and run `homonto apply`),
+GitHub skill bundle (declare `[workflows.h]` if needed and run `homonto apply`),
 and stop.
 
 `$ARGUMENTS` is one unambiguous PR reference: a GitHub PR URL,
 `OWNER/REPO#NUMBER`, a number, or a unique head branch resolved against the
 repository. Resolve its canonical identity rather than requiring a syntax rerun.
 
-The skill feeds the PR's outstanding feedback into the matching workflow
-change. With no match, honor an explicit path or recommend viable `to` and
-onto paths with reasons and ask once before creating a change. Continue after
-the answer in the same invocation to verified
-fixes pushed to the exact existing PR head, one evidence-backed summary comment,
-and honestly addressed threads, unless the user names an earlier endpoint or
-asks to pause. The invocation authorizes those actions after verification;
-configured tool permissions and nontrusted-feedback scope decisions still apply.
+The skill owns feedback scope, safe checkout, verification and publication.
+It is engine-optional: do not select an engine or create lifecycle records unless
+the user explicitly selects that route. Continue in the same invocation to the
+skill's success endpoint unless the user names an earlier endpoint or asks to
+pause.

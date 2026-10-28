@@ -8,6 +8,7 @@ import (
 	"strings"
 	"unicode"
 
+	"github.com/noviopenworks/homonto/internal/catalog"
 	"github.com/noviopenworks/homonto/internal/remote"
 )
 
@@ -39,7 +40,7 @@ func validate(c *Config) error {
 	if err := validateResources("commands", c.Commands); err != nil {
 		return err
 	}
-	if err := validateFrameworks(c); err != nil {
+	if err := validatePackages(c); err != nil {
 		return err
 	}
 	if err := validateSubagents(c.Subagents); err != nil {
@@ -49,6 +50,9 @@ func validate(c *Config) error {
 		return err
 	}
 	if err := validateRepos(c); err != nil {
+		return err
+	}
+	if err := validateIntegration(c); err != nil {
 		return err
 	}
 	if err := validateRepoTargets(c); err != nil {
@@ -89,18 +93,64 @@ func validateWorkflow(c *Config) error {
 	return nil
 }
 
-// validateFrameworks checks the framework source rule.
-//
-// Frameworks have their own source rule: builtin:<name> (expanded from the
-// embedded catalog) or local:<path> (a local framework root). Every other
-// source expands nothing and is rejected loudly (F35).
-//
-// onto and to may be declared together (ADR 0042): their records live in
-// disjoint directories (changes/ vs tasks/), their agents and commands are
-// namespaced, and the workflow is chosen per change by selecting its primary
-// agent — not per repository.
-func validateFrameworks(c *Config) error {
-	return validateFrameworkResources(c.Frameworks)
+// validatePackages checks the workflow and engine source rules. A declaration
+// cannot occupy both namespaces: model selection is dynamic, but a catalog
+// package has one role.
+func validatePackages(c *Config) error {
+	for name := range c.Workflows {
+		if _, duplicate := c.Engines[name]; duplicate {
+			return fmt.Errorf("parse config: %q is declared as both a workflow and an engine", name)
+		}
+	}
+	if err := validateFrameworkResources("workflows", c.Workflows); err != nil {
+		return err
+	}
+	if err := validateFrameworkResources("engines", c.Engines); err != nil {
+		return err
+	}
+	return validateBuiltinPackageKinds(c)
+}
+
+// validateBuiltinPackageKinds makes the public split semantic rather than a
+// pair of aliases: a bundled workflow cannot be installed as an engine and
+// vice versa. Local and remote packages carry their kind in their own manifest
+// and are checked when that manifest is loaded for expansion.
+func validateBuiltinPackageKinds(c *Config) error {
+	cl, err := loadedCatalog()
+	if err != nil {
+		return err
+	}
+	return validatePackageKinds(c, cl, true)
+}
+
+func validatePackageKinds(c *Config, cl *catalog.Catalog, builtinOnly bool) error {
+	for _, group := range []struct {
+		kind      string
+		resources map[string]Resource
+	}{{"workflow", c.Workflows}, {"engine", c.Engines}} {
+		for _, name := range sortedResourceNames(group.resources) {
+			r := group.resources[name]
+			if builtinOnly && !strings.HasPrefix(r.Source, "builtin:") {
+				continue
+			}
+			catalogName, expandable := FrameworkCatalogName(name, r.Source)
+			if !expandable {
+				continue
+			}
+			pkg, known := cl.Framework(catalogName)
+			if known && pkg.Kind != "" && pkg.Kind != group.kind {
+				return fmt.Errorf("parse config: %s.%s source %q is %s, not %s", group.kind+"s", name, r.Source, article(pkg.Kind), article(group.kind))
+			}
+		}
+	}
+	return nil
+}
+
+func article(noun string) string {
+	if strings.HasPrefix(noun, "a") || strings.HasPrefix(noun, "e") || strings.HasPrefix(noun, "i") || strings.HasPrefix(noun, "o") || strings.HasPrefix(noun, "u") {
+		return "an " + noun
+	}
+	return "a " + noun
 }
 
 // validateRepos checks the shape of every [repos] entry: a plain name usable
@@ -181,7 +231,11 @@ func validateRepoTargets(c *Config) error {
 	}
 	for _, name := range sortedResourceNames(c.Frameworks) {
 		if r := c.Frameworks[name]; r.Repo != "" {
-			return fmt.Errorf("parse config: frameworks.%s repo %q — frameworks project into the config repository only; declare their skills/commands/subagents per repo instead", name, r.Repo)
+			table := "workflows"
+			if _, ok := c.Engines[name]; ok {
+				table = "engines"
+			}
+			return fmt.Errorf("parse config: %s.%s repo %q — workflows and engines project into the config repository only; declare their skills/commands/subagents per repo instead", table, name, r.Repo)
 		}
 	}
 	return nil
@@ -434,7 +488,7 @@ func validateResources(kind string, resources map[string]Resource) error {
 	return nil
 }
 
-// validateFrameworkResources validates [frameworks.X] entries. A framework
+// validateFrameworkResources validates [workflows.X] or [engines.X] entries. A package
 // source must be builtin:<name> (expanded from the embedded catalog),
 // local:<path> (a local framework root resolved relative to the config dir), or
 // remote:<url> (a framework root fetched through the trust pipeline, which
@@ -442,12 +496,12 @@ func validateResources(kind string, resources map[string]Resource) error {
 // source MAY carry path components, so the plain-name guard is deliberately not
 // applied here. A bare name or a typo expands nothing and is rejected loudly
 // (F35); a digest on a builtin/local source is a no-op and rejected.
-func validateFrameworkResources(resources map[string]Resource) error {
+func validateFrameworkResources(kind string, resources map[string]Resource) error {
 	for name, r := range resources {
-		if err := validateResourceName("frameworks", name); err != nil {
+		if err := validateResourceName(kind, name); err != nil {
 			return err
 		}
-		label := "frameworks." + name
+		label := kind + "." + name
 		switch r.Scope {
 		case "user", "project":
 			// ok
@@ -798,7 +852,7 @@ func validateModels(c *Config) error {
 		// NO explicit declaration for this tool — or with only a tune-only retune
 		// — fall through here.
 		//
-		// Tolerate expansion errors (e.g. a stale [frameworks.comet] whose
+		// Tolerate expansion errors (e.g. a stale [engines.comet] whose
 		// catalog was removed): the engine and doctor already report them
 		// as warnings, the explicit walk above still catches must-declare
 		// failures for explicit declarations, and propagating here would

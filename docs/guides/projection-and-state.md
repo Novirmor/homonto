@@ -1,155 +1,159 @@
-# Projection & state — how apply works
+# Projection and state
 
-The mechanics behind `plan`/`apply`/`status`: the surgical merge, symlinked
-content, state, drift vs. pending, adoption, and pruning.
+How `plan` and `apply` turn `homonto.toml` into files, and how homonto keeps
+track of what it wrote.
 
 ## The pipeline
 
-`homonto.toml` parses into one tool-agnostic desired-state model. Each tool
-(OpenCode, the only adapter since v0.13.0) is an **adapter** that runs
-`Read → Plan → Apply`:
+```text
+homonto.toml ─▶ desired state ─▶ adapter: Read ─▶ Plan (diff) ─▶ confirm ─▶ resolve secrets ─▶ Apply ─▶ state
+```
 
-1. **Read** the tool's current files.
-2. **Plan** the diff against the desired state (`+` create, `~` update,
-   `-` delete).
-3. **Apply** — after confirmation and up-front secret resolution — writing
-   each file **atomically** (temp + rename), so an interrupted run never
-   leaves a half-written file.
+1. **Load** — parse and validate the whole config; any error stops here.
+2. **Read** — the adapter reads OpenCode's current files.
+3. **Plan** — compute `+` create, `~` update, `-` delete.
+4. **Confirm** — `[y/N]` unless `--yes`.
+5. **Resolve** — every `${…}` secret, before any write. One failure aborts.
+6. **Apply** — write each file atomically (temp file + rename).
+7. **Record** — save state.
 
-State persists after each successful adapter, so a failure in the second tool
-never loses the first tool's applied records.
+One apply lock covers the whole plan, including every declared repository.
+
+## What lands where
+
+| Resource | Project scope | User scope |
+|---|---|---|
+| MCP server | `<root>/opencode.jsonc` → `mcp.<name>` | `~/.config/opencode/opencode.jsonc` |
+| Setting | — | `~/.config/opencode/opencode.jsonc` |
+| Plugin | — | `opencode.jsonc` → `plugin` array |
+| Terminal setting | — | `~/.config/opencode/cli.json` |
+| Skill | `.opencode/skills/<name>` → link | `~/.config/opencode/skills/<name>` |
+| Command | `.opencode/command/<name>.md` → link | `~/.config/opencode/command/<name>.md` |
+| Agent | `.opencode/agent/<name>.md` → link or copy | `~/.config/opencode/agent/<name>.md` |
+| Workflow plugin | `.opencode/plugins/homonto-workflow-context` → link | — |
+| Catalog content | `.homonto/catalog/` | — |
+| State | `.homonto/state.json` (+ `state.<alias>.json` per declared repo) | — |
+
+Plan keys name the kind: `mcp.`, `projmcp.`, `setting.`, `projsetting.`,
+`plugin.`, `tui.cli.`, `skill.`, `command.`, `subagent.`.
 
 ## Surgical merge
 
-homonto writes **only the keys it manages** and preserves every unmanaged key
-in the tool's file. Consequences:
+homonto writes **only keys it manages**:
 
-- Your hand-added MCP servers, settings, and plugins survive every apply.
-- An **unparseable** tool file makes that adapter abort and report; homonto
-  never overwrites a file it cannot understand.
-- Adapters write a file **only when a managed key inside it changes**. A
-  skills-only apply leaves tool JSON files byte for byte untouched, which is
-  also why OpenCode JSONC comments survive link-only applies but not applies
-  that rewrite `opencode.jsonc`.
+- your hand-added MCP servers, settings, and plugins survive every apply;
+- a file is rewritten only when a managed key inside it changes — a
+  skills-only apply leaves `opencode.jsonc` byte-for-byte untouched;
+- an unparseable file makes that adapter stop and report; homonto never
+  overwrites what it can't read.
 
-## Owned content is symlinked
+**JSONC comments:** when an apply does rewrite `opencode.jsonc`, comments in
+it are lost. No-op and link-only applies keep them.
 
-Skills you author live under the optional, user-created `homonto/skills/`
-(the local provider root, next to `homonto.toml`) and are **symlinked** into
-each tool, so editing the source is instantly live everywhere. `apply` ensures
-the links exist and point correctly. It **never clobbers** a real file or a symlink pointing
-elsewhere; those are reported as conflicts.
+## Links, not copies
 
-Link-mode commands and subagents work the same way; copy-mode subagents are
-projected as real managed files instead (see [subagents](subagents.md)).
+Skills, commands, and link-mode agents are symlinks to their source
+(`homonto/…` for `local:`, `.homonto/catalog/…` for `builtin:`). Editing the
+source is live. Apply never replaces a real file or a symlink pointing
+elsewhere; it reports a **conflict**. Move the file aside and re-apply.
 
-Same-domain project links store **relative** targets: their source and
-destination are inside the config repository and move together. User-scoped
-and cross-repository links remain absolute. After a repository move, run
-`homonto plan` and `homonto apply` from the new location. Eligible stale
-absolute links are repaired through that normal plan/confirm path when the
-on-disk target exactly matches the recorded prior target and the old/new
-paths satisfy the relocation checks. This includes eligible user-scoped links
-whose source moved while their destination stayed fixed. Unrecorded or
-changed foreign links remain conflicts; cross-repository links do not qualify
-for this same-domain repair. See [ADR 0026](../adr/0026-relative-project-links.md)
-and [troubleshooting](troubleshooting.md).
+Project links use **relative** targets, so moving the repository keeps them
+valid. User-scope and cross-repository links are absolute. After a move, run
+`homonto plan` and `homonto apply` from the new location; eligible stale
+links whose on-disk target matches the recorded one are repaired through the
+normal confirm step.
 
-## State — `.homonto/state.json`
+## State
 
-State lives next to your config and records the last-applied snapshot per
-resource: the unresolved desired value plus a sha256 hash of the applied
-value (never a plaintext secret — see [secrets](secrets.md)). It also records
-the versions behind each apply (binary, catalog, per-framework), which is how
-`homonto update` prints its version transition and the workflow doctors
-detect binary/framework skew.
+`.homonto/state.json` records, per resource, the unresolved desired value and
+a sha256 hash of what was written — never a secret value. It also records:
 
-State additionally records the **catalog version** and a **subagent render
-fingerprint**, a digest of the per-agent models (and per-tool target sets)
-the projected agents were stamped from. Builtin content re-materializes only
-when one of those inputs moved (or a file it would write is missing), so a
-settled workspace stays a true no-op while a changed
-`[subagents.<name>.<tool>]` block re-renders the agent that reads it.
+- the binary, catalog, and package versions behind each apply (used by
+  `homonto update` and by `onto doctor`/`to doctor` skew checks);
+- a fingerprint of the agent model blocks, so changing a model re-renders
+  exactly the agents that use it;
+- an operation history used by `homonto explain`.
 
-Because a catalog file is reached through a name-based symlink, re-rendering
-it changes no *projected* value and so produces an empty plan. `apply` runs
-anyway in that case and reports
-`No projection changes; catalog re-materialized.` — the same carve-out
-`remote:` sources get, for the same reason.
+`.homonto/` is gitignored by `homonto init`; each machine applies for itself.
 
-State is generated; the scaffolded `.gitignore` excludes `.homonto/` by
-default.
+When only catalog content changed (for example after `homonto update` or a
+model change), plan shows no projection changes and apply reports:
 
-## `status`: drift vs. pending
+```text
+No projection changes; catalog re-materialized.
+```
 
-`homonto status` compares the values homonto manages on disk against the
-state snapshot and reports two **independent** things:
-
-- **Drift** — a managed key changed on disk *outside homonto* since the last
-  apply, or was deleted:
-
-  ```
-  opencode setting.theme drifted (will reset on apply)
-  opencode mcp.foo missing (deleted out of band)
-  ```
-
-- **Pending** — edits to `homonto.toml` not yet applied. The disk still
-  matches the last apply, so this is not drift; it is a count:
-
-  ```
-  1 config change(s) awaiting apply (run `homonto apply`)
-  ```
-
-When neither is present, `status` prints `No drift.` The distinction
-matters: editing your config should not look like something changed your
-files behind your back. Use `homonto plan` to see exactly what a pending
-apply would write.
-
-For scripting, `status --exit-code` exits `2` on pending and `3` on drift,
-and `--output json` emits the report structurally.
-
-## Adoption: pre-existing resources are recorded quietly
-
-When a declared resource already exists on disk with **exactly** the value
-homonto would write — an MCP server you added by hand, or config
-bootstrapped by `import` — `apply` **adopts** it: the resource is recorded
-into state with no file write, no diff line, and no prompt.
-
-- `plan` stays silent about adoption. It prints `No changes` when adoption
-  is the only outstanding work, because nothing will be *written*.
-- `apply` performs the adoption even when it is the only work, without a
-  confirmation prompt (only `state.json` is touched), and reports it:
-  `Reconciled 1 pre-existing resource(s) into state.`
-
-Why it matters: an adopted resource becomes fully managed, visible to drift
-detection and, if you later remove it from `homonto.toml`, to pruning.
-Before adoption, a hand-created resource could look managed while silently
-escaping both.
-
-Adoption never touches secret-bearing values (those are always re-applied so
-the resolved value is verified), and an apply whose only effect is adoption
-leaves `opencode.jsonc` byte for byte unchanged, comments included.
-
-## Pruning: removal is declarative too
-
-Remove a resource from `homonto.toml` and the next `apply` deletes it from
-the tool files (and removes owned-content links). Only resources homonto
-recorded in state are ever pruned; your own hand-added keys stay untouched.
-
-## A typical loop
+## Drift vs. pending
 
 ```console
 $ homonto status
-1 config change(s) awaiting apply (run `homonto apply`)   # you edited homonto.toml
-
-$ homonto plan                                            # see the diff
-opencode:
-  ~ setting.model: "old" -> "new"
-
-$ homonto apply                                           # write it
-...
-Applied.
-
+1 config change(s) awaiting apply (run `homonto apply`)    ← pending: you edited homonto.toml
 $ homonto status
-No drift.                                                 # disk matches state
+opencode setting.model drifted (will reset on apply)      ← drift: a file changed outside homonto
+opencode mcp.foo missing (deleted out of band)
+$ homonto status
+No drift.
 ```
+
+`--exit-code` makes scripts easy: `0` clean, `2` pending, `3` drift.
+Declared-repository findings are labelled `opencode@<alias>`.
+
+## Adoption
+
+If a declared resource already exists on disk **exactly** as homonto would
+write it — an MCP server you added by hand — apply records it in state
+without writing:
+
+```text
+Reconciled 1 pre-existing resource(s) into state.
+```
+
+`plan` shows `No changes` in that case, and adoption-only applies don't
+prompt. Values containing secret references are never adopted; they're always
+re-applied so the resolved value is checked.
+
+## Pruning
+
+Remove a resource from `homonto.toml` and the next apply removes it from
+OpenCode. Only resources recorded in state are pruned — hand-made keys never
+are. An adopted resource is managed, so removing its declaration prunes it.
+
+## Snapshots: undoable applies
+
+```console
+$ homonto apply --snapshot
+…
+$ homonto snapshot list
+$ homonto snapshot undo <apply-id>       # reverse a committed snapshot apply
+$ homonto snapshot recover <apply-id>    # roll back an interrupted one
+```
+
+`undo` restores state, links, copies, and structured keys, and refuses with
+no changes if any managed value was edited since. `recover` finishes an
+interrupted snapshot apply by rolling it back. The latest 10 committed
+journals are kept; `doctor` names incomplete ones with the exact recover
+command.
+
+## Explaining a resource
+
+```console
+$ homonto explain skill house-style
+skill         house-style          direct scope=project source=local:house-style
+    dst: …/notes/.opencode/skills/house-style
+    last: create (18dc732e, declare at 2026-10-27T17:37:54Z)
+```
+
+Kinds: `skill`, `command`, `subagent`, `subagentcopy`, `mcp`, `projmcp`,
+`setting`, `projsetting`, `tui`, `plugin`. `--repo` picks a repository
+partition, `--json` for machines. Values are never printed.
+
+## Updating catalog content
+
+```console
+$ homonto update
+```
+
+Re-materializes the catalog embedded in the running binary and re-projects
+it, printing the version transition, through the same plan → confirm → apply
+flow. It does not download binaries — install those first (see
+[installation](installation.md#upgrade)).

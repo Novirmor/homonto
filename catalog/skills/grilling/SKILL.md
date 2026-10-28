@@ -25,8 +25,9 @@ a later one.
 
 ## How to ask
 
-Use OpenCode's built-in `question` tool for each user decision, including in
-standalone mode. Do not substitute ordinary chat or shell prompts. If unavailable,
+Use OpenCode's built-in `question` tool for every question to the user, including
+clarifications and free-form input, in standalone mode too. Always display the
+native dialog box. Do not substitute ordinary chat or shell prompts. If unavailable,
 denied or dismissed, report the pending decision without assuming an answer.
 
 - **One question at a time.** Ask, wait for the answer, then ask the next.

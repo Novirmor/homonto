@@ -25,13 +25,13 @@ func runGit(t *testing.T, dir string, args ...string) {
 }
 
 // prepWorkspace builds a temp git repo that passes gate(): a homonto.toml
-// declaring [frameworks.onto] plus an applied onto catalog directory. It is
+// declaring [engines.onto] plus an applied onto catalog directory. It is
 // committed so the repo starts clean, and callers control dirtiness from
 // there by writing further, uncommitted files.
 func prepWorkspace(t *testing.T) string {
 	t.Helper()
 	dir := t.TempDir()
-	writeFile(t, filepath.Join(dir, "homonto.toml"), "[frameworks.onto]\nsource=\"builtin:onto\"\nscope=\"project\"\n")
+	writeFile(t, filepath.Join(dir, "homonto.toml"), "[engines.onto]\nsource=\"builtin:onto\"\nscope=\"project\"\n")
 	if err := os.MkdirAll(filepath.Join(dir, ".homonto", "catalog", "skills", "onto"), 0o755); err != nil {
 		t.Fatalf("failed to create catalog dir: %v", err)
 	}

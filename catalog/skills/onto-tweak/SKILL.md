@@ -12,6 +12,8 @@ the full plan — bounded by strict upgrade rules.
 Apply the shared [autonomous workflow policy](../homonto/references/autonomy.md),
 including workspace roots and dirty-work decisions, even on direct entry. Continue
 through the entire preset unless the user names an endpoint or asks to pause.
+Follow the [delivery loop](../onto/references/delivery.md), including endpoint
+capture and early delivery checks during setup, bounded repairs and PR readiness.
 
 ## Entry check
 
@@ -33,6 +35,7 @@ through the entire preset unless the user names an endpoint or asks to pause.
    | build with setup complete | step 2, first executable unchecked task under recorded dependencies; inspect partial work, never redo a committed task |
   | verify | step 3 |
   | close | step 4 |
+  | done | delivery loop's endpoint check; do not rerun archive |
 
   Read recorded phase before derived phase. Only a brand-new request runs
   `onto new`; an empty scaffold deriving build is not completed open/setup.
@@ -51,7 +54,8 @@ Scenarios, and non-empty Grounding. Close lint uses that template, not the full
 proposal. Use canonical dotted tasks with `[trace #N]` and inline
 Owner/Repo/Cwd/Files/Change/Verify contracts when there is no plan.
 Initialize an authorized empty managed records root before any scaffold write.
-Choose isolation before `new`; allocate schema-2 bindings immediately after
+Reuse the user's recorded isolation choice, or ask once before `new` under the
+shared execution policy; allocate schema-2 bindings immediately after
 creation, before any records/source commit. Resume existing isolation; never
 retarget a frozen base. Create the workspace via
 `onto new <name> --workflow tweak`, adding one `--repo <alias>` for each declared
@@ -179,3 +183,5 @@ discovered work exceeds the user's requested product scope.
       archived in its own commit
 - [ ] Prose edited for clarity with `onto-no-slop`; preserve machine-read markers,
       normative wording and literal evidence; no style receipt required
+- [ ] Integration, authorized publication and the requested delivery endpoint
+      confirmed under the delivery loop; archive alone is not completion

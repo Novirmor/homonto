@@ -1,11 +1,13 @@
 # Choose a workflow for new work
 
-Before creating a change, inspect both workflow inventories and the request.
-Resume a unique matching active change in its recorded workflow; do not ask
+Before creating a task, inspect the request and any recorded workspace task.
+Resume a matching task in its recorded engine; ignore other installed engines
+after selection. Only inspect a native inventory when selecting or resuming
+that lifecycle engine. No never invokes onto/to. Do not ask
 again on resume, after compaction, at a phase boundary, or on automatic preset
 escalation. Several plausible matches require an identity decision first.
 
-For genuinely new work, an explicit user choice of `to`, `onto fix`, `onto
+For genuinely new work, an explicit user choice of `no`, `to`, `onto fix`, `onto
 tweak`, or full `onto` (including `/to`, `/onto-fix`, `/onto-tweak`, and
 `/onto-open`) selects that path. `/onto` selects the onto family, not its
 preset: if the user has not chosen fix, tweak, or full, ask among those three.
@@ -13,11 +15,14 @@ An existing change or a binding repository policy may constrain the choice;
 never silently replace an explicit choice with a different workflow. Explain
 an incompatible choice and ask for a compliant path or a scope decision.
 
-If the user has not chosen a path for new work, ask **once before `to new` or
-`onto new`** using OpenCode's built-in `question` tool. Offer the viable choices with a short task-specific recommendation
+If the user has not chosen a path for new work, ask **once before task creation**
+(including no work and `to new` or `onto new`) using OpenCode's built-in `question`
+tool. Offer the viable choices with a short task-specific recommendation
 and plain-language reasons:
 
-- **`to`** — compact plan/do/done record for bounded solo work; verification is
+- **`no`** — model-directed implementation and review, without a dedicated binary
+  or lifecycle records; shared checkout and integration bookkeeping is allowed.
+- **`to`** — compact plan/do/done record for bounded work; verification is
   self-asserted, without onto's evidence-backed handoff.
 - **`onto fix`** — broken behavior with a reproducible failing test; an
   evidence-gated fix/verify/close record, without a design phase.
@@ -35,8 +40,9 @@ fit `to` or `onto tweak`. Show both where viable rather than silently choosing
 why (missing framework, binding repository policy, or preset limit). Do not
 install an absent framework or waive gates as a side effect of the answer. If
 the selected preset later exceeds its limits, follow its normal upgrade to
-full onto without another selection prompt; registered bindings may block
-cross-framework conversion, so assess fit before allocating one.
+full onto without another selection prompt. Engine selection is one-way for
+this task: do not promote/demote into another engine. If new obligations cannot
+be met in the selected engine, report the conflict and ask for a scope decision.
 
 This is a new-change routing decision, not permission to publish, skip
 verification, abandon an existing change, or repeatedly approve phases.
@@ -52,7 +58,8 @@ skills use it rather than introducing additional thresholds.
 | `onto fix` | Reproduces broken existing behavior with a failing test; bounded repair within one module and at most five non-test files | More than five non-test files, cross-module coordination, architecture/schema/dependency changes, or a new public API/capability |
 | `onto tweak` | Non-bug edit within one module and at most five non-test files; no new capability or changed spec requirement | More than five non-test files, cross-module coordination, architecture/schema/dependency changes, or a new capability/changed requirement |
 | Full `onto` | The user requests its record, or design/evidence obligations require it | Already the full path; never downgrade it automatically |
-| `to` | Bounded work without a requirement for onto's design/spec/evidence gates | Reassess fit when those obligations emerge; use supported conversion, respecting binding restrictions |
+| `to` | Bounded work without a requirement for onto's design/spec/evidence gates | Ask about incompatible scope; keep this task's selected engine |
+| `no` | Implementation and review without lifecycle records | Ask about incompatible scope; keep this task's selected engine |
 
 Count source/content files, excluding tests and workflow bookkeeping. Test count
 alone never forces escalation. A configuration key addition/removal is assessed

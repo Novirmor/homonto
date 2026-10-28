@@ -224,9 +224,12 @@ func TestRepoTargetMustBeDeclaredAndProjectScoped(t *testing.T) {
 	if err := load("[repos]\nsvc = \"" + svc + "\"\n\n[mcps.x]\ncommand=[\"x\"]\nrepo=\"svc\"\ntargets=[\"opencode\"]\n"); err == nil || !strings.Contains(err.Error(), "requires scope") {
 		t.Errorf("user-scope repo mcp = %v, want a scope error", err)
 	}
-	// Frameworks take no repo.
-	if err := load("[repos]\nsvc = \"" + svc + "\"\n\n[frameworks.onto]\nsource=\"builtin:onto\"\nscope=\"project\"\nrepo=\"svc\"\n"); err == nil || !strings.Contains(err.Error(), "config repository only") {
-		t.Errorf("repo on framework = %v, want a config-repo-only error", err)
+	// Workflows and engines take no repo; the error names the table that parses.
+	if err := load("[repos]\nsvc = \"" + svc + "\"\n\n[engines.onto]\nsource=\"builtin:onto\"\nscope=\"project\"\nrepo=\"svc\"\n"); err == nil || !strings.Contains(err.Error(), "config repository only") || !strings.Contains(err.Error(), "engines.onto repo") {
+		t.Errorf("repo on engine = %v, want a config-repo-only error naming engines.onto", err)
+	}
+	if err := load("[repos]\nsvc = \"" + svc + "\"\n\n[workflows.homonto]\nsource=\"builtin:homonto\"\nscope=\"project\"\nrepo=\"svc\"\n"); err == nil || !strings.Contains(err.Error(), "workflows.homonto repo") {
+		t.Errorf("repo on workflow = %v, want a config-repo-only error naming workflows.homonto", err)
 	}
 	// The legal shapes load.
 	if err := load("[repos]\nsvc = \"" + svc + "\"\n\n[skills.x]\nsource=\"local:x\"\nscope=\"project\"\nrepo=\"svc\"\n\n[mcps.y]\ncommand=[\"y\"]\nscope=\"project\"\nrepo=\"svc\"\ntargets=[\"opencode\"]\n"); err != nil {

@@ -9,6 +9,8 @@ Prove — with fresh evidence, not recollection — that the implementation does
 what the design and specs say. **Evidence before assertions, always.**
 Apply the shared [autonomous workflow policy](../homonto/references/autonomy.md),
 including workspace roots and dirty-work decisions, even on direct entry.
+Follow the [delivery loop](../onto/references/delivery.md): check delivery
+prerequisites before final verification and keep executing after skeptic returns.
 
 ## Entry check
 
@@ -24,6 +26,16 @@ including workspace roots and dirty-work decisions, even on direct entry.
   after recording the result.
 
 ## Steps
+
+For a multirepository task, finish per-repository candidate reviews, then review
+the combined interfaces and integration results under the shared
+[parallel execution policy](../homonto/references/execution.md#parallel-repository-assignments).
+The parent commits candidates and pauses participating writers before running
+all matching `homonto workspace task check` checks. Inspect for stale results
+on resume. These results supplement onto's native evidence and receipt gates;
+they do not replace them. A configured failure blocks combined verification;
+model-selected fallback is allowed only when no check matches. Ask before
+delivering a partial subset.
 
 ### 1. Scale check → verification mode
 
@@ -123,6 +135,12 @@ pass in Adversarial. An explicit independent-review requirement remains a blocke
 denial and blocked workers are not absence. Direct review never counts as an
 independent skeptic, and surfaced non-waivable defects still block.
 
+Apply those classes to confirmed defects in supported scenarios, not a reviewer's
+label alone. The coordinator establishes requirement, evidence, scope and impact
+under the adversarial protocol before deciding severity. An evidence request is
+work to execute; an unsupported production-hardening demand does not expand a
+local-development contract. Real data loss and credential exposure still block.
+
 ### 4. Write the report
 
 Write `<workflow-root>/changes/<name>/verification.md` from the canonical template
@@ -155,7 +173,9 @@ after recording to confirm current claims and resolve stale or unknown-ID findin
 On any failure, record `onto set verify-result <name> fail` once per round, which increments
 `observed.verify_rounds`, and note the date and failing items in `notes.md`.
 If step 4 already recorded fail, do not increment it again here.
-Default to **fix**: verify each finding against the candidate, then turn every
+Apply shared [proportionality and scope approval](../homonto/references/review-triage.md#proportionality-before-repair)
+before creating repair tasks; a verification failure does not authorize broader work.
+Default to **fix** within that boundary: verify each finding against the candidate, then turn every
 real in-scope source defect into an unchecked repair task before changing code.
 Invalidate a previous passing report (`Result: superseded (repair <date>)`) and
 record pending unless this round already recorded fail. Preserve the recorded
@@ -173,7 +193,8 @@ tasks remain coordinator-owned. Return here for fresh verification of the change
 candidate. Do not stop at a skeptic finding or ask whether to continue a clear
 in-scope repair. Escalation follows the shared eligibility table, not failure alone.
 
-Ask the user only if accepting a known lower-severity deviation is a real option
+For an authorized in-scope repair, ask the user only if accepting a known
+lower-severity deviation is a real option
 and fixing it would cross a user-owned constraint. Never recommend acceptance,
 auto-accept it, or offer it for security defects, data loss, or failed core
 acceptance scenarios. If authorized, record each deviation and rationale in

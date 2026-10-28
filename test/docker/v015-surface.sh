@@ -11,7 +11,7 @@ HOME="$(mktemp -d)"; export HOME
 W="$(mktemp -d)"; cd "$W"
 
 cat > homonto.toml <<'EOF'
-[frameworks.onto]
+[engines.onto]
 source = "builtin:onto"
 scope = "project"
 

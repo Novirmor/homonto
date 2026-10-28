@@ -16,6 +16,8 @@ Follow [autonomy](../homonto/references/autonomy.md), including OpenCode's built
 `question` tool for required decisions. Continue through the full success endpoint:
 verification, archival, integration and authorized publication. An explicit earlier
 endpoint, pause, blocking decision or hard blocker can stop the invocation.
+Load the [delivery loop](references/delivery.md) to carry the requested endpoint
+through repairs, close and remote readiness checks.
 
 ## Required inputs
 
@@ -42,7 +44,7 @@ transient evidence. Check actual dispatch using
 
 ### 2. Discover and select
 
-Inspect both workflow inventories before new work. Read
+Inspect the selected onto inventory before new work. Read
 [discovery](references/discovery.md) for active/archive matching, dependencies,
 dirty-work attribution and first-use bootstrap. Resume a unique matching change;
 ask through `question` only for unresolved identity or scope conflicts.
@@ -78,7 +80,7 @@ hand-edit state or use a backward phase write.
 | full, build | `onto-build` |
 | full, verify | `onto-verify` |
 | full, close | `onto-close` |
-| done | Report archived and integrated; new work requires its own selection |
+| done | Follow the delivery loop's endpoint check; native done alone does not prove PR readiness |
 
 Respect a preset's recorded open/design setup even if empty scaffolds derive
 build. Phase completion loads the next phase in this invocation; implementation
@@ -105,7 +107,7 @@ Schema 2 same-repo writers stay serial in their validated bindings. Legacy schem
 [subagent-protocol.md](../onto-build/references/subagent-protocol.md)'s five
 conditions. Read-only questions may run concurrently with bounded, distinct
 assignments. In direct mode the coordinator edits; in subagent mode workers edit
-only assigned source tasks and may commit only with explicit task authorization.
+only assigned source tasks and return edits and evidence. The parent owns all commits.
 
 ## Completion evidence and next route
 
@@ -118,4 +120,5 @@ Phase skills own their exit checklists and the next route. Edit retained prose
 for clarity using `onto-no-slop`; no separate style receipt is required. Preserve
 machine-read markers, task identifiers, normative requirements and literal output.
 At the final endpoint confirm `done` derives from completed integration, not
-merely an archived directory. Report blockers with evidence and preserved state.
+merely an archived directory, then establish the requested delivery facts under
+the delivery loop. Report blockers with evidence and preserved state.

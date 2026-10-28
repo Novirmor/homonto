@@ -18,7 +18,7 @@ command = ["npx", "-y", "server-brave"]
 env = { BRAVE_API_KEY = "${pass:ai/brave}" }
 targets = ["opencode"]
 
-[frameworks.onto]
+[engines.onto]
 source = "builtin:onto"
 scope = "project"
 
@@ -657,7 +657,7 @@ model = "anthropic/claude-opus-4-8"
 // them because the expanded agents are absent from c.Subagents.
 func TestLoadRequiresModelsForFrameworkExpandedSubagents(t *testing.T) {
 	doc := `
-[frameworks.onto]
+[engines.onto]
 source = "builtin:onto"
 scope = "project"
 `
@@ -679,7 +679,7 @@ scope = "project"
 // its rendered file without overriding one of the two installed host names.
 func TestLoadRejectsAliasDuplicatingFrameworkAgent(t *testing.T) {
 	doc := `
-[frameworks.onto]
+[engines.onto]
 source = "builtin:onto"
 scope = "project"
 
@@ -811,7 +811,7 @@ targets = ["opencode"]
 	// declaring anything itself.
 	t.Run("tune-only entries load over a framework", func(t *testing.T) {
 		if err := loadDoc(t, `
-[frameworks.onto]
+[engines.onto]
 source = "builtin:onto"
 scope = "project"
 
@@ -835,7 +835,7 @@ scope = "project"
 	// not skipped because the entry itself projects nothing.
 	t.Run("a tune-only entry's override is still validated", func(t *testing.T) {
 		err := loadDoc(t, `
-[frameworks.onto]
+[engines.onto]
 source = "builtin:onto"
 scope = "project"
 
@@ -862,7 +862,7 @@ effort = "turbo"
 	// A tune-only entry naming an agent nothing installs was a total silent
 	// no-op: it loaded, planned, and applied clean while retuning nothing.
 	t.Run("a tune-only typo is a load error", func(t *testing.T) {
-		err := loadDoc(t, `[frameworks.onto]
+		err := loadDoc(t, `[engines.onto]
 source = "builtin:onto"
 scope = "project"
 
@@ -876,7 +876,7 @@ model = "anthropic/claude-opus-4-8"
 	})
 
 	t.Run("a retired primary model block names its migration", func(t *testing.T) {
-		err := loadDoc(t, `[frameworks.onto]
+		err := loadDoc(t, `[engines.onto]
 source = "builtin:onto"
 scope = "project"
 
@@ -893,7 +893,7 @@ model = "test/model"
 	// homonto block does. The rename guidance must surface here too, not a
 	// bare required-model error from the framework-expanded walk.
 	t.Run("a retired primary block without homonto still names the migration", func(t *testing.T) {
-		err := loadDoc(t, `[frameworks.onto]
+		err := loadDoc(t, `[engines.onto]
 source = "builtin:onto"
 scope = "project"
 
@@ -1071,7 +1071,7 @@ func loadTOML(t *testing.T, body string) *Config {
 
 func TestExpandedSkillsIncludeFrameworkAndDeps(t *testing.T) {
 	c := loadTOML(t, `
-[frameworks.onto]
+[engines.onto]
 source = "builtin:onto"
 scope = "user"
 targets = ["opencode"]
@@ -1111,7 +1111,7 @@ func keysOf(m map[string]NamedResource) []string {
 
 func TestExpandedSkillsCollisionWithExplicit(t *testing.T) {
 	c := loadTOML(t, `
-[frameworks.onto]
+[engines.onto]
 source = "builtin:onto"
 scope = "user"
 targets = ["opencode"]
@@ -1138,12 +1138,12 @@ targets = ["opencode"]
 // collision.
 func TestExpandedSkillsFrameworkVsFrameworkConflict(t *testing.T) {
 	doc := `
-[frameworks.onto_a]
+[engines.onto_a]
 source = "builtin:onto"
 scope = "user"
 targets = ["opencode"]
 
-[frameworks.onto_b]
+[engines.onto_b]
 source = "builtin:onto"
 scope = "project"
 targets = ["opencode"]
@@ -1176,12 +1176,12 @@ targets = ["opencode"]
 // targets, so they should collapse into one entry with no error.
 func TestExpandedSkillsSameFrameworkDeclDedup(t *testing.T) {
 	c := loadTOML(t, `
-[frameworks.onto_a]
+[engines.onto_a]
 source = "builtin:onto"
 scope = "user"
 targets = ["opencode"]
 
-[frameworks.onto_b]
+[engines.onto_b]
 source = "builtin:onto"
 scope = "user"
 targets = ["opencode"]
@@ -1210,11 +1210,11 @@ targets = ["opencode"]
 // keeps BOTH origins. Different scopes remain a conflict.
 func TestExpandedSharedSkillOntoAndToDedup(t *testing.T) {
 	c := loadTOML(t, `
-[frameworks.onto]
+[engines.onto]
 source = "builtin:onto"
 scope = "project"
 
-[frameworks.to]
+[engines.to]
 source = "builtin:to"
 scope = "project"
 targets = ["opencode", "opencode"]
@@ -1243,11 +1243,11 @@ targets = ["opencode", "opencode"]
 	// before the skill expansion could report it — either surface is the
 	// same rule firing.
 	doc2 := `
-[frameworks.onto]
+[engines.onto]
 source = "builtin:onto"
 scope = "project"
 
-[frameworks.to]
+[engines.to]
 source = "builtin:to"
 scope = "user"
 
@@ -1285,8 +1285,8 @@ func ontoFrameworkModels() string {
 // targeted tool with source and scope preserved.
 func TestExpandedCommandsExplicit(t *testing.T) {
 	c := loadTOML(t, `
-[commands.example-command]
-source = "builtin:example-command"
+[commands.grill]
+source = "builtin:grill"
 scope = "project"
 targets = ["opencode"]
 `)
@@ -1295,11 +1295,11 @@ targets = ["opencode"]
 	if err != nil {
 		t.Fatalf("expand opencode: %v", err)
 	}
-	if len(got) != 1 || got[0].Name != "example-command" {
+	if len(got) != 1 || got[0].Name != "grill" {
 		t.Fatalf("opencode commands = %v", got)
 	}
-	if got[0].Resource.Source != "builtin:example-command" || got[0].Resource.Scope != "project" {
-		t.Fatalf("example-command resource = %+v", got[0].Resource)
+	if got[0].Resource.Source != "builtin:grill" || got[0].Resource.Scope != "project" {
+		t.Fatalf("grill resource = %+v", got[0].Resource)
 	}
 }
 
@@ -1350,13 +1350,13 @@ func TestExpandedCommandsFrameworkWithoutCommandsNoOps(t *testing.T) {
 		t.Fatal(err)
 	}
 	body := `
-[frameworks.skillsonly]
+[engines.skillsonly]
 source = "local:skillsonly"
 scope = "user"
 targets = ["opencode"]
 
-[commands.example-command]
-source = "builtin:example-command"
+[commands.grill]
+source = "builtin:grill"
 scope = "user"
 targets = ["opencode"]
 `
@@ -1372,8 +1372,8 @@ targets = ["opencode"]
 	if err != nil {
 		t.Fatalf("expand: %v", err)
 	}
-	if len(got) != 1 || got[0].Name != "example-command" {
-		t.Fatalf("commands = %v, want only example-command", got)
+	if len(got) != 1 || got[0].Name != "grill" {
+		t.Fatalf("commands = %v, want only grill", got)
 	}
 }
 
@@ -1398,7 +1398,7 @@ targets = ["opencode"]
 
 func TestExpandedSubagentsFrameworkInheritsScopeTargets(t *testing.T) {
 	c := loadTOML(t, `
-[frameworks.onto]
+[engines.onto]
 source = "builtin:onto"
 scope = "project"
 targets = ["opencode"]
@@ -1430,7 +1430,7 @@ func TestExpandedSubagentsExplicitVsFrameworkCollision(t *testing.T) {
 	dir := t.TempDir()
 	p := filepath.Join(dir, "homonto.toml")
 	doc := `
-[frameworks.onto]
+[engines.onto]
 source = "builtin:onto"
 scope = "project"
 

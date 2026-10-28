@@ -59,7 +59,7 @@ func TestWorkspacePromptAuditContracts(t *testing.T) {
 		{"skills/onto-open/references/preset-proposal.md", []string{"## Non-Goals", "## Capability Impact", "## Acceptance Scenarios", "## Grounding", "Scenario-ID: <id>", "Owner, Repo, Cwd, Files, Change, and Verify"}},
 		{"skills/onto-close/references/lint-checklist.md", []string{"preset-proposal.md", "Every preset Acceptance Scenario has current report evidence"}},
 		{"skills/onto-verify/SKILL.md", []string{"do not record receipts yet", "finalize `verification.md`", "Do not edit the report after receipts", "repository/task/scenario supersedes earlier claims", "Re-record all claims", "no separate round-reset command"}},
-		{"skills/to/SKILL.md", []string{"check bounded fit before allocation", "Registered bindings currently block promotion", "explicit handoff", "location-aware recovery", "to doctor"}},
+		{"skills/to/SKILL.md", []string{"check bounded fit before allocation", "keeps its selected engine", "ask for a scope decision", "location-aware recovery", "to doctor"}},
 		{"skills/to-do/SKILL.md", []string{"`Owner: coordinator` records tasks", "however substantial", "Owner/Repo/Cwd/Files/Change/Verify"}},
 		{"skills/onto-build/references/subagent-protocol.md", []string{"explicit separate lane", "Implementers remain prohibited from editing records", "Owner, Repo, absolute Cwd"}},
 		{"skills/onto-build/references/plan.md", []string{"- Owner:", "- Repo:", "- Cwd:", "never insert or reorder", "fresh final-validation task"}},
@@ -94,6 +94,10 @@ func TestWorkspaceSkillsPolicyReachability(t *testing.T) {
 	// normally loads the policy for them. Direct invocation must be safe too.
 	for _, policy := range []string{"skills/homonto/references/workspace-policy.md", "skills/homonto/references/autonomy.md"} {
 		for _, file := range files {
+			if file == "skills/no/SKILL.md" {
+				// no is intentionally only an inventory of its two subagents.
+				continue
+			}
 			t.Run(path.Base(policy)+"/"+file, func(t *testing.T) {
 				seen := map[string]bool{}
 				var reachesPolicy func(string) bool
@@ -135,7 +139,7 @@ func TestWorkspaceSkillsAllocationModes(t *testing.T) {
 			if !ok {
 				t.Fatal("missing schema 2 allocation policy")
 			}
-			registered, legacy, ok := strings.Cut(modes, "## Legacy schema 0/1 combined parallel")
+			registered, legacy, ok := strings.Cut(modes, "## Legacy schema 0/1 combined isolation")
 			if !ok {
 				t.Fatal("missing legacy combined protocol")
 			}
@@ -221,10 +225,6 @@ func TestWorkspaceSkillsContracts(t *testing.T) {
 			"Config/OpenCode may be non-Git", "never require configRoot's origin to match",
 			"--dir \"<configRoot>\"", "--repo <alias> --receipt",
 		}},
-		{"skills/h-continue-pr/SKILL.md", []string{
-			"may be non-Git", "not configRoot's origin", "--dir \"<configRoot>\"",
-			"Do not retarget existing anchors", "Existing combined mode retains the post-archive pinned commit",
-		}},
 	} {
 		t.Run(tc.file, func(t *testing.T) {
 			content, err := fs.ReadFile(embedded.FS, tc.file)
@@ -242,7 +242,7 @@ func TestWorkspaceSkillsContracts(t *testing.T) {
 }
 
 func TestWorkspaceSkillsCreationBases(t *testing.T) {
-	for _, name := range []string{"onto-open", "onto-fix", "onto-tweak", "to", "to-plan", "h-resolve-issue", "h-continue-pr"} {
+	for _, name := range []string{"onto-open", "onto-fix", "onto-tweak", "to", "to-plan", "h-resolve-issue"} {
 		text := hPromptText(t, "skills/"+name+"/SKILL.md")
 		if !strings.Contains(text, "--base <alias>=<local-branch>") {
 			t.Errorf("%s must select per-repo bases at creation", name)
@@ -253,10 +253,6 @@ func TestWorkspaceSkillsCreationBases(t *testing.T) {
 		if !strings.Contains(policy, workflow+" new <change> --repo api --repo web --base api=main --base web=develop") {
 			t.Errorf("%s needs a multi-repo creation example with independent target branches", workflow)
 		}
-	}
-	continuation := hPromptText(t, "skills/h-continue-pr/SKILL.md")
-	if !strings.Contains(continuation, "--base <alias>=<local-PR-head-branch>") || strings.Contains(continuation, "invent base flags") {
-		t.Error("PR continuation must select its local PR-head base at creation, not reject the supported flag")
 	}
 }
 

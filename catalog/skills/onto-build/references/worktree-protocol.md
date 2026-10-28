@@ -9,7 +9,7 @@ Inspect the config schema and actual layout before choosing a protocol. The
 legacy exception below requires schema 0/1 and an existing combined workflow;
 `workflow.git: existing` or an old state file alone does not enable it in schema 2.
 In both modes the coordinator alone owns workflow state, task records, workflow
-allocation, and integration. Workers commit only assigned source/test files. Never copy
+allocation, commits, and integration. Workers return assigned source/test edits. Never copy
 `.env` or untracked input automatically; the user decides required dirty-input
 transport. Honor tool permissions; no fallback around a denial or failed binding.
 
@@ -59,10 +59,10 @@ homonto worktree remove <name> --workflow onto --repo <alias> --yes
 Removal keeps the branch and refuses dirty, unowned, active, or unintegrated
 worktrees. Report failures without forcing removal or pruning around the registry.
 
-## Legacy schema 0/1 combined parallel
+## Legacy schema 0/1 combined isolation
 
-The existing combined onto workflow retains raw task worktrees for parallel
-disjoint-file tasks only under all five conditions in `subagent-protocol.md`.
+The existing combined onto workflow retains raw task worktrees for serial
+disjoint-file assignments under the conditions in `subagent-protocol.md`.
 Never downgrade configuration or use this path to evade a denial or registered
 allocation failure. Schema 2 must use the registered protocol above.
 
@@ -83,7 +83,7 @@ workflow execution trees or edit the copied `tasks.md`, `plan.md`, or workflow
 state. Every workflow call retains `--dir "<configRoot>"`, never a task worktree
 as its state owner.
 
-Verify returned source commits, then join them into the coordinator's change
+Review and commit returned source edits, then join them into the coordinator's change
 branch in plan order. Perform every checkoff and bookkeeping commit serially
 after the joins; run final review only after the last join. Verify the integrated
 candidate before continuing to workflow verification and close. Partial joins

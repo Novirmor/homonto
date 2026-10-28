@@ -393,12 +393,12 @@ func TestDoctorReportsLinkedCommand(t *testing.T) {
 
 	var found bool
 	for _, line := range e.Doctor() {
-		if strings.Contains(line, "ok: command \"example-command\" linked (opencode)") {
+		if strings.Contains(line, "ok: command \"grill\" linked (opencode)") {
 			found = true
 		}
 	}
 	if !found {
-		t.Fatalf("doctor did not report example-command linked; got %v", e.Doctor())
+		t.Fatalf("doctor did not report grill linked; got %v", e.Doctor())
 	}
 }
 

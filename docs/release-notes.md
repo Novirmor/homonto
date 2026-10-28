@@ -1,1291 +1,145 @@
-# Release notes intro
+# Release notes
 
-This file is prepended to every GitHub release's auto-generated notes by the
-`release` workflow (`--notes-file docs/release-notes.md --generate-notes`), so
-every release states the accepted limitations up front. Keep it short; the
-per-release changelog is generated automatically below it.
-
----
+The `release` workflow publishes this file as the top of each GitHub release
+(`--notes-file docs/release-notes.md --generate-notes`), followed by the
+generated commit list. It holds two things: the section for the release being
+tagged, and the standing known limitations. When cutting a release, replace
+the release section with that version's entry from
+[`CHANGELOG.md`](../CHANGELOG.md)
+([release checklist](release-checklist.md#3-release-notes)).
 
 ## What's in this release
 
-This release ships **three binaries** — `homonto` (config projector), `onto`
-(spec-driven workflow operator), and `to` (minimal coding-framework
-bookkeeper) — for every supported OS/arch as separate archives under one
-`SHA256SUMS`. `onto` and `to` each require `homonto` to have installed their
-framework first (`[frameworks.onto]` / `[frameworks.to]` + `homonto apply`).
-
-### v0.33.0 — OpenCode wildcard service bindings
-
-All three binaries are stamped v0.33.0. The embedded catalog is 0.33.0 (onto
-0.25.5, to 0.22.4, h 0.10.4).
-
-- **OpenCode V2 authorization (#26):** GitHub draft preparation accepts service
-  metadata registered with an IPv4 or IPv6 wildcard listener and connects only
-  through its corresponding loopback client address. Remote hosts, userinfo,
-  query strings, fragments, redirects, authentication, PID/version matching,
-  workspace plugin identity, cancellation, and request deadlines retain their
-  existing checks.
-
-**Upgrade:** install matching v0.33.0 binaries, run `homonto plan` and
-`homonto apply` in each configured project, then restart OpenCode. Existing
-workflow records do not migrate. A GitHub draft remains behind its existing
-native permission and approval flow.
-
-**Validation:** regression coverage includes IPv4/IPv6 loopback and wildcard
-registrations plus rejected remote endpoints. The complete pre-tag gate,
-including race tests, vulnerability scanning, Docker E2E, and release packaging,
-must pass before publication; the release workflow repeats it.
-
-### v0.32.2 — workflow recovery and evidence-backed implementation
-
-This stable release includes all changes since v0.32.1: the owner-approved
-v0.32.2-rc.3 candidate plus the shared debugging and implementer-report
-improvements below. All three binaries are stamped v0.32.2; the embedded catalog
-is 0.32.5 (onto 0.25.5, to 0.22.4, h 0.10.3). The h bundle receives the updated
-onto/to frameworks through its existing dependencies.
-
-- **Workflow continuity:** V1/V2 model-context and compaction reminders keep
-  homonto, build, and custom agents working on their authorized assignment.
-  Explicit endpoints, pauses, worker scope, permission denials, and concrete
-  blockers remain valid stops. Idle events never automatically restart agents.
-- **GitHub draft recovery (#19, #20):** V2 drafting returns the preview and native
-  question arguments without invoking a nested question. Publication still needs
-  correlated approval and freshness checks. Five-second preflight/service-read
-  deadlines, cancellation cleanup, stopped-listener detection, and distinct
-  context/binding/workspace/service errors replace stranded requests with useful
-  diagnostics. The original reported hang's exact blocked await was not established.
-- **Full no-delta evidence (#21):** full changes without delta files can resolve
-  standalone, unfenced `Scenario-ID` declarations from tasks or verification,
-  just like presets. Existing valid receipts recover without migration, deletion,
-  fabricated specs, or a workflow downgrade. Delta files retain precedence;
-  unknown/duplicate IDs are rejected before recording. Candidate, task, artifact
-  hashes, and explicit no-spec review obligations remain binding.
-- **Shared systematic debugging:** full onto, fix/tweak presets, to-do, and
-  implementers use one protocol. It covers intermittent reproduction, component
-  boundaries without exposing secrets, working-path comparisons, one-variable
-  experiments, and reassessment after three failed hypotheses. Expected test-first
-  failures are distinguished from unexpected failures; workers retain their scope.
-- **Explicit implementer returns:** workers report assignment status, the exact
-  candidate, changed files, commands, cwd, inputs, exit status, output, and gaps.
-  Dispatchers supply the contract rather than assume inherited context; coordinators
-  validate it against the repository. A successful command that ran no tests is
-  not verification, and an uncommitted candidate does not require a new commit
-  merely to identify it.
-- **Consistent tweak entry guidance:** descriptions use the shared eligibility
-  policy instead of an incorrect total-file limit, and no longer promise light
-  verification for security-sensitive work.
-- **Deterministic test setup:** Git 2.55 fixture maintenance now finishes before
-  filesystem snapshots. Production isolation and assertions are unchanged; RC2's
-  failed release tag was not moved or reused.
-
-**Upgrade:** install matching v0.32.2 binaries, run `homonto plan` and
-`homonto apply` in each configured project, then restart OpenCode. Workflow
-records and valid evidence receipts do not migrate. For #21 recovery, rerun
-`onto doctor --dir <config-root>` and `onto trace <change> --dir <config-root>`;
-changed candidates or reports need fresh verification. Reconcile interrupted
-GitHub publication before restarting; draft approvals are memory-only, so a
-newly staged draft needs fresh approval.
-
-**Validation and accepted gaps:** the owner approved the previous RC and
-requested this stable release with the additional prompt improvements. That is
-release acceptance, not a new report of individual live checks. The complete
-local pre-tag gate, including race tests, vulnerability scanning, Docker E2E and
-packaging, remains mandatory; the release workflow repeats it before publication.
-Regression tests cover the recovery paths, prompt contracts, and reference
-delivery with either framework installed alone. No new live model-compliance,
-V2 terminal/reload/notification/native-question, real-GitHub sandbox publication,
-or V1/V2 migration evaluation is claimed for this release. Prompt delivery and
-mocked publication do not establish those results.
-
-### Previous candidate: v0.32.2-rc.3 — no-delta evidence recovery and deterministic test setup
-
-This **owner-requested testing prerelease** includes the #21 fix described below
-and all RC1 runtime fixes. All three binaries are stamped v0.32.2-rc.3; catalog
-0.32.4 and framework versions (onto 0.25.4, to 0.22.3, h 0.10.3) are unchanged
-from the RC2 candidate. Stable v0.32.1 remains latest.
-
-RC2's release workflow stopped on a pre-existing fixture race before publishing
-assets. With Git 2.55, detached maintenance from the fixture's seed commit can
-remove `.git/objects/maintenance.lock` between filesystem snapshots, causing an
-isolation assertion to fail even without a workflow mutation. The history-test
-Git helper now waits for maintenance instead of detaching it; assertions and
-production Git isolation are unchanged. The RC2 tag is not moved or reused.
-
-**Upgrade:** explicitly select v0.32.2-rc.3, install matching binaries, run
-`homonto plan` and `homonto apply`, then restart OpenCode. For #21 recovery, use
-the doctor/trace steps below with the RC3 binary; valid existing receipts do not
-need deletion or migration.
-
-**Validation:** the fixture failure was reproduced with Git 2.55 in both a
-workflow-mutation run and a no-mutation control. The complete local, PR, and
-release gates remain mandatory. The live-only validation deferrals described
-below remain unchanged; this RC does not assert new live OpenCode or GitHub
-publication validation.
-
-### Previous candidate: v0.32.2-rc.2 — full no-delta verification evidence
-
-This **owner-approved testing prerelease** includes the RC1 continuity and
-GitHub-tool fixes below, plus the fix for #21. The embedded catalog is 0.32.4
-(onto 0.25.4, to 0.22.3, h 0.10.3); all three binary versions are stamped
-v0.32.2-rc.2. Stable v0.32.1 remains the latest stable release.
-
-- Full changes without delta files now resolve standalone, unfenced
-  `Scenario-ID: <id>` declarations in `tasks.md` or `verification.md`, just like
-  fix/tweak presets. Existing valid receipts resolve without migration,
-  deletion, fabricated specs, or a workflow downgrade.
-- When any delta files exist, their declarations remain authoritative, even if
-  they contain no IDs. Unknown or duplicate IDs are refused during evidence
-  recording before any receipt is written. Doctor still detects declarations
-  removed after recording; task, candidate, and artifact-hash checks are unchanged.
-- CLI help and verification instructions describe the supported contract.
-  Explicit no-spec justification remains a workflow-review requirement, not an
-  inferred approval or a waiver of required behavioral specifications.
-
-**Upgrade:** explicitly install v0.32.2-rc.2 binaries, run `homonto plan` and
-`homonto apply` in each configured project, and restart OpenCode. For a change
-blocked by #21 whose declarations and recorded evidence remain valid, rerun
-`onto doctor --dir <config-root>` and `onto trace <change> --dir <config-root>`
-with the new binary; do not delete receipts or alter workflow state to recover.
-If the candidate or verification report changed, record fresh verification.
-
-**Validation and accepted gaps:** regression tests cover the full documentation
-lifecycle in a registered schema-2 source worktree through verify, doctor, trace,
-and archive, plus delta precedence, duplicate/unknown IDs, fenced examples,
-task identity, evidence hashes, and existing receipts. The complete local gate,
-PR CI, and release-workflow gate remain required, including Docker E2E and
-packaging. RC1's live-only validation gaps remain deferred for this RC: no new
-live model-compliance, V2 terminal/reload/notification or native-question test,
-real-GitHub sandbox publication, or live V1/V2 migration smoke is claimed.
-
-### Previous: v0.32.2-rc.1 — workflow continuity and GitHub tool recovery
-
-This is an **owner-approved prerelease for user testing**, not a claim of newly
-validated production support. The embedded catalog is 0.32.3 (onto 0.25.3,
-to 0.22.3, h 0.10.3); all three binary versions are stamped v0.32.2-rc.1.
-
-- Both OpenCode plugin versions reinforce execution continuity for homonto,
-  build, and custom agents on model requests and compaction. The reminder checks
-  the current authorized assignment, not every observed change. Explicit pauses,
-  plan/research endpoints, worker boundaries, permissions, and concrete blockers
-  remain valid stops; idle events never automatically restart an agent.
-- Fixes #20's draft-contract mismatch: V2 GitHub drafting returns the exact
-  preview and native question arguments without invoking a nested question.
-  The agent presents the preview, calls native question separately, and publishes
-  only after a correlated approval. The reported hangs' original blocked await
-  was not established.
-- Session preflight and service-metadata reads have five-second deadlines and
-  cancellation cleanup. A stopped permission listener fails promptly instead
-  of stranding subsequent requests. Safe progress labels identify the current
-  stage without exposing draft bodies or credentials.
-- Addresses #19's diagnostic gap with distinct live-context, binding, workspace,
-  and service errors plus recovery guidance. Coordinator-only read tools name
-  the expected and observed agents. Host-authorized custom agents retain GitHub
-  draft access; exact approval, freshness checks, and uncertain-send safeguards
-  are unchanged.
-
-**Upgrade:** explicitly select v0.32.2-rc.1 in the installer or release downloads;
-the latest stable remains v0.32.1. Install matching binaries, run `homonto plan`
-and `homonto apply` in each configured project, then quit and restart OpenCode.
-Existing workflow records do not migrate. Draft approvals are memory-only:
-reconcile any interrupted publication before restarting, then stage a fresh
-draft and obtain fresh approval.
-
-**Validation and accepted gaps:** regression tests exercise the materialized V1
-and V2 adapters, exact native-form correlation, cancellation, deadlines, and
-publication against fake services. Strict TypeScript checks cover the V2 adapter
-against SDK 2.0.16 and 2.0.18. The complete local pre-tag gate and release-workflow
-gate, including Docker E2E and packaging, remain mandatory.
-The owner requested this user-testing release with live validation deferred:
-no new live model-compliance evaluation, actual V2 terminal/reload/notification
-or question/cancellation test, real-GitHub sandbox publication, or live V1/V2
-migration smoke was performed for this candidate. Mocked publication is not a
-real GitHub send, and prompt delivery is not proof of model compliance.
-
-### Previous: v0.32.1 — consistent workflow and skill instructions
-
-The embedded catalog is 0.32.2 (onto 0.25.2, to 0.22.2, h 0.10.2);
-all three binary versions are stamped v0.32.1 from the release tag.
-
-- Explicit workflow choices stay respected, including full onto for small work.
-  In-scope defects found before archive return to implementation without another
-  continuation approval. `onto-fix` and `onto-tweak` retain inline repair tasks
-  without acquiring a full design or plan; fix keeps its failing-test requirement.
-- Selection and preset escalation share one eligibility table. Test counts and
-  private configuration-key edits alone no longer force a full workflow.
-- Required user decisions use OpenCode's built-in `question` tool. Missing,
-  denied or dismissed questions leave decisions pending rather than implying consent.
-- Both workflows document direct fallback when dispatch is unavailable, with the
-  missing independent review reported. Explicit independent-review requirements
-  still block; denied or unsuccessful workers do not qualify as unavailable.
-- Shorter dispatch/close skills link to shared execution and recovery policies.
-  Tasks preserve identity while permitting recorded prerequisite execution;
-  verified evidence can serve multiple checkpoints when its candidate and inputs
-  remain unchanged. Prose edits preserve technical meaning without blanket style
-  bans or separate style receipts.
-
-**Upgrade:** install matching v0.32.1 binaries, run `homonto plan` and
-`homonto apply` in each configured project, then restart OpenCode to load the
-updated skills. Existing workflow records do not migrate.
-
-**Validation:** catalog contracts, installed-reference checks and executable CLI
-recovery tests cover both presets. These tests do not establish live model
-compliance. No new live agent-behavior evaluation was run. The release owner
-approved the complete pre-tag CI gate, including Docker E2E and packaging, as a
-substitute for unavailable local Docker for v0.32.1; available local checks must
-also pass. The release workflow repeats the full gate before publication.
-
-### Previous: v0.32.0 — OpenCode 2
-
-The embedded catalog is 0.32.1 (onto 0.25.1, to 0.22.1, h 0.10.1);
-the binary version is stamped from the release tag when packaged.
-
-- Builtin `onto`, `to`, and `h` now project the V2 workflow server/terminal plugin
-  by default: session-bound recovery context, read-only status/handoff tools,
-  a workflow panel, and session-idle notifications. The opt-in V1
-  `workflow_bridge` is retained only for rollback and is reported as
-  incompatible with V2.
-- `permission-observer` uses V2 tool and permission events. It suggests an exact
-  shell command only after two correlated **`once`** approvals. V2 `always`
-  replies may be automatic and do not count; suggestions will be less frequent
-  than under V1 rather than falsely treating execution as approval.
-- With builtin `h`, GitHub drafts use V2 native questions, exact read/shell
-  permission requests against the matching registered **local** OpenCode
-  service, post-approval freshness checks, and receipt reconciliation. An
-  unregistered/standalone or mismatched service fails closed. A local fake-model
-  and fake-`gh` run exercised denial and an exactly-once simulated send on
-  OpenCode 2.0.16; the release owner reports a separate real-GitHub sandbox run.
-- `[tui.opencode]` now projects supported settings to global `cli.json`, not
-  `tui.json`. Only four documented legacy aliases map automatically; unsupported
-  V1-only terminal fields fail validation. Homonto leaves V1 `tui.json(c)`
-  untouched and preserves unmanaged V2 settings. Supported V1 server config
-  remains in its compatible syntax; no wholesale JSON migration is required.
-- For a new change without an explicit workflow path, the coordinator now asks
-  once with a task-specific recommendation among viable `to`, `onto fix`,
-  `onto tweak`, and full `onto` choices. `/onto` asks only for the onto path;
-  `/to`, `/onto-fix`, `/onto-tweak`, and `/onto-open` are explicit. Resuming an
-  existing change does not prompt again. Reapply and restart OpenCode to load
-  the updated catalog prompts; existing workflow records do not migrate.
-
-**Before upgrading:** keep a copy of your V1 config and state. If
-you want OpenCode's one-time terminal preference migration, start V2 *before*
-homonto writes `cli.json`. Install matching versions of all three binaries,
-run `homonto plan` and `homonto apply` in each configured project, then quit and
-restart OpenCode. Explicit V1 `workflow_bridge = true` or
-`source = "homonto-workflow"` declarations must be removed or disabled when
-using the V2 default. Disabling `workflow_context` disables the V2 bridge; it
-does not restore V1 automatically. A snapshot undo does not reverse the
-`tui.json` → `cli.json` projection: re-declare the intended terminal values
-and apply. Do not point a V1 OpenCode installation at native V2-only settings.
-
-**Validation:** the RC passed the full Go/race/vet/vulnerability gate and
-triple-binary Docker packaging/checksum smoke, plus an isolated OpenCode 2.0.16
-local-model/fake-`gh` approval flow. For the stable release the owner reports
-passing live V2 terminal/reload/notification checks and a real throwaway-GitHub
-sandbox: denial, one approved publication with matching receipt, changed
-actor/destination/PR identity, and uncertain-send reconciliation. The live
-results are owner-reported; the isolated fake run is not evidence of external
-publication. The release owner approved the identical `./scripts/gate.sh` CI
-run on the final commit as a one-time substitute for the tagging host's missing
-Docker environment. The tag must not be pushed unless that run passes in full,
-including Docker E2E and release packaging.
-See the [release checklist](release-checklist.md).
-
-### New in v0.31.0 — expanded GitHub draft capacity
-
-- Long-running OpenCode servers now admit up to 4,096 observed GitHub sessions,
-  1,024 retained publication drafts, and 65,536 correlated question request IDs
-  per plugin instance, replacing the previous 64/128/512 ceilings.
-- Regression coverage crosses each previous ceiling. Drafts retain a lower limit
-  than lightweight identity records because they hold item bodies and remote
-  snapshots. See
-  [ADR 0060](adr/0060-raise-github-draft-runtime-capacities.md).
-- This release increases headroom without changing publication authorization or
-  lifecycle semantics. Terminal-record reclamation remains separate work.
-
-### Upgrading to v0.31.0
-
-Install all three binaries at v0.31.0, run `homonto update` (or `homonto apply`)
-in each configured project, and restart OpenCode so the updated workflow plugin
-is loaded.
-
-### New in v0.30.0 — session-approved GitHub publication
-
-- GitHub publication drafts now outlive the OpenCode tool call that staged
-  them. Ending that call no longer invalidates an otherwise live, approved
-  draft.
-- Custom agents and skills that OpenCode permits to invoke the
-  `homonto_github_*` tools can stage, inspect, and publish drafts in the same
-  session without switching to the `homonto` agent. Generated homonto worker
-  profiles continue to deny those tools.
-- Exact native-question approval, the 15-minute TTL, session deletion, draft
-  replacement, plugin disposal, publication permissions, actor and destination
-  freshness, and uncertain-send reconciliation remain enforced. See
-  [ADR 0059](adr/0059-authorize-github-drafts-by-session-and-approval.md).
-
-### Upgrading to v0.30.0
-
-Install all three binaries at v0.30.0, run `homonto update` (or `homonto apply`)
-in each configured project, and restart OpenCode so the updated workflow plugin
-is loaded.
-
-### New in v0.29.0 — explicit legacy-record migration
-
-- Adds `homonto workspace migrate plan`, `apply`, `verify`, and `recover` for
-  the supported legacy-records to schema-2 ownership transition. Planning is
-  read-only; applying requires an explicit source manifest, its reviewed plan
-  hash, and `--yes`.
-- Migration preserves record identities, phases, decisions, historical evidence,
-  and retired records. It can adopt validated legacy execution worktrees without
-  changing their source files, indexes, or refs. Ordinary discovery keeps retired
-  records out of active workflows.
-- Private backups, payload descriptors, and journaled writes support resume or
-  restore after interruption. Recovery rejects stale plans, conflicting edits,
-  or altered payloads rather than overwriting them. See
-  [ADR 0058](adr/0058-bind-migration-recovery-to-durable-payloads.md) and the
-  [workspace guide](guides/workspaces.md).
-- Shared Unix mutation locks use process-released guardians with compatible
-  legacy lock claims. Test images now use the pinned Go 1.26.6 toolchain, and
-  the full race suite has a bounded 20-minute timeout with no tests skipped.
-
-### Upgrading to v0.29.0
-
-Install all three binaries at v0.29.0, then run `homonto update` (or
-`homonto apply`) in each configured project and restart OpenCode. **Updating
-does not migrate existing workflow records.** Migration is a separate, explicit
-operation requiring a schema-2 non-Git control directory, `workflow.git = "existing"`,
-an existing records Git root, the matching legacy root marker, and a manifest.
-It is not a general workspace relocation or source-rebinding command.
-
-**Building from source now requires Go 1.25 or newer**; the pinned toolchain
-remains Go 1.26.6. Migration mutation/recovery is unavailable on unsupported
-platforms, including Windows; ordinary Windows binaries still ship. Preserve
-the private recovery directory after interruption and use the reported run ID
-with `recover`, rather than deleting recovery artifacts. Process-interruption
-tests do not establish durability under host power loss.
-
-### New in v0.28.0 — OpenCode recovery tools and approved GitHub drafts
-
-- OpenCode compaction and resumed model requests receive bounded recovery context:
-  unfinished tasks, recorded decisions, artifact pointers, and validated source
-  directories for up to three nonterminal change generations. Missing or truncated
-  context is explicit; recovery does not select an owner or advance a workflow.
-- The coordinator gets read-only `homonto_status` and `homonto_handoff` tools.
-  The new `homonto workflow handoff --workflow <onto|to> --change <name>
-  --identity <id> --json` command preserves the exact selected `--config` and
-  generation, including archives without borrowing a same-name active worktree.
-- Builtin `h` enables `homonto_github_draft`, `homonto_github_status`, and
-  `homonto_github_publish`. They support issue comments, PR summary comments,
-  and commit-bound `COMMENT`/`REQUEST_CHANGES` reviews. The coordinator shows
-  the exact preview and submits its native question; only matching replies
-  approve the selected items. Workers cannot use these tools. Permission allows
-  are not draft approval, and uncertain sends are reconciled rather than resent.
-- `/h-spike-issue` offers to post its checked brief after explicit draft approval.
-  A spike nested inside resolve remains research-only unless comment publication
-  is separately requested. Existing push and PR-creation authorization is unchanged.
-- Continuation instructions now require the full success endpoint, not merely
-  completed implementation tasks. Required verification, archival, integration,
-  and authorized publication still follow. Hard blockers permit factual reports
-  without invented continuation questions or false completion claims.
-
-### Upgrading to v0.28.0
-
-Install all three binaries at v0.28.0, run `homonto update` (or `homonto apply`)
-in each configured project, then quit and restart OpenCode. The projection refreshes
-its config/coordinator binding and tool permissions. No workflow records migrate.
-`integrations.opencode.workflow_bridge = false` disables the managed runtime
-integration, including its recovery and GitHub draft tools.
-
-Drafts and approvals are memory-only, session-bound, and expire after 15 minutes.
-Restart requires a fresh draft and approval; reconcile any interrupted publication
-before proceeding. Batches allow up to ten items, 8 KiB per body, and 32 KiB of
-bodies. Native questions are required to approve drafts. Question replies are
-host-channel confirmation, not human-only attestation or a sandbox against trusted
-shell/API access. Formal `APPROVE` reviews retain the existing explicit,
-commit-bound path. Tool registration and wire schemas were smoke-tested with
-OpenCode 1.18.30; publication tests use fake GitHub responses, not live comments.
-
-### New in v0.27.0 — cleaner setup and GitHub skill naming
-
-- `homonto init` now creates only `homonto.toml`, `.gitignore`, and
-  `.env.example`. It no longer creates an unused `homonto/skills/.gitkeep`.
-  Existing local content is preserved; create and declare local skills when
-  needed.
-- The installer, catalog, and current guides describe `h` as a **GitHub skill
-  bundle**, not a third lifecycle workflow. `[frameworks.h]`, the five `/h-*`
-  entry points, and its dependencies on onto and to are unchanged.
-- Guided setup rejects invalid repository selections, numeric-only repository
-  names, model `#variant` suffixes, workflow-root aliases of the config root,
-  and records/tmp collisions. The config loader and workflow resolver also
-  reject root aliases such as `./` and `docs/..`.
-- Installation refuses directory targets for executables. Retry loops stop
-  cleanly at EOF, invalid detected model defaults can be replaced, and path
-  validation ignores inherited `CDPATH`. Empty-array handling and version
-  validation work with Bash 3.2 as well as current Bash.
-- Next steps reflect selected configuration and installed binaries. The model
-  prompt discloses its global OpenCode scope. Current documentation corrects
-  coordinator naming, local-skill setup, repository relocation, and the limits
-  of workflow diagnostics.
-
-### Upgrading to v0.27.0
-
-Install all three binaries at v0.27.0, then run `homonto update` (or
-`homonto apply`) in each configured project and restart OpenCode. Existing
-local-skill directories are not deleted, and workflow records are not migrated.
-If an old `workflow.root` resolves to the config directory itself, choose a
-dedicated records directory before applying; these aliases are now rejected.
-
-### New in v0.26.0 — autonomous coordinator permissions
-
-- The dedicated `/onto-bypass` and `/to-bypass` commands now prompt the
-  coordinator for confirmation instead of being unconditionally denied. They
-  remain unavailable to implementers and undiscoverable to ordinary workflow
-  skills.
-- The coordinator can perform all local Git operations without a tool prompt;
-  `git push` still asks. Implementers retain destructive-command prompts.
-- When `[tooling] shell_proxy = "rtk"`, the coordinator receives an explicit
-  `rtk *` permission. Recognized publication, workflow-bypass, and destructive
-  non-Git commands still prompt. See [ADR 0055](adr/0055-require-confirmation-for-explicit-workflow-bypasses.md),
-  [ADR 0056](adr/0056-allow-coordinator-local-git-operations.md), and
-  [ADR 0057](adr/0057-allow-coordinator-rtk-commands.md).
-
-### Upgrading to v0.26.0
-
-Install all three binaries at v0.26.0, then run `homonto update` (or `homonto
-apply`) and restart OpenCode. Reapplying updates the coordinator's rendered
-permission map; no workflow records migrate.
-
-### New in v0.25.0 — trusted workspace shell by default
-
-- The coordinator and implementers now default to trusted-workspace shell
-  execution, including inspection, setup, cloning, Python/Node and repository
-  scripts, chains, and pipes. This deliberately overrides inherited Bash
-  asks/denies; it does not change edit behavior, directory grants, delegation,
-  or task write scope. Reviewers and other read-only specialists still deny
-  shell and edits.
-- Neutral agent profiles gain `bash_default: allow|ask` and `bash_ask`.
-  `allow` omits generic composition asks; omitted baselines retain guarded
-  custom-profile behavior. Known `git push`, GitHub publication, and raw `gh api`
-  patterns ask for the coordinator but are denied for implementers. Destructive
-  patterns ask for both writable roles. Protected asks/denies follow exact
-  additions and cannot be overridden by `bash_allow_add`.
-  Strict users can use guarded custom agent definitions; there is no new
-  model-route configuration knob. See [subagents](guides/subagents.md).
-- Implementers may perform task-authorized Git/gh setup and reads within their
-  write scope. The coordinator still owns authoritative GitHub intake, workflow
-  state, integration, and publication. Default-allow shell does not authorize
-  publishing: invocation scope, verification, and approval of the shown review
-  draft still bind operations inside scripts. Past accepted commands are not
-  publication consent; a tool prompt cannot override role ownership or approval.
-- Onto/to preflight investigates missing, broken, or incompatible binaries before
-  handing off: inspect PATH and known compatible installations, then repair only
-  already-authorized setup from a trusted source/version into a workspace-local
-  destination. No silent global-binary overwrite, shell-profile edit, or arbitrary
-  untrusted installation. Unresolved failures name the setup blocker or decision;
-  workflow mutations wait for version checks and the framework-install gate.
-- Registered worktree lifecycle and dirty-work decisions remain required.
-  Isolated, authorized task-local Git fixtures cannot replace live bindings or
-  recreate the control plane. Finite command patterns cannot cover every risky
-  tool, sandbox scripts/wrappers, or contain arbitrary shell directory access;
-  code runs with the process's files, credentials, and network privileges.
-  This accepted tradeoff replaces the finite default allowlist in v0.24.0, not
-  workflow authorization. See [ADR 0054](adr/0054-default-to-trusted-workspace-shell.md).
-
-### Upgrading to v0.25.0
-
-Install all three binaries at v0.25.0, run `homonto update` (or `homonto apply`)
-in each configured project, and restart OpenCode to load the new agent profiles.
-
-**Reapplying existing onto/to/h installations enables the loose shell default,
-including schema-0/1 configurations.** Schema 2 is not required for this policy
-change. The coordinator and implementers can execute arbitrary task-scoped
-commands, scripts, and shell composition without a generic approval prompt.
-Their Bash baseline overrides inherited Bash asks and denies; finite protected
-exceptions are not a sandbox. If you need the former guarded policy, select
-guarded custom agent definitions before reapplying. Custom profiles that omit
-`bash_default` retain their existing behavior.
-
-Read-only specialists remain shell- and edit-denied. Publication authorization,
-explicit review-draft approval, workflow-state ownership, and dirty-work cleanup
-decisions remain required. No workflow records are migrated by this upgrade.
-
-### New in v0.24.0 — separate workspaces and autonomous workflows
-
-- Schema 2 separates config, records history, and explicit source scope, with
-  registered execution and identity-checked terminal/archive receiver worktrees
-  (`--state-id` disambiguates, never rebinds). Managed operations journal scoped
-  pre-write intent with a prepared archive destination/date and recover partial
-  records without sweeping unrelated paths; same-file editor attribution and
-  automatic layout/active-binding conversion remain unsupported. See
-  [workspaces](guides/workspaces.md).
-- Onto retains superseded evidence as history, requires unique scenario
-  declarations (including no-spec presets), and reports failed-round history
-  only while unresolved. Ambiguous IDs provide no coverage or supersession.
-  See [ADR 0053](adr/0053-keep-history-without-blocking-fresh-verification.md).
-  Integration binds exact verified candidates (plus allowed records-only descendants), accepts
-  proven `unchanged:` receipts, and requires an externally asserted PR `--head`
-  for explicit sources without claiming remote attestation. To surfaces root
-  errors and preserves actual verification values during archive recovery.
-  Demotion preserves task scope and multiline checks, transfers deferred-close
-  work unchecked, and restarts incomplete contracts at plan.
-- Strict config diagnostics reject ignored fields and duplicate builtin aliases;
-  per-agent positive `steps` overrides tune finite budgets. Permission suggestions
-  use the actual `permission.asked`/`permission.replied` producer contract. The
-  workflow observer refreshes compaction status and reports transient errors;
-  notifications are not enforcement.
-- The five h workflows now work toward explicit completion goals, choose `to`
-  or `onto` from intent and evidence, and recover in-scope failures without
-  routine approval dialogs. Review drafts still need approval before posting.
-- The coordinator and implementers allow routine tests, builds, and formatting,
-  including on contributor-controlled PR checkouts. All shipped agents allow
-  web research; concurrent specialists remain shell- and edit-denied.
-- This deliberately trusts repository scripts to execute arbitrary code with
-  the process's privileges. Unknown command requests still ask; publishing
-  prompts and explicit denies remain. Composition guards apply to the host's
-  permission-request patterns, not necessarily whole shell invocations.
-  Configured RTK gets command-specific wrapper rules, not a blanket grant.
-  Permission denial cannot be bypassed. This replaces the per-run PR execution policy described below
-  for v0.23.0. See [ADR 0051](adr/0051-trust-workspace-execution-and-automate-h-routing.md).
-- The installer now passes an explicit stdin operand to checksum verification,
-  fixing false checksum mismatches with macOS `sha256sum` ([#7](https://github.com/Novirmor/homonto/issues/7)).
-
-### Upgrading to v0.24.0
-
-Install all three binaries at the same version, then run `homonto update` (or
-`homonto apply`) in each configured project. Restart OpenCode to reload the
-updated plugins, agent permissions, and budgets.
-
-- **Schema 2 is opt-in.** Configurations using schema 0/1 retain their implicit
-  configuration-repository scope. Do not change schema or workflow-root ownership
-  as a shortcut for migration: existing records are not moved or adopted
-  automatically. See the [workspace guide](guides/workspaces.md).
-- **Configuration is stricter.** Previously ignored keys, misplaced tuning
-  fields, and multiple aliases for one builtin agent now fail with diagnostics.
-  Correct the named declaration rather than editing generated files.
-- **Execution trust changes.** Routine tests, builds, and repository scripts,
-  including checked-out PR code, can run without individual approval. They run
-  with the process's privileges, not in a sandbox. Review publication still
-  requires approval of the shown draft, and tool-level publication prompts remain.
-
-### New in v0.23.0 — executable workflow contracts and safer agent projection
-
-- **Workflow agents can complete their documented gates.** The shared
-  coordinator records routine proposal, approach, verification, and close
-  evidence while explicit `onto` and `to` bypasses remain unreachable. Preset
-  verification now shares onto's risk classifier, so a small change to a
-  security-sensitive surface receives full verification. Close recovery
-  distinguishes completed spec merging from ADR promotion, and local
-  integration pins the post-archive commit so the base branch receives the
-  archive as well as the verified source.
-- **PR continuation keeps its execution boundary across delegation.**
-  Implementers prompt for shell execution, deny workflow and publishing
-  commands, and stop PR continuation when inherited auto-allows would bypass
-  per-command approval. Inline review comments now carry author association
-  through every paginated query; only owner, member, and collaborator feedback
-  routes automatically.
-- **Projection rejects malformed or unsafe input before publishing it.** Model
-  variants and additive Bash permissions reject multiline, wrapper, shell,
-  destructive, privilege-escalating, and network-fetching forms consistently
-  in both configuration and permission suggestions. Invalid or unknown
-  `homonto:` capabilities fail closed, and subagents are preflighted before a
-  catalog update publishes any content.
-- **The guided installer rejects non-model answers to its model question.**
-  This fixes a validation gap introduced after v0.22.0.
-
-### New in v0.22.0 — a declared workspace tmp directory
-
-- **`[tmp]`: one scratch directory the whole projection shares**
-  ([ADR 0048](adr/0048-one-declared-workspace-tmp-directory.md)). Declare
-  `[tmp]` (optionally `dir`, default `.tmp`) and every apply creates the
-  directory, keeps it gitignored, and generates `references/tmp.md` into the
-  framework dispatchers and the shared `homonto` skill naming the path and the
-  contract. Because it sits inside the workspace, every writable agent —
-  including custom agents — writes there with no prompts and no
-  permission-map changes; read-only workers stay read-only and hand scratch
-  to the coordinator. homonto never deletes tmp content: disabling the table
-  withdraws the generated references but leaves the directory and its files
-  untouched. The guided installer offers the declaration for new projects,
-  and the path is fingerprinted with the materialize gate so a `dir` edit
-  re-projects. The dir is validated against every tree homonto and the
-  workflows own — the workflow records root, `.git`, `.opencode/`,
-  `homonto/`, and the managed `.homonto` subtrees are rejected (equal, above,
-  or inside), because a colliding scratch dir would be gitignored or rebuilt
-  over. The h skills route their transient files (draft bodies, comment
-  files, PR bodies) there too.
-
-### New in v0.21.0 — one coordinator, and the h GitHub workflows
-
-- **One `homonto` coordinator agent.** The separate `onto` and `to` primary
-  agents are replaced by a single shared `homonto` primary; `/onto`, `/to`,
-  and every `/h-*` command route into it, and it loads whichever dispatcher
-  the change needs
-  ([ADR 0045](adr/0045-one-homonto-coordinator-for-both-workflows.md)).
-  **Breaking:** rename any `[subagents.onto.opencode]` or
-  `[subagents.to.opencode]` model block to `[subagents.homonto.opencode]` —
-  exactly one block; the old names fail at load naming the fix. The
-  installer writes the new shape and can add the `h` bundle to new projects.
-- **The `h` framework: GitHub intake over both workflows.** Declaring
-  `[frameworks.h]` (it depends on onto and to, and an applied `h` satisfies
-  both binaries' install gates) adds five workflows:
-  `/h-spike-issue` (read-only issue research through the `h-spike` worker),
-  `/h-resolve-issue` (spike, an explicit to-or-onto choice, then the chosen
-  workflow drives to a verified pull request), `/h-review-pr` and
-  `/h-review-batch` (full-context review through read-only `h-review`
-  workers — drafts first, nothing posted without an explicit approval of the
-  shown draft), and `/h-continue-pr` (collect outstanding feedback, resume
-   or open the matching workflow change, merge verified onto work into the
-   existing PR head, push only verified fixes, comment with evidence). Only the coordinator talks to GitHub; workers receive
-   prepared context and return analysis. The coordinator itself denies
-   open-web fetch/search (GitHub access flows through the approved `gh`
-   surface), and commands that execute repository-controlled code — test
-   runners, package-manager scripts, make targets — always prompt, so a
-   checked-out PR head cannot run contributor scripts silently. Compound
-   shell commands always prompt too: an allowlist entry no longer matches a
-   chained second command, and the workflow's own gate-skipping subcommands
-   (`onto`/`to bypass`, evidence-token writes) are denied outright
-   ([ADR 0047](adr/0047-deny-open-web-and-compound-shell-around-github-intake.md));
-   MCP servers a config enables stay outside this map as the owner's
-   trust decision.
-
-### New in v0.20.0 — guided project configuration
-
-- **The installer configures new projects.** After `homonto init` creates a
-  config, the installer asks for the workflow-record directory, existing
-  sibling Git repositories, `onto` and/or `to`, and one OpenCode model for the
-  main session plus all selected framework agents. Existing `homonto.toml`
-  files remain untouched ([ADR 0044](adr/0044-the-installer-configures-new-projects.md)).
-- **Terminal UI selection.** Interactive installs prefer Gum, then dialog, and
-  use plain text when neither dependency is available. `HOMONTO_UI=dialog`
-  selects dialog explicitly.
-
-### New in v0.19.0 — complementary workflows and a guided install
-
-- **onto and to are complementary.** A repository may declare both
-  `[frameworks.onto]` and `[frameworks.to]`: records stay in disjoint
-  directories, agents and commands are namespaced, and `/onto` or `/to` picks
-  the workflow per change. Active change names are globally
-  unique across both trees, and `to status --all` reports one combined
-  inventory ([ADR 0042](adr/0042-onto-and-to-are-complementary.md)).
-- **Reversible promote/demote with a shared conversion engine.** `onto demote
-  <name> --yes` joins `to promote`: sources move whole into a neutral
-  `.workflow/` control plane (lineage, receipts, snapshots) instead of
-  nested `imported-*` copies; demotion is phase-aware (open/design → plan,
-  build/verify → do with a translated doctor-clean plan, terminal states
-  refused); completion is receipt-verified, staging authenticates before
-  generating, and converting back while unchanged restores the previous
-  workspace byte-for-byte. Every onto mutator now takes the onto workspace
-  lock, in one fixed order with the bridges' locks.
-- **The installer guides setup.** Prompts use
-  [gum](https://github.com/charmbracelet/gum) when available and stdin is a
-  TTY (plain reads otherwise), the workflow-binary default is both, and on
-  explicit confirmation it runs `homonto init` in the current directory
-  ([ADR 0043](adr/0043-the-installer-offers-initialization.md)).
-
-### New in v0.18.0 — interactive release installer and a configurable workflow root
-
-- **Interactive release installer.** `scripts/install.sh` (Linux/macOS,
-  amd64/arm64) asks which binaries you want, verifies the release archives
-  against `SHA256SUMS`, installs into a directory you choose, and prints PATH
-  instructions — it never edits your shell configuration and never runs
-  project commands. Download-then-run, never `curl | bash`
-  ([ADR 0041](adr/0041-ship-an-interactive-release-installer.md)).
-- **Configurable workflow root.** `[workflow] root = "<relative path>"`
-  relocates both frameworks' records below `docs/`; changing the root while
-  workflow state exists fails closed
-  ([ADR 0040](adr/0040-configure-one-workflow-root.md)).
-
-### New in v0.17.0 — autonomous workflows and valid OpenCode resources
-
-- **Workflows run through by default.** Starting or resuming `onto` or `to`
-  continues through later phases unless the user names an endpoint or asks to
-  pause. Primaries investigate before asking, choose reversible technical
-  defaults, and reserve user questions for product intent and explicit waivers.
-- **Every workflow command enters its primary agent.** Direct phase and preset
-  commands now carry the same orchestration, permission, and delegation policy
-  as `/onto` and `/to`.
-- **OpenCode metadata and read-only agents are honest.** Shipped skills have
-  discoverable metadata, unsupported command fields are gone, bypasses are
-  command-only, and concurrent read-only specialists deny both edits and Bash.
-- **Close validates and receipts every destructive boundary.** The verification
-  report must contain one canonical result that agrees with state, and a
-  recorded pass freezes each scoped repository's HEAD — source commits after
-  the pass refuse close until the change is re-verified. Spec merges record
-  exact delta and living-spec pre/post-images (a receipt from an invalidated
-  round is discarded and recomputed, never a dead end), interrupted archives
-  are executable to recover, and post-archive Git integration is tracked per
-  repository with fail-closed receipts: a merge receipt must name a real
-  `--no-ff` merge commit reachable from the recorded base branch, and a
-  cross-repo change is done only when every selected repository landed.
-  Integration targets a separately recorded branch rather than the
-  commit-valued diff base; reused change names resolve to the newest archive
-  generation deterministically.
-
-### New in v0.16.0 — parallel workflow agents and explicit bypasses
-
-- **Choose a workflow by selecting its primary agent.** `onto` stays the
-  primary evidence-gated workflow agent. `to` now ships an equivalent primary
-  agent and `/to` routes into it. Both frameworks install the shared `homonto`
-   knowledge skill for configuration, projection, and workflow-choice guidance.
-- **Audited emergency bypasses.** Dedicated `/onto-bypass` and `/to-bypass`
-  entry points invoke direct, reason-required binary commands after an explicit
-  user request.
-  Each bypass writes a versioned sidecar with its command, target, timestamp,
-  reason, and skipped gates; archive bypasses preserve unmerged workspace
-  content rather than pretending it completed normally.
-
-### New in v0.15.0 — one release, seven capabilities
-
-- **Replayable handoffs.** `onto handoff --json`/`--write` and `to handoff
-  --json`/`--write` emit versioned recovery packs: identity, derived phase,
-  gates, commits, artifact digests, and a safe next argv. Persisted packs are
-  metadata only — never artifact prose or free-form state.
-- **`homonto explain`.** Every managed resource names its origin (direct or
-  framework), destination, last operation, and removal record. State schema 3
-  records provenance and a bounded tombstone ring; legacy state loads with
-  unknown provenance, never guessed facts.
-- **Portable projections.** Project-scope links carry relative targets, so a
-  repository rename converges on the next apply; user and cross-repo links
-  stay absolute. Stale links stranded by a wholesale move repair through the
-  plan path only, exactly matching their records.
-- **Requirement-to-evidence traceability.** Delta specs carry stable
-  Requirement-ID/Scenario-ID markers; `onto evidence record` stores hashes
-  only (never argv or output) and `onto trace` renders the typed graph.
-  `onto doctor` flags unknown scenarios, duplicate IDs, unreachable commits,
-  and stale verification artifacts.
-- **`to promote`.** A growing `to` change converts into a full onto change
-  at phase open with its complete workspace preserved under
-  `imported-to/` — atomic, crash-recoverable, tamper-refused. Frameworks stay
-  exclusive.
-- **Permission suggestions.** The `permission-observer` plugin ships as owned
-  catalog content; it correlates OpenCode's authoritative ask/reply events
-  (pinned revision 50efc055), suggests the second explicit approval exactly
-  once, and forgets it. `homonto permissions suggest` validates and renders
-  `bash_allow_add` snippets; nothing is persisted or auto-applied.
-- **Opt-in snapshots and undo.** `homonto apply --snapshot` journals semantic
-  checkpoints; failures roll back, `homonto snapshot recover` finishes
-  interrupted applies under an OS-released process lock, and `homonto
-  snapshot undo` reverses a committed apply — refusing over user edits.
-  Plain apply keeps its exact prior behavior.
-- **State migration.** One state schema migration (2 → 3) adds provenance;
-  a moved repository needs no manual link surgery. Run `homonto apply` once
-  to converge.
-
-### New in v0.14.0 — OpenCode agent variants and longer onto runs
-
-- **Agent variants use OpenCode's native fields.** `model` and `variant` now
-  render separately. homonto rejects `#variant` model IDs and the unsupported
-  global `model_variant` setting instead of generating an unknown model ID.
-- **The onto orchestrator gets a 1,200-step budget.** Its permissive Bash
-  allowlist covers workflow commands, local Git work, and common Go, Node, and
-  Make test commands. Remote and destructive operations still require approval.
-
-### New in v0.13.0 — OpenCode-only and designated multi-repo work
-
-- **OpenCode is the sole adapter.** Claude Code and codex configuration now
-  fail closed with a migration error instead of projecting stale support.
-- **Declared repos are real effect targets.** Repo-tagged project resources
-  project into the named declared repository with isolated state and
-  per-repository drift reporting; undeclared siblings remain untouched.
-- **Scoped workflow gates.** `onto new` and `to new` accept `--repo` aliases.
-  Workflow state stays in the config repo, while selected repositories must be
-  Git-clean before `onto` close or `to` done can complete.
-
-### New in v0.12.0 — a self-healing workspace lock, honest release notes
-
-A maintenance release over v0.11.0: one user-visible behavior change, two
-public-docs corrections (one of which shipped inside every release's notes),
-and internal cleanups. Catalog content is unchanged (catalog 0.11.0, onto
-0.8.0, to 0.6.0).
-
-- **`to` reclaims a stale workspace lock by itself.** A SIGKILLed command
-  used to wedge every mutating `to` command until `docs/tasks/.to.lock` was
-  removed by hand. The lock already records its holder's pid; on a conflict
-  `to` now probes it, and a pid that provably no longer runs (finished, or
-  no such process) means the lock is stale — it is removed and the command
-  proceeds. A live pid, a pid owned by another user, and a lockfile with no
-  readable pid (a crash between creating the file and writing it) are never
-  touched, so a live session's lock cannot be stolen. `homonto apply`'s
-  project lock keeps its deliberately manual reclamation.
-- **The standing limitations block no longer denies remote frameworks.**
-  Every GitHub release carried the claim that remote sources exist for
-  subagents only and there are no remote framework sources;
-  digest-pinned `remote:` frameworks have been supported and documented all
-  along. The block now states the real rule.
-- **Release packaging fixes.** `scripts/build-release.sh` falls back to
-  `shasum -a 256` when `sha256sum` is absent (macOS runners), keeping
-  `SHA256SUMS` byte-identical; and the release checklist's post-tag smoke
-  sequence now runs as written (it previously called `onto doctor` in a
-  workspace where `onto init` had never been able to run).
-- **Internals.** The dead `internal/merge` package (zero importers since the
-  projector split) is deleted; the Claude and OpenCode adapters' duplicated
-  key/document helpers have one owner in `baseadapter`, which also gains its
-  first direct tests; and `config`'s ~180-line `validate` cascade is split
-  into per-section helpers with unchanged rules — with one nondeterminism
-  removed: skills now validate before commands instead of map iteration
-  order deciding which error surfaces.
-
-### New in v0.11.0 — a resumable record, enforced
-
-onto's axis is now stated plainly: a change survives being handed to someone
-who was not there. `to` matches onto's code standards and skips its record;
-company size was never the distinction and is no longer claimed
-([ADR 0021](https://github.com/noviopenworks/homonto/blob/main/docs/adr/0021-onto-is-for-handoff-and-audit.md),
-catalog 0.11.0, onto 0.8.0, to 0.6.0).
-
-- **`onto doctor` now reports `tasks.md` ↔ `plan.md` drift** — a task number
-  in one file and not the other, or any checkbox in `plan.md`. That pairing is
-  the resume mechanism (continue at the first unchecked item, read its detail
-  under the matching `## Task N.M`), and it was previously checked only by a
-  prose item in the close-phase lint. **A workspace carrying existing drift
-  will start failing `onto doctor`, including the `--quiet` enforcement hook.**
-  That is the unreported problem surfacing, not a regression. A change with no
-  `plan.md` is a preset and reports nothing.
-- **Subagent concurrency follows write-scope, not framework**
-  ([ADR 0019](https://github.com/noviopenworks/homonto/blob/main/docs/adr/0019-parallelism-follows-write-scope.md),
-  [ADR 0020](https://github.com/noviopenworks/homonto/blob/main/docs/adr/0020-onto-parallel-implementers-are-supported.md)).
-  `to` previously forbade all subagent parallelism; the justification only ever
-  covered agents that *write*, and three of its four never do. Read-only agents
-  now run concurrently in both frameworks; the single implementer stays serial
-  in `to`, and in onto may run in parallel given a worktree each.
-- **Verify's skeptic lenses were renamed** to `abuse`, `data-migration`, and
-  `compatibility`. They previously collided with build's reviewer lenses on
-  "security" and "contract" despite asking a different question — a reviewer
-  reads the diff, a skeptic attacks the running system. Prose-only; nothing in
-  the binary keys on lens names.
-- **Docs corrected against the shipped binaries.** An audit found and fixed
-  nine mismatches, including: the state field is `build_mode` (not
-  `execution`); `read_only` renders as Claude's `disallowedTools:` **denylist**
-  (not a `tools:` allowlist); the three evidence tokens
-  (`proposal_approved`, `approach_confirmed`, `close_confirmed`) were absent
-  from both the canonical schema and the command reference; `onto advance
-  --to build` was undocumented; onto ships **five** agents, not four (the
-  `onto` orchestrator renders for OpenCode only); and `schema_version` is a
-  real top-level config key that rejects a newer config fail-closed.
-- **Artifact sections have one owner.** Grounding is recorded in `proposal.md`
-  (open) and `design.md` (design) and no longer duplicated into `notes.md`;
-  scope `Non-Goals` belong to `proposal.md` alone.
-
-### New in v0.10.0 — tooling providers are declared, not shipped
-
-*(Prepared but never tagged; it ships as part of v0.11.0.)*
-
-The `onto` and `to` frameworks no longer name `rtk` and `graphify` in their
-shipped prose. Which tools the workflow grounds against is now configuration
-([ADR 0022](https://github.com/noviopenworks/homonto/blob/main/docs/adr/0022-tooling-providers-are-declared-not-shipped.md),
-catalog 0.10.0, onto 0.7.0, to 0.5.0):
-
-```toml
-[tooling]
-shell_proxy = "rtk"       # "rtk" | "none"
-code_intel  = "graphify"  # "graphify" | "okf" | "none"
-```
-
-- **BREAKING for the rendered workflow — both keys default to `none`.** A
-  config with no `[tooling]` table now gets a preflight that names no tool at
-  all, and grounding falls back to direct file reading (already the documented
-  fallback). **Existing configs keep loading unchanged**; only the rendered
-  skill text differs. To keep the previous behavior, add the two lines above.
-- **`okf` is a selectable code-intelligence provider**
-  ([okf-generator](https://github.com/UmairBaig8/okf-generator)). homonto
-  **references** it and never downloads, installs, updates, or executes it —
-  exactly as it never installed `rtk` or `graphify`. Installing a provider
-  stays your job.
-- **`homonto apply` generates `references/tooling.md`** inside each framework's
-  dispatcher skill, describing exactly the declared pair. Shipped `SKILL.md`
-  files defer to it, so a provider you did not declare is never mentioned. The
-  file is regenerated on every apply — do not hand-edit it.
-- **An unknown key or provider name fails at load**, naming the offender and
-  the accepted set (`tooling.code_intel "ctags" is not a known provider
-  (accepted: graphify, okf, none)`).
-- **`homonto doctor` warns when a declared provider is not detected.** It
-  probes `PATH` and index/bundle directories only and never runs the provider,
-  so it cannot hang. The finding never fails a projection.
-
-Editing `[tooling]` re-renders on the next apply: the materialize fingerprint
-gained a tooling component, so a provider change is no longer invisible to the
-"everything up to date" gate.
-
-### New in v0.9.0 — onto's judgment gates are enforced, not documented
-
-`onto` gated artifacts and bookkeeping but took a change's word on the three
-decisions that need human judgment, and on whether its verify actually passed.
-Those are now enforced in the binary (capability spec
-`openspec/specs/onto-evidence-gates/`, onto framework 0.6.0):
-
-- **BREAKING for in-flight `workflow: full` changes — three evidence tokens
-  gate the judgment decisions.** `onto advance` refuses to leave `open` without
-  `proposal_approved` and to enter `build` without `approach_confirmed`;
-  `onto merge-deltas` and `onto close` refuse for **every** workflow without
-  `close_confirmed`, checked before any shared file is mutated. Record them
-  with `onto set proposal-approved|approach-confirmed|close-confirmed <change>
-  "<evidence>"` (free-form, convention `YYYY-MM-DD <summary>`). A change
-  mid-flight when you upgrade blocks on its next `advance` until the token is
-  recorded — the unanswered gate is simply re-asked. Preset workflows (`fix`,
-  `tweak`) are exempt from the two design-phase tokens. Unanswered tokens show
-  up in `onto gate --json`.
-- **Leaving `verify` cross-checks the report against the state.** The first
-  `Result:` line of `verification.md` must agree with `verify.result=pass`, so
-  a recorded pass can no longer be self-asserted. `Result: pass (2 accepted
-  deviations)` still passes; `Result: passing` does not.
-- **`onto state <change> --json` now derives the working phase from workspace
-  artifacts** (`derived_phase`, plus `phase_mismatch` when the state file's
-  claim disagrees) instead of echoing the claim it is named to distrust.
-  `onto status` annotates a disagreeing row with `(working: <phase>)`, and
-  `onto state`'s text output does the same. The evidence table lives in tested
-  Go rather than being re-run from prose per dispatch.
-- **`onto advance <change> --to build` walks a preset from `open` to `build` in
-  one call**, running every per-hop gate. It refuses for `workflow: full`
-  (those advance one gate at a time), for any target other than `build`, and
-  for a change already at or past `build`.
-- The onto skills record their token at the gate they own, so an agent
-  following the workflow gets this for free; `docs/guides/onto-workflow.md`
-  carries the token table and the migration note. Catalog 0.9.0.
-
-### New in v0.8.0 — explicit per-agent models; model tiers removed (BREAKING)
-
-The model tier system is gone (ADR 0016). Model selection no longer routes
-through `role:` frontmatter and shared `[models.<tool>.<tier>]` blocks —
-every declared subagent names its own model, per tool, where the agent is
-configured:
-
-```toml
-[subagents.onto-reviewer.claude]
-model = "opus"
-variant = "1m"
-effort = "high"
-```
-
-- **BREAKING — `[models.<tool>.<tier>]` blocks are rejected at load**, naming
-  the offending table. Delete them and declare a
-  `[subagents.<name>.<tool>]` block (non-empty `model`) for every declared
-  subagent × targeted tool — framework-expanded agents included. A missing
-  block fails at load with `subagents.<name>.<tool> model is required`, so
-  the offender is named instead of today's anonymous missing-tier error.
-- **BREAKING — homonto no longer manages the main session model.** The
-  route-derived default (`model` in Claude settings, `model`/`small_model`
-  in OpenCode) is not projected anymore; each tool uses its own default.
-  If you pinned the main model through `[models.claude.architectural]`,
-  move it to `[settings.claude].model` (or `[settings.opencode].model` /
-  `.small_model`) — the explicit settings path is unchanged.
-- Catalog subagents no longer carry `role:` frontmatter; a leftover `role:`
-  in your own agent files is ignored as unknown frontmatter.
-- Tool variants of a subagent now materialize only for the tools it actually
-  targets; stale variants of untargeted tools are removed on apply.
-- `onto new` proposals now require a Non-Goals section (onto framework).
-
-### New in v0.7.0 — security hardening + deep code-review pass
-
-A full code-quality review of `internal/` found and fixed five HIGH-severity
-silent-failure paths, eight maintainability hotspots, and several test gaps.
-Shipped happy-path behavior is unchanged; every refactor was verified by the
-existing test suite plus 92 new tests (871 → 963). The changes that **are**
-user-visible all turn previously-silent bugs into loud errors.
-
-**Trust boundary and exec hygiene:**
-- **`git://` is rejected as a remote transport** (insecure, like `http://`
-  already was). Use `git+https://`, `git+file://`, `https://`, or `file://`.
-- **Every external `exec` (pass, git) is now bounded by a 30s timeout.** A
-  hung gpg-agent passphrase prompt or a git credential prompt previously hung
-  the whole CLI indefinitely; you can now Ctrl-C through it.
-- **`context.Context` is threaded through `engine.Build`/`Apply`**, so a hung
-  remote fetch is interruptible from the calling CLI.
-
-**Loud errors where silence was a bug:**
-- **A malformed `homonto:` frontmatter block now fails the projection** with
-  a named parse error. Previously it was treated as "no block" and the agent
-  was silently projected with no model line and default permissions.
-- **A corrupted TOML tool file now fails the projection** rather than being
-  folded into "key absent" — the previous behavior could emit a misleading
-  "create" plan or report false drift.
-
-**Maintainability (no behavior change):**
-- New `internal/adapter/baseadapter` absorbs ~590 LOC of byte-identical
-  methods between the Claude and OpenCode adapters; both adapters shrink by
-  ~294 LOC each.
-- New `internal/resourcepath` unifies the three former
-  `skillpath`/`commandpath`/`subagentpath` packages (their switch bodies had
-  drifted in subtle ways).
-- New `internal/workcli` extracts the gate / `validChangeName` /
-  `ErrQuietFindings` scaffolding shared between `ontocli` and `tocli`; the
-  `"0.1.0-dev"` literal now lives in one place (`buildinfo.DevVersion`).
-- The 1381-line `internal/config/config.go` god file is split into four
-  focused files (`config.go` types / `load.go` decode+migrate+Load /
-  `validate.go` validation / `expand.go` framework expansion).
-- Three near-identical `doctor{Skills,Commands,Subagents}` methods collapse
-  into one `doctorResource(tool, doctorOp)`.
-- `internal/schema.ErrTooNew` is the shared sentinel for the five
-  schema-version-too-new checks (state, config, onto-state, catalog builtin,
-  catalog local) — callers can `errors.Is(err, schema.ErrTooNew)` instead of
-  substring-matching.
-- Error wrapping at six sites uses `%w` (was `%v`) so error types survive
-  the engine boundary; catalog loader surfaces `fs.ReadDir` errors instead
-  of treating an unreadable directory as missing.
-
-### New in v0.6.1 — lossless per-tool agent rendering
-
-An audit of the rendered agents against both tools' real contracts found
-and fixed four silent information losses (catalog 0.6.0, onto 0.4.1,
-to 0.3.1):
-
-- **Claude renders a denylist, not an allowlist.** The old `tools:`
-  allowlist silently stripped every unlisted default (WebFetch, WebSearch,
-  Skill, …) that the OpenCode variant kept. Claude now gets
-  `disallowedTools:` covering exactly the denied intent — read-only denies
-  `Edit, Write, NotebookEdit`, `bash: false` denies `Bash`, `spawn: []`
-  denies `Agent`/`Task` — matching OpenCode's deny-by-exception model.
-- **`steps` now reaches Claude as `maxTurns`** (it was dropped as
-  "no concept"; Claude has one).
-- **`dialogs: false` is now enforced in OpenCode** (`question: deny`);
-  omitting the line left the question tool available in defiance of the
-  declared intent. All eight specialist subagents in both frameworks are
-  now `dialogs: false` — matching the protocol's "a subagent never prompts
-  the user; it returns a `Questions:` section" rule, which is also the only
-  behavior Claude can express (AskUserQuestion is never available to Claude
-  subagents). The onto orchestrator (primary) keeps its dialogs.
-- **The unrecognized `mode:` line is gone from Claude variants** (Claude
-  has no such frontmatter field).
-
-### New in v0.6.0 — four model tiers, project-scoped model settings & MCPs, closed tier names
-
-**`review` is the fourth model tier.** Model routes are now `architectural`
-(orchestrate/design), `coding` (implement), `review` (judge others' work),
-and `trivial` (cheap lookups) — and a model-backed config must declare all
-four per enabled tool (**breaking**: existing three-route configs fail at
-load until a `[models.<tool>.review]` block is added). The onto and to
-reviewers and skeptics now run on the review tier instead of borrowing the
-architectural one, in both Claude Code and OpenCode; the catalog is bumped
-to 0.5.0 and re-materializes on the next apply.
-
-**Route-derived default-model keys follow scope.** When every model-backed
-resource (framework, command, subagent) enabled for a tool is
-project-scoped, the `[models.<tool>.*]`-derived default-model keys now
-project into the project-level config the tool merges over its global one
-(`<repo>/opencode.jsonc` `model`/`small_model`;
-`<repo>/.claude/settings.json` `model`) instead of the global file — one
-repository's workflow models no longer become every other session's
-defaults, and two repositories no longer fight over the same global keys.
-Previously-applied global keys are pruned automatically on the next
-`apply`. Any user-scope model-backed resource, and all explicit
-`[settings.<tool>]` keys, keep today's global projection.
-
-**MCP servers take a `scope`.** `[mcps.<name>] scope = "project"` projects
-the server into the project-level config (Claude Code `<repo>/.mcp.json`;
-OpenCode `<repo>/opencode.jsonc`) instead of the global one, so a
-repository's servers no longer run in every other session. Default stays
-`user` (global, today's behavior); codex remains user-scope only and a
-project-scoped codex target fails at load. A previously-global server whose
-scope changes migrates automatically on the next `apply`.
-
-**Tier and role names are enforced.** `[models.<tool>.<level>]` with a
-level outside `architectural`/`coding`/`trivial` now fails at load naming
-the offender, and an agent frontmatter `role:` outside the same three tiers
-fails at render — both were silent no-ops before (an unknown role rendered
-the agent with no model at all).
-
-### New in v0.5.1 — documentation rewrite
-
-Docs only; the binaries are identical to v0.5.0. The README and every living
-guide were rewritten for accuracy and directness: the source matrix is now
-stated correctly everywhere (frameworks accept `builtin:`, `local:`, and
-digest-pinned `remote:`; onto and `to` are mutually exclusive), stale
-"`to` is planned" claims are gone, and the reference guides were re-checked
-against the shipped binaries' command surfaces.
-
-### New in v0.5.0 — live task lists, hardened `to`, principle guides
-
-**The task list is live state — in both frameworks.** Discovered work is
-appended to the checklist (with its files and verification) *before* its code
-is written; checkoffs ride each task's own commit; tasks are never renumbered
-or deleted (`SUPERSEDED` instead), so a fresh session always resumes from the
-first unchecked task. onto gets this in onto-build, its templates, the
-presets, and the subagent protocol (implementers report discovered work, the
-coordinator appends it); `to` gets the same discipline adapted to its plan
-contract.
-
-**`to` grew teeth without growing ceremony:**
-
-- **Plan contract**: every task carries `Files:` / `Change:` / `Verify:`
-  fields plus a whole-change `Final Verify:` line; notes and verification
-  evidence live in the same archived `plan.md`. `to doctor` diagnoses
-  contract violations (line-numbered), wedged archives, and version skew;
-  `--quiet` is the enforcement hook primitive.
-- **Crash convergence**: an interrupted `done`/`abandon` no longer wedges a
-  change — re-running the same command completes the archive.
-- **Date-prefixed archives** (`docs/tasks/archive/<date>-<name>/`) free
-  change names for reuse; mutating commands take a fail-fast workspace lock.
-- **`to done --evidence "<text>"`** records what was asserted, verbatim and
-  unchecked, so a real verification is distinguishable in the archive.
-- **`to handoff`** now excerpts what a resuming session needs: the plan head,
-  every unchecked task contract, `Final Verify:`, and bounded notes.
-
-**Docs**: the `to` guides split into [workflow concepts](https://github.com/noviopenworks/homonto/blob/main/docs/guides/to-workflow.md)
-and a [command reference](https://github.com/noviopenworks/homonto/blob/main/docs/guides/to-reference.md)
-(mirroring onto's pair), and two principle guides —
-[YAGNI](https://github.com/noviopenworks/homonto/blob/main/docs/guides/yagni.md) and
-[KISS](https://github.com/noviopenworks/homonto/blob/main/docs/guides/kiss.md) —
-map where each framework structurally enforces building only what's needed,
-simply. Framework versions: onto 0.3.2, to 0.2.0; catalog 0.4.0.
-
-### New in v0.4.0 — the `to` framework
-
-`to` is the minimal coding framework for LLMs: **plan → do → done**, a
-bookkeeper binary (`init`, `new`, `status`, `phase`, `done --verified`,
-`abandon`, `handoff`; structured `--json` output on each of those workflow
-commands), and the `builtin:to` catalog
-framework — a `/to` dispatcher, three phase skills, a vendored `to-no-slop`,
-and four **sequential-only** specialist subagents adapted from onto. Changes
-live under `docs/tasks/` and archive on done. Design and rationale:
-`docs/to-framework-design.md`.
-
-Two deliberate properties to know before adopting it:
-
-- **onto and `to` are mutually exclusive.** Declaring both frameworks in one
-  `homonto.toml` fails at load — pick one workflow per repository (onto for
-  evidence-gated enterprise changes, `to` for simple development). There is no
-  escalation path between their state formats.
-- **`to done --verified` is self-asserted.** The binary records the checkbox;
-  it observes no evidence. The verification rigor lives in the `to-done`
-  skill (real verify run + a single adversarial skeptic pass), not in a gate.
-
-### Breaking in v0.3.0 — comet, openspec, and superpowers removed
-
-The catalog now ships **only homonto-native frameworks**: `onto` (and, since
-v0.4.0, `to`) — plus the loose framework-agnostic
-skills/commands (`handoff`, `grilling`), which are a separate channel and
-unaffected. A config declaring `[frameworks.comet]`, `[frameworks.openspec]`,
-`[frameworks.superpowers]`, or `builtin:comet-navigator` now fails at load
-with `catalog: unknown framework` / `unknown subagent`; remove the
-declaration (their projected links are pruned on the next apply) or vendor
-the content yourself via a `local:` framework / pinned `remote:` source.
-v0.2.2 is the last release carrying them. Rationale: ADR 0015.
-
-### New in v0.2.2 — dirty-workspace support
-
-The close gate no longer treats every uncommitted path the same. `onto dirt
-[change] [--json]` classifies each dirty path — `own` (the change's own
-`docs/changes/<name>/` evidence), `change` (another change's docs), `source`
-(everything else) — and `onto advance`/`onto close` now tolerate `change`
-dirt: one change's in-flight artifacts no longer deadlock another change's
-close. What does block (`own` + `source`) is listed right in the refusal
-instead of a bare "dirty worktree blocks close". The onto skills gained a
-dirty-workspace protocol (attribution stays with the agent; the binary owns
-classification).
-
-### Fixed in v0.2.1 — deep-review findings
-
-**onto's terminal states are now actually terminal.** An abandoned change could
-archive as a success, have its evidence tokens forged via `onto set`, and merge
-its never-accepted deltas into the living specs; all three paths now refuse.
-`merge-deltas` recovers from a crash between its per-file writes instead of
-wedging the change forever; `onto scale` errors without a recorded base ref
-instead of silently measuring an empty diff as "light"; dependency resolution
-is an exact name match (dep `auth` is no longer satisfied by an archive named
-`…-refactor-auth`); a close crash can no longer leave `archived: true` at the
-original path; `doctor` skips abandoned changes and `--quiet` is now fully
-quiet.
-
-**homonto re-materializes when framework CONTENT changes.** Editing a `local:`
-framework's resources — or repinning a `remote:` framework's digest, which is
-how a patched resource ships — used to be ignored forever ("No changes"). The
-materialize gate now digests source content. Related: `plan` surfaces a pending
-re-materialization (text + `--exit-code` 2) instead of disagreeing with apply;
-renamed/de-declared resources are GC'd from `.homonto/catalog/` instead of
-lingering where the adapters' variant-preference could resurrect them; and a
-per-subagent model override is validated no matter what the entry's `targets`
-say (an unvalidated value could previously reach a live agent file), with
-conflicting overrides for one builtin now a deterministic load error.
-
-### Breaking in v0.2.0 — `effort` and `variant` now do something
-
-They were **required by validation and projected nowhere**: homonto forced you
-to write two fields it then discarded — and never checked, so real configs
-filled up with values no tool accepts (`effort = "normal"`, `variant = "max"`,
-even `effort = "n"`). Now they are **optional, validated, and actually
-projected** into each tool's own dialect:
-
-| | Claude Code | OpenCode |
-|---|---|---|
-| `variant` | rendered *into* the model string (`opus[1m]`); **alias-only**, `1m` is the only documented one | a first-class `variant:` field, any provider-defined value |
-| `effort` | a real field: `low`, `medium`, `high`, `xhigh`, `max` | **no such concept** — declaring it is now an error |
-
-**You may need to edit your config.** A route naming just a `model` is now
-complete, so the simplest fix is to delete values you were only writing to
-satisfy the old rule. Otherwise the loader tells you exactly what is wrong:
-
-```
-parse config: models.claude.coding effort "normal" is not a Claude effort level (low, medium, high, xhigh, max)
-parse config: models.opencode.coding sets effort "high", but OpenCode has no effort setting — use variant, or drop it
-```
-
-**New:** retune one agent without restating its tier — each field wins field by
-field, and no `source` is needed for an agent a framework installed:
-
-```toml
-[subagents.onto-skeptic.claude]
-effort = "max"
-```
-
-### Breaking in v0.2.0 — onto's subagents are namespaced `onto-*`
-
-Every resource the onto framework ships is now namespaced, so installing onto
-cannot collide with another framework's — or your own — agent of the same
-generic name. Two builtin subagents were renamed:
-
-| Old | New |
-|---|---|
-| `builtin:code-reviewer` | `builtin:onto-reviewer` |
-| `builtin:codebase-explorer` | `builtin:onto-explorer` |
-
-If you declare either **standalone** in a `[subagents.*]` table, update its
-`source` — an old name now fails at load with `catalog: unknown subagent`. If
-you install them via `[frameworks.onto]`, apply handles the rename for you: the
-old agent files are pruned and the new ones projected. (The onto skills, its
-commands, and the `onto` dispatcher itself are unchanged; `onto` is the
-namespace root.)
-
-### Fixed in v0.2.0 — subagents now track their model routes
-
-Changing a `[models.<tool>.<role>]` route did **not** re-render the subagents
-stamped from it. The projected agents stayed frozen at the model they were first
-materialized with, while the tool's own `setting.model` — re-read from the routes
-on every apply — moved correctly: one config, two different answers. If you have
-edited a model route since installing a framework or subagent, **upgrade and run
-`homonto apply`** to re-stamp your agents; verify with
-`grep '^model:' .homonto/catalog/subagents/*.md`.
-
-Three related defects went with it: a deleted rendered agent variant is now
-restored instead of stranding a dangling symlink that `plan`/`status`/`doctor`
-all called healthy; `apply` now re-materializes the catalog even when the
-projection plan is empty; and `doctor` no longer reports a permanent, unfixable
-finding for an OpenCode-primary agent's by-design absent Claude variant.
+Three binaries, `homonto` (configuration projector), `onto` (evidence-gated
+workflow), and `to` (minimal workflow bookkeeper), for Linux, macOS, and
+Windows on amd64 and arm64. Each binary is a separate archive, and one
+`SHA256SUMS` covers them all. Install with mise or the installer:
+[installation guide](https://github.com/noviopenworks/homonto/blob/main/docs/guides/installation.md).
+Earlier releases: [CHANGELOG.md](https://github.com/noviopenworks/homonto/blob/main/CHANGELOG.md).
+
+### v0.34.0 — workflows, engines, and workspace tasks
+
+Breaking configuration change. All three binaries are stamped v0.34.0.
+The embedded catalog is 0.34.0 (onto 0.26.0, to 0.23.0,
+h 0.12.0, and the new no 0.1.0).
+
+- **`[frameworks.*]` is removed (ADR 0067).** Declare `onto`, `to`, and `no`
+  under `[engines.<name>]` and `h` under `[workflows.h]`. A config that still
+  names `[frameworks.*]` fails at load; there is no automatic migration.
+  `[workflows.h]` no longer installs onto and to or satisfies their binaries'
+  install gates; declare an engine yourself if `/h-resolve-issue` should use
+  one.
+- **`no` engine:** `/no`, one entry skill, `no-implementer`, and
+  `no-reviewer`. No binary, no records, and no coordinator of its own.
+- **Engines combine (ADR 0068).** onto, to, and no may all be installed in one
+  config. A workspace task selects exactly one engine and keeps it on resume.
+- **Workspace tasks:** `homonto workspace task create|inspect|check|cleanup`
+  records the engine, checkouts, isolation choice, bases, and integration
+  results for parallel work across repositories: one repository per
+  implementer and one writer per checkout.
+- **Integration checks:** `[integration.<name>]` declares `repos`, `repo`,
+  `cwd`, and an argv `command`. A check runs against exact candidate
+  revisions, records its result, and is invalidated when an input changes.
+  Interrupting a check kills its process group and records the result.
+- **Terminal cleanup (ADR 0075):** `onto cleanup`, `to cleanup`, and
+  `homonto workflow cleanup`, each with `list`, `preview`, and `apply`.
+  Cleanup archives an abandoned onto record still in `changes/` and removes
+  registered worktrees that are clean and integrated. Eligibility comes from
+  native state, never from age or checked tasks. `apply` needs the exact
+  generation `--identity` and `--yes`, rechecks every safety condition, and
+  writes a retryable receipt under `<workflow-root>/.workflow/cleanup/`.
+  Branches and archives are kept. The coordinator inspects cleanup after
+  delivery and asks before applying it.
+- **Name reuse after abandon:** an abandoned onto archive no longer blocks a
+  new change with the same name. When a name is taken, `onto new` and
+  `to new` now suggest `cleanup preview`.
+- **`/h-resolve-conflicts` (ADR 0076):** resolves only an open PR's merge
+  conflicts. It pins head and base, does nothing if they merge cleanly,
+  merges the base into the head without rebasing, verifies the result, and
+  pushes it to the same head without force. It needs no engine and
+  authorizes no comments, thread resolution, or PR merge.
+- **Task branches** are named `work-<name>/<alias>`. Cleanup deletes a
+  task-created branch once its commits are integrated into the recorded
+  target (ADR 0072).
+- **Delivery to the requested endpoint (ADR 0069):** the coordinator
+  implements, verifies, triages findings, repairs, closes, publishes, and
+  confirms the endpoint you asked for, such as a review-ready PR with
+  passing required checks.
+- **Coordinator permissions (ADR 0070):** ordinary pushes, GitHub API calls,
+  routine PR and issue publication, and CI reruns no longer ask. Forced or
+  deleting pushes, PR merges, administrative operations, and workflow bypass
+  still ask. Workers keep their publication denies; read-only agents keep
+  their edit and shell denies. Agent roles now come from the catalog instead
+  of hard-coded name lists, and every builtin agent may read an external
+  records root.
+- **Entry points (ADR 0071):** commands defer execution policy to their
+  skills, and `/no` and `/h-resolve-issue` share one execution reference.
+  `builtin:example-command` is removed; delete any declaration of it.
+- **Proportional repairs and explorers first (ADRs 0073, 0074):** the
+  coordinator asks before a repair that is out of proportion to the
+  finding, and dispatches explorers instead of guessing about code it has
+  not read.
+- **Docs:** the README and guides are rewritten. New guides cover
+  installation (mise first), concepts, examples, the catalog, workflows, the
+  no engine, the h workflow, OpenCode integration, principles, and remote
+  sources.
+- **Development:** a Taskfile replaces the Makefile and `.mise.toml`;
+  `scripts/gate.sh` holds the only golangci-lint pin; CodeGraph is the local
+  code index (ADR 0066).
+
+**Upgrade:** rename every `[frameworks.<name>]` table to
+`[engines.<name>]` (onto, to, no) or `[workflows.h]`, add
+`[engines.onto]` or `[engines.to]` if h relied on one, and remove any
+`builtin:example-command` declaration. Then install matching v0.34.0
+binaries, run `homonto plan` and `homonto apply` in each configured project,
+and restart OpenCode. Existing workflow records do not migrate.
+
+**Validation requirement:** the complete pre-tag gate, including race tests,
+vulnerability scanning, Docker E2E and release packaging, must pass. The release
+workflow repeats the automated gate before publishing.
+
+**Live-check release exception (v0.34.0 only):** the owner directed publication
+without completing these release-checklist checks. None is claimed as passing:
+
+- Interactive OpenCode 2 panel, reload/unload, status/handoff tools, model context,
+  compaction, idle notifications, permission observer and V1-link removal checks.
+- Native GitHub draft denial/approval, permission prompts and changed-session,
+  directory, binding, cancellation and service-mismatch checks in a live host.
+- Real throwaway GitHub account/repository sends, matching receipts, changed
+  actor/destination/PR OIDs and uncertain-send reconciliation checks.
+- Two-way OpenCode migration checks in throwaway projects, including terminal
+  settings and snapshot limitations.
+
+This is a one-release exception, not approval to skip these checks in later tags.
 
 ## Known limitations
 
-homonto is a young, deliberately narrow tool. For the current 0.x line:
+homonto is young and deliberately narrow. For the 0.x line:
 
-- **OpenCode JSONC comments are not preserved** on any apply that writes
-  `opencode.jsonc` (the file is rewritten as normalized JSON). Accepted for beta.
-- **The bundled catalog ships only homonto-native content**: the `onto` and
-  `to` frameworks (complementary, ADR 0042), the `h` GitHub companion, and loose framework-agnostic
-  skills/commands. Third-party frameworks are not bundled; vendor them via a
-  `local:` path or a digest-pinned `remote:` archive (the same fail-closed
-  verification `remote:` subagents use). Every `remote:` source requires a
-  `digest = "sha256:…"` pin, and homonto never re-resolves a pin to newer
-  content on its own.
-- **OpenCode is the only adapter.** Claude Code and codex support was removed
-  in v0.13.0; a config naming them fails at load naming the key.
-- **Secrets require `pass` or an env var** at apply time (`${pass:...}` /
-  `${ENV_VAR}`).
-- **After moving or renaming a repository, re-run `homonto apply`.** Project-local
-  links use relative targets; reapply refreshes absolute config bindings and
-  managed user-scoped references. Foreign links are never silently adopted.
-- **Workspace migration and bound conversion remain explicit limitations.**
-  There is no automatic records-layout migration, and converting a change with
-  registered worktrees is refused rather than silently rebinding its ownership.
-- **Native permissions are not a filesystem sandbox.** OpenCode v1.18.29 does
-  not report an `apply_patch` move destination to edit-permission checks. The
-  documented coordinator-only records policy remains binding, but static
-  permissions cannot enforce an unreported destination.
+- **OpenCode is the only target.** Claude Code and Codex support was removed in
+  v0.13.0; a config naming them fails at load and names the key.
+- **`opencode.jsonc` comments are not preserved** by an apply that rewrites
+  the file; it is written back as normalized JSON. No-op and link-only applies
+  leave it alone.
+- **The catalog ships only homonto's own content:** the onto, to, and no
+  engines, the h workflow, and standalone skills and commands. Bring
+  third-party skills or agents as a `local:` path or a digest-pinned `remote:`
+  source. homonto never re-resolves a pin to newer content on its own.
+- **Secrets need `pass` or an environment variable** at apply time
+  (`${pass:…}` / `${ENV}`). Project-scoped MCP secrets end up in plain text in
+  the project's `opencode.jsonc`.
+- **After moving or renaming a repository, run `homonto apply` again.**
+  Project links are relative; reapplying refreshes absolute config bindings and
+  user-scoped references. Foreign links are never adopted silently.
+- **Workspace migration is explicit and partial.** `homonto workspace
+  migrate` moves only supported legacy record layouts, and only when you run
+  it. Converting a change that has registered worktrees is refused rather than
+  rebinding them.
+- **Agent permissions are not a sandbox.** OpenCode v1.18.29 does not report an
+  `apply_patch` move destination to edit-permission checks, so a move into
+  workflow records cannot be guaranteed blocked. The rule that only the
+  coordinator writes records still binds; static permissions cannot enforce a
+  path the host does not report.
 
-See the README's "Caveats" section and
-[`docs/guides/troubleshooting.md`](https://github.com/noviopenworks/homonto/blob/main/docs/guides/troubleshooting.md) for details.
+Details: [README › Scope and limits](https://github.com/noviopenworks/homonto/blob/main/README.md#scope-and-limits)
+and [troubleshooting](https://github.com/noviopenworks/homonto/blob/main/docs/guides/troubleshooting.md).

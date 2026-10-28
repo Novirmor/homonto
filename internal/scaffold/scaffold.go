@@ -14,10 +14,10 @@ var files = map[string]string{
 # command = ["codegraph", "serve", "--mcp"]
 # targets = ["opencode"]              # default: every tool (OpenCode)
 
-# [frameworks.onto]
+# [engines.onto]
 # source = "builtin:onto"
 # scope = "project"
-# A framework expands its catalog subagents; each MUST declare a per-tool
+# A package expands its catalog subagents; each MUST declare a per-tool
 # block (subagents.<name>.opencode) with a non-empty model.
 # [subagents.homonto.opencode]
 # model = "anthropic/claude-opus-4-8"
@@ -40,7 +40,7 @@ var files = map[string]string{
 # targets = ["opencode"]
 
 # A standalone builtin subagent needs its model block too. Use a source not
-# already installed by a framework (the onto framework above owns onto-reviewer).
+# already installed by a package (the onto engine above owns onto-reviewer).
 # Every declared subagent MUST declare a per-tool block
 # (subagents.<name>.opencode) with a non-empty model. Variant is optional.
 # [subagents.reviewer]

@@ -53,7 +53,7 @@ func TestWorkflowPromptCLISequences(t *testing.T) {
 		for _, early := range []bool{false, true} {
 			t.Run(fmt.Sprintf("combined/%s/early=%t", workflow, early), func(t *testing.T) {
 				root := filepath.Join(t.TempDir(), "combined")
-				write(t, filepath.Join(root, "homonto.toml"), fmt.Sprintf("schema_version=2\n[frameworks.%s]\nsource='builtin:%s'\nscope='project'\n[workflow]\nroot='docs'\ngit='existing'\n[repos]\napp='.'\n[worktrees]\ndir='../execution'\n", workflow, workflow))
+				write(t, filepath.Join(root, "homonto.toml"), fmt.Sprintf("schema_version=2\n[engines.%s]\nsource='builtin:%s'\nscope='project'\n[workflow]\nroot='docs'\ngit='existing'\n[repos]\napp='.'\n[worktrees]\ndir='../execution'\n", workflow, workflow))
 				write(t, filepath.Join(root, ".gitignore"), ".homonto/\n")
 				write(t, filepath.Join(root, "source.txt"), "baseline\n")
 				// Fixture only: materialized-directory presence is the CLI install gate.
@@ -130,6 +130,13 @@ func TestWorkflowPromptCLISequences(t *testing.T) {
 						t.Fatalf("source verification: %s", got)
 					}
 					run(t, root, to, "done", "sequence", "--verified", "--evidence", "git show HEAD:source.txt returned verified continuation fixture", "--dir", root)
+					// The dispatcher must inspect archives even when active status is
+					// empty: this verified candidate still has not reached its target.
+					var active []json.RawMessage
+					status := run(t, root, to, "status", "--json", "--dir", root)
+					if err := json.Unmarshal([]byte(status), &active); err != nil || len(active) != 0 {
+						t.Fatalf("archived task must disappear from active inventory: %v %s", err, status)
+					}
 					probe := exec.Command("git", "merge-base", "--is-ancestor", candidate, "main")
 					probe.Dir = root
 					if err := probe.Run(); err == nil {
@@ -155,6 +162,17 @@ func TestWorkflowPromptCLISequences(t *testing.T) {
 					if got := run(t, resumed.Path, "git", "show", "HEAD:source.txt"); got != "verified continuation fixture" {
 						t.Fatalf("integration verification: %s", got)
 					}
+					remote := filepath.Join(t.TempDir(), "remote.git")
+					run(t, root, "git", "init", "--bare", remote)
+					delivery := run(t, resumed.Path, "git", "rev-parse", "HEAD")
+					run(t, resumed.Path, "git", "push", remote, delivery+":refs/heads/main")
+					if got := run(t, root, "git", "--git-dir", remote, "rev-parse", "refs/heads/main"); got != delivery {
+						t.Fatalf("recovered delivery = %s, want %s", got, delivery)
+					}
+					after, err := os.ReadFile(archives[0])
+					if err != nil || string(after) != string(data) {
+						t.Fatalf("delivery recovery rewrote immutable archive: %v", err)
+					}
 				}
 			})
 		}
@@ -162,7 +180,7 @@ func TestWorkflowPromptCLISequences(t *testing.T) {
 	for _, mode := range []string{"merge", "pr"} {
 		t.Run("integration/"+mode, func(t *testing.T) {
 			root := t.TempDir()
-			write(t, filepath.Join(root, "homonto.toml"), "schema_version=2\n[frameworks.onto]\nsource='builtin:onto'\nscope='project'\n[workflow]\nroot='records'\ngit='existing'\n[repos]\napp='app'\nuntouched='untouched'\n[worktrees]\ndir='execution'\n")
+			write(t, filepath.Join(root, "homonto.toml"), "schema_version=2\n[engines.onto]\nsource='builtin:onto'\nscope='project'\n[workflow]\nroot='records'\ngit='existing'\n[repos]\napp='app'\nuntouched='untouched'\n[worktrees]\ndir='execution'\n")
 			if err := os.MkdirAll(filepath.Join(root, ".homonto/catalog/skills/onto"), 0755); err != nil {
 				t.Fatal(err)
 			}
@@ -272,12 +290,22 @@ func TestWorkflowPromptCLISequences(t *testing.T) {
 					t.Fatalf("failed validation fabricated publication: %s", out)
 				}
 			}
+			if mode == "pr" {
+				// A syntactically valid external claim completes native integration
+				// without contacting a host. This deliberately fictional PR proves
+				// why the coordinator must separately observe remote readiness.
+				call("complete-integration", "deliver", "--repo", "app", "--receipt", "pr:https://example.test/pull/1", "--head", candidate)
+				out = call("state", "deliver", "--json")
+				if err := json.Unmarshal([]byte(out), &state); err != nil || state.Derived != "done" {
+					t.Fatalf("valid PR claim should complete native integration only: %v %s", err, out)
+				}
+			}
 		})
 	}
 	for _, preset := range []string{"fix", "tweak"} {
 		t.Run("preset-resume/"+preset, func(t *testing.T) {
 			root := t.TempDir()
-			write(t, filepath.Join(root, "homonto.toml"), "[frameworks.onto]\nsource='builtin:onto'\nscope='project'\n")
+			write(t, filepath.Join(root, "homonto.toml"), "[engines.onto]\nsource='builtin:onto'\nscope='project'\n")
 			write(t, filepath.Join(root, ".gitignore"), ".homonto/\n")
 			if err := os.MkdirAll(filepath.Join(root, ".homonto/catalog/skills/onto"), 0755); err != nil {
 				t.Fatal(err)
@@ -287,6 +315,9 @@ func TestWorkflowPromptCLISequences(t *testing.T) {
 			run(t, root, "git", "commit", "-m", "baseline")
 			onto := filepath.Join(bins, "onto")
 			run(t, root, onto, "new", "resume", "--workflow", preset, "--dir", root)
+			base := run(t, root, "git", "rev-parse", "HEAD")
+			run(t, root, onto, "set", "base-ref", "resume", base, "--dir", root)
+			run(t, root, onto, "set", "base-branch", "resume", "main", "--dir", root)
 			// A new process resumes the scaffold: derived build is not setup completion.
 			var state struct {
 				Phase    string `json:"phase"`
@@ -409,12 +440,38 @@ func TestWorkflowPromptCLISequences(t *testing.T) {
 					t.Fatalf("preset repair unexpectedly required %s: %v", name, err)
 				}
 			}
+			// A repaired preset continues beyond its skeptic/verify checkpoint
+			// through real archive and local delivery, without a phase rewind.
+			for _, pair := range [][2]string{{"integration", "merge"}, {"close-confirmed", "validated repaired preset delivery"}} {
+				run(t, root, onto, "set", pair[0], "resume", pair[1], "--dir", root)
+			}
+			run(t, root, onto, "merge-deltas", "resume", "--dir", root)
+			run(t, root, "git", "add", "docs")
+			run(t, root, "git", "commit", "-m", "record repaired preset close preparation")
+			run(t, root, onto, "close", "resume", "--dir", root)
+			run(t, root, "git", "add", "docs")
+			run(t, root, "git", "commit", "-m", "archive repaired preset")
+			out = run(t, root, onto, "state", "resume", "--json", "--dir", root)
+			if err := json.Unmarshal([]byte(out), &state); err != nil || state.Derived != "close" {
+				t.Fatalf("archive must leave integration pending: %v %s", err, out)
+			}
+			// All intervening changes in this fixture are records-only. The
+			// archive descendant is permitted in legacy combined checkouts.
+			delivery := run(t, root, "git", "rev-parse", "HEAD")
+			run(t, root, "git", "checkout", "main")
+			run(t, root, "git", "merge", "--no-ff", delivery, "-m", "deliver repaired preset")
+			merge := run(t, root, "git", "rev-parse", "HEAD")
+			run(t, root, onto, "complete-integration", "resume", "--receipt", "merge:"+merge, "--dir", root)
+			out = run(t, root, onto, "state", "resume", "--json", "--dir", root)
+			if err := json.Unmarshal([]byte(out), &state); err != nil || state.Derived != "done" {
+				t.Fatalf("repaired preset not delivered: %v %s", err, out)
+			}
 		})
 	}
 	for _, missing := range []string{"", "Owner", "Repo", "Cwd"} {
 		t.Run("converted-contract/missing="+missing, func(t *testing.T) {
 			root := t.TempDir()
-			write(t, filepath.Join(root, "homonto.toml"), "[frameworks.onto]\nsource='builtin:onto'\nscope='project'\n[frameworks.to]\nsource='builtin:to'\nscope='project'\n")
+			write(t, filepath.Join(root, "homonto.toml"), "[engines.onto]\nsource='builtin:onto'\nscope='project'\n[engines.to]\nsource='builtin:to'\nscope='project'\n")
 			write(t, filepath.Join(root, ".gitignore"), ".homonto/\n")
 			for _, workflow := range []string{"onto", "to"} {
 				if err := os.MkdirAll(filepath.Join(root, ".homonto/catalog/skills", workflow), 0755); err != nil {

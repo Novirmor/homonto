@@ -125,16 +125,18 @@ skeptics — one per capability, each dispatch naming its capability's scenarios
 (abuse, data/migration, compatibility) per `references/adversarial.md` — those
 names differ from build's reviewer lenses on purpose, because a skeptic attacks
 the running system, not the diff. All deny edits and shell commands, so they go
-in the same parallel batch without mutating the candidate. Both mandatory lenses are prompted to
-refute, never approve; light mode runs no skeptic and records that in
-Adversarial. Triage
-findings per the protocol: a refuted claim fails its scenario; new defects
-are CRITICAL-fix or gate-decided deviations. **Non-waivable classes:** a
+in the same parallel batch without mutating the candidate. Both mandatory lenses
+are prompted to refute, never approve; light mode runs no skeptic and records
+that in Adversarial.
+
+Triage findings per the protocol: a refuted claim fails its scenario; new
+defects are CRITICAL-fix or gate-decided deviations. **Non-waivable classes:** a
 security defect, data loss, or a failed core-acceptance scenario is CRITICAL
 and must be fixed — it is never waived, skipped, or gate-accepted as a
 deviation, in light or full mode. Only lower-severity findings are eligible
-for a recorded deviation. For unavailable dispatch apply the shared execution
-policy: perform the claim/gap checks directly and record the missing independent
+for a recorded deviation.
+
+For unavailable dispatch apply the shared execution policy: perform the claim/gap checks directly and record the missing independent
 pass in Adversarial. An explicit independent-review requirement remains a blocker;
 denial and blocked workers are not absence. Direct review never counts as an
 independent skeptic, and surfaced non-waivable defects still block.
@@ -152,8 +154,9 @@ Write `<workflow-root>/changes/<name>/verification.md` from the canonical templa
 scenario-evidence table, design conformance, adversarial pass, regression,
 deviations). When deviations were accepted, the Result line carries their
 count — `Result: pass (2 accepted deviations)` — so a pass with caveats is
-visibly different from a clean one everywhere the line is read. Record the
-result only after this ordering: finish scenario/adversarial/regression evidence
+visibly different from a clean one everywhere the line is read.
+
+Record the result only after this ordering: finish scenario/adversarial/regression evidence
 and the no-slop edit, finalize `verification.md`, checkpoint its manual edits in
 managed mode, then record each current scenario receipt with `--artifact
 <absolute-verification.md>`, then `onto set verify-result <name> pass|fail`.
@@ -163,6 +166,7 @@ current claim again using `onto evidence record`. The latest record for the same
 repository/task/scenario supersedes earlier claims without deleting audit history;
 there is no separate round-reset command. Re-record all claims bound to a changed
 report, not only the previously failing scenario. Never hand-edit the sidecar.
+
 For changes without delta files, including full documentation-only changes,
 declare each stable `Scenario-ID: <id>` once on an unfenced standalone line in
 either `tasks.md` or `verification.md` and use plain references elsewhere.

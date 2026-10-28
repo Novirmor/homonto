@@ -32,7 +32,7 @@ func TestCLIMigrationSnapshotUndoRestoresLegacyStateWithoutRetargeting(t *testin
 		}
 		return string(data)
 	}
-	write(configPath, "[tui.opencode]\ntheme = 'gruvbox'\n")
+	write(configPath, "[tui.opencode.theme]\nname = 'gruvbox'\n")
 	tuiPath := filepath.Join(home, ".config", "opencode", "tui.json")
 	cliPath := filepath.Join(home, ".config", "opencode", "cli.json")
 	legacy := "{\n \"theme\": \"gruvbox\", \"diff_style\": \"stacked\"\n}\n"

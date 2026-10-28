@@ -533,7 +533,7 @@ func TestDemoteRequiresYesRefusesCollisionsAndTerminals(t *testing.T) {
 func TestDemoteStateIdentityMustMatch(t *testing.T) {
 	dir := setUpGatedWorkspace(t)
 	seedDemotable(t, dir, "shrinker", "open", "")
-	writeFile(t, filepath.Join(dir, "docs", "changes", "shrinker", "onto-state.yaml"), "change: impostor\nphase: open\n")
+	writeFile(t, filepath.Join(dir, "docs", "changes", "shrinker", "onto-state.yaml"), "schema_version: 3\nchange: impostor\nphase: open\n")
 	if msg := runFail(t, "demote", "shrinker", "--dir", dir, "--yes"); !strings.Contains(msg, "impostor") {
 		t.Fatalf("state/directory mismatch must be refused: %q", msg)
 	}

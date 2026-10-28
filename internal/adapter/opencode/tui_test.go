@@ -57,81 +57,6 @@ func applyCLI(t *testing.T, a *Adapter, st *state.State, c *config.Config) adapt
 	return cs
 }
 
-func TestOpenCodeCLIMigratesPriorStateWithoutTouchingV1(t *testing.T) {
-	for _, existing := range []bool{false, true} {
-		t.Run(map[bool]string{false: "absent cli", true: "existing cli"}[existing], func(t *testing.T) {
-			a, st := cliFixture(t)
-			legacy := "{\n // V1 stays as-is\n \"theme\":\"gruvbox\",\"scroll_speed\":3,\"diff_style\":\"stacked\",\"custom\":true\n}\n"
-			writeCLIFile(t, a.tuiFile(), legacy)
-			server := "{\n // preserve server syntax and comments\n \"model\":\"provider/model\"\n}\n"
-			writeCLIFile(t, a.cfgFile(), server)
-			st.Set("opencode", "tui.theme", `"gruvbox"`, secret.Hash(`"gruvbox"`))
-			st.Set("opencode", "tui.scroll_speed", `3`, secret.Hash(`3`))
-			st.Set("opencode", "tui.diff_style", `"stacked"`, secret.Hash(`"stacked"`))
-			before, err := a.ObserveHashes(st)
-			if err != nil || before["tui.theme"] != secret.Hash(`"gruvbox"`) {
-				t.Fatalf("legacy observe: %v, %v", before, err)
-			}
-			if existing {
-				writeCLIFile(t, a.cliFile(), `{"theme":{"name":"other","mode":"dark"},"scroll":{"acceleration":true},"tabs":{"mode":"off"},"plugins":["user-plugin"],"custom":{"keep":42}}`)
-			}
-			c := &config.Config{TUI: config.TUI{OpenCode: map[string]any{"theme": "gruvbox", "scroll_speed": int64(3)}}}
-			cs := applyCLI(t, a, st, c)
-			for _, key := range []string{"tui.theme", "tui.scroll_speed", "tui.diff_style"} {
-				if _, ok := st.Get("opencode", key); ok {
-					t.Fatalf("legacy state not retired: %s; %+v", key, cs)
-				}
-			}
-			raw := readCLIFile(t, a.cliFile())
-			if gjson.Get(raw, "theme.name").String() != "gruvbox" || gjson.Get(raw, "scroll.speed").Int() != 3 {
-				t.Fatalf("legacy declarations not mapped: %s", raw)
-			}
-			for _, key := range []string{"scroll_speed", "diff_style"} {
-				if gjson.Get(raw, key).Exists() {
-					t.Fatalf("V1 field leaked to cli.json: %s", raw)
-				}
-			}
-			if existing {
-				for key, want := range map[string]string{"theme.mode": "dark", "scroll.acceleration": "true", "tabs.mode": "off", "plugins.0": "user-plugin", "custom.keep": "42"} {
-					if gjson.Get(raw, key).String() != want {
-						t.Fatalf("unmanaged %s lost: %s", key, raw)
-					}
-				}
-			}
-			if readCLIFile(t, a.tuiFile()) != legacy || readCLIFile(t, a.cfgFile()) != server {
-				t.Fatal("migration changed a V1 or server file")
-			}
-			if _, err := os.Stat(filepath.Join(a.ProjectRoot, "cli.json")); !os.IsNotExist(err) {
-				t.Fatalf("created project CLI file: %v", err)
-			}
-			for _, r := range a.Describe(c) {
-				if r.Kind == "tui" && (r.Destination != a.cliFile() || !strings.HasPrefix(r.Key, cliStatePrefix)) {
-					t.Fatalf("wrong CLI description: %+v", r)
-				}
-			}
-			obs, err := a.ObserveHashes(st)
-			if err != nil {
-				t.Fatal(err)
-			}
-			for _, key := range st.Keys("opencode") {
-				e, _ := st.Get("opencode", key)
-				if obs[key] != e.Applied {
-					t.Fatalf("observe %s: %v != %s", key, obs, e.Applied)
-				}
-			}
-			cs = applyCLI(t, a, st, c)
-			for _, ch := range cs.Changes {
-				if ch.Action != "noop" {
-					t.Fatalf("not idempotent: %+v", ch)
-				}
-			}
-			if readCLIFile(t, a.cliFile()) != raw {
-				t.Fatal("noop rewrote cli.json")
-			}
-		})
-	}
-}
-
 func TestOpenCodeCLIAdoptsNativeSettingsAndPrunesLeaves(t *testing.T) {
 	a, st := cliFixture(t)
 	original := "{\n  \"theme\": {\"name\": \"gruvbox\", \"mode\": \"light\"},\n  \"keybinds\": {\"app.exit\": [\"ctrl+c\", \"<leader>q\"], \"help.show\": false},\n  \"attention\": {\"sounds\": {\"done\": \"user.wav\"}}\n}\n"
@@ -215,7 +140,7 @@ func TestOpenCodeCLINativeProjectionAlongsideV1ServerConfig(t *testing.T) {
 
 func TestOpenCodeCLIObserveDriftAndMissing(t *testing.T) {
 	a, st := cliFixture(t)
-	c := &config.Config{TUI: config.TUI{OpenCode: map[string]any{"theme": "gruvbox"}}}
+	c := &config.Config{TUI: config.TUI{OpenCode: map[string]any{"theme": map[string]any{"name": "gruvbox"}}}}
 	applyCLI(t, a, st, c)
 	key := cliStatePrefix + "theme.name"
 	e, _ := st.Get("opencode", key)
@@ -322,9 +247,9 @@ theme = { name = "quoted\" name\\with\nnewline" }
 func TestOpenCodeCLIRetiresLegacyStateWithoutReadingOrCreatingFiles(t *testing.T) {
 	a, st := cliFixture(t)
 	st.Set("opencode", "tui.theme", `"old"`, secret.Hash(`"old"`))
-	writeCLIFile(t, a.tuiFile(), "invalid legacy JSON")
+	writeCLIFile(t, v1TUIFile(a), "invalid legacy JSON")
 	applyCLI(t, a, st, &config.Config{})
-	if readCLIFile(t, a.tuiFile()) != "invalid legacy JSON" {
+	if readCLIFile(t, v1TUIFile(a)) != "invalid legacy JSON" {
 		t.Fatal("retirement touched legacy file")
 	}
 	if _, err := os.Stat(a.cliFile()); !os.IsNotExist(err) {
@@ -338,18 +263,18 @@ func TestOpenCodeCLIRetiresLegacyStateWithoutReadingOrCreatingFiles(t *testing.T
 func TestOpenCodeCLIReverseChangesCannotReplayLegacyWrites(t *testing.T) {
 	a, st := cliFixture(t)
 	legacy := `{"theme":"v1"}`
-	writeCLIFile(t, a.tuiFile(), legacy)
-	c := &config.Config{TUI: config.TUI{OpenCode: map[string]any{"theme": "before"}}}
+	writeCLIFile(t, v1TUIFile(a), legacy)
+	c := &config.Config{TUI: config.TUI{OpenCode: map[string]any{"theme": map[string]any{"name": "before"}}}}
 	applyCLI(t, a, st, c)
 	key := cliStatePrefix + "theme.name"
 	before, _ := st.Get("opencode", key)
-	c.TUI.OpenCode["theme"] = "after"
+	c.TUI.OpenCode["theme"] = map[string]any{"name": "after"}
 	applyCLI(t, a, st, c)
 	reverse := adapter.ChangeSet{Tool: "opencode", Changes: []adapter.Change{{Action: "update", Key: key, New: before.Desired}}}
 	if err := a.Apply(c, reverse, noSecret(), st); err != nil {
 		t.Fatal(err)
 	}
-	if gjson.Get(readCLIFile(t, a.cliFile()), "theme.name").String() != "before" || readCLIFile(t, a.tuiFile()) != legacy {
+	if gjson.Get(readCLIFile(t, a.cliFile()), "theme.name").String() != "before" || readCLIFile(t, v1TUIFile(a)) != legacy {
 		t.Fatal("reverse change targeted the wrong file")
 	}
 	for _, action := range []adapter.Action{"create", "update", "adopt"} {
@@ -365,7 +290,7 @@ func TestOpenCodeCLIReverseChangesCannotReplayLegacyWrites(t *testing.T) {
 			t.Fatalf("restored old checkpoint retargeted: %+v", ch)
 		}
 	}
-	if readCLIFile(t, a.tuiFile()) != legacy {
+	if readCLIFile(t, v1TUIFile(a)) != legacy {
 		t.Fatal("restored checkpoint mutated V1")
 	}
 }
@@ -388,7 +313,7 @@ func TestOpenCodeCLIRejectsUnsupportedDeclarationsAndParentConflicts(t *testing.
 	for _, disk := range []string{`{"theme":"v1"}`, `{"theme":null}`, `{"theme":[]}`, `[]`, `{broken`} {
 		a, st := cliFixture(t)
 		writeCLIFile(t, a.cliFile(), disk)
-		c := &config.Config{TUI: config.TUI{OpenCode: map[string]any{"theme": "gruvbox"}}}
+		c := &config.Config{TUI: config.TUI{OpenCode: map[string]any{"theme": map[string]any{"name": "gruvbox"}}}}
 		if _, err := a.Plan(c, st); err == nil {
 			t.Fatalf("conflicting file accepted: %s", disk)
 		}
@@ -431,4 +356,10 @@ func TestOpenCodeCLIXDGAndRepoIsolation(t *testing.T) {
 	if readCLIFile(t, a.cliFile()) != "invalid global config" {
 		t.Fatal("repo touched global settings")
 	}
+}
+
+// v1TUIFile is OpenCode 1's TUI file. homonto no longer reads or writes it;
+// tests use the path only to prove it stays untouched.
+func v1TUIFile(a *Adapter) string {
+	return filepath.Join(a.Home, ".config", "opencode", "tui.json")
 }

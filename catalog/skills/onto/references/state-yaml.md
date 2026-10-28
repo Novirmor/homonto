@@ -9,12 +9,11 @@ from file state on every run; the binary's `phase` field is the authoritative
 record of where the workflow stands, and files win only for routing decisions
 (see the dispatcher's §3).
 
-A legacy `state.yaml` (the pre-binary, agent-managed shape with nested
-`decisions:`, `verify.mode:`, `metrics:`) is migration input only:
-`LoadChange` reads it when no `onto-state.yaml` exists, or merges its
-observational data when both are present. The current binary never writes it.
-If you encounter a change with only a legacy `state.yaml`, treat it as a
-recovery situation (see the dispatcher's §3.5).
+The binary reads only `onto-state.yaml` at the current `schema_version`. An
+older file — unversioned, an earlier schema version, or the pre-binary
+`state.yaml` — is reported as malformed with the fix: finish or abandon that
+change with the onto release that created it. Never hand-edit it to the current
+schema.
 
 ## Template (the shape the binary writes)
 

@@ -115,29 +115,20 @@ func checkRemovedWorktree(l Layout, w Worktree) error {
 	if w.WorkflowRoot != l.WorkflowRoot {
 		return fmt.Errorf("worktree: removal workflow root changed")
 	}
-	if w.Origin == "legacy-migration" {
-		if err := validateMigrationBindingPath(l, w); err != nil {
-			return err
-		}
-		if err := validateMigrationBindingReceipt(l, w); err != nil {
-			return err
-		}
-	} else {
-		parent, err := worktreeParent(l)
-		if err != nil {
-			return err
-		}
-		repoDir := w.Repo
-		if repoDir == "" {
-			repoDir = "_config"
-		}
-		expected := filepath.Join(parent, repoDir, w.Workflow+"-"+w.Change)
-		if w.Role == "receiver" {
-			expected = filepath.Join(parent, repoDir, ".receivers", w.Workflow+"-"+w.Change)
-		}
-		if w.Parent != parent || w.Path != expected {
-			return fmt.Errorf("worktree: removal path is outside its recorded ownership")
-		}
+	parent, err := worktreeParent(l)
+	if err != nil {
+		return err
+	}
+	repoDir := w.Repo
+	if repoDir == "" {
+		repoDir = "_config"
+	}
+	expected := filepath.Join(parent, repoDir, w.Workflow+"-"+w.Change)
+	if w.Role == "receiver" {
+		expected = filepath.Join(parent, repoDir, ".receivers", w.Workflow+"-"+w.Change)
+	}
+	if w.Parent != parent || w.Path != expected {
+		return fmt.Errorf("worktree: removal path is outside its recorded ownership")
 	}
 	if w.Ownership == "" || w.GitDir == "" || filepath.Dir(w.GitDir) != filepath.Join(w.CommonDir, "worktrees") {
 		return fmt.Errorf("worktree: incomplete removal identity")

@@ -33,7 +33,7 @@ func handoffFixture(t *testing.T, workflow string) (string, string) {
 	dir, state := "records/tasks/demo", "id: generation\nchange: demo\nphase: do\n"
 	if workflow == "onto" {
 		dir = "records/changes/demo"
-		state = "schema_version: 2\nid: generation\nchange: demo\nworkflow: light\nphase: build\nisolation: branch\nintegration: pr\nbuild_mode: direct\ntdd_mode: tdd\nverify:\n  scale: light\n  result: pending\n"
+		state = "schema_version: 3\nid: generation\nchange: demo\nworkflow: light\nphase: build\nisolation: branch\nintegration: pr\nbuild_mode: direct\ntdd_mode: tdd\nverify:\n  scale: light\n  result: pending\n"
 	}
 	handoffWrite(t, root, dir+"/"+workflow+"-state.yaml", state)
 	return root, dir
@@ -413,7 +413,7 @@ func TestReadHandoffUsesNativePhaseEvidence(t *testing.T) {
 func TestReadHandoffOntoArchiveAndUnsafeEvidenceParents(t *testing.T) {
 	root, _ := handoffFixture(t, "onto")
 	dir := "records/changes/archive/old-demo"
-	handoffWrite(t, root, dir+"/onto-state.yaml", "schema_version: 2\nid: old\nchange: demo\nworkflow: full\nphase: close\narchived: true\nintegration_required: true\n")
+	handoffWrite(t, root, dir+"/onto-state.yaml", "schema_version: 3\nid: old\nchange: demo\nworkflow: full\nphase: close\narchived: true\nintegration_required: true\n")
 	handoffWrite(t, root, dir+"/proposal.md", "Archived objective\n")
 	cfg := filepath.Join(root, "selected.toml")
 	got, err := ReadHandoff(cfg, "onto", "demo", "old")

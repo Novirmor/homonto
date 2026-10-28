@@ -99,4 +99,5 @@ numbering: [`../agents/adr.md`](../agents/adr.md).
 | [0077](0077-hand-worker-permission-blocks-to-the-coordinator.md) | Hand worker permission blocks to the coordinator | Accepted |
 | [0078](0078-merge-onto-presets-into-light.md) | Merge onto fix and tweak into onto light | Accepted |
 | [0079](0079-drop-the-opencode-1-workflow-plugin.md) | Drop the OpenCode 1 workflow plugin | Accepted |
-| [0080](0080-freeze-workspace-migration.md) | Freeze workspace migration | Accepted |
+| [0080](0080-freeze-workspace-migration.md) | Freeze workspace migration | Superseded by 0081 |
+| [0081](0081-support-only-the-live-version.md) | Support only the live version | Accepted |

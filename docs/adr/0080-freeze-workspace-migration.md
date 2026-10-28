@@ -1,6 +1,6 @@
 # Freeze workspace migration
 
-- **Status:** Accepted
+- **Status:** Superseded by [0081](0081-support-only-the-live-version.md)
 - **Date:** 2026-10-28
 
 ## Context

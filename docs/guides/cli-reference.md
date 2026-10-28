@@ -25,7 +25,7 @@ Every `homonto` command and flag. Workflow binaries: [onto](onto-reference.md),
 | [`permissions suggest`](#homonto-permissions-suggest) | Render `bash_allow_add` entries |
 | [`cache gc`](#homonto-cache-gc) | Reclaim the remote cache |
 | [`workflow`](#homonto-workflow) | Read workflow progress |
-| [`workspace`](#homonto-workspace) | Records layout, checkpoints, tasks, migration |
+| [`workspace`](#homonto-workspace) | Records layout, checkpoints, tasks |
 | [`worktree`](#homonto-worktree) | Registered per-change worktrees |
 | `version`, `completion <shell>` | Version; shell completion |
 
@@ -208,10 +208,6 @@ instead of `--dir`: [cleaning up terminal workflows](workflow-cleanup.md).
 | `workspace task inspect <name>` | — | Recorded choices and check results (JSON). |
 | `workspace task check <name>` | `--writers-paused`, `--check`, `--timeout` | Run matching integration checks. |
 | `workspace task cleanup <name>` | `--yes` | Remove clean integrated task-owned worktrees. |
-| `workspace migrate plan` | `--manifest`, `--json` | Read-only legacy-records migration plan with a hash. |
-| `workspace migrate apply` | `--manifest`, `--plan-hash`, `--yes` | Apply the reviewed plan with a recovery journal. |
-| `workspace migrate verify` | `--run-id`, `--json` | Verify a completed migration. |
-| `workspace migrate recover` | `--run-id`, `--action resume\|restore`, `--plan-hash`, `--yes` | Resume or restore an interrupted migration. |
 
 ```console
 $ homonto workspace inspect

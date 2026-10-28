@@ -122,16 +122,6 @@ func activeOntoDirNames(root string) (map[string]bool, error) {
 		if !e.IsDir() || e.Name() == "archive" {
 			continue
 		}
-		changeDir := filepath.Join(dir, e.Name())
-		if state, class, _ := ontostate.Classify(changeDir); class == "valid" {
-			retired, err := retiredMigrationState(root, changeDir, state)
-			if err != nil {
-				return nil, err
-			}
-			if retired {
-				continue
-			}
-		}
 		names[e.Name()] = true
 	}
 	return names, nil

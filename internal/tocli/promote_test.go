@@ -168,7 +168,7 @@ func TestPromoteIdempotentRetryIsReceiptVerified(t *testing.T) {
 	// source precondition runs first), and a REAL source aimed at an
 	// occupied target is a collision refusal.
 	os.MkdirAll(filepath.Join(dir, "docs", "changes", "other"), 0o755)
-	os.WriteFile(filepath.Join(dir, "docs", "changes", "other", "onto-state.yaml"), []byte("change: other\nphase: open\n"), 0o644)
+	os.WriteFile(filepath.Join(dir, "docs", "changes", "other", "onto-state.yaml"), []byte("schema_version: 3\nchange: other\nphase: open\n"), 0o644)
 	if msg := runErrString(t, "promote", "ghost", "--as", "other", "--dir", dir, "--yes"); !strings.Contains(msg, "no such") {
 		t.Fatalf("unknown source must be refused, got: %q", msg)
 	}

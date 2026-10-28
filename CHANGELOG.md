@@ -7,9 +7,17 @@ list. Release candidates are folded into their stable release.
 
 ## Unreleased
 
-- **Workspace migration is frozen (ADR 0080).** `homonto workspace migrate`
-  keeps its current scope and still gets fixes; future breaking record or
-  config changes ship a load error and upgrade notes, not new migrations.
+- **Breaking: only the live version is supported (ADR 0081).**
+  - `homonto workspace migrate` is removed, along with migration-adopted
+    worktree bindings and retired-record handling. A registry entry adopted by
+    the migration now fails with the fix.
+  - onto reads only `onto-state.yaml` at the current `schema_version`.
+    Unversioned or older state files, a lone pre-binary `state.yaml`, and the
+    `fix`/`tweak` workflow values fail and say to finish the change with the
+    release that created it.
+  - OpenCode 2 only: OpenCode 1's `tui.json` is no longer read, and the V1 TUI
+    spellings (`theme = "x"`, `scroll_speed`, `scroll_acceleration`,
+    `leader_timeout`) fail at load and name their V2 key.
 - **Breaking: the OpenCode 1 workflow plugin is removed (ADR 0079).**
   `integrations.opencode.workflow_bridge = true` and an enabled
   `source = "homonto-workflow"` plugin declaration now fail at load; use
@@ -25,7 +33,6 @@ list. Release candidates are folded into their stable release.
   measures over five non-test files, adds a capability, or touches a
   security-sensitive surface escalates to full onto, and `onto set
   verify-scale` / `onto scale --set` refuse `full` for a light change.
-  Existing changes recorded as `fix` or `tweak` load as `light`.
 - **Worker permission blocks return to the coordinator (ADR 0077).** An
   implementer, reviewer, skeptic, explorer, or h worker whose tool call is
   denied, or whose prompt you reject, stops and hands back a `Permission block`

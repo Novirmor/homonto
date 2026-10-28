@@ -16,6 +16,9 @@ func mkState(t *testing.T, root, rel string, st ontostate.State) {
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		t.Fatal(err)
 	}
+	if st.SchemaVersion == 0 {
+		st.SchemaVersion = ontostate.CurrentSchemaVersion
+	}
 	b, err := ontostate.Marshal(st)
 	if err != nil {
 		t.Fatal(err)

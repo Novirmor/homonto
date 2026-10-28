@@ -283,7 +283,7 @@ func TestLoadRejectsIndexLikeNames(t *testing.T) {
 }
 
 func TestLoadParsesTUIOpenCode(t *testing.T) {
-	doc := "[tui.opencode]\ntheme = \"gruvbox\"\nscroll_speed = 3\n"
+	doc := "[tui.opencode]\ntheme = { name = \"gruvbox\" }\nscroll = { speed = 3 }\n"
 	p := filepath.Join(t.TempDir(), "homonto.toml")
 	if err := os.WriteFile(p, []byte(doc), 0o644); err != nil {
 		t.Fatal(err)
@@ -292,11 +292,11 @@ func TestLoadParsesTUIOpenCode(t *testing.T) {
 	if err != nil {
 		t.Fatalf("load: %v", err)
 	}
-	if got := c.TUI.OpenCode["theme"]; got != "gruvbox" {
-		t.Fatalf("tui.opencode theme = %#v; want \"gruvbox\"", got)
+	if theme, ok := c.TUI.OpenCode["theme"].(map[string]any); !ok || theme["name"] != "gruvbox" {
+		t.Fatalf("tui.opencode theme = %#v; want name gruvbox", c.TUI.OpenCode["theme"])
 	}
-	if got, ok := c.TUI.OpenCode["scroll_speed"].(int64); !ok || got != 3 {
-		t.Fatalf("tui.opencode scroll_speed = %#v; want int64(3)", c.TUI.OpenCode["scroll_speed"])
+	if scroll, ok := c.TUI.OpenCode["scroll"].(map[string]any); !ok || scroll["speed"] != int64(3) {
+		t.Fatalf("tui.opencode scroll = %#v; want speed int64(3)", c.TUI.OpenCode["scroll"])
 	}
 }
 

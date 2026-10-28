@@ -8,8 +8,8 @@ workspace tasks, checkpoints, and recovery.
 Existing configs without `schema_version = 2` keep the legacy behavior:
 the config root's Git checkout is the source, `[repos]` adds siblings, and
 records live under it. Changing the schema of a config that already has
-workflow records is guarded, not migrated (see
-[migration](#migrating-legacy-records)).
+workflow records is guarded, not migrated: homonto has no migration path
+([ADR 0081](../adr/0081-support-only-the-live-version.md)).
 
 ## Four locations
 
@@ -302,27 +302,6 @@ $ homonto workspace recover --config /work/control/homonto.toml
 Then inspect workflow state before re-running anything. Don't delete the
 journal.
 
-## Migrating legacy records
-
-One narrow, one-time path moves supported legacy records into schema-2
-ownership. Its scope is frozen
-([ADR 0080](../adr/0080-freeze-workspace-migration.md)): later breaking changes
-come with a load error and upgrade notes, not new migrations. Preconditions: schema-2 non-Git control directory,
-`workflow.git = "existing"`, an existing records Git root with the legacy
-marker, and an explicit manifest.
-
-```console
-$ homonto workspace migrate plan    --config /work/control/homonto.toml --manifest /work/migration.json --json
-$ homonto workspace migrate apply   --config /work/control/homonto.toml --manifest /work/migration.json --plan-hash <reviewed-hash> --yes
-$ homonto workspace migrate verify  --config /work/control/homonto.toml --run-id <run-id> --json
-$ homonto workspace migrate recover --config /work/control/homonto.toml --run-id <run-id> --action resume --plan-hash <reviewed-hash> --yes
-```
-
-`plan` is read-only and emits the hash you review. `apply` keeps a private
-recovery journal and writes the schema-2 marker last. `recover --action
-restore` restores captured pre-images of an incomplete run; neither action
-resets branches or deletes unknown worktrees.
-
 ## Limits
 
 - **Not a sandbox.** OpenCode checks paths lexically; symlinks in a declared
@@ -333,6 +312,6 @@ resets branches or deletes unknown worktrees.
 - **No conversion with bindings.** `to promote` and `onto demote` refuse
   changes with registered worktrees.
 - **No layout migration.** Changing schema, records root, or Git mode with
-  existing records fails closed, except the migration above.
+  existing records fails closed.
 
 Command details: [CLI reference](cli-reference.md#homonto-workspace).

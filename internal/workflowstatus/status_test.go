@@ -1,15 +1,10 @@
 package workflowstatus
 
 import (
-	"crypto/sha256"
-	"encoding/hex"
-	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
-
-	"github.com/noviopenworks/homonto/internal/migrationrecord"
 )
 
 func TestReadReportsBothActiveWorkflowsAndMalformedState(t *testing.T) {
@@ -21,7 +16,7 @@ func TestReadReportsBothActiveWorkflowsAndMalformedState(t *testing.T) {
 	if err := os.MkdirAll(onto, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(onto, "onto-state.yaml"), []byte("change: feature\nworkflow: full\nphase: build\n"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(onto, "onto-state.yaml"), []byte("schema_version: 3\nchange: feature\nworkflow: full\nphase: build\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.WriteFile(filepath.Join(onto, "tasks.md"), []byte("- [x] first\n- [ ] second\n"), 0o644); err != nil {
@@ -60,8 +55,8 @@ func TestReadExactConfigAndTerminalGenerations(t *testing.T) {
 	root := t.TempDir()
 	write := func(p, text string) {
 		t.Helper()
-		if strings.HasSuffix(p, "onto-state.yaml") {
-			text = "schema_version: 2\n" + text
+		if strings.HasSuffix(p, "onto-state.yaml") && !strings.HasPrefix(text, "schema_version:") {
+			text = "schema_version: 3\n" + text
 		}
 		p = filepath.Join(root, p)
 		if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
@@ -73,10 +68,10 @@ func TestReadExactConfigAndTerminalGenerations(t *testing.T) {
 	}
 	write("selected.toml", "[workflow]\nroot = 'records'\n")
 	write("homonto.toml", "invalid = [")
-	write("records/changes/one/onto-state.yaml", "id: generation2\nchange: one\nworkflow: full\nphase: close\nverify:\n  result: fail\n")
-	write("records/changes/archive/2026-09-01-one/onto-state.yaml", "id: generation1\nchange: one\nworkflow: full\nphase: close\narchived: true\nverify:\n  result: fail\n")
-	write("records/changes/archive/2026-09-02-pending/onto-state.yaml", "id: pending\nchange: pending\nworkflow: full\nphase: close\narchived: true\nintegration_required: true\n")
-	write("records/changes/cancelled/onto-state.yaml", "change: cancelled\nworkflow: full\nphase: open\nabandoned: true\nverify:\n  result: fail\n")
+	write("records/changes/one/onto-state.yaml", "schema_version: 3\nid: generation2\nchange: one\nworkflow: full\nphase: close\nverify:\n  result: fail\n")
+	write("records/changes/archive/2026-09-01-one/onto-state.yaml", "schema_version: 3\nid: generation1\nchange: one\nworkflow: full\nphase: close\narchived: true\nverify:\n  result: fail\n")
+	write("records/changes/archive/2026-09-02-pending/onto-state.yaml", "schema_version: 3\nid: pending\nchange: pending\nworkflow: full\nphase: close\narchived: true\nintegration_required: true\n")
+	write("records/changes/cancelled/onto-state.yaml", "schema_version: 3\nchange: cancelled\nworkflow: full\nphase: open\nabandoned: true\nverify:\n  result: fail\n")
 	write("records/tasks/archive/2026-09-01-done/to-state.yaml", "change: done\nphase: done\nverified: true\n")
 	write("records/tasks/archive/2026-09-01-cancelled/to-state.yaml", "change: cancelled\nphase: abandoned\n")
 	write("records/tasks/archive/2026-09-01-bypass/to-state.yaml", "change: bypass\nphase: done\n")
@@ -170,92 +165,5 @@ func TestLegacyIdentitySurvivesArchiveMove(t *testing.T) {
 	after := Read(root)
 	if len(after.Changes) != 2 || after.Changes[0].Identity == after.Changes[1].Identity {
 		t.Fatalf("same-day generation collided: %+v", after)
-	}
-}
-
-func TestReadConfigSkipsReceiptListedRetiredMigrationRecord(t *testing.T) {
-	root := t.TempDir()
-	config := filepath.Join(root, "selected.toml")
-	workflow := filepath.Join(root, "records")
-	writeWorkflowStatusFile(t, config, "[workflow]\nroot = 'records'\n")
-	writeWorkflowStatusFile(t, filepath.Join(workflow, "changes", "active", "onto-state.yaml"), "schema_version: 3\nid: active-record\nchange: active\nworkflow: full\nphase: open\n")
-	retiredPath := filepath.Join(workflow, "changes", "retired-record", "onto-state.yaml")
-	writeWorkflowStatusFile(t, retiredPath, "schema_version: 3\nid: retired-record\nchange: historical-duplicate\nworkflow: full\nphase: build\nabandoned: true\n")
-	seedWorkflowStatusRetiredReceipt(t, workflow, "changes/retired-record", "retired-record")
-
-	got := ReadConfig(config)
-	if len(got.Changes) != 1 || got.Changes[0].Name != "active" {
-		t.Fatalf("changes = %+v, want only active record", got.Changes)
-	}
-	if len(got.Findings) != 0 {
-		t.Fatalf("findings = %+v", got.Findings)
-	}
-}
-
-func seedWorkflowStatusRetiredReceipt(t *testing.T, workflow, retiredPath, stateID string) {
-	t.Helper()
-	statePath := filepath.Join(workflow, filepath.FromSlash(retiredPath), "onto-state.yaml")
-	state, err := os.ReadFile(statePath)
-	if err != nil {
-		t.Fatal(err)
-	}
-	digest := sha256.Sum256(state)
-	const runID = "migration-12345678"
-	receiptPath := filepath.Join(workflow, ".workflow", "migrations", runID, "receipt.json")
-	proofPath := filepath.Join(workflow, ".workflow", "migrations", runID, "commit-proof.json")
-	receipt := migrationrecord.Receipt{
-		Version: migrationrecord.ReceiptVersion, RunID: runID, PlanHash: strings.Repeat("a", 64),
-		Config:       migrationrecord.FileRef{Path: filepath.Join(filepath.Dir(workflow), "homonto.toml"), SHA256: strings.Repeat("b", 64)},
-		Manifest:     migrationrecord.FileRef{Path: filepath.Join(filepath.Dir(workflow), "migration-manifest.json"), SHA256: strings.Repeat("c", 64)},
-		LayoutMarker: migrationrecord.FileRef{Path: filepath.Join(filepath.Dir(workflow), ".homonto", "workflow-layout.json"), SHA256: strings.Repeat("d", 64)},
-		Registry:     migrationrecord.FileRef{Path: filepath.Join(filepath.Dir(workflow), ".homonto", "worktrees.json"), SHA256: strings.Repeat("e", 64)},
-		RecordWrites: []migrationrecord.RecordWrite{{Path: statePath, PreSHA256: hex.EncodeToString(digest[:]), PostSHA256: hex.EncodeToString(digest[:]), Action: "preserve_retired"}},
-		Retired:      []migrationrecord.RetiredRecord{{Path: retiredPath, ID: stateID, SchemaVersion: 3, SHA256: hex.EncodeToString(digest[:])}},
-		Bindings:     []migrationrecord.Binding{}, CommitProofPath: filepath.ToSlash(proofPath[len(workflow)+1:]),
-	}
-	proof := migrationrecord.CommitProof{Version: migrationrecord.ReceiptVersion, RunID: runID, MigrationCommit: strings.Repeat("1", 40), Parent: strings.Repeat("2", 40), Tree: strings.Repeat("3", 40), MessageSHA256: strings.Repeat("4", 64)}
-	writeWorkflowStatusJSON(t, filepath.Join(workflow, ".workflow", "migrations", runID, "private", "journal.json"), migrationrecord.JournalStatus{Version: migrationrecord.JournalVersion, RunID: runID, Phase: "complete"}, 0o600)
-	writeWorkflowStatusJSON(t, receiptPath, receipt, 0o644)
-	writeWorkflowStatusJSON(t, proofPath, proof, 0o644)
-	receiptData, err := os.ReadFile(receiptPath)
-	if err != nil {
-		t.Fatal(err)
-	}
-	proofData, err := os.ReadFile(proofPath)
-	if err != nil {
-		t.Fatal(err)
-	}
-	witness, err := migrationrecord.NewCompletionWitness(runID, receiptData, proofData)
-	if err != nil {
-		t.Fatal(err)
-	}
-	witnessPath, err := migrationrecord.CompletionWitnessPath(workflow, runID)
-	if err != nil {
-		t.Fatal(err)
-	}
-	writeWorkflowStatusJSON(t, witnessPath, witness, 0o600)
-}
-
-func writeWorkflowStatusFile(t *testing.T, path, text string) {
-	t.Helper()
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(path, []byte(text), 0o644); err != nil {
-		t.Fatal(err)
-	}
-}
-
-func writeWorkflowStatusJSON(t *testing.T, path string, value any, mode os.FileMode) {
-	t.Helper()
-	data, err := json.Marshal(value)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(path, append(data, '\n'), mode); err != nil {
-		t.Fatal(err)
 	}
 }

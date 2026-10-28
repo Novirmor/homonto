@@ -417,11 +417,10 @@ Supported groups follow the [V2 CLI config](https://opencode.ai/v2/docs/cli/conf
 `animations`, `mouse`, `$schema`. Quote keybinding IDs that contain dots.
 Unknown fields and invalid values fail before projection.
 
-Four V1 spellings are mapped: `theme = "x"` → `theme.name`, `scroll_speed` →
-`scroll.speed`, `scroll_acceleration.enabled` → `scroll.acceleration`,
-`leader_timeout` → `leader.timeout`. Declaring both a V1 alias and its V2
-destination is an error. Other V1-only keys need an explicit V2 replacement.
-More in [OpenCode integration](opencode.md#terminal-settings).
+OpenCode 1 spellings fail at load and name their V2 key: `theme = "x"` →
+`theme.name`, `scroll_speed` → `scroll.speed`, `scroll_acceleration` →
+`scroll.acceleration`, `leader_timeout` → `leader.timeout`. More in
+[OpenCode integration](opencode.md#terminal-settings).
 
 ## Integrations — `[integrations.opencode]`
 

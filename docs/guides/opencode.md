@@ -138,25 +138,19 @@ tabs   = { mode = "auto" }
 "help.show"    = false
 ```
 
-Plan keys look like `tui.cli.theme.name`. Allowed groups and the four
-mapped V1 spellings are in [configuration](configuration.md#terminal-settings--tuiopencode).
-V1 `tui.json` files are never touched. To have OpenCode migrate other V1
-preferences itself, start OpenCode 2 before homonto first creates `cli.json`.
-`homonto snapshot undo` does not reverse this migration; declare old values
-and apply again to restore them.
+Plan keys look like `tui.cli.theme.name`. Allowed groups are in
+[configuration](configuration.md#terminal-settings--tuiopencode). homonto never
+reads or writes OpenCode 1's `tui.json`.
 
-## Upgrading from OpenCode 1
+## OpenCode version
 
-1. Back up your OpenCode config and `.homonto/`.
-2. Install matching `homonto`, `onto`, and `to` versions.
-3. `homonto plan` — review terminal-setting moves and plugin warnings.
-4. `homonto apply`, then quit and restart OpenCode.
-
-Supported V1 `opencode.json(c)` settings, `mcp` entries, and `plugin` arrays
-keep their format. The OpenCode 1 workflow bridge (`workflow_bridge = true`)
-is removed; use `workflow_context`. `homonto apply` removes a stale
-`.opencode/plugins/homonto-workflow.ts` link it owns. Restoring a V1 setup needs
-your original config and an older homonto, not just a snapshot undo.
+homonto supports OpenCode 2 only
+([ADR 0081](../adr/0081-support-only-the-live-version.md)). OpenCode 1's
+`tui.json`, its TUI key spellings, and the V1 workflow bridge are not
+supported: a V1 spelling or `workflow_bridge = true` fails at load and names
+the V2 replacement. Upgrade OpenCode first, then run `homonto plan` and
+`homonto apply`. `homonto apply` removes a stale
+`.opencode/plugins/homonto-workflow.ts` link it owns.
 
 Generated permission paths follow V2 rules: paths inside the launch
 directory are relative to it, external ones absolute. V1's Git-root-relative

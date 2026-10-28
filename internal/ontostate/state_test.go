@@ -87,7 +87,7 @@ func TestLoad_MissingFile_ErrorNamesPath(t *testing.T) {
 func TestLoad_ValidFile_ReturnsState(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "onto-state.yaml")
-	content := []byte("change: onto-binary-foundation\nphase: open\n")
+	content := []byte("schema_version: 3\nchange: onto-binary-foundation\nphase: open\n")
 	if err := os.WriteFile(path, content, 0o644); err != nil {
 		t.Fatalf("failed to write fixture file: %v", err)
 	}

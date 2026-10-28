@@ -737,7 +737,7 @@ func TestWorkflowContextRuntimeUsesMaterializedConfigBinding(t *testing.T) {
 						t.Fatal(err)
 					}
 				}
-				pluginTestWrite(t, filepath.Join(repo, "docs/changes/one/onto-state.yaml"), "schema_version: 2\nid: id-one\nchange: one\nworkflow: full\nphase: build\n")
+				pluginTestWrite(t, filepath.Join(repo, "docs/changes/one/onto-state.yaml"), "schema_version: 3\nid: id-one\nchange: one\nworkflow: full\nphase: build\n")
 				pluginTestWrite(t, filepath.Join(repo, "docs/changes/one/tasks.md"), "- [x] first\n- [ ] second\n")
 				snapshot := workflowstatus.ReadConfig(configPath)
 				if len(snapshot.Findings) != 0 || len(snapshot.Changes) != 1 {

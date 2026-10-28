@@ -211,8 +211,8 @@ Everything else: [docs index](docs/guides/README.md).
 
 - **OpenCode only.** Claude Code and Codex support was removed in v0.13.0;
   configs naming them fail to load.
-- **OpenCode 2.** Supported V1 config keys keep working; the V1 workflow
-  plugin is removed. See [OpenCode integration](docs/guides/opencode.md).
+- **OpenCode 2 only.** OpenCode 1 configuration and plugins are not
+  supported. See [OpenCode integration](docs/guides/opencode.md#opencode-version).
 - Applies that rewrite `opencode.jsonc` drop its comments.
 - Workflow permissions trust the workspace; they are not a sandbox.
 - CLI output goes to stderr.

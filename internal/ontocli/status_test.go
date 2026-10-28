@@ -49,8 +49,8 @@ func writeFile(t *testing.T, path, content string) {
 
 func TestStatusCommand_ReportsValidAndInvalidChanges(t *testing.T) {
 	dir := t.TempDir()
-	writeFile(t, filepath.Join(dir, "docs", "changes", "alpha", "onto-state.yaml"), "change: alpha\nphase: build\n")
-	writeFile(t, filepath.Join(dir, "docs", "changes", "beta", "onto-state.yaml"), "change: [unterminated\n  phase: build")
+	writeFile(t, filepath.Join(dir, "docs", "changes", "alpha", "onto-state.yaml"), "schema_version: 3\nchange: alpha\nphase: build\n")
+	writeFile(t, filepath.Join(dir, "docs", "changes", "beta", "onto-state.yaml"), "schema_version: 3\nchange: [unterminated\n  phase: build")
 
 	cmd := NewRootCmd()
 	var out bytes.Buffer
@@ -89,8 +89,8 @@ func TestStatusCommand_DeletedStateFile_IsMissingStateRow(t *testing.T) {
 
 func TestStatusCommand_IsReadOnly(t *testing.T) {
 	dir := t.TempDir()
-	writeFile(t, filepath.Join(dir, "docs", "changes", "alpha", "onto-state.yaml"), "change: alpha\nphase: build\n")
-	writeFile(t, filepath.Join(dir, "docs", "changes", "beta", "onto-state.yaml"), "change: [unterminated\n  phase: build")
+	writeFile(t, filepath.Join(dir, "docs", "changes", "alpha", "onto-state.yaml"), "schema_version: 3\nchange: alpha\nphase: build\n")
+	writeFile(t, filepath.Join(dir, "docs", "changes", "beta", "onto-state.yaml"), "schema_version: 3\nchange: [unterminated\n  phase: build")
 
 	before := treeSnapshot(t, dir)
 
@@ -127,7 +127,7 @@ func TestStatusCommand_IsReadOnly(t *testing.T) {
 
 func TestStatusCommand_SucceedsWithoutHomontoToml(t *testing.T) {
 	dir := t.TempDir()
-	writeFile(t, filepath.Join(dir, "docs", "changes", "alpha", "onto-state.yaml"), "change: alpha\nphase: open\n")
+	writeFile(t, filepath.Join(dir, "docs", "changes", "alpha", "onto-state.yaml"), "schema_version: 3\nchange: alpha\nphase: open\n")
 
 	if _, err := os.Stat(filepath.Join(dir, "homonto.toml")); !os.IsNotExist(err) {
 		t.Fatalf("expected no homonto.toml in temp workspace, stat err = %v", err)
@@ -156,8 +156,8 @@ func TestStatusCommand_SucceedsWithoutHomontoToml(t *testing.T) {
 // docs/changes/<name>/onto-state.yaml is matched and reported.
 func TestStatusCommand_SkipsArchivedChanges(t *testing.T) {
 	dir := t.TempDir()
-	writeFile(t, filepath.Join(dir, "docs", "changes", "alpha", "onto-state.yaml"), "change: alpha\nphase: build\n")
-	writeFile(t, filepath.Join(dir, "docs", "changes", "archive", "old-change", "onto-state.yaml"), "change: old-change\nphase: close\narchived: true\n")
+	writeFile(t, filepath.Join(dir, "docs", "changes", "alpha", "onto-state.yaml"), "schema_version: 3\nchange: alpha\nphase: build\n")
+	writeFile(t, filepath.Join(dir, "docs", "changes", "archive", "old-change", "onto-state.yaml"), "schema_version: 3\nchange: old-change\nphase: close\narchived: true\n")
 
 	cmd := NewRootCmd()
 	var out bytes.Buffer
@@ -183,7 +183,7 @@ func TestStatusCommand_SkipsArchivedChanges(t *testing.T) {
 // that change must carry a "skeleton ok" note.
 func TestStatusCommand_ReportsSkeletonOk(t *testing.T) {
 	dir := t.TempDir()
-	writeFile(t, filepath.Join(dir, "docs", "changes", "alpha", "onto-state.yaml"), "change: alpha\nphase: open\n")
+	writeFile(t, filepath.Join(dir, "docs", "changes", "alpha", "onto-state.yaml"), "schema_version: 3\nchange: alpha\nphase: open\n")
 	writeFile(t, filepath.Join(dir, "docs", "changes", "alpha", "proposal.md"), "proposal")
 	writeFile(t, filepath.Join(dir, "docs", "changes", "alpha", "tasks.md"), "tasks")
 
@@ -211,7 +211,7 @@ func TestStatusCommand_ReportsSkeletonMissingArtifact(t *testing.T) {
 	dir := t.TempDir()
 	// A fix preset requires tasks.md from the open exit, so an open preset with
 	// only proposal.md is a reported skeleton gap.
-	writeFile(t, filepath.Join(dir, "docs", "changes", "alpha", "onto-state.yaml"), "change: alpha\nworkflow: light\nphase: open\n")
+	writeFile(t, filepath.Join(dir, "docs", "changes", "alpha", "onto-state.yaml"), "schema_version: 3\nchange: alpha\nworkflow: light\nphase: open\n")
 	writeFile(t, filepath.Join(dir, "docs", "changes", "alpha", "proposal.md"), "proposal")
 
 	cmd := NewRootCmd()
@@ -238,8 +238,8 @@ func TestStatusCommand_ReportsSkeletonMissingArtifact(t *testing.T) {
 // runStatus) and must not abort processing of other changes.
 func TestStatusCommand_ReportsInvalidPhase(t *testing.T) {
 	dir := t.TempDir()
-	writeFile(t, filepath.Join(dir, "docs", "changes", "alpha", "onto-state.yaml"), "change: alpha\nphase: build\n")
-	writeFile(t, filepath.Join(dir, "docs", "changes", "gamma", "onto-state.yaml"), "change: gamma\nphase: bogus\n")
+	writeFile(t, filepath.Join(dir, "docs", "changes", "alpha", "onto-state.yaml"), "schema_version: 3\nchange: alpha\nphase: build\n")
+	writeFile(t, filepath.Join(dir, "docs", "changes", "gamma", "onto-state.yaml"), "schema_version: 3\nchange: gamma\nphase: bogus\n")
 
 	cmd := NewRootCmd()
 	var out bytes.Buffer
@@ -265,7 +265,7 @@ func TestStatusCommand_ReportsInvalidPhase(t *testing.T) {
 func TestStatusCommand_FlagsWorkingPhaseMismatch(t *testing.T) {
 	root := t.TempDir()
 	writeFile(t, filepath.Join(root, "docs", "changes", "c", "onto-state.yaml"),
-		"schema_version: 1\nchange: c\nworkflow: full\nphase: verify\n")
+		"schema_version: 3\nchange: c\nworkflow: full\nphase: verify\n")
 	writeFile(t, filepath.Join(root, "docs", "changes", "c", "proposal.md"), "p")
 	writeFile(t, filepath.Join(root, "docs", "changes", "c", "tasks.md"), "- [ ] a\n")
 
@@ -281,7 +281,7 @@ func TestStatusCommand_FlagsWorkingPhaseMismatch(t *testing.T) {
 func TestStatusCommand_ReportsArchivedPendingIntegration(t *testing.T) {
 	dir := t.TempDir()
 	archiveDir := filepath.Join(dir, "docs", "changes", "archive", "2026-09-03-c")
-	writeFile(t, filepath.Join(archiveDir, "onto-state.yaml"), "change: c\nworkflow: full\nphase: close\narchived: true\nintegration: merge\nbase_branch: main\n")
+	writeFile(t, filepath.Join(archiveDir, "onto-state.yaml"), "schema_version: 3\nchange: c\nworkflow: full\nphase: close\narchived: true\nintegration: merge\nbase_branch: main\n")
 	if err := integrationrecord.Save(archiveDir, integrationrecord.NewPending("c", "merge", "main", []integrationrecord.Entry{{BaseBranch: "main", BaseCommit: "1111111111111111111111111111111111111111", SourceBranch: "change/c", SourceCommit: "2222222222222222222222222222222222222222"}})); err != nil {
 		t.Fatal(err)
 	}

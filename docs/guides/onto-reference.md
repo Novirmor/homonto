@@ -76,7 +76,7 @@ existing name.
 
 | Flag | Notes |
 |---|---|
-| `--workflow` | `full` (default) or `light`. Changes recorded as the removed `fix` or `tweak` presets load as `light`. |
+| `--workflow` | `full` (default) or `light`. |
 | `--repo` | Repeatable `[repos]` alias. Schema 2: required, and the list is the complete source set. Schema 0/1: optional extra siblings beside the implicit config repository. |
 | `--base` | Schema 2 only, repeatable, once per selected alias: integrate into this existing **local** branch, anchored at its current tip. Default: each source's current branch and HEAD. The dirty checkout is not switched. |
 

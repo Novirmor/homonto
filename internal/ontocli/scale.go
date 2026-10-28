@@ -153,11 +153,6 @@ func scaleCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			if doSet {
-				if err := rejectRetiredMigrationState(dir, changeDir, st); err != nil {
-					return fmt.Errorf("onto scale: %w", err)
-				}
-			}
 			files, lines, level, err := stateDiffScale(dir, st)
 			if err != nil {
 				return err

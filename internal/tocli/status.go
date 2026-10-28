@@ -6,7 +6,6 @@ import (
 	"path/filepath"
 	"sort"
 
-	"github.com/noviopenworks/homonto/internal/migrationrecord"
 	"github.com/noviopenworks/homonto/internal/ontostate"
 	"github.com/noviopenworks/homonto/internal/workcli"
 	"github.com/spf13/cobra"
@@ -134,13 +133,6 @@ func collectSiblingStatus(root string) ([]statusEntry, error) {
 			out = append(out, statusEntry{Change: e.Name(), Error: err.Error()})
 			continue
 		}
-		retired, err := retiredOntoMigrationState(wf, changeDir, st)
-		if err != nil {
-			return nil, fmt.Errorf("to status: retired migration record: %w", err)
-		}
-		if retired {
-			continue
-		}
 		if st.Change != e.Name() {
 			out = append(out, statusEntry{Change: e.Name(), Error: fmt.Sprintf("state identity mismatch: requested %q, recorded %q", e.Name(), st.Change)})
 			continue
@@ -149,18 +141,6 @@ func collectSiblingStatus(root string) ([]statusEntry, error) {
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].Change < out[j].Change })
 	return out, nil
-}
-
-func retiredOntoMigrationState(workflowRoot, changeDir string, state ontostate.State) (bool, error) {
-	retired, err := migrationrecord.IsRetired(workflowRoot, changeDir, state.ID)
-	if err != nil || !retired {
-		return retired, err
-	}
-	schemaVersion, err := ontostate.RawSchemaVersion(changeDir)
-	if err != nil {
-		return false, err
-	}
-	return migrationrecord.IsRetired(workflowRoot, changeDir, state.ID, schemaVersion)
 }
 
 // collectStatus scans docs/tasks/ for change directories, skipping the

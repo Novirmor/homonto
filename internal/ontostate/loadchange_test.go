@@ -17,34 +17,12 @@ func writeFixture(t *testing.T, dir, name, content string) {
 	}
 }
 
-func TestLoadChange_BothLegacyAgree_MergesObserved(t *testing.T) {
+// A lone pre-binary state.yaml is malformed, never silently missing.
+func TestLoadChange_LegacySkillStateRejected(t *testing.T) {
 	dir := t.TempDir()
-	writeFixture(t, dir, "onto-state.yaml", "change: c\nworkflow: full\nphase: build\narchived: false\n")
-	writeFixture(t, dir, "state.yaml", "change: c\nworkflow: full\nphase: build\narchived: false\nmetrics:\n  phases:\n    open: \"2026-07-10\"\n  tasks_total: 3\n")
-
-	st, err := LoadChange(dir)
-	if err != nil {
-		t.Fatalf("LoadChange: %v", err)
-	}
-	if st.Phase != "build" {
-		t.Errorf("Phase = %q, want build", st.Phase)
-	}
-	if st.Observed.TasksTotal != 3 || st.Observed.Metrics["open"] != "2026-07-10" {
-		t.Errorf("Observed not merged from skill file: %+v", st.Observed)
-	}
-}
-
-func TestLoadChange_BothLegacyDisagree_IsMalformed(t *testing.T) {
-	dir := t.TempDir()
-	writeFixture(t, dir, "onto-state.yaml", "change: c\nphase: build\n")
-	writeFixture(t, dir, "state.yaml", "change: c\nphase: verify\n") // phase disagrees
-
-	_, err := LoadChange(dir)
-	if err == nil {
-		t.Fatal("LoadChange accepted disagreeing dual legacy files, want malformed error")
-	}
-	if !strings.Contains(err.Error(), "phase") {
-		t.Errorf("error = %q, want it to name the conflicting field", err.Error())
+	writeFixture(t, dir, "state.yaml", "change: c\nworkflow: full\nphase: build\n")
+	if _, class, err := Classify(dir); class != "malformed" || err == nil || !strings.Contains(err.Error(), "no longer supported") {
+		t.Fatalf("Classify = %q, %v; want malformed no-longer-supported", class, err)
 	}
 }
 
@@ -61,13 +39,13 @@ func TestClassify_MissingState(t *testing.T) {
 
 func TestClassify_ValidAndMalformed(t *testing.T) {
 	valid := t.TempDir()
-	writeFixture(t, valid, "onto-state.yaml", "change: c\nphase: build\n")
+	writeFixture(t, valid, "onto-state.yaml", "schema_version: 3\nchange: c\nphase: build\n")
 	if st, class, err := Classify(valid); err != nil || class != "valid" || st.Phase != "build" {
 		t.Errorf("valid case: class=%q phase=%q err=%v", class, st.Phase, err)
 	}
 
 	bad := t.TempDir()
-	writeFixture(t, bad, "onto-state.yaml", "change: c\nphase: bogus\n")
+	writeFixture(t, bad, "onto-state.yaml", "schema_version: 3\nchange: c\nphase: bogus\n")
 	if _, class, err := Classify(bad); class != "malformed" || err == nil {
 		t.Errorf("malformed case: class=%q err=%v, want malformed + error", class, err)
 	}

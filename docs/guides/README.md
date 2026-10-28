@@ -19,7 +19,7 @@
 | [Secrets](secrets.md) | `${pass:…}` and `${ENV}` references |
 | [Projection and state](projection-and-state.md) | How apply writes, drift vs. pending, adoption, pruning, snapshots |
 | [Remote sources](remote-sources.md) | Pinned, verified `remote:` installs |
-| [OpenCode integration](opencode.md) | Workflow plugin, status panel, GitHub draft tools, terminal settings, V1 upgrade |
+| [OpenCode integration](opencode.md) | Workflow plugin, status panel, GitHub draft tools, terminal settings, supported version |
 
 ## Work
 

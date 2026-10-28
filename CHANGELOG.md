@@ -7,6 +7,13 @@ list. Release candidates are folded into their stable release.
 
 ## Unreleased
 
+- **Breaking: the OpenCode 1 workflow plugin is removed (ADR 0079).**
+  `integrations.opencode.workflow_bridge = true` and an enabled
+  `source = "homonto-workflow"` plugin declaration now fail at load; use
+  `workflow_context`, on by default with onto, to, or h. A leftover
+  `workflow_bridge = false` is ignored. `homonto apply` removes a stale owned
+  `.opencode/plugins/homonto-workflow.ts` link. Bundled plugins drop their V1
+  `plugin.ts` entrypoints.
 - **Breaking: `onto fix` and `onto tweak` are now one preset, `onto light`
   (ADR 0078).** Use `onto new --workflow light` and `/onto-light`; the `fix`
   and `tweak` workflow values, skills, and commands are removed. The preset

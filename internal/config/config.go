@@ -303,6 +303,8 @@ type Integrations struct {
 // OpenCodeIntegrations controls project-local OpenCode runtime integrations.
 // The V2 workflow context is the default for builtin workflow frameworks.
 type OpenCodeIntegrations struct {
+	// WorkflowBridge is a detector for the removed V1 bridge (ADR 0079): true
+	// fails at load; false is a no-op left over from the old opt-out advice.
 	WorkflowBridge  *bool `toml:"workflow_bridge"`
 	WorkflowContext *bool `toml:"workflow_context"`
 }
@@ -399,20 +401,9 @@ type Config struct {
 	repoDirs map[string]string
 }
 
-// WorkflowBridgeEnabled reports whether the legacy V1 bridge was explicitly requested.
-func (c *Config) WorkflowBridgeEnabled() bool {
-	if c.Integrations.OpenCode.WorkflowBridge != nil {
-		return *c.Integrations.OpenCode.WorkflowBridge
-	}
-	return false
-}
-
 func (c *Config) WorkflowContextEnabled() bool {
 	if c.Integrations.OpenCode.WorkflowContext != nil {
 		return *c.Integrations.OpenCode.WorkflowContext
-	}
-	if c.WorkflowBridgeEnabled() {
-		return false
 	}
 	for _, framework := range c.Frameworks {
 		switch framework.Source {

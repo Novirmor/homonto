@@ -430,16 +430,16 @@ Controls the bundled `homonto-workflow` plugin.
 ```toml
 [integrations.opencode]
 workflow_context = true    # V2 read-only context + status panel
-workflow_bridge  = false   # legacy V1 bridge
 ```
 
 | Key | Default | Meaning |
 |---|---|---|
 | `workflow_context` | `true` when `builtin:onto`, `builtin:to`, or `builtin:h` is declared; else `false` | Links `.opencode/plugins/homonto-workflow-context`: workflow context for model requests and compaction, the **Open workflow status** panel, `homonto_status` / `homonto_handoff` tools, and (with `h`) GitHub draft tools. |
-| `workflow_bridge` | `false` | The legacy V1 plugin. Not OpenCode 2 compatible. |
 
-Enabling both, or enabling `workflow_context` alongside an enabled plugin with
-`source = "homonto-workflow"`, is an error. Opt out of the plugin entirely:
+The OpenCode 1 bridge is removed: `workflow_bridge = true`, or an enabled plugin
+declared with `source = "homonto-workflow"`, fails at load and names the key.
+A leftover `workflow_bridge = false` is ignored; delete it. Opt out of the
+plugin entirely:
 
 ```toml
 [integrations.opencode]

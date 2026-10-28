@@ -53,16 +53,6 @@ func TestParseStreamContract(t *testing.T) {
 	}
 }
 
-func TestPermissionPluginRuntime(t *testing.T) {
-	if _, err := exec.LookPath("node"); err != nil {
-		t.Skip("Node unavailable; TS runtime contract not run")
-	}
-	cmd := exec.Command("node", "testdata/plugin-runtime.mjs", "../../catalog/plugins/permission-observer/plugin.ts", "testdata/opencode_events.jsonl")
-	if out, err := cmd.CombinedOutput(); err != nil {
-		t.Fatalf("TypeScript runtime contract: %v\n%s", err, out)
-	}
-}
-
 func TestPermissionV2PluginRuntime(t *testing.T) {
 	if _, err := exec.LookPath("node"); err != nil {
 		t.Skip("Node unavailable; V2 runtime contract not run")

@@ -131,7 +131,7 @@ func TestMaterializePluginsRepairsFileLinkWithoutFollowingIt(t *testing.T) {
 			if err := c.MaterializePlugins(dst, []string{"homonto-workflow"}); err != nil {
 				t.Fatal(err)
 			}
-			source := filepath.Join(root, "homonto-workflow", "plugin.ts")
+			source := filepath.Join(root, "homonto-workflow", "index.ts")
 			want, err := os.ReadFile(source)
 			if err != nil {
 				t.Fatal(err)

@@ -98,3 +98,4 @@ numbering: [`../agents/adr.md`](../agents/adr.md).
 | [0076](0076-separate-conflict-only-pr-resolution.md) | Separate conflict-only PR resolution | Accepted |
 | [0077](0077-hand-worker-permission-blocks-to-the-coordinator.md) | Hand worker permission blocks to the coordinator | Accepted |
 | [0078](0078-merge-onto-presets-into-light.md) | Merge onto fix and tweak into onto light | Accepted |
+| [0079](0079-drop-the-opencode-1-workflow-plugin.md) | Drop the OpenCode 1 workflow plugin | Accepted |

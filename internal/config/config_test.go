@@ -106,40 +106,11 @@ func TestLoad(t *testing.T) {
 	}
 }
 
-func TestWorkflowBridgeEnabled(t *testing.T) {
-	falseValue, trueValue := false, true
-	for _, tc := range []struct {
-		name string
-		cfg  Config
-		want bool
-	}{
-		{"no framework", Config{}, false},
-		{"builtin workflow framework", Config{Frameworks: map[string]Resource{"onto": {Source: "builtin:onto"}}}, false},
-		{"explicit legacy bridge", Config{Integrations: Integrations{OpenCode: OpenCodeIntegrations{WorkflowBridge: &trueValue}}}, true},
-		{"non-builtin framework", Config{Frameworks: map[string]Resource{"onto": {Source: "local:onto"}}}, false},
-		{"explicit opt-out", Config{
-			Frameworks:   map[string]Resource{"to": {Source: "builtin:to"}},
-			Integrations: Integrations{OpenCode: OpenCodeIntegrations{WorkflowBridge: &falseValue}},
-		}, false},
-		{"context suppresses implicit bridge", Config{
-			Frameworks:   map[string]Resource{"h": {Source: "builtin:h"}},
-			Integrations: Integrations{OpenCode: OpenCodeIntegrations{WorkflowContext: &trueValue}},
-		}, false},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			if got := tc.cfg.WorkflowBridgeEnabled(); got != tc.want {
-				t.Fatalf("WorkflowBridgeEnabled() = %t, want %t", got, tc.want)
-			}
-		})
-	}
-}
-
 func TestLoadWorkflowContext(t *testing.T) {
 	for _, tc := range []struct {
 		name    string
 		text    string
 		context bool
-		bridge  bool
 		wantErr string
 	}{
 		{name: "default"},
@@ -147,11 +118,11 @@ func TestLoadWorkflowContext(t *testing.T) {
 		{name: "opt in without framework", text: "[integrations.opencode]\nworkflow_context = true\n", context: true},
 		{name: "framework default suppressed", text: sample + "\n[integrations.opencode]\nworkflow_context = true\n", context: true},
 		{name: "V2 default", text: sample, context: true},
-		{name: "explicit legacy retained", text: "[integrations.opencode]\nworkflow_bridge = true\n", bridge: true},
-		{name: "legacy disabled", text: "[integrations.opencode]\nworkflow_context = true\nworkflow_bridge = false\n", context: true},
-		{name: "conflicting integrations", text: "[integrations.opencode]\nworkflow_context = true\nworkflow_bridge = true\n", wantErr: "conflicts with explicit workflow_bridge = true"},
-		{name: "implicit enabled plugin conflict", text: "[integrations.opencode]\nworkflow_context = true\n[plugins.opencode.legacy]\nsource = 'homonto-workflow'\n", wantErr: "conflicts with enabled plugins.opencode.legacy source homonto-workflow"},
-		{name: "explicit enabled plugin conflict", text: "[integrations.opencode]\nworkflow_context = true\nworkflow_bridge = false\n[plugins.opencode.legacy]\nsource = 'homonto-workflow'\nenabled = true\n", wantErr: "conflicts with enabled plugins.opencode.legacy source homonto-workflow"},
+		{name: "removed V1 bridge", text: "[integrations.opencode]\nworkflow_bridge = true\n", wantErr: "workflow_bridge — the OpenCode 1 workflow bridge was removed"},
+		{name: "removed V1 bridge with context", text: "[integrations.opencode]\nworkflow_context = true\nworkflow_bridge = true\n", wantErr: "workflow_bridge — the OpenCode 1 workflow bridge was removed"},
+		{name: "stale bridge opt-out ignored", text: "[integrations.opencode]\nworkflow_context = true\nworkflow_bridge = false\n", context: true},
+		{name: "removed V1 plugin declaration", text: "[plugins.opencode.legacy]\nsource = 'homonto-workflow'\n", wantErr: "plugins.opencode.legacy source homonto-workflow — the OpenCode 1 workflow plugin was removed"},
+		{name: "removed V1 plugin declaration with context", text: "[integrations.opencode]\nworkflow_context = true\nworkflow_bridge = false\n[plugins.opencode.legacy]\nsource = 'homonto-workflow'\nenabled = true\n", wantErr: "the OpenCode 1 workflow plugin was removed"},
 		{name: "disabled plugin allowed", text: "[integrations.opencode]\nworkflow_context = true\n[plugins.opencode.legacy]\nsource = 'homonto-workflow'\nenabled = false\n", context: true},
 		{name: "other plugin retained", text: "[integrations.opencode]\nworkflow_context = true\n[plugins.opencode.observer]\nsource = 'permission-observer'\n", context: true},
 		{name: "wrong type", text: "[integrations.opencode]\nworkflow_context = 'true'\n", wantErr: "WorkflowContext of type bool"},
@@ -171,8 +142,8 @@ func TestLoadWorkflowContext(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if cfg.WorkflowContextEnabled() != tc.context || cfg.WorkflowBridgeEnabled() != tc.bridge {
-				t.Fatalf("context = %t, bridge = %t; want %t, %t", cfg.WorkflowContextEnabled(), cfg.WorkflowBridgeEnabled(), tc.context, tc.bridge)
+			if cfg.WorkflowContextEnabled() != tc.context {
+				t.Fatalf("context = %t, want %t", cfg.WorkflowContextEnabled(), tc.context)
 			}
 			if plugin, ok := cfg.Plugins.OpenCode["observer"]; ok && !plugin.IsEnabled() {
 				t.Fatal("explicit unrelated plugin was silently disabled")

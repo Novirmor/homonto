@@ -300,6 +300,9 @@ func (a *Adapter) Plan(c *config.Config, st *state.State) (adapter.ChangeSet, er
 			entry := src
 			if a.PluginCatalogRoot != "" {
 				if _, ok := catalogPluginNames[src]; ok {
+					// homonto-workflow keeps its removed V1 entry path (ADR 0079)
+					// only so a recorded legacy entry still matches for pruning;
+					// config rejects declaring it.
 					entry = filepath.Join(a.PluginCatalogRoot, src, "plugin.ts")
 					if src == "permission-observer" {
 						entry = filepath.Join(a.PluginCatalogRoot, src)

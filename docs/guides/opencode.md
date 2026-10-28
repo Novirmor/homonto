@@ -153,10 +153,10 @@ and apply again to restore them.
 4. `homonto apply`, then quit and restart OpenCode.
 
 Supported V1 `opencode.json(c)` settings, `mcp` entries, and `plugin` arrays
-keep their format. The legacy V1 bridge (`workflow_bridge = true`) still
-exists but is **not** OpenCode 2 compatible and conflicts with
-`workflow_context`. Restoring a V1 setup needs your original config, not just
-a snapshot undo.
+keep their format. The OpenCode 1 workflow bridge (`workflow_bridge = true`)
+is removed; use `workflow_context`. `homonto apply` removes a stale
+`.opencode/plugins/homonto-workflow.ts` link it owns. Restoring a V1 setup needs
+your original config and an older homonto, not just a snapshot undo.
 
 Generated permission paths follow V2 rules: paths inside the launch
 directory are relative to it, external ones absolute. V1's Git-root-relative

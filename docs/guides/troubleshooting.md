@@ -178,5 +178,6 @@ inside the config root. Restart OpenCode after apply.
 **GitHub draft tools fail.** They need `[workflows.h]`, OpenCode 2's bound
 local service, and native question support; headless clients can't approve.
 
-**`workflow_context` conflicts with `workflow_bridge`.** Choose one; the V1
-bridge isn't OpenCode 2 compatible.
+**`workflow_bridge` — the OpenCode 1 workflow bridge was removed.** Delete the
+key (and any `source = "homonto-workflow"` plugin declaration); the V2
+`workflow_context` plugin is on by default with onto, to, or h.

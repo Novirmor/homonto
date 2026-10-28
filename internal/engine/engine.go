@@ -657,15 +657,15 @@ func (e *Engine) tmpSurfacePresent(dir string) bool {
 // materialized — the plugin side of the materialize gate.
 func allPluginDirsExist(root string, names []string, workflowContext bool) bool {
 	for _, n := range names {
-		files := []string{"plugin.ts"}
+		files := []string{"index.ts"}
 		if n == "permission-observer" {
-			files = append(files, "index.ts", "v2.ts")
+			files = append(files, "v2.ts")
 		}
 		if n == workflowBridgePlugin {
 			files = append(files, "continuation.ts")
 		}
 		if n == workflowBridgePlugin && workflowContext {
-			files = append(files, "index.ts", "tui.tsx", "rpc.ts", "v2.ts", "runner.ts", "github.ts", "authorization.ts", "compat.ts")
+			files = append(files, "tui.tsx", "rpc.ts", "v2.ts", "runner.ts", "github.ts", "authorization.ts", "compat.ts")
 		}
 		for _, file := range files {
 			fi, err := os.Lstat(filepath.Join(root, n, file))
@@ -858,6 +858,9 @@ func (e *Engine) workflowBindingPresent(want []byte) bool {
 	return err == nil && bytes.Equal(data, want)
 }
 
+// workflowBridgeSource is the removed V1 bridge entry (ADR 0079). Its link stays
+// in workflowPluginLinks, permanently disabled, so apply still removes a stale
+// owned symlink; removal compares only the link target, so the file need not exist.
 func (e *Engine) workflowBridgeSource() string {
 	return filepath.Join(e.PluginCatalogRoot, workflowBridgePlugin, "plugin.ts")
 }
@@ -879,7 +882,7 @@ type workflowPluginLink struct {
 
 func (e *Engine) workflowPluginLinks() []workflowPluginLink {
 	return []workflowPluginLink{
-		{source: e.workflowBridgeSource(), destination: e.workflowBridgeDestination(), enabled: e.Cfg.WorkflowBridgeEnabled()},
+		{source: e.workflowBridgeSource(), destination: e.workflowBridgeDestination(), enabled: false},
 		{source: filepath.Join(e.PluginCatalogRoot, workflowBridgePlugin, "v2.ts"), destination: e.workflowContextDestination() + ".ts"},
 		{source: filepath.Join(e.PluginCatalogRoot, workflowBridgePlugin), destination: e.workflowContextDestination(), enabled: e.Cfg.WorkflowContextEnabled(), directory: true},
 	}
@@ -1093,7 +1096,7 @@ func (e *Engine) planCatalog() (*catalogPlan, error) {
 			}
 		}
 	}
-	if e.Cfg.WorkflowBridgeEnabled() || e.Cfg.WorkflowContextEnabled() {
+	if e.Cfg.WorkflowContextEnabled() {
 		pluginSet[workflowBridgePlugin] = true
 	}
 	if len(skillSet)+len(cmdSet)+len(subSet)+len(pluginSet) == 0 {

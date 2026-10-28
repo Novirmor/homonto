@@ -174,9 +174,6 @@ func (e *Engine) Doctor() []string {
 
 func (e *Engine) OpenCodeV2Warnings() []string {
 	plugins := map[string]bool{}
-	if e.Cfg.WorkflowBridgeEnabled() {
-		plugins["homonto-workflow"] = true
-	}
 	for _, plugin := range e.Cfg.Plugins.OpenCode {
 		if plugin.IsEnabled() {
 			plugins[plugin.Source] = true
@@ -190,8 +187,6 @@ func (e *Engine) OpenCodeV2Warnings() []string {
 	var out []string
 	for _, name := range names {
 		switch name {
-		case "homonto-workflow":
-			out = append(out, "OpenCode V2 cutover blocked: homonto-workflow still uses the V1 plugin API; opt into integrations.opencode.workflow_context = true and explicitly disable workflow_bridge and any homonto-workflow plugin declaration for read-only snapshot context. GitHub draft tools, publication, and TUI notifications remain unavailable in that bridge")
 		case "permission-observer":
 			out = append(out, "OpenCode V2 permission suggestions: only two correlated explicit 'once' approvals of one exact shell command qualify; 'always' replies may be automatic and are not counted")
 		default:

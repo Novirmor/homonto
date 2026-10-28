@@ -56,7 +56,7 @@ func explainSetup(t *testing.T) (home, cfg string) {
 func TestOpenCodeV2ReadinessIsAdvisory(t *testing.T) {
 	home := t.TempDir()
 	cfg := filepath.Join(t.TempDir(), "homonto.toml")
-	if err := os.WriteFile(cfg, []byte("[integrations.opencode]\nworkflow_bridge = true\n"), 0o644); err != nil {
+	if err := os.WriteFile(cfg, []byte("[plugins.opencode.external]\nsource = \"example-opencode-plugin\"\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	for _, args := range [][]string{
@@ -71,8 +71,8 @@ func TestOpenCodeV2ReadinessIsAdvisory(t *testing.T) {
 		if err != nil {
 			t.Fatalf("%v: %v\n%s", args, err, out)
 		}
-		if !strings.Contains(out, "OpenCode V2 cutover blocked: homonto-workflow") {
-			t.Fatalf("%v omitted cutover blocker:\n%s", args, out)
+		if !strings.Contains(out, "OpenCode V2 compatibility unverified for plugin") || !strings.Contains(out, "example-opencode-plugin") {
+			t.Fatalf("%v omitted V2 readiness warning:\n%s", args, out)
 		}
 		if len(args) == 3 && args[2] == "json" && !json.Valid([]byte(out)) {
 			t.Fatalf("%v mixed warning text into JSON:\n%s", args, out)

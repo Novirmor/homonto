@@ -9,7 +9,6 @@ import (
 	"os/exec"
 	"path/filepath"
 	"reflect"
-	"strings"
 	"testing"
 	"time"
 
@@ -74,7 +73,7 @@ source = "permission-observer"
 	}
 
 	// Plugin materialized as owned catalog content.
-	pluginEntry := filepath.Join(repo, ".homonto", "catalog", "plugins", "permission-observer", "plugin.ts")
+	pluginEntry := filepath.Join(repo, ".homonto", "catalog", "plugins", "permission-observer", "index.ts")
 	if _, err := os.Stat(pluginEntry); err != nil {
 		t.Fatalf("bundled plugin not materialized: %v", err)
 	}
@@ -104,49 +103,42 @@ source = "permission-observer"
 	}
 }
 
-func TestWorkflowBridgeProjectsForFrameworkAndHonorsOptOut(t *testing.T) {
-	home := t.TempDir()
-	repo := t.TempDir()
-	configPath := filepath.Join(repo, "homonto.toml")
-	base := `
-[engines.onto]
-source = "builtin:onto"
-scope = "project"
-
-` + ontoFrameworkModels + "\n[integrations.opencode]\nworkflow_bridge = true\n"
-	if err := os.WriteFile(configPath, []byte(base), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	e, err := Build(context.Background(), configPath, home, "homonto")
-	if err != nil {
-		t.Fatal(err)
-	}
-	e.Resolver = &secret.Resolver{Getenv: func(string) string { return "" }, Pass: func(string) (string, error) { return "", nil }}
-	if err := e.Apply(context.Background(), mustPlan(t, e)); err != nil {
-		t.Fatal(err)
-	}
-	dst := filepath.Join(repo, ".opencode", "plugins", "homonto-workflow.ts")
-	src := filepath.Join(repo, ".homonto", "catalog", "plugins", "homonto-workflow", "plugin.ts")
-	want := filepath.FromSlash("../../.homonto/catalog/plugins/homonto-workflow/plugin.ts")
-	if target, err := os.Readlink(dst); err != nil || target != want {
-		t.Fatalf("workflow bridge = %q, %v; want relative symlink to %q", target, err, want)
-	}
-	if resolved, err := filepath.EvalSymlinks(dst); err != nil || resolved != src {
-		t.Fatalf("workflow bridge resolves to %q, %v; want %q", resolved, err, src)
-	}
-
-	if err := os.WriteFile(configPath, []byte(strings.Replace(base, "workflow_bridge = true", "workflow_bridge = false", 1)), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	e, err = Build(context.Background(), configPath, home, "homonto")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := e.Apply(context.Background(), mustPlan(t, e)); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := os.Lstat(dst); !os.IsNotExist(err) {
-		t.Fatalf("disabled workflow bridge still exists: %v", err)
+// The V1 bridge is removed (ADR 0079); an owned link left by an older install,
+// relative or absolute, is removed on apply and the projection converges.
+func TestRetiredWorkflowBridgeLinkIsRemoved(t *testing.T) {
+	for _, absolute := range []bool{false, true} {
+		t.Run(fmt.Sprint(absolute), func(t *testing.T) {
+			repo, home := t.TempDir(), t.TempDir()
+			configPath := filepath.Join(repo, "homonto.toml")
+			pluginTestWrite(t, configPath, "[engines.onto]\nsource = 'builtin:onto'\nscope = 'project'\n"+ontoFrameworkModels)
+			e, err := Build(context.Background(), configPath, home, "homonto")
+			if err != nil {
+				t.Fatal(err)
+			}
+			dst := e.workflowBridgeDestination()
+			if err := os.MkdirAll(filepath.Dir(dst), 0o755); err != nil {
+				t.Fatal(err)
+			}
+			target := filepath.FromSlash("../../.homonto/catalog/plugins/homonto-workflow/plugin.ts")
+			if absolute {
+				target = e.workflowBridgeSource()
+			}
+			if err := os.Symlink(target, dst); err != nil {
+				t.Fatal(err)
+			}
+			if e.workflowBridgePresent() || !e.CatalogNeedsMaterialize() {
+				t.Fatal("stale V1 link treated as converged")
+			}
+			if err := e.Apply(context.Background(), mustPlan(t, e)); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := os.Lstat(dst); !os.IsNotExist(err) {
+				t.Fatalf("stale V1 link not removed: %v", err)
+			}
+			if e.CatalogNeedsMaterialize() {
+				t.Fatal("removal did not converge")
+			}
+		})
 	}
 }
 
@@ -173,224 +165,76 @@ func TestBuiltinWorkflowDefaultsToV2Directory(t *testing.T) {
 	}
 }
 
-func TestWorkflowBridgeSurvivesProjectMove(t *testing.T) {
-	for _, schema := range []int{0, 1, 2} {
-		t.Run(fmt.Sprint(schema), func(t *testing.T) {
-			parent, home := t.TempDir(), t.TempDir()
-			repo := filepath.Join(parent, "old", "project")
-			configPath := filepath.Join(repo, "selected config.toml")
-			text := fmt.Sprintf("schema_version = %d\n[engines.onto]\nsource = 'builtin:onto'\nscope = 'project'\n", schema) + ontoFrameworkModels + "\n[integrations.opencode]\nworkflow_bridge = true\n"
-			pluginTestWrite(t, configPath, text)
-			e, err := Build(context.Background(), configPath, home, "homonto")
-			if err != nil {
-				t.Fatal(err)
-			}
-			if err := e.Apply(context.Background(), mustPlan(t, e)); err != nil {
-				t.Fatal(err)
-			}
-			want := filepath.FromSlash("../../.homonto/catalog/plugins/homonto-workflow/plugin.ts")
-			checkLink := func(root string) {
-				t.Helper()
-				dst := filepath.Join(root, ".opencode/plugins/homonto-workflow.ts")
-				if target, err := os.Readlink(dst); err != nil || target != want {
-					t.Fatalf("link target = %q, %v; want %q", target, err, want)
-				}
-				if resolved, err := filepath.EvalSymlinks(dst); err != nil || resolved != filepath.Join(root, ".homonto/catalog/plugins/homonto-workflow/plugin.ts") {
-					t.Fatalf("link does not resolve within moved project: %q, %v", resolved, err)
-				}
-			}
-			checkLink(repo)
-			moved := filepath.Join(parent, "new", "project")
-			if err := os.MkdirAll(filepath.Dir(moved), 0o755); err != nil {
-				t.Fatal(err)
-			}
-			if err := os.Rename(repo, moved); err != nil {
-				t.Fatal(err)
-			}
-			checkLink(moved) // the existing link must resolve even before reapply
-			configPath = filepath.Join(moved, filepath.Base(configPath))
-			e, err = Build(context.Background(), configPath, home, "homonto")
-			if err != nil {
-				t.Fatal(err)
-			}
-			if !e.workflowBridgePresent() {
-				t.Fatal("relative link lost ownership after move")
-			}
-			if !e.CatalogNeedsMaterialize() {
-				t.Fatal("moved config binding not detected")
-			}
-			if err := e.Apply(context.Background(), mustPlan(t, e)); err != nil {
-				t.Fatal(err)
-			}
-			checkLink(moved)
-			data, err := os.ReadFile(e.workflowBindingPath())
-			if err != nil {
-				t.Fatal(err)
-			}
-			var binding struct{ ConfigPath, ConfigRoot string }
-			if err := json.Unmarshal(data, &binding); err != nil {
-				t.Fatal(err)
-			}
-			if binding.ConfigPath != configPath || binding.ConfigRoot != moved {
-				t.Fatalf("stale moved binding: %+v", binding)
-			}
-			if e.CatalogNeedsMaterialize() {
-				t.Fatal("moved project did not converge")
-			}
-			before, err := os.Lstat(e.workflowBridgeDestination())
-			if err != nil {
-				t.Fatal(err)
-			}
-			sets := mustPlan(t, e)
-			for _, cs := range sets {
-				for _, c := range cs.Changes {
-					if c.Action != "noop" && c.Action != "adopt" {
-						t.Fatalf("reapply not idempotent: %+v", c)
-					}
-				}
-			}
-			if err := e.Apply(context.Background(), sets); err != nil {
-				t.Fatal(err)
-			}
-			if after, err := os.Lstat(e.workflowBridgeDestination()); err != nil || !os.SameFile(before, after) {
-				t.Fatalf("no-op replaced bridge link: %v", err)
-			}
-			pluginTestWrite(t, configPath, strings.Replace(text, "workflow_bridge = true", "workflow_bridge = false", 1))
-			e, err = Build(context.Background(), configPath, home, "homonto")
-			if err != nil {
-				t.Fatal(err)
-			}
-			if err := e.Apply(context.Background(), mustPlan(t, e)); err != nil {
-				t.Fatal(err)
-			}
-			if _, err := os.Lstat(e.workflowBridgeDestination()); !os.IsNotExist(err) {
-				t.Fatalf("moved bridge not removed on opt-out: %v", err)
-			}
-			if e.CatalogNeedsMaterialize() {
-				t.Fatal("opt-out did not converge")
-			}
-		})
-	}
-}
-
-func TestWorkflowBridgeMigratesOnlyCurrentAbsoluteLink(t *testing.T) {
-	for _, enabled := range []bool{true, false} {
-		t.Run(fmt.Sprint(enabled), func(t *testing.T) {
-			repo, home := t.TempDir(), t.TempDir()
+func TestWorkflowBridgePreservesForeignTargets(t *testing.T) {
+	for _, kind := range []string{"file", "directory", "relative", "absolute", "stale-absolute", "noncanonical-relative", "parent-symlink"} {
+		t.Run(kind, func(t *testing.T) {
+			repo, foreign := t.TempDir(), t.TempDir()
 			configPath := filepath.Join(repo, "homonto.toml")
-			pluginTestWrite(t, configPath, "[integrations.opencode]\nworkflow_bridge = true\n")
-			e, err := Build(context.Background(), configPath, home, "homonto")
+			pluginTestWrite(t, configPath, "")
+			e, err := Build(context.Background(), configPath, t.TempDir(), "homonto")
 			if err != nil {
-				t.Fatal(err)
-			}
-			if err := e.Apply(context.Background(), mustPlan(t, e)); err != nil {
 				t.Fatal(err)
 			}
 			dst := e.workflowBridgeDestination()
-			if err := os.Remove(dst); err != nil {
+			if err := os.MkdirAll(filepath.Dir(dst), 0o755); err != nil {
 				t.Fatal(err)
 			}
-			if err := os.Symlink(e.workflowBridgeSource(), dst); err != nil {
-				t.Fatal(err)
+			target := ""
+			switch kind {
+			case "file":
+				pluginTestWrite(t, dst, "foreign plugin")
+			case "directory":
+				pluginTestWrite(t, filepath.Join(dst, "keep"), "foreign directory")
+			case "relative":
+				target = "../../foreign.ts"
+			case "absolute":
+				target = filepath.Join(foreign, "plugin.ts")
+			case "stale-absolute":
+				target = filepath.Join(foreign, ".homonto/catalog/plugins/homonto-workflow/plugin.ts")
+			case "noncanonical-relative":
+				target = "../../.homonto/catalog/plugins/homonto-workflow/../homonto-workflow/plugin.ts"
+			case "parent-symlink":
+				if err := os.Remove(filepath.Dir(dst)); err != nil {
+					t.Fatal(err)
+				}
+				if err := os.Symlink(foreign, filepath.Dir(dst)); err != nil {
+					t.Fatal(err)
+				}
+				pluginTestWrite(t, filepath.Join(foreign, "homonto-workflow.ts"), "foreign plugin")
 			}
-			pluginTestWrite(t, configPath, fmt.Sprintf("[integrations.opencode]\nworkflow_bridge = %t\n", enabled))
-			e, err = Build(context.Background(), configPath, home, "homonto")
+			if target != "" {
+				if err := os.Symlink(target, dst); err != nil {
+					t.Fatal(err)
+				}
+			}
+			before, err := os.Lstat(dst)
 			if err != nil {
 				t.Fatal(err)
 			}
-			if e.workflowBridgePresent() || !e.CatalogNeedsMaterialize() {
-				t.Fatal("absolute link incorrectly treated as converged")
+			if e.workflowBridgePresent() {
+				t.Fatal("foreign projection considered owned")
 			}
-			if err := e.Apply(context.Background(), mustPlan(t, e)); err != nil {
-				t.Fatal(err)
+			err = e.Apply(context.Background(), mustPlan(t, e))
+			if err == nil || !containsString(err.Error(), "workflow bridge:") {
+				t.Fatalf("foreign projection not clearly refused: %v", err)
 			}
-			if enabled {
-				want := filepath.FromSlash("../../.homonto/catalog/plugins/homonto-workflow/plugin.ts")
-				if target, err := os.Readlink(dst); err != nil || target != want {
-					t.Fatalf("migration target = %q, %v", target, err)
+			if after, err := os.Lstat(dst); err != nil || !os.SameFile(before, after) {
+				t.Fatalf("foreign projection replaced: %v", err)
+			}
+			if target != "" {
+				if got, err := os.Readlink(dst); err != nil || got != target {
+					t.Fatalf("foreign target changed: %q, %v", got, err)
 				}
-			} else if _, err := os.Lstat(dst); !os.IsNotExist(err) {
-				t.Fatalf("absolute owned link not removed: %v", err)
-			}
-			if e.CatalogNeedsMaterialize() {
-				t.Fatal("migration/removal did not converge")
+			} else {
+				path, want := dst, "foreign plugin"
+				if kind == "directory" {
+					path, want = filepath.Join(dst, "keep"), "foreign directory"
+				}
+				if data, err := os.ReadFile(path); err != nil || string(data) != want {
+					t.Fatalf("foreign content changed: %q, %v", data, err)
+				}
 			}
 		})
-	}
-}
-
-func TestWorkflowBridgePreservesForeignTargets(t *testing.T) {
-	for _, kind := range []string{"file", "directory", "relative", "absolute", "stale-absolute", "noncanonical-relative", "parent-symlink"} {
-		for _, enabled := range []bool{true, false} {
-			t.Run(fmt.Sprintf("%s/%t", kind, enabled), func(t *testing.T) {
-				repo, foreign := t.TempDir(), t.TempDir()
-				configPath := filepath.Join(repo, "homonto.toml")
-				pluginTestWrite(t, configPath, fmt.Sprintf("[integrations.opencode]\nworkflow_bridge = %t\n", enabled))
-				e, err := Build(context.Background(), configPath, t.TempDir(), "homonto")
-				if err != nil {
-					t.Fatal(err)
-				}
-				dst := e.workflowBridgeDestination()
-				if err := os.MkdirAll(filepath.Dir(dst), 0o755); err != nil {
-					t.Fatal(err)
-				}
-				target := ""
-				switch kind {
-				case "file":
-					pluginTestWrite(t, dst, "foreign plugin")
-				case "directory":
-					pluginTestWrite(t, filepath.Join(dst, "keep"), "foreign directory")
-				case "relative":
-					target = "../../foreign.ts"
-				case "absolute":
-					target = filepath.Join(foreign, "plugin.ts")
-				case "stale-absolute":
-					target = filepath.Join(foreign, ".homonto/catalog/plugins/homonto-workflow/plugin.ts")
-				case "noncanonical-relative":
-					target = "../../.homonto/catalog/plugins/homonto-workflow/../homonto-workflow/plugin.ts"
-				case "parent-symlink":
-					if err := os.Remove(filepath.Dir(dst)); err != nil {
-						t.Fatal(err)
-					}
-					if err := os.Symlink(foreign, filepath.Dir(dst)); err != nil {
-						t.Fatal(err)
-					}
-					pluginTestWrite(t, filepath.Join(foreign, "homonto-workflow.ts"), "foreign plugin")
-				}
-				if target != "" {
-					if err := os.Symlink(target, dst); err != nil {
-						t.Fatal(err)
-					}
-				}
-				before, err := os.Lstat(dst)
-				if err != nil {
-					t.Fatal(err)
-				}
-				if e.workflowBridgePresent() {
-					t.Fatal("foreign projection considered owned")
-				}
-				err = e.Apply(context.Background(), mustPlan(t, e))
-				if err == nil || !containsString(err.Error(), "workflow bridge:") {
-					t.Fatalf("foreign projection not clearly refused: %v", err)
-				}
-				if after, err := os.Lstat(dst); err != nil || !os.SameFile(before, after) {
-					t.Fatalf("foreign projection replaced: %v", err)
-				}
-				if target != "" {
-					if got, err := os.Readlink(dst); err != nil || got != target {
-						t.Fatalf("foreign target changed: %q, %v", got, err)
-					}
-				} else {
-					path, want := dst, "foreign plugin"
-					if kind == "directory" {
-						path, want = filepath.Join(dst, "keep"), "foreign directory"
-					}
-					if data, err := os.ReadFile(path); err != nil || string(data) != want {
-						t.Fatalf("foreign content changed: %q, %v", data, err)
-					}
-				}
-			})
-		}
 	}
 }
 
@@ -455,7 +299,7 @@ func TestWorkflowContextMaterializesAndRepairsWithoutFrameworks(t *testing.T) {
 		if target, err := os.Readlink(dst); err != nil || target != want {
 			t.Fatalf("context link = %q, %v; want %q", target, err, want)
 		}
-		for _, file := range []string{"plugin.ts", "index.ts", "tui.tsx", "rpc.ts", "v2.ts", "runner.ts", "continuation.ts"} {
+		for _, file := range []string{"index.ts", "tui.tsx", "rpc.ts", "v2.ts", "runner.ts", "continuation.ts"} {
 			info, err := os.Lstat(filepath.Join(dst, file))
 			if err != nil || !info.Mode().IsRegular() {
 				t.Fatalf("projected %s missing or not regular: %v", file, err)
@@ -528,15 +372,13 @@ func TestWorkflowContextSwitchesOwnedLinks(t *testing.T) {
 	repo, home := t.TempDir(), t.TempDir()
 	configPath := filepath.Join(repo, "homonto.toml")
 	base := "[engines.onto]\nsource = 'builtin:onto'\nscope = 'project'\n" + ontoFrameworkModels
-	for _, mode := range []string{"legacy", "context", "legacy", "context", "disabled"} {
+	for _, mode := range []string{"context", "disabled", "context", "disabled"} {
 		text := base
 		switch mode {
-		case "legacy":
-			text += "\n[integrations.opencode]\nworkflow_bridge = true\n"
 		case "context":
 			text += "\n[integrations.opencode]\nworkflow_context = true\n"
 		case "disabled":
-			text += "\n[integrations.opencode]\nworkflow_context = false\nworkflow_bridge = false\n"
+			text += "\n[integrations.opencode]\nworkflow_context = false\n"
 		}
 		pluginTestWrite(t, configPath, text)
 		e, err := Build(context.Background(), configPath, home, "homonto")
@@ -627,7 +469,7 @@ func TestWorkflowContextMigrationPreflightsAllEndpoints(t *testing.T) {
 			t.Run(conflict+"/"+kind, func(t *testing.T) {
 				repo := t.TempDir()
 				configPath := filepath.Join(repo, "homonto.toml")
-				pluginTestWrite(t, configPath, "[integrations.opencode]\nworkflow_bridge = true\n")
+				pluginTestWrite(t, configPath, "[integrations.opencode]\nworkflow_context = false\n")
 				e, err := Build(context.Background(), configPath, t.TempDir(), "homonto")
 				if err != nil {
 					t.Fatal(err)
@@ -636,11 +478,14 @@ func TestWorkflowContextMigrationPreflightsAllEndpoints(t *testing.T) {
 					t.Fatal(err)
 				}
 				old := e.workflowContextDestination() + ".ts"
+				if err := os.MkdirAll(filepath.Dir(old), 0o755); err != nil {
+					t.Fatal(err)
+				}
 				if err := os.Symlink(filepath.FromSlash("../../.homonto/catalog/plugins/homonto-workflow/v2.ts"), old); err != nil {
 					t.Fatal(err)
 				}
 				path := map[string]string{"old-file": old, "directory": e.workflowContextDestination(), "legacy": e.workflowBridgeDestination()}[conflict]
-				if conflict != "directory" {
+				if conflict == "old-file" {
 					if err := os.Remove(path); err != nil {
 						t.Fatal(err)
 					}
@@ -656,7 +501,7 @@ func TestWorkflowContextMigrationPreflightsAllEndpoints(t *testing.T) {
 					}
 				}
 				before := pluginTestTree(t, filepath.Dir(path))
-				pluginTestWrite(t, configPath, "[integrations.opencode]\nworkflow_context = true\nworkflow_bridge = false\n")
+				pluginTestWrite(t, configPath, "[integrations.opencode]\nworkflow_context = true\n")
 				e, err = Build(context.Background(), configPath, e.Home, "homonto")
 				if err != nil {
 					t.Fatal(err)
@@ -750,79 +595,76 @@ func TestWorkflowContextRejectsSymlinkedCatalogDirectory(t *testing.T) {
 	}
 }
 
-func TestWorkflowContextSwitchConflictPreservesActiveLink(t *testing.T) {
-	for _, contextEnabled := range []bool{false, true} {
-		for _, kind := range []string{"file", "directory", "symlink", "parent-symlink"} {
-			t.Run(fmt.Sprintf("context=%t/%s", contextEnabled, kind), func(t *testing.T) {
-				repo, home := t.TempDir(), t.TempDir()
-				configPath := filepath.Join(repo, "homonto.toml")
-				build := func(enabled bool) *Engine {
-					t.Helper()
-					pluginTestWrite(t, configPath, fmt.Sprintf("[integrations.opencode]\nworkflow_context = %t\nworkflow_bridge = %t\n", enabled, !enabled))
-					e, err := Build(context.Background(), configPath, home, "homonto")
-					if err != nil {
-						t.Fatal(err)
-					}
-					return e
-				}
-				e := build(contextEnabled)
-				if err := e.Apply(context.Background(), mustPlan(t, e)); err != nil {
-					t.Fatal(err)
-				}
-				active, next := e.workflowBridgeDestination(), e.workflowContextDestination()
-				if contextEnabled {
-					active, next = next, active
-				}
-				before, err := os.Lstat(active)
+// A foreign object at the retired V1 destination is refused without touching
+// the active V2 link or anything outside the plugin directory.
+func TestWorkflowContextRetiredConflictPreservesActiveLink(t *testing.T) {
+	for _, kind := range []string{"file", "directory", "symlink", "parent-symlink"} {
+		t.Run(kind, func(t *testing.T) {
+			repo, home := t.TempDir(), t.TempDir()
+			configPath := filepath.Join(repo, "homonto.toml")
+			build := func() *Engine {
+				t.Helper()
+				pluginTestWrite(t, configPath, "[integrations.opencode]\nworkflow_context = true\n")
+				e, err := Build(context.Background(), configPath, home, "homonto")
 				if err != nil {
 					t.Fatal(err)
 				}
-				dir := filepath.Dir(active)
-				external := t.TempDir()
-				switch kind {
-				case "file":
-					pluginTestWrite(t, next, "foreign plugin")
-				case "directory":
-					pluginTestWrite(t, filepath.Join(next, "keep"), "foreign plugin")
-				case "symlink":
-					if err := os.Symlink("../../foreign.ts", next); err != nil {
-						t.Fatal(err)
-					}
-				case "parent-symlink":
-					external = filepath.Join(external, "plugins")
-					if err := os.Rename(dir, external); err != nil {
-						t.Fatal(err)
-					}
-					if err := os.Symlink(external, dir); err != nil {
-						t.Fatal(err)
-					}
+				return e
+			}
+			e := build()
+			if err := e.Apply(context.Background(), mustPlan(t, e)); err != nil {
+				t.Fatal(err)
+			}
+			active, retired := e.workflowContextDestination(), e.workflowBridgeDestination()
+			before, err := os.Lstat(active)
+			if err != nil {
+				t.Fatal(err)
+			}
+			dir := filepath.Dir(active)
+			external := t.TempDir()
+			switch kind {
+			case "file":
+				pluginTestWrite(t, retired, "foreign plugin")
+			case "directory":
+				pluginTestWrite(t, filepath.Join(retired, "keep"), "foreign plugin")
+			case "symlink":
+				if err := os.Symlink("../../foreign.ts", retired); err != nil {
+					t.Fatal(err)
 				}
-				plugins, outside := pluginTestTree(t, dir), pluginTestTree(t, external)
-				e = build(!contextEnabled)
-				if !e.CatalogNeedsMaterialize() {
-					t.Fatal("switch conflict hidden from materialization gate")
+			case "parent-symlink":
+				external = filepath.Join(external, "plugins")
+				if err := os.Rename(dir, external); err != nil {
+					t.Fatal(err)
 				}
-				if err := e.Apply(context.Background(), mustPlan(t, e)); err == nil || !containsString(err.Error(), "workflow bridge:") {
-					t.Fatalf("switch conflict not refused: %v", err)
+				if err := os.Symlink(external, dir); err != nil {
+					t.Fatal(err)
 				}
-				if after, err := os.Lstat(active); err != nil || !os.SameFile(before, after) {
-					t.Fatalf("switch conflict removed or replaced prior active link: %v", err)
-				}
-				if !reflect.DeepEqual(plugins, pluginTestTree(t, dir)) || !reflect.DeepEqual(outside, pluginTestTree(t, external)) {
-					t.Fatal("switch conflict changed plugin paths or foreign content")
-				}
-			})
-		}
+			}
+			plugins, outside := pluginTestTree(t, dir), pluginTestTree(t, external)
+			e = build()
+			if !e.CatalogNeedsMaterialize() {
+				t.Fatal("retired-path conflict hidden from materialization gate")
+			}
+			if err := e.Apply(context.Background(), mustPlan(t, e)); err == nil || !containsString(err.Error(), "workflow bridge:") {
+				t.Fatalf("retired-path conflict not refused: %v", err)
+			}
+			if after, err := os.Lstat(active); err != nil || !os.SameFile(before, after) {
+				t.Fatalf("conflict removed or replaced the active link: %v", err)
+			}
+			if !reflect.DeepEqual(plugins, pluginTestTree(t, dir)) || !reflect.DeepEqual(outside, pluginTestTree(t, external)) {
+				t.Fatal("conflict changed plugin paths or foreign content")
+			}
+		})
 	}
 }
 
 func TestWorkflowContextPreservesForeignPaths(t *testing.T) {
-	for _, mode := range []string{"context", "legacy", "disabled"} {
+	for _, mode := range []string{"context", "disabled"} {
 		for _, kind := range []string{"file", "directory", "symlink", "parent-symlink"} {
 			t.Run(mode+"/"+kind, func(t *testing.T) {
 				repo, foreign := t.TempDir(), t.TempDir()
 				configPath := filepath.Join(repo, "homonto.toml")
-				pluginTestWrite(t, configPath, fmt.Sprintf("[integrations.opencode]\nworkflow_context = %t\nworkflow_bridge = %t\n", mode == "context", mode == "legacy"))
+				pluginTestWrite(t, configPath, fmt.Sprintf("[integrations.opencode]\nworkflow_context = %t\n", mode == "context"))
 				e, err := Build(context.Background(), configPath, t.TempDir(), "homonto")
 				if err != nil {
 					t.Fatal(err)
@@ -927,73 +769,6 @@ func TestWorkflowContextRuntimeUsesMaterializedConfigBinding(t *testing.T) {
 	}
 }
 
-func TestWorkflowBridgeRuntimeUsesMaterializedConfigBinding(t *testing.T) {
-	if _, err := exec.LookPath("node"); err != nil {
-		t.Skip("Node unavailable; projection runtime contract not run")
-	}
-	for _, schema := range []int{0, 1, 2} {
-		for _, filename := range []string{"homonto.toml", "selected config.toml"} {
-			t.Run(fmt.Sprintf("schema%d/%s", schema, filename), func(t *testing.T) {
-				repo := t.TempDir()
-				configPath := filepath.Join(repo, filename)
-				pluginTestWrite(t, filepath.Join(repo, "Cargo.toml"), "[package]\nname = 'not-homonto'\n")
-				pluginTestWrite(t, filepath.Join(repo, "homonto.toml"), "invalid = [")
-				// No framework/references are needed to bind an explicitly enabled bridge.
-				pluginTestWrite(t, configPath, fmt.Sprintf("schema_version = %d\n[integrations.opencode]\nworkflow_bridge = true\n", schema))
-				e, err := Build(context.Background(), configPath, t.TempDir(), "homonto")
-				if err != nil {
-					t.Fatal(err)
-				}
-				if err := e.Apply(context.Background(), mustPlan(t, e)); err != nil {
-					t.Fatal(err)
-				}
-				if schema == 2 {
-					if err := workflowroot.WriteLayoutMarker(workflowroot.LayoutMarker{SchemaVersion: 2, ConfigPath: configPath, WorkflowRoot: e.WorkspaceLayout.WorkflowRoot, GitMode: e.WorkspaceLayout.GitMode}); err != nil {
-						t.Fatal(err)
-					}
-				}
-				pluginTestWrite(t, filepath.Join(repo, "docs/changes/one/onto-state.yaml"), "schema_version: 2\nid: id-one\nchange: one\nworkflow: full\nphase: build\n")
-				pluginTestWrite(t, filepath.Join(repo, "docs/changes/one/tasks.md"), "- [x] first\n- [ ] second\n")
-				snapshot := workflowstatus.ReadConfig(configPath)
-				if len(snapshot.Findings) != 0 || len(snapshot.Changes) != 1 {
-					t.Fatalf("backend snapshot: %+v", snapshot)
-				}
-				data, err := json.Marshal(snapshot)
-				if err != nil {
-					t.Fatal(err)
-				}
-				fixture := filepath.Join(repo, "snapshot.json")
-				pluginTestWrite(t, fixture, string(data))
-				handoff, err := workflowstatus.ReadHandoff(configPath, "onto", "one", snapshot.Changes[0].Identity)
-				if err != nil {
-					t.Fatal(err)
-				}
-				handoffData, err := json.Marshal(handoff)
-				if err != nil {
-					t.Fatal(err)
-				}
-				handoffFixture := filepath.Join(repo, "handoff.json")
-				pluginTestWrite(t, handoffFixture, string(handoffData))
-				launch := filepath.Join(repo, "source/nested")
-				if err := os.MkdirAll(launch, 0o755); err != nil {
-					t.Fatal(err)
-				}
-				script, err := filepath.Abs("../workflowstatus/testdata/plugin-runtime.mjs")
-				if err != nil {
-					t.Fatal(err)
-				}
-				ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
-				defer cancel()
-				cmd := exec.CommandContext(ctx, "node", script, e.workflowBridgeDestination(), configPath, fixture, handoffFixture)
-				cmd.Dir = launch
-				if out, err := cmd.CombinedOutput(); err != nil {
-					t.Fatalf("native projected TypeScript runtime contract: %v\n%s", err, out)
-				}
-			})
-		}
-	}
-}
-
 func TestWorkflowBindingRepairsAndConfigSwitchesAllSchemas(t *testing.T) {
 	for _, schema := range []int{0, 1, 2} {
 		t.Run(fmt.Sprint(schema), func(t *testing.T) {
@@ -1002,7 +777,7 @@ func TestWorkflowBindingRepairsAndConfigSwitchesAllSchemas(t *testing.T) {
 			var fingerprint string
 			for _, filename := range []string{"homonto.toml", "selected config.toml"} {
 				configPath := filepath.Join(repo, filename)
-				pluginTestWrite(t, configPath, fmt.Sprintf("schema_version = %d\n[integrations.opencode]\nworkflow_bridge = true\n", schema))
+				pluginTestWrite(t, configPath, fmt.Sprintf("schema_version = %d\n[integrations.opencode]\nworkflow_context = true\n", schema))
 				cwd, err := os.Getwd()
 				if err != nil {
 					t.Fatal(err)
@@ -1276,7 +1051,7 @@ func TestCatalogPreflightPreservesSymlinkedRootsAndEntries(t *testing.T) {
 func TestWorkflowSourceSymlinkRepairDoesNotWriteOutside(t *testing.T) {
 	repo, outside := t.TempDir(), t.TempDir()
 	configPath := filepath.Join(repo, "homonto.toml")
-	pluginTestWrite(t, configPath, "[integrations.opencode]\nworkflow_bridge = true\n")
+	pluginTestWrite(t, configPath, "[integrations.opencode]\nworkflow_context = true\n")
 	e, err := Build(context.Background(), configPath, t.TempDir(), "homonto")
 	if err != nil {
 		t.Fatal(err)
@@ -1284,7 +1059,7 @@ func TestWorkflowSourceSymlinkRepairDoesNotWriteOutside(t *testing.T) {
 	if err := e.Apply(context.Background(), mustPlan(t, e)); err != nil {
 		t.Fatal(err)
 	}
-	source := e.workflowBridgeSource()
+	source := filepath.Join(e.PluginCatalogRoot, workflowBridgePlugin, "v2.ts")
 	want, err := os.ReadFile(source)
 	if err != nil {
 		t.Fatal(err)
@@ -1317,7 +1092,7 @@ func TestWorkflowSourceSymlinkRepairDoesNotWriteOutside(t *testing.T) {
 		t.Fatal("source/binding repair did not converge")
 	}
 	if !e.workflowBridgePresent() {
-		t.Fatal("relative bridge ownership broken by repair")
+		t.Fatal("relative context ownership broken by repair")
 	}
 }
 

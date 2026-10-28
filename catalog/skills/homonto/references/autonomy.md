@@ -47,6 +47,9 @@ After permitted recovery is exhausted or unavailable, report the blocker,
 evidence, preserved state, and next action, then stop without claiming completion.
 Do not invent a question when only a factual blocker report is needed. Never
 retry or route around an explicit denial, or blindly resend an uncertain publication.
+A worker's denied tool call or rejected prompt goes through
+[permission-block triage](execution.md#permission-blocks) first; it stops the
+task only when that triage ends in a refusal or no available answer.
 
 ## Decide before asking
 

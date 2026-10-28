@@ -5,6 +5,18 @@ release page for a tag shows only that release's notes
 ([`docs/release-notes.md`](docs/release-notes.md)) plus the generated commit
 list. Release candidates are folded into their stable release.
 
+## Unreleased
+
+- **Worker permission blocks return to the coordinator (ADR 0077).** An
+  implementer, reviewer, skeptic, explorer, or h worker whose tool call is
+  denied, or whose prompt you reject, stops and hands back a `Permission block`
+  naming the exact command or resource. The coordinator first checks whether
+  the action is needed and whether its own authority covers it. Then it asks
+  you once: run it, send it the output or the missing information, continue
+  without it, or change scope. Both workflow plugin variants add a one-time
+  notice to the coordinator's context when a worker's prompt was rejected,
+  even if the worker returned nothing.
+
 ## v0.34.0 — workflows, engines, and workspace tasks
 
 Breaking configuration change. All three binaries are stamped v0.34.0.

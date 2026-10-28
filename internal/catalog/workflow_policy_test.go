@@ -1,11 +1,14 @@
 package catalog
 
 import (
+	"io/fs"
 	"os"
 	"path/filepath"
 	"regexp"
 	"strings"
 	"testing"
+
+	embedded "github.com/noviopenworks/homonto/catalog"
 )
 
 // These scenarios check conflicting shipped instructions, not model compliance.
@@ -30,6 +33,13 @@ func TestWorkflowPolicyScenarios(t *testing.T) {
 			[]string{"dispatch or the worker is unavailable", "perform the claim/gap checks directly", "Explicit independent-review requirements still block", "Never label direct review a completed skeptic pass"}, nil},
 		{"denial is not unavailable dispatch", "skills/homonto/references/execution.md",
 			[]string{"Tool permission denied", "no direct execution or alternate tool as a workaround", "an unsuccessful attempt is not absence", "explicitly requires independent review", "record the dependency and next executable task"}, nil},
+		{"permission block returns to the coordinator", "skills/homonto/references/execution.md",
+			[]string{"## Permission blocks", "hands the assignment back to you", "Homonto worker permission blocks",
+				"run it yourself and re-dispatch", "never re-run that action on your own", "native `question` dialog",
+				"sends you the output or the missing information", "Inspect any partial edits", "**Permission block:**"},
+			[]string{"| Honor the denial;"}},
+		{"permission block is triaged before it stops the task", "skills/homonto/references/autonomy.md",
+			[]string{"[permission-block triage](execution.md#permission-blocks) first"}, nil},
 		{"unchanged evidence across phases", "skills/homonto/references/execution.md",
 			[]string{"may satisfy multiple checkpoints", "unchanged", "coverage matches the claim", "uncertain provenance requires a rerun", "merge/conflict resolution invalidates"}, nil},
 		{"configuration and test-count eligibility", "skills/homonto/references/workflow-selection.md",
@@ -164,5 +174,28 @@ func TestExtractedWorkflowPoliciesMaterialize(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+// Every worker hands a denied or rejected tool call back instead of working
+// around it, and the coordinator owns the triage (ADR 0077).
+func TestWorkersReturnPermissionBlocks(t *testing.T) {
+	entries, err := fs.ReadDir(embedded.FS, "subagents")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, entry := range entries {
+		if entry.Name() == "homonto.md" {
+			continue
+		}
+		text := hPromptText(t, "subagents/"+entry.Name())
+		for _, want := range []string{"return a `Permission block` to the coordinator", "Never retry, rephrase or switch tools to get around it."} {
+			if !strings.Contains(text, want) {
+				t.Errorf("%s missing %q", entry.Name(), want)
+			}
+		}
+	}
+	if text := hPromptText(t, "subagents/homonto.md"); !strings.Contains(text, "homonto/references/execution.md#permission-blocks") {
+		t.Error("coordinator must triage worker permission blocks")
 	}
 }

@@ -602,6 +602,27 @@ try {
   assert.deepEqual([...new Set(clientCapabilities)], ["tui"])
 
   assert.equal(await readFile(bindingPath, "utf8"), bindingBytes, "observer wrote projection metadata")
+  // A rejected worker prompt reaches the parent's next system context exactly once.
+  const blocks = await plugin(input)
+  const emit = (type, properties) => blocks.event({ event: { type, properties } })
+  await emit("session.created", { info: { id: "child", parentID: "session" } })
+  await emit("permission.asked", { id: "per_1", sessionID: "child", permission: "bash", patterns: ["git push origin main"] })
+  await emit("permission.asked", { id: "per_2", sessionID: "session", permission: "bash", patterns: ["rm -rf build"] })
+  await emit("permission.replied", { sessionID: "child", requestID: "per_1", reply: "reject" })
+  await emit("permission.replied", { sessionID: "session", requestID: "per_2", reply: "reject" })
+  for (const expected of [true, false]) {
+    const out = { system: [] }
+    responses.push({ value: snapshot([]) })
+    await blocks["experimental.chat.system.transform"]({ sessionID: "session" }, out)
+    assert.equal(out.system[0], CONTINUATION_POLICY)
+    assert.equal(out.system.length, expected ? 2 : 1)
+    if (expected) {
+      assert.ok(out.system[1].includes('- worker "unknown" session "child": "bash" refused for "git push origin main"'))
+      assert.ok(!out.system[1].includes("rm -rf build"))
+    }
+  }
+  assert.equal(responses.length, 0)
+  await blocks.dispose()
   // Missing or invalid metadata is an observer error, not a TOML/Markdown
   // discovery fallback. No subprocess may run for any of these bindings.
   for (const invalid of [undefined, "{", "null", JSON.stringify({ version: 2, configPath: config, configRoot: root }),

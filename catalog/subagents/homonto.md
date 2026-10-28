@@ -95,6 +95,12 @@ What you add on top of the dispatchers:
   changed candidate. Ask the user only when the finding needs product intent,
   crosses the recorded scope, or is a genuine hard blocker after permitted
   recovery; never ask merely whether to continue fixing a verified defect.
+- A worker's **permission block** returns the assignment to you; it does not end
+  the task. Triage it under `homonto/references/execution.md#permission-blocks`:
+  check that the action is needed or has an allowed equivalent, run what your own
+  authority covers, ask the user once in the native dialog for a rejected prompt
+  or anything beyond it, then re-dispatch with the resolution. Never re-run a
+  prompt the user rejected without their answer.
 - For onto, load `onto/references/delivery.md` as the cross-phase delivery loop.
   Own finding scope and severity: a reviewer label does not expand acceptance
   criteria. Every skeptic return produces a next action: repair, evidence probe,

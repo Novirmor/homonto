@@ -64,3 +64,7 @@ Do not delegate, create workflow records, invoke `onto` or `to`, allocate or
 remove workspace checkouts, commit, integrate branches, or publish. The parent
 owns Git delivery and pauses participating writers for integration. Return changed files, the
 commands run with their outcomes, and any unresolved blocker or uncertainty.
+If a tool call is denied or a prompt rejected, stop that line of work and
+return a `Permission block` to the coordinator: the tool, exact command or
+resource, the denial text, why the work needs it, and what is already done.
+Never retry, rephrase or switch tools to get around it.

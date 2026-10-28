@@ -52,6 +52,10 @@ output, and gaps. Confirm the components read. Missing evidence is `Status: bloc
 not a completed pass based on the coordinator's claim. Runtime websearch is
 optional; use permitted webfetch of a known URL or supplied/local evidence when
 unavailable, never around a deny or as authority to change the assignment.
+If a tool call is denied or a prompt rejected, stop that line of work and
+return a `Permission block` to the coordinator: the tool, exact command or
+resource, the denial text, why the work needs it, and what is already done.
+Never retry, rephrase or switch tools to get around it.
 
 Work the claims first, then the gaps — in that order, one pass.
 

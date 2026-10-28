@@ -64,7 +64,7 @@ workflows, including re-verification after integration:
 | Dispatch and worker available | Use the phase's assigned worker; validate its result against the repository |
 | Dispatch or worker unavailable | Coordinator implements or reviews directly; record which independent pass was unavailable and perform its checks without claiming an independent verdict |
 | Repository or user explicitly requires independent review | Missing dispatch/reviewer is a blocker; ask only for a real authorization decision, never silently waive it |
-| Tool permission denied | Honor the denial; no direct execution or alternate tool as a workaround |
+| Tool permission denied | Triage it under [permission blocks](#permission-blocks); no direct execution or alternate tool as a workaround |
 | Worker failed or returned blocked | Resolve evidence requests and retry with the complete pack; an unsuccessful attempt is not absence and is not a completed pass |
 
 Use one worker per focused question, with bounded concurrency appropriate to
@@ -109,6 +109,46 @@ an explorer pass solely because the phase changed. Trivial, already-grounded wor
 may proceed directly. When dispatch is unavailable, investigate directly and state
 the fallback; honor denials rather than routing around them. Exploration never
 authorizes extra implementation or expands the user's request.
+
+## Permission blocks
+
+A worker whose tool call is denied, or whose prompt the user rejects, returns
+instead of working around it. The block hands the assignment back to you; it
+does not end the task. Read the worker's `Permission block` return. A rejected
+prompt can end a worker before it returns anything; the workflow plugin then
+adds a `Homonto worker permission blocks` notice to your context naming the
+worker, the refused action and its exact command or resource.
+
+Triage before you ask the user:
+
+1. **Needed?** Check whether the assignment really requires the refused action.
+   If a command inside the worker's permissions answers the same question (a
+   read instead of a write, a focused test instead of a broad script, evidence
+   you already hold), re-dispatch with that instruction.
+2. **Role boundary or user refusal?** A static deny in the worker's permissions,
+   such as a reviewer's shell or an implementer's push or workflow command, is a
+   division of work, not a verdict on the action. If the action is inside your
+   own permissions and task authority, run it yourself and re-dispatch with the
+   result; that is ownership, not a workaround. A rejected prompt is the user's
+   decision: never re-run that action on your own, by any tool.
+3. **Ask once.** For a rejected prompt, or an action outside your own authority,
+   use the native `question` dialog. Name the worker, the exact command or
+   resource, why the task needs it and what is already done. Offer the viable
+   choices, recommended first: you run it with the user's approval; the user runs
+   it and sends you the output or the missing information; continue without it
+   and record the gap; or change scope. Put simultaneous blocks in one dialog. A
+   free-form answer is a valid resolution.
+4. **Resume.** Inspect any partial edits the blocked implementer left before you
+   re-dispatch; never discard them silently. Give a fresh worker the complete
+   pack, the preserved task ID, and the resolution with its evidence. Do not ask
+   again about a block the user already resolved for the same task and action.
+
+Keep independent assignments moving while a block is pending. If the dialog is
+unavailable, denied or dismissed, report the pending block with its exact command
+and the choices above. The user resolves it by replying to you with a decision,
+the output or the missing information, and the task resumes from that answer.
+A block becomes a hard blocker only after triage, when the user refuses or no
+answer is available.
 
 ## Terminal cleanup
 
@@ -180,6 +220,10 @@ is done. Include:
   status of zero when no tests ran is not evidence that the behavior passed.
 - **Gaps / discovered work:** checks that did not run, unavailable evidence,
   remaining failures, and needed work outside scope — reported, never done.
+- **Permission block:** only when a tool call was denied or a prompt rejected.
+  Give the tool, the exact command or resource, the denial text, why the task
+  needs it, any allowed alternative, and the work done before the block. Return
+  `blocked` or `partial`; never retry, rephrase or switch tools to get around it.
 - **Questions:** only unresolved goal, scope, ownership or authorization decisions.
   Technical blockers belong with their evidence under gaps; do not invent a user
   decision. Return a unified diff if requested.

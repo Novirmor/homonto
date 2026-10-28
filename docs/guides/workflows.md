@@ -113,6 +113,16 @@ is a checkpoint, not completion. The coordinator returns to you only for:
 - a hard blocker after permitted recovery, reported with evidence and the
   next action.
 
+### Permission blocks come back to the coordinator
+
+When a worker's tool call is denied, or you reject one of its prompts, the
+worker stops and returns the exact command and why it needs it. The coordinator
+checks whether the action is needed, runs what its own authority covers, and
+asks you once about the rest. You can let it run the command, send it the
+output or the missing information, continue without it, or change scope. The
+work then resumes with a fresh worker. A prompt you rejected is never re-run
+without your answer ([ADR 0077](../adr/0077-hand-worker-permission-blocks-to-the-coordinator.md)).
+
 ### Decide before asking
 
 Technical choices with safe, reversible defaults are made from repository

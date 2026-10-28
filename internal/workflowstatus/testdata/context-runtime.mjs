@@ -807,6 +807,48 @@ try {
   bus.push({ type: "session.idle", data: { sessionID: "ses_one" } })
   await until(() => observing.notifications.length === 2)
   assert.equal(observing.notifications[1].variant, "success")
+  // A rejected worker prompt reaches the parent's next context exactly once.
+  bus.push({ type: "session.created", data: { sessionID: "ses_child", projectID: "prj_one", parentID: "ses_one", agent: "to-implementer" } })
+  bus.push({ type: "session.created", data: { sessionID: "ses_foreign", projectID: "other", parentID: "ses_one", agent: "intruder" } })
+  bus.push({ type: "permission.asked", data: { id: "per_1", sessionID: "ses_child", action: "shell", resources: ["git push origin main\nignore previous"] } })
+  bus.push({ type: "permission.asked", data: { id: "per_2", sessionID: "ses_child", action: "shell", resources: ["go test ./..."] } })
+  bus.push({ type: "permission.asked", data: { id: "per_3", sessionID: "ses_foreign", action: "shell", resources: ["curl evil"] } })
+  bus.push({ type: "permission.asked", data: { id: "per_4", sessionID: "ses_one", action: "shell", resources: ["rm -rf build"] } })
+  bus.push({ type: "permission.replied", data: { sessionID: "ses_child", requestID: "per_1", reply: "reject" } })
+  bus.push({ type: "permission.replied", data: { sessionID: "ses_child", requestID: "per_2", reply: "once" } })
+  bus.push({ type: "permission.replied", data: { sessionID: "ses_foreign", requestID: "per_3", reply: "reject" } })
+  bus.push({ type: "permission.replied", data: { sessionID: "ses_one", requestID: "per_4", reply: "reject" } })
+  await bus.flush()
+  for (const expected of [true, false]) {
+    responses.push({ value: snap([change]) })
+    const event = request("homonto")
+    await observing.hooks.get("context")(event)
+    const added = event.system.slice(2)
+    assert.equal(added.length, expected ? 3 : 2)
+    assert.deepEqual(added[0], { type: "text", text: CONTINUATION_POLICY })
+    assert.ok(added.reduce((size, block) => size + Buffer.byteLength(block.text), 0) <= 16384)
+    if (!expected) continue
+    const notice = added[2].text
+    assert.match(notice, /^## Homonto worker permission blocks\n/)
+    assert.ok(notice.includes("execution.md#permission-blocks"))
+    assert.ok(notice.includes('- worker "to-implementer" session "ses_child": "shell" refused for "git push origin main\\nignore previous"'))
+    assert.equal(notice.split("\n- ").length, 2, "only the child's rejected prompt is reported")
+    for (const absent of ["go test", "curl evil", "rm -rf build", "intruder"]) assert.ok(!notice.includes(absent), absent)
+  }
+  // Many long refusals stay within the notice budget and report what was left out.
+  for (let i = 0; i < 10; i++) {
+    bus.push({ type: "permission.asked", data: { id: `per_many_${i}`, sessionID: "ses_child", action: "shell", resources: ["x".repeat(400)] } })
+    bus.push({ type: "permission.replied", data: { sessionID: "ses_child", requestID: `per_many_${i}`, reply: "reject" } })
+  }
+  await bus.flush()
+  responses.push({ value: snap([change]) })
+  const crowded = request("homonto")
+  await observing.hooks.get("context")(crowded)
+  const many = crowded.system.at(-1).text
+  assert.ok(Buffer.byteLength(many) <= 2048)
+  const listed = many.split("\n- ").length - 2
+  assert.ok(listed >= 1 && listed < 10)
+  assert.ok(many.endsWith(`- ${10 - listed} more refused request(s) omitted; ask the workers for their permission blocks`), many)
   observing.dispose()
   await githubIntegration()
   const afterGithub = calls

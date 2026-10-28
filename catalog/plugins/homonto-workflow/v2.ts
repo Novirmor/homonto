@@ -10,7 +10,7 @@ import { WorkflowPanelRPC } from "./rpc.ts"
 import { createAuthorization } from "./authorization.ts"
 import { createGithubDrafts } from "./github.ts"
 import { requireCoordinator, requireLiveContext, strictArgs } from "./compat.ts"
-import { CONTINUATION_POLICY, CONTEXT_SNAPSHOT_LIMIT } from "./continuation.ts"
+import { CONTINUATION_POLICY, CONTEXT_SNAPSHOT_LIMIT, HANDBACK_LIMIT, createHandback } from "./continuation.ts"
 
 type Binding = { version: 1; configPath: string; configRoot: string; coordinator: string; githubEnabled: boolean }
 type Change = {
@@ -136,6 +136,7 @@ export default {
     const github = binding.githubEnabled ? createGithubDrafts({
       configPath: binding.configPath, run: processes.at(() => binding.configRoot),
     }) : undefined
+    const handback = createHandback()
 
     async function checkBinding(signal: AbortSignal) {
       const current = await selectedBinding(signal)
@@ -158,6 +159,7 @@ export default {
       processes.dispose()
       authorization.dispose()
       github?.dispose()
+      handback.clear()
       for (const controller of requests) controller.abort()
       requests.clear()
       for (const registration of registrations) {
@@ -254,8 +256,10 @@ export default {
       try {
         const result = await Promise.race([work(), interrupted])
         if (!disposed && !signal.aborted && result) {
+          const blocked = handback.take(event.sessionID)
           event.system.push({ type: "text", text: CONTINUATION_POLICY })
-          if (result.text) event.system.push({ type: "text", text: bounded(result.text, CONTEXT_SNAPSHOT_LIMIT) })
+          if (result.text) event.system.push({ type: "text", text: bounded(result.text, CONTEXT_SNAPSHOT_LIMIT - (blocked ? HANDBACK_LIMIT : 0)) })
+          if (blocked) event.system.push({ type: "text", text: blocked })
         }
         if (!disposed && !signal.aborted && github) event.system.push({ type: "text", text: github.context(event.sessionID) })
       } catch {
@@ -265,6 +269,26 @@ export default {
         signal.removeEventListener("abort", interrupt)
         controller.abort()
         requests.delete(controller)
+      }
+    }
+
+    // Child sessions come from session.created; only their rejected prompts are kept.
+    function observeHandback(event: { type: string; data?: unknown }) {
+      const data = event.data
+      if (!object(data)) return
+      if (event.type === "session.created" && text(data.sessionID) && text(data.parentID) &&
+          (data.projectID === undefined || data.projectID === ctx.location.project.id)) {
+        const agent = text(data.agent) ? data.agent : object(data.agent) && text(data.agent.name) ? data.agent.name
+          : object(data.agent) && text(data.agent.id) ? data.agent.id : undefined
+        handback.session(data.sessionID, data.parentID, agent)
+      } else if (event.type === "permission.asked" && text(data.sessionID) && text(data.id) && text(data.action) &&
+          Array.isArray(data.resources)) {
+        handback.asked(data.sessionID, data.id, data.action, data.resources.filter(text))
+      } else if (event.type === "permission.replied" && text(data.sessionID) && text(data.requestID) && text(data.reply)) {
+        handback.replied(data.sessionID, data.requestID, data.reply)
+      } else if (event.type === "session.deleted") {
+        const id = object(data.info) ? data.info.id : data.sessionID
+        if (text(id)) handback.deleted(id)
       }
     }
 
@@ -416,6 +440,7 @@ export default {
           for await (const event of subscriber) {
             if (disposed) return
             if (github) github.event({ event })
+            observeHandback(event)
             if (event.type !== "session.idle" || !object(event.data) || typeof event.data.sessionID !== "string") continue
             const sessionID = event.data.sessionID
             try {

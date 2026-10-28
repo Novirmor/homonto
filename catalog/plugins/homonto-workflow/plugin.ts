@@ -11,7 +11,7 @@ import type { Run } from "./runner.ts"
 import { requireCoordinator, strictArgs } from "./compat.ts"
 import type { Binding, ToolContext, ToolDefinition } from "./compat.ts"
 import { createGithubDrafts } from "./github.ts"
-import { CONTINUATION_POLICY, CONTEXT_SNAPSHOT_LIMIT } from "./continuation.ts"
+import { CONTINUATION_POLICY, CONTEXT_SNAPSHOT_LIMIT, HANDBACK_LIMIT, createHandback } from "./continuation.ts"
 
 type Change = {
   identity: string
@@ -106,6 +106,7 @@ export const homontoWorkflow = (async ({ client, directory }: Parameters<Plugin>
   const run: Run = processes.at(async () => (await selectedBinding()).configRoot)
   let github: ReturnType<typeof createGithubDrafts> | undefined
   let githubBinding: string | undefined
+  const handback = createHandback()
 
   async function dispose() {
     if (disposed) return
@@ -115,6 +116,7 @@ export const homontoWorkflow = (async ({ client, directory }: Parameters<Plugin>
     timer = undefined
     processes.dispose()
     github?.dispose()
+    handback.clear()
     for (const cancel of compactions) cancel()
     compactions.clear()
     previous.clear()
@@ -413,6 +415,23 @@ export const homontoWorkflow = (async ({ client, directory }: Parameters<Plugin>
     return [header, ...blocks].join("\n\n")
   }
 
+  // V1 child sessions carry parentID in session.created; permission events use
+  // permission/patterns. Only rejected child prompts reach the parent's context.
+  function observeHandback(event: RuntimeEvent) {
+    const props = event.properties
+    if (disposed || !object(props)) return
+    const str = (value: unknown): value is string => typeof value === "string" && value !== ""
+    if (event.type === "session.created" && object(props.info) && str(props.info.id) && str(props.info.parentID)) {
+      handback.session(props.info.id, props.info.parentID, undefined)
+    } else if (event.type === "permission.asked" && str(props.sessionID) && str(props.id) && str(props.permission)) {
+      handback.asked(props.sessionID, props.id, props.permission, Array.isArray(props.patterns) ? props.patterns.filter(str) : [])
+    } else if (event.type === "permission.replied" && str(props.sessionID) && str(props.requestID) && str(props.reply)) {
+      handback.replied(props.sessionID, props.requestID, props.reply)
+    } else if (event.type === "session.deleted" && object(props.info) && str(props.info.id)) {
+      handback.deleted(props.info.id)
+    }
+  }
+
   return {
     dispose,
     tool: tools,
@@ -421,6 +440,7 @@ export const homontoWorkflow = (async ({ client, directory }: Parameters<Plugin>
     },
     event: async ({ event }: { event: RuntimeEvent }) => {
       github?.event({ event })
+      observeHandback(event)
       if (event.type === "server.instance.disposed") {
         await dispose()
         return
@@ -441,8 +461,10 @@ export const homontoWorkflow = (async ({ client, directory }: Parameters<Plugin>
     },
     "experimental.chat.system.transform": async (input: { sessionID?: string }, output: { system: string[] }) => {
       const text = await recovery()
+      const blocked = !disposed && input.sessionID ? handback.take(input.sessionID) : undefined
       if (!disposed) output.system.push(CONTINUATION_POLICY)
-      if (!disposed && text) output.system.push(boundedText(text, CONTEXT_SNAPSHOT_LIMIT))
+      if (!disposed && text) output.system.push(boundedText(text, CONTEXT_SNAPSHOT_LIMIT - (blocked ? HANDBACK_LIMIT : 0)))
+      if (blocked) output.system.push(blocked)
       if (!disposed && github && input.sessionID) output.system.push(github.context(input.sessionID))
     },
   }

@@ -96,3 +96,4 @@ numbering: [`../agents/adr.md`](../agents/adr.md).
 | [0074](0074-use-explorers-before-guessing.md) | Use explorers before guessing | Accepted |
 | [0075](0075-own-terminal-cleanup-in-the-binaries.md) | Own terminal cleanup in the binaries | Accepted |
 | [0076](0076-separate-conflict-only-pr-resolution.md) | Separate conflict-only PR resolution | Accepted |
+| [0077](0077-hand-worker-permission-blocks-to-the-coordinator.md) | Hand worker permission blocks to the coordinator | Accepted |

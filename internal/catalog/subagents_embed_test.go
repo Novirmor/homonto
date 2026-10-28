@@ -104,13 +104,14 @@ func TestAllShippedAgentsExplicitlyAllowSupportingWebResearch(t *testing.T) {
 
 // TestHomontoPrimaryPromptIsComplete pins the shared coordinator's prompt
 // shape: one tooling section, both workflow doctrines referenced, the GitHub
-// intake boundary stated, and the repo-boundary ending intact.
+// intake boundary stated, and the tooling section's ending intact. Phrases are
+// matched whitespace-normalized so reflowing the prose does not break them.
 func TestHomontoPrimaryPromptIsComplete(t *testing.T) {
 	content, err := fs.ReadFile(embedded.FS, "subagents/homonto.md")
 	if err != nil {
 		t.Fatal(err)
 	}
-	text := string(content)
+	text := strings.Join(strings.Fields(string(content)), " ")
 	if strings.Count(text, "## The tooling around you: homonto") != 1 {
 		t.Errorf("homonto prompt must contain one tooling section")
 	}
@@ -129,7 +130,7 @@ func TestHomontoPrimaryPromptIsComplete(t *testing.T) {
 		"not a sandbox",
 		"The host may evaluate parsed",
 		"raw chain need not match",
-		"Unknown\ncommands and wrappers also allow by default",
+		"Unknown commands and wrappers also allow by default",
 	} {
 		if !strings.Contains(text, want) {
 			t.Errorf("homonto prompt missing %q", want)
@@ -140,7 +141,7 @@ func TestHomontoPrimaryPromptIsComplete(t *testing.T) {
 			t.Errorf("homonto prompt retains obsolete dialog requirement %q", obsolete)
 		}
 	}
-	if !strings.HasSuffix(text, "request a broad\n  external-directory exception.\n") {
+	if !strings.HasSuffix(text, "whenever a later step must find them again.") {
 		t.Errorf("homonto prompt has unexpected or truncated ending: %q", text[max(0, len(text)-80):])
 	}
 }

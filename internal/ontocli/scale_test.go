@@ -1,6 +1,7 @@
 package ontocli
 
 import (
+	"encoding/json"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -9,6 +10,79 @@ import (
 
 	"github.com/noviopenworks/homonto/internal/ontostate"
 )
+
+func TestScaleSetRefusesTerminalAndMismatchedState(t *testing.T) {
+	for _, kind := range []string{"abandoned", "archived", "identity-mismatch"} {
+		t.Run(kind, func(t *testing.T) {
+			root := prepWorkspace(t)
+			base, err := resolveCommit(root, "HEAD")
+			if err != nil {
+				t.Fatal(err)
+			}
+			st := ontostate.State{Change: "c", Phase: "build", Workflow: "full", BaseRef: base}
+			want := "terminal"
+			switch kind {
+			case "abandoned":
+				st.Abandoned = true
+			case "archived":
+				st.Archived = true
+			default:
+				st.Change, want = "different", "does not match"
+			}
+			path := filepath.Join(root, "docs", "changes", "c", "onto-state.yaml")
+			if err := ontostate.Save(path, st); err != nil {
+				t.Fatal(err)
+			}
+			before, err := os.ReadFile(path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if _, err := runOnto(t, "scale", "c", "--set", "--dir", root); err == nil || !strings.Contains(err.Error(), want) {
+				t.Fatalf("scale --set accepted %s or gave wrong error: %v", kind, err)
+			}
+			after, err := os.ReadFile(path)
+			if err != nil || string(before) != string(after) {
+				t.Fatalf("refused scale changed state: %v", err)
+			}
+			// Measuring a terminal record is read-only and remains supported.
+			_, err = runOnto(t, "scale", "c", "--dir", root)
+			if kind == "identity-mismatch" {
+				if err == nil || !strings.Contains(err.Error(), want) {
+					t.Fatalf("read accepted mismatched identity: %v", err)
+				}
+			} else if err != nil {
+				t.Fatalf("read-only terminal measurement: %v", err)
+			}
+		})
+	}
+}
+
+func TestScaleSetJSONRecordsMeasurement(t *testing.T) {
+	root := prepWorkspace(t)
+	base, err := resolveCommit(root, "HEAD")
+	if err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(root, "docs", "changes", "c", "onto-state.yaml")
+	if err := ontostate.Save(path, ontostate.State{Change: "c", Phase: "build", Workflow: "light", BaseRef: base}); err != nil {
+		t.Fatal(err)
+	}
+	out, err := runOnto(t, "scale", "c", "--set", "--json", "--dir", root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var result struct {
+		Level    string `json:"level"`
+		Recorded bool   `json:"recorded"`
+	}
+	if err := json.Unmarshal([]byte(out), &result); err != nil || result.Level != "light" || !result.Recorded {
+		t.Fatalf("measurement JSON = %q: %v", out, err)
+	}
+	st, err := ontostate.Load(path)
+	if err != nil || st.Verify.Scale != result.Level {
+		t.Fatalf("recorded measurement = %+v: %v", st, err)
+	}
+}
 
 func TestIsTestPath(t *testing.T) {
 	tests := map[string]bool{

@@ -141,30 +141,37 @@ func scaleCmd() *cobra.Command {
 			if err := ontoFramework.ValidChangeName(name); err != nil {
 				return err
 			}
+			var files, lines int
+			var level string
+			measure := func(st *ontostate.State) error {
+				var err error
+				files, lines, level, err = stateDiffScale(dir, *st)
+				return err
+			}
 			if doSet {
-				unlock, err := lockOnto(dir)
+				if err := updateChange(dir, name, func(st *ontostate.State) error {
+					if err := measure(st); err != nil {
+						return err
+					}
+					if level == "full" {
+						if err := lightFullScale("onto scale --set", name, *st); err != nil {
+							return err
+						}
+					}
+					st.Verify.Scale = level
+					return nil
+				}); err != nil {
+					return err
+				}
+			} else {
+				st, err := ontostate.LoadChange(filepath.Join(changesDir(dir), name))
 				if err != nil {
 					return err
 				}
-				defer unlock()
-			}
-			changeDir := filepath.Join(changesDir(dir), name)
-			st, err := ontostate.LoadChange(changeDir)
-			if err != nil {
-				return err
-			}
-			files, lines, level, err := stateDiffScale(dir, st)
-			if err != nil {
-				return err
-			}
-			if doSet && level == "full" {
-				if err := lightFullScale("onto scale --set", name, st); err != nil {
-					return err
+				if st.Change != name {
+					return fmt.Errorf("onto scale: state change %q does not match directory %q", st.Change, name)
 				}
-			}
-			if doSet {
-				st.Verify.Scale = level
-				if err := ontostate.Save(filepath.Join(changeDir, "onto-state.yaml"), st); err != nil {
+				if err := measure(&st); err != nil {
 					return err
 				}
 			}

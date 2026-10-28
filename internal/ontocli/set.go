@@ -9,11 +9,18 @@ import (
 	"github.com/spf13/cobra"
 )
 
-// runTransition loads the change via LoadChange (so migration + dual-legacy
-// conflict detection apply), lets apply validate+mutate the state, re-validates
-// the whole state, and saves. It gates on ontoFramework.Gate(root) and
-// ontoFramework.ValidChangeName, and writes nothing if any step fails.
+// runTransition reports a successful guarded state update.
 func runTransition(cmd *cobra.Command, root, name string, apply func(*ontostate.State) error) error {
+	if err := updateChange(root, name, apply); err != nil {
+		return err
+	}
+	fmt.Fprintf(cmd.OutOrStdout(), "%s: updated\n", name)
+	return nil
+}
+
+// updateChange loads a live, matching, nonterminal change under the mutation
+// locks, applies the update, validates and saves. Callers own output formatting.
+func updateChange(root, name string, apply func(*ontostate.State) error) error {
 	if err := ontoFramework.Gate(root); err != nil {
 		return err
 	}
@@ -53,7 +60,6 @@ func runTransition(cmd *cobra.Command, root, name string, apply func(*ontostate.
 	if err := ontostate.Save(filepath.Join(changeDir, "onto-state.yaml"), st); err != nil {
 		return fmt.Errorf("onto set: %w", err)
 	}
-	fmt.Fprintf(cmd.OutOrStdout(), "%s: updated\n", name)
 	return nil
 }
 

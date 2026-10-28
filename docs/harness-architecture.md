@@ -9,19 +9,23 @@ version and must be before that harness is assigned a tier.
 
 ## Principles
 
-1. **Native in, native out.** A harness is configured in its own vocabulary
+1. **OpenCode first.** OpenCode is the primary harness: every feature is
+   designed, shipped, and verified there first. Other harnesses follow at
+   their tier, and their gaps are handled in their adapters. OpenCode never
+   waits for them and never loses a feature to them.
+2. **Native in, native out.** A harness is configured in its own vocabulary
    and rendered in its own formats. There is no neutral config schema and no
    translation of one harness's settings into another's.
-2. **Capabilities, not names.** Engines declare what they need; adapters
+3. **Capabilities, not names.** Engines declare what they need; adapters
    declare what a pinned harness version provides. Support follows from the
    match.
-3. **Fail closed.** A declaration a harness cannot render, or an engine whose
+4. **Fail closed.** A declaration a harness cannot render, or an engine whose
    needs a harness cannot meet, is a plan or selection error that names the
    gap. Nothing is dropped or approximated silently.
-4. **One runtime, thin shims.** Workflow runtime logic lives once in the Go
+5. **One runtime, thin shims.** Workflow runtime logic lives once in the Go
    binary. A harness integration carries only what that harness needs to reach
    it.
-5. **Stale support is worse than none.** The v0.13.0 removal happened because
+6. **Stale support is worse than none.** The v0.13.0 removal happened because
    Claude Code and Codex projections outlived the workflows they no longer ran.
    A harness keeps its tier only while its capability fixtures and end-to-end
    checks pass.
@@ -171,6 +175,9 @@ refuses an engine the harness cannot run, and says why.
   checks are not maintained drops a tier, not into silent staleness.
 
 ## Implementation order (when implementation starts)
+
+Each step ships on OpenCode first; a later harness picks it up when its adapter
+reaches that tier.
 
 1. Extract the runtime core from the OpenCode plugin into the binary behind MCP,
    keeping OpenCode behavior identical. This proves the core/shim split on the

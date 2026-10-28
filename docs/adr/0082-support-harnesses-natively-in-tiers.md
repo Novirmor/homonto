@@ -16,6 +16,10 @@ OpenCode TypeScript plugin) and the doctrine, which names OpenCode's tools.
 
 ## Decision
 
+- **OpenCode first.** OpenCode is the primary harness. Features are designed,
+  shipped, and verified on OpenCode first; other harnesses follow at their tier.
+  OpenCode work never waits on another harness, and another harness's limits
+  never cut an OpenCode feature.
 - **Native configuration, no neutral schema.** Each harness is configured in
   its own vocabulary, under its own keys. homonto does not translate one
   harness's settings into another's.

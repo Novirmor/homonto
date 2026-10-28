@@ -79,11 +79,18 @@ their named V2 keys, and use `onto light` for new bounded changes. Install all
 three matching v0.35.0 binaries, run `homonto plan` and `homonto apply` in each
 configured project, and restart OpenCode. No state conversion is provided.
 
-**Validation requirement:** the complete pre-tag gate, including race tests,
-vulnerability scanning, Docker E2E and release packaging, must pass. The release
-workflow repeats the automated gate before publishing. The live-host and GitHub
-sandbox checks in the release checklist are also required before tagging; the
-v0.34.0 exception does not apply to this release.
+**Validation:** the complete automated pre-tag gate passed, including race
+tests, vulnerability scanning, all nine Docker E2E suites, and release
+packaging. The release workflow repeats the gate before publishing.
+
+**Accepted validation gaps for v0.35.0:** the owner approved publication with
+the release checklist's live checks outstanding: the real OpenCode 2 host
+(plugin loading, panel, reload/unload, tools, context/compaction, idle
+notifications, permission observer, and V1 link removal); native GitHub draft
+denial/approval and authorization-boundary checks; real GitHub sandbox sends,
+receipts, actor/destination/PR changes, and uncertain-send reconciliation; and
+live-host migration checks in both directions. Automated contracts do not
+establish these live behaviors. This exception applies only to v0.35.0.
 
 ## Known limitations
 

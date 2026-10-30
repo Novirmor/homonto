@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"path/filepath"
 
+	"github.com/noviopenworks/homonto/internal/workflowcleanup"
 	"github.com/noviopenworks/homonto/internal/workflowstatus"
 	"github.com/spf13/cobra"
 )
@@ -12,9 +13,9 @@ import (
 func workflowCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "workflow",
-		Short: "Read workflow progress without changing it",
+		Short: "Inspect workflow progress and safely clean terminal resources",
 	}
-	cmd.AddCommand(workflowSnapshotCmd(), workflowHandoffCmd())
+	cmd.AddCommand(workflowSnapshotCmd(), workflowHandoffCmd(), workflowcleanup.Command(""))
 	return cmd
 }
 

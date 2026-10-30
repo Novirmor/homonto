@@ -10,7 +10,7 @@ Routine work does not need the full gate. `task` lists every task.
 | Scope | Command |
 |---|---|
 | One package | `go test ./internal/<pkg>/...` |
-| Packages you changed vs `main` | `task test-changed` |
+| Packages with Go changes vs `main` (committed, uncommitted, untracked) | `task test-changed` (`task test-changed BASE=<ref>` to compare elsewhere) |
 | Tests CodeGraph links to your changes | `task affected` (lists them; [codegraph.md](codegraph.md)) |
 | Concurrency-sensitive | add `-race`, or `task race` |
 | Compile-wide effect | `task vet` and `task lint` |
@@ -39,9 +39,23 @@ CI — one of the few places where that inference is sound.
 ## Traps
 
 **The lint config is part of the gate.** `.golangci.yml` is checked by
-`task lint`, the pre-commit hook, and the gate at the version pinned in
-`Taskfile.yml` (`task tools`) and `scripts/gate.sh`; bump both together. Prefer fixing a
-finding over excluding it. An exclusion carries a comment saying why.
+`task lint`, the pre-commit hook, and the gate. The golangci-lint version is
+pinned once, as `GOLANGCI_LINT_VERSION` in `scripts/gate.sh`; `Taskfile.yml`
+reads it from there, and `task tools` installs that version. `task lint` and
+the pre-commit hook run whatever `golangci-lint` is on `PATH`, so run
+`task tools` after a bump. Prefer fixing a finding over excluding it. An
+exclusion carries a comment saying why.
+
+**The Go toolchain is pinned in three places.** `go.mod`'s `toolchain` line is
+what builds, tests, the gate, and `task tools` use. `.github/workflows/ci.yml`
+and `release.yml` provision Go with `setup-go`, whose `go-version` must match
+it. An older provisioned Go lets `govulncheck@latest` downgrade and fail the
+gate before it starts, so bump all three together.
+
+**No base, no answer.** `task test-changed` and `task affected` diff against
+`main`, falling back to `origin/main`. If neither resolves (a shallow CI
+clone, a fork without `main`), they fail instead of reporting "no changed Go
+packages". Fetch the base, or pass one: `task test-changed BASE=<ref>`.
 
 **The eof-fixer aborts your commit.** `.pre-commit-config.yaml` runs
 `end-of-file-fixer` and `trailing-whitespace`. When either modifies a staged

@@ -188,7 +188,7 @@ func runNewWithRepos(cmd *cobra.Command, root, name string, jsonMode bool, repos
 		}
 	}
 	if _, err := os.Stat(changeDir(root, name)); err == nil {
-		return fmt.Errorf("to new: change %q already exists at %s", name, changeDir(root, name))
+		return fmt.Errorf("to new: change %q already exists at %s; resume it, or inspect terminal cleanup with `to cleanup preview %s --dir %q`", name, changeDir(root, name), name, root)
 	}
 	// Global-name uniqueness (ADR 0042): the same active name in the onto
 	// workflow is resolved by demotion, not duplication.

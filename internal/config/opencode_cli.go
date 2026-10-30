@@ -112,32 +112,19 @@ func OpenCodeCLISettings(raw map[string]any) (map[string]any, error) {
 		if err := validateKey("tui.opencode", key); err != nil {
 			return nil, err
 		}
-		path, value := key, raw[key]
-		switch key {
-		case "theme":
-			if _, ok := value.(string); ok {
-				path = "theme.name"
-			}
-		case "scroll_speed":
-			path = "scroll.speed"
-		case "leader_timeout":
-			path = "leader.timeout"
-		case "scroll_acceleration":
-			obj, ok := value.(map[string]any)
-			if !ok || len(obj) != 1 {
-				return nil, fmt.Errorf("tui.opencode.scroll_acceleration: legacy form requires only enabled; use scroll.acceleration in V2")
-			}
-			value, ok = obj["enabled"]
-			if !ok {
-				return nil, fmt.Errorf("tui.opencode.scroll_acceleration: missing enabled; use scroll.acceleration in V2")
-			}
-			path = "scroll.acceleration"
-		default:
-			if strings.ContainsAny(key, `.|*?#@\:`) && key != "$schema" {
-				return nil, fmt.Errorf("tui.opencode: unsupported V2 field %q; use nested TOML tables", key)
-			}
+		value := raw[key]
+		// The OpenCode 1 spellings were removed (ADR 0081); name the V2 key.
+		v1 := map[string]string{"scroll_speed": "scroll.speed", "leader_timeout": "leader.timeout", "scroll_acceleration": "scroll.acceleration"}
+		if _, isString := value.(string); key == "theme" && isString {
+			v1["theme"] = "theme.name"
 		}
-		if err := walk(path, key, value); err != nil {
+		if replacement, ok := v1[key]; ok {
+			return nil, fmt.Errorf("tui.opencode.%s: the OpenCode 1 spelling was removed; declare %s instead", key, replacement)
+		}
+		if strings.ContainsAny(key, `.|*?#@\:`) && key != "$schema" {
+			return nil, fmt.Errorf("tui.opencode: unsupported V2 field %q; use nested TOML tables", key)
+		}
+		if err := walk(key, key, value); err != nil {
 			return nil, err
 		}
 	}

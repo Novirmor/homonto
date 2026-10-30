@@ -1,145 +1,145 @@
 # Release checklist
 
-The repeatable steps for cutting a triple-binary `homonto` + `onto` + `to`
-release. This is the operational *how* of a release; the release gate below
-decides *whether*.
+How to cut a release of the three binaries, `homonto`, `onto`, and `to`.
+The gate below decides *whether* to release; the rest of this page is *how*.
 
-Releases are driven by the `release` GitHub workflow
-(`.github/workflows/release.yml`), which triggers on any pushed `v*` tag. Do
-not push a tag until the local gate and packaging rehearsal pass. After
-the tag is pushed, the workflow must re-run the CI gates, cross-compile every
-target, write checksums for the archives, and publish a GitHub release.
+Releases run through the `release` GitHub workflow
+(`.github/workflows/release.yml`), triggered by any pushed `v*` tag. Push a tag
+only after the local gate passes. The workflow then re-runs the gate,
+cross-compiles every target, checksums the archives, and publishes the GitHub
+release.
 
-## Pre-tag verification
+## 1. Pre-tag verification
 
-**`./scripts/gate.sh` is the whole gate**: one command, run identically by
-`ci.yml`, by `release.yml` before it builds or publishes anything, and by
-you before tagging. That is what makes a tag unable to publish on a weaker
-gate than a pull request. It ends with `ALL GATE CHECKS PASSED`.
+`./scripts/gate.sh` (`task gate`) is the whole gate. `ci.yml` runs it on every
+push and pull request, `release.yml` runs it before building anything, and you
+run it before tagging, so a tag can never publish on a weaker check than a pull
+request. It needs Go and a running Docker daemon, and it ends with
+`ALL GATE CHECKS PASSED`.
 
 ```sh
 ./scripts/gate.sh
 ```
 
-It covers gofmt, `go mod tidy -diff`, vet, golangci-lint, build, test,
-`-race`, version stamps, a CLI smoke, the doc-reference, skill shell-out, and
-permission-telemetry checks, the installer tests, govulncheck, and the
-triple-binary Docker E2E. That E2E
-is where the old hand-written checks now live, done against a disposable
-`$HOME` so the host is never touched:
+In order, it runs: gofmt, `go mod tidy -diff`, vet, golangci-lint, build,
+tests, tests under `-race`, version-stamp smoke for all three binaries, a CLI
+plan smoke, the doc-reference check, the skill shell-out check, the OpenCode
+permission-telemetry contract, the installer's mocked-network tests,
+govulncheck, and the Docker E2E suites. The suites
+(`test/docker/run-all.sh`) run against a disposable `$HOME`, so the host is
+never touched:
 
-- **`release-packaging`** — builds every target, verifies `SHA256SUMS` over
-  all archives, then extracts the **real** archives and smokes all three
-  binaries (`version` reports the stamped tag; `init`/`plan`/`apply`/`status`
-  run clean).
-- **`homonto-core` / `homonto-expanded`** — projection, per-tool agent
-  render, and prune behavior for the builtin catalog.
-- **`onto-lifecycle`** — drives a change through onto's gates.
-- **`to-lifecycle`** — drives a change through to's plan → do → done: gate
-  refusal, the `--verified` requirement, archive, doctor and convergence,
-  and onto/to coexistence with shared-resource deduplication.
+| Suite | Proves |
+|---|---|
+| `homonto-core` | `apply` against a real `os.UserHomeDir()` in a throwaway home |
+| `homonto-expanded` | Builtin package materialization, skill/command/agent links, agent renders, plugin and TUI projection |
+| `multi-repo` | Repo-tagged resources land in declared sibling repos only; per-repo state partitions; undeclared repos untouched |
+| `workspace-layout` | Schema-2 control, records, sources, and execution roots through the real CLIs |
+| `onto-lifecycle` | onto's install gate, init, gated phase advances (including a failing gate), doctor, dependency-aware close, archive |
+| `to-lifecycle` | to's install gate, the self-asserted `--verified`, abandon, archive, config-free read-only commands, onto + to side by side |
+| `h-surface` | The standalone h workflow: command and worker projection, worker permissions, rejection by the engine binaries' gates |
+| `release-packaging` | The real release build: 18 archives, `SHA256SUMS`, extraction, stamped versions, a smoke of an *extracted* binary |
+| `v015-surface` | explain and provenance, links surviving a repo move, evidence and trace, promote, permission suggestions, snapshot undo |
 
-## Live host checks
+## 2. Live host checks
 
-The gate does not boot a real OpenCode 2 host or publish to GitHub. When a
+The gate never boots a real OpenCode 2 host or publishes to GitHub. When a
 release changes the workflow plugin, the GitHub draft tools, permission
-projection, or the V1 → V2 migration path, run these before choosing a tag
+projection, or the V1 → V2 migration path, run these before choosing the tag
 commit, and keep the evidence:
 
-1. With a disposable home/config and the **OpenCode version** the
-   [OpenCode 2 guide](guides/opencode-v2.md) links against, check the project-local V2 plugin directory, terminal panel,
-   reload/unload, status/handoff tools, model context and compaction, idle
-   notifications, and the declared permission observer. Verify old V1 plugin
-   links are removed on apply; changing config alone does not hot-reload the
-   client.
-2. Test GitHub draft **denial and approval** with the host's native question
-   and exact permission prompts. Unknown sessions, moved directories, changed
+1. **OpenCode 2 host.** With a disposable home and config and the OpenCode
+   version the [OpenCode integration guide](guides/opencode.md) names, check
+   the project-local V2 plugin directory, the terminal panel, reload and
+   unload, the status and handoff tools, model context and compaction, idle
+   notifications, and the declared permission observer. Confirm apply removes
+   old V1 plugin links. Changing config alone does not hot-reload the client.
+2. **GitHub draft denial and approval** with the host's native question and
+   exact permission prompts. Unknown sessions, moved directories, changed
    bindings, cancellation, and a service mismatch must fail closed. A
-   standalone, unregistered server intentionally cannot authorize publication.
-   A local-model plus fake-`gh` run proves no external send happened, not that
-   real GitHub accepted a receipt.
-3. Run a **real GitHub sandbox** in a throwaway repo and account: a denied
-   send, a single permitted send with a matching receipt, changed
-   actor/destination/PR OIDs, and uncertain-send reconciliation. Never use a
-   production issue or PR.
-4. Check both migration directions in throwaway projects. OpenCode 2 reads
-   supported V1 server config, but its terminal settings live in global
-   `cli.json`; V1 files stay untouched and snapshot undo does not restore their
-   terminal values.
+   standalone, unregistered server must not be able to authorize publication.
+   A local model with a fake `gh` proves no external send happened, not that
+   GitHub accepted a receipt.
+3. **Real GitHub sandbox** in a throwaway repository and account: a denied
+   send, one permitted send with a matching receipt, changed actor,
+   destination, and PR OIDs, and reconciliation of an uncertain send. Never
+   use a production issue or PR.
+4. **Migration both ways** in throwaway projects. OpenCode 2 reads supported
+   V1 server config, but its terminal settings live in the global `cli.json`;
+   V1 files stay untouched, and snapshot undo does not restore their terminal
+   values.
 
 A check that was not run is not a pass. If the owner approves releasing
-without one, name every skipped check in the release notes, and do not claim
-it for that release. Such an approval covers one tag, never later ones.
+without one, name every skipped check in the release notes and do not claim
+it. That approval covers one tag, never later ones.
 
-Then review the release section of `docs/release-notes.md` against the final
-tag and verification results, and re-run `./scripts/gate.sh` after the last
-change. Only a fully green gate, including the release-packaging Docker suite,
-makes a tag candidate.
-
-> **Dogfooding is deferred to v1.** This repository is developed directly
-> on branches, with no external workflow stack
+> **No dogfooding step.** This repository is developed directly on branches
 > ([ADR 0023](adr/0023-develop-directly-without-comet.md);
-> [`personas.md`](personas.md)); onto is the workflow we *ship*, not the one
-> we use here yet. The repo therefore carries **no `homonto.toml` and no
-> projected `.opencode/` content** of its own, there is
-> deliberately **no "does the repo dogfood cleanly" pre-tag step**, and a
-> stale `.homonto/` in a working copy is not a release blocker. The Docker E2E verifies all three binaries in a clean
-> environment instead — stronger evidence than a developer machine whose
-> state has accumulated across versions.
+> [README › Contributing](../README.md#contributing)). It carries no
+> `homonto.toml` and no projected `.opencode/` content, so there is
+> deliberately no "does the repo dogfood cleanly" check, and a stale
+> `.homonto/` in a working copy is not a release blocker. The Docker suites
+> verify all three binaries in a clean environment instead, which is stronger
+> evidence than a developer machine with years of accumulated state.
 
-## Tag and publish
+## 3. Release notes
 
-1. Pick the version. Pre-releases use a suffix (for example,
-   `v1.2.0-rc.1`); a bare
-   `vMAJOR.MINOR.PATCH` is a full release. The workflow marks any tag
-   containing `-` as a GitHub pre-release automatically.
-2. Move the previous release's section from `docs/release-notes.md` into
-   `CHANGELOG.md`, and write the new one in its place. The release workflow
-   publishes that file as the release body, so it must describe only this tag.
-3. Tag an annotated tag on the commit that passed verification, and push
-   it:
+1. Pick the version. A bare `vMAJOR.MINOR.PATCH` is a full release. A suffix
+   (`v1.2.0-rc.1`) is a pre-release, and the workflow marks any tag containing
+   `-` as a GitHub pre-release.
+2. Bump `catalog/version.txt` and, for each package whose content changed, its
+   `version` in `catalog/frameworks/<name>/framework.toml`.
+3. In [`CHANGELOG.md`](../CHANGELOG.md), retitle the `Unreleased` section as
+   `vX.Y.Z — <theme>` and state the stamped binary and catalog versions.
+4. In [`release-notes.md`](release-notes.md), replace the release section
+   with that entry. The workflow publishes this file as the release body, so
+   it must describe only this tag. Review the known limitations too.
+5. Re-run `./scripts/gate.sh` after the last change. Only a fully green gate,
+   including `release-packaging`, makes a tag candidate.
 
-   ```sh
-    TAG=vX.Y.Z
-    git tag -a "$TAG" -m "$TAG"
-    git push origin "$TAG"
-   ```
+## 4. Tag and publish
 
-4. The `release` workflow then:
-    - re-runs the full gate as a guard,
-    - builds `homonto`, `onto`, and `to` for `linux`, `darwin`, and
-      `windows` on `amd64` and `arm64`, stamping the tag into every version
-      command via `-ldflags`,
-    - archives each target (`.tar.gz`, or `.zip` for Windows) with `LICENSE`
-      and `README.md`,
-    - writes a single `SHA256SUMS` over every archive,
-    - creates the GitHub release with generated notes and all assets
-      attached.
-
-## Post-tag smoke install
-
-From **outside** the repo, in a clean environment, verify the command
-packages install at the tag. Keep the concrete import paths matched to the
-release commit layout, and do not tag while this smoke covers only some of
-the binaries:
+Tag the verified commit with an annotated tag and push it:
 
 ```sh
 TAG=vX.Y.Z
-GOBIN=$(mktemp -d)
-export GOBIN
+git tag -a "$TAG" -m "$TAG"
+git push origin "$TAG"
+```
+
+The `release` workflow then:
+
+- re-runs the full gate;
+- builds `homonto`, `onto`, and `to` for `linux`, `darwin`, and `windows` on
+  `amd64` and `arm64` (`scripts/build-release.sh`), stamping the tag into each
+  `version` command via `-ldflags`;
+- archives each binary per target as `<bin>_<tag>_<os>_<arch>.tar.gz`
+  (`.zip` for Windows), each with `LICENSE` and `README.md`;
+- writes one `SHA256SUMS` over all 18 archives;
+- creates the GitHub release from `docs/release-notes.md` plus generated
+  notes, with every asset attached.
+
+## 5. Post-tag smoke
+
+Run all of these from **outside** the repository, in a clean environment.
+
+**Go install** of all three command packages at the tag:
+
+```sh
+TAG=vX.Y.Z
+GOBIN=$(mktemp -d); export GOBIN
 go install "github.com/noviopenworks/homonto@$TAG"
 go install "github.com/noviopenworks/homonto/cmd/onto@$TAG"
 go install "github.com/noviopenworks/homonto/cmd/to@$TAG"
-export PATH="$GOBIN:$PATH"
-"$GOBIN"/homonto version    # expect the tagged version string
-"$GOBIN"/onto version       # expect the tagged version string
-"$GOBIN"/to version         # expect the tagged version string
+"$GOBIN"/homonto version    # each prints the tag
+"$GOBIN"/onto version
+"$GOBIN"/to version
 ```
 
-Then smoke the interactive installer (Linux/macOS) against the same tag: it
-must download the tagged script, verify the real release archives against
-`SHA256SUMS`, and install into the temp dir (answers: version, no workflow
-binary, temp dir, decline initialization):
+**The interactive installer** (Linux, macOS) against the same tag. It must
+download the tagged script, verify the real archives against `SHA256SUMS`, and
+install into the temp directory. The piped answers are: version, no workflow
+binaries, install directory, decline initialization.
 
 ```sh
 TAG=vX.Y.Z
@@ -147,81 +147,83 @@ TMPBIN=$(mktemp -d)
 curl -fsSL -o /tmp/homonto-install.sh \
   "https://raw.githubusercontent.com/noviopenworks/homonto/$TAG/scripts/install.sh"
 printf '%s\nnone\n%s\nn\n' "$TAG" "$TMPBIN" | bash /tmp/homonto-install.sh
-"$TMPBIN"/homonto version   # expect the tagged version string
+"$TMPBIN"/homonto version
 ```
 
-Then exercise the binaries against a disposable home:
+**mise.** Use the three-alias configuration from the
+[installation guide](guides/installation.md#mise-recommended) with every
+version pinned to the new tag without its `v`, run `mise install`, and run
+each binary's `version` through `mise exec --`. Confirm mise picked the
+matching `homonto_`, `onto_`, and `to_` archives and all three print the tag.
+
+**A disposable home:**
 
 ```sh
-HOME=$(mktemp -d) # (or run in a container)
-export HOME
+HOME=$(mktemp -d); export HOME
+cd "$(mktemp -d)" && git init -q .
 homonto init
-# edit the generated homonto.toml minimally
-homonto plan
+homonto plan                # No changes. Everything up to date.
 homonto apply --yes
-homonto status              # expect: No drift
-homonto doctor              # warnings only (see below)
-onto status                 # expect: no active changes
-to status                   # expect: no active changes
+homonto status              # No drift.
+homonto doctor              # three warnings, see below; exit 0
+onto status                 # no active changes
+to status                   # No active changes
 ```
 
-Two results here look like failures and are not:
+Two results look like failures and are not:
 
-- **`homonto doctor` warns.** In a disposable `$HOME` with no editor installed
-  it reports `pass` missing from `PATH` and both tool config locations absent,
-  and — because a freshly generated `homonto.toml` declares nothing to apply —
-  `catalog upgrade pending: recorded (none)`. All four are environment facts,
-  not release defects. Read them; do not expect silence.
-- **`onto doctor` exits non-zero on an unscaffolded workspace.** A missing
-  `docs/{changes,specs,adr,guides}` layout is a documented finding, so the bare
-  command reports four problems — `onto status` and `onto doctor` are
-  config-independent and run anywhere, which is exactly why they do not imply a
-  scaffolded repo.
+- **`homonto doctor` warns three times**: `catalog upgrade pending: recorded
+  (none)` (the generated `homonto.toml` declares nothing yet), `pass` not on
+  `PATH`, and OpenCode's config location not found. All three describe the
+  empty environment, not the release.
+- **`onto doctor` exits 1 before `onto init`**: it reports the four missing
+  `docs/{changes,specs,adr,guides}` directories. `onto status` and
+  `onto doctor` run anywhere, which is why they don't assume a scaffolded
+  repository.
 
-To smoke `onto` properly you must install its framework first, because
-`onto init` is itself gated on it. That is what the "edit the generated
-`homonto.toml` minimally" step above means concretely — declare the framework
-**and** a `[subagents.<name>.opencode]` model block for each of its five agents
-(`homonto`, `onto-explorer`, `onto-reviewer`, `onto-implementer`, `onto-skeptic`),
-since a missing block fails at load:
+To smoke onto itself, install its engine first, since `onto init` is behind
+the install gate. Every agent the package installs needs a model block, or the
+config fails to load:
 
 ```sh
 cat >> homonto.toml <<'TOML'
-[frameworks.onto]
+[engines.onto]
 source = "builtin:onto"
 scope  = "project"
 
 [subagents.homonto.opencode]
-model = "anthropic/claude-opus-4-8"
-# … one [subagents.<name>.opencode] block per agent
+model = "anthropic/claude-opus-5-5"
+[subagents.onto-explorer.opencode]
+model = "anthropic/claude-haiku-5-5"
+[subagents.onto-implementer.opencode]
+model = "anthropic/claude-sonnet-5-5"
+[subagents.onto-reviewer.opencode]
+model = "anthropic/claude-opus-5-5"
+[subagents.onto-skeptic.opencode]
+model = "anthropic/claude-opus-5-5"
 TOML
-
 homonto apply --yes
 onto init
-onto doctor                 # expect: healthy
+onto doctor                 # healthy
 ```
 
-Replace `[frameworks.onto]` and the four `onto-*` specialists with `[frameworks.to]` and the four
-`to-*` specialists (the shared `homonto` block stays). The two frameworks
-are complementary, so one config may cover both.
+For `to`, add `[engines.to]` and model blocks for `to-explorer`,
+`to-implementer`, `to-reviewer`, and `to-skeptic` (the `homonto` block is
+shared), then `to init` and `to doctor`. Both engines may be declared in one
+config.
 
-Verify a downloaded archive's checksum matches `SHA256SUMS`:
+To check a downloaded archive by hand:
 
 ```sh
 sha256sum -c SHA256SUMS --ignore-missing
 ```
 
-The interactive installer performs this verification automatically before it
-installs anything; the mocked-network installer tests (`scripts/install-test.sh`)
-run in the gate.
-
 ## Rollback
 
-A release is only ever additive to git history, so rollback is deletion
-plus a follow-up, never a force-push:
+A release only ever adds to Git history, so rollback is deletion plus a
+follow-up release, never a force-push:
 
-1. Mark the bad GitHub release as a draft (or delete it) so it stops being
-   offered:
+1. Stop offering the release (or mark it as a draft in the GitHub UI):
 
    ```sh
    TAG=vX.Y.Z
@@ -235,22 +237,22 @@ plus a follow-up, never a force-push:
    git push origin ":refs/tags/$TAG"
    ```
 
-3. `go install ...@vX.Y.Z` keeps working for anyone who already
-   resolved it (the module proxy caches tags), so a broken release is
-   corrected by shipping a higher patch/rc tag, not by expecting the old
-   one to vanish. Never re-point an existing tag at a different commit.
+3. Ship a higher patch or rc tag with the fix. `go install …@vX.Y.Z` keeps
+   working for anyone who already resolved it, because the module proxy
+   caches tags, so the old version will not vanish. Never re-point an
+   existing tag at a different commit.
 
-## Security scanning decision (CodeQL / dependency-review)
+## Security scanning decision
 
 CodeQL and dependency-review are **deferred** on purpose:
 
 - `govulncheck` runs in the gate and reports *called* known vulnerabilities in
   dependencies and the standard library, the highest-signal check for a Go CLI
   with six direct dependencies. golangci-lint (staticcheck, govet, errcheck)
-  covers the static side.
-- dependency-review gates *new* dependencies in PRs; with a near-static
-  dependency list its overhead outweighs its signal.
+  covers static analysis.
+- dependency-review gates *new* dependencies in pull requests. With a
+  near-static dependency list, its overhead outweighs its signal.
 
 Revisit both when the dependency surface grows. Remote sources are already
-untrusted input; they are verified fail-closed against a sha256 pin
+treated as untrusted input and verified fail-closed against a sha256 pin
 ([ADR 0013](adr/0013-remote-source-trust-boundary.md)).

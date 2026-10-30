@@ -15,7 +15,7 @@ An expected red test in a test-first task is not an unexpected failure.
 - **Check recent changes** — what did this change touch? `git diff`, the last
   commits.
 - **Trace the data flow** — follow the actual values to where the wrong one is
-   produced. Fix at the source, not where the symptom surfaced.
+  produced. Fix at the source, not where the symptom surfaced.
 - **Inspect component boundaries** when several components are involved: compare
   inputs, outputs and configuration at the failing boundary without exposing secrets.
 

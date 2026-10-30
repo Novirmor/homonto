@@ -9,12 +9,11 @@ from file state on every run; the binary's `phase` field is the authoritative
 record of where the workflow stands, and files win only for routing decisions
 (see the dispatcher's §3).
 
-A legacy `state.yaml` (the pre-binary, agent-managed shape with nested
-`decisions:`, `verify.mode:`, `metrics:`) is migration input only:
-`LoadChange` reads it when no `onto-state.yaml` exists, or merges its
-observational data when both are present. The current binary never writes it.
-If you encounter a change with only a legacy `state.yaml`, treat it as a
-recovery situation (see the dispatcher's §3.5).
+The binary reads only `onto-state.yaml` at the current `schema_version`. An
+older file — unversioned, an earlier schema version, or the pre-binary
+`state.yaml` — is reported as malformed with the fix: finish or abandon that
+change with the onto release that created it. Never hand-edit it to the current
+schema.
 
 ## Template (the shape the binary writes)
 
@@ -28,7 +27,7 @@ after a config upgrade. Never convert state by hand.
 schema_version: 3
 change: <name>             # must equal directory name
 id: <stable-id>            # assigned once at `onto new`, never rewritten
-workflow: full             # full | fix | tweak
+workflow: full             # full | light
 phase: open                # open | design | build | verify | close
 created: YYYY-MM-DD
 repo_mode: explicit
@@ -82,7 +81,7 @@ observed:                  # observational only — never a gate, never blocking
   <evidence>`. The binary refuses the transition while the token is empty, so a
   review cannot disappear between sessions. Git records who wrote each token.
   `onto gate <change> --json` lists pending decisions with the exact setter. The two full-only
-  tokens are not required of `fix`/`tweak` presets; `close_confirmed` is
+  tokens are not required of the light preset; `close_confirmed` is
   required of every workflow.
 - `deps` names other changes under `<workflow-root>/changes/`; a legacy archive resolves a
   dependency, while a tracked archive resolves it only after

@@ -74,7 +74,7 @@ func TestCheckTaskPlan_AcceptsDottedTasksWithTraceMarkers(t *testing.T) {
 }
 
 func TestCheckTaskPlan_NoPlanIsNotDrift(t *testing.T) {
-	// Presets (fix/tweak) run without a plan.md. Reporting that as drift would
+	// Light changes run without a plan.md. Reporting that as drift would
 	// make `doctor` permanently unhappy on every preset change.
 	drift, err := CheckTaskPlan(writeTaskPlan(t, goodTasks, ""))
 	if err != nil {

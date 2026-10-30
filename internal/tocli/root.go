@@ -6,6 +6,7 @@ package tocli
 
 import (
 	"github.com/noviopenworks/homonto/internal/buildinfo"
+	"github.com/noviopenworks/homonto/internal/workflowcleanup"
 	"github.com/noviopenworks/homonto/internal/workspace"
 	"github.com/spf13/cobra"
 )
@@ -43,6 +44,7 @@ func NewRootCmd() *cobra.Command {
 	root.AddCommand(bypassCmd())
 	root.AddCommand(doneCmd())
 	root.AddCommand(abandonCmd())
+	root.AddCommand(workflowcleanup.Command("to"))
 	root.AddCommand(handoffCmd())
 	root.AddCommand(doctorCmd())
 	root.AddCommand(promoteCmd())

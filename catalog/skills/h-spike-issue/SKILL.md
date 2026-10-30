@@ -82,7 +82,7 @@ a second publication dialog.
    repository evidence answers them; only genuinely missing product intent
    goes to the user.
 6. **Report the brief** in conversation: findings, candidate code paths,
-   unknowns, risks, approach sketch, and the worker's `to`-vs-onto fit
+   unknowns, risks, approach sketch, and the worker's no/to/onto fit
    assessment with its deciding facts. Show the exact proposed comment body and
    canonical issue URL. Identify the source revision inspected where applicable,
    distinguish research from implemented or verified work, and omit secrets and

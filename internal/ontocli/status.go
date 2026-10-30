@@ -1,7 +1,6 @@
 package ontocli
 
 import (
-	"fmt"
 	"os"
 	"path/filepath"
 
@@ -54,13 +53,6 @@ func runStatus(cmd *cobra.Command, root string) error {
 		case "malformed":
 			cmd.Printf("%s: malformed (%v)\n", e.Name(), classErr)
 		default: // valid — label by the enumerated directory (consistent with doctor)
-			retired, err := retiredMigrationState(root, changeDir, st)
-			if err != nil {
-				return fmt.Errorf("onto status: retired migration record: %w", err)
-			}
-			if retired {
-				continue
-			}
 			// Surface a claim the artifacts cannot support: the derived
 			// WORKING phase differs from the recorded one (the state file is
 			// a cache of truth; see ontostate.DeriveWorkingPhase).

@@ -122,10 +122,6 @@ func (a *Adapter) readProjectCfg() ([]byte, error) {
 	return readStandardized(a.projectCfgFile())
 }
 
-func (a *Adapter) tuiFile() string {
-	return filepath.Join(a.Home, ".config", "opencode", "tui.json")
-}
-
 func (a *Adapter) cliFile() string {
 	return filepath.Join(a.cliConfigHome, "opencode", "cli.json")
 }
@@ -224,7 +220,6 @@ func settingDocPath(key string) string { return jsonutil.EscapePath(trim(key, "s
 func projSettingDocPath(key string) string {
 	return jsonutil.EscapePath(trim(key, "projsetting."))
 }
-func tuiDocPath(key string) string { return jsonutil.EscapePath(trim(key, "tui.")) }
 func cliDocPath(key string) string { return trim(key, cliStatePrefix) }
 
 func (a *Adapter) Plan(c *config.Config, st *state.State) (adapter.ChangeSet, error) {
@@ -285,6 +280,8 @@ func (a *Adapter) Plan(c *config.Config, st *state.State) (adapter.ChangeSet, er
 		} else {
 			cs.Changes = append(cs.Changes, changes...)
 		}
+		// State recorded for OpenCode 1's tui.json is dropped from state only;
+		// the V1 file itself is never read or written (ADR 0081).
 		for _, key := range st.Keys("opencode") {
 			if hasPrefix(key, "tui.") && !hasPrefix(key, cliStatePrefix) {
 				cs.Changes = append(cs.Changes, adapter.Change{Action: "delete", Key: key, Old: adapter.SecretRedaction, Cause: adapter.CauseRemove})
@@ -300,6 +297,9 @@ func (a *Adapter) Plan(c *config.Config, st *state.State) (adapter.ChangeSet, er
 			entry := src
 			if a.PluginCatalogRoot != "" {
 				if _, ok := catalogPluginNames[src]; ok {
+					// homonto-workflow keeps its removed V1 entry path (ADR 0079)
+					// only so a recorded legacy entry still matches for pruning;
+					// config rejects declaring it.
 					entry = filepath.Join(a.PluginCatalogRoot, src, "plugin.ts")
 					if src == "permission-observer" {
 						entry = filepath.Join(a.PluginCatalogRoot, src)
@@ -480,27 +480,6 @@ func (a *Adapter) ObserveHashes(st *state.State) (map[string]string, error) {
 	} else {
 		for k, v := range obs {
 			out[k] = v
-		}
-	}
-	if a.RepoName == "" {
-		var legacy []byte
-		for _, key := range st.Keys("opencode") {
-			if !hasPrefix(key, "tui.") || hasPrefix(key, cliStatePrefix) {
-				continue
-			}
-			if legacy == nil {
-				legacy, err = readStandardized(a.tuiFile())
-				if err != nil {
-					return nil, err
-				}
-			}
-			v, ok, err := codec.Get(legacy, tuiDocPath(key))
-			if err != nil {
-				return nil, err
-			}
-			if ok {
-				out[key] = secret.Hash(v)
-			}
 		}
 	}
 	// File-projection keys (skill./command./subagent.*) live on disk as symlinks;

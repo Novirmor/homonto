@@ -10,7 +10,7 @@ import (
 // names, and destructive commands fail at load.
 func TestLoadValidatesBashAllowAdd(t *testing.T) {
 	framework := `
-[frameworks.onto]
+[engines.onto]
 source = "builtin:onto"
 scope = "project"
 
@@ -64,7 +64,7 @@ variant = """high
 // projection), like any model-only tune.
 func TestBashAllowAddRidesTheTuneOnlySignal(t *testing.T) {
 	doc := `
-[frameworks.onto]
+[engines.onto]
 source = "builtin:onto"
 scope = "project"
 

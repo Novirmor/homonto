@@ -1,15 +1,15 @@
 # Reduced preset proposal
 
-Fix and tweak use this structure, not the full proposal template. All headings
+Light uses this structure, not the full proposal template. All headings
 below are required; keep content short and specific. Close lint checks this
 template for an unupgraded preset, and the full template after upgrade.
 
 ```markdown
 # Proposal: <change-name>
-Preset: fix
+Preset: light
 
 ## Why
-<bug and reproduction, expected versus actual; for tweak, what and why>
+<for a bug, reproduction and expected versus actual; otherwise what and why>
 
 ## What Changes
 <bounded outcome and files/modules affected>
@@ -19,7 +19,7 @@ Preset: fix
 
 ## Capability Impact
 <New/Modified capabilities with delta paths, or explicit no-spec-level change
-and why. A tweak cannot change an existing spec requirement or add a capability.>
+and why. Light cannot change an existing spec requirement or add a capability.>
 
 ## Acceptance Scenarios
 - <stable descriptive ID>: <input/precondition, action, expected observable result>
@@ -29,9 +29,9 @@ and why. A tweak cannot change an existing spec requirement or add a capability.
 <actual queries or direct file paths read and what established the scope>
 ```
 
-Use `Preset: tweak` for tweaks. For fix, one core scenario must reproduce the
-bug before the fix and pass afterward. Every scenario is verified in the report,
-even when there are no spec deltas. For no-spec fix/tweak structured evidence,
+For a bug, one core scenario must reproduce the bug before the fix and pass
+afterward. Every scenario is verified in the report, even when there are no
+spec deltas. For no-spec light structured evidence,
 declare each stable `Scenario-ID: <id>` in `tasks.md` or `verification.md`, using
 the same scenario identity as the proposal. The binary supports those declarations;
 do not create fake delta specs or rely on proposal-only IDs for evidence lookup.

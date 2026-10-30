@@ -44,7 +44,7 @@ func TestSourceOnlyWorkerDeniesNestedWorkflowRecords(t *testing.T) {
 			t.Errorf("missing %s:\n%s", want, out)
 		}
 	}
-	if strings.Contains(string(out), "external_directory:") {
-		t.Fatalf("read-only worker gained external access:\n%s", out)
+	if !strings.Contains(string(out), `"/source/**": allow`) || !strings.Contains(string(out), `"/source/records/**": deny`) {
+		t.Fatalf("read-only worker lost declared source access or record denial:\n%s", out)
 	}
 }

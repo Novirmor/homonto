@@ -27,7 +27,7 @@ func loadedCatalog() (*catalog.Catalog, error) {
 }
 
 // frameworkCatalog returns the catalog used to expand this config's frameworks:
-// the embedded builtin catalog overlaid with each [frameworks.X]
+// the embedded builtin catalog overlaid with each [engines.X]
 // source="local:<path>" as a local single-framework root keyed by X (its path
 // resolved relative to the config's baseDir). When the config declares no local
 // frameworks it returns the cached embedded singleton unchanged, so a
@@ -57,10 +57,17 @@ func (c *Config) FrameworkCatalog() (*catalog.Catalog, error) {
 	if len(locals) == 0 {
 		return loadedCatalog()
 	}
-	return catalog.NewWithLocal(locals)
+	cl, err := catalog.NewWithLocal(locals)
+	if err != nil {
+		return nil, err
+	}
+	if err := validatePackageKinds(c, cl, false); err != nil {
+		return nil, err
+	}
+	return cl, nil
 }
 
-// frameworkCatalogName maps a [frameworks.X] declaration to the catalog
+// frameworkCatalogName maps a [engines.X] declaration to the catalog
 // framework name to expand, and reports whether it is expandable. A builtin:<n>
 // source expands framework n from the embedded catalog; a local:<path> or
 // remote:<url> source expands the framework keyed by the config name X
@@ -221,7 +228,7 @@ func subagentNames(e []catalog.ExpandedSubagent) []string {
 }
 
 // ExpandedSkillEntriesForTool returns the effective skills for a tool: explicit
-// [skills.X] entries plus, for each [frameworks.<fw>] source="builtin:<fw>"
+// [skills.X] entries plus, for each [engines.<fw>] source="builtin:<fw>"
 // targeting the tool, its transitively expanded skills. Each expanded skill
 // inherits the framework declaration's scope and targets. A framework skill
 // whose name collides with an explicit [skills.X] entry, or with another
@@ -236,7 +243,7 @@ func (c *Config) ExpandedSkillEntriesForTool(tool string) ([]NamedResource, erro
 }
 
 // ExpandedCommandEntriesForTool returns the effective commands for a tool:
-// explicit [commands.X] entries plus, for each [frameworks.<fw>]
+// explicit [commands.X] entries plus, for each [engines.<fw>]
 // source="builtin:<fw>" targeting the tool, its transitively expanded commands.
 // Each expanded command inherits the framework declaration's scope and targets.
 // A framework command whose name collides with an explicit [commands.X] entry,
@@ -252,7 +259,7 @@ func (c *Config) ExpandedCommandEntriesForTool(tool string) ([]NamedResource, er
 }
 
 // ExpandedSubagentEntriesForTool returns the effective subagents for a tool:
-// explicit [subagents.X] entries plus, for each [frameworks.<fw>]
+// explicit [subagents.X] entries plus, for each [engines.<fw>]
 // source="builtin:<fw>" targeting the tool, its transitively expanded
 // subagents. Each expanded subagent inherits the framework declaration's scope
 // and targets. A framework subagent whose name collides with an explicit

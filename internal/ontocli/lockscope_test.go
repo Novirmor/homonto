@@ -16,7 +16,7 @@ func TestLegacyLockCommandsIgnoreUnselectedOfflineRepo(t *testing.T) {
 	for _, version := range []int{0, 1} {
 		t.Run(fmt.Sprint(version), func(t *testing.T) {
 			root := prepWorkspace(t)
-			writeFile(t, filepath.Join(root, "homonto.toml"), fmt.Sprintf("schema_version=%d\n[frameworks.onto]\nsource='builtin:onto'\nscope='project'\n[repos]\noffline='missing-repo'\n", version))
+			writeFile(t, filepath.Join(root, "homonto.toml"), fmt.Sprintf("schema_version=%d\n[engines.onto]\nsource='builtin:onto'\nscope='project'\n[repos]\noffline='missing-repo'\n", version))
 			commitAll(t, root, "declare offline repository")
 			base := seedBaseBranch(t, root)
 			head, err := resolveCommit(root, "HEAD")
@@ -24,7 +24,7 @@ func TestLegacyLockCommandsIgnoreUnselectedOfflineRepo(t *testing.T) {
 				t.Fatal(err)
 			}
 			seedCloseState(t, root, ontostate.State{
-				Change: "local", Workflow: "tweak", Phase: "close", BaseRef: head, BaseBranch: base,
+				Change: "local", Workflow: "light", Phase: "close", BaseRef: head, BaseBranch: base,
 				Verify: ontostate.Verify{Result: "pass"}, CloseConfirmed: "reviewed", Integration: "merge",
 			})
 			checkoutChangeBranch(t, root, "local")
@@ -84,10 +84,10 @@ func TestLegacyLockCommandsStillRejectSelectedOfflineRepo(t *testing.T) {
 	for _, command := range []string{"merge-deltas", "complete-integration"} {
 		t.Run(command, func(t *testing.T) {
 			root := prepWorkspace(t)
-			writeFile(t, filepath.Join(root, "homonto.toml"), "schema_version=1\n[frameworks.onto]\nsource='builtin:onto'\nscope='project'\n[repos]\noffline='missing-repo'\n")
+			writeFile(t, filepath.Join(root, "homonto.toml"), "schema_version=1\n[engines.onto]\nsource='builtin:onto'\nscope='project'\n[repos]\noffline='missing-repo'\n")
 			base := seedBaseBranch(t, root)
 			st := ontostate.State{
-				Change: "scoped", Workflow: "tweak", Phase: "close", Repos: []string{"offline"},
+				Change: "scoped", Workflow: "light", Phase: "close", Repos: []string{"offline"},
 				Verify: ontostate.Verify{Result: "pass"}, CloseConfirmed: "reviewed", Integration: "pr", BaseBranch: base,
 			}
 			args := []string{command, "scoped", "--dir", root}

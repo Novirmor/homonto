@@ -33,13 +33,14 @@ exceeds the work.
 
 ## Per-task dispatch
 
-**Default path: serial. One task at a time in recorded execution order.**
+**Parallel across independent repositories; serial within each repository.**
 Follow [execution policy](../../homonto/references/execution.md) for a prerequisite
 override: record it before dispatch and keep task IDs/history intact.
 Two implementers on one branch share the working tree and Git
 index, so their edits and commits can race. The coordinator alone writes
-workflow and task records. Fan out implementers only under the legacy combined
-exception below; if the mode or ownership is uncertain, stay serial.
+workflow and task records. Give each implementer exactly one repository and
+readable context for all declared repositories. Follow the shared execution
+policy for isolation, candidate commits, integration checks and combined review.
 
 Follow the shared [workspace and dirty-work policy](../../homonto/references/workspace-policy.md).
 The coordinator supplies configRoot, records root, selected alias, validated
@@ -57,10 +58,9 @@ prompt contains:
 1. The task text verbatim (Owner, Repo, absolute Cwd, files, do, verify) from `plan.md`
 2. The relevant `design.md` section(s) — pasted, not summarized
 3. The isolation target: the exact branch (and worktree path, if any) to
-   work in — a fresh-context agent must never guess where to commit
-4. Conventions: one implementation commit containing only this task's assigned
-   source and test files, message style from recent
-   `git log`, match surrounding code idiom
+   work in — a fresh-context agent must never guess its writable checkout
+4. Conventions: edit only this task's assigned source and test files and match
+   surrounding code idiom; return edits, leaving commits to the coordinator
 5. The TDD rule in force (`tdd: tdd` → failing test first, watch it fail)
 6. The shared [debugging protocol](../../homonto/references/debugging.md), to use
    for unexpected failures. Paste it or provide a worker-readable absolute path;
@@ -69,7 +69,7 @@ prompt contains:
    records. Preserve the handed dotted task ID and its `[trace #N]` marker in
    the return; the coordinator records completion after verifying the task
 8. The shared [implementer return contract](../../homonto/references/execution.md#implementer-return),
-   pasted or at a worker-readable absolute path: assignment outcome, commit sha
+   pasted or at a worker-readable absolute path: assignment outcome, base and exact diff
    and diff summary, candidate-bound literal verification output, gaps and any
    **discovered work** (needed work outside this task's stated scope) — reported,
    never done. The coordinator appends each
@@ -87,7 +87,7 @@ in either existing or managed history mode. Read-only workers may fan out. Separ
 repos need disjoint write scopes and validated bindings, with coordinator
 bookkeeping serialized after verifying each return.
 
-## Legacy schema 0/1 combined parallel
+## Legacy schema 0/1 combined isolation
 
 Only for an existing combined source/records workflow using config schema 0 or 1
 (including an omitted schema version), `build_mode: subagent`,
@@ -96,12 +96,13 @@ legacy capability, not a fallback from the schema 2 allocator. A legacy state
 file under schema 2 does not enable it. Never downgrade configuration, switch
 tools, or use this protocol to work around a denial or a failed registered binding.
 
-All five conditions must hold, or stay serial:
+Same-repository assignments remain serial. When using legacy task worktrees,
+retain these isolation and integration conditions:
 
 - [ ] One **git worktree per implementer**, with a distinct branch and explicit
       committed base; never two writers in one working tree or index.
 - [ ] Implementers **do not touch `tasks.md`/`plan.md`** or workflow/state records;
-      they commit only their assigned source and test files.
+      the coordinator commits only their assigned source and test files.
 - [ ] The coordinator merges the worktree branches into the change branch
       **in plan order**, validating each returned source commit before joining.
 - [ ] The coordinator performs **every** bookkeeping checkoff and commit itself,
@@ -118,9 +119,9 @@ cleanup. Dirty input still requires the user's transport decision; never copy
 
 ## Coordinator duties after each return
 
-- **Verify against the repository, not the report**: the returned commit
-  sha exists (`git log`), its diff contains only assigned source and test files
-  with no task or workflow-state mutations, the working tree is clean, and the
+- **Verify against the repository, not the report**: the returned diff contains
+  only assigned source and test files with no task or workflow-state mutations.
+  The coordinator reviews and commits the candidate, checks the tree is clean, and the
   evidence covers the task's expected passing signal. Reuse it only under the
   shared candidate-bound verification policy; uncertain provenance or coverage
   requires a rerun, not a plausibility judgment.
@@ -133,7 +134,7 @@ cleanup. Dirty input still requires the user's transport decision; never copy
   no checkbox. The coordinator owns every workflow-state write through the
   binary and any required evidence recording. On resume, verify an existing
   implementation commit and finish its missing bookkeeping instead of
-  reimplementing it. For a legacy parallel batch, perform these checkoffs and
+  reimplementing it. For a legacy isolated batch, perform these checkoffs and
   bookkeeping commits serially after all ordered joins, before the next dispatch.
   Source commits and managed history remain separate.
 - A failed or half-done task is re-dispatched with the failure context after
@@ -156,7 +157,7 @@ Apply `receiving-code-review` discipline to the findings: verify each against th
 code before acting, and push back with evidence on a wrong one rather than
 implementing it blindly.
 
-For a legacy parallel batch, wait until the last join before these reviews;
+For a legacy isolated batch, wait until the last join before these reviews;
 review the integrated candidate, not a task tree still being written.
 
 ## Failure of the protocol itself

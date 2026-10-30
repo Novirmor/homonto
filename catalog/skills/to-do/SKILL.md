@@ -1,11 +1,11 @@
 ---
 name: to-do
-description: to phase 2 — do. Use when an active change has phase do — executes plan.md one task at a time through the implementer/reviewer loop, one implementer at a time with reviewers run concurrently, holding the code to onto-grade standards.
+description: to phase 2 — do. Executes plan.md through implementer/reviewer loops, parallel across repositories and serial within each checkout, holding code to onto-grade standards.
 ---
 
 # to-do — Phase 2: Do
 
-Execute the plan, one task at a time. This is the code-writing skill: the flow
+Execute the plan in dependency order, parallelizing independent repositories. This is the code-writing skill: the flow
 is simple, but the code written inside it is held to the full bar.
 Apply the shared [autonomous workflow policy](../homonto/references/autonomy.md),
 including workspace roots and dirty-work decisions, even on direct entry.
@@ -22,13 +22,14 @@ including workspace roots and dirty-work decisions, even on direct entry.
   If any contract field is missing or ambiguous, route to `to-plan` for repair
   without changing recorded do; never infer ownership merely from conversion.
 - On resume (fresh session, context loss): run `to handoff <name>` first, then
-   find the first executable unchecked task in `plan.md`, honoring recorded
-   prerequisites under the execution policy, and continue from there; never
+  find the first executable unchecked task in `plan.md`, honoring recorded
+  prerequisites under the execution policy, and continue from there; never
   redo completed tasks.
 
 ## The loop
 
-For each unchecked task in `plan.md`, in order:
+For each executable unchecked task in `plan.md`, respecting dependencies and
+serial order within its repository; independent repositories may run together:
 
 Route `Owner: coordinator` records tasks to the coordinator, however substantial.
 It edits and verifies those named workflow records serially and obtains read-only
@@ -36,16 +37,20 @@ review, then checkpoints/commits them in their records owner. Never ask a
 source-only implementer to edit records. Source tasks use the loop below.
 
 1. **Execute under the shared [dispatch policy](../homonto/references/execution.md#dispatch-capability).**
+   Apply shared [focused exploration](../homonto/references/execution.md#focused-exploration)
+   before dispatching implementation when ownership, call paths or impact remain
+   unclear. Reuse valid plan grounding; otherwise resolve the gap with `to-explorer`
+   rather than asking the implementer to invent the contract.
    When dispatch is available, send `to-implementer` the complete task verbatim: outcome,
    files and symbols, behavioral contract, verification command, and expected
    passing signal. Include any directly relevant conclusion from the plan's
-   grounding; do not silently add scope. One implementer at a time — **never in
-   parallel**: it is the only agent that edits, and `to` keeps a single working
-    tree per selected repo. Supply the exact source alias and validated execution
-    binding, plus the existing dirt decision; configRoot and records root are
-    not substitute source directories. Same-repo tasks are serial until
-    task-level bindings exist. Only the coordinator calls workspace/worktree
-    commands, and all workflow calls retain `--dir "<configRoot>"`.
+   grounding; do not silently add scope. One implementer per repository and one
+   writer per checkout; independent repositories may run in parallel under the
+   shared execution policy. Supply the exact source alias and validated execution
+   binding, plus the existing dirt decision; configRoot and records root are
+   not substitute source directories. Same-repo tasks are serial until
+   task-level bindings exist. Only the coordinator calls workspace/worktree
+   commands, and all workflow calls retain `--dir "<configRoot>"`.
    Supply the shared [implementer return contract](../homonto/references/execution.md#implementer-return)
    and [debugging protocol](../homonto/references/debugging.md), pasted or at a
    worker-readable absolute path; do not assume inherited context. The latter
@@ -61,7 +66,8 @@ source-only implementer to edit records. Source tasks use the loop below.
    at once with distinct lenses (correctness, security, completeness) rather
    than one after another. Always **after** the implementer returns, never
    alongside it: reviewing a tree still being written reviews nothing.
-4. **Act on findings.** Fix critical/major findings before moving on
+4. **Act on findings.** Apply shared [review triage](../homonto/references/review-triage.md).
+   Fix confirmed in-scope findings before moving on
    (re-dispatch the implementer for substantial fixes; apply trivial ones
    directly). Declined findings are recorded with a reason under `## Notes` in
    `plan.md` — never silently dropped.

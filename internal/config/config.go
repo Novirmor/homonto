@@ -144,7 +144,7 @@ func (s Subagent) ModelOverrideFor(tool string) ModelRoute {
 //
 // It exists because a framework's subagents may not be re-declared explicitly
 // (that collision is an error), which would otherwise leave no way at all to
-// retune the model of an agent you installed via [frameworks.*] — the main
+// retune the model of an agent you installed via [engines.*] — the main
 // reason to reach for an override. So
 //
 //	[subagents.onto-skeptic.opencode]
@@ -303,6 +303,8 @@ type Integrations struct {
 // OpenCodeIntegrations controls project-local OpenCode runtime integrations.
 // The V2 workflow context is the default for builtin workflow frameworks.
 type OpenCodeIntegrations struct {
+	// WorkflowBridge is a detector for the removed V1 bridge (ADR 0079): true
+	// fails at load; false is a no-op left over from the old opt-out advice.
 	WorkflowBridge  *bool `toml:"workflow_bridge"`
 	WorkflowContext *bool `toml:"workflow_context"`
 }
@@ -331,18 +333,27 @@ const CurrentConfigSchemaVersion = 2
 
 // Config is the tool-agnostic desired state parsed from homonto.toml.
 type Config struct {
+	Integration map[string]IntegrationCheck `toml:"integration"`
 	// SchemaVersion is the homonto.toml format version. Absent/0 means a legacy
 	// (pre-versioning) config and retains implicit-repository semantics; a value
 	// greater than CurrentConfigSchemaVersion is rejected fail-closed at load so
 	// an older binary never silently mis-applies a newer config.
-	SchemaVersion int                 `toml:"schema_version,omitempty"`
-	Workflow      Workflow            `toml:"workflow"`
-	Worktrees     Worktrees           `toml:"worktrees"`
-	MCPs          map[string]MCP      `toml:"mcps"`
-	Frameworks    map[string]Resource `toml:"frameworks"`
-	Skills        map[string]Resource `toml:"skills"`
-	Commands      map[string]Resource `toml:"commands"`
-	Subagents     map[string]Subagent `toml:"subagents"`
+	SchemaVersion int            `toml:"schema_version,omitempty"`
+	Workflow      Workflow       `toml:"workflow"`
+	Worktrees     Worktrees      `toml:"worktrees"`
+	MCPs          map[string]MCP `toml:"mcps"`
+	// Workflows provide user-facing coordination. Engines provide the work model
+	// and, when applicable, a companion binary. They are declared separately so
+	// a workflow such as h can be installed without an engine.
+	Workflows map[string]Resource `toml:"workflows"`
+	Engines   map[string]Resource `toml:"engines"`
+	// Frameworks is the normalized union of Workflows and Engines. It is kept
+	// internal to the config API while the projection pipeline is generalized;
+	// it is never decoded from a [frameworks] TOML table.
+	Frameworks map[string]Resource `toml:"-"`
+	Skills     map[string]Resource `toml:"skills"`
+	Commands   map[string]Resource `toml:"commands"`
+	Subagents  map[string]Subagent `toml:"subagents"`
 	// Repos maps code repository names to paths relative to this config file.
 	// Schema 0/1 implicitly includes the config repo and forbids listing it;
 	// schema 2 uses only explicit declarations and permits path ".".
@@ -370,13 +381,13 @@ type Config struct {
 	Agents       map[string]Agent `toml:"agents"`
 
 	// baseDir is the absolute directory of the homonto.toml this config was
-	// loaded from. It resolves a [frameworks.X] source="local:<path>" framework
+	// loaded from. It resolves a package source="local:<path>" root
 	// root relative to the config file, so local paths need not be threaded
 	// through the Expanded* method signatures. Empty for a config not built via
 	// Load (e.g. decode in tests): local frameworks then resolve relative to cwd.
 	baseDir string
 
-	// remoteFrameworkDirs maps a [frameworks.X] source="remote:<url>" name to the
+	// remoteFrameworkDirs maps a package source="remote:<url>" name to the
 	// verified cache dir the engine resolved through the remote trust pipeline
 	// (fetch → verify → digest-pin → revocation). The engine injects it via
 	// SetRemoteFrameworkDirs after resolution so FrameworkCatalog overlays a
@@ -390,20 +401,9 @@ type Config struct {
 	repoDirs map[string]string
 }
 
-// WorkflowBridgeEnabled reports whether the legacy V1 bridge was explicitly requested.
-func (c *Config) WorkflowBridgeEnabled() bool {
-	if c.Integrations.OpenCode.WorkflowBridge != nil {
-		return *c.Integrations.OpenCode.WorkflowBridge
-	}
-	return false
-}
-
 func (c *Config) WorkflowContextEnabled() bool {
 	if c.Integrations.OpenCode.WorkflowContext != nil {
 		return *c.Integrations.OpenCode.WorkflowContext
-	}
-	if c.WorkflowBridgeEnabled() {
-		return false
 	}
 	for _, framework := range c.Frameworks {
 		switch framework.Source {

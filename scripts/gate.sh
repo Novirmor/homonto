@@ -14,6 +14,10 @@ cd "$(dirname "$0")/.."
 work="$(mktemp -d)"
 trap 'rm -rf "$work"' EXIT
 
+# Tools built here use go.mod's pinned toolchain, the one build and test use.
+toolchain="$(sed -n 's/^toolchain //p' go.mod)"
+[ -n "$toolchain" ] || { echo "go.mod has no toolchain pin"; exit 1; }
+
 step() { printf '\n============================================================\n=== gate: %s\n============================================================\n' "$1"; }
 
 step "gofmt -l"
@@ -31,12 +35,12 @@ go vet ./...
 step "golangci-lint (.golangci.yml)"
 # Pinned like the toolchain so CI, release, and local runs lint identically.
 # A matching golangci-lint on PATH (`task tools`) skips the source build.
-# Keep in step with GOLANGCI_LINT_VERSION in Taskfile.yml.
+# This is the only pin; Taskfile.yml reads it from here.
 GOLANGCI_LINT_VERSION=2.12.2
 if command -v golangci-lint >/dev/null && golangci-lint version 2>/dev/null | grep -q "version $GOLANGCI_LINT_VERSION "; then
   golangci-lint run ./...
 else
-  GOTOOLCHAIN=go1.26.10 go run "github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v$GOLANGCI_LINT_VERSION" run ./...
+  GOTOOLCHAIN="$toolchain" go run "github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v$GOLANGCI_LINT_VERSION" run ./...
 fi
 
 step "go build ./..."
@@ -76,7 +80,7 @@ step "govulncheck ./..."
 # Pin the toolchain for the tool build too: with GOTOOLCHAIN=auto, x/vuln's own
 # go.mod can select a toolchain older than this module's pin, and a govulncheck
 # built that way cannot parse the pinned toolchain's stdlib sources.
-GOTOOLCHAIN=go1.26.10 go run golang.org/x/vuln/cmd/govulncheck@latest ./...
+GOTOOLCHAIN="$toolchain" go run golang.org/x/vuln/cmd/govulncheck@latest ./...
 
 step "triple-binary Docker E2E suites (including release-packaging smoke)"
 ./scripts/docker-test.sh

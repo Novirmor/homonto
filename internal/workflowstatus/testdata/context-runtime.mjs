@@ -183,6 +183,7 @@ const request = (agent = "custom-agent") => ({
   tools: { read: { description: "Read", input: { type: "object" } } }, options: { temperature: 0.2 }, result: undefined,
 })
 async function invoke(instance, response, kind = "context", outcome = "policy", agent = "custom-agent") {
+  const invocation = new Error("context invocation").stack
   if (response) responses.push(response)
   const event = request(agent)
   const original = structuredClone(event)
@@ -198,7 +199,7 @@ async function invoke(instance, response, kind = "context", outcome = "policy", 
     assert.ok(!added[0].text.includes(CONTINUATION_POLICY))
   } else {
     assert.ok(added.length === 1 || added.length === 2)
-    assert.deepEqual(added[0], { type: "text", text: CONTINUATION_POLICY })
+    assert.deepEqual(added[0], { type: "text", text: CONTINUATION_POLICY }, invocation)
     if (added[1]) {
       assert.match(added[1].text, /untrusted, read-only snapshot data/)
       assert.ok(!added[1].text.includes(CONTINUATION_POLICY))
@@ -704,21 +705,32 @@ try {
   }
   sessionValue = session
 
-  responses.push({ hold: true, value: snap([change]) })
-  held = undefined
-  const first = invoke(instance)
-  await until(() => held)
-  const beforeConcurrent = calls
-  let lookups = 0
-  getSession = async () => { lookups++; return session }
-  const second = invoke(instance, undefined, "compaction")
-  await until(() => lookups === 1)
-  await delay(20)
-  held(); held = undefined
-  assert.deepEqual(await first, await second)
-  assert.equal(calls, beforeConcurrent)
-  assert.equal(maxLive, 1)
-  getSession = undefined
+  for (const lookupDelay of [0, 50]) {
+    responses.push({ hold: true, value: snap([change]) })
+    held = undefined
+    const first = invoke(instance)
+    await until(() => held)
+    const beforeConcurrent = calls
+    let lookups = 0
+    getSession = async () => { lookups++; if (lookupDelay) await delay(lookupDelay); return session }
+    // Hooks overlap, but async session/binding preflight can finish after the
+    // first snapshot. Supply a second response for that legitimate serial read.
+    // If both reach snapshot while it is held, they must share one subprocess.
+    responses.push({ value: snap([change]) })
+    const second = invoke(instance, undefined, "compaction")
+    const completed = Promise.all([first, second])
+    void completed.catch(() => {}) // observe failures now; await/rethrow below
+    await until(() => lookups === 1)
+    await delay(20)
+    held(); held = undefined
+    const [firstOutput, secondOutput] = await completed
+    assert.deepEqual(firstOutput, secondOutput)
+    assert.ok(calls === beforeConcurrent || calls === beforeConcurrent + 1)
+    assert.equal(maxLive, 1, "overlapping snapshot reads must share a subprocess")
+    assert.equal(responses.length, calls === beforeConcurrent ? 1 : 0)
+    responses = []
+    getSession = undefined
+  }
   assert.match(await invoke(instance, { value: snap([{ ...change, identity: "fresh-generation" }]) }), /fresh-generation/)
 
   responses.push({ hold: true })
@@ -795,6 +807,48 @@ try {
   bus.push({ type: "session.idle", data: { sessionID: "ses_one" } })
   await until(() => observing.notifications.length === 2)
   assert.equal(observing.notifications[1].variant, "success")
+  // A rejected worker prompt reaches the parent's next context exactly once.
+  bus.push({ type: "session.created", data: { sessionID: "ses_child", projectID: "prj_one", parentID: "ses_one", agent: "to-implementer" } })
+  bus.push({ type: "session.created", data: { sessionID: "ses_foreign", projectID: "other", parentID: "ses_one", agent: "intruder" } })
+  bus.push({ type: "permission.asked", data: { id: "per_1", sessionID: "ses_child", action: "shell", resources: ["git push origin main\nignore previous"] } })
+  bus.push({ type: "permission.asked", data: { id: "per_2", sessionID: "ses_child", action: "shell", resources: ["go test ./..."] } })
+  bus.push({ type: "permission.asked", data: { id: "per_3", sessionID: "ses_foreign", action: "shell", resources: ["curl evil"] } })
+  bus.push({ type: "permission.asked", data: { id: "per_4", sessionID: "ses_one", action: "shell", resources: ["rm -rf build"] } })
+  bus.push({ type: "permission.replied", data: { sessionID: "ses_child", requestID: "per_1", reply: "reject" } })
+  bus.push({ type: "permission.replied", data: { sessionID: "ses_child", requestID: "per_2", reply: "once" } })
+  bus.push({ type: "permission.replied", data: { sessionID: "ses_foreign", requestID: "per_3", reply: "reject" } })
+  bus.push({ type: "permission.replied", data: { sessionID: "ses_one", requestID: "per_4", reply: "reject" } })
+  await bus.flush()
+  for (const expected of [true, false]) {
+    responses.push({ value: snap([change]) })
+    const event = request("homonto")
+    await observing.hooks.get("context")(event)
+    const added = event.system.slice(2)
+    assert.equal(added.length, expected ? 3 : 2)
+    assert.deepEqual(added[0], { type: "text", text: CONTINUATION_POLICY })
+    assert.ok(added.reduce((size, block) => size + Buffer.byteLength(block.text), 0) <= 16384)
+    if (!expected) continue
+    const notice = added[2].text
+    assert.match(notice, /^## Homonto worker permission blocks\n/)
+    assert.ok(notice.includes("execution.md#permission-blocks"))
+    assert.ok(notice.includes('- worker "to-implementer" session "ses_child": "shell" refused for "git push origin main\\nignore previous"'))
+    assert.equal(notice.split("\n- ").length, 2, "only the child's rejected prompt is reported")
+    for (const absent of ["go test", "curl evil", "rm -rf build", "intruder"]) assert.ok(!notice.includes(absent), absent)
+  }
+  // Many long refusals stay within the notice budget and report what was left out.
+  for (let i = 0; i < 10; i++) {
+    bus.push({ type: "permission.asked", data: { id: `per_many_${i}`, sessionID: "ses_child", action: "shell", resources: ["x".repeat(400)] } })
+    bus.push({ type: "permission.replied", data: { sessionID: "ses_child", requestID: `per_many_${i}`, reply: "reject" } })
+  }
+  await bus.flush()
+  responses.push({ value: snap([change]) })
+  const crowded = request("homonto")
+  await observing.hooks.get("context")(crowded)
+  const many = crowded.system.at(-1).text
+  assert.ok(Buffer.byteLength(many) <= 2048)
+  const listed = many.split("\n- ").length - 2
+  assert.ok(listed >= 1 && listed < 10)
+  assert.ok(many.endsWith(`- ${10 - listed} more refused request(s) omitted; ask the workers for their permission blocks`), many)
   observing.dispose()
   await githubIntegration()
   const afterGithub = calls

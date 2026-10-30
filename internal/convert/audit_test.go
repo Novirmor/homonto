@@ -29,40 +29,6 @@ func auditSource(t *testing.T, root, direction, name string) string {
 	return dir
 }
 
-func TestDemoteLegacyStateFilenameFreshAndResumed(t *testing.T) {
-	for _, resume := range []bool{false, true} {
-		t.Run(map[bool]string{false: "fresh", true: "resumed"}[resume], func(t *testing.T) {
-			root := t.TempDir()
-			src := auditSource(t, root, Demote, "legacy")
-			if err := os.Rename(filepath.Join(src, "onto-state.yaml"), filepath.Join(src, "state.yaml")); err != nil {
-				t.Fatal(err)
-			}
-			before, _ := digestActive(src)
-			ops := testOps()
-			if resume {
-				stg, m, _, err := findOrStage(specs[Demote], root, filepath.Join(root, "docs"), src, "legacy", "legacy", ops)
-				if err != nil {
-					t.Fatal(err)
-				}
-				if err := buildWork(specs[Demote], filepath.Join(stg, "work"), src, m); err != nil {
-					t.Fatal(err)
-				}
-			}
-			if _, err := Run(Demote, root, "legacy", "legacy", ops); err != nil {
-				t.Fatal(err)
-			}
-			restored, err := Run(Promote, root, "legacy", "legacy", ops)
-			if err != nil {
-				t.Fatal(err)
-			}
-			after, err := digestActive(restored)
-			if err != nil || before != after {
-				t.Fatalf("legacy snapshot changed: %s != %s, %v", before, after, err)
-			}
-		})
-	}
-}
-
 func TestConversionNamesAndConsumedReceipts(t *testing.T) {
 	for _, direction := range []string{Promote, Demote} {
 		for _, scenario := range []string{"sibling", "target", "archive", "reused-source", "reused-identical-source", "retry", "staged-reused-source"} {

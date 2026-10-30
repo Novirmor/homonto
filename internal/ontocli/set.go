@@ -84,6 +84,44 @@ func enumSetterCmd(field string, allowed []string, set func(*ontostate.State, st
 	return cmd
 }
 
+// lightFullScale refuses full verification inside a light change: light never
+// runs skeptics, so work that needs full verification escalates to the full
+// workflow instead (ADR 0078).
+func lightFullScale(command, name string, st ontostate.State) error {
+	if st.Workflow != "light" {
+		return nil
+	}
+	return fmt.Errorf("%s: %q is a light change, which verifies at light scale only; escalate it with `onto set workflow %s full`", command, name, name)
+}
+
+// verifyScaleCmd is the verify-scale enum setter plus the light guard, checked
+// inside the same transition that writes the field.
+func verifyScaleCmd() *cobra.Command {
+	var dir string
+	cmd := &cobra.Command{
+		Use:   "verify-scale <change> <value>",
+		Short: "Set the verify-scale field of a change",
+		Args:  cobra.ExactArgs(2),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			name, value := args[0], args[1]
+			return runTransition(cmd, dir, name, func(st *ontostate.State) error {
+				if value != "light" && value != "full" {
+					return fmt.Errorf("onto set verify-scale: %q is not one of [light full]", value)
+				}
+				if value == "full" {
+					if err := lightFullScale("onto set verify-scale", name, *st); err != nil {
+						return err
+					}
+				}
+				st.Verify.Scale = value
+				return nil
+			})
+		},
+	}
+	cmd.Flags().StringVar(&dir, "dir", ".", "workspace root containing the change")
+	return cmd
+}
+
 // setCmd builds the "onto set" parent with one semantic subcommand per gated
 // field. Each subcommand owns its field's allowed set.
 func setCmd() *cobra.Command {
@@ -99,8 +137,7 @@ func setCmd() *cobra.Command {
 		func(s *ontostate.State, v string) { s.BuildMode = v }))
 	cmd.AddCommand(enumSetterCmd("tdd-mode", []string{"tdd", "direct"},
 		func(s *ontostate.State, v string) { s.TDDMode = v }))
-	cmd.AddCommand(enumSetterCmd("verify-scale", []string{"light", "full"},
-		func(s *ontostate.State, v string) { s.Verify.Scale = v }))
+	cmd.AddCommand(verifyScaleCmd())
 	cmd.AddCommand(verifyResultCmd())
 	cmd.AddCommand(enumSetterCmd("build-pause", []string{"plan-ready", "clear"},
 		func(s *ontostate.State, v string) {
@@ -301,7 +338,7 @@ func workflowCmd() *cobra.Command {
 	var dir string
 	cmd := &cobra.Command{
 		Use:   "workflow <change> full",
-		Short: "Upgrade a fix or tweak preset to the full workflow",
+		Short: "Upgrade a light change to the full workflow",
 		Args:  cobra.ExactArgs(2),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			name, workflow := args[0], args[1]
@@ -312,7 +349,7 @@ func workflowCmd() *cobra.Command {
 				if st.Workflow == "full" || st.Workflow == "" {
 					return nil
 				}
-				if st.Workflow != "fix" && st.Workflow != "tweak" {
+				if st.Workflow != "light" {
 					return fmt.Errorf("onto set workflow: cannot upgrade workflow %q", st.Workflow)
 				}
 				st.Workflow = "full"

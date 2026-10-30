@@ -86,14 +86,14 @@ type RenderContext struct {
 	// allows. Protected asks and trusted-shell denies also cover RTK without it.
 	ShellProxy string
 	// ExternalDirectoriesByAgent names the resolved workspace directories that each
-	// bundled writable workflow role may access. The engine owns this map so a
+	// bundled role may access; read-only roles retain shell/edit denials. The engine owns this map so a
 	// custom agent cannot self-grant access by declaring frontmatter.
 	ExternalDirectoriesByAgent map[string][]string
 	// ExternalDirectoryDeniesByAgent excludes coordinator-owned records even
 	// when they lie beneath an otherwise trusted source root. Denies render last.
 	ExternalDirectoryDeniesByAgent map[string][]string
-	// EditDirectoryDeniesByAgent additionally carries worktree-relative paths,
-	// which native edit/write/apply_patch use instead of absolute paths.
+	// EditDirectoryDeniesByAgent additionally carries V2 location-relative paths
+	// used for internal edits instead of the absolute external-path form.
 	EditDirectoryDeniesByAgent map[string][]string
 	// Targets names actually projected to this tool. It lets materialization skip
 	// an unselected tool variant without weakening validation for selected agents.
@@ -285,10 +285,14 @@ func Render(name string, content []byte, tool string, ctx *RenderContext) ([]byt
 		if h.BashDefault == "allow" || (ctx != nil && ctx.ShellProxy == "rtk") {
 			h.BashDeny = rtkPatterns(h.BashDeny, true)
 		}
+		roles, err := BuiltinRoles()
+		if err != nil {
+			return nil, err
+		}
 		if perm := opencodePermission(h, spec.BashAllowAdd, externalDirectories, externalDirectoryDenies, editDirectoryDenies, managesExternalDirectories); perm != "" {
-			if name == "homonto" || strings.HasPrefix(name, "onto-") || strings.HasPrefix(name, "to-") || name == "h-spike" || name == "h-review" {
+			if role, builtin := roles[name]; builtin {
 				action := "deny"
-				if name == "homonto" && !h.ReadOnly && (h.Bash == nil || *h.Bash) {
+				if role.Coordinator && !h.ReadOnly && (h.Bash == nil || *h.Bash) {
 					action = "allow"
 				}
 				for _, tool := range []string{"homonto_status", "homonto_handoff", "homonto_read", "homonto_github_draft", "homonto_github_status", "homonto_github_publish", "homonto_github_read"} {
@@ -427,7 +431,7 @@ func opencodePermission(h Homonto, additions, externalDirectories, externalDirec
 		}
 		lines = append(lines, "  webfetch: "+action, "  websearch: "+action)
 	}
-	if !h.ReadOnly && managesExternalDirectories {
+	if managesExternalDirectories {
 		lines = append(lines, "  external_directory:")
 		// Agent rules override inherited global permissions. Deny everything
 		// outside the declared paths before re-allowing those trusted roots.

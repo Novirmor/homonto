@@ -100,6 +100,16 @@ func migrate(c *Config) {
 
 // normalize applies defaulting so downstream projection sees concrete values.
 func normalize(c *Config) {
+	// The old [frameworks.*] table is deliberately not decoded. Keep a single
+	// effective package set for projection internals while public configuration
+	// distinguishes workflows from engines.
+	c.Frameworks = make(map[string]Resource, len(c.Workflows)+len(c.Engines))
+	for name, r := range c.Workflows {
+		c.Frameworks[name] = r
+	}
+	for name, r := range c.Engines {
+		c.Frameworks[name] = r
+	}
 	// Subagents default to project scope when omitted (skills and commands still
 	// require an explicit scope). Normalize before validation so downstream
 	// projection sees a concrete scope. Model-route values are whitespace-trimmed

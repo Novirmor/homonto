@@ -1,8 +1,6 @@
 #!/bin/sh
-# Suite: h-surface — the h GitHub-intake framework applied alone: transitive
-# onto/to installation, command and skill projection, rendered worker
-# permissions (edit/bash/task denied, web allowed), trusted workspace execution,
-# and both binaries' gates accepting an applied [frameworks.h].
+# Suite: h-surface — the standalone h GitHub workflow: its command and worker
+# projection, rendered worker permissions, and rejection by engine binary gates.
 set -eu
 SUITE=h-surface
 . "$(dirname "$0")/lib.sh"
@@ -14,11 +12,8 @@ git config user.email e2e@example.com
 git config user.name e2e
 
 cat > homonto.toml <<'EOF'
-# h alone: it depends on onto and to in the catalog, so applying it must
-# transitively install both frameworks and every expanded agent needs an
-# explicit model block (ADR 0045: one shared homonto primary, no onto/to
-# primary blocks exist anymore).
-[frameworks.h]
+# h alone installs only its own shared coordinator and read-only workers.
+[workflows.h]
 source = "builtin:h"
 scope = "project"
 
@@ -28,35 +23,21 @@ model = "anthropic/claude-opus-4-8"
 model = "openai/gpt-5-mini"
 [subagents.h-review.opencode]
 model = "anthropic/claude-opus-4-8"
-[subagents.onto-explorer.opencode]
-model = "openai/gpt-5-mini"
-[subagents.onto-reviewer.opencode]
-model = "anthropic/claude-opus-4-8"
-[subagents.onto-implementer.opencode]
-model = "anthropic/claude-sonnet-4"
-[subagents.onto-skeptic.opencode]
-model = "anthropic/claude-opus-4-8"
-[subagents.to-explorer.opencode]
-model = "openai/gpt-5-mini"
-[subagents.to-reviewer.opencode]
-model = "anthropic/claude-opus-4-8"
-[subagents.to-implementer.opencode]
-model = "anthropic/claude-sonnet-4"
-[subagents.to-skeptic.opencode]
-model = "anthropic/claude-opus-4-8"
 EOF
 
-log "homonto apply installs h plus both transitive frameworks"
+log "homonto apply installs only standalone h resources"
 "$HOMONTO" apply --yes >/dev/null
-is_dir "$W/.homonto/catalog/skills/onto"
-is_dir "$W/.homonto/catalog/skills/to"
-for c in h-spike-issue h-resolve-issue h-review-pr h-continue-pr h-review-batch; do
+test ! -e "$W/.homonto/catalog/skills/onto" || fail "h must not install onto"
+test ! -e "$W/.homonto/catalog/skills/to" || fail "h must not install to"
+for c in h-spike-issue h-resolve-issue h-review-pr h-continue-pr h-resolve-conflicts h-review-batch; do
 	is_link "$W/.opencode/command/$c.md"; is_file "$W/.opencode/command/$c.md"
 done
-ok "h commands project; onto and to materialize transitively"
+is_file "$W/.homonto/catalog/skills/h-resolve-conflicts/SKILL.md"
+in_file "$W/.homonto/catalog/skills/h-resolve-conflicts/SKILL.md" 'conflict-resolution-only'
+ok "h commands project without onto or to"
 
 log "read-only workers allow supporting web research without write or shell access"
-for worker in h-spike h-review onto-explorer onto-reviewer onto-skeptic to-explorer to-reviewer to-skeptic; do
+for worker in h-spike h-review; do
 	RVAR="$W/.homonto/catalog/subagents/$worker.opencode.md"
 	in_file "$RVAR" '  edit: deny'
 	in_file "$RVAR" '  bash: deny'
@@ -71,14 +52,24 @@ PVAR="$W/.homonto/catalog/subagents/homonto.opencode.md"
 in_file "$PVAR" 'mode: primary'
 in_file "$PVAR" '  webfetch: allow'
 in_file "$PVAR" '  websearch: allow'
-# Trusted shell has finite publication/destruction exceptions, not composition
-# guards. in_file regex-matches (BRE): escape the literal asterisks.
-in_file "$PVAR" '"git push \*": ask'
-in_file "$PVAR" '"gh pr comment\*": ask'
+# ADR 0070 trusts ordinary coordinator delivery; protected operations still ask.
+# in_file regex-matches (BRE): escape the literal asterisks.
+in_file "$PVAR" '"git push --force\*": ask'
+in_file "$PVAR" '"git push --delete\*": ask'
+in_file "$PVAR" '"gh pr merge\*": ask'
 in_file "$PVAR" '"onto bypass\*": ask'
 in_file "$PVAR" '"to bypass\*": ask'
+for prefix in '' 'rtk ' 'rtk proxy '; do
+	for pattern in 'git push *' 'gh pr comment*' 'gh pr create*' 'gh api*' 'gh run rerun*'; do
+		for action in ask deny; do
+			if grep -Fq "\"${prefix}${pattern}\": $action" "$PVAR"; then
+				fail "coordinator routine delivery must inherit allow: ${prefix}${pattern}"
+			fi
+		done
+	done
+done
 is_link "$W/.opencode/agent/homonto.md"; is_file "$W/.opencode/agent/homonto.md"
-for agent in homonto onto-implementer to-implementer; do
+for agent in homonto; do
 	RVAR="$W/.homonto/catalog/subagents/$agent.opencode.md"
 	in_file "$RVAR" '  webfetch: allow'
 	in_file "$RVAR" '  websearch: allow'
@@ -86,26 +77,13 @@ for agent in homonto onto-implementer to-implementer; do
 	in_file "$RVAR" '"rm -r\*": ask'
 	in_file "$RVAR" '"rtk proxy rm -r\*": ask'
 	if grep -q '"\*;\*": ask' "$RVAR"; then fail "trusted shell must not retain composition guards"; fi
-	if [ "$agent" != homonto ]; then
-		in_file "$RVAR" '"onto \*": deny'
-		in_file "$RVAR" '"to \*": deny'
-		in_file "$RVAR" '"homonto \*": deny'
-		in_file "$RVAR" '"gh pr comment\*": deny'
-		in_file "$RVAR" '"gh api\*": deny'
-		in_file "$RVAR" '"git push \*": deny'
-		in_file "$RVAR" '"rtk proxy git push \*": deny'
-		in_file "$RVAR" '  task: deny'
-		in_file "$RVAR" '  question: deny'
-	fi
 done
 ok "trusted general shell allowed; worker write and publishing boundaries retained"
 
-log "an applied h satisfies both workflow gates"
-"$ONTO" init >/dev/null
-is_dir "$W/docs/changes"
-"$TO" init >/dev/null
-is_dir "$W/docs/tasks"
-ok "onto init and to init accept [frameworks.h]"
+log "an applied h does not satisfy engine binary gates"
+if "$ONTO" init >/dev/null 2>&1; then fail "onto accepted h without [engines.onto]"; fi
+if "$TO" init >/dev/null 2>&1; then fail "to accepted h without [engines.to]"; fi
+ok "onto and to require their own engine declarations"
 
 log "re-apply is idempotent"
 out="$("$HOMONTO" apply --yes 2>&1)"; printf '%s\n' "$out"

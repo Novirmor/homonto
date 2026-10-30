@@ -439,7 +439,7 @@ func TestDemotionRefusesUnsupportedSourceFormatsBeforeWrites(t *testing.T) {
 	} {
 		t.Run(strings.ReplaceAll(fields, "\n", "/"), func(t *testing.T) {
 			root := t.TempDir()
-			provenanceWrite(t, filepath.Join(root, "docs", "changes", "cross", "onto-state.yaml"), "change: cross\nphase: open\n"+fields)
+			provenanceWrite(t, filepath.Join(root, "docs", "changes", "cross", "onto-state.yaml"), "schema_version: 3\nchange: cross\nphase: open\n"+fields)
 			before := provenanceTree(t, root)
 			if _, err := Run(Demote, root, "cross", "cross", testOps()); err == nil {
 				t.Fatal("unsupported format accepted")

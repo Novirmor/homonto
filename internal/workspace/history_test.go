@@ -333,8 +333,8 @@ func TestCommandMutationScopeSelectsOnlyCurrentOperation(t *testing.T) {
 	if !reflect.DeepEqual(s, want) {
 		t.Fatalf("spec write set = %+v, want %+v", s, want)
 	}
-	historyWrite(t, filepath.Join(l.WorkflowRoot, "changes/one/onto-state.yaml"), "change: one\n")
-	historyWrite(t, filepath.Join(l.WorkflowRoot, "changes/archive/2026-01-01-one/onto-state.yaml"), "change: one\n")
+	historyWrite(t, filepath.Join(l.WorkflowRoot, "changes/one/onto-state.yaml"), "schema_version: 3\nchange: one\n")
+	historyWrite(t, filepath.Join(l.WorkflowRoot, "changes/archive/2026-01-01-one/onto-state.yaml"), "schema_version: 3\nchange: one\n")
 	s, err = commandMutationScope(l, cmd, "onto", "close", []string{"one"})
 	if err != nil {
 		t.Fatal(err)

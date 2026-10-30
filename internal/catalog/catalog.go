@@ -20,6 +20,7 @@ import (
 // Framework is one catalog framework's parsed metadata.
 type Framework struct {
 	Name         string
+	Kind         string // "workflow" or "engine" for shipped packages
 	Version      string
 	Description  string
 	Dependencies []string // framework names (version constraints stripped)
@@ -73,6 +74,7 @@ const CurrentManifestSchemaVersion = 1
 type frameworkTOML struct {
 	ManifestSchema int    `toml:"manifest_schema"`
 	Name           string `toml:"name"`
+	Kind           string `toml:"kind"`
 	Version        string `toml:"version"`
 	Description    string `toml:"description"`
 	Dependencies   struct {
@@ -97,7 +99,7 @@ func New() (*Catalog, error) { return Load(embedded.FS) }
 // NewWithLocal loads the production catalog from the embedded filesystem, then
 // merges each local single-framework root in locals (keyed by framework name).
 // It is LoadWithLocal with the embedded base, the constructor a config uses to
-// resolve its [frameworks.X] source="local:<path>" entries.
+// resolve its [engines.X] source="local:<path>" entries.
 func NewWithLocal(locals map[string]fs.FS) (*Catalog, error) {
 	return LoadWithLocal(embedded.FS, locals)
 }
@@ -301,7 +303,7 @@ func (c *Catalog) mergeSource(src fs.FS) error {
 		c.skillFS[name] = src
 	}
 	// Bundled plugins: every plugins/<name>/ entry holding a plugin entry
-	// file (plugin.ts) is indexed like a skill directory — owned catalog
+	// file (index.ts) is indexed like a skill directory — owned catalog
 	// content, materialized and version-gated, but never auto-enabled.
 	pluginEntries, err := readOptionalDir("plugins")
 	if err != nil {
@@ -316,8 +318,8 @@ func (c *Catalog) mergeSource(src fs.FS) error {
 			continue // a framework or earlier source already declares it
 		}
 		sp := path.Join("plugins", name)
-		if _, err := fs.Stat(src, path.Join(sp, "plugin.ts")); err != nil {
-			continue // a plugin directory must hold a plugin.ts
+		if _, err := fs.Stat(src, path.Join(sp, "index.ts")); err != nil {
+			continue // a plugin directory must hold an index.ts
 		}
 		c.plugins[name] = sp
 		c.pluginFS[name] = src
@@ -440,7 +442,7 @@ func (c *Catalog) indexFramework(name string, src fs.FS, ft frameworkTOML) error
 		if err := validResourceName("plugin", plugin); err != nil {
 			return err
 		}
-		if _, err := fs.Stat(src, path.Join(pp, "plugin.ts")); err != nil {
+		if _, err := fs.Stat(src, path.Join(pp, "index.ts")); err != nil {
 			return fmt.Errorf("catalog: framework %q plugin %q path %q missing from catalog", name, plugin, pp)
 		}
 		if prev, ok := c.plugins[plugin]; ok {
@@ -477,6 +479,7 @@ func (c *Catalog) indexFramework(name string, src fs.FS, ft frameworkTOML) error
 	c.frameworks[name] = Framework{
 		srcFS:                 src,
 		Name:                  ft.Name,
+		Kind:                  ft.Kind,
 		Version:               ft.Version,
 		Description:           ft.Description,
 		Dependencies:          depNames,

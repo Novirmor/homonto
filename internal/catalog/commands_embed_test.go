@@ -218,7 +218,7 @@ func TestWorkflowPromptsDefaultToAutonomousContinuation(t *testing.T) {
 		"skills/onto/SKILL.md", "skills/onto-open/SKILL.md",
 		"skills/onto-design/SKILL.md", "skills/onto-build/SKILL.md",
 		"skills/onto-verify/SKILL.md", "skills/onto-close/SKILL.md",
-		"skills/onto-fix/SKILL.md", "skills/onto-tweak/SKILL.md",
+		"skills/onto-light/SKILL.md",
 	} {
 		content, err := fs.ReadFile(embedded.FS, file)
 		if err != nil {
@@ -390,13 +390,13 @@ func TestWorkflowRecoveryAndPresetTransitionsAreExecutable(t *testing.T) {
 			t.Errorf("onto dispatcher missing mismatch/upgrade instruction %q", want)
 		}
 	}
-	for _, file := range []string{"skills/onto-fix/SKILL.md", "skills/onto-tweak/SKILL.md"} {
+	for _, file := range []string{"skills/onto-light/SKILL.md"} {
 		content, err := fs.ReadFile(embedded.FS, file)
 		if err != nil {
 			t.Fatal(err)
 		}
 		text := strings.Join(strings.Fields(string(content)), " ")
-		for _, want := range []string{"only at recorded build to enter verify", "when recorded phase is open or design", "without fake phase hops", "onto-verify`'s scale and risk check", "set workflow <name> full"} {
+		for _, want := range []string{"only at recorded build to enter verify", "when recorded phase is open or design", "without fake phase hops", "Light verification never dispatches a skeptic", "set workflow <name> full"} {
 			if !strings.Contains(text, want) {
 				t.Errorf("%s missing executable preset transition %q", file, want)
 			}

@@ -53,35 +53,20 @@ leader = "ctrl+x"
 	}
 }
 
-func TestOpenCodeCLILegacyMappings(t *testing.T) {
-	c, err := loadDocCfg(t, `[tui.opencode]
-theme = "gruvbox"
-scroll_speed = 3
-scroll_acceleration = { enabled = false }
-leader_timeout = 1500
-`)
-	if err != nil {
-		t.Fatal(err)
-	}
-	got, err := OpenCodeCLISettings(c.TUI.OpenCode)
-	want := map[string]any{"theme.name": "gruvbox", "scroll.speed": int64(3), "scroll.acceleration": false, "leader.timeout": int64(1500)}
-	if err != nil || !reflect.DeepEqual(got, want) {
-		t.Fatalf("legacy conversion = %#v, %v; want %#v", got, err, want)
-	}
-	if c.TUI.OpenCode["theme"] != "gruvbox" || c.TUI.OpenCode["scroll_speed"] != int64(3) {
-		t.Fatal("normalization mutated the TOML surface")
-	}
-	for _, doc := range []string{
-		"scroll_speed = 3\nscroll = { speed = 3 }",
-		"scroll_acceleration = { enabled = true }\nscroll = { acceleration = false }",
-		"leader_timeout = 2000\nleader = { timeout = 1000 }",
+// The OpenCode 1 spellings fail at load and name their V2 key (ADR 0081).
+func TestOpenCodeCLIRejectsV1Spellings(t *testing.T) {
+	for doc, want := range map[string]string{
+		`theme = "gruvbox"`:                        "declare theme.name instead",
+		"scroll_speed = 3":                         "declare scroll.speed instead",
+		"scroll_acceleration = { enabled = true }": "declare scroll.acceleration instead",
+		"leader_timeout = 1500":                    "declare leader.timeout instead",
 	} {
-		if err := loadDoc(t, "[tui.opencode]\n"+doc); err == nil || !strings.Contains(err.Error(), "declare only one") {
-			t.Fatalf("ambiguous declarations accepted: %s: %v", doc, err)
+		if err := loadDoc(t, "[tui.opencode]\n"+doc); err == nil || !strings.Contains(err.Error(), want) {
+			t.Errorf("%s: err = %v, want %q", doc, err, want)
 		}
 	}
-	if err := loadDoc(t, "[tui.opencode]\nscroll_speed = 3\nscroll = { acceleration = true }"); err != nil {
-		t.Fatalf("nonconflicting legacy/native mix rejected: %v", err)
+	if err := loadDoc(t, "[tui.opencode]\ntheme = { name = \"gruvbox\" }\nscroll = { speed = 3 }"); err != nil {
+		t.Fatalf("V2 spellings rejected: %v", err)
 	}
 }
 

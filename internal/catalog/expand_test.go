@@ -193,13 +193,8 @@ func TestWorkflowFrameworksInstallSharedHomontoKnowledge(t *testing.T) {
 	}
 }
 
-// TestHFrameworkInstallsBothWorkflowsAndItsOwnResources pins the h
-// companion's dependency surface: expanding h transitively yields onto's and
-// to's resources plus the five h skills/commands, the shared homonto
-// primary, and exactly the two read-only workers. The workflow binaries'
-// gates accept an applied [frameworks.h] on the strength of exactly this
-// expansion (workcli.Framework.GateAliases).
-func TestHFrameworkInstallsBothWorkflowsAndItsOwnResources(t *testing.T) {
+// TestHWorkflowInstallsOnlyItsOwnResources pins h's standalone surface.
+func TestHWorkflowInstallsOnlyItsOwnResources(t *testing.T) {
 	c, err := New()
 	if err != nil {
 		t.Fatal(err)
@@ -210,9 +205,8 @@ func TestHFrameworkInstallsBothWorkflowsAndItsOwnResources(t *testing.T) {
 	}
 	wantSkills := map[string]bool{
 		"h-spike-issue": false, "h-resolve-issue": false, "h-review-pr": false,
-		"h-continue-pr": false, "h-review-batch": false,
-		"homonto": false, "onto": false, "to": false,
-		"onto-fix": false, "to-plan": false,
+		"h-continue-pr": false, "h-resolve-conflicts": false, "h-review-batch": false,
+		"homonto": false,
 	}
 	for _, skill := range skills {
 		if seen, ok := wantSkills[skill.Name]; ok {
@@ -235,7 +229,7 @@ func TestHFrameworkInstallsBothWorkflowsAndItsOwnResources(t *testing.T) {
 	for _, s := range subs {
 		got[s.Name] = true
 	}
-	for _, want := range []string{"homonto", "h-spike", "h-review", "onto-implementer", "to-skeptic"} {
+	for _, want := range []string{"homonto", "h-spike", "h-review"} {
 		if !got[want] {
 			t.Errorf("h expansion missing subagent %q (got %v)", want, got)
 		}
@@ -253,7 +247,7 @@ func TestHFrameworkInstallsBothWorkflowsAndItsOwnResources(t *testing.T) {
 	for _, cmd := range cmds {
 		gotCmds[cmd.Name] = true
 	}
-	for _, want := range []string{"h-spike-issue", "h-resolve-issue", "h-review-pr", "h-continue-pr", "h-review-batch", "onto", "to"} {
+	for _, want := range []string{"h-spike-issue", "h-resolve-issue", "h-review-pr", "h-continue-pr", "h-resolve-conflicts", "h-review-batch"} {
 		if !gotCmds[want] {
 			t.Errorf("h expansion missing command %q", want)
 		}

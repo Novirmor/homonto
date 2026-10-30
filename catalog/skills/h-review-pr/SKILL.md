@@ -41,13 +41,13 @@ below without an extra approval dialog; context validation remains required.
 3. **Build the context pack** exactly per
    [`references/context-pack.md`](references/context-pack.md): metadata,
    paginated review threads, diff, linked issues, checks, and the repository
-    match. Confirm renamed/transferred origins through canonical repository IDs
-    before declaring a mismatch. Materialize and validate the worker-readable
-    pack; use the shared bounded retry and pinned local-diff fallback for
-    transient failures. Incomplete pagination is a blocker, not a warning.
+   match. Confirm renamed/transferred origins through canonical repository IDs
+   before declaring a mismatch. Materialize and validate the worker-readable
+   pack; use the shared bounded retry and pinned local-diff fallback for
+   transient failures. Incomplete pagination is a blocker, not a warning.
 4. **Checkout only if needed.** Prefer reviewing from the fetched pack and
    repository at HEAD. Check out the PR (`gh pr checkout NUMBER --repo
-    HOST/OWNER/REPO`) only to inspect surrounding code or verify a suspected
+   HOST/OWNER/REPO`) only to inspect surrounding code or verify a suspected
    issue — and only over a clean tree; never use `git reset`, `--amend`, or
    force operations. Inspect and present exact dirty paths under the shared
    workspace policy; honor an existing preserve/isolate/cleanup decision, or ask
@@ -61,18 +61,18 @@ below without an extra approval dialog; context validation remains required.
    without bypass; if required checks cannot run, report the verification gap
    and review statically where useful, never invent passing evidence.
 5. **Dispatch `h-review`.** Hand the worker the whole pack: absolute manifest
-    and component paths, pinned refs, source path, and review lens, not a summary
-    or a pointer to earlier tool output. Dispatch only a ready pack. Dispatch a
+   and component paths, pinned refs, source path, and review lens, not a summary
+   or a pointer to earlier tool output. Dispatch only a ready pack. Dispatch a
    second worker with a distinct lens (security, contract, tests) when the
    PR warrants it — workers are read-only, so concurrent dispatch is safe.
    Resolve their `Questions:` by fetching what is missing and re-dispatching
-    against the completed pack. The worker has no shell: the coordinator runs
-    any required `git show` or other probes and attaches full pinned output.
+   against the completed pack. The worker has no shell: the coordinator runs
+   any required `git show` or other probes and attaches full pinned output.
 6. **Validate and dedupe.** Confirm each finding's file and line exist in
    the fetched diff, and fold findings that existing unresolved threads
-    already cover into a single confirmed item. Require the worker's Context
-    used report to identify the pack it actually read. A missing-context return
-    is not a completed review. Drop what does not survive.
+   already cover into a single confirmed item. Require the worker's Context
+   used report to identify the pack it actually read. A missing-context return
+   is not a completed review. Drop what does not survive.
 7. **Draft** per [`references/draft-format.md`](references/draft-format.md)
    and show it. Drafts and comment bodies are transient files: write them
    under the workspace tmp directory when the shared `homonto` skill's
@@ -81,9 +81,9 @@ below without an extra approval dialog; context validation remains required.
    the summary comment / (only if the user names it) submit a formal review
    with a chosen mode. No approval, no posting.
 9. **Post if approved**, after the shared context-pack publication-freshness
-    check. Revalidate identity/state and base/head OIDs; changed refs require a
-    new review and draft approval. A summary comment uses a body file naming
-    the reviewed OIDs:
+   check. Revalidate identity/state and base/head OIDs; changed refs require a
+   new review and draft approval. A summary comment uses a body file naming
+   the reviewed OIDs:
 
    ```bash
    gh pr comment NUMBER --repo HOST/OWNER/REPO --body-file COMMENT_FILE

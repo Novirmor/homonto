@@ -5,6 +5,128 @@ release page for a tag shows only that release's notes
 ([`docs/release-notes.md`](docs/release-notes.md)) plus the generated commit
 list. Release candidates are folded into their stable release.
 
+## Unreleased
+
+- **Breaking: only the live version is supported (ADR 0081).**
+  - `homonto workspace migrate` is removed, along with migration-adopted
+    worktree bindings and retired-record handling. A registry entry adopted by
+    the migration now fails with the fix.
+  - onto reads only `onto-state.yaml` at the current `schema_version`.
+    Unversioned or older state files, a lone pre-binary `state.yaml`, and the
+    `fix`/`tweak` workflow values fail and say to finish the change with the
+    release that created it.
+  - OpenCode 2 only: OpenCode 1's `tui.json` is no longer read, and the V1 TUI
+    spellings (`theme = "x"`, `scroll_speed`, `scroll_acceleration`,
+    `leader_timeout`) fail at load and name their V2 key.
+- **Breaking: the OpenCode 1 workflow plugin is removed (ADR 0079).**
+  `integrations.opencode.workflow_bridge = true` and an enabled
+  `source = "homonto-workflow"` plugin declaration now fail at load; use
+  `workflow_context`, on by default with onto, to, or h. A leftover
+  `workflow_bridge = false` is ignored. `homonto apply` removes a stale owned
+  `.opencode/plugins/homonto-workflow.ts` link. Bundled plugins drop their V1
+  `plugin.ts` entrypoints.
+- **Breaking: `onto fix` and `onto tweak` are now one preset, `onto light`
+  (ADR 0078).** Use `onto new --workflow light` and `/onto-light`; the `fix`
+  and `tweak` workflow values, skills, and commands are removed. The preset
+  classifies the request itself: a bug still starts from a failing
+  reproduction test. **Light never runs a skeptic.** A light change that
+  measures over five non-test files, adds a capability, or touches a
+  security-sensitive surface escalates to full onto, and `onto set
+  verify-scale` / `onto scale --set` refuse `full` for a light change.
+- **Worker permission blocks return to the coordinator (ADR 0077).** An
+  implementer, reviewer, skeptic, explorer, or h worker whose tool call is
+  denied, or whose prompt you reject, stops and hands back a `Permission block`
+  naming the exact command or resource. The coordinator first checks whether
+  the action is needed and whether its own authority covers it. Then it asks
+  you once: run it, send it the output or the missing information, continue
+  without it, or change scope. Both workflow plugin variants add a one-time
+  notice to the coordinator's context when a worker's prompt was rejected,
+  even if the worker returned nothing.
+
+## v0.34.0 — workflows, engines, and workspace tasks
+
+Breaking configuration change. All three binaries are stamped v0.34.0.
+The embedded catalog is 0.34.0 (onto 0.26.0, to 0.23.0,
+h 0.12.0, and the new no 0.1.0).
+
+- **`[frameworks.*]` is removed (ADR 0067).** Declare `onto`, `to`, and `no`
+  under `[engines.<name>]` and `h` under `[workflows.h]`. A config that still
+  names `[frameworks.*]` fails at load; there is no automatic migration.
+  `[workflows.h]` no longer installs onto and to or satisfies their binaries'
+  install gates; declare an engine yourself if `/h-resolve-issue` should use
+  one.
+- **`no` engine:** `/no`, one entry skill, `no-implementer`, and
+  `no-reviewer`. No binary, no records, and no coordinator of its own.
+- **Engines combine (ADR 0068).** onto, to, and no may all be installed in one
+  config. A workspace task selects exactly one engine and keeps it on resume.
+- **Workspace tasks:** `homonto workspace task create|inspect|check|cleanup`
+  records the engine, checkouts, isolation choice, bases, and integration
+  results for parallel work across repositories: one repository per
+  implementer and one writer per checkout.
+- **Integration checks:** `[integration.<name>]` declares `repos`, `repo`,
+  `cwd`, and an argv `command`. A check runs against exact candidate
+  revisions, records its result, and is invalidated when an input changes.
+  Interrupting a check kills its process group and records the result.
+- **Terminal cleanup (ADR 0075):** `onto cleanup`, `to cleanup`, and
+  `homonto workflow cleanup`, each with `list`, `preview`, and `apply`.
+  Cleanup archives an abandoned onto record still in `changes/` and removes
+  registered worktrees that are clean and integrated. Eligibility comes from
+  native state, never from age or checked tasks. `apply` needs the exact
+  generation `--identity` and `--yes`, rechecks every safety condition, and
+  writes a retryable receipt under `<workflow-root>/.workflow/cleanup/`.
+  Branches and archives are kept. The coordinator inspects cleanup after
+  delivery and asks before applying it.
+- **Name reuse after abandon:** an abandoned onto archive no longer blocks a
+  new change with the same name. When a name is taken, `onto new` and
+  `to new` now suggest `cleanup preview`.
+- **`/h-resolve-conflicts` (ADR 0076):** resolves only an open PR's merge
+  conflicts. It pins head and base, does nothing if they merge cleanly,
+  merges the base into the head without rebasing, verifies the result, and
+  pushes it to the same head without force. It needs no engine and
+  authorizes no comments, thread resolution, or PR merge.
+- **Task branches** are named `work-<name>/<alias>`. Cleanup deletes a
+  task-created branch once its commits are integrated into the recorded
+  target (ADR 0072).
+- **Delivery to the requested endpoint (ADR 0069):** the coordinator
+  implements, verifies, triages findings, repairs, closes, publishes, and
+  confirms the endpoint you asked for, such as a review-ready PR with
+  passing required checks.
+- **Coordinator permissions (ADR 0070):** ordinary pushes, GitHub API calls,
+  routine PR and issue publication, and CI reruns no longer ask. Forced or
+  deleting pushes, PR merges, administrative operations, and workflow bypass
+  still ask. Workers keep their publication denies; read-only agents keep
+  their edit and shell denies. Agent roles now come from the catalog instead
+  of hard-coded name lists, and every builtin agent may read an external
+  records root.
+- **Entry points (ADR 0071):** commands defer execution policy to their
+  skills, and `/no` and `/h-resolve-issue` share one execution reference.
+  `builtin:example-command` is removed; delete any declaration of it.
+- **Proportional repairs and explorers first (ADRs 0073, 0074):** the
+  coordinator asks before a repair that is out of proportion to the
+  finding, and dispatches explorers instead of guessing about code it has
+  not read.
+- **Docs:** the README and guides are rewritten. New guides cover
+  installation (mise first), concepts, examples, the catalog, workflows, the
+  no engine, the h workflow, OpenCode integration, principles, and remote
+  sources.
+- **Development:** a Taskfile replaces the Makefile and `.mise.toml`;
+  `scripts/gate.sh` holds the only golangci-lint pin; CodeGraph is the local
+  code index (ADR 0066).
+
+**Upgrade:** rename every `[frameworks.<name>]` table to
+`[engines.<name>]` (onto, to, no) or `[workflows.h]`, add
+`[engines.onto]` or `[engines.to]` if h relied on one, and remove any
+`builtin:example-command` declaration. Then install matching binaries, run
+`homonto plan` and `homonto apply` in each configured project, and restart
+OpenCode. Existing workflow records do not migrate.
+
+**Live-check release exception (v0.34.0 only):** the owner directed publication
+without completing the interactive OpenCode panel/reload/unload/context checks,
+native GitHub draft denial/approval checks, real GitHub sandbox publication and
+reconciliation checks, or two-way OpenCode migration checks. These checks were
+not run and are not claimed as passing. The complete automated gate and remote
+CI remain required; this exception does not apply to later releases.
+
 ## v0.33.0 — OpenCode wildcard service bindings
 
 All three binaries are stamped v0.33.0. The embedded catalog is 0.33.0 (onto
@@ -1007,8 +1129,8 @@ contract.
 **Docs**: the `to` guides split into [workflow concepts](https://github.com/noviopenworks/homonto/blob/main/docs/guides/to-workflow.md)
 and a [command reference](https://github.com/noviopenworks/homonto/blob/main/docs/guides/to-reference.md)
 (mirroring onto's pair), and two principle guides —
-[YAGNI](https://github.com/noviopenworks/homonto/blob/main/docs/guides/yagni.md) and
-[KISS](https://github.com/noviopenworks/homonto/blob/main/docs/guides/kiss.md) —
+[YAGNI](https://github.com/noviopenworks/homonto/blob/v0.5.0/docs/guides/yagni.md) and
+[KISS](https://github.com/noviopenworks/homonto/blob/v0.5.0/docs/guides/kiss.md) —
 map where each framework structurally enforces building only what's needed,
 simply. Framework versions: onto 0.3.2, to 0.2.0; catalog 0.4.0.
 

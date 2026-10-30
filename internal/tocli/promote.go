@@ -73,7 +73,7 @@ func promoteCmd() *cobra.Command {
 			cmd.Printf("  source snapshot (unchanged): %s\n", filepath.Join(created, ".workflow", "snapshots"))
 			cmd.Printf("  fresh onto workspace (phase open): %s\n", created)
 			cmd.Println("\nnext steps (onto and `to` are complementary — pick per change):")
-			cmd.Println("  1. declare [frameworks.onto] in homonto.toml (alongside `to`, if not")
+			cmd.Println("  1. declare [engines.onto] in homonto.toml (alongside `to`, if not")
 			cmd.Println("     already) and homonto apply, if the onto framework is missing")
 			cmd.Println("  2. /onto                 # resume the promoted change at phase open")
 			cmd.Println("  3. onto demote <name> --yes converts back while nothing has changed")

@@ -1,8 +1,8 @@
 package workspace
 
 import (
+	"context"
 	"crypto/rand"
-	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -19,7 +19,6 @@ import (
 
 	"github.com/noviopenworks/homonto/internal/applylock"
 	"github.com/noviopenworks/homonto/internal/fsutil"
-	"github.com/noviopenworks/homonto/internal/migrationrecord"
 	"github.com/noviopenworks/homonto/internal/workflowroot"
 	"github.com/pelletier/go-toml/v2"
 	"gopkg.in/yaml.v3"
@@ -44,43 +43,14 @@ type Worktree struct {
 	BaseTarget   string `json:"baseTarget"`
 	BaseCommit   string `json:"baseCommit"`
 	Status       string `json:"status"`
-	// Origin is empty for native allocated bindings. The migration origin is a
-	// deliberately narrow exception for receipt-listed legacy checkouts; it does
-	// not relax the configured-parent rule for ordinary registry entries.
-	Origin         string `json:"origin,omitempty"`
-	MigrationRunID string `json:"migration_run_id,omitempty"`
+	// Origin is empty for native allocated bindings. It is read only to refuse
+	// bindings adopted by the removed workspace migration (ADR 0081).
+	Origin string `json:"origin,omitempty"`
 }
 
 type worktreeRegistry struct {
 	Version int        `json:"version"`
 	Entries []Worktree `json:"entries"`
-}
-
-// MigrationBinding is one pre-existing execution checkout the schema-2
-// migration is authorized to adopt. It is intentionally not a general rebind
-// API: callers must provide every observed identity and a fresh ownership token.
-type MigrationBinding struct {
-	Workflow   string
-	Change     string
-	StateID    string
-	Repo       string
-	Path       string
-	CommonDir  string
-	GitDir     string
-	Branch     string
-	BaseRef    string
-	BaseTarget string
-	BaseCommit string
-	Ownership  string
-}
-
-// MigrationAdoptions is the validated, still-unwritten registry postimage.
-// The token bytes remain only in Worktrees for the private migration journal;
-// callers must never render this value in public JSON.
-type MigrationAdoptions struct {
-	Worktrees    []Worktree
-	RegistryPath string
-	RegistryData []byte
 }
 
 var worktreeName = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]*$`)
@@ -183,9 +153,17 @@ func realWorktreePath(path string, directory bool) error {
 }
 
 func worktreeGit(dir string, args ...string) (string, error) {
-	cmd := exec.Command("git", append([]string{"-C", dir}, args...)...)
-	// Do not inherit a caller's repository/index override. Read-only Git probes
-	// must not refresh the original checkout's index either.
+	out, err := Git(context.Background(), dir, args...)
+	if err != nil {
+		return "", fmt.Errorf("worktree: %w", err)
+	}
+	return out, nil
+}
+
+// Git runs one Git probe in dir. It does not inherit a caller's repository or
+// index override, refresh the checkout's index, or prompt for credentials.
+func Git(ctx context.Context, dir string, args ...string) (string, error) {
+	cmd := exec.CommandContext(ctx, "git", append([]string{"-C", dir}, args...)...)
 	for _, env := range os.Environ() {
 		if !strings.HasPrefix(env, "GIT_") {
 			cmd.Env = append(cmd.Env, env)
@@ -194,7 +172,7 @@ func worktreeGit(dir string, args ...string) (string, error) {
 	cmd.Env = append(cmd.Env, "GIT_OPTIONAL_LOCKS=0", "GIT_TERMINAL_PROMPT=0")
 	out, err := cmd.CombinedOutput()
 	if err != nil {
-		return "", fmt.Errorf("worktree: git %s in %s: %w: %s", strings.Join(args, " "), dir, err, strings.TrimSpace(string(out)))
+		return "", fmt.Errorf("git %s in %s: %w: %s", strings.Join(args, " "), dir, err, strings.TrimSpace(string(out)))
 	}
 	return strings.TrimSpace(string(out)), nil
 }
@@ -273,13 +251,8 @@ func readWorktreeRegistry(l Layout) (worktreeRegistry, error) {
 		}
 		switch w.Origin {
 		case "":
-			if w.MigrationRunID != "" {
-				return r, fmt.Errorf("worktree: ownership: native binding has an unexpected migration run ID")
-			}
 		case "legacy-migration":
-			if !migrationrecord.SafeRunID(w.MigrationRunID) {
-				return r, fmt.Errorf("worktree: ownership: migration binding has an invalid run ID")
-			}
+			return r, fmt.Errorf("worktree: ownership: %s was adopted by the removed workspace migration; finish or remove it with the homonto release that migrated it", w.Path)
 		default:
 			return r, fmt.Errorf("worktree: ownership: unknown binding origin %q", w.Origin)
 		}
@@ -302,7 +275,7 @@ func EnsureNameAvailable(l Layout, workflow, change string) error {
 	}
 	for _, w := range r.Entries {
 		if w.Workflow == workflow && w.Change == change {
-			return fmt.Errorf("worktree: ownership: %s/%s still has a registered binding for repository %q at %s; remove or recover it before reusing the change name", workflow, change, w.Repo, w.Path)
+			return fmt.Errorf("worktree: ownership: %s/%s still has a registered binding for repository %q at %s; remove or recover it before reusing the change name; inspect `%s cleanup preview %s`", workflow, change, w.Repo, w.Path, workflow, change)
 		}
 	}
 	return nil
@@ -326,220 +299,6 @@ func marshalWorktreeRegistry(r worktreeRegistry) ([]byte, error) {
 		return a.Workflow+"/"+a.Change+"/"+a.Repo+"/"+a.Role < b.Workflow+"/"+b.Change+"/"+b.Repo+"/"+b.Role
 	})
 	return json.MarshalIndent(r, "", "  ")
-}
-
-// LockMigrationBindings takes the existing lifecycle locks in their documented
-// order: per-framework mutation locks, the cross-framework name lock, then the
-// registry lock. The caller must hold any outer config and records locks first.
-func LockMigrationBindings(l Layout) (func(), error) {
-	unlockOnto, err := lockWorktreeLifecyclePath(l, filepath.Join(worktreeStatesDir(l, "onto"), ".onto.lock"))
-	if err != nil {
-		return nil, err
-	}
-	unlockTo, err := lockWorktreeLifecyclePath(l, filepath.Join(worktreeStatesDir(l, "to"), ".to.lock"))
-	if err != nil {
-		unlockOnto()
-		return nil, err
-	}
-	unlockNames, err := LockLifecycle(l)
-	if err != nil {
-		unlockTo()
-		unlockOnto()
-		return nil, err
-	}
-	unlockRegistry, err := lockWorktreeRegistry(l)
-	if err != nil {
-		unlockNames()
-		unlockTo()
-		unlockOnto()
-		return nil, err
-	}
-	return func() {
-		unlockRegistry()
-		unlockNames()
-		unlockTo()
-		unlockOnto()
-	}, nil
-}
-
-// PlanMigrationAdoptions validates already-existing linked worktrees and
-// renders the exact registry postimage without writing source refs, indexes, or
-// checkout files. It accepts only receipt-ready legacy migration bindings; it
-// is not a public worktree adoption mechanism.
-func PlanMigrationAdoptions(l Layout, runID string, bindings []MigrationBinding) (MigrationAdoptions, error) {
-	if !l.ExplicitRepos() || !migrationrecord.SafeRunID(runID) {
-		return MigrationAdoptions{}, fmt.Errorf("worktree: migration adoption requires schema-2 explicit repositories and a valid run ID")
-	}
-	if _, err := os.Lstat(registryPath(l)); err == nil {
-		return MigrationAdoptions{}, fmt.Errorf("worktree: ownership: migration requires an absent worktree registry")
-	} else if !errors.Is(err, os.ErrNotExist) {
-		return MigrationAdoptions{}, err
-	}
-	registry, err := readWorktreeRegistry(l)
-	if err != nil {
-		return MigrationAdoptions{}, err
-	}
-	if len(registry.Entries) != 0 {
-		return MigrationAdoptions{}, fmt.Errorf("worktree: ownership: migration requires an empty worktree registry")
-	}
-	inputs := append([]MigrationBinding(nil), bindings...)
-	sort.Slice(inputs, func(i, j int) bool {
-		return inputs[i].Workflow+"/"+inputs[i].Change+"/"+inputs[i].Repo < inputs[j].Workflow+"/"+inputs[j].Change+"/"+inputs[j].Repo
-	})
-	seen := map[string]bool{}
-	for _, input := range inputs {
-		key := input.Workflow + "/" + input.Change + "/" + input.Repo
-		if seen[key] {
-			return MigrationAdoptions{}, fmt.Errorf("worktree: ownership: duplicate migration binding %s", key)
-		}
-		seen[key] = true
-		worktree, err := validateMigrationAdoption(l, runID, input)
-		if err != nil {
-			return MigrationAdoptions{}, err
-		}
-		registry.Entries = append(registry.Entries, worktree)
-	}
-	data, err := marshalWorktreeRegistry(registry)
-	if err != nil {
-		return MigrationAdoptions{}, err
-	}
-	return MigrationAdoptions{Worktrees: append([]Worktree(nil), registry.Entries...), RegistryPath: registryPath(l), RegistryData: append(data, '\n')}, nil
-}
-
-// ValidateMigrationRegistryData checks that a private journal's registry
-// postimage is exactly the deterministic serialization of its already-reviewed
-// migration bindings. It performs no filesystem writes or adoption probes.
-func ValidateMigrationRegistryData(l Layout, runID string, bindings []MigrationBinding, data []byte) error {
-	if !l.ExplicitRepos() || !migrationrecord.SafeRunID(runID) {
-		return fmt.Errorf("worktree: migration registry requires schema-2 explicit repositories and a valid run ID")
-	}
-	inputs := append([]MigrationBinding(nil), bindings...)
-	sort.Slice(inputs, func(i, j int) bool {
-		return inputs[i].Workflow+"/"+inputs[i].Change+"/"+inputs[i].Repo < inputs[j].Workflow+"/"+inputs[j].Change+"/"+inputs[j].Repo
-	})
-	registry := worktreeRegistry{Version: 1, Entries: []Worktree{}}
-	seen := map[string]bool{}
-	for _, input := range inputs {
-		if err := validateMigrationRegistryBinding(input); err != nil {
-			return err
-		}
-		key := input.Workflow + "/" + input.Change + "/" + input.Repo
-		if seen[key] {
-			return fmt.Errorf("worktree: ownership: duplicate migration binding %s", key)
-		}
-		seen[key] = true
-		registry.Entries = append(registry.Entries, Worktree{
-			Role: "execution", Workflow: input.Workflow, Change: input.Change, Repo: input.Repo, StateID: input.StateID,
-			WorkflowRoot: filepath.Dir(worktreeStatesDir(l, input.Workflow)), Parent: l.ConfigRoot, Path: input.Path,
-			CommonDir: input.CommonDir, GitDir: input.GitDir, Ownership: input.Ownership, Branch: input.Branch,
-			BaseRef: input.BaseRef, BaseTarget: input.BaseTarget, BaseCommit: input.BaseCommit, Status: "ready",
-			Origin: "legacy-migration", MigrationRunID: runID,
-		})
-	}
-	expected, err := marshalWorktreeRegistry(registry)
-	if err != nil {
-		return err
-	}
-	if string(append(expected, '\n')) != string(data) {
-		return fmt.Errorf("worktree: ownership: migration registry bytes differ from reviewed bindings")
-	}
-	return nil
-}
-
-func validateMigrationRegistryBinding(input MigrationBinding) error {
-	if input.Workflow != "onto" || input.Change == "" || input.Repo == "" || !strings.HasPrefix(input.StateID, "id:") || input.StateID == "id:" || input.Branch == "" || input.BaseRef == "" || input.BaseCommit == "" || input.BaseTarget == "" {
-		return fmt.Errorf("worktree: ownership: migration binding is incomplete")
-	}
-	if err := checkWorktreeNames(input.Workflow, input.Change); err != nil {
-		return err
-	}
-	if _, err := hex.DecodeString(input.Ownership); err != nil || len(input.Ownership) != 32 {
-		return fmt.Errorf("worktree: ownership: migration token must be a fresh 128-bit hexadecimal value")
-	}
-	for _, path := range []string{input.Path, input.CommonDir, input.GitDir} {
-		if !filepath.IsAbs(path) || filepath.Clean(path) != path {
-			return fmt.Errorf("worktree: ownership: migration binding paths must be canonical absolute paths")
-		}
-	}
-	return nil
-}
-
-func validateMigrationAdoption(l Layout, runID string, input MigrationBinding) (Worktree, error) {
-	if err := validateMigrationRegistryBinding(input); err != nil {
-		return Worktree{}, err
-	}
-	candidate := Worktree{Origin: "legacy-migration", MigrationRunID: runID, Workflow: input.Workflow, Change: input.Change, Repo: input.Repo, StateID: input.StateID, Parent: l.ConfigRoot, Path: input.Path}
-	if err := validateMigrationBindingPath(l, candidate); err != nil {
-		return Worktree{}, err
-	}
-	authority, err := worktreeAuthority(l, input.Repo)
-	if err != nil {
-		return Worktree{}, err
-	}
-	_, authorityCommon, err := GitIdentity(authority)
-	if err != nil || authorityCommon != input.CommonDir {
-		return Worktree{}, fmt.Errorf("worktree: ownership: migration source common-dir mismatch")
-	}
-	top, common, err := GitIdentity(input.Path)
-	if err != nil || top != input.Path || common != input.CommonDir || common != authorityCommon {
-		return Worktree{}, fmt.Errorf("worktree: ownership: migration execution Git identity mismatch")
-	}
-	gitDir, err := migrationGitText(input.Path, "rev-parse", "--absolute-git-dir")
-	if err != nil || gitDir != input.GitDir || filepath.Dir(gitDir) != filepath.Join(common, "worktrees") {
-		return Worktree{}, fmt.Errorf("worktree: ownership: migration execution Git directory mismatch")
-	}
-	if err := realWorktreePath(gitDir, true); err != nil {
-		return Worktree{}, err
-	}
-	backlink := filepath.Join(gitDir, "gitdir")
-	if err := realWorktreePath(backlink, false); err != nil {
-		return Worktree{}, err
-	}
-	backlinkData, err := os.ReadFile(backlink)
-	if err != nil || strings.TrimSpace(string(backlinkData)) != filepath.Join(input.Path, ".git") {
-		return Worktree{}, fmt.Errorf("worktree: ownership: migration execution backlink mismatch")
-	}
-	branch, err := migrationGitText(input.Path, "symbolic-ref", "--quiet", "HEAD")
-	if err != nil || branch != "refs/heads/"+input.Branch {
-		return Worktree{}, fmt.Errorf("worktree: ownership: migration execution must retain its attached branch")
-	}
-	if !strings.HasPrefix(input.BaseTarget, "refs/heads/") {
-		return Worktree{}, fmt.Errorf("worktree: ownership: migration integration target must be a local branch")
-	}
-	if _, err := ReadGit(authority, "merge-base", "--is-ancestor", input.BaseCommit, input.BaseTarget); err != nil {
-		return Worktree{}, fmt.Errorf("worktree: ownership: migration base is not an ancestor of its recorded target: %w", err)
-	}
-	if _, err := ReadGit(input.Path, "merge-base", "--is-ancestor", input.BaseCommit, "HEAD"); err != nil {
-		return Worktree{}, fmt.Errorf("worktree: ownership: migration base is not an ancestor of its execution checkout: %w", err)
-	}
-	ownerPath := filepath.Join(gitDir, "homonto-owner")
-	if err := realWorktreePath(ownerPath, false); err != nil {
-		return Worktree{}, err
-	}
-	if _, err := os.Lstat(ownerPath); err == nil {
-		return Worktree{}, fmt.Errorf("worktree: ownership: migration token already exists at %s", ownerPath)
-	} else if !errors.Is(err, os.ErrNotExist) {
-		return Worktree{}, err
-	}
-	state, err := bindingState(l, input.Workflow, input.Change, input.StateID, false)
-	if err != nil {
-		return Worktree{}, err
-	}
-	if err := state.checkAuthority(l, input.Repo, common); err != nil {
-		return Worktree{}, err
-	}
-	if err := state.checkBase(input.Repo, input.BaseCommit, input.BaseTarget); err != nil {
-		return Worktree{}, err
-	}
-	return Worktree{Role: "execution", Workflow: input.Workflow, Change: input.Change, Repo: input.Repo, StateID: input.StateID, WorkflowRoot: filepath.Dir(worktreeStatesDir(l, input.Workflow)), Parent: l.ConfigRoot, Path: input.Path, CommonDir: common, GitDir: gitDir, Ownership: input.Ownership, Branch: input.Branch, BaseRef: input.BaseRef, BaseTarget: input.BaseTarget, BaseCommit: input.BaseCommit, Status: "ready", Origin: "legacy-migration", MigrationRunID: runID}, nil
-}
-
-func migrationGitText(dir string, args ...string) (string, error) {
-	data, err := ReadGit(dir, args...)
-	if err != nil {
-		return "", err
-	}
-	return strings.TrimSpace(string(data)), nil
 }
 
 func lockWorktreeRegistry(l Layout) (func(), error) {
@@ -765,29 +524,22 @@ func validateWorktree(l Layout, w Worktree) error {
 	if err != nil {
 		return err
 	}
-	migrationBinding := w.Origin == "legacy-migration"
-	if w.Origin != "" && !migrationBinding {
+	if w.Origin != "" {
 		return fmt.Errorf("worktree: ownership: unknown binding origin %q", w.Origin)
 	}
-	if migrationBinding {
-		if err := validateMigrationBindingPath(l, w); err != nil {
-			return err
+	repoDir := w.Repo
+	if repoDir == "" {
+		repoDir = "_config"
+	}
+	expected := filepath.Join(parent, repoDir, w.Workflow+"-"+w.Change)
+	if w.Role == "receiver" {
+		expected = filepath.Join(parent, repoDir, ".receivers", w.Workflow+"-"+w.Change)
+		if w.BaseTarget != "refs/heads/"+w.Branch {
+			return fmt.Errorf("worktree: receiver branch does not match its recorded target")
 		}
-	} else {
-		repoDir := w.Repo
-		if repoDir == "" {
-			repoDir = "_config"
-		}
-		expected := filepath.Join(parent, repoDir, w.Workflow+"-"+w.Change)
-		if w.Role == "receiver" {
-			expected = filepath.Join(parent, repoDir, ".receivers", w.Workflow+"-"+w.Change)
-			if w.BaseTarget != "refs/heads/"+w.Branch {
-				return fmt.Errorf("worktree: receiver branch does not match its recorded target")
-			}
-		}
-		if w.Parent != parent || w.Path != expected {
-			return fmt.Errorf("worktree: unsafe path: registered %s is not owned under configured parent %s (parent changes do not retarget bindings)", w.Path, parent)
-		}
+	}
+	if w.Parent != parent || w.Path != expected {
+		return fmt.Errorf("worktree: unsafe path: registered %s is not owned under configured parent %s (parent changes do not retarget bindings)", w.Path, parent)
 	}
 	if w.WorkflowRoot != filepath.Dir(worktreeStatesDir(l, w.Workflow)) {
 		return fmt.Errorf("worktree: ownership: workflow root changed for %s/%s", w.Workflow, w.Change)
@@ -824,11 +576,6 @@ func validateWorktree(l Layout, w Worktree) error {
 	if err != nil || w.Ownership == "" || string(owner) != w.Ownership {
 		return fmt.Errorf("worktree: ownership: creation token mismatch at %s; refusing to adopt a replacement worktree", w.Path)
 	}
-	if migrationBinding {
-		if err := validateMigrationBindingReceipt(l, w); err != nil {
-			return err
-		}
-	}
 	// Verify the administrative backlink as well as the worktree's .git file.
 	backlink := filepath.Join(gitDir, "gitdir")
 	if err := realWorktreePath(backlink, false); err != nil {
@@ -850,42 +597,6 @@ func validateWorktree(l Layout, w Worktree) error {
 		return err
 	}
 	return s.checkBase(w.Repo, w.BaseCommit, w.BaseTarget)
-}
-
-func validateMigrationBindingPath(l Layout, w Worktree) error {
-	if w.Workflow != "onto" || w.Role == "receiver" || !migrationrecord.SafeRunID(w.MigrationRunID) || w.Parent != l.ConfigRoot || w.Path == l.ConfigRoot || !within(l.ConfigRoot, w.Path) {
-		return fmt.Errorf("worktree: ownership: invalid migration-origin binding path")
-	}
-	for _, protected := range append([]string{filepath.Join(l.ConfigRoot, ".homonto"), l.WorkflowRoot}, repoPaths(l)...) {
-		if overlaps(w.Path, protected) {
-			return fmt.Errorf("worktree: ownership: migration-origin binding overlaps a configured control, records, or source path")
-		}
-	}
-	return nil
-}
-
-func repoPaths(l Layout) []string {
-	paths := make([]string, 0, len(l.Repos))
-	for _, path := range l.Repos {
-		paths = append(paths, path)
-	}
-	return paths
-}
-
-func validateMigrationBindingReceipt(l Layout, w Worktree) error {
-	receipt, err := migrationrecord.LoadReceipt(l.WorkflowRoot, w.MigrationRunID)
-	if err != nil {
-		return fmt.Errorf("worktree: ownership: migration receipt unavailable: %w", err)
-	}
-	binding, ok := receipt.BindingFor(w.Workflow, w.Change, w.Repo, w.Path)
-	if !ok {
-		return fmt.Errorf("worktree: ownership: migration receipt does not list %s", w.Path)
-	}
-	token := sha256.Sum256([]byte(w.Ownership))
-	if binding.StateID != w.StateID || binding.CommonDir != w.CommonDir || binding.GitDir != w.GitDir || binding.Branch != w.Branch || binding.BaseRef != w.BaseRef || binding.BaseTarget != w.BaseTarget || binding.BaseCommit != w.BaseCommit || binding.OwnershipHash != hex.EncodeToString(token[:]) {
-		return fmt.Errorf("worktree: ownership: migration receipt identity mismatch at %s", w.Path)
-	}
-	return nil
 }
 
 func (s worktreeState) checkAuthority(l Layout, repo, common string) error {
@@ -1017,6 +728,29 @@ func SourceDirsForLayout(l Layout, workflow, change string, aliases []string) (m
 	return out, nil
 }
 
+// SourceAnchor is a lifecycle-owned immutable source base and integration target.
+type SourceAnchor struct {
+	Commit string
+	Branch string
+}
+
+// SourceAnchors returns the recorded generation and bases without modifying state.
+// A supplied identity also permits terminal/archived resume of that generation.
+func SourceAnchors(l Layout, workflow, change, identity string) (string, map[string]SourceAnchor, error) {
+	if err := checkWorktreeNames(workflow, change); err != nil {
+		return "", nil, err
+	}
+	s, err := bindingState(l, workflow, change, identity, identity == "")
+	if err != nil {
+		return "", nil, err
+	}
+	anchors := make(map[string]SourceAnchor, len(s.RepoBases))
+	for alias, base := range s.RepoBases {
+		anchors[alias] = SourceAnchor{Commit: base.BaseRef, Branch: base.BaseBranch}
+	}
+	return s.identity, anchors, nil
+}
+
 func SourceDirsForActiveState(l Layout, workflow, change string) (map[string]string, error) {
 	if err := checkWorktreeNames(workflow, change); err != nil {
 		return nil, err
@@ -1073,7 +807,15 @@ func SourceDirsForActiveState(l Layout, workflow, change string) (map[string]str
 // declared checkout's HEAD, index, or working files. Repeating a ready binding is
 // idempotent; an interrupted operation remains visible and fails closed.
 func CreateWorktree(l Layout, workflow, change, repo, base, branch string) (Worktree, error) {
-	return createWorktree(l, workflow, change, repo, base, branch, "execution", "")
+	return createWorktree(l, workflow, change, repo, base, branch, "execution", "", false)
+}
+
+// AnchoredWorktree allocates an execution checkout at the state's recorded
+// base commit, integrating into its recorded local branch. Unlike an explicit
+// base, the branch may have moved on since the change began; it must still
+// contain the recorded commit.
+func AnchoredWorktree(l Layout, workflow, change, repo, branch string) (Worktree, error) {
+	return createWorktree(l, workflow, change, repo, "", branch, "execution", "", true)
 }
 
 // ReceiverWorktree allocates a clean checkout attached to the recorded local
@@ -1093,10 +835,10 @@ func ReceiverWorktree(l Layout, workflow, change, repo string, stateID ...string
 	if identity != "" && !strings.HasPrefix(identity, "id:") && !strings.HasPrefix(identity, "legacy:") {
 		identity = "id:" + identity
 	}
-	return createWorktree(l, workflow, change, repo, "", "", "receiver", identity)
+	return createWorktree(l, workflow, change, repo, "", "", "receiver", identity, false)
 }
 
-func createWorktree(l Layout, workflow, change, repo, base, branch, role, identity string) (Worktree, error) {
+func createWorktree(l Layout, workflow, change, repo, base, branch, role, identity string, anchored bool) (Worktree, error) {
 	var w Worktree
 	if err := checkWorktreeNames(workflow, change); err != nil {
 		return w, err
@@ -1140,6 +882,13 @@ func createWorktree(l Layout, workflow, change, repo, base, branch, role, identi
 	}
 	if !selected {
 		return w, fmt.Errorf("worktree: repository %q is not selected by state %s/%s", repo, workflow, change)
+	}
+	if anchored {
+		anchor := s.RepoBases[repo]
+		if anchor.BaseRef == "" || anchor.BaseBranch == "" {
+			return w, fmt.Errorf("worktree: repository %q has no recorded base commit and branch in state %s/%s", repo, workflow, change)
+		}
+		base = anchor.BaseRef
 	}
 	if role != "receiver" && (base == "" || strings.HasPrefix(base, "-") || branch == "" || strings.HasPrefix(branch, "-")) {
 		return w, fmt.Errorf("worktree: explicit --base REF and --branch NAME are required")
@@ -1211,6 +960,12 @@ func createWorktree(l Layout, workflow, change, repo, base, branch, role, identi
 	target, targetErr := worktreeGit(authority, "rev-parse", "--symbolic-full-name", "--verify", "--end-of-options", base)
 	if targetErr != nil || !strings.HasPrefix(target, "refs/") || strings.ContainsAny(target, "\r\n") {
 		target = commit
+	}
+	if anchored {
+		target = "refs/heads/" + s.RepoBases[repo].BaseBranch
+		if _, err := worktreeGit(authority, "merge-base", "--is-ancestor", commit, target); err != nil {
+			return w, fmt.Errorf("worktree: integration target %s no longer contains the recorded base %s: %w", target, commit, err)
+		}
 	}
 	if role == "receiver" {
 		target = "refs/heads/" + branch
@@ -1375,7 +1130,7 @@ func RemoveWorktree(l Layout, workflow, change, repo string, yes bool) (Worktree
 
 // RemoveWorktreeRole removes only the selected owned role. Receiver removal
 // obeys the same terminal, clean, and integrated checks as execution removal.
-func RemoveWorktreeRole(l Layout, workflow, change, repo, role string, yes bool) (Worktree, error) {
+func RemoveWorktreeRole(l Layout, workflow, change, repo, role string, yes bool, expectedStateID ...string) (Worktree, error) {
 	var w Worktree
 	if role != "execution" && role != "receiver" {
 		return w, fmt.Errorf("worktree: role must be execution or receiver")
@@ -1413,29 +1168,16 @@ func RemoveWorktreeRole(l Layout, workflow, change, repo, role string, yes bool)
 	if index < 0 {
 		return w, fmt.Errorf("worktree: ownership: no registered binding for %s/%s repository %q", workflow, change, repo)
 	}
-	if err := validateWorktree(l, w); err != nil {
-		return w, err
+	if len(expectedStateID) > 1 || (len(expectedStateID) == 1 && (expectedStateID[0] == "" || w.StateID != expectedStateID[0])) {
+		return w, fmt.Errorf("worktree: cleanup generation changed; preview again")
 	}
-	s, err := bindingState(l, workflow, change, w.StateID, false)
+	_, _, removed, err := checkWorktreeRemoval(l, w)
 	if err != nil {
 		return w, err
 	}
-	if !s.terminal(workflow) {
-		return w, fmt.Errorf("worktree: active binding cannot be removed; complete or abandon %s/%s first", workflow, change)
-	}
-	if err := cleanWorktree(w.Path); err != nil {
-		return w, err
-	}
-	head, err := worktreeGit(w.Path, "rev-parse", "--verify", "HEAD^{commit}")
-	if err != nil {
-		return w, err
-	}
-	base, err := worktreeGit(w.Path, "rev-parse", "--verify", "--end-of-options", w.BaseTarget+"^{commit}")
-	if err != nil {
-		return w, err
-	}
-	if _, err := worktreeGit(w.Path, "merge-base", "--is-ancestor", head, base); err != nil {
-		return w, fmt.Errorf("worktree: unmerged source commit %s is not integrated into configured base %q; refusing removal: %w", head, w.BaseRef, err)
+	if removed {
+		r.Entries = append(r.Entries[:index], r.Entries[index+1:]...)
+		return w, saveWorktreeRegistry(l, r)
 	}
 	r.Entries[index].Status = "removing"
 	if err := saveWorktreeRegistry(l, r); err != nil {
@@ -1461,9 +1203,19 @@ func RemoveWorktreeRole(l Layout, workflow, change, repo, role string, yes bool)
 }
 
 func cleanWorktree(path string) error {
+	if err := CheckoutClean(context.Background(), path, true); err != nil {
+		return fmt.Errorf("worktree: %w", err)
+	}
+	return nil
+}
+
+// CheckoutClean refuses hidden index flags and uncommitted or untracked files.
+// For removal it also refuses ignored files and in-progress Git operations; a
+// verification input may keep ignored build output.
+func CheckoutClean(ctx context.Context, path string, removal bool) error {
 	// Status trusts index flags that hide modified files. Refuse those flags
 	// rather than clearing them or materializing sparse files in a user's tree.
-	files, err := worktreeGit(path, "ls-files", "-v", "-z")
+	files, err := Git(ctx, path, "ls-files", "-v", "-z")
 	if err != nil {
 		return err
 	}
@@ -1472,26 +1224,36 @@ func cleanWorktree(path string) error {
 			continue
 		}
 		if len(entry) < 3 || entry[1] != ' ' {
-			return fmt.Errorf("worktree: cannot verify index flags at %s", path)
+			return fmt.Errorf("cannot verify index flags at %s", path)
 		}
 		if entry[0] == 'S' || (entry[0] >= 'a' && entry[0] <= 'z') {
-			return fmt.Errorf("worktree: nondefault index flags (assume-unchanged or skip-worktree) for %q at %s", entry[2:], path)
+			return fmt.Errorf("nondefault index flags (assume-unchanged or skip-worktree) for %q at %s", entry[2:], path)
 		}
 	}
-	dirt, err := worktreeGit(path, "status", "--porcelain=v1", "--untracked-files=all", "--ignored", "--ignore-submodules=none")
+	if !removal {
+		status, err := Git(ctx, path, "status", "--porcelain=v1", "--untracked-files=all")
+		if err != nil {
+			return err
+		}
+		if status != "" {
+			return fmt.Errorf("uncommitted input at %s:\n%s", path, status)
+		}
+		return nil
+	}
+	dirt, err := Git(ctx, path, "status", "--porcelain=v1", "--untracked-files=all", "--ignored", "--ignore-submodules=none")
 	if err != nil {
 		return err
 	}
 	if dirt != "" {
-		return fmt.Errorf("worktree: dirty registered path %s (including untracked/ignored files)", path)
+		return fmt.Errorf("dirty registered path %s (including untracked/ignored files)", path)
 	}
-	gitDir, err := worktreeGit(path, "rev-parse", "--absolute-git-dir")
+	gitDir, err := Git(ctx, path, "rev-parse", "--absolute-git-dir")
 	if err != nil {
 		return err
 	}
 	for _, state := range []string{"MERGE_HEAD", "CHERRY_PICK_HEAD", "REVERT_HEAD", "rebase-merge", "rebase-apply", "sequencer", "index.lock", "locked"} {
 		if _, err := os.Lstat(filepath.Join(gitDir, state)); err == nil {
-			return fmt.Errorf("worktree: Git operation or locked worktree at %s: %s", path, state)
+			return fmt.Errorf("in-progress Git operation or locked worktree at %s: %s", path, state)
 		} else if !os.IsNotExist(err) {
 			return err
 		}

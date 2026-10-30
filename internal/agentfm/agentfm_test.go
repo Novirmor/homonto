@@ -1,6 +1,8 @@
 package agentfm
 
 import (
+	"slices"
+	"sort"
 	"strings"
 	"testing"
 )
@@ -359,5 +361,33 @@ func TestRenderNilContextRemainsLenientForCatalogProjection(t *testing.T) {
 	}
 	if strings.Contains(string(out), "model:") {
 		t.Fatalf("nil catalog context must not add a model line:\n%s", out)
+	}
+}
+
+func TestBuiltinRolesFollowCatalogCapabilities(t *testing.T) {
+	roles, err := BuiltinRoles()
+	if err != nil {
+		t.Fatal(err)
+	}
+	var coordinators, writers []string
+	for name, role := range roles {
+		if role.Coordinator {
+			coordinators = append(coordinators, name)
+		}
+		if role.Writer {
+			writers = append(writers, name)
+		}
+	}
+	sort.Strings(writers)
+	if !slices.Equal(coordinators, []string{"homonto"}) || !slices.Equal(writers, []string{"no-implementer", "onto-implementer", "to-implementer"}) {
+		t.Fatalf("coordinators = %v, writers = %v", coordinators, writers)
+	}
+	for _, name := range []string{"h-review", "h-spike", "no-reviewer", "onto-explorer", "onto-reviewer", "onto-skeptic", "to-explorer", "to-reviewer", "to-skeptic"} {
+		if role, ok := roles[name]; !ok || role.Coordinator || role.Writer {
+			t.Errorf("%s = %+v, %t; want a read-only builtin role", name, role, ok)
+		}
+	}
+	if _, ok := roles["custom-agent"]; ok {
+		t.Fatal("non-catalog agent claimed a builtin role")
 	}
 }

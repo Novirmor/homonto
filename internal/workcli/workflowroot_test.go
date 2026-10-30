@@ -244,7 +244,7 @@ func TestGateSchemaForwardSafetyAndMinimalParsing(t *testing.T) {
 		t.Fatalf("future path = %v", err)
 	}
 	// Workflow helpers must not decode unrelated projection configuration.
-	if err := os.WriteFile(path, []byte("schema_version=2\n[frameworks.onto]\nsource=42\n[subagents.broken]\nsource=42\n"), 0o644); err != nil {
+	if err := os.WriteFile(path, []byte("schema_version=2\n[engines.onto]\nsource=42\n[subagents.broken]\nsource=42\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.MkdirAll(filepath.Join(root, ".homonto", "catalog", onto.SkillsDir), 0o755); err != nil {

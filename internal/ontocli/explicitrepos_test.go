@@ -31,7 +31,7 @@ func explicitWorkspaceMode(t *testing.T, mode string) workspace.Layout {
 		runGit(t, dir, "init", "-b", branch)
 		commitAll(t, dir, "base "+alias)
 	}
-	writeFile(t, filepath.Join(root, "homonto.toml"), fmt.Sprintf("schema_version = 2\n[frameworks.onto]\nsource='builtin:onto'\nscope='project'\n[workflow]\nroot='records/deep/tree'\ngit=%q\n[worktrees]\ndir='execution'\n[repos]\na='source-a'\nb='source-b'\n", mode))
+	writeFile(t, filepath.Join(root, "homonto.toml"), fmt.Sprintf("schema_version = 2\n[engines.onto]\nsource='builtin:onto'\nscope='project'\n[workflow]\nroot='records/deep/tree'\ngit=%q\n[worktrees]\ndir='execution'\n[repos]\na='source-a'\nb='source-b'\n", mode))
 	if err := os.MkdirAll(filepath.Join(root, ".homonto", "catalog", "skills", "onto"), 0755); err != nil {
 		t.Fatal(err)
 	}
@@ -63,10 +63,10 @@ func TestExplicitReposManagedLifecycle(t *testing.T) {
 	if inGitRepository(root) {
 		t.Fatal("fixture config root must not be Git")
 	}
-	if _, err := runOnto(t, "new", "cross", "--workflow", "tweak", "--dir", root); err == nil || !strings.Contains(err.Error(), "--repo") {
+	if _, err := runOnto(t, "new", "cross", "--workflow", "light", "--dir", root); err == nil || !strings.Contains(err.Error(), "--repo") {
 		t.Fatalf("missing selection: %v", err)
 	}
-	if _, err := runOnto(t, "new", "cross", "--workflow", "tweak", "--repo", "a,b", "--dir", root); err != nil {
+	if _, err := runOnto(t, "new", "cross", "--workflow", "light", "--repo", "a,b", "--dir", root); err != nil {
 		t.Fatal(err)
 	}
 	changeDir := filepath.Join(l.WorkflowRoot, "changes", "cross")

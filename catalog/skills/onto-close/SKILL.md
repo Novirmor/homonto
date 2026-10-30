@@ -12,12 +12,14 @@ source integration. Follow [autonomy](../homonto/references/autonomy.md),
 [workspace policy](../homonto/references/workspace-policy.md), and
 [verified source publication](../homonto/references/publication.md).
 All workflow calls that accept it retain `--dir "<configRoot>"`.
+Follow the [delivery loop](../onto/references/delivery.md), including prerequisite
+rechecks and post-publication confirmation of the requested endpoint.
 
 Entry requires recorded close and a current `verification.md` with exactly one
 canonical passing `Result:` line, optionally `pass (N accepted deviations)`.
 Read state and notes. Otherwise return to the dispatcher. An in-scope defect
 before archive follows [active repair](../onto/references/recovery.md#active-repairs-versus-new-work),
-including fix/tweak's own build steps; do not ask merely whether to repair it.
+including light's own build steps; do not ask merely whether to repair it.
 
 ## Required inputs
 
@@ -105,6 +107,8 @@ Managed receipt writes checkpoint automatically; source delivery is separate.
 - Archive exists with `archived: true` and its move is recorded.
 - Every source has a proven unchanged receipt, real merge receipt, or independently
   observed exact PR receipt. `onto state <name> --json` derives done only then.
+- For a requested review-ready PR, continue with the delivery loop's authoritative
+  remote checks. Native done or a PR receipt alone does not establish readiness.
 - Report the source integration and durable record locations. If publication is
   unavailable, preserve pending integration and report the concrete blocker.
 

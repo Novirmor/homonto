@@ -1,265 +1,337 @@
 # Getting started
 
-A hands-on walkthrough of `homonto` and `onto`. `homonto` projects your
-`homonto.toml` into OpenCode, Terraform-style: `plan`, then `apply`. OpenCode
-is the only adapter; Claude Code and codex support was removed in v0.13.0
-(configs naming them fail at load naming the key). `onto` gates a change
-through `open → design → build → verify → close`. onto's mutating commands
-need the onto framework installed *by* homonto first.
+This walkthrough takes an empty repository to a working OpenCode setup with an
+MCP server, a skill of your own, and both workflow engines — then runs one
+change through each engine. Every output below is real, with long paths
+shortened to `…`.
 
-> A third binary, `to`, is the lightweight alternative to onto (`plan → do →
-> done`, self-asserted verification). It checks installation, phase/state, and
-> applicable source cleanliness. See the [to workflow guide](to-workflow.md) and the
-> [to reference](to-reference.md). onto and `to` are complementary — declare
-> either or both and pick per change; this walkthrough uses onto.
+You need `homonto`, `onto`, and `to` installed ([installation](installation.md))
+and a Git repository to work in. OpenCode itself is only needed to *use* what
+homonto projects.
 
-> Output goes to **stderr**. Redirect with `2>&1` when scripting.
+> All three binaries print to **stderr**. Use `2>&1` when piping.
 
-For schema-2 explicit sources, a non-Git control directory, separate records
-history, or worktree isolation, see [workspaces](workspaces.md). This walkthrough
-keeps the legacy combined layout; changing an existing config's schema is not
-a records migration.
-
-## 1. Install
-
-```bash
-go install github.com/noviopenworks/homonto@latest           # homonto
-go install github.com/noviopenworks/homonto/cmd/onto@latest  # onto
-```
-
-No Go toolchain? On Linux/macOS run the interactive installer — it asks which
-binaries you want, verifies the release archives against `SHA256SUMS`, and
-prints PATH instructions without editing your shell configuration. It also
-offers to run the non-destructive `homonto init` in the current directory. For
-a newly created config, it asks for the workflow-record directory, an optional
-workspace tmp directory (`[tmp]`), sibling Git repositories, and onto/to
-lifecycle workflows. With both workflow binaries installed, it also offers the
-`h` GitHub skill bundle. One model is written to `[settings.opencode]` and each
-selected agent's model block: applying it updates **global OpenCode settings**,
-affecting other projects. The printed next steps name the configured, installed
-lifecycle workflows and, if selected, the `/h-*` skills.
-The installer leaves an existing `homonto.toml` unchanged;
-it uses Gum when available, then dialog, then text prompts. Decline to
-initialize elsewhere later:
-
-```bash
-curl -fsSL -o install.sh https://raw.githubusercontent.com/noviopenworks/homonto/main/scripts/install.sh && bash install.sh
-```
-
-Or grab the prebuilt binaries and `SHA256SUMS` from the GitHub release
-(Linux/macOS/Windows, amd64/arm64). From a checked-out repo use `go install .`.
-If a local `homonto/` content directory exists, a bare `go build .` conflicts
-with it; use an explicit output path (see [troubleshooting](troubleshooting.md)).
-
-Verify:
+## 1. Scaffold
 
 ```console
-$ homonto version
-homonto v0.33.0
-$ onto version
-onto v0.33.0
+$ cd ~/work/notes
+$ homonto init
+created homonto.toml
+created .gitignore
+created .env.example
 ```
 
-## 2. homonto in five commands
+`init` never overwrites a file, never runs `git init`, and installs nothing. It
+writes:
 
-Run these commands from the directory that should contain `homonto.toml`.
-`homonto init` scaffolds configuration; it does not create a Git repository or
-install a workflow framework. Git remains your decision, and an MCP is optional
-until you need a server. Frameworks install declaratively after you add their
-`[frameworks.*]` table and apply the configuration.
+- `homonto.toml` — every section commented out, as a menu.
+- `.gitignore` — ignores `/.homonto/` (projection state) and `.env`.
+- `.env.example` — a place to document `${ENV_VAR}` secrets.
 
-```console
-$ homonto init            # scaffold homonto.toml + .gitignore + .env.example (never overwrites)
-$ $EDITOR homonto.toml    # declare MCPs / skills / plugins / settings
-$ homonto plan            # show the diff — writes nothing, resolves no secrets
-$ homonto apply           # confirm [y/N] (--yes to skip), then write atomically
-$ homonto status          # report drift / pending / clean
-```
+`homonto init ~/dotfiles/ai` scaffolds another directory.
 
-A realistic first `homonto.toml`:
+## 2. Declare an MCP server and a skill
+
+Replace `homonto.toml` with:
 
 ```toml
 [mcps.codegraph]
-command = ["codegraph", "serve", "--mcp"]      # every tool by default (OpenCode)
+command = ["codegraph", "serve", "--mcp"]
+scope = "project"                          # this repo only
 
 [mcps.brave]
 command = ["npx", "-y", "@modelcontextprotocol/server-brave-search"]
-env = { BRAVE_API_KEY = "${BRAVE_API_KEY}" }    # a reference, never a literal secret
-targets = ["opencode"]                          # the only valid target
+env = { BRAVE_API_KEY = "${BRAVE_API_KEY}" }   # a reference, never the value
+scope = "project"
 
-[skills.my-notes]
-source = "local:my-notes"                       # → homonto/skills/my-notes/
-scope = "project"                               # required: user | project
-
-[settings.opencode]
-model = "anthropic/claude-opus-4-8"
+[skills.house-style]
+source = "local:house-style"               # homonto/skills/house-style/
+scope = "project"
 ```
 
-**Model variants.** Configure a provider variant, such as `thinking`, `high`,
-`xhigh`, or `max`, on a subagent with `variant = "…"` in its
-`[subagents.<name>.opencode]` block. OpenCode keeps the model ID and variant
-as separate fields.
-
-Before planning this example, create its optional local skill. `homonto init`
-creates only `homonto.toml`, `.gitignore`, and `.env.example`; local skill
-directories and their contents are user-created:
+Create the skill it points at:
 
 ```console
-$ mkdir -p homonto/skills/my-notes
-$ printf -- '---\nname: my-notes\ndescription: My note conventions\n---\n' > homonto/skills/my-notes/SKILL.md
+$ mkdir -p homonto/skills/house-style
+$ cat > homonto/skills/house-style/SKILL.md <<'EOF'
+---
+name: house-style
+description: Team writing and naming conventions for this repo.
+---
+
+# House style
+
+- Prefer short, active sentences.
+EOF
 ```
 
-`plan` prints a Terraform-style diff (`+` create, `~` update, `-` delete) and
-leaves secrets as unresolved tokens:
+## 3. Plan
+
+`plan` is a dry run. It writes nothing and never resolves a secret:
 
 ```console
 $ homonto plan
 opencode:
-  + mcp.brave = {"command":["npx","-y","@modelcontextprotocol/server-brave-search"],"enabled":true,"environment":{"BRAVE_API_KEY":"${BRAVE_API_KEY}"},"type":"local"}
-  + mcp.codegraph = {"command":["codegraph","serve","--mcp"],"enabled":true,"type":"local"}
-  + setting.model = "anthropic/claude-opus-4-8"
-  + skill.my-notes = …/.opencode/skills/my-notes -> ../../homonto/skills/my-notes
+  + projmcp.brave = {"command":["npx","-y","@modelcontextprotocol/server-brave-search"],"enabled":true,"environment":{"BRAVE_API_KEY":"${BRAVE_API_KEY}"},"type":"local"}
+  + projmcp.codegraph = {"command":["codegraph","serve","--mcp"],"enabled":true,"type":"local"}
+  + skill.house-style = …/notes/.opencode/skills/house-style -> ../../homonto/skills/house-style
 ```
 
-`apply` resolves every secret first and aborts before any write if one fails,
-then writes surgically, keeping every key it does not manage. `status` tells
-the three states apart:
+`+` creates, `~` updates, `-` deletes. `projmcp` is a project-scoped MCP server
+(written to `./opencode.jsonc`); `mcp` would be the global one.
+
+## 4. Apply
+
+```console
+$ export BRAVE_API_KEY=…          # or put "${pass:ai/brave}" in the toml
+$ homonto apply
+opencode:
+  + projmcp.brave = …
+  + projmcp.codegraph = …
+  + skill.house-style = …
+Apply these changes? [y/N] y
+Applied.
+```
+
+`apply` resolves every secret **before** writing anything — one missing value
+aborts with nothing touched. Then it writes each file atomically and touches
+only keys it manages. The result:
+
+```text
+notes/
+├── homonto.toml
+├── homonto/skills/house-style/SKILL.md      ← you own this
+├── opencode.jsonc                           ← mcp.brave, mcp.codegraph
+├── .opencode/skills/house-style -> ../../homonto/skills/house-style
+└── .homonto/state.json                      ← hashes, never secret values
+```
+
+Skills are symlinks: edit `homonto/skills/house-style/SKILL.md` and OpenCode
+sees the change immediately, no re-apply needed.
+
+## 5. Check health
 
 ```console
 $ homonto status
-1 config change(s) awaiting apply (run `homonto apply`)   # you edited the toml
-opencode setting.model drifted (will reset on apply)      # disk changed outside homonto
-No drift.                                                 # everything matches
+No drift.
+
+$ homonto doctor
+warn: `pass` not found on PATH (pass: references will fail)
+ok: .config/opencode (OpenCode) config location present
+ok: skill "house-style" linked (opencode)
 ```
 
-**Secrets** are referenced, never stored: `${pass:path}` (via
-[`pass`](https://www.passwordstore.org/)) or `${ENV_VAR}`.
-`.homonto/state.json` holds only the token plus a sha256 hash, so it is safe
-to share. See [secrets](secrets.md).
-
-**Health check:** `homonto doctor` verifies `pass` is on `PATH`, the tool
-config locations exist, and each owned skill has intact content and its tool
-links.
-
-## 3. Your first owned skill
-
-Local skills live under the optional, user-created `homonto/skills/` next to
-`homonto.toml` and are **symlinked** into each tool. Edit the skill created in
-step 2 to add your note conventions; source edits are instantly live:
+`status` separates two things. Edit `homonto.toml` and you get **pending**:
 
 ```console
-$ $EDITOR homonto/skills/my-notes/SKILL.md
-$ homonto apply --yes
+$ homonto status
+1 config change(s) awaiting apply (run `homonto apply`)
 ```
 
-Each skill declares its own `scope` (required, no default): `user` links into
-`~/.config/opencode/skills/`; `project` links into the repo itself
-(`.opencode/skills/`). Switching scope is clean: `plan` shows the link
-relocating, and `apply` removes the old link as it creates the new one.
+Change a managed value behind homonto's back and you get **drift**:
 
-## 4. The onto workflow
+```console
+$ homonto status
+opencode setting.model drifted (will reset on apply)
+```
 
-Install the framework via homonto, then apply. Every subagent the framework
-expands must declare **an explicit model** — including the shared `homonto`
-coordinator (ADR 0045; declaring `[frameworks.to]` alongside reuses the same
-block, so write it once):
+`homonto status --exit-code` exits `2` for pending and `3` for drift.
+
+## 6. Install the workflow engines
+
+Add both engines. Each one installs skills, slash commands, and agents, and
+**every installed agent needs a model** — homonto has no defaults:
 
 ```toml
-[frameworks.onto]
+[engines.onto]
 source = "builtin:onto"
 scope = "project"
 
+[engines.to]
+source = "builtin:to"
+scope = "project"
+
+# The shared coordinator (installed by onto, to, and h — declare once).
 [subagents.homonto.opencode]
-model = "anthropic/claude-opus-4-8"
+model = "anthropic/claude-opus-5-5"
+
+# onto specialists
 [subagents.onto-explorer.opencode]
-model = "openai/gpt-5-mini"
-[subagents.onto-reviewer.opencode]
-model = "anthropic/claude-opus-4-8"
+model = "anthropic/claude-haiku-5-5"
 [subagents.onto-implementer.opencode]
-model = "anthropic/claude-sonnet-5"
+model = "anthropic/claude-sonnet-5-5"
+[subagents.onto-reviewer.opencode]
+model = "anthropic/claude-opus-5-5"
 [subagents.onto-skeptic.opencode]
-model = "anthropic/claude-opus-4-8"
+model = "anthropic/claude-opus-5-5"
+variant = "high"
+
+# to specialists
+[subagents.to-explorer.opencode]
+model = "anthropic/claude-haiku-5-5"
+[subagents.to-implementer.opencode]
+model = "anthropic/claude-sonnet-5-5"
+[subagents.to-reviewer.opencode]
+model = "anthropic/claude-opus-5-5"
+[subagents.to-skeptic.opencode]
+model = "anthropic/claude-opus-5-5"
 ```
 
-```console
-$ homonto apply --yes            # materializes the shared knowledge and onto workflow surface
+Use model IDs your OpenCode providers offer. Forget one and the config fails
+to load, naming it:
 
-$ onto init && onto new add-search
-$ onto set proposal-approved add-search "proposal matches request"
-$ onto advance add-search        # open → design
-$ onto advance add-search        # error: cannot leave "design": missing design.md
-$ printf '# Design\n\nStatus: Confirmed\n' > docs/changes/add-search/design.md
-$ printf '%s\n' '- [ ] 1.1 implement search [trace #1]' > docs/changes/add-search/tasks.md
-$ onto set approach-confirmed add-search "selected indexed search"
+```console
+$ homonto plan
+Error: config "…/notes/homonto.toml": parse config: subagents.homonto.opencode model is required
+```
+
+Plan and apply again. The plan now lists the shared `homonto` skill and
+coordinator, the `onto-*` and `to-*` skills, commands, and specialists:
+
+```console
+$ homonto apply --yes
+opencode:
+  + command.onto = …/.opencode/command/onto.md -> ../../.homonto/catalog/commands/onto.md
+  …
+  + skill.homonto = …/.opencode/skills/homonto -> ../../.homonto/catalog/skills/homonto
+  …
+  + subagent.onto-skeptic = …/.opencode/agent/onto-skeptic.md -> ../../.homonto/catalog/subagents/onto-skeptic.md
+  …
+Applied.
+```
+
+Commit the projection so teammates get it too (`.homonto/` stays ignored;
+they run `homonto apply` themselves):
+
+```console
+$ git add -A && git commit -m "Install homonto workflows"
+```
+
+## 7. Use it from OpenCode
+
+Start OpenCode in the repository and type a slash command. Every workflow
+command runs in the `homonto` coordinator agent:
+
+```text
+/onto add full-text search to the notes CLI
+/to cap the note cache at 100 entries
+/onto-light search crashes on an empty query
+```
+
+For new work with no explicit path, the coordinator asks **once** which
+workflow fits (`to`, `onto light`, or full `onto`) and recommends
+one. After that it drives the change to its endpoint — implementation,
+review, verification, archive, integration — and stops only for a real
+decision, an endpoint you named, or a hard blocker. See
+[workflows](workflows.md).
+
+The rest of this page shows what the coordinator does under the hood with the
+binaries, so you can follow along or run it by hand.
+
+## 8. An onto change by hand
+
+```console
+$ onto init
+created docs/changes
+created docs/specs
+created docs/adr
+created docs/guides
+
+$ onto new add-search
+created change "add-search" at …/docs/changes/add-search
+  …/docs/changes/add-search/onto-state.yaml
+  …/docs/changes/add-search/proposal.md
+
+$ onto gate add-search
+[Proposal] Has the proposal been reviewed against the request and grounding?
+  → onto set proposal-approved add-search "<evidence>"
+
+$ onto advance add-search
+error: onto advance: cannot leave open: proposal review not recorded (review the proposal, then run `onto set proposal-approved add-search "<evidence>"`)
+```
+
+The binary refuses until the phase's evidence exists. Write the proposal,
+record its review, and advance:
+
+```console
+$ $EDITOR docs/changes/add-search/proposal.md
+$ onto set proposal-approved add-search "proposal matches the request; scope excludes ranking"
+add-search: updated
+$ onto advance add-search
+add-search: open → design
+```
+
+Design produces `design.md`, delta specs under `specs/`, and `tasks.md`. Build
+also needs an isolation choice:
+
+```console
+$ onto set approach-confirmed add-search "linear scan chosen over index: <1k notes"
 $ onto set isolation add-search branch
-$ onto advance add-search        # design → build
+$ onto advance add-search
+add-search: design → build
 ```
 
-Each transition needs that phase's deliverables. They accumulate; this table
-is the `full` workflow, and the `fix`/`tweak` presets run a reduced path:
-
-| Leaving | Requires |
-|---|---|
-| `open` | `proposal.md` |
-| `design` | + `design.md`, `tasks.md`, `isolation` set |
-| `build` | + `plan.md` **and every `tasks.md` box checked** |
-| `verify` | + `verification.md`, `verify-result = pass` |
-
-`verify → close` also blocks on uncommitted work: this change's own artifacts
-or any source path, but not another change's in-flight docs (`onto dirt
-<change>` classifies each path, and the refusal names what blocks). Close has
-its own evidence gates:
+Build writes `plan.md`, implements each task with its own commit, and checks
+it off in `tasks.md`. Unchecked tasks block the exit:
 
 ```console
-$ onto close add-search          # error: unresolved close evidence
-$ onto set guides add-search updated
-$ onto set base-ref add-search "$(git rev-parse <original-base>)"
-$ onto set base-branch add-search main
-$ onto set integration add-search merge
-$ onto set close-confirmed add-search "validated close plan"
-$ onto merge-deltas add-search
-$ git add -- docs/changes/add-search docs/specs docs/guides
-$ git commit -q -m "close evidence"
-$ onto close add-search          # archived to docs/changes/archive/2026-07-14-add-search
-$ git add -A && git commit -m "archive add-search"
-$ git switch main && git merge --no-ff <change-branch>
-$ onto complete-integration add-search --receipt "merge:$(git rev-parse HEAD)"
+$ onto advance add-search
+error: onto advance: cannot leave build: tasks.md has unchecked items
 ```
 
-`close` also refuses while any dependency is unresolved (see `onto graph`). A
-new archive remains resumable at close until integration is recorded; a manual
-PR handoff is not completion. Terminal states: archived and integrated (success)
-and `onto abandon`
-(failure). Read-only inspectors: `onto status`, `doctor`, `state --json`,
-`gate --json`, `scale`, `graph`, `handoff`, `dirt`.
+Verify records evidence and a result; close merges specs, archives, and
+records the integration. The [onto workflow](onto-workflow.md) walks the whole
+flow with every file's contents. The end looks like this:
 
-Concepts and the skills side: [the onto workflow](onto-workflow.md). Every
-command and gate: [onto reference](onto-reference.md).
+```console
+$ onto merge-deltas add-search
+  merged search → docs/specs/search.md
+add-search: 1 delta spec(s) merged; marked close.merged
+$ onto close add-search
+add-search: archived to docs/changes/archive/2026-10-27-add-search; integration pending
+$ git switch main && git merge --no-ff onto/add-search
+$ onto complete-integration add-search --receipt merge:$(git rev-parse HEAD)
+add-search: integration complete for repository config (merge:b7e101e…)
+$ onto doctor
+healthy
+```
 
-## 5. Supported / not supported
+## 9. A to change by hand
 
-| Supported | Notes |
+`to` is three phases and one artifact:
+
+```console
+$ to init
+created docs/tasks
+created docs/tasks/archive
+
+$ to new tune-cache
+created change "tune-cache" at docs/tasks/tune-cache
+  docs/tasks/tune-cache/to-state.yaml
+  docs/tasks/tune-cache/plan.md
+
+$ $EDITOR docs/tasks/tune-cache/plan.md       # goal, boundary, task contracts
+$ to phase tune-cache
+change "tune-cache" advanced plan → do
+
+# … implement, review, commit each task …
+
+$ to done tune-cache
+error: to done: --verified is required; verify the change first (the to-done skill), then assert it
+$ to done tune-cache --verified --evidence "go test ./... ok; to-skeptic: no blocking findings"
+change "tune-cache" done, archived at docs/tasks/archive/2026-10-27-tune-cache
+```
+
+`--verified` is a recorded assertion, not a check. The `to-done` skill is
+where the real verification happens. See the [to workflow](to-workflow.md).
+
+## Where next
+
+| You want to… | Read |
 |---|---|
-| MCP servers, settings, skills, plugins, TUI settings | OpenCode, full — the only adapter (Claude Code and codex were removed in v0.13.0) |
-| Packages (`[frameworks.*]`) | builtin `onto` and `to` lifecycle workflows (complementary), and the `h` GitHub skill bundle; also `local:` roots and digest-pinned `remote:` sources |
-| Commands, subagents (`builtin:` / `local:`) | subagents: `mode = link` (default) or `copy` |
-| Remote sources (`remote:…`) | subagents and frameworks; **require `digest = "sha256:…"`**; fetched, verified, pinned, cached |
-| Moving/renaming the repo | same-domain project links are relative; reapply repairs eligible state-recorded relocations through the normal plan/confirm path (see [projection & state](projection-and-state.md)) |
-
-`[frameworks.h]` with `source = "builtin:h"` is the stable generic package key
-for the bundle. It installs both onto and to dependencies, the five `/h-*`
-skills/commands, and their two read-only workers; all commands use the shared
-`homonto` coordinator. Calling `h` a skill bundle does not rename the key.
-
-| Not supported (accepted for beta) | Detail |
-|---|---|
-| OpenCode JSONC comments | any apply that writes `opencode.jsonc` drops comments (no-op applies don't) |
-| Secrets without a backend | `${pass:…}` needs `pass` on `PATH`; `${ENV_VAR}` needs the var set |
-| Adapters beyond OpenCode | none; configs naming `claude`/`codex` fail at load citing the v0.13.0 removal |
-
-## Where to next
-
-- [Configuration reference](configuration.md) — every table and field of `homonto.toml`.
-- [homonto CLI reference](cli-reference.md) — flags, exit codes, examples.
-- [Projection & state](projection-and-state.md) — how apply, drift, adoption, and pruning work.
-- [Troubleshooting & caveats](troubleshooting.md) — when something looks wrong.
+| Understand the moving parts | [Concepts](concepts.md) |
+| Copy a config for your situation | [Examples](examples.md) |
+| Look up a `homonto.toml` field | [Configuration](configuration.md) |
+| Choose between onto, to, no, and h | [Workflows](workflows.md) |
+| Know what each skill and agent does | [Catalog](catalog.md) |
+| Coordinate several repositories | [Workspaces](workspaces.md) |

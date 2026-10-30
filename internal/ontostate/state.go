@@ -46,7 +46,7 @@ var canonicalCommit = regexp.MustCompile(`^[0-9a-f]{40}$|^[0-9a-f]{64}$`)
 // enum membership sets for optional gated core fields. An empty value is
 // always allowed (legacy-tolerant); a non-empty value must be a member.
 var (
-	validWorkflows     = map[string]bool{"full": true, "fix": true, "tweak": true}
+	validWorkflows     = map[string]bool{"full": true, "light": true}
 	validIsolations    = map[string]bool{"branch": true, "worktree": true}
 	validIntegrations  = map[string]bool{"merge": true, "pr": true}
 	validBuildModes    = map[string]bool{"direct": true, "subagent": true}
@@ -211,7 +211,7 @@ func Load(path string) (State, error) {
 	if err != nil {
 		return State{}, fmt.Errorf("onto-state: failed to read %s: %w", path, err)
 	}
-	state, err := parseAndMigrate(b, path)
+	state, err := parseCurrent(b, path)
 	if err != nil {
 		return State{}, fmt.Errorf("%s: %w", path, err)
 	}
@@ -232,7 +232,7 @@ func (s State) Validate() error {
 		return fmt.Errorf("onto-state: phase %q is not one of open|design|build|verify|close", s.Phase)
 	}
 	if s.Workflow != "" && !validWorkflows[s.Workflow] {
-		return fmt.Errorf("onto-state: workflow %q is not one of full|fix|tweak", s.Workflow)
+		return fmt.Errorf("onto-state: workflow %q is not one of full|light", s.Workflow)
 	}
 	if s.Isolation != "" && !validIsolations[s.Isolation] {
 		return fmt.Errorf("onto-state: isolation %q is not one of branch|worktree", s.Isolation)
@@ -379,17 +379,17 @@ var orderedPhases = []string{"open", "design", "build", "verify", "close"}
 //   - full (and "" / unknown → strictest): the task list is derived from the
 //     confirmed design, so tasks.md gates the DESIGN exit — not the open exit —
 //     and design.md + plan.md are required as before.
-//   - fix / tweak presets: they skip design and plan entirely, so tasks.md is
-//     the open-lite checklist (required from the open exit on) and neither
-//     design.md nor plan.md is ever demanded. This is also what lets a preset
-//     advance mechanically past design/build (the former N2 gap).
+//   - light: it skips design and plan entirely, so tasks.md is the open-lite
+//     checklist (required from the open exit on) and neither design.md nor
+//     plan.md is ever demanded. This is also what lets a light change advance
+//     mechanically past design/build (the former N2 gap).
 //
 // The returned slice is a fresh copy on every call.
 func RequiredArtifacts(phase, workflow string) []string {
 	base := func(extra ...string) []string {
 		return append([]string{"onto-state.yaml", "proposal.md"}, extra...)
 	}
-	if workflow == "fix" || workflow == "tweak" {
+	if workflow == "light" {
 		switch phase {
 		case "verify", "close":
 			return base("tasks.md", "verification.md")

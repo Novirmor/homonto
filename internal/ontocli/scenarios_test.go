@@ -20,8 +20,8 @@ func TestScenarioDeclarationsRejectAmbiguousEvidence(t *testing.T) {
 	}{
 		{"separate specs", "full", "specs/first.md", delta, "specs/second.md", otherDelta, "specs/first.md:5", "specs/second.md:5"},
 		{"same spec distinct scenarios", "full", "specs/first.md", delta, "specs/first.md", delta + otherDelta, "specs/first.md:5", "specs/first.md:13"},
-		{"preset tasks and report", "tweak", "tasks.md", "- [x] #1 verify\nScenario-ID: SC-shared\n", "verification.md", "Result: pass\nScenario-ID: SC-shared\n", "tasks.md:2", "verification.md:2"},
-		{"preset duplicate task declarations", "fix", "tasks.md", "- [x] #1 verify\nScenario-ID: SC-shared\n", "tasks.md", "- [x] #1 verify\nScenario-ID: SC-shared\nAnother obligation:\nScenario-ID: SC-shared\n", "tasks.md:2", "tasks.md:4"},
+		{"preset tasks and report", "light", "tasks.md", "- [x] #1 verify\nScenario-ID: SC-shared\n", "verification.md", "Result: pass\nScenario-ID: SC-shared\n", "tasks.md:2", "verification.md:2"},
+		{"preset duplicate task declarations", "light", "tasks.md", "- [x] #1 verify\nScenario-ID: SC-shared\n", "tasks.md", "- [x] #1 verify\nScenario-ID: SC-shared\nAnother obligation:\nScenario-ID: SC-shared\n", "tasks.md:2", "tasks.md:4"},
 		{"full no-delta tasks and report", "full", "tasks.md", "- [x] #1 verify\nScenario-ID: SC-shared\n", "verification.md", "Result: pass\nScenario-ID: SC-shared\n", "tasks.md:2", "verification.md:2"},
 		{"full no-delta duplicate task declarations", "full", "tasks.md", "- [x] #1 verify\nScenario-ID: SC-shared\n", "tasks.md", "- [x] #1 verify\nScenario-ID: SC-shared\nAnother obligation:\nScenario-ID: SC-shared\n", "tasks.md:2", "tasks.md:4"},
 		{"full no-delta duplicate report declarations", "full", "verification.md", "Result: pass\nScenario-ID: SC-shared\n", "verification.md", "Result: pass\nScenario-ID: SC-shared\nAnother obligation:\nScenario-ID: SC-shared\n", "verification.md:2", "verification.md:4"},
@@ -119,8 +119,7 @@ func TestScenarioDeclarationsIgnoreReferencesAndExamples(t *testing.T) {
 		name, workflow, declaration string
 	}{
 		{"full delta", "full", "specs/unique.md"},
-		{"fix", "fix", "tasks.md"},
-		{"tweak", "tweak", "tasks.md"},
+		{"light", "light", "tasks.md"},
 		{"full no-delta tasks", "full", "tasks.md"},
 		{"full no-delta report", "full", "verification.md"},
 		{"legacy no-delta report", "", "verification.md"},

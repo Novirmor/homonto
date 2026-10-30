@@ -1,386 +1,435 @@
-# onto reference — commands, flow, and gates
+# onto reference
 
-The precise reference for the `onto` binary: how a change **enters** the
-workflow, how it **moves** between phases, the exact **gates** each
-transition enforces, and every command. For the conceptual overview and the
-skills side, read [the onto workflow](onto-workflow.md) first.
+Every `onto` command, flag, and gate. Concepts and a worked example:
+[onto workflow](onto-workflow.md).
 
-The **`onto` binary owns the state and the gates**; the `onto-*` skills own
-the work inside each phase. Every state change goes through the binary
-(`onto new`, `onto set …`, `onto advance`, `onto close`). The skills never
-hand-edit `onto-state.yaml`, and the phase is always cross-checked against
-real file state.
+## Conventions
 
-Most commands take `--dir <root>` (default `.`) to select the configuration
-root. `<workflow-root>` below means `[workflow].root` from its
-`homonto.toml` (default `docs`). Phase/lifecycle mutations require the onto framework
-to be installed by homonto, directly through `[frameworks.onto]` or as a
-dependency of the `[frameworks.h]` GitHub skill bundle. `demote` bridges the
-frameworks and also accepts an applied `[frameworks.to]`. Read-only commands
-do not write; `onto dirt <change>` reads
-configuration to resolve the records root and recorded source scope. Read-only
-does not mean config-independent; legacy config-free recovery uses `docs`.
+- `--dir <config-root>` (default `.`) selects the directory containing
+  `homonto.toml`. Pass the config root even when your shell is in a source
+  worktree.
+- `<workflow-root>` is `[workflow] root` (default `docs`). Changes live in
+  `<workflow-root>/changes/<name>/`, archives in `changes/archive/`.
+- Change names are kebab-case; path traversal is rejected; `archive` is
+  reserved. Active names are unique across onto and to.
+- **Install gate.** `init`, `new`, `set`, `advance`, `bypass`, `close`,
+  `abandon`, `merge-deltas`, and `complete-integration` refuse unless `homonto.toml` declares `[engines.onto]` and
+  `homonto apply` has materialized `.homonto/catalog/skills/onto`. `demote`
+  also accepts an applied `[engines.to]`.
+- Read-only commands need no install but still read `homonto.toml` for the
+  records root and source scope.
+- Output goes to stderr. Exit `0` on success, non-zero on a refused gate or
+  error.
+- Managed records (`workflow.git = "managed"`): each mutation checkpoints its
+  own record changes. If a checkpoint fails after the state write, the command
+  exits non-zero; run `homonto workspace recover`, then inspect state before
+  retrying.
 
-## General flow
+## Command summary
 
-```
-                 ┌─────────────────── onto advance (one phase per call) ───────────────────┐
-                 ▼                                                                          │
-   onto new → [ open ] → [ design ] → [ build ] → [ verify ] → [ close ] ── onto close ──→ archived/pending
-                                                                                                  │
-                                                   done ← onto complete-integration ←──────────────┘
+| Command | Writes | Purpose |
+|---|---|---|
+| `onto init` | yes | Create `changes/`, `specs/`, `adr/`, `guides/` (never overwrites). |
+| `onto new <c>` | yes | Create a change at phase `open`. |
+| `onto set <field> <c> …` | yes | Record a decision or evidence token. |
+| `onto advance <c>` | yes | Move one phase forward if every gate passes. |
+| `onto merge-deltas <c>` | yes | Merge delta specs into living specs. |
+| `onto close <c>` | yes | Archive a change in phase `close`. |
+| `onto complete-integration <c>` | yes | Record a merge, PR, or no-op receipt. |
+| `onto abandon <c>` | yes | Unsuccessful terminal state. |
+| `onto bypass <c>` | yes | User-requested emergency skip, audited. |
+| `onto demote <c>` | yes | Convert into a `to` change. |
+| `onto evidence record <c>` | yes | Append a structured verification claim. |
+| `onto status` | no | Derived phase of each active change. |
+| `onto state <c>` | no | Full state. |
+| `onto gate <c>` | no | Pending decisions with resolving commands. |
+| `onto scale <c>` | `--set` only | Measure the diff → verification level. |
+| `onto dirt [c]` | no | Classify uncommitted paths. |
+| `onto graph` | no | Dependency graph. |
+| `onto trace [c]` | no | Requirements → scenarios → tasks → evidence. |
+| `onto handoff <c>` | `--write` only | Recovery pack. |
+| `onto doctor` | no | Workspace health. |
+| `onto cleanup list\|preview\|apply` | `apply` only | Archive abandoned records and remove clean, integrated worktrees of terminal changes. |
+| `onto version` | no | Release version. |
 
-   presets:   --workflow fix / tweak run a reduced path (open-lite → build → verify → close),
-              and upgrade to the full path when scope grows.
+## `onto init`
 
-   failure:   onto abandon <change>  →  abandoned  (the unsuccessful terminal state)
-```
-
-A change tracks its phase and evidence in
-`<workflow-root>/changes/<name>/onto-state.yaml`. The phase set is exactly
-`open → design → build → verify → close`; `close` is the terminal phase
-(reached by advancing), after which `onto close` archives the change and records
-pending Git integration. `done` is derived only after `onto
-complete-integration` records a merge, proven no-op, or opened-PR claim.
-There is no `archive` phase.
-
-## Entering — `onto init` and `onto new`
-
-**`onto init [--dir <root>]`** scaffolds the `<workflow-root>/{changes,specs,adr,guides}/`
-layout, idempotently. It reports created vs. skipped paths and never
-overwrites existing content.
-
-**`onto new <name> [--workflow full|fix|tweak] [--repo <declared-name>] [--base <alias>=<branch>]`** creates
-`<workflow-root>/changes/<name>/` with:
-
-- `onto-state.yaml` at **phase `open`**, `workflow: full` (the default);
-- a `proposal.md` skeleton — plus `tasks.md` **only for the fix/tweak
-  presets**; a full change's `tasks.md` is derived later, in design.
-
-It requires the framework installed, refuses to clobber an existing change,
-and validates that the name is kebab-case with no path traversal.
-
-`--repo` is repeatable and records selected names from `[repos]` in
-`onto-state.yaml`. Schema 2 requires at least one alias and has no implicit
-config source; schema 0/1 retains the implicit config repo and optional
-additional aliases. Records stay at `<workflow-root>`. Pass the config root
-as `--dir`, even from a source worktree.
-
-Schema 2 also accepts repeatable `--base <alias>=<branch>`, once per selected
-alias, naming an existing local branch. Without it, creation captures each
-source's current HEAD and attached local branch. An override captures the
-chosen branch's tip and integration target without switching or cleaning the
-source checkout:
-
-```bash
-onto new add-search --repo api --repo web --base api=main --base web=develop --dir /work/control
+```console
+$ onto init
+created docs/changes
+created docs/specs
+created docs/adr
+created docs/guides
 ```
 
-Choose these anchors before record creation. Worktree creation must match both
-the frozen commit and target; later setters cannot rebase or retarget them.
-Schema 0/1 rejects `--base`. A retained worktree binding blocks reuse of its
-workflow/change name even after archive or abandonment. See
-[workspaces](workspaces.md) for isolation and removal.
+Idempotent: existing paths are reported as skipped.
 
-## Advancing — `onto advance <change> [--to build]`
+## `onto new <change>`
 
-Each call attempts **one** transition and writes nothing unless every gate
-below passes, in this order. `--to build` is **preset-only** and the only
-accepted value: it walks the gated advances up to build in one call, so a
-`fix`/`tweak` change reaches build without two ceremonial advances. Every gate
-below still applies to each step it walks. Each successful hop is saved; a later
-failure does not roll back an earlier hop.
+```text
+onto new <change> [--workflow full|light] [--repo <alias>]... [--base <alias>=<branch>]...
+```
 
-1. **Framework installed** (the install gate) and a **valid change name**.
-2. State **loads** and the change is **not abandoned**.
-3. The current phase has a **next phase** (advancing from `close` is an
-   error).
-4. **Required artifacts** for the *current* phase all exist — **workflow-aware**
-   (they accumulate). A full change derives its task list *from* the
-   confirmed design, so `tasks.md` gates the **design** exit, not the open
-   exit. The fix/tweak presets skip design and decompose at open-lite, so
-   their `tasks.md` gates the **open** exit and no `design.md`/`plan.md` is
-   ever demanded (this is what lets a preset advance straight through
-   design and build):
+Creates `<workflow-root>/changes/<change>/` with `onto-state.yaml` (phase
+`open`) and an empty `proposal.md`; presets also get `tasks.md`. Refuses an
+existing name.
 
-   | Leaving phase | full | fix / tweak |
+| Flag | Notes |
+|---|---|
+| `--workflow` | `full` (default) or `light`. |
+| `--repo` | Repeatable `[repos]` alias. Schema 2: required, and the list is the complete source set. Schema 0/1: optional extra siblings beside the implicit config repository. |
+| `--base` | Schema 2 only, repeatable, once per selected alias: integrate into this existing **local** branch, anchored at its current tip. Default: each source's current branch and HEAD. The dirty checkout is not switched. |
+
+```console
+$ onto new add-search --repo api --repo web --base api=main --base web=develop --dir /work/control
+```
+
+Anchors are frozen at creation; later worktree creation must match them.
+
+## `onto advance <change> [--to build]`
+
+Attempts one transition and writes nothing unless every check passes, in
+this order:
+
+1. Install gate, valid name.
+2. State loads; change not abandoned.
+3. The current phase has a next phase.
+4. **Required artifacts** (cumulative):
+
+   | Leaving | full | light |
    |---|---|---|
-   | `open`   | `proposal.md` | `proposal.md`, `tasks.md` |
-   | `design` | + `design.md`, `tasks.md` | *(pass-through — no `design.md`)* |
-   | `build`  | + `plan.md` (and all tasks checked) | all tasks checked (no `plan.md`) |
-   | `verify` | + `verification.md` | + `verification.md` |
+   | open | `proposal.md` | `proposal.md`, `tasks.md` |
+   | design | + `design.md`, `tasks.md` | (pass-through) |
+   | build | + `plan.md` | — |
+   | verify | + `verification.md` | + `verification.md` |
 
-   An empty legacy workflow is treated as full; an unknown workflow is invalid.
+5. **Leaving build:** no `- [ ]` left in `tasks.md`.
+6. **Evidence tokens:**
+   - leaving open (full): `proposal_approved` non-empty;
+   - entering build: `isolation` set; `approach_confirmed` non-empty (full);
+     every dependency complete; no dependency cycle;
+   - leaving verify: `verify.result == pass` and exactly one canonical
+     passing `Result:` line in `verification.md`.
+7. **Entering close:** the selected source checkouts are clean and readable
+   (see [cleanliness](#source-cleanliness)). Other transitions only warn
+   about dirt.
 
-5. **Leaving `build`:** `tasks.md` has **no unchecked items** (`- [ ]`).
-6. **Evidence / entry tokens** (recorded via `onto set`, not inferred from
-   files):
-   - **Leaving `open`** (full only): `proposal_approved` is non-empty — the
-     open phase's proposal-review summary.
-   - **Entering `build`** (design→build): `isolation` is set (`branch` or
-     `worktree`), so planning and build work is never committed unisolated;
-      **and** `approach_confirmed` is non-empty (full only) — the design
-      phase's selected approach and basis; **and** every dependency is complete;
-      **and** the change is **not in a dependency cycle** (no valid build order
-      exists).
-    - **Leaving `verify`** (verify→close): `verify.result == pass` and exactly
-      one canonical `Result:` line in `verification.md` reporting a pass.
+`--to build` (presets only) walks the hops to build in one call; each hop is
+gated and saved individually.
 
-   These review tokens preserve the decision across sessions: the binary refuses
-   the transition while a token is empty. The coordinator records a truthful
-   review summary; Git records who wrote it. Presets are exempt from the two
-   full-only tokens but still record close-plan validation.
-7. **Worktree cleanliness:** entering `close` audits the recorded source scope.
-   Schema-2 explicit records select only their `--repo` aliases, using each
-   registered execution worktree when present. Legacy records also include the
-   implicit config repo. A real combined source/records checkout classifies its
-   own change artifacts as `own` (blocking), other changes and archives as
-   `change` (nonblocking), and other paths as `source` (blocking). A separate
-   source checkout has no records carve-out, even for similarly named paths.
-   Independent records Git and unselected sources are not extra source gates.
-   A missing alias, invalid binding, unavailable Git worktree, or undeterminable
-   result blocks. `onto dirt <change>` labels every repository and path.
-   Other transitions only warn on determinable config-checkout dirt.
+```console
+$ onto advance add-search
+error: onto advance: cannot leave open: proposal review not recorded (review the proposal, then run `onto set proposal-approved add-search "<evidence>"`)
+$ onto advance fix-crash --to build
+error: onto advance: cannot enter build: missing isolation (set branch or worktree)
+```
 
-A failed gate exits non-zero without advancing that hop. In managed mode,
-pending history recovery can also make the command fail after a phase write;
-inspect state and use `homonto workspace recover` before retrying the workflow.
+A full change upgraded from an older onto that lacks a now-required review
+token refuses its next advance until that review is recorded.
 
-## Explicit bypass — `onto bypass <change> --to <phase|archive> --reason <reason>`
+## `onto set <field> <change> [value]`
 
-This is an emergency operator command, surfaced through the dedicated
-`/onto-bypass` slash command only after the user explicitly requests it. It accepts any
-workflow phase (`open`, `design`, `build`, `verify`, or `close`) or `archive`;
-it skips the normal transition, evidence, dependency, merge, and worktree
-checks. The framework-install gate, change-name validation, readable valid
-state, and filesystem safety checks still apply.
+| Field | Values | Gate / meaning |
+|---|---|---|
+| `proposal-approved <c> "<evidence>"` | text | Leave open (full). |
+| `approach-confirmed <c> "<evidence>"` | text | Enter build (full). |
+| `isolation <c> <v>` | `branch`, `worktree` | Enter build. |
+| `build-mode <c> <v>` | `direct`, `subagent` | Who edits during build. |
+| `tdd-mode <c> <v>` | `tdd`, `direct` | Whether build writes the failing test first. |
+| `build-pause <c> <v>` | `plan-ready`, `clear` | Record an explicitly requested pause after planning. |
+| `verify-result <c> <v>` | `pending`, `pass`, `fail` | Leave verify, close. `pass` captures selected source HEADs; `fail` increments the round counter. |
+| `verify-scale <c> <v>` | `light`, `full` | Verification level. |
+| `guides <c> <v>` | `pending`, `updated`, `waived:<reason>` | Close (full). |
+| `integration <c> <v>` | `merge`, `pr` | Close. |
+| `close-confirmed <c> "<evidence>"` | text | `merge-deltas` and close (all workflows). |
+| `close-merged <c>` | — | Compatibility alias that delegates to `merge-deltas`. |
+| `base-ref <c> <ref> [--repo a]` | commit | Diff anchor for `scale`. Schema 2: validates the frozen per-repo anchor; can't rebase it. |
+| `base-branch <c> <branch> [--repo a]` | branch | Integration target. Schema 2: validates the frozen target. |
+| `deps <c> --dep <name>…` | change names | Must be complete before build/close. |
+| `supersedes <c> --change <name>…` | change names | Shown in `onto graph`. |
+| `deviates-from <c> --from <name>…` | names | Shown in `onto graph`. |
+| `directive <c> "<text>"` | text | A verbatim pre-authorization from you. |
+| `workflow <c> full` | `full` | One-way preset upgrade; invalidates build/verify/close evidence. |
 
-Every invocation requires a non-empty user reason and appends a versioned
-`.onto/bypass.json` record with the timestamp, command, source/target, reason,
-and skipped checks. `archive` moves the existing workspace without merging its
-spec deltas or ADRs. It is not a successful close.
+## `onto merge-deltas <change>`
 
-## Demotion — `onto demote <change> [--as <name>] --yes`
+Merges `changes/<c>/specs/*.md` into `<workflow-root>/specs/` in a fixed
+order (RENAMED → MODIFIED → REMOVED → ADDED), after linting. Transactional:
+nothing is written unless every delta merges cleanly. Writes a receipt
+(`.onto/merge-receipt.json`) with the delta manifest and living-spec pre/post
+images so an interrupted merge resumes, and a changed delta or unexpected
+spec fails closed. Refuses until `close-confirmed` is recorded.
 
-Converts an onto change into a `to` change (ADR 0042), the mirror of
-`to promote` (ADR 0028): the complete source workspace moves unchanged into
-the neutral control plane (`.workflow/snapshots/`) of a fresh change.
-open/design restart at phase `plan`; build/verify continue at phase `do`
-only when each dotted task has a matching `## Task N.M` plan contract with
-concrete `Owner:`, `Repo:`, absolute `Cwd:`, `Files:`, `Do:`, and `Verify:`
-fields. Translation preserves execution scope and multiline fields/checks,
-renames `Do:` to `Change:`, and carries an explicit `Final Verify:` (including
-continuations), or the final task's recorded check when no aggregate is present.
-Tasks titled `DEFERRED TO CLOSE:` (case-insensitive prefix) transfer **unchecked**,
-even if onto checked them to defer work; other checkboxes retain their state.
-Missing, placeholder, or ambiguous contracts restart at `plan` with an honest
-snapshot-based stub, not invented execution detail or verification. A
-closed, abandoned, or archived change is refused. Converting back with
-`to promote` while nothing changed restores the previous workspace
-byte-for-byte; after edits it is a fresh conversion that snapshots the edited
-bytes. Crash recovery is receipt-verified and idempotent, tampered staging is
-refused, and the locks are taken in promote's fixed order (plus the onto
-workspace lock, which excludes concurrent onto mutations of the source).
+Delta lint rules: only the four section headings; each ADDED/MODIFIED
+requirement's first normative line contains SHALL or MUST; each has ≥1
+scenario with WHEN and THEN bullets; MODIFIED/REMOVED/RENAMED names match the
+living spec exactly.
 
-Conversion carries `repos`, `repo_mode`, and `repo_bases` source provenance,
-including canonical Git identity and any recorded base/target anchors, rather
-than recapturing today's HEAD. Current onto-state schema is 3 and to-state
-schema is 1; these are separate from config schema 2. Legacy provenance may
-have optional anchors; explicit source anchors remain required.
+## `onto close <change>`
 
-Registered worktree bindings block conversion: there is no ownership-safe
-active-binding conversion or rebind command. Continue in the current workflow;
-deleting a registry entry is not a supported workaround.
+Archives a change in phase `close`. Checks, in order:
 
-## Merging specs — `onto merge-deltas <change>`
+1. Install gate, name, state.
+2. Phase is `close`.
+3. Every cumulative artifact exists.
+4. Close evidence: `verify.result == pass` with one passing `Result:` line;
+   `guides` `updated` or `waived:…` (full); `integration` set; valid base and
+   target anchors; `close_confirmed`; `close.merged == true`.
+5. The verified source is intact and the merge receipt matches.
+6. Every dependency's integration is complete.
+7. Any pending integration record from an interrupted attempt is valid.
+8. Clean, determinable source scope.
+9. No clobber: same-day name reuse gets a numeric suffix.
 
-Before archiving, the close phase merges the change's spec deltas into the
-living specs with `onto merge-deltas`: a deterministic
-RENAMED → MODIFIED → REMOVED → ADDED application, lint-checked,
-**transactional** (writes nothing unless every delta merges clean), and
-**receipt-bound and resumable** (it records the exact delta manifest and living
-spec pre/post-images in `.onto/merge-receipt.json`). A changed delta, deleted
-delta, or unexpected living-spec image fails closed instead of being replayed.
-This replaces the
-by-hand merge that was the workflow's most destructive step.
+On success it writes `.onto/integration.json` (one pending entry per source
+repository), marks the change archived, and moves it to
+`changes/archive/<YYYY-MM-DD>-<c>/`. Rerunning after an interruption repairs
+the newest archive.
 
-It shares the close-plan review gate: `merge-deltas` refuses while
-`close_confirmed` is empty, so the specs never move before the plan is validated.
+Close refuses if commits after the recorded verification change source.
+Every intervening commit is inspected, not only the net diff; in a combined
+records/source checkout, record-only commits (`changes`, `specs`, `adr`,
+`guides`) are allowed. Re-verify, or reopen for a real fix.
 
-## Exiting — `onto close <change>`
+## `onto complete-integration <change>`
 
-Archives a change that has reached the `close` phase. Gates, in order:
+```text
+onto complete-integration <change> --receipt <receipt> [--repo <alias>] [--head <sha>]
+```
 
-1. Framework installed; valid name; state loads.
-2. Phase **is `close`** (advance until it reaches close first).
-3. Every cumulative artifact for the workflow exists.
-4. **Close evidence:** `verify.result == pass` and exactly one canonical passing
-   `Result:` line in `verification.md`; guides `updated` or `waived:<reason>` for
-   full workflows (presets are exempt); `integration` set to `merge` or `pr`;
-   valid immutable base/target anchors (per selected alias in explicit mode,
-   scalar `base_ref` / `base_branch` in legacy mode); non-empty `close_confirmed`
-   for every workflow; and `close.merged == true`.
-5. **Verified source intact** and a matching completed spec-merge receipt.
-6. **Dependencies resolved:** every tracked dependency has completed archive
-   integration; legacy archives remain accepted.
-7. **Pending integration record valid**, if an interrupted attempt left one.
-8. **Clean, determinable source scope** (same recorded-scope rule as entering
-   close, with recovery of the command's own pending integration sidecar).
-9. **No-clobber:** the dated archive target takes a numeric suffix on same-day
-   name reuse; filesystem safety checks still apply.
-
-On success it writes a pending `.onto/integration.json` with one entry per
-repository in the change's source scope (only selected aliases in explicit
-mode; config plus selected siblings in legacy mode), sets `archived: true` and
-`integration_required: true`, and moves the
-workspace to `<workflow-root>/changes/archive/<YYYY-MM-DD>-<name>/`. If the process stops
-between the move and flag write, rerunning `onto close <change>` repairs the
-newest dated archive. The archived change remains at derived phase `close`
-while any repository's integration is pending. Close also refuses when commits
-landed after the recorded verification pass that change source. For explicit
-sources, the verified commit must remain an ancestor, and only a real combined
-checkout allows descendants changing records under `changes`, `specs`, `adr`,
-or `guides`. Every intervening commit is inspected, not just the net diff;
-source edit/revert pairs and merge-parent source changes require re-verification.
-A separate source must retain the exact verified candidate.
-
-In managed mode, archive destination/date and source-state identity are prepared
-before history intent, then reused by the handler. Source identity and target
-safety are checked again before the move; the handler does not choose a different
-archive date or suffix after gates. If history is pending after interruption,
-recover it first and inspect state before retrying `onto close`.
-
-**`onto complete-integration <change> [--repo <alias>] --receipt <receipt> [--head <canonical-commit>]`**
-records the one-way post-archive result, one repository at a time. `--repo` is
-required for multiple explicit sources; a single explicit alias is inferred.
-Legacy omission selects config Git.
-
-| Receipt | Contract |
+| Receipt | Proves |
 |---|---|
-| `merge:<commit-sha>` | In merge mode, a real two-parent merge reachable from the recorded local base branch. Its first parent descends from the captured integration base; its second parent is the pinned source candidate, or a permitted combined-layout bookkeeping-only descendant. Mere ancestry of the candidate is insufficient. The ID is canonicalized. |
-| `unchanged:<receiving-commit-sha>` | A proven no-op in either integration mode. The receiving commit must descend from the captured integration base and be reachable from the recorded local target branch. At capture, the source must already have been an ancestor of that base, or descend from it with an identical tree. A merge that happened only afterward cannot manufacture this proof. No synthetic merge or empty PR is needed. |
-| `pr:<https-url>` | In PR mode, record the opened PR and, for explicit sources, `--head` with the canonical 40- or 64-character lowercase commit ID reported by the publication tool. The head is checked locally against the pinned candidate with the same bookkeeping-only allowance. The URL/head is an **external assertion**, not remote attestation: onto does not query the host to prove publication. |
+| `merge:<sha>` | A real two-parent merge reachable from the recorded base branch, whose first parent descends from the captured base and whose second parent is the verified candidate (or a records-only descendant in a combined checkout). Squash, rebase, and fast-forward merges don't qualify. |
+| `unchanged:<sha>` | A proven no-op: the receiving commit descends from the base and is on the target branch, and the source was already contained (or tree-identical) at capture. |
+| `pr:<https-url>` | An opened PR. Explicit sources also need `--head <40/64-hex sha>` from the publication tool, checked locally against the candidate. Not verified with the host. |
 
-Repeating the same receipt is idempotent; replacing it or its publication head
-is refused. Explicit receipts are revalidated even on retry. The derived phase
-becomes `done` and dependencies resolve once **every** source is complete. A
-manual `ship.md` handoff alone is not completion. Prefer allocating a needed
-receiver early; identity-checked terminal/archive allocation also supports
-post-archive recovery, with optional `--state-id` to disambiguate archives,
-never to override existing bindings. See [workspaces](workspaces.md#allocate-an-integration-receiver).
+`--repo` is required when several explicit sources are selected (one is
+inferred; legacy defaults to the config repository). Repeating the same
+receipt is idempotent; replacing it is refused. The change derives `done`
+when every repository is complete.
 
-**`onto abandon <change>`** is the other terminal state — the unsuccessful
-one — for work that stops rather than completes.
+```console
+$ onto complete-integration add-search --receipt merge:$(git rev-parse HEAD)
+add-search: integration complete for repository config (merge:b7e101e…)
+$ onto complete-integration add-search --repo api --receipt pr:https://github.com/acme/api/pull/42 --head 3f2a…
+```
 
-## Recording evidence — `onto set <field> <change> [value]`
+## `onto abandon <change>`
 
-Gate tokens live in `onto-state.yaml` and are set through `onto set`, never
-by hand:
+Marks the change abandoned — the unsuccessful terminal state. The record stays
+in `changes/<change>/` and keeps reserving the name until
+[`onto cleanup`](#onto-cleanup) archives it:
 
-| `onto set` field | Gate it satisfies / records |
-|---|---|
-| `proposal-approved <change> <evidence>` | required to **leave open** (full only); proposal review and basis |
-| `approach-confirmed <change> <evidence>` | required to **enter build** (full only); selected approach and basis |
-| `close-confirmed <change> <evidence>` | required for **`merge-deltas`** and **`close`** (all workflows); close-plan review summary |
-| `isolation <branch\|worktree>` | required to **enter build** |
-| `integration <merge\|pr>` | required to **close**; how the branch is integrated after archive |
-| `build-pause <plan-ready\|clear>` | record/clear an explicitly requested pause after planning so a fresh session resumes without re-planning |
-| `verify-result <pending\|pass\|fail>` | `pass` captures selected source HEADs and is required to **leave verify** and to **close**; `fail` increments `observed.verify_rounds`. At least 3 rounds is a doctor finding only while the current result is `fail`; a later pass retains the historical count without that finding. |
-| `verify-scale` | records the verification level for the verify phase (see `onto scale --set`) |
-| `close-merged` | compatibility spelling that delegates to `onto merge-deltas`; it cannot set an unbound marker |
-| `guides <updated\|waived:<reason>>` | required to **close** a full workflow |
-| `deps --dep <name> …` | dependency list; each must be archived before **close** |
-| `build-mode`, `tdd-mode` | records how build executes |
-| `base-ref [--repo <alias>]` | Immutable commit anchor used by `onto scale`. In explicit mode, validates the selected alias's frozen `repo_bases` value without rebasing it; legacy mode uses scalar `base_ref`. |
-| `base-branch [--repo <alias>]` | Immutable, syntax-checked integration target. In explicit mode, validates the selected alias's frozen target without retargeting; legacy mode uses scalar `base_branch`. Separate from commit-valued `base-ref`. |
-| `workflow <full>` | one-way preset upgrade from `fix`/`tweak` to the full workflow |
-| `supersedes`, `deviates-from` | cross-change relationships (surfaced by `onto graph`); repeat `--change <name>` (supersedes) or `--from <name>` (deviates-from) per target |
-| `directive` | a verbatim pre-authorization directive on the change |
+```console
+$ onto abandon spike-x
+spike-x: abandoned (was at phase open)
+$ onto new spike-x
+error: onto new: change "spike-x" already exists at …/docs/changes/spike-x; resume it, or inspect terminal cleanup with `onto cleanup preview spike-x --dir "…"`
+```
 
-## Inspection (no install gate)
+After cleanup, the name is free again. An abandoned archive never blocks a new
+change of the same name; an archive whose integration is incomplete still does.
 
-These commands resolve the configured records root and, where needed, source
-scope. `scale --set` and `handoff --write` are explicit write variants, not
-read-only inspection.
+## `onto bypass <change> --to <phase|archive> --reason "<reason>"`
 
-| Command | What it reports |
-|---|---|
-| `onto status` | each active change's derived phase and skeleton validity |
-| `onto state <change> [--json]` | a change's full state |
-| `onto gate <change> [--json]` | pending evidence decisions and the exact command that resolves each; most use `onto set`, while delta merging uses `onto merge-deltas` |
-| `onto scale <change> [--json] [--set]` | Verification level from committed source diffs (non-test files, changed lines). Explicit mode aggregates each selected execution checkout against its frozen base; legacy mode measures config Git against scalar `base_ref`. Actual combined-layout record trees are excluded. `--set` records the level via `verify-scale`. |
-| `onto graph [--json] [--check]` | the change dependency graph (`{nodes, edges, cycles}`); `--check` exits non-zero on a cycle — the same cycles the build gate rejects |
-| `onto dirt [change] [--json]` | Every uncommitted path classified against the change's recorded source scope, with repository labels and the combined-layout carve-out described above. Without a change, inspects config-checkout dirt rather than inventing a selected source set. |
-| `onto handoff <change> [--write]` | a compact recovery context pack (identity, phase, pending gate, artifact excerpts + a content hash) for continuing after a context compaction; `--write` persists it under `<workflow-root>/changes/<name>/.onto/handoff/` |
-| `onto doctor [--quiet]` | Workspace health across layout, state, phase/artifact match, dependencies, archives, and structured evidence; non-zero on any finding. Reports **`tasks.md` / `plan.md` drift** (mismatched task numbers or checkboxes in the plan; an absent preset plan is not drift), **version skew** (run `homonto update`), and at least 3 failed verify rounds only while `verify.result` remains `fail`. Historical failures resolved by a pass are not an unresolved finding. `--quiet` uses exit status only; see [enforcement](enforcement.md). |
-| `onto version` | the release-stamped version |
+User-requested only (the `/onto-bypass` command). Target is `open`, `design`,
+`build`, `verify`, `close`, or `archive`. Skips transition, evidence,
+dependency, merge, and worktree checks; still requires the install gate, a
+valid name and state, and filesystem safety. Appends
+`.onto/bypass.json` with timestamp, command, source, target, reason, and
+skipped checks. `archive` moves the workspace without merging deltas or ADRs.
 
-## Recovery packs — `onto handoff <change> [--json] [--write]`
+## `onto demote <change> [--as <name>] --yes`
 
-`handoff` emits the recovery context: identity, phases (claimed and
-derived), deps, repo aliases, commits, pending gates (as argv templates),
-artifact digests, and a safe next command. `--json` prints the interactive
-view (envelope plus the full state); `--write` persists the metadata-only
-recovery view — versioned JSON and Markdown under
-`<workflow-root>/changes/<name>/.onto/handoff/` with create-only, no-follow, confined
-writes. Persisted packs carry no artifact prose and no free-form state, so a
-secret pasted into a plan cannot reach them (ADR 0027).
+Converts an active onto change into a `to` change. The whole workspace is
+preserved under `.workflow/snapshots/` of the new change.
 
-## Structured evidence — `onto evidence record` and `onto trace`
+- From open/design: the to change starts at `plan`.
+- From build/verify: continues at `do` only if every dotted task has a
+  matching `## Task N.M` contract with concrete `Owner:`, `Repo:`, absolute
+  `Cwd:`, `Files:`, `Do:`, and `Verify:` fields (`Do:` becomes `Change:`;
+  `Final Verify:` is carried or taken from the last task). Otherwise restarts
+  at `plan` with a stub — no invented detail.
+- `DEFERRED TO CLOSE:` tasks transfer unchecked.
+- Closed, abandoned, or archived changes are refused, as are changes with
+  registered worktree bindings.
+- `to promote` back without edits restores the original byte-for-byte.
+- Crash recovery is receipt-verified; tampered staging is refused.
 
-`onto evidence record <change> --task N --scenario <Scenario-ID> --exec <name>
---cmd-hash <sha256> --exit <n> [--repo <alias>] [--output <file>] [--artifact <file>]` records one verification
-claim in `<workflow-root>/changes/<name>/.onto/evidence.json`: hashes only, never argv
-or output, anchored to the selected execution checkout's current commit.
-`--repo` is required for multiple explicit sources; a single alias is inferred,
-while legacy omission selects config Git. The binary never executes the
-command: run the checks, **finalize `verification.md` before recording claims**,
-then record their real outcomes. The report is hashed by default; subsequent
-edits make its current claims stale: re-verify and append replacements rather
-than deleting the old attempts. `--artifact` selects another file to hash,
-but doctor still compares the stored artifact hash to `verification.md`.
+## `onto evidence record <change>`
 
-Evidence is append-only. The last appended claim for each **(repo, task,
-scenario)** key supersedes earlier claims for an unambiguous scenario, even if
-its command changes; timestamps do not determine precedence. Doctor checks current claims for stale tasks,
-scenarios, commits, and report hashes, without making superseded failures a
-permanent blocker. `onto trace [change] [--json]` retains audit history and adds
-`superseded-by` edges. It renders the typed graph:
-changes, capabilities, requirements, scenarios, tasks, commits, and
-evidence. `onto doctor` reports unknown scenarios/tasks, duplicate scenario,
-requirement, or operation IDs, unreachable commits, and changed verification
-artifacts; a change verified
-without a sidecar gets a note, not a finding.
+```text
+onto evidence record <change> --task N --scenario <Scenario-ID> --exec <name>
+    --cmd-hash <sha256> --exit <n> [--repo <alias>] [--output <file>] [--artifact <file>]
+```
 
-For `fix`/`tweak` changes with **no delta specs**, declare each scenario on its
-own standalone line at **one canonical location**, in either `tasks.md` or
-`verification.md`, never both for the same ID, for example `Scenario-ID: cache-hit`.
-These IDs are the preset's trace contract; do not invent a spec just to record
-evidence. Full changes and presets with deltas use their delta-spec scenarios.
+Appends one claim to `.onto/evidence.json`: the command is named and hashed,
+the output file hashed — never stored — and the claim is anchored to the
+checkout's current commit. **onto never runs the command**; run it yourself
+(so your permission rules apply), finalize `verification.md`, then record.
 
-Scenario declarations must be unique across the change's contract. Doctor
-reports duplicates with every declaration's relative path and line number,
-even without an evidence sidecar. `evidence record` refuses an ambiguous ID;
-trace retains existing audit records and reports the ambiguity but gives them
-no coverage or `superseded-by` edges for that ID. Re-recording cannot choose
-between two obligations that share an identifier.
+- `--task` is the numeric trace ID from `[trace #N]`.
+- `--scenario` must be declared exactly once: in a delta spec, or — when the
+  change has no delta files — on its own line in `tasks.md` or
+  `verification.md`. Unknown or duplicate IDs are rejected.
+- `--artifact` defaults to `verification.md`, whose hash makes a claim stale
+  if the report later changes.
+- The last claim per (repo, task, scenario) supersedes earlier ones; history
+  is kept.
 
-Use plain mentions such as `cache-hit` or `See Scenario-ID: cache-hit` elsewhere.
-Prose references, inline code, blockquotes, and fenced examples are not
-declarations. In delta specs, declarations belong under a scenario within a
-requirement. Related rationale: [ADR 0053](../adr/0053-keep-history-without-blocking-fresh-verification.md).
+```console
+$ onto evidence record add-search --task 1 --scenario SC-add-search-match --exec go \
+    --cmd-hash "$(printf 'go test ./...' | sha256sum | cut -d' ' -f1)" --exit 0 --output test.out
+recorded SC-add-search-match <- task 1, go, exit 0, commit 10346c35645a
+```
 
-`--task N` takes the numeric marker from a task line such as
-`- [ ] 1.1 Implement parser [trace #1]`. The dotted `1.1` must match the
-corresponding `## Task 1.1` plan heading; `N` is the unique positive trace ID
-for evidence and graph links. A legacy `- [ ] #1 ...` task remains supported,
-but bare issue references such as `fixes #1` do not create trace tasks.
+## Inspection commands
 
-## Driving it from the tool — slash commands
+### `onto status`
 
-`homonto apply` installs a slash command per phase and preset, so you can
-drive the flow from the command palette: `/onto` (the dispatcher — it
-derives the active change's phase and routes automatically), plus
-`/onto-open`, `/onto-design`, `/onto-build`, `/onto-verify`, `/onto-close`,
-`/onto-fix`, `/onto-tweak`, and `/onto-no-slop`. Each command loads its
-matching skill; the binary still owns every state change.
+```console
+$ onto status
+add-search: open — skeleton ok
+fix-crash: build — skeleton ok
+```
+
+Archived changes with pending integration show as
+`add-search: close (archived; integration pending)`.
+
+### `onto state <change> [--json]`
+
+The full state. JSON includes `derived_phase` (computed from files) and
+`phase_mismatch` when the recorded phase disagrees.
+
+### `onto gate <change> [--json]`
+
+Pending decisions, each with options and the command that resolves it:
+
+```console
+$ onto gate add-search
+[Approach] Has the design approach been selected and its basis recorded?
+  → onto set approach-confirmed add-search "<evidence>"
+[Isolation] How should this change be isolated for build?
+  * branch — A branch off the base ref
+    worktree — A separate git worktree (parallel work / dirty tree)
+  → onto set isolation add-search <value>
+```
+
+### `onto scale <change> [--json] [--set]`
+
+```console
+$ onto scale add-search
+add-search: 1 non-test file(s), 11 changed line(s) → verify-scale light
+$ onto scale add-search --json
+{"files":1,"lines":11,"level":"light","recorded":false}
+```
+
+Measures committed non-test changes since `base-ref` (schema 2: each
+selected checkout against its frozen base). More than five non-test files →
+`full`. `--set` records the level.
+
+### `onto dirt [change] [--json]`
+
+```console
+$ onto dirt fix-crash
+?? docs/changes/fix-crash/notes.md (own)
+?? docs/changes/other-change/proposal.md (change)
+ M main.go (source)
+3 uncommitted path(s), 2 blocking close
+```
+
+Without a change, reports config-checkout dirt.
+
+### `onto graph [--json] [--check]`
+
+The dependency graph as `{nodes, edges, cycles}`. `--check` exits non-zero
+on a cycle.
+
+### `onto trace [change] [--json]`
+
+The typed graph of changes, capabilities, requirements, scenarios, tasks,
+commits, and evidence, with `superseded-by` edges between attempts.
+
+### `onto handoff <change> [--json] [--write]`
+
+Identity, claimed and derived phase, dependencies, repositories, commits,
+pending gates as argv, artifact digests and excerpts, and a safe next
+command. `--write` persists a metadata-only pack (no prose) under
+`.onto/handoff/`.
+
+### `onto doctor [--quiet]`
+
+Workspace health; non-zero on any finding: missing layout, malformed state,
+phase/artifact mismatch, unresolved dependencies, archived-but-active
+changes, `tasks.md`/`plan.md` drift, malformed archives, ≥3 failed verify
+rounds while still failing, stale or unknown evidence, duplicate scenario IDs
+(with paths and lines), and version skew between `onto` and the homonto that
+installed the skills (fix with `homonto update`). `--quiet` prints nothing
+and reports only by exit status.
+
+## `onto cleanup`
+
+```text
+onto cleanup list    [--json] [--dir <root>]
+onto cleanup preview <change> [--identity <id>] [--json] [--dir <root>]
+onto cleanup apply   <change> --identity <id> --yes [--json] [--dir <root>]
+```
+
+Cleans up after a change that is over: archived with every integration
+receipt, or abandoned. It archives an abandoned record still in `changes/` and
+removes registered worktrees that are clean and integrated. It keeps branches
+and never edits archives. It doesn't need `[engines.onto]` to be installed.
+`list` and `preview` write nothing. `apply` needs the exact `--identity` from
+`list` or `preview`, and `--yes` confirms without bypassing any check:
+
+```console
+$ onto cleanup preview spike-x
+onto/spike-x	cleanup-pending	identity=13a7e345	changes/spike-x
+  archive: changes/archive/2026-10-27-spike-x
+  apply: onto cleanup apply spike-x --identity 13a7e345 --yes
+$ onto cleanup apply spike-x --identity 13a7e345 --yes
+onto/spike-x	cleanup-complete	identity=13a7e345	changes/archive/2026-10-27-spike-x
+```
+
+Statuses, blockers, receipts, and retrying:
+[cleaning up terminal workflows](workflow-cleanup.md).
+
+## Source cleanliness
+
+Entering close and closing audit the change's **recorded** source scope:
+
+- Schema 2: only the selected aliases, using each registered execution
+  worktree when present.
+- Schema 0/1: the config repository plus selected siblings.
+
+In a checkout that holds both records and source, paths are classified `own`
+(blocks), `change` (doesn't), or `source` (blocks). A separate source
+checkout has no records carve-out. Missing aliases, invalid bindings, or
+unreadable Git state block rather than pass.
+
+## Task and trace IDs
+
+```markdown
+- [ ] 1.1 Implement parser [trace #1]          ← tasks.md
+## Task 1.1 — Implement parser                  ← plan.md
+```
+
+The dotted ID binds `tasks.md` to `plan.md` (doctor checks the match). The
+`[trace #N]` ID binds evidence and trace output. Legacy `- [ ] #1 …` lines
+still work; `fixes #1` in prose doesn't create a trace task.
+
+## State file
+
+`onto-state.yaml` (schema 3) is written only by the binary:
+
+```yaml
+schema_version: 3
+change: add-search
+id: 7984967a
+workflow: full
+phase: open
+created: "2026-10-27"
+```
+
+Sidecars live in the change's `.onto/` directory: `evidence.json`,
+`merge-receipt.json`, `integration.json`, `bypass.json`, `handoff/`.

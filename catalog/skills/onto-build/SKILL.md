@@ -1,6 +1,6 @@
 ---
 name: onto-build
-description: Build an active full onto change from its confirmed design with reviewable tasks, focused commits and candidate-bound verification. Preset work returns to onto-fix or onto-tweak; pause after planning only on explicit request.
+description: Build an active full onto change from its confirmed design with reviewable tasks, focused commits and candidate-bound verification. Light work returns to onto-light; pause after planning only on explicit request.
 ---
 
 # onto-build — Phase 3: Plan and Build
@@ -9,6 +9,8 @@ Turn the confirmed design into a plan, then the plan into committed code —
 one small, verified task at a time.
 Apply the shared [autonomous workflow policy](../homonto/references/autonomy.md),
 including workspace roots and dirty-work decisions, even on direct entry.
+Follow the [delivery loop](../onto/references/delivery.md); checked tasks lead to
+verification, repairs and the requested endpoint in the same invocation.
 
 ## Entry check
 
@@ -16,8 +18,8 @@ including workspace roots and dirty-work decisions, even on direct entry.
   phase `build`.
 - `workflow: full` → a `design.md` marked `Status: Confirmed` must exist; if
   it doesn't, the design phase isn't done — route back through `/onto`.
-- Presets (`fix`/`tweak`) enter build directly after open-lite.
-- If dispatched here for a preset, return to `onto-fix` or `onto-tweak` step 2.
+- Light changes enter build directly after open-lite.
+- If dispatched here for a light change, return to `onto-light` step 2.
   The planning steps below are full-workflow steps; preset repairs retain their
   inline contracts and existing mode, with no new design or plan requirement.
 - On a downward mismatch, repair the build artifacts while leaving the later
@@ -31,18 +33,17 @@ including workspace roots and dirty-work decisions, even on direct entry.
   run `onto set build-pause <name> clear`, derive the build config, and proceed
   without asking again.
 - On resume (fresh session, context loss): run `onto dirt <name> --json`
-  FIRST (falling back to `git status` on an old binary). Dirt classified
-  `source` or `own` is usually an interrupted task's partial work —
-  reconcile it before continuing per the dispatcher's
-   `onto/references/dirty-workspace.md`: preserve it under the existing choice,
-   or ask once for preserve/isolate/cleanup with exact paths if none exists.
-   Never reset partial work automatically. Explicitly include approved task input;
-   dirt
-  classified `change` belongs to another change — leave it. Never build on
-  top of partial edits unknowingly — the same rule the subagent protocol
-  enforces for fresh agents. Then find the first unchecked task in
-   `tasks.md`/`plan.md` and continue from there, honoring any recorded prerequisite
-   override in notes; never redo committed tasks.
+  FIRST (falling back to `git status` on an old binary).
+  - Dirt classified `source` or `own` is usually an interrupted task's partial
+    work. Reconcile it before continuing per the dispatcher's
+    `onto/references/dirty-workspace.md`: preserve it under the existing choice,
+    or ask once for preserve/isolate/cleanup with exact paths if none exists.
+    Never reset partial work automatically. Explicitly include approved task input.
+  - Dirt classified `change` belongs to another change — leave it.
+  - Never build on top of partial edits unknowingly — the same rule the subagent
+    protocol enforces for fresh agents. Then find the first unchecked task in
+    `tasks.md`/`plan.md` and continue from there, honoring any recorded
+    prerequisite override in notes; never redo committed tasks.
 
 ## Steps
 
@@ -77,9 +78,9 @@ configuration without asking:
 - `onto set tdd-mode <name> tdd` for testable behavior; use `direct` for
   content, configuration values, and documentation-only deliverables
 
-Isolation was chosen before entering build. If unset, resolve dirty work under
-the shared policy first; then choose worktree isolation under the applicable
-config-mode protocol, or a safe source branch. Build work must never run unisolated.
+Isolation was chosen before entering build. Reuse the recorded task choice and
+per-repo exceptions. If absent, ask once under the shared execution policy before
+allocation, then resolve uncovered dirty work. Build work must never run unisolated.
 
 Pause only when the user explicitly asks to stop after the plan. In that case,
 run `onto set build-pause <name> plan-ready` and end the invocation before
@@ -87,26 +88,33 @@ execution. Otherwise never set the pause. Record the selected config and its
 basis in `notes.md`; record any explicit directive verbatim with `onto set
 directive`.
 
-Validate and reuse the isolation created during open/setup using `references/worktree-protocol.md`.
-Do not postpone schema-2 allocation until build: it must follow `new` before any
-records/source commit. If setup is incomplete, repair it without retargeting the
-frozen base; an advanced target is a blocker, not permission to recreate state.
-Use that protocol
-for schema 2 registered worktrees or legacy combined isolation. Inspect before writes; unrelated dirt requires the
+Validate and reuse the isolation created during open/setup using
+`references/worktree-protocol.md`, for schema 2 registered worktrees or legacy
+combined isolation. Do not postpone schema-2 allocation until build: it must
+follow `new` before any records/source commit. If setup is incomplete, repair it
+without retargeting the frozen base; an advanced target is a blocker, not
+permission to recreate state. Inspect before writes; unrelated dirt requires the
 shared preserve/isolate/cleanup decision, not an automatic worktree or commit.
 Checkpoint owned Markdown records in managed mode; retain named manual records
 commits in existing mode. Never copy `.env` or untracked input automatically.
 For branch isolation, create the source branch `<type>/YYYYMMDD/<change-name>`
 only in its safe selected execution root. Type prefix: `feature` for full,
-`fix`/`tweak` for presets; an upgraded preset keeps its original branch
+`light` for light; an escalated light change keeps its original branch
 (the proposal's upgrade annotation records the lifecycle, not the branch
 name).
 
 ### 3. Execute task by task
 
+Apply shared [focused exploration](../homonto/references/execution.md#focused-exploration)
+before dispatching implementation (or writing directly) when ownership, call paths
+or impact remain unclear. Reuse design grounding when still valid rather than
+re-exploring each task; an implementer should not have to guess the contract.
+
+#### Who implements
+
 **`build_mode: subagent`** → follow `references/subagent-protocol.md`: the
 main session coordinates only — one fresh-context implementer agent per
-task, coordinator verifies commits and checkoffs against the repository
+task in one repository; the coordinator verifies edits, commits and checkoffs against the repository
 (never the agent's report), reviewer agent after `(risk: high)` tasks and
 the final task. If no real dispatch capability exists, fall back to
 `build_mode: direct`, record it, announce it.
@@ -117,11 +125,14 @@ implements and verifies those named records serially; read-only specialists may
 review them. Never dispatch records edits to a source-only implementer. Split a
 mixed source/records task into linked tasks with distinct owners and roots.
 
+#### Isolation and parallelism
+
 **Schema 2:** same-repo implementation tasks are serial: the allocator supports
 one binding per workflow/change/repo, not task-level bindings. Disjoint files do
 not permit unregistered raw/native task worktrees, even with existing history.
 
-**Legacy schema 0/1 combined:** parallel implementers remain supported for
+Independent repositories may run in parallel under the shared execution policy.
+**Legacy schema 0/1 combined:** isolated serial assignments remain supported for
 disjoint-file tasks with `build_mode: subagent` and `isolation: worktree`, under
 all five conditions in `references/subagent-protocol.md`: a worktree per worker,
 no worker task/state writes, coordinator joins in plan order, serial coordinator
@@ -129,6 +140,8 @@ bookkeeping after joins, and final review after the last join. The coordinator's
 combined change checkout remains the sole state owner. Never downgrade or use
 legacy raw worktrees around a denial or failed schema 2 binding. Neither mode
 automatically copies `.env` or dirty input. Read-only specialists may still fan out.
+
+#### The direct-mode loop
 
 **`build_mode: direct`** → for each task, in order:
 
@@ -142,8 +155,10 @@ automatically copies `.env` or dirty input. Read-only specialists may still fan 
    source repo and check off `tasks.md`. In managed mode checkpoint the checkoff
    with `homonto workspace checkpoint --path changes/<name> --message "Record task completion"`.
    Existing combined mode retains one source-plus-checkoff commit per task;
-    separate existing records get their own named commit. A permitted cohesive
-    batch names and verifies each included task; never leave completed bookkeeping unrecorded.
+   separate existing records get their own named commit. A permitted cohesive
+   batch names and verifies each included task; never leave completed bookkeeping unrecorded.
+
+#### Keep the task list live
 
 **The task list is live state — append before doing, check off at landing.**
 The checkboxes are the change's ground truth; a fresh session resumes from
@@ -157,21 +172,22 @@ gets lost. Four rules, no exceptions:
   Append-then-do, never do-then-maybe-note. A few lines inside the current
   task's stated scope belong to that task; anything more is a new task.
 - **Check off at landing.** In existing combined direct mode, the `tasks.md`
-  checkoff rides the task's implementation commit. In subagent mode, verify the returned source
-   commit, then check off in a separate coordinator-owned bookkeeping commit
-   before the next dispatch. In managed mode use a records checkpoint instead
-   of that manual bookkeeping commit; never put workflow records in source commits.
-   For a legacy parallel batch, joins finish first, then the coordinator records
-   every checkoff and bookkeeping commit serially before the next dispatch.
+  checkoff rides the task's implementation commit. In subagent mode, verify and
+  commit the returned source edits, then check off in a separate
+  coordinator-owned bookkeeping commit before the next dispatch. In managed mode
+  use a records checkpoint instead of that manual bookkeeping commit; never put
+  workflow records in source commits. For a legacy isolated batch, joins finish
+  first, then the coordinator records every checkoff and bookkeeping commit
+  serially before the next dispatch.
   Never check off unverified work or defer bookkeeping past the next task.
   `plan.md` has no checkbox to update.
 - **Keep stable identifiers and completed history.** A task that becomes
   unnecessary is checked with a one-line reason
-   (`- [x] N.N SUPERSEDED: <why> [trace #K]`); appended tasks take the next
-   dotted number and trace ID.
-   Record a dependency override before executing an appended prerequisite;
-   resume the first executable unchecked task under the shared execution policy.
-   Keep checkbox order and IDs stable rather than renumbering history.
+  (`- [x] N.N SUPERSEDED: <why> [trace #K]`); appended tasks take the next
+  dotted number and trace ID. Record a dependency override before executing an
+  appended prerequisite; resume the first executable unchecked task under the
+  shared execution policy. Keep checkbox order and IDs stable rather than
+  renumbering history.
 - **Fix the list before writing more code.** If at any moment the checkboxes
   do not describe reality (an unchecked task is actually done, work happened
   that no task names), stop and reconcile the list first — that state is a
@@ -181,20 +197,22 @@ Appended tasks that touch the design's interfaces, components, or data flow
 are not "discovered work" — they are scope changes; route them through
 section 5 instead of appending silently.
 
+#### Review
+
 **Delegate review and parallelize independent tasks.** The reviewer role above
 is the `onto-reviewer` subagent shipped with onto — hand it each task's diff (and
 always the final diff), rather than reviewing inline. Its findings are input to
 **evaluate, not execute**: apply `references/receiving-review.md` — verify each
 finding against the code before acting, and push back with evidence on a wrong
 one instead of implementing it. When `plan.md` marks tasks
-whose file sets **do not overlap**, dispatch their reviews (and any needed
+in independent repositories, dispatch their reviews (and any needed
 `onto-explorer` investigation) **concurrently** — one subagent invocation per
 task — through the Task tool; send several independent read-only tasks in one
 turn so OpenCode runs them as parallel child sessions. The reviews then
-proceed in parallel while you implement the next task. Tasks that share files
-stay serial (one commit each, in order).
+proceed in parallel while you implement in unrelated repositories. Pause writers
+in every reviewed checkout. Tasks in the same repository stay serial.
 
-Legacy parallel-batch reviews wait for the last join and inspect the integrated
+Legacy isolated-batch reviews wait for the last join and inspect the integrated
 candidate; the serial review timing above does not override that fifth condition.
 
 A diff worth more than one opinion gets **several reviewers at once, one per
@@ -208,8 +226,9 @@ skeptic pass.
 This is the concrete wiring of the dispatcher's "Delegation, parallelization,
 and dialogs" section. Under **`build_mode: direct`** the orchestrator (this
 session) owns every edit and commit and the subagents only read and report;
-under **`build_mode: subagent`** implementers edit and commit their own task's
-files. The orchestrator owns every `onto` binary call in both modes.
+under **`build_mode: subagent`** implementers return edits and evidence; the
+orchestrator commits. It owns every `onto` binary call in both modes. Per-repo
+reviews precede combined interface review and configured integration checks.
 Technical review findings and in-scope discovered work are resolved without a
 user round-trip. Ask only when a proposed change crosses the agreed product
 scope.

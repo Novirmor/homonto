@@ -10,6 +10,8 @@ Produce a confirmed technical design before any implementation exists.
 the full workflow exists.
 Apply the shared [autonomous workflow policy](../homonto/references/autonomy.md),
 including workspace roots and dirty-work decisions, even on direct entry.
+Follow the [delivery loop](../onto/references/delivery.md); inspect living-spec
+targets when drafting deltas so missing requirements are repaired before verify.
 
 ## Entry check
 
@@ -20,7 +22,7 @@ including workspace roots and dirty-work decisions, even on direct entry.
   missing) — resume from Pending; never re-ask Confirmed. After
   compaction, notes.md is the *why*-recovery; the derivation table is the
   *where*-recovery.
-- Presets never enter this phase — except a preset **upgraded** to full,
+- Light changes never enter this phase — except one **escalated** to full,
   which arrives here to backfill the design it skipped.
 - **Revision entry**: if `design.md` exists marked `Status: Under
   revision`, this is a mid-build design revisit. Re-evaluate the approach for
@@ -49,6 +51,9 @@ available (the preflight may have recorded a direct-file-reading fallback),
 then the actual files. Map the
 integration points the proposal touches. Never design against an imagined
 codebase.
+Use `onto-explorer` under the shared [focused exploration policy](../homonto/references/execution.md#focused-exploration)
+to map unfamiliar behavior, ownership and integration impact before proposing an
+approach; dispatch independent discovery questions concurrently.
 
 ### 2. Question until clear
 
@@ -117,10 +122,12 @@ the canonical template; do not create new legacy leading `#K` tasks.
 
 ## Isolation decision (before leaving design)
 
-The binary refuses to advance design → build without isolation. Inspect first;
-when dirt exists, present exact paths and use the shared preserve/isolate/cleanup
-decision, asking once if none exists. For a clean serial change choose `branch`;
-when isolation is chosen in schema 2 use registered worktrees per source alias.
+The binary refuses to advance design → build without isolation. Reuse the user's
+task isolation choice from setup. If absent, ask once under the shared execution
+policy even when the checkouts are clean; do not choose a phase default. Preserve
+any per-repo exceptions. Inspect dirt and resolve uncovered paths separately.
+Record native `branch` for existing-checkout execution or `worktree` for selected
+worktree isolation, preserving validated per-repo bindings and overrides.
 Schema 2 same-repo tasks stay serial because task-level bindings are not supported.
 Legacy schema 0/1 combined workflows retain the five-condition parallel path in
 `onto-build/references/subagent-protocol.md`. Record

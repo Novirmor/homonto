@@ -52,18 +52,6 @@ func TestExplicitRepoBasesValidation(t *testing.T) {
 	}
 }
 
-func TestOldStatesDoNotAcquireExplicitMode(t *testing.T) {
-	for _, text := range []string{"change: old\nphase: close\n", "schema_version: 0\nchange: old\nphase: close\n", "schema_version: 1\nchange: old\nphase: close\n", "schema_version: 2\nchange: old\nphase: close\n"} {
-		st, err := parseAndMigrate([]byte(text), "test")
-		if err != nil || st.RepoMode != "" || len(st.RepoBases) != 0 {
-			t.Fatalf("legacy mode changed: %+v %v", st, err)
-		}
-	}
-	if _, err := parseAndMigrate([]byte("schema_version: 2\nchange: old\nphase: open\nrepo_mode: explicit\n"), "test"); err == nil {
-		t.Fatal("accepted explicit fields in old schema")
-	}
-}
-
 func TestLegacyRepoProvenanceValidation(t *testing.T) {
 	valid := func() State {
 		return State{SchemaVersion: CurrentSchemaVersion, Change: "cross", Phase: "open", RepoMode: "legacy", Repos: []string{"api"}, RepoBases: map[string]RepoBase{
@@ -114,8 +102,5 @@ func TestLegacyRepoProvenanceValidation(t *testing.T) {
 				t.Fatal("invalid legacy provenance accepted")
 			}
 		})
-	}
-	if _, err := parseAndMigrate([]byte("schema_version: 2\nchange: old\nphase: open\nrepo_mode: legacy\n"), "test"); err == nil {
-		t.Fatal("accepted provenance marker in old schema")
 	}
 }

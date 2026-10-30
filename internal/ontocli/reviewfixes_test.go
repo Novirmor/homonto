@@ -36,7 +36,7 @@ The system SHALL verify its selected source.
 
 func reviewCloseReady(t *testing.T, l workspace.Layout, delta bool) string {
 	t.Helper()
-	if _, err := runOnto(t, "new", "review", "--workflow", "tweak", "--repo", "a", "--dir", l.ConfigRoot); err != nil {
+	if _, err := runOnto(t, "new", "review", "--workflow", "light", "--repo", "a", "--dir", l.ConfigRoot); err != nil {
 		t.Fatal(err)
 	}
 	runGit(t, l.Repos["a"], "checkout", "-b", "review")
@@ -211,7 +211,7 @@ func TestReviewDirtNeverRefreshesSourceIndex(t *testing.T) {
 
 func TestReviewHandoffCarriesEveryBoundSource(t *testing.T) {
 	l := explicitWorkspace(t)
-	if _, err := runOnto(t, "new", "pack", "--workflow", "tweak", "--repo", "a,b", "--dir", l.ConfigRoot); err != nil {
+	if _, err := runOnto(t, "new", "pack", "--workflow", "light", "--repo", "a,b", "--dir", l.ConfigRoot); err != nil {
 		t.Fatal(err)
 	}
 	changeDir := filepath.Join(l.WorkflowRoot, "changes", "pack")
@@ -372,7 +372,7 @@ func TestReviewLegacyEmptyScopeIgnoresUnavailableRepos(t *testing.T) {
 	for _, version := range []int{0, 1} {
 		t.Run(fmt.Sprint(version), func(t *testing.T) {
 			root := prepWorkspace(t)
-			writeFile(t, filepath.Join(root, "homonto.toml"), fmt.Sprintf("schema_version=%d\n[frameworks.onto]\nsource='builtin:onto'\nscope='project'\n[repos]\nunavailable='/missing/source-repo'\n", version))
+			writeFile(t, filepath.Join(root, "homonto.toml"), fmt.Sprintf("schema_version=%d\n[engines.onto]\nsource='builtin:onto'\nscope='project'\n[repos]\nunavailable='/missing/source-repo'\n", version))
 			if _, err := runOnto(t, "new", "local", "--dir", root); err != nil {
 				t.Fatal(err)
 			}

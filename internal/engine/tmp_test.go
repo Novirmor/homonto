@@ -8,7 +8,7 @@ import (
 	"testing"
 )
 
-const tmpFrameworkTOML = `[frameworks.onto]
+const tmpFrameworkTOML = `[engines.onto]
 source = "builtin:onto"
 scope = "project"
 

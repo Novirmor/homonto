@@ -9,7 +9,7 @@ import (
 func TestStateJSON_EmitsFullStateAndDerivedPhase(t *testing.T) {
 	root := t.TempDir() // read command needs no framework install
 	writeFile(t, filepath.Join(root, "docs", "changes", "c", "onto-state.yaml"),
-		"schema_version: 1\nchange: c\nworkflow: full\nphase: build\nisolation: worktree\n")
+		"schema_version: 3\nchange: c\nworkflow: full\nphase: build\nisolation: worktree\n")
 	// Phase-appropriate artifacts: a confirmed design + incomplete tasks are
 	// what make the WORKING phase build (derivation reads files, not the claim).
 	writeFile(t, filepath.Join(root, "docs", "changes", "c", "proposal.md"), "p")
@@ -57,7 +57,7 @@ func TestStateJSON_DerivedPhaseIsArtifactBased(t *testing.T) {
 	// Claimed verify, but tasks.md has unchecked items and design is a draft:
 	// the working phase is design.
 	writeFile(t, filepath.Join(root, "docs", "changes", "c", "onto-state.yaml"),
-		"schema_version: 1\nchange: c\nworkflow: full\nphase: verify\n")
+		"schema_version: 3\nchange: c\nworkflow: full\nphase: verify\n")
 	writeFile(t, filepath.Join(root, "docs", "changes", "c", "proposal.md"), "p")
 	writeFile(t, filepath.Join(root, "docs", "changes", "c", "design.md"), "Status: Draft\n")
 	writeFile(t, filepath.Join(root, "docs", "changes", "c", "tasks.md"), "- [ ] a\n")

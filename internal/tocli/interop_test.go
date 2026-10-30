@@ -14,7 +14,7 @@ import (
 func TestNewRefusesSiblingActiveName(t *testing.T) {
 	dir := setUpGatedWorkspace(t)
 	os.MkdirAll(filepath.Join(dir, "docs", "changes", "taken"), 0o755)
-	os.WriteFile(filepath.Join(dir, "docs", "changes", "taken", "onto-state.yaml"), []byte("change: taken\nphase: open\n"), 0o644)
+	os.WriteFile(filepath.Join(dir, "docs", "changes", "taken", "onto-state.yaml"), []byte("schema_version: 3\nchange: taken\nphase: open\n"), 0o644)
 
 	if msg := runErrString(t, "new", "taken", "--dir", dir); !strings.Contains(msg, "onto workflow") || !strings.Contains(msg, "onto demote taken") {
 		t.Fatalf("sibling-active name must be refused with the demotion hint: %q", msg)
@@ -31,7 +31,7 @@ func TestDoctorReportsSiblingDuplicate(t *testing.T) {
 	run(t, false, "init", "--dir", dir)
 	run(t, false, "new", "dupe", "--dir", dir)
 	os.MkdirAll(filepath.Join(dir, "docs", "changes", "dupe"), 0o755)
-	os.WriteFile(filepath.Join(dir, "docs", "changes", "dupe", "onto-state.yaml"), []byte("change: dupe\nphase: open\n"), 0o644)
+	os.WriteFile(filepath.Join(dir, "docs", "changes", "dupe", "onto-state.yaml"), []byte("schema_version: 3\nchange: dupe\nphase: open\n"), 0o644)
 
 	findings, err := collectFindings(dir)
 	if err != nil {
@@ -50,7 +50,7 @@ func TestStatusAllIncludesSiblingInventory(t *testing.T) {
 	run(t, false, "init", "--dir", dir)
 	run(t, false, "new", "mine", "--dir", dir)
 	os.MkdirAll(filepath.Join(dir, "docs", "changes", "theirs"), 0o755)
-	os.WriteFile(filepath.Join(dir, "docs", "changes", "theirs", "onto-state.yaml"), []byte("change: theirs\nphase: build\n"), 0o644)
+	os.WriteFile(filepath.Join(dir, "docs", "changes", "theirs", "onto-state.yaml"), []byte("schema_version: 3\nchange: theirs\nphase: build\n"), 0o644)
 
 	cmd := NewRootCmd()
 	var out strings.Builder
@@ -72,23 +72,5 @@ func TestStatusAllIncludesSiblingInventory(t *testing.T) {
 	}
 	if len(inv.Onto) != 1 || inv.Onto[0].Change != "theirs" || inv.Onto[0].Phase != "build" {
 		t.Fatalf("onto inventory = %+v", inv.Onto)
-	}
-}
-
-func TestStatusAllLoadsLegacySiblingState(t *testing.T) {
-	dir := setUpGatedWorkspace(t)
-	legacy := filepath.Join(dir, "docs", "changes", "legacy")
-	if err := os.MkdirAll(legacy, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(legacy, "state.yaml"), []byte("change: legacy\nphase: build\n"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	entries, err := collectSiblingStatus(dir)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(entries) != 1 || entries[0].Change != "legacy" || entries[0].Phase != "build" || entries[0].Error != "" {
-		t.Fatalf("legacy sibling status = %+v", entries)
 	}
 }

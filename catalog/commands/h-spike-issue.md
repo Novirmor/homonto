@@ -7,7 +7,7 @@ agent: homonto
 
 Load and follow the `h-spike-issue` skill. If it is unavailable, say the
 required skill is unavailable, direct the user to install or reapply the `h`
-GitHub skill bundle (declare `[frameworks.h]` if needed and run `homonto apply`),
+GitHub skill bundle (declare `[workflows.h]` if needed and run `homonto apply`),
 and stop.
 
 `$ARGUMENTS` is the GitHub issue to spike: one issue URL

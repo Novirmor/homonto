@@ -3,6 +3,8 @@
 Read on mismatch, compaction, interrupted close, preset upgrade, or a defect
 found after a passing report. Binary state remains authoritative for recorded
 decisions; artifact evidence determines what work remains.
+Follow the [delivery loop](delivery.md) across recovery. Native done routes to
+the requested endpoint check, including remote PR readiness when requested.
 
 ## Derive and reconcile
 
@@ -46,13 +48,13 @@ required grammar, tokens or evidence to clear a gate.
 ## Workflow identity and upgrade
 
 Use proposal `Preset:` first (an upgrade annotation means full), then confirmed
-or under-revision design (full), then a legacy `fix/` or `tweak/` branch prefix,
+or under-revision design (full), then a `light/` branch prefix,
 otherwise full. A branch prefix cannot downgrade a designed change. Preserve an
 explicit full choice and surface mismatches. Objective preset escalation uses
 the shared [eligibility table](../../homonto/references/workflow-selection.md#eligibility-and-escalation).
 
 Record an upgrade with `onto set workflow <name> full`, annotate
-`Preset: fix|tweak (upgraded to full YYYY-MM-DD)`, expand the reduced proposal,
+`Preset: light (upgraded to full YYYY-MM-DD)`, expand the reduced proposal,
 and create `design.md` marked `Status: Under revision`. Invalidate any old passing
 report and set verify-result pending before design is reconfirmed. Backfill design
 without moving the recorded phase backward. Continue automatically unless scope
@@ -60,7 +62,10 @@ now requires a user-owned decision. Never downgrade full to a preset automatical
 
 ## Active repairs versus new work
 
-A confirmed defect before archive, within the existing acceptance criteria, is
+Apply shared [proportionality and scope approval](../../homonto/references/review-triage.md#proportionality-before-repair)
+before invalidating evidence or appending tasks. Existing PR acceptance criteria
+do not override a narrower current user assignment.
+A confirmed defect before archive, within the authorized proportionate scope, is
 an autonomous repair even after verification passed. No new consent is needed.
 First invalidate `verification.md` to `Result: superseded (repair <date>)`, run
 `onto set verify-result <name> pending` (or retain this round's recorded fail),
@@ -69,8 +74,7 @@ and append the repair task. Keep the recorded phase and existing isolation.
 | Workflow | Repair route |
 |---|---|
 | full | Paired tasks/plan contract; `onto-build` |
-| fix | Inline task contract; `onto-fix` step 2, failing test first |
-| tweak | Inline task contract; `onto-tweak` step 2 |
+| light | Inline task contract; `onto-light` step 2, a bug's failing test first |
 
 Return through verification before close. Preset repairs do not require a new
 plan or design unless eligibility triggers escalation. Scope expansion needs a
@@ -79,6 +83,8 @@ decision through OpenCode's built-in `question` tool.
 An archived pending change only finishes its recorded integration. A defect in
 completed history is new work, referencing that archive and following normal
 selection/intent rules. Never modify immutable archives to absorb a repair.
+Remote CI failure after archive follows that linked follow-up route; completed
+native integration does not finish an outstanding review-ready PR request.
 `onto abandon` always requires explicit user intent; it retains an unsuccessful
 workspace in place, with no spec merge or successful archive move.
 

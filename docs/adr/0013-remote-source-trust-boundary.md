@@ -42,4 +42,4 @@ provenance layer is deferred to item 11.
 - `builtin:`/`local:` behavior is unchanged; remote is strictly additive and
   opt-in.
 - Every attack class in the threat model maps to an enforced control and a
-  fail-closed test (see `docs/guides/remote-source-trust.md`).
+  fail-closed test (see `docs/guides/remote-sources.md`).

@@ -44,7 +44,7 @@ func TestMergeDeltasCommand_MergesAndMarksMerged(t *testing.T) {
 
 func TestMergeDeltasCommand_ReceiptUsesConfiguredWorkflowRoot(t *testing.T) {
 	root := prepWorkspace(t)
-	writeFile(t, filepath.Join(root, "homonto.toml"), "[workflow]\nroot=\"workflow/records\"\n[frameworks.onto]\nsource=\"builtin:onto\"\nscope=\"project\"\n")
+	writeFile(t, filepath.Join(root, "homonto.toml"), "[workflow]\nroot=\"workflow/records\"\n[engines.onto]\nsource=\"builtin:onto\"\nscope=\"project\"\n")
 	changeDir := filepath.Join(root, "workflow", "records", "changes", "c")
 	if err := ontostate.Save(filepath.Join(changeDir, "onto-state.yaml"), ontostate.State{
 		Change: "c", Workflow: "full", Phase: "close", Verify: ontostate.Verify{Result: "pass"}, CloseConfirmed: "reviewed",

@@ -87,7 +87,7 @@ func TestLoad_MissingFile_ErrorNamesPath(t *testing.T) {
 func TestLoad_ValidFile_ReturnsState(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "onto-state.yaml")
-	content := []byte("change: onto-binary-foundation\nphase: open\n")
+	content := []byte("schema_version: 3\nchange: onto-binary-foundation\nphase: open\n")
 	if err := os.WriteFile(path, content, 0o644); err != nil {
 		t.Fatalf("failed to write fixture file: %v", err)
 	}
@@ -223,7 +223,7 @@ func TestRequiredArtifacts_OpenPhase_WorkflowAware(t *testing.T) {
 		t.Errorf("RequiredArtifacts(open, \"\") = %v, want %v", got, want)
 	}
 	// presets: tasks.md is the open-lite checklist, required from the open exit.
-	if got, want := RequiredArtifacts("open", "fix"), []string{"onto-state.yaml", "proposal.md", "tasks.md"}; !reflect.DeepEqual(got, want) {
+	if got, want := RequiredArtifacts("open", "light"), []string{"onto-state.yaml", "proposal.md", "tasks.md"}; !reflect.DeepEqual(got, want) {
 		t.Errorf("RequiredArtifacts(open, fix) = %v, want %v", got, want)
 	}
 }
@@ -250,7 +250,7 @@ func TestValidateSkeleton_MissingTasksFile_ErrorNamesFile(t *testing.T) {
 	dir := t.TempDir()
 	// A fix preset requires tasks.md from the open exit (its open-lite checklist),
 	// so an open preset missing tasks.md is a skeleton error naming the file.
-	state := State{Change: "onto-binary-foundation", Workflow: "fix", Phase: "open"}
+	state := State{Change: "onto-binary-foundation", Workflow: "light", Phase: "open"}
 	if err := Save(filepath.Join(dir, "onto-state.yaml"), state); err != nil {
 		t.Fatalf("Save returned unexpected error: %v", err)
 	}
@@ -283,11 +283,11 @@ func TestRequiredArtifacts_CumulativePerPhaseAndWorkflow(t *testing.T) {
 		{"bogus", "full", full},
 		{"open", "", full}, // empty → strictest (full)
 		// presets: tasks.md from open on; no design.md/plan.md; verification at verify.
-		{"open", "fix", preset},
-		{"design", "fix", preset},
-		{"build", "tweak", preset},
-		{"verify", "tweak", append(append([]string{}, preset...), "verification.md")},
-		{"close", "fix", append(append([]string{}, preset...), "verification.md")},
+		{"open", "light", preset},
+		{"design", "light", preset},
+		{"build", "light", preset},
+		{"verify", "light", append(append([]string{}, preset...), "verification.md")},
+		{"close", "light", append(append([]string{}, preset...), "verification.md")},
 	}
 
 	for _, tc := range cases {

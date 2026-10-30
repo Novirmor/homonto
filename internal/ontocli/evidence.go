@@ -386,15 +386,6 @@ func activeChangeNames(root, changesDir string) ([]string, error) {
 		}
 		changeDir := filepath.Join(changesDir, e.Name())
 		if _, err := os.Stat(filepath.Join(changeDir, "onto-state.yaml")); err == nil {
-			if state, class, _ := ontostate.Classify(changeDir); class == "valid" {
-				retired, err := retiredMigrationState(root, changeDir, state)
-				if err != nil {
-					return nil, err
-				}
-				if retired {
-					continue
-				}
-			}
 			out = append(out, e.Name())
 		}
 	}

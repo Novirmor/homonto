@@ -64,7 +64,7 @@ func TestApply_RemoteFrameworkSkillMaterialized(t *testing.T) {
 	tarPath := buildFrameworkTarGz(t, fixtures)
 	pin := pinFor(t, tarPath)
 
-	cfg := "[frameworks.myfw]\nsource = \"remote:file://" + tarPath + "\"\ndigest = \"" + pin.String() + "\"\nscope = \"user\"\n"
+	cfg := "[engines.myfw]\nsource = \"remote:file://" + tarPath + "\"\ndigest = \"" + pin.String() + "\"\nscope = \"user\"\n"
 	if err := os.WriteFile(filepath.Join(repo, "homonto.toml"), []byte(cfg), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -91,7 +91,7 @@ func TestApply_RemoteFrameworkWrongDigestAborts(t *testing.T) {
 	tarPath := buildFrameworkTarGz(t, fixtures)
 
 	wrong := "sha256:" + "00000000000000000000000000000000000000000000000000000000000000ff"
-	cfg := "[frameworks.myfw]\nsource = \"remote:file://" + tarPath + "\"\ndigest = \"" + wrong + "\"\nscope = \"user\"\n"
+	cfg := "[engines.myfw]\nsource = \"remote:file://" + tarPath + "\"\ndigest = \"" + wrong + "\"\nscope = \"user\"\n"
 	if err := os.WriteFile(filepath.Join(repo, "homonto.toml"), []byte(cfg), 0o644); err != nil {
 		t.Fatal(err)
 	}

@@ -1,6 +1,6 @@
 # Allow coordinator local Git operations
 
-- **Status:** Accepted
+- **Status:** Partially superseded by 0070 (ordinary push confirmation)
 - **Date:** 2026-09-11
 
 ## Context

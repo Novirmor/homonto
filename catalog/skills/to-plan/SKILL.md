@@ -28,17 +28,20 @@ including workspace roots and dirty-work decisions, even on direct entry.
 
 1. **Understand before writing.** Ground every claim about the codebase in
    reading. Read the repository's relevant ADRs and nearby design documents
-   before planning a behavior or architecture change. For questions that span
-   many files, dispatch `to-explorer` — read-only, so run one per question
-   concurrently rather than serializing them — and work from its conclusions.
+   before planning a behavior or architecture change. Use `to-explorer` for
+   unfamiliar code, unclear ownership or integration impact under the shared
+   [focused exploration policy](../homonto/references/execution.md#focused-exploration),
+   not only for questions spanning many files. Run independent questions
+   concurrently and validate the cited conclusions before choosing task boundaries.
    For converted work, carry Owner/Repo/Cwd and Files/Change/Verify from the
    preserved snapshot when concrete, then validate against the actual records
    owner/source binding. Do not drop ownership/root fields during translation.
    Missing or ambiguous fields require plan repair before execution, not defaults
    inferred from a converted phase or a doctor's partial contract check.
-2. **Validate isolation and fit.** Check bounded fit before allocation; if onto
-   obligations emerge after a binding exists, follow the dispatcher's explicit
-   conversion-blocker handoff, not an unsupported promotion attempt.
+2. **Validate isolation and fit.** Reuse the user's recorded task isolation and
+   per-repo exceptions; if absent, ask once under the shared execution policy.
+   Check selected-engine fit before allocation; incompatible obligations need
+   a scope decision while retaining to, not an engine conversion.
    Schema 2 allocation belongs immediately after `new`, before any records/source
    commit. Reuse that binding here. Inspect before writes and present exact dirty paths.
    Honor an existing preserve/isolate/cleanup decision; ask once if none exists.
@@ -78,8 +81,8 @@ including workspace roots and dirty-work decisions, even on direct entry.
      with the same full contract, its outcome line suffixed
      `(discovered <date>)`, placed after the existing tasks and before
      `Final Verify:`. Plan for that by writing tasks other sessions can trust
-      — a fresh session resumes from the first executable unchecked task, honoring
-      recorded prerequisites under the [execution policy](../homonto/references/execution.md).
+     — a fresh session resumes from the first executable unchecked task, honoring
+     recorded prerequisites under the [execution policy](../homonto/references/execution.md).
    - Substantial records tasks (ADRs, guides, specs, plans) remain coordinator-owned
      and serial, not implementer work. Split mixed-root source/records work into
      linked tasks, each with its own Owner/Repo/Cwd and verification.
@@ -117,5 +120,5 @@ including workspace roots and dirty-work decisions, even on direct entry.
   arbitrary file count or by separate "code" and "tests" tasks.
 - Never hand-edit `to-state.yaml`; the binary owns it.
 - If the work turns out to need evidence-gated phases, spec deltas, or a
-  dependency graph, say so: that is onto-shaped work. `to promote <name> --yes`
-  converts the change; do not rebuild onto inside a plan.md.
+  dependency graph, report the incompatible scope and ask for a scope decision.
+  Preserve this task's selected engine; do not rebuild onto inside a plan.md.

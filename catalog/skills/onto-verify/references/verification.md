@@ -18,8 +18,9 @@ Result: <pass | fail>
 With accepted deviations, append the count on that same machine-read line:
 `Result: pass (2 accepted deviations)`. Derivation and close entry match the
 canonical pass forms only; the count distinguishes a caveated pass from a clean one.
-A mid-build design revisit writes `Result: superseded (revision <date>)` to
-invalidate the report; the verify phase does not write that value.
+An active repair or design revisit invalidates an old passing report with
+`Result: superseded (repair <date>)` or `Result: superseded (revision <date>)`
+before changing the candidate; the completed verification replaces it.
 
 ## Scenario evidence
 
@@ -43,7 +44,16 @@ findings, not footnotes>
 
 - Conformance skeptic: <verdict summary + findings triaged>
 - Robustness skeptic: <verdict summary + findings triaged>
-<!-- Or record a light-mode optional skip / unavailable independent pass here,
+- Evidence pack: <readable artifact/output paths, base/candidate OIDs, supported
+  environments, non-goals and confirmed pack consumption>
+
+| Finding ID | Supported scenario / requirement | Evidence and impact | Coordinator severity / disposition | Next action / closure evidence |
+|---|---|---|---|---|
+| <stable ID> | <contract or grounded invariant> | <probe or file:line> | <repair / evidence request / justified dismissal / authorized deviation> | <task/probe and result> |
+
+<For a repair round, identify changed claims and adjacent regression risks;
+carry prior dispositions forward unless new evidence or changed scope reopens them.>
+<!-- Or record "light: no skeptic pass" / an unavailable independent pass here,
      with reason and direct checks performed. Explicit independent-review
      requirements still block; denial or a blocked worker is not absence.
      Direct review is never labeled a completed skeptic verdict. -->
@@ -61,10 +71,11 @@ stays present reading "none">
 
 ## Rules
 
-- Every verdict cites fresh output from THIS verify round — no "passed
-  earlier", no stale logs.
+- Every verdict cites candidate-bound output validated for THIS verify round.
+  Reuse only under the execution policy's provenance/input rules; no bare "passed
+  earlier" or stale logs. Finalize the report before recording artifact-bound receipts.
 - A scenario that cannot be demonstrated is a **fail**, not a skip.
-- With no delta files, full, fix, and tweak changes declare each scenario once
+- With no delta files, full and light changes declare each scenario once
   in `tasks.md` or `verification.md`, on an unfenced standalone line such as
   `Scenario-ID: handoff-content`. Describe the observable check and cite that ID
   in the evidence table; table mentions and fenced examples are not declarations.

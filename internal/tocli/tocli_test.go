@@ -41,12 +41,12 @@ func writeFile(t *testing.T, path, content string) {
 }
 
 // setUpGatedWorkspace prepares a temp workspace that passes gate(): a
-// homonto.toml declaring [frameworks.to] plus an applied to catalog
+// homonto.toml declaring [engines.to] plus an applied to catalog
 // directory.
 func setUpGatedWorkspace(t *testing.T) string {
 	t.Helper()
 	dir := t.TempDir()
-	writeFile(t, filepath.Join(dir, "homonto.toml"), "[frameworks.to]\nsource=\"builtin:to\"\nscope=\"project\"\n")
+	writeFile(t, filepath.Join(dir, "homonto.toml"), "[engines.to]\nsource=\"builtin:to\"\nscope=\"project\"\n")
 	if err := os.MkdirAll(filepath.Join(dir, ".homonto", "catalog", "skills", "to"), 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -60,14 +60,14 @@ func TestGate_OrderedFailures(t *testing.T) {
 		t.Errorf("gate(no toml) = %v, want mention of homonto init", err)
 	}
 
-	// Step 2: homonto.toml without [frameworks.to].
-	writeFile(t, filepath.Join(dir, "homonto.toml"), "[frameworks.onto]\nsource=\"builtin:onto\"\n")
-	if err := toFramework.Gate(dir); err == nil || !strings.Contains(err.Error(), "[frameworks.to]") {
-		t.Errorf("gate(no frameworks.to) = %v, want mention of [frameworks.to]", err)
+	// Step 2: homonto.toml without [engines.to].
+	writeFile(t, filepath.Join(dir, "homonto.toml"), "[engines.onto]\nsource=\"builtin:onto\"\n")
+	if err := toFramework.Gate(dir); err == nil || !strings.Contains(err.Error(), "[engines.to]") {
+		t.Errorf("gate(no frameworks.to) = %v, want mention of [engines.to]", err)
 	}
 
 	// Step 3: declared but never applied.
-	writeFile(t, filepath.Join(dir, "homonto.toml"), "[frameworks.to]\nsource=\"builtin:to\"\n")
+	writeFile(t, filepath.Join(dir, "homonto.toml"), "[engines.to]\nsource=\"builtin:to\"\n")
 	if err := toFramework.Gate(dir); err == nil || !strings.Contains(err.Error(), "homonto apply") {
 		t.Errorf("gate(unapplied) = %v, want mention of homonto apply", err)
 	}
@@ -99,9 +99,9 @@ func TestMutatingCommandsRefuseWithoutGate(t *testing.T) {
 }
 
 // TestPromoteAcceptsEitherFramework pins the promote bridge gate: promotion
-// must work both while [frameworks.to] is declared (the documented order:
+// must work both while [engines.to] is declared (the documented order:
 // promote, then swap the declaration) and after the declaration already moved
-// to [frameworks.onto] (promoting a leftover `to` change). With neither
+// to [engines.onto] (promoting a leftover `to` change). With neither
 // framework applied it is refused like every other mutating command.
 func TestPromoteAcceptsEitherFramework(t *testing.T) {
 	// to declared and applied: canonical order.
@@ -121,7 +121,7 @@ func TestPromoteAcceptsEitherFramework(t *testing.T) {
 	dir2 := setUpGatedWorkspace(t)
 	run(t, false, "init", "--dir", dir2)
 	run(t, false, "new", "grower", "--dir", dir2)
-	writeFile(t, filepath.Join(dir2, "homonto.toml"), "[frameworks.onto]\nsource=\"builtin:onto\"\nscope=\"project\"\n")
+	writeFile(t, filepath.Join(dir2, "homonto.toml"), "[engines.onto]\nsource=\"builtin:onto\"\nscope=\"project\"\n")
 	if err := os.MkdirAll(filepath.Join(dir2, ".homonto", "catalog", "skills", "onto"), 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -195,7 +195,7 @@ func TestLifecycle_PlanDoDoneArchives(t *testing.T) {
 
 func TestCustomWorkflowRootLifecycle(t *testing.T) {
 	dir := t.TempDir()
-	writeFile(t, filepath.Join(dir, "homonto.toml"), "[workflow]\nroot=\"workflow/records\"\n[frameworks.to]\nsource=\"builtin:to\"\nscope=\"project\"\n")
+	writeFile(t, filepath.Join(dir, "homonto.toml"), "[workflow]\nroot=\"workflow/records\"\n[engines.to]\nsource=\"builtin:to\"\nscope=\"project\"\n")
 	if err := os.MkdirAll(filepath.Join(dir, ".homonto", "catalog", "skills", "to"), 0o755); err != nil {
 		t.Fatal(err)
 	}

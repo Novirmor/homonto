@@ -1,5 +1,6 @@
 name = "onto"
-version = "0.25.5"
+kind = "engine"
+version = "0.26.0"
 description = "Onto self-contained development workflow"
 
 [dependencies]
@@ -11,9 +12,8 @@ onto = "skills/onto"
 onto-build = "skills/onto-build"
 onto-close = "skills/onto-close"
 onto-design = "skills/onto-design"
-onto-fix = "skills/onto-fix"
 onto-open = "skills/onto-open"
-onto-tweak = "skills/onto-tweak"
+onto-light = "skills/onto-light"
 onto-verify = "skills/onto-verify"
 onto-no-slop = "skills/onto-no-slop"
 
@@ -25,8 +25,7 @@ onto-design = "commands/onto-design.md"
 onto-build = "commands/onto-build.md"
 onto-verify = "commands/onto-verify.md"
 onto-close = "commands/onto-close.md"
-onto-fix = "commands/onto-fix.md"
-onto-tweak = "commands/onto-tweak.md"
+onto-light = "commands/onto-light.md"
 onto-no-slop = "commands/onto-no-slop.md"
 
 [plugins]

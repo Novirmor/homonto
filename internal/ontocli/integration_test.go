@@ -111,7 +111,7 @@ func TestCompleteIntegrationRejectsUnprovenMergeReceipts(t *testing.T) {
 func TestCompleteIntegrationRejectsWrongReceiptKind(t *testing.T) {
 	root := prepWorkspace(t)
 	st := ontostate.State{
-		Change: "demo", Workflow: "tweak", Phase: "close", BaseRef: "abc123",
+		Change: "demo", Workflow: "light", Phase: "close", BaseRef: "abc123",
 		Verify: ontostate.Verify{Result: "pass"}, Close: ontostate.Close{Merged: true},
 		Integration: "pr", CloseConfirmed: "reviewed",
 	}
@@ -146,7 +146,7 @@ func TestCompleteIntegrationCrossRepoNeedsEveryRepository(t *testing.T) {
 	if err := os.MkdirAll(filepath.Join(root, ".homonto", "catalog", "skills", "onto"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	writeFile(t, filepath.Join(root, "homonto.toml"), `[frameworks.onto]
+	writeFile(t, filepath.Join(root, "homonto.toml"), `[engines.onto]
 source="builtin:onto"
 scope="project"
 [subagents.homonto.opencode]

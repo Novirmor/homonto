@@ -213,15 +213,6 @@ func buildGraph(root string) ([]graphNode, []graphEdge, error) {
 	capSeen := map[string]bool{}
 	add := func(dir, fallbackName string, archived bool) error {
 		st, class, _ := ontostate.Classify(dir)
-		if !archived && class == "valid" {
-			retired, err := retiredMigrationState(root, dir, st)
-			if err != nil {
-				return err
-			}
-			if retired {
-				return nil
-			}
-		}
 		name := st.Change
 		if class != "valid" || name == "" {
 			name = fallbackName

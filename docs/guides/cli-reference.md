@@ -1,384 +1,248 @@
 # homonto CLI reference
 
-Every command, flag, and exit-code contract of the `homonto` binary. For the
-workflow binaries see the [onto reference](onto-reference.md) and the
-[to reference](to-reference.md).
+Every `homonto` command and flag. Workflow binaries: [onto](onto-reference.md),
+[to](to-reference.md).
 
-Global behavior:
+## Global behavior
 
-- `--config <path>` (persistent flag, default `homonto.toml`) selects the
-  config file for config-driven commands, including `workspace` and `worktree`.
-  `init` instead takes an optional target directory argument.
-- Human-readable command output uses **stderr** (cobra's print default).
-  `workspace inspect --json` and `worktree` commands with `--json` write to
-  stdout. Redirect with `2>&1` when capturing both streams in scripts.
-- Unless `--exit-code` is noted below, commands exit `0` on success and
-  non-zero on error.
+- `--config <path>` (default `homonto.toml`) selects the config for every
+  config-driven command. `init` takes a directory argument instead.
+- Human output goes to **stderr**. JSON from `--json` / `--output json` and
+  workspace-task output goes to stdout. Use `2>&1` to capture everything.
+- Exit `0` on success, non-zero on error, unless `--exit-code` is noted.
+- `-v`, `--version` print the version.
 
-## `homonto init [dir]`
+| Command | Purpose |
+|---|---|
+| [`init [dir]`](#homonto-init) | Scaffold a config directory |
+| [`plan`](#homonto-plan) | Show what apply would change |
+| [`apply`](#homonto-apply) | Project the config |
+| [`status`](#homonto-status) | Drift and pending changes |
+| [`doctor`](#homonto-doctor) | Environment health |
+| [`explain`](#homonto-explain) | Why a managed resource exists |
+| [`update`](#homonto-update) | Bring catalog content to this binary's version |
+| [`snapshot`](#homonto-snapshot) | Undo or recover snapshot applies |
+| [`permissions suggest`](#homonto-permissions-suggest) | Render `bash_allow_add` entries |
+| [`cache gc`](#homonto-cache-gc) | Reclaim the remote cache |
+| [`workflow`](#homonto-workflow) | Read workflow progress |
+| [`workspace`](#homonto-workspace) | Records layout, checkpoints, tasks |
+| [`worktree`](#homonto-worktree) | Registered per-change worktrees |
+| `version`, `completion <shell>` | Version; shell completion |
 
-Scaffold a starter config: `homonto.toml`, `.gitignore` (excluding `.homonto/`
-and `.env`), and `.env.example`. Writes into `dir` (default: the current
-directory), preserves existing config and content, and appends missing ignore
-entries to an existing `.gitignore`. It does not create `homonto/skills/` or a
-`.gitkeep`. For a local skill, create `homonto/skills/<name>/SKILL.md` yourself
-and declare `source = "local:<name>"` under `[skills.<name>]` with a scope.
-
-This scaffolds configuration, not Git history. For an empty managed records
-repository, use `homonto workspace init --yes` after configuring its layout.
+## `homonto init`
 
 ```console
-$ homonto init
-$ homonto init ~/dotfiles/ai     # scaffold somewhere else
+$ homonto init                 # current directory
+$ homonto init ~/dotfiles/ai   # another directory
+created homonto.toml
+created .gitignore
+created .env.example
 ```
+
+Writes a commented `homonto.toml`, a `.gitignore` with `/.homonto/` and
+`.env` (appending missing lines to an existing one), and `.env.example`.
+Never overwrites, never runs `git init`, never installs a package, never
+creates `homonto/skills/`.
 
 ## `homonto plan`
 
-Print the diff between the desired state (`homonto.toml`) and what is on
-disk. `plan` writes nothing and **never resolves or prints a secret**;
-references stay `${…}` tokens.
-
 | Flag | Effect |
 |---|---|
-| `--output text\|json` | output format (default `text`) |
-| `--exit-code` | opt-in exit taxonomy: exit `2` when changes are pending |
-
-The diff is Terraform-style: `+` create, `~` update, `-` delete. Unchanged
-keys stay silent.
-
-With `[repos]`, plan first lists every declared repository. Untagged
-project-scoped resources remain in the config repo; `repo = "<name>"`
-resources render in a separate `opencode@<name>` changeset. This is the full
-write scope for a later apply.
+| `--output text\|json` | Format (default `text`). |
+| `--exit-code` | Exit `2` when changes are pending. |
 
 ```console
 $ homonto plan
 opencode:
-  ~ setting.model: "anthropic/claude-opus-4-8" -> "anthropic/claude-sonnet-5"
+  ~ setting.model: "anthropic/claude-opus-5-5" -> "anthropic/claude-sonnet-5-5"
 
-$ homonto plan --output json | jq .        # machine-readable
-$ homonto plan --exit-code && echo clean   # CI: fail when an apply is pending
+$ homonto plan --output json
+{
+  "changes": [ { "tool": "opencode", "changes": [ { "action": "update", "key": "setting.model" } ] } ],
+  "repins": [],
+  "repos": [],
+  "warnings": []
+}
+
+$ homonto plan --exit-code >/dev/null 2>&1 || echo "apply pending"
 ```
+
+Writes nothing, resolves no secrets. With `[repos]`, lists the declared
+repositories first and shows repo-tagged resources under `opencode@<alias>`.
+Warnings (unverified V2 plugins, GitHub publication requirements) print
+first.
 
 ## `homonto apply`
 
-Project the config into the tools: print the plan, confirm (`[y/N]`), then
-write.
-
-Schema-2 workspace declarations also render workspace instructions and bounded
-external-path permissions. `apply` does not initialize managed records Git or
-allocate execution worktrees. See [workspaces](workspaces.md).
-
 | Flag | Effect |
 |---|---|
-| `--yes` | skip the confirmation prompt |
+| `--yes` | Skip the `[y/N]` prompt. |
+| `--snapshot` | Journal the apply so it can be undone. |
 
-Guarantees (details in [projection & state](projection-and-state.md) and
-[secrets](secrets.md)):
+Prints the plan, confirms, resolves every secret, then writes atomically.
+Guarantees: nothing is written if any secret fails; unmanaged keys survive; an
+unparseable file aborts that adapter; state is saved after the adapter
+succeeds; one lock covers the whole apply including declared repositories;
+exact pre-existing matches are adopted without writing. Schema 2: also renders
+workspace instructions and permissions, but never initializes managed records
+or creates worktrees.
 
-- **Two-phase.** Every secret resolves up front, before any file is written.
-  One failed resolution aborts the whole apply untouched.
-- **Atomic writes.** Each file is written via temp + rename, so an
-  interrupted run never leaves a half-written file.
-- **Surgical.** Only managed keys are written; unmanaged keys survive. An
-  unparseable tool file makes that adapter abort and report rather than
-  overwrite.
-- **State per adapter.** State is saved after each successful adapter, so a
-  failure partway through never loses an already-applied adapter's records.
-- **Declared-repo isolation.** One config-repo apply lock covers the entire
-  plan. Each declared repo records its resources in
-  `.homonto/state.<name>.json`; no undeclared repo is read or written.
-- **Adoption.** A declared resource that already exists on disk exactly as
-  homonto would write it is recorded into state with no file write.
+```console
+$ homonto apply --yes
+…
+Applied.
+```
 
 ## `homonto status`
 
-Compare managed values on disk against the last-applied snapshot and report
-two independent things:
-
-- **Drift** — a managed value changed on disk *outside homonto*, or was
-  deleted: `opencode setting.model drifted (will reset on apply)`.
-- **Pending** — unapplied `homonto.toml` edits, reported as a count:
-  `1 config change(s) awaiting apply (run `homonto apply`)`.
-
-When neither is present it prints `No drift.`
-
-Drift from a declared repo is labelled `opencode@<name>`, so a reset is
-attributed to the repository containing the changed file.
-
 | Flag | Effect |
 |---|---|
-| `--output text\|json` | output format (default `text`) |
-| `--exit-code` | opt-in taxonomy: exit `2` on pending, `3` on drift |
+| `--output text\|json` | Format. |
+| `--exit-code` | Exit `2` on pending, `3` on drift. |
+
+```console
+$ homonto status
+1 config change(s) awaiting apply (run `homonto apply`)
+$ homonto status
+opencode setting.model drifted (will reset on apply)
+$ homonto status
+No drift.
+```
 
 ## `homonto doctor`
 
-Environment health check: is `pass` on `PATH`, do the tool config locations
-exist, and does each owned skill have intact content plus both tool links?
-Declared repos are rechecked for existence and Git-worktree status.
+`--output text|json`. Checks that `pass` is on PATH, OpenCode's config
+location exists, every skill, command, and agent has content and its link,
+declared repositories exist and are Git worktrees, declared tooling providers
+are detectable, and no snapshot apply is left incomplete.
 
-| Flag | Effect |
-|---|---|
-| `--output text\|json` | output format (default `text`) |
+```console
+$ homonto doctor
+warn: `pass` not found on PATH (pass: references will fail)
+ok: .config/opencode (OpenCode) config location present
+ok: skill "house-style" linked (opencode)
+ok: subagent "homonto" linked (opencode)
+ok: tooling.shell_proxy provider rtk detected
+```
+
+## `homonto explain`
+
+```text
+homonto explain [kind] [name] [--repo <alias>] [--json]
+```
+
+With no arguments, lists every managed resource. Kinds: `skill`, `command`,
+`subagent`, `subagentcopy`, `mcp`, `projmcp`, `setting`, `projsetting`,
+`tui`, `plugin`. Shows origin (direct or package), destination, the operation
+that last touched it, and removal records. Never prints values.
+
+```console
+$ homonto explain projmcp brave
+projmcp       brave                direct scope=project
+    dst: …/notes/opencode.jsonc
+    last: create (18dc732e, declare at 2026-10-27T17:37:54Z)
+```
 
 ## `homonto update`
 
-Re-materialize this binary's embedded catalog (frameworks, skills, commands,
-subagents) and re-project it, bringing installed content up to the running
-version. Prints the version transition (binary, catalog, per-framework) and
-shares apply's plan → confirm → apply flow.
+`--yes` skips confirmation. Re-materializes the catalog embedded in this
+binary and re-projects it, printing the binary, catalog, and per-package
+version transition. Does not download binaries.
 
-| Flag | Effect |
+## `homonto snapshot`
+
+| Command | Effect |
 |---|---|
-| `--yes` | skip the confirmation prompt |
+| `snapshot list` | Committed and incomplete snapshot applies. |
+| `snapshot undo <apply-id> [--yes]` | Reverse a committed snapshot apply; refuses with no change if a managed value was edited since. |
+| `snapshot recover <apply-id>` | Roll back an interrupted snapshot apply. |
 
-`update` does **not** download or replace the binaries themselves. Install
-those the usual way (`go install …@latest`, the interactive installer, or the
-release archives), then run `homonto update`. State records the versions
-behind each apply, and `onto doctor` / `to doctor` warn when a workflow binary
-and the homonto that installed its framework have drifted apart.
-
-## `homonto cache gc`
-
-Reclaim entries in the content-addressed remote cache
-(`.homonto/cache/remote/`) that no `.homonto/remote.lock.json` entry
-references. Kept out of `apply` on purpose, so reverting a `digest` pin can
-still roll back from cache. `--dry-run` reports what would be reclaimed
-without deleting anything. See
-[remote source trust](remote-source-trust.md).
-
-## `homonto explain [kind] [name] [--repo <alias>] [--json]`
-
-Why each managed resource exists. `homonto explain` lists everything; a
-`kind` (`skill`, `command`, `subagent`, `subagentcopy`, `mcp`, `projmcp`,
-`setting`, `projsetting`, `tui`, `plugin`) and `name` select one resource,
-with `--repo` to disambiguate across repository partitions. Each row shows
-origin (direct declaration or framework+provider), destination, the
-operation that last touched it, and — for removed resources — the removal
-record. Values are never shown, so secrets cannot leak. Unknown selectors
-fail nonzero naming the valid kinds; ambiguous names list the partitions.
-
-## `homonto snapshot undo <apply-id>` / `recover <apply-id>` / `list`
-
-The reverse side of `homonto apply --snapshot` (ADR 0030). `undo` restores a
-committed snapshot's managed state, links, copies, and structured keys —
-refusing with zero mutation if any managed value changed after the apply.
-`recover` rolls back an interrupted snapshot apply (a killed process cannot
-hold the process lock, so recovery always starts). `list` shows snapshots and
-their status; doctor reports incomplete ones with the exact recover command.
-Retention keeps the latest 10 committed journals.
+The latest 10 committed journals are kept.
 
 ## `homonto permissions suggest`
 
-Reads one exact command per line from stdin and renders a
-`bash_allow_add = [...]` TOML snippet for `[subagents.<name>.opencode]`
-(ADR 0029). Patterns, shell composition, credentials, and destructive or
-privilege-escalating commands are rejected inline. Writes nothing — paste
-the snippet, review, and keep.
+Reads one exact command per line from stdin and prints a `bash_allow_add`
+snippet. Rejects patterns, shell composition, credentials, and destructive or
+privilege-escalating commands (listed as comments). Writes nothing.
 
-Stdin is implicit; there is no `--stdin` flag. The optional permission-observer
-plugin correlates runtime `permission.asked` (`id`, `sessionID`, `permission`,
-`metadata.command`) with `permission.replied` (`sessionID`, `requestID`, `reply`).
-Two explicit `once`/`always` approvals can produce one suggestion; `reject`
-disqualifies the command for that session. Execution alone is not approval.
+```console
+$ printf 'go test ./...\nmake lint\n' | homonto permissions suggest
+# reviewed suggestions — paste under the agent's [subagents.<name>.opencode] block
+bash_allow_add = [
+  "go test ./...",
+  "make lint",
+]
+```
 
-## `homonto workflow snapshot --json`
+## `homonto cache gc`
 
-Print a read-only JSON snapshot of `onto` and `to` progress and terminal records
-for the selected `--config`. It includes durable identities, lifecycle status,
-phase, checklist progress, pending decisions/integration, and concise findings
-for malformed or unreadable state. A missing workflow is empty; invalid layout
-or unreadable state is a finding, not proof of completion. Consumers must inspect
-findings and status rather than treat a successful snapshot command as a passed
-doctor check. The bundled OpenCode bridge consumes it but never mutates workflow
-state or enforces gates.
+`--dry-run` reports only. Deletes `.homonto/cache/remote/` entries that no
+`.homonto/remote.lock.json` entry references. Not part of `apply`, so
+reverting a digest can still roll back from cache.
 
-## `homonto workflow handoff --workflow <onto|to> --change <name> --identity <id> --json`
+## `homonto workflow`
 
-Read recovery context for one exact generation from `workflow snapshot`, using
-the selected `--config` filename. Returns the config and records roots, validated
-active execution directories, recorded decisions, bounded artifact excerpts,
-findings, and the next skill reference. It never writes handoff files or changes
-workflow state. Archived generations are supported for artifact inspection but
-do not borrow execution directories from a same-name active change.
+| Command | Output |
+|---|---|
+| `workflow snapshot --json` | onto and to progress and terminal records: identities, phase, checklist progress, pending decisions and integration, findings. |
+| `workflow handoff --workflow onto\|to --change <name> --identity <id> --json` | Recovery context for one exact generation: roots, validated execution directories, decisions, bounded excerpts (64 KiB/file, 12 KiB total), findings, next skill. |
 
-Artifact reads are limited to 64 KiB per file and 12 KiB of combined excerpt
-text. Missing, unsafe, or oversized content is reported; use the returned
-artifact pointers for complete records. Excerpts are untrusted data, not
-instructions or verification evidence. There is no `--write` option.
+| `workflow cleanup list [--workflow onto\|to] --json` | Cleanup state of every onto and to generation: status, identity, archive destination, worktrees to remove, blockers. |
+| `workflow cleanup preview <change> --workflow onto\|to [--identity <id>]` | The same for one generation. |
+| `workflow cleanup apply <change> --workflow onto\|to --identity <id> --yes` | Archive the terminal record and remove its clean, integrated worktrees. |
+
+`snapshot`, `handoff`, `cleanup list`, and `cleanup preview` are read-only;
+excerpts are data, not instructions or evidence. `cleanup` is the same
+contract as `onto cleanup` and `to cleanup`, addressed through `--config`
+instead of `--dir`: [cleaning up terminal workflows](workflow-cleanup.md).
 
 ## `homonto workspace`
 
-Inspect the configured records layout and manage its Git checkpoints. These
-commands accept the global `--config <path>` flag and no positional arguments.
-From a source checkout, pass the control config's full path. See
-[workspaces](workspaces.md) for complete layout examples.
-
 | Command | Flags | Effect |
 |---|---|---|
-| `workspace inspect` | `--json` | Read-only layout and history inspection; does not initialize Git, acquire a history lock, or audit source dirt. |
-| `workspace init` | `--yes` required | Explicit initialization of an absent/empty managed records root; in `existing` mode, only validates its existing Git owner. |
-| `workspace checkpoint` | `--message <text>` required; repeatable `--path <path>` | Commit selected owned record files/subtrees in managed mode. |
-| `workspace recover` | none | Retry an exact prepared checkpoint, or preserve only the scoped delta of an interrupted pre-write intent with a recovery label. |
-| `workspace migrate plan` | `--manifest <path>` required; `--json` required | Read-only inventory of the supported legacy-records transition. Emits a reviewed `plan_hash` in JSON. |
-| `workspace migrate apply` | `--manifest <path>`, `--plan-hash <sha256>`, and `--yes` required | Apply the exact reviewed legacy-records migration with a durable private recovery journal. |
-| `workspace migrate verify` | `--run-id <id>` and `--json` required | Verify a completed migration receipt, records history, and adopted bindings without printing private journal data. |
-| `workspace migrate recover` | `--run-id <id>`, `--action resume\|restore`, `--plan-hash <sha256>`, and `--yes` required | Resume or restore exactly one interrupted migration journal. The plan hash must be the reviewed hash for that run. |
+| `workspace inspect` | `--json` | Layout and history, read-only. |
+| `workspace init` | `--yes` | Initialize an empty managed records repository (managed mode); validate the Git owner (existing mode). |
+| `workspace checkpoint` | `--message` (required), `--path` (repeatable) | Commit owned record paths in managed mode. |
+| `workspace recover` | — | Retry a pending checkpoint or preserve an interrupted intent's scoped delta. |
+| `workspace task create <name>` | `--engine`, `--repo`…, `--isolation`, `--isolation-override`, `--change` | Record a task's engine and checkouts (JSON). |
+| `workspace task inspect <name>` | — | Recorded choices and check results (JSON). |
+| `workspace task check <name>` | `--writers-paused`, `--check`, `--timeout` | Run matching integration checks. |
+| `workspace task cleanup <name>` | `--yes` | Remove clean integrated task-owned worktrees. |
 
-Inspection text reports `Config`, `Workflow`, `Git mode`, `Initialized`, and
-`Pending checkpoint`. JSON includes `schema_version`, `config_path`,
-`config_root`, `workflow_root`, `worktrees_dir`, `repos`, and `history`.
-History includes `git_mode`, `initialized`, `pending`, and `owned_paths`, plus
-`git_root` and `head` when available. An uninitialized managed root is a valid
-inspection result; an invalid existing Git owner or ownership mismatch is an
-error. Inspection never adopts a repository.
-
-Managed initialization writes ownership metadata, ignore rules, and an initial
-commit. It requires your configured author/committer identity, runs your Git
-commit hooks, and never pushes. A repeat init validates existing ownership;
-it does not adopt populated or unowned directories. `homonto apply` does not
-perform this initialization.
-
-Checkpoint paths are literal, workflow-root-relative paths under `changes`,
-`tasks`, `specs`, `adr`, `guides`, or `.workflow`. Omission selects all owned
-records, not the whole Git tree. Prefer exact paths after diff inspection:
-
-```bash
-homonto workspace checkpoint --config /work/control/homonto.toml --path changes/add-search/proposal.md --path guides/search.md --message "Record search design"
+```console
+$ homonto workspace inspect
+Config: /work/control/homonto.toml
+Workflow: /work/records
+Git mode: managed
+Initialized: true
+Pending checkpoint: false
 ```
 
-The message must be nonempty. Checkpoints exclude transient files, refuse
-symlinked records/nested Git metadata and pre-staged work, and do not create
-empty commits. Managed onto/to mutations persist pre-write intent with an
-explicit operation write scope and checkpoint only changed paths in that scope.
-State setters do not sweep neighboring Markdown, other changes, or unrelated
-specs/guides into history. Manual Markdown edits still need an explicit
-checkpoint; source commits remain separate. Attribution is path-level: arbitrary
-editors in the same owned file or subtree cannot be distinguished, and selected
-files are committed whole. Inspect existing edits and avoid concurrent writes
-inside an operation's scope.
-
-Managed archive intent also contains the prepared source, exact destination,
-date, and source-state fingerprint. The handler consumes that same plan, checks
-source directory/state identity before writing, then rechecks directory/parent
-identity and target absence before the move. It does not recompute an archive
-date or suffix after gates, so midnight cannot split the journal's scope from
-the actual archive. Replaced sources or occupied destinations fail closed.
-
-Checkpoints use Git-normalized content, including normal CRLF conversion from
-Git configuration or attributes, without rewriting working files. Recovery
-separately protects the original raw bytes: later edits still block it even
-when they would normalize to the same committed content. A normalization change
-that alters the pending commit also blocks recovery.
-
-A failed history commit returns nonzero even if the workflow operation already
-completed; filesystem edits remain. A pending journal blocks subsequent managed
-mutations. Fix the Git identity/hook issue and run `workspace recover`, not the
-possibly completed workflow command. For a prepared checkpoint, recovery refuses
-changed pending content, unrelated staging, and unexpected HEAD movement; it can
-acknowledge an exact commit left pending by interrupted journal cleanup. For an
-interrupted pre-write intent, recovery compares current scoped files with the
-stored pre-operation snapshot and records `Recover interrupted operation: <label>`.
-It neither sweeps unrelated paths nor claims the operation completed; later edits
-inside the scope cannot be attributed to an editor. A no-change intent creates
-no empty commit. Inspect workflow state afterward. Recovery never pushes or
-rolls back user edits.
-
-`workspace migrate` is a separate, narrow command family for supported legacy
-records only. Run `migrate plan --json`, review its `plan_hash`, then pass that
-same hash to `migrate apply --yes`. An interrupted run reports its run ID; pass
-both that run ID and the original reviewed hash to `migrate recover --yes`.
-Recovery revalidates the configured schema-2 layout, all declared repositories,
-and the journal's exact Plan-derived write authority before it writes anything.
-Private migration recovery payloads are additionally bound to a durable run
-identity, descriptor, immutable blob, target, mode, and digest. Missing,
-malformed, foreign, or altered recovery material fails closed before recovery
-writes an authoritative file; `restore` never resets source branches or accepts
-a different reviewed plan hash.
+JSON adds `schema_version`, `config_root`, `workflow_root`, `worktrees_dir`,
+`repos`, and `history` (`git_mode`, `initialized`, `pending`, `owned_paths`,
+`git_root`, `head`). Procedures: [workspaces](workspaces.md).
 
 ## `homonto worktree`
 
-Manage registered per-workflow/change/repo execution checkouts using the global
-`--config <path>` flag. Requires an explicit `worktrees.dir` for allocation;
-there is no default parent or per-task binding.
-
-| Command | Flags | Effect |
+| Command | Required flags | Effect |
 |---|---|---|
-| `worktree create <change>` | Required: `--workflow onto\|to`, `--repo <alias>`, `--base <ref>`, `--branch <new-name>`; optional `--json` | Create and register an isolated checkout for an alias selected by matching active state. |
-| `worktree receiver <change>` | Required: `--workflow onto\|to`, `--repo <alias>`; optional `--state-id <id>`, `--json` | Allocate a clean checkout at the recorded local integration target from matching active or terminal/archive state. `--state-id` disambiguates archived generations; it cannot override existing bindings. No `--base` or `--branch` flags. |
-| `worktree list` | `--json` | Read-only validation and listing of execution and receiver bindings. |
-| `worktree remove <change>` | Required: `--workflow onto\|to`, `--repo <alias>`, `--yes`; optional `--role execution\|receiver` (default `execution`), `--json` | Remove only the selected clean, owned, integrated role for terminal workflow state. Retains the branch. |
+| `worktree create <change>` | `--workflow`, `--repo`, `--base`, `--branch` | Create and register an execution checkout matching the change's frozen anchors. |
+| `worktree receiver <change>` | `--workflow`, `--repo` (opt. `--state-id`) | Allocate a clean checkout at the recorded integration branch. |
+| `worktree list` | — | Validate and list bindings. |
+| `worktree remove <change>` | `--workflow`, `--repo`, `--yes` (opt. `--role execution\|receiver`) | Remove a clean, integrated binding of a terminal change; keeps the branch. |
 
-Creation resolves the explicit base to a commit and integration target. For
-records with frozen source anchors, both must match: even another branch at
-the same commit, or an advanced tip of the chosen branch, is a mismatch.
-Choose alternatives before record creation with the schema-2-only, repeatable
-`onto new` / `to new --base <alias>=<branch>` flag; omission uses each source's
-current HEAD and local branch. Worktree creation cannot rebase those anchors.
-It refuses existing branch names or destinations, leaves
-the declared checkout's HEAD/index/files untouched, and reuses an identical
-ready binding on repeat calls. Use the returned path for source edits and
-tests; keep `onto`/`to` commands on `--dir <configRoot>`.
+All accept `--json`. Text output for create/receiver/remove is the checkout
+path; list prints `workflow/change`, repo, role, branch, and path. JSON
+bindings include `role`, `workflow`, `change`, `repo`, `stateID`, `path`,
+`branch`, `baseRef`, `baseTarget`, `baseCommit`, `ownership`, and `status`
+(`ready`; interrupted operations leave `creating`/`removing`, which `list`
+reports as invalid). Rules and examples: [workspaces](workspaces.md#registered-worktrees).
 
-Receiver allocation uses the recorded local branch and immutable base (or, for
-legacy state lacking per-repo anchors, a validated execution binding's local
-target). The target's tip must contain that base. It refuses a target checked
-out anywhere else, even clean, naming that checkout; it never adopts, switches,
-or cleans it. Prefer early allocation, but post-archive allocation/recovery is
-supported. Existing workflow/change bindings pin the generation across aliases
-and roles; otherwise matching state at the active path takes precedence, with
-one unambiguous terminal archive accepted only when that path is absent.
-`--state-id` accepts a native state `id` or registered `stateID` from inspected
-records to disambiguate archives. It must match existing generation/binding
-evidence, cannot bypass a reused active name, and never changes ownership or
-base/target anchors. Repeat allocation validates the existing receiver and its
-cleanliness. A receiver does not replace execution authority, merge source,
-fetch, publish, or record completion. `worktree create` remains active-only.
-
-Create/receiver/remove text output is the checkout path. List text columns are
-`workflow/change`, repo alias, role, branch, and path. JSON create/receiver/remove
-output is a binding object; list output is an array sorted by
-workflow/change/repo/role. Fields include `role`, `workflow`, `change`, `repo`,
-`stateID`, `workflowRoot`, `parent`, `path`,
-`commonDir`, `gitDir`, `ownership`, `branch`, `baseRef`, `baseTarget`, `baseCommit`,
-and `status`. Successful bindings have status `ready`. Interrupted operations
-may retain `creating` or `removing` entries; list fails on incomplete or invalid
-bindings instead of returning them as usable. There is no `worktree recover`
-command or automatic adoption/deletion of interrupted allocations.
-
-Roles are `execution` and `receiver`; an older binding with omitted `role`
-means execution. Each role has one binding per workflow/change/repo and can be
-removed independently under the same safety checks, in either order.
-
-Removal needs terminal state (onto archived/abandoned; to done/abandoned), no
-tracked, untracked, ignored, or submodule dirt, and current worktree HEAD as an
-ancestor of the recorded integration target. Removal also refuses index entries
-marked `assume-unchanged` or `skip-worktree`, including sparse-checkout entries,
-even if status looks clean. A PR receipt alone cannot satisfy the ancestry test;
-squash/rebase integration may not preserve it. `--yes` does not bypass any check,
-and removal neither fetches/merges source nor deletes branches.
-
-A retained binding blocks reuse of its workflow/change name after archive or
-abandonment, even if a new change selects different repos. Remove or recover
-the binding first; do not discard registry entries to free the name.
-
-Registered ownership binds local absolute paths, source Git identity, and
-workflow state identity. Changing configuration does not rebind it. `to promote`
-and `onto demote` refuse affected registered bindings because conversion cannot
-transactionally rebind them. Do not delete registry entries to force conversion.
-Active bindings also cannot be removed, so removal is not an active-conversion
-route. Continue in the current workflow; no ownership-safe active rebind API
-or automatic layout migration is available.
-
-## `homonto version`
-
-Print the release-stamped build version (`homonto --version` works too).
-
-## `homonto completion <shell>`
-
-Generate a shell autocompletion script (bash, zsh, fish, powershell), a
-standard cobra facility:
+## `homonto completion`
 
 ```console
 $ homonto completion zsh > "${fpath[1]}/_homonto"
+$ homonto completion bash > /etc/bash_completion.d/homonto
 ```
+
+Supports bash, zsh, fish, and powershell.

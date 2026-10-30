@@ -2,6 +2,7 @@ package ontocli
 
 import (
 	"github.com/noviopenworks/homonto/internal/buildinfo"
+	"github.com/noviopenworks/homonto/internal/workflowcleanup"
 	"github.com/noviopenworks/homonto/internal/workspace"
 	"github.com/spf13/cobra"
 )
@@ -41,6 +42,7 @@ func NewRootCmd() *cobra.Command {
 	root.AddCommand(closeCmd())
 	root.AddCommand(completeIntegrationCmd())
 	root.AddCommand(abandonCmd())
+	root.AddCommand(workflowcleanup.Command("onto"))
 	root.AddCommand(demoteCmd())
 	root.AddCommand(doctorCmd())
 	root.AddCommand(setCmd())

@@ -20,8 +20,7 @@ FILES=(
   catalog/skills/onto-build/SKILL.md
   catalog/skills/onto-verify/SKILL.md
   catalog/skills/onto-close/SKILL.md
-  catalog/skills/onto-fix/SKILL.md
-  catalog/skills/onto-tweak/SKILL.md
+  catalog/skills/onto-light/SKILL.md
   catalog/skills/to/SKILL.md
   catalog/skills/to-plan/SKILL.md
   catalog/skills/to-do/SKILL.md

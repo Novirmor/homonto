@@ -48,7 +48,7 @@ func TestDeriveWorkingPhase_EvidenceTable(t *testing.T) {
 			map[string]string{"design.md": "Status: Confirmed | Under revision\n", "tasks.md": "- [ ] a\n"}, "design"},
 		{"revision template cannot override verification", State{Phase: "verify", Workflow: "full", Verify: Verify{Result: "pass"}},
 			map[string]string{"design.md": "Status: Under revision | Confirmed\n", "verification.md": "Result: pass\n"}, "close"},
-		{"preset workspace derives build", State{Phase: "open", Workflow: "fix"},
+		{"preset workspace derives build", State{Phase: "open", Workflow: "light"},
 			map[string]string{"proposal.md": "p", "tasks.md": "- [ ] a\n"}, "build"},
 		{"full incomplete tasks derive design", State{Phase: "build", Workflow: "full"},
 			map[string]string{"proposal.md": "p", "tasks.md": "- [ ] a\n"}, "design"},

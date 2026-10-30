@@ -84,6 +84,6 @@ func workspaceCmd() *cobra.Command {
 			return workspace.RecoverHistory(l)
 		},
 	}
-	cmd.AddCommand(inspect, init, checkpoint, recover, workspaceMigrateCmd())
+	cmd.AddCommand(inspect, init, checkpoint, recover, workspaceTaskCmd())
 	return cmd
 }

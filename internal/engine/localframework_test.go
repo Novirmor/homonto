@@ -8,7 +8,7 @@ import (
 )
 
 // TestApply_LocalFrameworkSkillMaterialized is the acceptance gate for local
-// framework resolution: a [frameworks.X] source="local:<path>" installs its
+// framework resolution: a [engines.X] source="local:<path>" installs its
 // skill through the same path as a builtin framework.
 func TestApply_LocalFrameworkSkillMaterialized(t *testing.T) {
 	home := t.TempDir()
@@ -25,7 +25,7 @@ func TestApply_LocalFrameworkSkillMaterialized(t *testing.T) {
 	}
 	must(filepath.Join(fw, "framework.toml"), "name = \"myfw\"\nversion = \"0.1.0\"\n[skills]\nmyskill = \"skills/myskill\"\n")
 	must(filepath.Join(fw, "skills", "myskill", "SKILL.md"), "local skill body")
-	must(filepath.Join(repo, "homonto.toml"), "[frameworks.myfw]\nsource = \"local:./myfw\"\nscope = \"user\"\n")
+	must(filepath.Join(repo, "homonto.toml"), "[engines.myfw]\nsource = \"local:./myfw\"\nscope = \"user\"\n")
 
 	e := buildEngine(t, home, repo)
 	sets, err := e.Plan()

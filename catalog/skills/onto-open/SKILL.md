@@ -87,10 +87,10 @@ different scope. Create each artifact from its canonical template:
   --workflow full`
   with `--dir "<configRoot>"` and one `--repo <declared-alias>` for each source
   repository in scope (schema 2 requires explicit aliases, not an implicit config repo).
-  In schema 2, add repeated `--base <alias>=<local-branch>` to select alternative
-  bases before creation; for example `--base api=main --base web=develop` for
-  different repo targets. Without an override each source's current committed
-  HEAD and local branch are frozen. Selecting `api=main` leaves a dirty feature
+  In schema 2, first [choose and pull the base](../homonto/references/workspace-policy.md#choose-and-pull-the-base)
+  for each repo, then pass it as repeated `--base <alias>=<local-branch>`; for
+  example `--base api=main --base web=develop` for different repo targets.
+  Selecting `api=main` leaves a dirty feature
   checkout untouched; do not switch or clean it just to choose the base.
   (`onto new` creates `onto-state.yaml` carrying `change`, `workflow: full`,
   `phase: open`, `created`; and an empty `proposal.md`. It does **not** scaffold

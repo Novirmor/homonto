@@ -18,6 +18,8 @@ func TestRenderWorkspaceResolvedLayout(t *testing.T) {
 		"Workflow root: `/records`", "Workflow Git mode: `managed`", "WorktreesDir: `/execution`",
 		"- `a`: `/src/a`\n- `b`: `/src/b`", "no implicit config repository",
 		"homonto workspace inspect --config '/work/config home/custom.toml' --json",
+		"homonto workspace pull --repo ALIAS --branch BASE --config '/work/config home/custom.toml' --json",
+		"pull each chosen BASE",
 		"homonto worktree list --config '/work/config home/custom.toml' --json",
 		"homonto worktree create CHANGE --workflow onto --repo ALIAS --base BASE --branch BRANCH --config '/work/config home/custom.toml' --json",
 		"homonto workspace checkpoint --config '/work/config home/custom.toml' --message 'Describe the workflow edits' --path changes/CHANGE",

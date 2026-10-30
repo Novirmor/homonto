@@ -18,10 +18,9 @@ including workspace roots and dirty-work decisions, even on direct entry.
 - If `plan.md` already has content, a previous session started planning —
   read it and continue rather than starting over.
 - In schema 2, inspect `repo_bases` already frozen by the dispatcher's `to new`.
-  Alternative bases must be selected there with repeated
+  Bases are chosen, pulled and passed there with repeated
   `--base <alias>=<local-branch>`, such as `--base api=main --base web=develop`,
-  not by switching a dirty original or retargeting state during planning. The
-  default freezes each source's current committed HEAD and local branch.
+  not by switching a dirty original or retargeting state during planning.
   Report an existing base mismatch; never recreate the change to change anchors.
 
 ## Steps

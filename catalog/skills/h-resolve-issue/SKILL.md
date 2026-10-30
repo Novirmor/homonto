@@ -70,12 +70,12 @@ candidate pinning, exact PR reuse, recovery, and repository-qualified issue inte
    never duplicated. Native creation checks name conflicts; choose a fresh name
    for a collision with a different change without invoking another engine.
    Ask for ambiguous matches or material scope conflicts, not routine naming.
-   For a new schema 2 change, select source integration targets on `onto new`
-   or `to new` with repeated `--base <alias>=<local-branch>` before worktree
-   allocation. Use each repo's intended local branch, for example
+   For a new schema 2 change,
+   [choose and pull the base](../homonto/references/workspace-policy.md#choose-and-pull-the-base)
+   for each repo, then pass it on `onto new` or `to new` as repeated
+   `--base <alias>=<local-branch>` before worktree allocation, for example
    `--base api=main --base web=develop`; do not assume all repos use the same
-   branch. Without overrides each source's current committed HEAD and local
-   branch are frozen. Preserve dirty originals: select `api=main` at creation
+   branch. Preserve dirty originals: select `api=main` at creation
    rather than checking out `main` or trying to retarget setters afterwards.
    Registered worktrees must match each alias's frozen commit and target.
 4. **Drive the workflow.** For no, execute and review under its parent contract;

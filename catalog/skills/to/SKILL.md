@@ -90,10 +90,10 @@ Recover a uniquely matched interrupted delivery before creating another task.
   the shared policy before scaffold writes. Derive source repositories in scope,
   create it with `to
   new <kebab-name>` plus one `--repo <alias>` per selected source (required in
-  schema 2, with no implicit config repository). Select alternative bases now
-  with repeated `--base <alias>=<local-branch>`, for example
-  `--base api=main --base web=develop`; defaults freeze each source's current
-  committed HEAD and local branch. This leaves dirty originals untouched and
+  schema 2, with no implicit config repository). First
+  [choose and pull the base](../homonto/references/workspace-policy.md#choose-and-pull-the-base)
+  for each repo, then pass it as repeated `--base <alias>=<local-branch>`, for
+  example `--base api=main --base web=develop`. This leaves dirty originals untouched and
   must precede worktree allocation. Keep `--dir "<configRoot>"`, then treat it
   as phase plan; immediately allocate schema-2 bindings before any records/source
   commit. Existing changes cannot be retargeted by rerunning `new`.

@@ -7,6 +7,12 @@ list. Release candidates are folded into their stable release.
 
 ## Unreleased
 
+- **New changes start from a freshly pulled base (ADR 0083).** Before `onto
+  new` or `to new`, the workflow skills ask which branch each repo starts from,
+  then run the new `homonto workspace pull --repo <alias> --branch <branch>`.
+  It fetches the upstream and fast-forwards only that local branch. It refuses
+  a diverged branch, a missing upstream, a failed fetch, or a dirty checkout of
+  the branch, and never merges or resets.
 - **Breaking: only the live version is supported (ADR 0081).**
   - `homonto workspace migrate` is removed, along with migration-adopted
     worktree bindings and retired-record handling. A registry entry adopted by

@@ -102,3 +102,4 @@ numbering: [`../agents/adr.md`](../agents/adr.md).
 | [0080](0080-freeze-workspace-migration.md) | Freeze workspace migration | Superseded by 0081 |
 | [0081](0081-support-only-the-live-version.md) | Support only the live version | Accepted |
 | [0082](0082-support-harnesses-natively-in-tiers.md) | Support harnesses natively, in tiers | Accepted |
+| [0083](0083-pull-the-chosen-base-before-every-change.md) | Pull the chosen base before every change | Accepted |

@@ -143,6 +143,18 @@ $ onto new add-search --repo app --repo api --base app=develop --base api=main -
 $ to new tune-cache --repo api --base api=main --dir /work/control
 ```
 
+The workflow skills ask which branch to start from and pull it first:
+
+```console
+$ homonto workspace pull --repo api --branch main --config /work/control/homonto.toml
+main: fast-forwarded (origin/main) 4f2c9e1...
+```
+
+`workspace pull` fetches the branch's upstream and fast-forwards only that
+local branch. A branch checked out somewhere is updated there only when that
+checkout has no uncommitted tracked changes; a diverged branch, a missing
+upstream, or a failed fetch is refused, never merged or reset.
+
 Each selected repository gets frozen anchors: a base commit and a local
 integration branch. Without `--base`, that's the checkout's current HEAD and
 branch. `--base alias=branch` picks another existing local branch at its

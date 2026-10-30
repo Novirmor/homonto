@@ -252,13 +252,43 @@ fixture to evade a registered lifecycle refusal. Cleanup retains the exact-path
 authorization and dirty-work rules. Registered workflow allocation, integration,
 and removal remain coordinator-owned and use the protocols above.
 
+## Choose and pull the base
+
+Every new onto or to change starts from a base branch the user chose, pulled
+immediately before creation. Use the branch the request or a recorded decision
+names; otherwise ask once through the `question` tool, one question covering
+every selected alias (combine it with the isolation question when both are
+pending). Recommend each repo's remote default branch
+(`git symbolic-ref --short refs/remotes/origin/HEAD`), else its current branch.
+
+Then pull each chosen branch, always, even when it looks current:
+
+```sh
+homonto workspace pull --repo <alias> --branch <branch> --json
+```
+
+It fetches the branch's upstream and fast-forwards only that local branch. A
+branch checked out somewhere is updated in that checkout only when it has no
+uncommitted tracked changes. `up-to-date`, `fast-forwarded`, and `ahead`
+(unpushed local commits are kept and reported) let creation proceed. A refusal
+(no upstream, failed fetch, diverged branch, dirty checkout of the branch) is a
+blocker: report it and ask how to proceed, for example starting from the branch
+as it is. Never merge, rebase, reset, stash, or switch a checkout to get past it.
+
+Pass every chosen branch explicitly as `--base <alias>=<branch>` on `new`, right
+after the pull, and allocate worktrees from `refs/heads/<branch>`. Resuming an
+existing change never pulls or re-selects; its frozen base stands. Legacy
+schema 0/1 has no base selection: pull the current branch from configRoot with
+`homonto workspace pull --branch <current-branch>` (no `--repo`).
+
 ## Source anchors and evidence
 
 Schema 2 `onto new` and `to new` freeze `repo_bases` per selected source: an
-immutable commit and integration target branch. The default is each source's
-current committed HEAD and local branch, never its dirty working files or the
-records repository's HEAD. To choose another base, pass repeated
-`--base <alias>=<local-branch>` at creation, once per overridden selected alias.
+immutable commit and integration target branch. Without `--base`, the binary
+freezes each source's current committed HEAD and local branch, never its dirty
+working files or the records repository's HEAD; the skills always pass the
+branch chosen and pulled [above](#choose-and-pull-the-base) as repeated
+`--base <alias>=<local-branch>` at creation, once per selected alias.
 Each value must name an existing literal local branch, not a remote-tracking ref,
 tag, or arbitrary commit. Repositories may use different target branch names:
 

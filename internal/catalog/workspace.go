@@ -49,10 +49,11 @@ func RenderWorkspace(l workspace.Layout) []byte {
 	fmt.Fprintf(&b, "homonto workspace task inspect TASK --config %s\n", quote(l.ConfigPath))
 	fmt.Fprintf(&b, "homonto workspace task check TASK --writers-paused --config %s\n", quote(l.ConfigPath))
 	b.WriteString("```\n\nSelect exactly one installed ENGINE (onto, to, no) per task and keep it on resume. Ask the user once for MODE (existing or worktree); per-repo exceptions use --isolation-override ALIAS=MODE. Repeat --repo for changed inputs. Onto/to additionally require --change naming their active native lifecycle record. No never invokes onto/to or creates lifecycle records. Inspect returns recorded paths, bases and integration results. Parent-owned candidate commits precede checks; pause participating writers, then rerun stale results. All declared repositories are readable; each implementer writes only its assigned checkout.\n\nThe following native lifecycle commands apply only when onto or to was selected:\n\n```sh\n")
+	fmt.Fprintf(&b, "homonto workspace pull --repo ALIAS --branch BASE --config %s --json\n", quote(l.ConfigPath))
 	fmt.Fprintf(&b, "homonto worktree list --config %s --json\n", quote(l.ConfigPath))
 	fmt.Fprintf(&b, "homonto worktree create CHANGE --workflow onto --repo ALIAS --base BASE --branch BRANCH --config %s --json\n", quote(l.ConfigPath))
 	fmt.Fprintf(&b, "homonto workspace checkpoint --config %s --message 'Describe the workflow edits' --path changes/CHANGE\n", quote(l.ConfigPath))
-	b.WriteString("```\n\nUse `--workflow to` for a to task; checkpoint paths are workflow-root-relative (for example `tasks/TASK`), not source-root-relative.\n\n")
+	b.WriteString("```\n\nBefore `onto new` or `to new`, pull each chosen BASE with `workspace pull` and pass it as `--base ALIAS=BASE`. Use `--workflow to` for a to task; checkpoint paths are workflow-root-relative (for example `tasks/TASK`), not source-root-relative.\n\n")
 	if l.GitMode == "managed" {
 		fmt.Fprintf(&b, "Managed mode owns a standalone records Git repository. Inspect first; explicit initialization, when authorized, is `homonto workspace init --config %s --yes`. Never initialize Git at the config root as a substitute.\n\n", quote(l.ConfigPath))
 	} else {

@@ -204,6 +204,7 @@ instead of `--dir`: [cleaning up terminal workflows](workflow-cleanup.md).
 | `workspace init` | `--yes` | Initialize an empty managed records repository (managed mode); validate the Git owner (existing mode). |
 | `workspace checkpoint` | `--message` (required), `--path` (repeatable) | Commit owned record paths in managed mode. |
 | `workspace recover` | — | Retry a pending checkpoint or preserve an interrupted intent's scoped delta. |
+| `workspace pull` | `--branch` (required), `--repo`, `--json` | Fetch a local base branch's upstream and fast-forward it; refuses a diverged branch or a dirty checkout of it. |
 | `workspace task create <name>` | `--engine`, `--repo`…, `--isolation`, `--isolation-override`, `--change` | Record a task's engine and checkouts (JSON). |
 | `workspace task inspect <name>` | — | Recorded choices and check results (JSON). |
 | `workspace task check <name>` | `--writers-paused`, `--check`, `--timeout` | Run matching integration checks. |

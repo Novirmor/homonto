@@ -74,9 +74,9 @@ of allocating again; a frozen-base mismatch blocks, never retarget it.
 
 - Create the workspace via `onto new <name> --workflow light`, adding one `--repo
   <alias>` for every selected source in schema 2, with `--dir "<configRoot>"`.
-  Add repeated `--base <alias>=<local-branch>` at creation for alternative bases,
-  such as `--base api=main --base web=develop`; otherwise each source's current
-  committed HEAD and local branch are frozen. To isolate from `main` while on
+  First [choose and pull the base](../homonto/references/workspace-policy.md#choose-and-pull-the-base)
+  for each repo, then pass it at creation as repeated `--base <alias>=<local-branch>`,
+  such as `--base api=main --base web=develop`. To isolate from `main` while on
   a dirty feature branch, select `api=main` here without switching or cleaning
   the original. (`onto new` creates `onto-state.yaml` carrying `workflow: light`,
   `phase: open`, `created`, and empty `proposal.md`/`tasks.md`.) Then:

@@ -84,6 +84,30 @@ func workspaceCmd() *cobra.Command {
 			return workspace.RecoverHistory(l)
 		},
 	}
-	cmd.AddCommand(inspect, init, checkpoint, recover, workspaceTaskCmd())
+	var pullRepo, pullBranch string
+	var pullJSON bool
+	pull := &cobra.Command{
+		Use: "pull", Short: "Fetch a base branch's upstream and fast-forward the local branch", Args: cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			l, err := load(cmd)
+			if err != nil {
+				return err
+			}
+			r, err := workspace.PullBase(l, pullRepo, pullBranch)
+			if err != nil {
+				return err
+			}
+			if pullJSON {
+				return json.NewEncoder(cmd.OutOrStdout()).Encode(r)
+			}
+			cmd.Printf("%s: %s (%s) %s\n", r.Branch, r.Status, r.Upstream, r.After)
+			return nil
+		},
+	}
+	pull.Flags().StringVar(&pullRepo, "repo", "", "declared repository alias (required with config schema 2)")
+	pull.Flags().StringVar(&pullBranch, "branch", "", "local base branch to update from its upstream")
+	pull.Flags().BoolVar(&pullJSON, "json", false, "print the result as JSON")
+	_ = pull.MarkFlagRequired("branch")
+	cmd.AddCommand(inspect, init, checkpoint, recover, pull, workspaceTaskCmd())
 	return cmd
 }

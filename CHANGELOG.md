@@ -5,11 +5,10 @@ release page for a tag shows only that release's notes
 ([`docs/release-notes.md`](docs/release-notes.md)) plus the generated commit
 list. Release candidates are folded into their stable release.
 
-## v0.35.0 — onto light and live-version support
+## v0.36.0 — fresh bases, bring-your-own tools, and safe cleanup
 
-Breaking workflow and OpenCode compatibility changes. All three binaries are
-stamped v0.35.0. The embedded catalog is 0.35.0 (onto 0.27.0, to 0.24.0,
-h 0.13.0, and no 0.2.0).
+Breaking configuration change. All three binaries are stamped v0.36.0.
+The embedded catalog is 0.36.0 (onto 0.28.0, to 0.25.0, h 0.14.0, and no 0.3.0).
 
 - **New changes start from a freshly pulled base (ADR 0083).** Before `onto
   new` or `to new`, the workflow skills ask which branch each repo starts from,
@@ -45,6 +44,30 @@ h 0.13.0, and no 0.2.0).
   under `<tmp>/<engine>/<change>/`, and cleanup deletes that folder.
   `homonto tmp clean` previews, and with `--yes` removes, scratch that belongs
   to no active change.
+- **Scratch deletion is generation-safe.** Cleanup retains scratch when a
+  name belongs to multiple generations. The global sweep refuses incomplete
+  workflow inventories, and deletion holds the lifecycle/name lock.
+- **Moved-repository handover preserves user links.** Former local skill and
+  command links are released unchanged at both project and user scope, even
+  when the repository moved before upgrading.
+- **`to-done` cleans up after delivery.** Integration verification and confirmed
+  source delivery precede cleanup; blocked delivery retains receivers,
+  execution worktrees, and scratch for recovery.
+- **Release lineage reconciled.** v0.35.0's state-schema guards, guarded
+  `onto scale --set`, permission handbacks, and regression tests remain present.
+
+**Upgrade:** remove `[mcps.*]`, `mcp` under `[settings.opencode]`, and standalone
+`local:` skill/command declarations from `homonto.toml`; keep their OpenCode
+files. Install all three matching v0.36.0 binaries, run `homonto plan` and
+`homonto apply`, and restart OpenCode. Released links remain byte-for-byte;
+an absolute user link stranded by a repository move must be repaired by its owner.
+
+## v0.35.0 — onto light and live-version support
+
+Breaking workflow and OpenCode compatibility changes. All three binaries are
+stamped v0.35.0. The embedded catalog is 0.35.0 (onto 0.27.0, to 0.24.0,
+h 0.13.0, and no 0.2.0).
+
 - **Breaking: only the live version is supported (ADR 0081).**
   - `homonto workspace migrate` is removed, along with migration-adopted
     worktree bindings and retired-record handling. A registry entry adopted by

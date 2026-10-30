@@ -17,80 +17,75 @@ Windows on amd64 and arm64. Each binary is a separate archive, and one
 [installation guide](https://github.com/noviopenworks/homonto/blob/main/docs/guides/installation.md).
 Earlier releases: [CHANGELOG.md](https://github.com/noviopenworks/homonto/blob/main/CHANGELOG.md).
 
-### v0.35.0 — onto light and live-version support
+### v0.36.0 — fresh bases, bring-your-own tools, and safe cleanup
 
-Breaking workflow and OpenCode compatibility changes. All three binaries are
-stamped v0.35.0. The embedded catalog is 0.35.0 (onto 0.27.0, to 0.24.0,
-h 0.13.0, and no 0.2.0).
+Breaking configuration change. All three binaries are stamped v0.36.0.
+The embedded catalog is 0.36.0 (onto 0.28.0, to 0.25.0, h 0.14.0, and no 0.3.0).
 
-- **Breaking: only the live version is supported (ADR 0081).**
-  - `homonto workspace migrate` is removed, along with migration-adopted
-    worktree bindings and retired-record handling. A registry entry adopted by
-    the migration now fails with the fix.
-  - onto reads only `onto-state.yaml` at the current `schema_version`.
-    Unversioned or older state files, a lone pre-binary `state.yaml`, and the
-    `fix`/`tweak` workflow values fail and say to finish the change with the
-    release that created it.
-  - OpenCode 2 only: OpenCode 1's `tui.json` is no longer read, and the V1 TUI
-    spellings (`theme = "x"`, `scroll_speed`, `scroll_acceleration`,
-    `leader_timeout`) fail at load and name their V2 key.
-- **Breaking: the OpenCode 1 workflow plugin is removed (ADR 0079).**
-  `integrations.opencode.workflow_bridge = true` and an enabled
-  `source = "homonto-workflow"` plugin declaration now fail at load; use
-  `workflow_context`, on by default with onto, to, or h. A leftover
-  `workflow_bridge = false` is ignored. `homonto apply` removes a stale owned
-  `.opencode/plugins/homonto-workflow.ts` link. Bundled plugins drop their V1
-  `plugin.ts` entrypoints.
-- **Breaking: `onto fix` and `onto tweak` are now one preset, `onto light`
-  (ADR 0078).** Use `onto new --workflow light` and `/onto-light`; the `fix`
-  and `tweak` workflow values, skills, and commands are removed. The preset
-  classifies the request itself: a bug still starts from a failing
-  reproduction test. **Light never runs a skeptic.** A light change that
-  measures over five non-test files, adds a capability, or touches a
-  security-sensitive surface escalates to full onto, and `onto set
-  verify-scale` / `onto scale --set` refuse `full` for a light change.
-- **Worker permission blocks return to the coordinator (ADR 0077).** An
-  implementer, reviewer, skeptic, explorer, or h worker whose tool call is
-  denied, or whose prompt you reject, stops and hands back a `Permission block`
-  naming the exact command or resource. The coordinator first checks whether
-  the action is needed and whether its own authority covers it. Then it asks
-  you once: run it, send it the output or the missing information, continue
-  without it, or change scope. The OpenCode 2 workflow plugin adds a one-time
-  notice to the coordinator's context when a worker's prompt was rejected,
-  even if the worker returned nothing.
-- **Permission handback survives plugin reload and snapshot failure.** Resumed
-  workers' parent sessions are discovered on demand with a bounded lookup.
-  Rejection notices still reach a validated parent when workflow observation
-  fails; changed bindings and out-of-scope sessions do not receive them.
-- **Worktree state validation matches onto.** Allocation and recovery reject
-  unversioned, old, future, and removed-preset onto states before acting, rather
-  than accepting a format the lifecycle CLI cannot read.
-- **`onto scale --set` uses the guarded mutation path.** Abandoned and
-  archived states are immutable, and the state identity must match the requested
-  change. JSON measurement output is preserved.
-- **Harness architecture (ADR 0082):** OpenCode remains the primary and only
-  shipped harness. Native, tiered support for other harnesses is documented as
-  architecture; it is not implemented in this release.
+- **New changes start from a freshly pulled base (ADR 0083).** Before `onto
+  new` or `to new`, the workflow skills ask which branch each repo starts from,
+  then run the new `homonto workspace pull --repo <alias> --branch <branch>`.
+  It fetches the upstream and fast-forwards only that local branch. It refuses
+  a diverged branch, a missing upstream, a failed fetch, or a dirty checkout of
+  the branch, and never merges or resets.
+- **Draft PRs at any phase (ADR 0084).** The coordinator can open a draft PR
+  whatever the verify result or the skeptics say, listing the phase, verify
+  result and open findings. A draft records no receipt and changes no gate; at
+  close the verified candidate is delivered to it and it is marked ready.
+- **`[integration.<name>] repos = ["*"]` covers every declared repository.**
+  The check is selected when any repository changes and runs against all of
+  their checkouts. `"*"` must be the only entry.
+- **Breaking: MCP servers and your own skills and commands are
+  bring-your-own (ADR 0085).**
+  - `[mcps.*]`, `mcp` under `[settings.opencode]`, and `local:` sources on
+    `[skills.*]` / `[commands.*]` fail at load and name the fix. Builtin
+    skills and commands, and `local:` agents and packages, are unchanged.
+  - Configure MCP servers in your own `opencode.jsonc` and put skills and
+    commands in `.opencode/skills/` and `.opencode/command/` (or the
+    `~/.config/opencode/` equivalents).
+  - Upgrading: delete those tables and apply once. What an earlier release
+    projected is released — dropped from state, left on disk unchanged — and
+    `plan` shows it as `>`.
+  - `homonto explain` no longer has `mcp` / `projmcp` kinds.
+- **Cleanup runs at close (ADR 0086).** Closing an onto or to change
+  authorizes its cleanup: the coordinator runs `cleanup apply` without asking.
+  A worktree whose commits are only on its retained branch (a PR not merged
+  yet) is now removable; branches are still kept. Engine-free task cleanup
+  follows the same rule and keeps an unmerged task branch.
+- **Per-change scratch and `homonto tmp clean`.** A change keeps its scratch
+  under `<tmp>/<engine>/<change>/`, and cleanup deletes that folder.
+  `homonto tmp clean` previews, and with `--yes` removes, scratch that belongs
+  to no active change.
+- **Scratch deletion is generation-safe.** Cleanup retains scratch when a
+  name belongs to multiple generations. The global sweep refuses incomplete
+  workflow inventories, and deletion holds the lifecycle/name lock.
+- **Moved-repository handover preserves user links.** Former local skill and
+  command links are released unchanged at both project and user scope, even
+  when the repository moved before upgrading.
+- **`to-done` cleans up after delivery.** Integration verification and confirmed
+  source delivery precede cleanup; blocked delivery retains receivers,
+  execution worktrees, and scratch for recovery.
+- **Release lineage reconciled.** v0.35.0's state-schema guards, guarded
+  `onto scale --set`, permission handbacks, and regression tests remain present.
 
-**Upgrade:** finish or abandon unsupported in-flight changes and migrated
-worktree bindings with the release that created them before upgrading. Remove
-V1 workflow-plugin declarations, replace V1 terminal-setting spellings with
-their named V2 keys, and use `onto light` for new bounded changes. Install all
-three matching v0.35.0 binaries, run `homonto plan` and `homonto apply` in each
-configured project, and restart OpenCode. No state conversion is provided.
+**Upgrade:** remove `[mcps.*]`, `mcp` under `[settings.opencode]`, and standalone
+`local:` skill/command declarations from `homonto.toml`; keep their OpenCode
+files. Install all three matching v0.36.0 binaries, run `homonto plan` and
+`homonto apply`, and restart OpenCode. Released links remain byte-for-byte;
+an absolute user link stranded by a repository move must be repaired by its owner.
 
-**Validation:** the complete automated pre-tag gate passed, including race
-tests, vulnerability scanning, all nine Docker E2E suites, and release
-packaging. The release workflow repeats the gate before publishing.
+**Automated release gate:** race tests, vulnerability scanning, all nine Docker
+E2E suites, and release packaging are required before tagging. The release
+workflow repeats the complete gate before publishing.
 
-**Accepted validation gaps for v0.35.0:** the owner approved publication with
+**Accepted validation gaps for v0.36.0:** the owner approved publication with
 the release checklist's live checks outstanding: the real OpenCode 2 host
 (plugin loading, panel, reload/unload, tools, context/compaction, idle
 notifications, permission observer, and V1 link removal); native GitHub draft
 denial/approval and authorization-boundary checks; real GitHub sandbox sends,
 receipts, actor/destination/PR changes, and uncertain-send reconciliation; and
 live-host migration checks in both directions. Automated contracts do not
-establish these live behaviors. This exception applies only to v0.35.0.
+establish these live behaviors. This exception applies only to v0.36.0.
 
 ## Known limitations
 
@@ -104,11 +99,12 @@ homonto is young and deliberately narrow. For the 0.x line:
   leave it alone.
 - **The catalog ships only homonto's own content:** the onto, to, and no
   engines, the h workflow, and standalone skills and commands. Bring
-  third-party skills or agents as a `local:` path or a digest-pinned `remote:`
-  source. homonto never re-resolves a pin to newer content on its own.
+  third-party packages or agents as a `local:` path or a digest-pinned `remote:`
+  source. Standalone local skills and commands are bring-your-own. homonto
+  never re-resolves a pin to newer content on its own.
 - **Secrets need `pass` or an environment variable** at apply time
-  (`${pass:…}` / `${ENV}`). Project-scoped MCP secrets end up in plain text in
-  the project's `opencode.jsonc`.
+  (`${pass:…}` / `${ENV}`). MCP configuration and its secrets are managed
+  directly in OpenCode, outside homonto.
 - **After moving or renaming a repository, run `homonto apply` again.**
   Project links are relative; reapplying refreshes absolute config bindings and
   user-scoped references. Foreign links are never adopted silently.

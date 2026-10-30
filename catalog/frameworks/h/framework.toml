@@ -1,6 +1,6 @@
 name = "h"
 kind = "workflow"
-version = "0.13.0"
+version = "0.14.0"
 description = "Standalone GitHub workflow skill bundle — spike, resolve, review, continue, conflict resolution, batch review"
 
 [dependencies]

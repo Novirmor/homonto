@@ -12,7 +12,7 @@ func TestDoctor_JSONOutput(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 	cfg := filepath.Join(t.TempDir(), "homonto.toml")
-	if err := os.WriteFile(cfg, []byte("[mcps.demo]\ncommand = [\"true\"]\n"), 0o644); err != nil {
+	if err := os.WriteFile(cfg, []byte("[settings.opencode]\nshare = \"manual\"\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	cmd := NewRootCmd()

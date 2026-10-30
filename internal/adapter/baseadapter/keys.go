@@ -7,11 +7,9 @@ package baseadapter
 import (
 	"fmt"
 	"os"
-	"slices"
 	"strings"
 
 	"github.com/noviopenworks/homonto/internal/adapter"
-	"github.com/noviopenworks/homonto/internal/config"
 	"github.com/noviopenworks/homonto/internal/jsonutil"
 )
 
@@ -25,14 +23,6 @@ func HasAnyPrefix(s string, prefixes ...string) bool {
 		}
 	}
 	return false
-}
-
-// MCPProjected reports whether a declared MCP server has something runnable
-// to project for tool: it targets the tool (or all tools) and carries a
-// command. The per-tool JSON schema stays in each adapter; only the guard is
-// shared.
-func MCPProjected(m config.MCP, tool string) bool {
-	return slices.Contains(m.TargetsOrAll(), tool) && len(m.Command) > 0
 }
 
 // FilterDesired returns the subset of desired values whose keys carry prefix,

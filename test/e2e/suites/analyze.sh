@@ -28,11 +28,8 @@ model = "anthropic/claude-sonnet-4"
 [subagents.onto-skeptic.opencode]
 model = "anthropic/claude-opus-4-8"
 
-[mcps.e2e-probe]
-command = ["codegraph", "serve", "--mcp"]
-
 [skills.e2e-demo]
-source = "local:e2e-demo"
+source = "builtin:handoff"
 scope = "user"
 
 [settings.opencode]

@@ -22,7 +22,7 @@ func TestProjectScopeEndToEnd(t *testing.T) {
 
 	writeTOML := func(scope string) {
 		os.WriteFile(filepath.Join(repo, "homonto.toml"),
-			[]byte("[skills.graphify]\nsource=\"local:graphify\"\nscope=\""+scope+"\"\n"), 0o644)
+			[]byte("[skills.graphify]\nsource=\"builtin:handoff\"\nscope=\""+scope+"\"\n"), 0o644)
 	}
 	build := func() *Engine {
 		e, err := Build(context.Background(), filepath.Join(repo, "homonto.toml"), home, content)
@@ -97,7 +97,7 @@ func TestScopeSwitchStatusReportsPendingNotDrift(t *testing.T) {
 			os.MkdirAll(filepath.Join(content, "skills", "graphify"), 0o755)
 			writeTOML := func(scope string) {
 				os.WriteFile(filepath.Join(repo, "homonto.toml"),
-					[]byte("[skills.graphify]\nsource=\"local:graphify\"\nscope=\""+scope+"\"\n"), 0o644)
+					[]byte("[skills.graphify]\nsource=\"builtin:handoff\"\nscope=\""+scope+"\"\n"), 0o644)
 			}
 			build := func() *Engine {
 				e, err := Build(context.Background(), filepath.Join(repo, "homonto.toml"), home, content)
@@ -154,7 +154,7 @@ func TestSkillsOnlyRebuildsLostState(t *testing.T) {
 	content := filepath.Join(repo, "content")
 	os.MkdirAll(filepath.Join(content, "skills", "foo"), 0o755)
 	os.WriteFile(filepath.Join(repo, "homonto.toml"),
-		[]byte("[skills.foo]\nsource=\"local:foo\"\nscope=\"project\"\n"), 0o644)
+		[]byte("[skills.foo]\nsource=\"builtin:handoff\"\nscope=\"project\"\n"), 0o644)
 	build := func() *Engine {
 		e, err := Build(context.Background(), filepath.Join(repo, "homonto.toml"), home, content)
 		if err != nil {

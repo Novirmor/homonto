@@ -96,10 +96,8 @@ func TestRemovedToolTargetsRejected(t *testing.T) {
 		return err
 	}
 	for _, tc := range []struct{ label, doc, want string }{
-		{"mcp targets claude", "[mcps.demo]\ncommand=[\"srv\"]\ntargets=[\"claude\"]\n", `targets "claude"`},
-		{"mcp targets codex", "[mcps.demo]\ncommand=[\"srv\"]\ntargets=[\"codex\"]\n", `targets "codex"`},
 		{"subagent targets claude", "[subagents.foo]\nsource=\"builtin:architect\"\nscope=\"project\"\ntargets=[\"claude\"]\n", `targets "claude"`},
-		{"skill targets codex", "[skills.foo]\nsource=\"local:foo\"\nscope=\"project\"\ntargets=[\"codex\"]\n", `targets "codex"`},
+		{"skill targets codex", "[skills.foo]\nsource=\"builtin:handoff\"\nscope=\"project\"\ntargets=[\"codex\"]\n", `targets "codex"`},
 	} {
 		err := load(tc.doc)
 		if err == nil {
@@ -111,7 +109,7 @@ func TestRemovedToolTargetsRejected(t *testing.T) {
 			}
 		}
 	}
-	if err := load("[mcps.demo]\ncommand=[\"srv\"]\ntargets=[\"nope\"]\n"); err == nil {
-		t.Fatal("an unknown MCP target must still be rejected")
+	if err := load("[skills.foo]\nsource=\"builtin:handoff\"\nscope=\"project\"\ntargets=[\"nope\"]\n"); err == nil {
+		t.Fatal("an unknown target must still be rejected")
 	}
 }

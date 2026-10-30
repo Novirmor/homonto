@@ -132,15 +132,14 @@ homonto explain [kind] [name] [--repo <alias>] [--json]
 ```
 
 With no arguments, lists every managed resource. Kinds: `skill`, `command`,
-`subagent`, `subagentcopy`, `mcp`, `projmcp`, `setting`, `projsetting`,
-`tui`, `plugin`. Shows origin (direct or package), destination, the operation
+`subagent`, `subagentcopy`, `setting`, `projsetting`, `tui`, `plugin`. Shows origin (direct or package), destination, the operation
 that last touched it, and removal records. Never prints values.
 
 ```console
-$ homonto explain projmcp brave
-projmcp       brave                direct scope=project
-    dst: …/notes/opencode.jsonc
-    last: create (18dc732e, declare at 2026-10-27T17:37:54Z)
+$ homonto explain skill handoff
+skill         handoff              direct scope=project source=builtin:handoff
+    dst: …/notes/.opencode/skills/handoff
+    last: create (13f87c95, declare at 2026-10-29T14:38:10Z)
 ```
 
 ## `homonto update`

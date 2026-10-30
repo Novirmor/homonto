@@ -1,8 +1,8 @@
 # Getting started
 
-This walkthrough takes an empty repository to a working OpenCode setup with an
-MCP server, a skill of your own, and both workflow engines — then runs one
-change through each engine. Every output below is real, with long paths
+This walkthrough takes an empty repository to a working OpenCode setup with a
+builtin skill, a setting, and both workflow engines — alongside an MCP server
+and a skill of your own — then runs one change through each engine. Every output below is real, with long paths
 shortened to `…`.
 
 You need `homonto`, `onto`, and `to` installed ([installation](installation.md))
@@ -30,65 +30,62 @@ writes:
 
 `homonto init ~/dotfiles/ai` scaffolds another directory.
 
-## 2. Declare an MCP server and a skill
+## 2. Bring your own MCP servers and skills
 
-Replace `homonto.toml` with:
-
-```toml
-[mcps.codegraph]
-command = ["codegraph", "serve", "--mcp"]
-scope = "project"                          # this repo only
-
-[mcps.brave]
-command = ["npx", "-y", "@modelcontextprotocol/server-brave-search"]
-env = { BRAVE_API_KEY = "${BRAVE_API_KEY}" }   # a reference, never the value
-scope = "project"
-
-[skills.house-style]
-source = "local:house-style"               # homonto/skills/house-style/
-scope = "project"
-```
-
-Create the skill it points at:
+homonto doesn't manage MCP servers or skills you write yourself. Put them where
+OpenCode looks, and homonto leaves them alone:
 
 ```console
-$ mkdir -p homonto/skills/house-style
-$ cat > homonto/skills/house-style/SKILL.md <<'EOF'
+$ cat > opencode.jsonc <<'EOF'
+{
+  "mcp": {
+    "codegraph": {"type": "local", "command": ["codegraph", "serve", "--mcp"], "enabled": true}
+  }
+}
+EOF
+$ mkdir -p .opencode/skills/house-style
+$ cat > .opencode/skills/house-style/SKILL.md <<'EOF'
 ---
 name: house-style
 description: Team writing and naming conventions for this repo.
 ---
 
 # House style
-
-- Prefer short, active sentences.
 EOF
 ```
 
-## 3. Plan
+## 3. Declare what homonto manages
+
+Replace `homonto.toml` with a builtin skill and a setting:
+
+```toml
+[skills.handoff]
+source = "builtin:handoff"
+scope = "project"
+
+[settings.opencode]
+model = "anthropic/claude-opus-5-5"
+```
 
 `plan` is a dry run. It writes nothing and never resolves a secret:
 
 ```console
 $ homonto plan
 opencode:
-  + projmcp.brave = {"command":["npx","-y","@modelcontextprotocol/server-brave-search"],"enabled":true,"environment":{"BRAVE_API_KEY":"${BRAVE_API_KEY}"},"type":"local"}
-  + projmcp.codegraph = {"command":["codegraph","serve","--mcp"],"enabled":true,"type":"local"}
-  + skill.house-style = …/notes/.opencode/skills/house-style -> ../../homonto/skills/house-style
+  + setting.model = "anthropic/claude-opus-5-5"
+  + skill.handoff = …/notes/.opencode/skills/handoff -> ../../.homonto/catalog/skills/handoff
 ```
 
-`+` creates, `~` updates, `-` deletes. `projmcp` is a project-scoped MCP server
-(written to `./opencode.jsonc`); `mcp` would be the global one.
+`+` creates, `~` updates, `-` deletes, `>` releases something homonto used to
+manage and leaves it in place for you.
 
 ## 4. Apply
 
 ```console
-$ export BRAVE_API_KEY=…          # or put "${pass:ai/brave}" in the toml
 $ homonto apply
 opencode:
-  + projmcp.brave = …
-  + projmcp.codegraph = …
-  + skill.house-style = …
+  + setting.model = "anthropic/claude-opus-5-5"
+  + skill.handoff = …
 Apply these changes? [y/N] y
 Applied.
 ```
@@ -100,14 +97,13 @@ only keys it manages. The result:
 ```text
 notes/
 ├── homonto.toml
-├── homonto/skills/house-style/SKILL.md      ← you own this
-├── opencode.jsonc                           ← mcp.brave, mcp.codegraph
-├── .opencode/skills/house-style -> ../../homonto/skills/house-style
+├── opencode.jsonc                           ← yours; never rewritten
+├── .opencode/skills/house-style/SKILL.md    ← yours
+├── .opencode/skills/handoff -> ../../.homonto/catalog/skills/handoff
 └── .homonto/state.json                      ← hashes, never secret values
 ```
 
-Skills are symlinks: edit `homonto/skills/house-style/SKILL.md` and OpenCode
-sees the change immediately, no re-apply needed.
+The setting lands in your global `~/.config/opencode/opencode.jsonc`.
 
 ## 5. Check health
 
@@ -118,7 +114,7 @@ No drift.
 $ homonto doctor
 warn: `pass` not found on PATH (pass: references will fail)
 ok: .config/opencode (OpenCode) config location present
-ok: skill "house-style" linked (opencode)
+ok: skill "handoff" linked (opencode)
 ```
 
 `status` separates two things. Edit `homonto.toml` and you get **pending**:

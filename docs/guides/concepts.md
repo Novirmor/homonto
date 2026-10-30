@@ -11,8 +11,10 @@ homonto.toml ──plan──▶ diff ──apply──▶ OpenCode files
 ```
 
 You describe the desired state of your AI tooling in **`homonto.toml`**:
-MCP servers, skills, slash commands, agents, plugins, settings, and workflow
-packages. homonto **projects** that description into the tool's own files.
+workflow packages, builtin skills and slash commands, agents, plugins, and
+settings. homonto **projects** that description into the tool's own files.
+MCP servers and skills you write yourself are bring-your-own: they live in
+OpenCode's own files, and homonto never touches them.
 
 - **`plan`** computes the diff and prints it. It writes nothing and resolves
   no secrets.
@@ -48,7 +50,7 @@ Every skill, command, agent, and package names where its content comes from:
 | Source | Meaning |
 |---|---|
 | `builtin:<name>` | Shipped inside the binary (the *catalog*), materialized to `.homonto/catalog/`. |
-| `local:<name>` | Your content next to `homonto.toml`, under `homonto/`. |
+| `local:<name>` | Your agent or package next to `homonto.toml`, under `homonto/`. |
 | `remote:<url>` | A fetched archive pinned by `digest = "sha256:…"`, verified before use. |
 
 ## Scope
@@ -56,8 +58,7 @@ Every skill, command, agent, and package names where its content comes from:
 `scope = "project"` projects into the repository (`./.opencode/`,
 `./opencode.jsonc`). `scope = "user"` projects into your global OpenCode
 config (`~/.config/opencode/`), affecting every project. Skills, commands,
-and packages require an explicit scope; MCP servers default to `user`, agents
-to `project`.
+and packages require an explicit scope; agents default to `project`.
 
 ## The catalog
 

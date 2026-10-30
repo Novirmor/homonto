@@ -55,27 +55,12 @@ func TestMultiRepoProjectionScopesPerRepository(t *testing.T) {
 [repos]
 svc = "../svc"
 
-[mcps.global-probe]
-command = ["probe", "serve"]
-targets = ["opencode"]
-
-[mcps.cfg-probe]
-command = ["cfg", "serve"]
-scope = "project"
-targets = ["opencode"]
-
-[mcps.svc-probe]
-command = ["svc", "serve"]
-scope = "project"
-repo = "svc"
-targets = ["opencode"]
-
 [skills.cfg-skill]
-source = "local:cfg-skill"
+source = "builtin:handoff"
 scope = "project"
 
 [skills.svc-skill]
-source = "local:svc-skill"
+source = "builtin:handoff"
 scope = "project"
 repo = "svc"
 `
@@ -121,21 +106,7 @@ repo = "svc"
 	if fi, err := os.Lstat(svcLink); err != nil || fi.Mode()&os.ModeSymlink == 0 {
 		t.Errorf("svc skill link missing at %s", svcLink)
 	}
-	svcJSON, err := os.ReadFile(filepath.Join(svc, "opencode.jsonc"))
-	if err != nil || !strings.Contains(string(svcJSON), "svc-probe") {
-		t.Errorf("svc project config missing svc-probe: %v %s", err, svcJSON)
-	}
-	if strings.Contains(string(svcJSON), "cfg-probe") || strings.Contains(string(svcJSON), "global-probe") {
-		t.Errorf("svc project config leaked another repo's server: %s", svcJSON)
-	}
 	// The config repo received its own, and only its own.
-	cfgJSON, err := os.ReadFile(filepath.Join(cfgRepo, "opencode.jsonc"))
-	if err != nil || !strings.Contains(string(cfgJSON), "cfg-probe") {
-		t.Errorf("config repo project config missing cfg-probe: %v %s", err, cfgJSON)
-	}
-	if strings.Contains(string(cfgJSON), "svc-probe") {
-		t.Errorf("config repo project config leaked svc's server: %s", cfgJSON)
-	}
 	cfgLink := filepath.Join(cfgRepo, ".opencode", "skills", "cfg-skill")
 	if _, err := os.Lstat(cfgLink); err != nil {
 		t.Errorf("config repo skill link missing at %s", cfgLink)
@@ -169,10 +140,12 @@ repo = "svc"
 		}
 	}
 
-	// Drift is attributed per repo: hand-edit the svc project config and the
-	// finding must name opencode@svc.
-	svcJSONPath := filepath.Join(svc, "opencode.jsonc")
-	if err := os.WriteFile(svcJSONPath, []byte(`{"mcp":{"svc-probe":{"command":["edited"]}}}`), 0o644); err != nil {
+	// Drift is attributed per repo: repoint the svc skill link out of band and
+	// the finding must name opencode@svc.
+	if err := os.Remove(svcLink); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(t.TempDir(), svcLink); err != nil {
 		t.Fatal(err)
 	}
 	e3 := build()
@@ -207,9 +180,9 @@ func TestMultiRepoPruneStaysScoped(t *testing.T) {
 		t.Helper()
 		svcBlock := ""
 		if withSvc {
-			svcBlock = "\n[skills.svc-skill]\nsource = \"local:svc-skill\"\nscope = \"project\"\nrepo = \"svc\"\n"
+			svcBlock = "\n[skills.svc-skill]\nsource = \"builtin:handoff\"\nscope = \"project\"\nrepo = \"svc\"\n"
 		}
-		out := "[repos]\nsvc = \"../svc\"\n\n[skills.cfg-skill]\nsource = \"local:cfg-skill\"\nscope = \"project\"\n" + svcBlock
+		out := "[repos]\nsvc = \"../svc\"\n\n[skills.cfg-skill]\nsource = \"builtin:handoff\"\nscope = \"project\"\n" + svcBlock
 		if err := os.WriteFile(cfgPath, []byte(out), 0o644); err != nil {
 			t.Fatal(err)
 		}

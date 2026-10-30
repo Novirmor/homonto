@@ -1,6 +1,6 @@
 # ADR 0024: Multi-repo support — designated state, cross-repo effect
 
-- **Status:** Accepted (stages 1–3 implemented)
+- **Status:** Accepted (stages 1–3 implemented); partially superseded by [0085](0085-bring-your-own-mcp-servers-and-skills.md) (MCP servers and `local:` skills and commands)
 - **Date:** 2026-09-01
 
 ## Context

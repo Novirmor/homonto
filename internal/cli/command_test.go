@@ -69,8 +69,8 @@ func TestInitScaffoldsRepoAndSkipsExisting(t *testing.T) {
 func TestPlanReportsConfigLoadError(t *testing.T) {
 	home := t.TempDir()
 	cfg := filepath.Join(t.TempDir(), "homonto.toml")
-	// "mcp" is a reserved settings.opencode key (config.Load rejects it —
-	// homonto itself manages the mcp structure in opencode.jsonc).
+	// "mcp" is not accepted under settings.opencode (config.Load rejects it —
+	// MCP servers are bring-your-own, ADR 0085).
 	if err := os.WriteFile(cfg, []byte("[settings.opencode]\nmcp = {}\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}

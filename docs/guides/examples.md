@@ -1,16 +1,16 @@
 # Examples
 
-Complete, copy-ready configurations and command sessions, from a single MCP
-server to a multi-repository workspace. Every `homonto.toml` here loads with
+Complete, copy-ready configurations and command sessions, from your own MCP
+servers to a multi-repository workspace. Every `homonto.toml` here loads with
 the current release. Replace model IDs with ones your OpenCode providers
 offer.
 
 | # | Example | Uses |
 |---|---|---|
-| 1 | [One MCP server](#1-one-mcp-server) | `[mcps]` |
+| 1 | [Bring your own MCP servers and skills](#1-bring-your-own-mcp-servers-and-skills) | `opencode.jsonc`, `.opencode/skills/` |
 | 2 | [Personal global setup](#2-personal-global-setup-dotfiles) | user scope, settings, terminal |
-| 3 | [Team repo with secrets](#3-team-repository-with-secrets) | project MCPs, `${ENV}`, `${pass:}` |
-| 4 | [Your own skills, commands, agents](#4-your-own-skills-commands-and-agents) | `local:` |
+| 3 | [Team repo with secrets](#3-team-repository-with-secrets) | your MCP servers, OpenCode `{env:}` |
+| 4 | [Your own skills, commands, agents](#4-your-own-skills-commands-and-agents) | `.opencode/`, `local:` agents |
 | 5 | [Solo developer on `to`](#5-solo-developer-on-to) | `[engines.to]` |
 | 6 | [Audited team on onto](#6-audited-team-on-onto) | `[engines.onto]`, variants, steps |
 | 7 | [Everything: onto + to + no + h](#7-everything-onto--to--no--h) | all packages |
@@ -34,22 +34,27 @@ offer.
 
 ---
 
-## 1. One MCP server
+## 1. Bring your own MCP servers and skills
 
-The smallest useful config. No `scope` means user scope: every project gets
-it.
+homonto doesn't manage MCP servers or skills you write yourself. Put them
+where OpenCode looks; `apply` never touches them.
 
-```toml
-[mcps.codegraph]
-command = ["codegraph", "serve", "--mcp"]
+```jsonc
+// ~/.config/opencode/opencode.jsonc (every project) or ./opencode.jsonc (this one)
+{
+  "mcp": {
+    "codegraph": {"type": "local", "command": ["codegraph", "serve", "--mcp"], "enabled": true}
+  }
+}
 ```
 
-```console
-$ homonto plan
-opencode:
-  + mcp.codegraph = {"command":["codegraph","serve","--mcp"],"enabled":true,"type":"local"}
-$ homonto apply --yes
+```text
+~/.config/opencode/skills/house-style/SKILL.md   ← every project
+.opencode/skills/house-style/SKILL.md            ← this project
 ```
+
+homonto manages what it ships: workflow packages, builtin skills and commands,
+agents, plugins and settings.
 
 ## 2. Personal global setup (dotfiles)
 
@@ -58,9 +63,6 @@ OpenCode config. Everything is `scope = "user"`.
 
 ```toml
 # ~/dotfiles/ai/homonto.toml
-[mcps.fetch]
-command = ["uvx", "mcp-server-fetch"]
-
 [skills.handoff]
 source = "builtin:handoff"
 scope  = "user"
@@ -98,63 +100,52 @@ You now have `/handoff` and `/grill` in every project.
 
 ## 3. Team repository with secrets
 
-Project-scoped servers live in the repository's `opencode.jsonc`. Secrets are
-references; each developer supplies values.
+Your MCP servers live in the repository's `opencode.jsonc`, which you own.
+Reference secrets with OpenCode's own `{env:…}` substitution so the committed
+file never holds a value; each developer supplies them.
 
-```toml
-[mcps.github]
-command = ["github-mcp-server", "stdio"]
-env     = { GITHUB_PERSONAL_ACCESS_TOKEN = "${GITHUB_TOKEN}" }
-scope   = "project"
-
-[mcps.postgres]
-command = ["npx", "-y", "@modelcontextprotocol/server-postgres", "${DATABASE_URL}"]
-scope   = "project"
-
-[mcps.brave]
-command = ["npx", "-y", "@modelcontextprotocol/server-brave-search"]
-env     = { BRAVE_API_KEY = "${pass:team/brave}" }
-scope   = "project"
+```jsonc
+// opencode.jsonc — committed
+{
+  "mcp": {
+    "github": {
+      "type": "local",
+      "command": ["github-mcp-server", "stdio"],
+      "environment": {"GITHUB_PERSONAL_ACCESS_TOKEN": "{env:GITHUB_TOKEN}"},
+      "enabled": true
+    }
+  }
+}
 ```
 
 ```sh
 # .env.example — committed
 GITHUB_TOKEN=
-DATABASE_URL=postgres://localhost/app_dev
 ```
 
-```console
-$ set -a; . ./.env; set +a
-$ homonto apply
-```
-
-Because project-scoped servers write resolved values into `opencode.jsonc`,
-keep that file out of Git (or use user scope for secret-bearing servers).
+homonto's own `${ENV}` and `${pass:}` references still work in values it
+manages, such as `[settings.opencode]`; see [secrets](secrets.md).
 
 ## 4. Your own skills, commands, and agents
 
+Skills and commands are bring-your-own: write them straight into OpenCode's
+directories. Agents can still come from your own content through `local:`.
+
 ```text
-homonto/
+.opencode/
 ├── skills/release/SKILL.md
-├── commands/changelog.md
+└── command/changelog.md
+homonto/
 └── subagents/security-review.md
 ```
 
 ```toml
-[skills.release]
-source = "local:release"
-scope  = "project"
-
-[commands.changelog]
-source = "local:changelog"
-scope  = "project"
-
 [subagents.security-review]
 source = "local:security-review"
 scope  = "project"
 ```
 
-`homonto/skills/release/SKILL.md`:
+`.opencode/skills/release/SKILL.md`:
 
 ```markdown
 ---
@@ -169,7 +160,7 @@ description: Use when cutting a release — bump the version, update CHANGELOG.m
 3. Commit "release vX.Y.Z", tag `vX.Y.Z`, push the tag.
 ```
 
-`homonto/commands/changelog.md`:
+`.opencode/command/changelog.md`:
 
 ```markdown
 ---
@@ -447,15 +438,10 @@ source = "builtin:onto"
 scope  = "project"
 
 # Installed into ../api only
-[skills.api-conventions]
-source = "local:api-conventions"
+[skills.handoff]
+source = "builtin:handoff"
 scope  = "project"
 repo   = "api"
-
-[mcps.api-db]
-command = ["pg-mcp", "--dsn", "${API_DEV_DSN}"]
-scope   = "project"
-repo    = "api"
 
 [subagents.homonto.opencode]
 model = "anthropic/claude-opus-5-5"
@@ -477,8 +463,7 @@ repos (repo-tagged project resources project only into their named repo):
 opencode:
   …
 opencode@api:
-  + projmcp.api-db = …
-  + skill.api-conventions = …
+  + skill.handoff = …
 $ onto new add-pagination --repo api
 ```
 

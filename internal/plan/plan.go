@@ -47,6 +47,10 @@ func Render(sets []adapter.ChangeSet) string {
 			case "update":
 				lines = append(lines, fmt.Sprintf("  ~ %s: %s -> %s", c.Key, c.Old, c.New))
 			case "delete":
+				if c.Cause == adapter.CauseRelease {
+					lines = append(lines, fmt.Sprintf("  > %s (released; left in place, now yours)", c.Key))
+					continue
+				}
 				lines = append(lines, fmt.Sprintf("  - %s", c.Key))
 			}
 		}

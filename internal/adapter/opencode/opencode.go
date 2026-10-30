@@ -126,55 +126,6 @@ func (a *Adapter) cliFile() string {
 	return filepath.Join(a.cliConfigHome, "opencode", "cli.json")
 }
 
-// mcpValue renders one declared server as OpenCode's mcp entry, or ok=false
-// when there is nothing runnable to project for this tool.
-func mcpValue(m config.MCP) (string, bool) {
-	if !baseadapter.MCPProjected(m, "opencode") {
-		return "", false
-	}
-	obj := map[string]any{"type": "local", "command": m.Command, "enabled": true}
-	if len(m.Env) > 0 {
-		obj["environment"] = m.Env
-	}
-	return structproj.MustJSON(obj), true
-}
-
-// desiredMCPs maps the user-scoped servers to their mcp.* state keys (the
-// global opencode.jsonc). Project-scoped servers fall back here only when no
-// project root is known.
-func (a *Adapter) desiredMCPs(c *config.Config) map[string]string {
-	out := map[string]string{}
-	for name, m := range c.MCPs {
-		if m.ScopeOrDefault() == "project" && a.ProjectRoot != "" {
-			continue
-		}
-		if v, ok := mcpValue(m); ok {
-			out["mcp."+name] = v
-		}
-	}
-	return out
-}
-
-// desiredProjectMCPs maps the project-scoped servers tagged at this adapter's
-// repo ("" = the config repo) to their projmcp.* state keys — the same
-// mcp.<name> entries, written into the repository's opencode.jsonc instead,
-// so one repository's servers don't run in every other session.
-func (a *Adapter) desiredProjectMCPs(c *config.Config) map[string]string {
-	out := map[string]string{}
-	if a.ProjectRoot == "" {
-		return out
-	}
-	for name, m := range c.MCPs {
-		if m.ScopeOrDefault() != "project" || m.Repo != a.RepoName {
-			continue
-		}
-		if v, ok := mcpValue(m); ok {
-			out["projmcp."+name] = v
-		}
-	}
-	return out
-}
-
 // desiredSettings maps each [settings.opencode] key to its setting.* state key
 // (explicit settings always live in the global opencode.jsonc). homonto no
 // longer derives a default main/small_model from any route — an operator who
@@ -212,10 +163,6 @@ func desiredTUI(c *config.Config) (map[string]string, error) {
 
 // Document-path mappings for each structured-document namespace. Config-supplied
 // names are escaped so a name with dots/@/|/# addresses the literal key.
-func mcpDocPath(key string) string { return "mcp." + jsonutil.EscapePath(trim(key, "mcp.")) }
-func projMCPDocPath(key string) string {
-	return "mcp." + jsonutil.EscapePath(trim(key, "projmcp."))
-}
 func settingDocPath(key string) string { return jsonutil.EscapePath(trim(key, "setting.")) }
 func projSettingDocPath(key string) string {
 	return jsonutil.EscapePath(trim(key, "projsetting."))
@@ -252,17 +199,12 @@ func (a *Adapter) Plan(c *config.Config, st *state.State) (adapter.ChangeSet, er
 	cs := adapter.ChangeSet{Tool: a.Name()}
 
 	codec := jsoncodec.Codec{}
-	if global {
-		if changes, err := structproj.Project("opencode", "mcp.", a.desiredMCPs(c), doc, st, codec, mcpDocPath); err != nil {
-			return adapter.ChangeSet{}, err
-		} else {
-			cs.Changes = append(cs.Changes, changes...)
+	// MCP servers are bring-your-own (ADR 0085). Entries an earlier release
+	// projected stay in opencode.jsonc; their state is only released.
+	for _, key := range st.Keys("opencode") {
+		if (global && hasPrefix(key, "mcp.")) || hasPrefix(key, "projmcp.") {
+			cs.Changes = append(cs.Changes, adapter.Change{Action: "delete", Key: key, Old: adapter.SecretRedaction, Cause: adapter.CauseRelease})
 		}
-	}
-	if changes, err := structproj.Project("opencode", "projmcp.", a.desiredProjectMCPs(c), projDoc, st, codec, projMCPDocPath); err != nil {
-		return adapter.ChangeSet{}, err
-	} else {
-		cs.Changes = append(cs.Changes, changes...)
 	}
 	if global {
 		if changes, err := structproj.Project("opencode", "setting.", a.desiredSettings(c), doc, st, codec, settingDocPath); err != nil {
@@ -366,9 +308,6 @@ func (a *Adapter) Plan(c *config.Config, st *state.State) (adapter.ChangeSet, er
 	// Global namespaces only contribute declared keys in the config-repo
 	// adapter; a repo adapter's partition carries only project/file keys.
 	declared := map[string]bool{}
-	for k := range a.desiredMCPs(c) {
-		declared[k] = true
-	}
 	if global {
 		for k := range c.Settings.OpenCode {
 			declared["setting."+k] = true
@@ -414,7 +353,11 @@ func (a *Adapter) Plan(c *config.Config, st *state.State) (adapter.ChangeSet, er
 		if declared[k] || !managedPrefix(k) {
 			continue
 		}
-		cs.Changes = append(cs.Changes, adapter.Change{Action: "delete", Key: k, Old: adapter.SecretRedaction, Cause: adapter.CauseRemove})
+		cause := adapter.CauseRemove
+		if a.ownSkillLink(st, k) {
+			cause = adapter.CauseRelease
+		}
+		cs.Changes = append(cs.Changes, adapter.Change{Action: "delete", Key: k, Old: adapter.SecretRedaction, Cause: cause})
 	}
 	// Keys come from map iteration (random order); a plan must render the
 	// same way every run. Keys are unique within a changeset.
@@ -443,13 +386,6 @@ func (a *Adapter) ObserveHashes(st *state.State) (map[string]string, error) {
 	}
 	codec := jsoncodec.Codec{}
 	out := map[string]string{}
-	if obs, err := structproj.Observe("opencode", "mcp.", doc, st, codec, mcpDocPath); err != nil {
-		return nil, err
-	} else {
-		for k, v := range obs {
-			out[k] = v
-		}
-	}
 	if obs, err := structproj.Observe("opencode", "setting.", doc, st, codec, settingDocPath); err != nil {
 		return nil, err
 	} else {
@@ -460,13 +396,6 @@ func (a *Adapter) ObserveHashes(st *state.State) (map[string]string, error) {
 	projDoc, err := a.readProjectCfg()
 	if err != nil {
 		return nil, err
-	}
-	if obs, err := structproj.Observe("opencode", "projmcp.", projDoc, st, codec, projMCPDocPath); err != nil {
-		return nil, err
-	} else {
-		for k, v := range obs {
-			out[k] = v
-		}
 	}
 	if obs, err := structproj.Observe("opencode", "projsetting.", projDoc, st, codec, projSettingDocPath); err != nil {
 		return nil, err
@@ -570,10 +499,13 @@ func (a *Adapter) Apply(cfg *config.Config, cs adapter.ChangeSet, res *secret.Re
 	// In repo mode the change filters match nothing (global namespaces are never
 	// planned there) and the write gates below stay false; passing the empty
 	// filters keeps this one code path for both modes.
-	doc, docChanged, err := structproj.Apply("opencode", "mcp.", filterChanges(cs.Changes, "mcp."), doc, codec, res, st, mcpDocPath)
-	if err != nil {
-		return err
+	// Released MCP keys leave state only; the servers stay in the file.
+	for _, c := range append(filterChanges(cs.Changes, "mcp."), filterChanges(cs.Changes, "projmcp.")...) {
+		if c.Action == "delete" {
+			st.Delete("opencode", c.Key)
+		}
 	}
+	docChanged := false
 	// plugin.* is bespoke array membership (structproj's keyed codec cannot model
 	// it): create/update adds the element, delete removes it, adopt records state.
 	for _, c := range filterChanges(cs.Changes, "plugin.") {
@@ -642,10 +574,7 @@ func (a *Adapter) Apply(cfg *config.Config, cs adapter.ChangeSet, res *secret.Re
 		}
 		docChanged = docChanged || ch
 	}
-	projDoc, projChanged, err := structproj.Apply("opencode", "projmcp.", filterChanges(cs.Changes, "projmcp."), projDoc, codec, res, st, projMCPDocPath)
-	if err != nil {
-		return err
-	}
+	projChanged := false
 	{
 		var ch bool
 		projDoc, ch, err = structproj.Apply("opencode", "projsetting.", filterChanges(cs.Changes, "projsetting."), projDoc, codec, res, st, projSettingDocPath)
@@ -670,14 +599,24 @@ func (a *Adapter) Apply(cfg *config.Config, cs adapter.ChangeSet, res *secret.Re
 	// fileproj.ApplyLinks pass below; noop and subagentcopy.* are handled
 	// elsewhere. The fallback recovers a de-declared key's on-disk dst at user
 	// scope when state lacks a recorded dst, matching the prior inline behavior.
+	// Released skill and command links (your own content, now bring-your-own)
+	// leave state only; the symlink stays where it is.
+	var linkChanges []adapter.Change
+	for _, c := range cs.Changes {
+		if c.Cause == adapter.CauseRelease && (hasPrefix(c.Key, "skill.") || hasPrefix(c.Key, "command.")) {
+			st.Delete("opencode", c.Key)
+			continue
+		}
+		linkChanges = append(linkChanges, c)
+	}
 	roots := a.ManagedRoots()
-	if err := fileproj.ApplyState("opencode", filterChanges(cs.Changes, "skill."), st, roots, func(k string) []string {
+	if err := fileproj.ApplyState("opencode", filterChanges(linkChanges, "skill."), st, roots, func(k string) []string {
 		name := trim(k, "skill.")
 		return []string{filepath.Join(a.SkillsDir("user"), name), filepath.Join(a.SkillsDir("project"), name)}
 	}); err != nil {
 		return err
 	}
-	if err := fileproj.ApplyState("opencode", filterChanges(cs.Changes, "command."), st, roots, func(k string) []string {
+	if err := fileproj.ApplyState("opencode", filterChanges(linkChanges, "command."), st, roots, func(k string) []string {
 		name := trim(k, "command.") + ".md"
 		return []string{filepath.Join(a.CommandsDir("user"), name), filepath.Join(a.CommandsDir("project"), name)}
 	}); err != nil {

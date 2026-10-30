@@ -63,17 +63,14 @@ func objKeys(t *testing.T, path, root string) map[string]bool {
 }
 
 // TestOpenCodeDottedNamesLandAsLiteralKeysAndConverge reproduces the review's
-// path-injection finding for opencode: an MCP named "corp.internal" and a
-// setting key "a.b" must land as literal keys, not nested objects — and a
+// path-injection finding for opencode: a setting key "a.b" must land as a
+// literal key, not a nested object — and a
 // second plan after apply must be all noop.
 func TestOpenCodeDottedNamesLandAsLiteralKeysAndConverge(t *testing.T) {
 	home := t.TempDir()
 	a := New(home, t.TempDir())
 	st, _ := state.Load(t.TempDir())
 	c := &config.Config{
-		MCPs: map[string]config.MCP{
-			"corp.internal": {Command: []string{"srv"}, Targets: []string{"opencode"}},
-		},
 		Settings: config.Settings{OpenCode: map[string]any{"a.b": "v"}},
 	}
 
@@ -86,13 +83,6 @@ func TestOpenCodeDottedNamesLandAsLiteralKeysAndConverge(t *testing.T) {
 	}
 
 	cfgPath := filepath.Join(home, ".config", "opencode", "opencode.jsonc")
-	mcps := objKeys(t, cfgPath, "mcp")
-	if !mcps["corp.internal"] {
-		t.Fatalf("literal key %q missing from mcp; got %v", "corp.internal", mcps)
-	}
-	if mcps["corp"] {
-		t.Fatalf("dotted MCP name nested into a %q object: %v", "corp", mcps)
-	}
 	root := objKeys(t, cfgPath, "@this")
 	if !root["a.b"] {
 		t.Fatalf("literal setting key %q missing; got %v", "a.b", root)
@@ -120,15 +110,7 @@ func TestOpenCodePlanRenderIsDeterministic(t *testing.T) {
 	a := New(home, t.TempDir())
 	st, _ := state.Load(t.TempDir())
 	c := cfgWithSkills("user", "one", "two", "three")
-	c.MCPs = map[string]config.MCP{
-		"alpha":   {Command: []string{"a"}, Targets: []string{"opencode"}},
-		"bravo":   {Command: []string{"b"}, Targets: []string{"opencode"}},
-		"charlie": {Command: []string{"c"}, Targets: []string{"opencode"}},
-		"delta":   {Command: []string{"d"}, Targets: []string{"opencode"}},
-		"echo":    {Command: []string{"e"}, Targets: []string{"opencode"}},
-		"foxtrot": {Command: []string{"f"}, Targets: []string{"opencode"}},
-	}
-	c.Settings = config.Settings{OpenCode: map[string]any{"model": "x", "theme": "dark"}}
+	c.Settings = config.Settings{OpenCode: map[string]any{"model": "x", "theme": "dark", "alpha": "a", "bravo": "b", "charlie": "c", "delta": "d"}}
 	var first string
 	for i := 0; i < 20; i++ {
 		cs, err := a.Plan(c, st)
@@ -143,35 +125,6 @@ func TestOpenCodePlanRenderIsDeterministic(t *testing.T) {
 		if out != first {
 			t.Fatalf("plan render differs between runs:\n--- run 0 ---\n%s--- run %d ---\n%s", first, i, out)
 		}
-	}
-}
-
-// TestOpenCodeSkipsEmptyCommandMCP: an MCP with no command (e.g. a url-type
-// server a future config might carry) must not be projected as a broken
-// `command: []` entry — claude's adapter already skips these; opencode must
-// match.
-func TestOpenCodeSkipsEmptyCommandMCP(t *testing.T) {
-	a := New(t.TempDir(), t.TempDir())
-	st, _ := state.Load(t.TempDir())
-	c := &config.Config{MCPs: map[string]config.MCP{
-		"remote": {Targets: []string{"opencode"}}, // no command
-		"local":  {Command: []string{"srv"}, Targets: []string{"opencode"}},
-	}}
-	cs, err := a.Plan(c, st)
-	if err != nil {
-		t.Fatalf("plan: %v", err)
-	}
-	var sawLocal bool
-	for _, ch := range cs.Changes {
-		if ch.Key == "mcp.remote" {
-			t.Fatalf("empty-command MCP planned as %s %s (New=%s)", ch.Action, ch.Key, ch.New)
-		}
-		if ch.Key == "mcp.local" {
-			sawLocal = true
-		}
-	}
-	if !sawLocal {
-		t.Fatal("valid sibling MCP missing from plan")
 	}
 }
 

@@ -1,14 +1,9 @@
 package opencode
 
 import (
-	"os"
-	"path/filepath"
 	"testing"
 
 	"github.com/noviopenworks/homonto/internal/config"
-	"github.com/noviopenworks/homonto/internal/jsonutil"
-	"github.com/noviopenworks/homonto/internal/state"
-	"github.com/tidwall/gjson"
 )
 
 // With no [settings.opencode].model and no route-derived default, the adapter
@@ -81,67 +76,5 @@ func TestDesiredSettings_UserScopedNoSynthesizedModelKeys(t *testing.T) {
 	}
 	if proj := a.desiredProjectSettings(c); len(proj) != 0 {
 		t.Errorf("no route-derived project settings exist anymore, got %v", proj)
-	}
-}
-
-// TestProjectScopedMCPAppliesToProjectFileAndMigrates: a scope="project" MCP
-// lands in <project>/opencode.jsonc, and one previously applied to the global
-// config (recorded as mcp.*) is pruned from it on the next apply.
-func TestProjectScopedMCPAppliesToProjectFileAndMigrates(t *testing.T) {
-	home := t.TempDir()
-	project := t.TempDir()
-
-	globalDir := filepath.Join(home, ".config", "opencode")
-	os.MkdirAll(globalDir, 0o755)
-	os.WriteFile(filepath.Join(globalDir, "opencode.jsonc"),
-		[]byte(`{"mcp":{"codegraph":{"type":"local","command":["codegraph","serve"],"enabled":true},"keep":{"type":"local","command":["keep"],"enabled":true}}}`), 0o644)
-	st, _ := state.Load(t.TempDir())
-	st.Set("opencode", "mcp.codegraph", `{"type":"local","command":["codegraph","serve"],"enabled":true}`, "stale")
-
-	a := New(home, t.TempDir()).WithProjectRoot(project)
-	c := &config.Config{
-		MCPs: map[string]config.MCP{
-			"codegraph": {Command: []string{"codegraph", "serve"}, Targets: []string{"opencode"}, Scope: "project"},
-		},
-	}
-	cs, err := a.Plan(c, st)
-	if err != nil {
-		t.Fatalf("plan: %v", err)
-	}
-	if err := a.Apply(c, cs, noSecret(), st); err != nil {
-		t.Fatalf("apply: %v", err)
-	}
-
-	raw, _ := os.ReadFile(filepath.Join(globalDir, "opencode.jsonc"))
-	doc, _ := jsonutil.Standardize(raw)
-	if gjson.GetBytes(doc, "mcp.codegraph").Exists() {
-		t.Fatalf("project-scoped MCP not pruned from global config: %s", doc)
-	}
-	if !gjson.GetBytes(doc, "mcp.keep").Exists() {
-		t.Fatal("unmanaged global MCP lost")
-	}
-	praw, err := os.ReadFile(filepath.Join(project, "opencode.jsonc"))
-	if err != nil {
-		t.Fatalf("project opencode.jsonc not written: %v", err)
-	}
-	pdoc, _ := jsonutil.Standardize(praw)
-	if gjson.GetBytes(pdoc, "mcp.codegraph.type").String() != "local" {
-		t.Fatalf("project MCP not projected: %s", pdoc)
-	}
-	if _, ok := st.Get("opencode", "mcp.codegraph"); ok {
-		t.Fatal("stale global mcp.codegraph still recorded")
-	}
-	if _, ok := st.Get("opencode", "projmcp.codegraph"); !ok {
-		t.Fatal("projmcp.codegraph not recorded")
-	}
-
-	cs2, err := a.Plan(c, st)
-	if err != nil {
-		t.Fatalf("re-plan: %v", err)
-	}
-	for _, ch := range cs2.Changes {
-		if ch.Action != "noop" {
-			t.Fatalf("re-plan not idempotent: %+v", ch)
-		}
 	}
 }

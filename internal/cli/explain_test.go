@@ -8,15 +8,12 @@ import (
 	"testing"
 )
 
-// explainCfg declares one direct mcp (with an unresolved secret reference),
-// one setting, and the onto framework so framework origins are covered too.
+// explainCfg declares two direct settings (one with an unresolved secret
+// reference) and the onto framework so framework origins are covered too.
 const explainCfg = `
 [settings.opencode]
 theme = "opencode-dark"
-
-[mcps.brave]
-command = ["npx", "-y", "@example/server-brave"]
-env = { BRAVE_API_KEY = "${EXPLAIN_SECRET_TOKEN}" }
+provider = { brave = { options = { apiKey = "${EXPLAIN_SECRET_TOKEN}" } } }
 
 [engines.onto]
 source = "builtin:onto"
@@ -93,7 +90,7 @@ func TestExplainShowsOriginsAndHistory(t *testing.T) {
 	}
 	for _, want := range []string{
 		"setting", "theme", "direct",
-		"mcp", "brave",
+		"provider",
 		"skill", "onto", "framework:onto",
 		"subagent", "onto-reviewer",
 		"last: create (", // an operation with an id and timestamp
@@ -109,18 +106,15 @@ func TestExplainShowsOriginsAndHistory(t *testing.T) {
 	}
 }
 
-// TestExplainTombstoneAfterRemoval: de-declaring the mcp and re-applying
+// TestExplainTombstoneAfterRemoval: de-declaring a setting and re-applying
 // leaves a tombstone; explain reports the removal with its operation.
 func TestExplainTombstoneAfterRemoval(t *testing.T) {
 	home, cfg := explainSetup(t)
 
-	// Drop the whole mcp block by rewriting the config without it.
+	// Drop the provider setting by rewriting the config without it.
 	without := ""
 	for _, line := range strings.Split(explainCfg, "\n") {
-		if strings.HasPrefix(line, "[mcps.brave]") {
-			continue
-		}
-		if strings.Contains(line, "BRAVE_API_KEY") || strings.Contains(line, "command = [\"npx\"") {
+		if strings.HasPrefix(line, "provider = ") {
 			continue
 		}
 		without += line + "\n"
@@ -132,11 +126,11 @@ func TestExplainTombstoneAfterRemoval(t *testing.T) {
 		t.Fatalf("re-apply: %v\n%s", err, out)
 	}
 
-	out, err := runCmd(t, home, "", "explain", "mcp", "--config", cfg)
+	out, err := runCmd(t, home, "", "explain", "setting", "--config", cfg)
 	if err != nil {
-		t.Fatalf("explain mcp: %v\n%s", err, out)
+		t.Fatalf("explain setting: %v\n%s", err, out)
 	}
-	if !strings.Contains(out, "brave") || !strings.Contains(out, "removed") {
+	if !strings.Contains(out, "provider") || !strings.Contains(out, "removed") {
 		t.Errorf("tombstone not reported:\n%s", out)
 	}
 }
@@ -151,7 +145,7 @@ func TestExplainSelectors(t *testing.T) {
 	} else if !strings.Contains(err.Error(), "valid:") {
 		t.Fatalf("unknown kind error must list kinds: %v", err)
 	}
-	if _, err := runCmd(t, home, "", "explain", "mcp", "nonexistent", "--config", cfg); err == nil {
+	if _, err := runCmd(t, home, "", "explain", "setting", "nonexistent", "--config", cfg); err == nil {
 		t.Fatal("unknown name must fail")
 	}
 

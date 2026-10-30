@@ -8,7 +8,7 @@ import (
 // A config with no [tooling] table resolves both providers to "none", so an
 // existing config keeps loading and names no third-party tool.
 func TestTooling_AbsentTableDefaultsToNone(t *testing.T) {
-	c, err := Load(writeConfig(t, "[mcps.demo]\ncommand = [\"true\"]\n"))
+	c, err := Load(writeConfig(t, "[settings.opencode]\nshare = \"manual\"\n"))
 	if err != nil {
 		t.Fatalf("absent [tooling] should load: %v", err)
 	}
@@ -61,7 +61,7 @@ func TestTooling_ExplicitNoneMatchesAbsent(t *testing.T) {
 	if err != nil {
 		t.Fatalf("explicit none should load: %v", err)
 	}
-	absent, err := Load(writeConfig(t, "[mcps.demo]\ncommand = [\"true\"]\n"))
+	absent, err := Load(writeConfig(t, "[settings.opencode]\nshare = \"manual\"\n"))
 	if err != nil {
 		t.Fatalf("absent should load: %v", err)
 	}

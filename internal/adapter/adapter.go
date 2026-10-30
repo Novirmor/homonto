@@ -51,6 +51,7 @@ const (
 	CauseRepin    Cause = "repin"        // remote digest pin moved
 	CauseModeMove Cause = "mode-move"    // link/copy mode switched
 	CauseRemove   Cause = "remove"       // de-declared
+	CauseRelease  Cause = "release"      // handed to the user; disk left untouched
 )
 
 // Change is a single planned modification. Old/New hold JSON-encoded values.

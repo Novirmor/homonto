@@ -67,7 +67,7 @@ func TestOpenCodeV2ReadinessDoesNotClaimSkippedAdapters(t *testing.T) {
 func TestDoctorFlagsMissingSkillContent(t *testing.T) {
 	home := t.TempDir()
 	repo := t.TempDir()
-	os.WriteFile(filepath.Join(repo, "homonto.toml"), []byte("[skills.ghost]\nsource=\"local:ghost\"\nscope=\"user\"\n"), 0o644)
+	os.WriteFile(filepath.Join(repo, "homonto.toml"), []byte("[skills.ghost]\nsource=\"builtin:handoff\"\nscope=\"user\"\n"), 0o644)
 
 	e, err := Build(context.Background(), filepath.Join(repo, "homonto.toml"), home, filepath.Join(repo, "content"))
 	if err != nil {
@@ -79,12 +79,16 @@ func TestDoctorFlagsMissingSkillContent(t *testing.T) {
 	}
 }
 
-func TestDoctorReportsSkillLinkState(t *testing.T) {
+// TestDoctorReportsLinkState covers a link to the user's own content (a
+// local: subagent): content present but unlinked warns, a correct link is ok.
+func TestDoctorReportsLinkState(t *testing.T) {
 	home := t.TempDir()
 	repo := t.TempDir()
-	os.WriteFile(filepath.Join(repo, "homonto.toml"), []byte("[skills.graphify]\nsource=\"local:graphify\"\nscope=\"user\"\n"), 0o644)
+	os.WriteFile(filepath.Join(repo, "homonto.toml"), []byte("[subagents.graphify]\nsource=\"local:graphify\"\nscope=\"user\"\n"), 0o644)
 	content := filepath.Join(repo, "content")
-	os.MkdirAll(filepath.Join(content, "skills", "graphify"), 0o755)
+	src := filepath.Join(content, "subagents", "graphify.md")
+	os.MkdirAll(filepath.Dir(src), 0o755)
+	os.WriteFile(src, []byte("---\ndescription: test\n---\nbody\n"), 0o644)
 
 	build := func() *Engine {
 		e, err := Build(context.Background(), filepath.Join(repo, "homonto.toml"), home, content)
@@ -96,19 +100,19 @@ func TestDoctorReportsSkillLinkState(t *testing.T) {
 
 	// content present but no symlink yet -> not linked
 	lines := strings.Join(build().Doctor(), "\n")
-	if !strings.Contains(lines, `skill "graphify" content present, not linked`) {
-		t.Fatalf("doctor should report unlinked skill:\n%s", lines)
+	if !strings.Contains(lines, `subagent "graphify" content present, not linked`) {
+		t.Fatalf("doctor should report unlinked subagent:\n%s", lines)
 	}
 
 	// correct symlink -> linked
-	dst := filepath.Join(home, ".config", "opencode", "skills", "graphify")
+	dst := filepath.Join(home, ".config", "opencode", "agent", "graphify.md")
 	os.MkdirAll(filepath.Dir(dst), 0o755)
-	if err := os.Symlink(filepath.Join(content, "skills", "graphify"), dst); err != nil {
+	if err := os.Symlink(src, dst); err != nil {
 		t.Fatal(err)
 	}
 	lines = strings.Join(build().Doctor(), "\n")
-	if !strings.Contains(lines, `ok: skill "graphify" linked`) {
-		t.Fatalf("doctor should report linked skill:\n%s", lines)
+	if !strings.Contains(lines, `ok: subagent "graphify" linked`) {
+		t.Fatalf("doctor should report linked subagent:\n%s", lines)
 	}
 }
 
@@ -117,10 +121,11 @@ func TestDoctorReportsSkillLinkState(t *testing.T) {
 func TestDoctorProjectScopeChecksProjectLocation(t *testing.T) {
 	home := t.TempDir()
 	repo := t.TempDir()
-	os.WriteFile(filepath.Join(repo, "homonto.toml"), []byte("[skills.graphify]\nsource=\"local:graphify\"\nscope=\"project\"\n"), 0o644)
+	os.WriteFile(filepath.Join(repo, "homonto.toml"), []byte("[subagents.graphify]\nsource=\"local:graphify\"\nscope=\"project\"\n"), 0o644)
 	content := filepath.Join(repo, "content")
-	src := filepath.Join(content, "skills", "graphify")
-	os.MkdirAll(src, 0o755)
+	src := filepath.Join(content, "subagents", "graphify.md")
+	os.MkdirAll(filepath.Dir(src), 0o755)
+	os.WriteFile(src, []byte("---\ndescription: test\n---\nbody\n"), 0o644)
 	build := func() *Engine {
 		e, err := Build(context.Background(), filepath.Join(repo, "homonto.toml"), home, content)
 		if err != nil {
@@ -131,18 +136,18 @@ func TestDoctorProjectScopeChecksProjectLocation(t *testing.T) {
 
 	// No link yet -> reported unlinked at the project location.
 	lines := strings.Join(build().Doctor(), "\n")
-	if !strings.Contains(lines, `skill "graphify" content present, not linked for opencode`) {
+	if !strings.Contains(lines, `subagent "graphify" content present, not linked for opencode`) {
 		t.Fatalf("project-scope doctor should report the project link missing:\n%s", lines)
 	}
 
 	// Create the project-location link.
-	d := filepath.Join(repo, ".opencode", "skills", "graphify")
+	d := filepath.Join(repo, ".opencode", "agent", "graphify.md")
 	os.MkdirAll(filepath.Dir(d), 0o755)
 	if err := os.Symlink(src, d); err != nil {
 		t.Fatal(err)
 	}
 	lines = strings.Join(build().Doctor(), "\n")
-	if !strings.Contains(lines, `ok: skill "graphify" linked (opencode)`) {
+	if !strings.Contains(lines, `ok: subagent "graphify" linked (opencode)`) {
 		t.Fatalf("project-scope doctor should verify the link at the project location:\n%s", lines)
 	}
 }

@@ -11,7 +11,7 @@ import (
 )
 
 // applyObserveCfg applies a config touching every recorded prefix
-// (mcp./setting./plugin./skill.) and returns the adapter + populated state.
+// (setting./plugin./skill.) and returns the adapter + populated state.
 func applyObserveCfg(t *testing.T, home, content string) (*Adapter, *state.State) {
 	t.Helper()
 	os.MkdirAll(filepath.Join(content, "skills", "onto"), 0o755)
@@ -19,7 +19,6 @@ func applyObserveCfg(t *testing.T, home, content string) (*Adapter, *state.State
 	a := New(home, content)
 	st, _ := state.Load(t.TempDir())
 	c := cfgWithSkills("user", "onto")
-	c.MCPs = map[string]config.MCP{"codegraph": {Command: []string{"codegraph", "serve"}, Targets: []string{"opencode"}}}
 	c.Settings = config.Settings{OpenCode: map[string]any{"theme": "dark"}}
 	c.Plugins = config.Plugins{OpenCode: map[string]config.Plugin{"quota": {Source: "@slkiser/opencode-quota"}}}
 	cs, err := a.Plan(c, st)
@@ -44,7 +43,7 @@ func TestOpenCodeObserveHashesUnchangedEqualsApplied(t *testing.T) {
 		t.Fatalf("observe: %v", err)
 	}
 	keys := st.Keys("opencode")
-	sawMCP, sawSetting, sawPlugin, sawSkill := false, false, false, false
+	sawSetting, sawPlugin, sawSkill := false, false, false
 	for _, key := range keys {
 		e, _ := st.Get("opencode", key)
 		h, ok := obs[key]
@@ -55,8 +54,6 @@ func TestOpenCodeObserveHashesUnchangedEqualsApplied(t *testing.T) {
 			t.Fatalf("key %q: observed %q != Applied %q", key, h, e.Applied)
 		}
 		switch key {
-		case "mcp.codegraph":
-			sawMCP = true
 		case "setting.theme":
 			sawSetting = true
 		case "plugin.@slkiser/opencode-quota":
@@ -65,8 +62,8 @@ func TestOpenCodeObserveHashesUnchangedEqualsApplied(t *testing.T) {
 			sawSkill = true
 		}
 	}
-	if !(sawMCP && sawSetting && sawPlugin && sawSkill) {
-		t.Fatalf("expected mcp/setting/plugin/skill keys exercised, got %v", keys)
+	if !(sawSetting && sawPlugin && sawSkill) {
+		t.Fatalf("expected setting/plugin/skill keys exercised, got %v", keys)
 	}
 }
 
@@ -107,7 +104,7 @@ func TestOpenCodeObserveHashesAbsentOmitted(t *testing.T) {
 	if err != nil {
 		t.Fatalf("observe: %v", err)
 	}
-	for _, key := range []string{"mcp.codegraph", "setting.theme", "plugin.@slkiser/opencode-quota"} {
+	for _, key := range []string{"setting.theme", "plugin.@slkiser/opencode-quota"} {
 		if _, ok := obs[key]; ok {
 			t.Fatalf("deleted %q must be omitted, got %q", key, obs[key])
 		}

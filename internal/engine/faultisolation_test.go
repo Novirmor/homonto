@@ -20,9 +20,8 @@ func TestUnparseableToolFileSkipsAdapterWithWarning(t *testing.T) {
 	home := t.TempDir()
 	repo := t.TempDir()
 	os.WriteFile(filepath.Join(repo, "homonto.toml"), []byte(`
-[mcps.codegraph]
-command = ["codegraph","serve"]
-targets = ["opencode"]
+[settings.opencode]
+share = "manual"
 `), 0o644)
 	// broken JSONC that Standardize cannot parse
 	ocDir := filepath.Join(home, ".config", "opencode")

@@ -29,23 +29,12 @@ cat > "$CFG/homonto.toml" <<EOF
 [repos]
 svc = "../svc"
 
-[mcps.svc-probe]
-command = ["svc-serve"]
-scope = "project"
-repo = "svc"
-targets = ["opencode"]
-
-[mcps.cfg-probe]
-command = ["cfg-serve"]
-scope = "project"
-targets = ["opencode"]
-
 [skills.cfg-skill]
-source = "local:cfg-skill"
+source = "builtin:handoff"
 scope = "project"
 
 [skills.svc-skill]
-source = "local:svc-skill"
+source = "builtin:handoff"
 scope = "project"
 repo = "svc"
 EOF
@@ -62,12 +51,10 @@ log "apply projects into the declared repo, never the undeclared one"
 "$HOMONTO" apply --yes --config "$CFG/homonto.toml" > /dev/null 2>&1 || fail "apply failed"
 
 is_link "$SVC/.opencode/skills/svc-skill"
-in_file "$SVC/opencode.jsonc" "svc-probe"
-if grep -q "cfg-probe" "$SVC/opencode.jsonc" 2>/dev/null; then
-  fail "svc config leaked the config repo's project server"
+if [ -e "$SVC/.opencode/skills/cfg-skill" ]; then
+  fail "svc repo received the config repo's skill"
 fi
 is_link "$CFG/.opencode/skills/cfg-skill"
-in_file "$CFG/opencode.jsonc" "cfg-probe"
 if [ -e "$OTHER/.opencode" ] || [ -e "$OTHER/opencode.jsonc" ]; then
   fail "UNDECLARED repo $OTHER was touched by apply — isolation broken"
 fi
@@ -83,7 +70,7 @@ fi
 ok "second apply is a no-op"
 
 log "status attributes drift per repository"
-printf '{"mcp":{"svc-probe":{"command":["edited-out-of-band"]}}}' > "$SVC/opencode.jsonc"
+rm "$SVC/.opencode/skills/svc-skill" && ln -s "$(mktemp -d)" "$SVC/.opencode/skills/svc-skill"
 OUT3="$("$HOMONTO" status --config "$CFG/homonto.toml" 2>&1)" || true
 printf '%s' "$OUT3" | grep -q "opencode@svc" || fail "status must attribute svc drift to opencode@svc: $OUT3"
 ok "drift finding names the repository"

@@ -40,7 +40,7 @@ type adapterCase struct {
 	// content dir (owned skills). Mirrors each package's New(home, content).
 	newAdapter func(home, content string) adapter.Adapter
 	// newConfig declares at least one simple managed resource the adapter
-	// projects (an MCP targeting the tool plus a setting), so a fresh Plan
+	// projects (a setting), so a fresh Plan
 	// yields creates.
 	newConfig func() *config.Config
 	// seed pre-creates the adapter's base config files when the adapter expects
@@ -64,7 +64,7 @@ type adapterCase struct {
 	// Plan+Apply and asserts neither panics. Leave nil to skip (with explanation).
 	malformed func(t *testing.T, home string)
 	// secretConfig declares a managed key whose value is a ${pass:...} secret
-	// reference (an MCP env var), so the secret-non-resolution check can Apply it
+	// reference (a provider API key setting), so the secret-non-resolution check can Apply it
 	// with a resolving Resolver and assert the resolved plaintext never escapes via
 	// ObserveHashes or state. secretKey is that value's state key. Leave secretConfig
 	// nil to skip (with explanation) an adapter that projects no secret-bearing key.
@@ -87,9 +87,6 @@ func cases() []adapterCase {
 			newAdapter: func(home, content string) adapter.Adapter { return opencode.New(home, content) },
 			newConfig: func() *config.Config {
 				return &config.Config{
-					MCPs: map[string]config.MCP{
-						"codegraph": {Command: []string{"codegraph", "serve"}, Targets: []string{"opencode"}},
-					},
 					Settings: config.Settings{OpenCode: map[string]any{"theme": "dark"}},
 				}
 			},
@@ -121,15 +118,13 @@ func cases() []adapterCase {
 				// A pre-existing, unparseable opencode.jsonc (dangling value).
 				mustWrite(t, filepath.Join(dir, "opencode.jsonc"), `{"theme": }`)
 			},
-			// A secret-backed MCP env var; opencode projects it into opencode.jsonc.
+			// A secret-backed provider key; opencode projects it into opencode.jsonc.
 			secretConfig: func() *config.Config {
 				return &config.Config{
-					MCPs: map[string]config.MCP{
-						"brave": {Command: []string{"npx", "server-brave"}, Env: map[string]string{"K": "${pass:ai/brave}"}, Targets: []string{"opencode"}},
-					},
+					Settings: config.Settings{OpenCode: map[string]any{"provider": map[string]any{"brave": map[string]any{"options": map[string]any{"apiKey": "${pass:ai/brave}"}}}}},
 				}
 			},
-			secretKey: "mcp.brave",
+			secretKey: "setting.provider",
 		},
 	}
 }

@@ -95,7 +95,6 @@ func TestOpenCodeCLINativeProjectionAlongsideV1ServerConfig(t *testing.T) {
 	writeCLIFile(t, a.cliFile(), `{"attention":{"sounds":{"done":"unmanaged.wav"}},"keybinds":{"help.show":false}}`)
 	c := &config.Config{
 		Settings: config.Settings{OpenCode: map[string]any{"model": "provider/model"}},
-		MCPs:     map[string]config.MCP{"example": {Command: []string{"example", "serve"}, Targets: []string{"opencode"}}},
 		Plugins:  config.Plugins{OpenCode: map[string]config.Plugin{"example": {Source: "example-plugin"}}},
 		TUI: config.TUI{OpenCode: map[string]any{
 			"theme":        map[string]any{"name": "gruvbox", "mode": "system"},
@@ -118,7 +117,7 @@ func TestOpenCodeCLINativeProjectionAlongsideV1ServerConfig(t *testing.T) {
 		}
 	}
 	server := readCLIFile(t, a.cfgFile())
-	if gjson.Get(server, "model").String() != "provider/model" || gjson.Get(server, "mcp.example.type").String() != "local" || !gjson.Get(server, "mcp.example.enabled").Bool() || gjson.Get(server, "plugin.0").String() != "example-plugin" || gjson.Get(server, "plugins").Exists() {
+	if gjson.Get(server, "model").String() != "provider/model" || gjson.Get(server, "plugin.0").String() != "example-plugin" || gjson.Get(server, "plugins").Exists() {
 		t.Fatalf("V1 server shape changed: %s", server)
 	}
 	obs, err := a.ObserveHashes(st)

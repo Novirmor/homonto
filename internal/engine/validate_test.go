@@ -14,7 +14,7 @@ func buildMinimalEngine(t *testing.T) *Engine {
 	t.Helper()
 	home := t.TempDir()
 	repo := t.TempDir()
-	toml := "[mcps.demo]\ncommand = [\"true\"]\n"
+	toml := "[settings.opencode]\nshare = \"manual\"\n"
 	if err := os.WriteFile(filepath.Join(repo, "homonto.toml"), []byte(toml), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -26,7 +26,7 @@ func buildMinimalEngine(t *testing.T) *Engine {
 func TestApply_RejectsUnknownTool(t *testing.T) {
 	e := buildMinimalEngine(t)
 	sets := []adapter.ChangeSet{{Tool: "ghost-tool", Changes: []adapter.Change{
-		{Action: adapter.ActionCreate, Key: "mcp.x", New: `{"a":1}`},
+		{Action: adapter.ActionCreate, Key: "setting.x", New: `{"a":1}`},
 	}}}
 	err := e.Apply(context.Background(), sets)
 	if err == nil || !strings.Contains(err.Error(), "ghost-tool") {
@@ -40,7 +40,7 @@ func TestApply_RejectsUnknownAction(t *testing.T) {
 	e := buildMinimalEngine(t)
 	tool := e.Adapters[0].Name()
 	sets := []adapter.ChangeSet{{Tool: tool, Changes: []adapter.Change{
-		{Action: adapter.Action("frobnicate"), Key: "mcp.x", New: `{"a":1}`},
+		{Action: adapter.Action("frobnicate"), Key: "setting.x", New: `{"a":1}`},
 	}}}
 	err := e.Apply(context.Background(), sets)
 	if err == nil || !strings.Contains(err.Error(), "frobnicate") {

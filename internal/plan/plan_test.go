@@ -109,3 +109,21 @@ func TestRenderAdoptProducesNoLine(t *testing.T) {
 		t.Fatalf("adopt change must render nothing, got:\n%s", out)
 	}
 }
+
+// TestRenderMarksReleases: a release is not a deletion — the entry stays on
+// disk and becomes the user's (ADR 0085), so plan must not show it as "-".
+func TestRenderMarksReleases(t *testing.T) {
+	out := Render([]adapter.ChangeSet{{Tool: "opencode", Changes: []adapter.Change{
+		{Action: "delete", Key: "projmcp.codegraph", Cause: adapter.CauseRelease},
+		{Action: "delete", Key: "skill.gone", Cause: adapter.CauseRemove},
+	}}})
+	if !strings.Contains(out, "  > projmcp.codegraph (released; left in place, now yours)") {
+		t.Fatalf("release not marked:\n%s", out)
+	}
+	if strings.Contains(out, "- projmcp.codegraph") || !strings.Contains(out, "  - skill.gone") {
+		t.Fatalf("release rendered as a delete, or delete lost:\n%s", out)
+	}
+	if !HasChanges([]adapter.ChangeSet{{Changes: []adapter.Change{{Action: "delete", Key: "k", Cause: adapter.CauseRelease}}}}) {
+		t.Fatal("a pending release must still count as a change")
+	}
+}

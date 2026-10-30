@@ -48,7 +48,9 @@ Errors name the file, the key, and usually the fix:
 | `models.opencode.<tier> is an unknown table` | Model tiers were removed; use per-agent `[subagents.<name>.opencode]`. |
 | `is missing required scope` | Add `scope = "project"` or `"user"`. |
 | `is tune-only; scope, repo, mode… would be ignored` | A block without `source` tunes an installed agent; remove declaration fields or add a `source`. |
-| `settings.opencode key "mcp" is reserved` | Use `[mcps.<name>]` (or `[plugins.opencode.*]` for `plugin`/`plugins`). |
+| `homonto no longer manages MCP servers` / `settings.opencode key "mcp" is not accepted` | Move the servers into your own `opencode.jsonc` and delete the `[mcps.*]` tables. Servers an earlier apply wrote are already there. |
+| `your own skills are bring-your-own` / `your own commands are bring-your-own` | Put the files in `.opencode/skills/` / `.opencode/command/` (or the `~/.config/opencode/` equivalents) and delete the table. Links an earlier apply made stay in place. |
+| `settings.opencode key "plugin" is reserved` | Use `[plugins.opencode.<name>]`. |
 | `OpenCode has no effort setting` | Use `variant`. |
 | `targets … claude` / `codex` | Those adapters were removed in v0.13.0; delete the key. |
 | `[tmp] takes only dir` | `[tmp]` has one key, `dir`. |

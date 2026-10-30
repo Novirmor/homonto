@@ -9,7 +9,6 @@ import (
 	"testing"
 
 	"github.com/noviopenworks/homonto/internal/adapter"
-	"github.com/noviopenworks/homonto/internal/config"
 	"github.com/noviopenworks/homonto/internal/jsonutil"
 )
 
@@ -27,31 +26,6 @@ func TestHasAnyPrefix(t *testing.T) {
 	}
 }
 
-// TestMCPProjected verifies the shared projection guard: a server projects
-// only when it targets the tool (explicitly or by default-all) and has a
-// command to run.
-func TestMCPProjected(t *testing.T) {
-	cmd := []string{"serve"}
-	cases := []struct {
-		name string
-		m    config.MCP
-		tool string
-		want bool
-	}{
-		{"targets tool with command", config.MCP{Command: cmd, Targets: []string{"claude"}}, "claude", true},
-		{"default targets all", config.MCP{Command: cmd}, "opencode", true},
-		{"targets other tool only", config.MCP{Command: cmd, Targets: []string{"claude"}}, "opencode", false},
-		{"no command", config.MCP{Targets: []string{"claude"}}, "claude", false},
-	}
-	for _, tc := range cases {
-		if got := MCPProjected(tc.m, tc.tool); got != tc.want {
-			t.Errorf("MCPProjected(%s) = %v, want %v", tc.name, got, tc.want)
-		}
-	}
-}
-
-// TestFilterDesired verifies each structproj namespace sees only the keys it
-// owns — the returned map is a copy, never the input aliased.
 func TestFilterDesired(t *testing.T) {
 	in := map[string]string{"mcp.a": "1", "mcp.b": "2", "setting.x": "3"}
 	got := FilterDesired(in, "mcp.")

@@ -21,15 +21,15 @@ func findChange(cs adapter.ChangeSet, action adapter.Action, key string) *adapte
 	return nil
 }
 
-// Deep review CRITICAL: a de-declared MCP stayed in opencode.jsonc forever —
-// no delete action existed. It must be planned as a delete, pruned from disk,
-// and garbage-collected from state.
-func TestOpenCodeRemovedMCPIsPruned(t *testing.T) {
+// Deep review CRITICAL: a de-declared structured key stayed in opencode.jsonc
+// forever — no delete action existed. It must be planned as a delete, pruned
+// from disk, and garbage-collected from state.
+func TestOpenCodeRemovedSettingIsPruned(t *testing.T) {
 	home := t.TempDir()
 	a := New(home, t.TempDir())
 	st, _ := state.Load(t.TempDir())
 	c := &config.Config{
-		MCPs: map[string]config.MCP{"codegraph": {Command: []string{"codegraph", "serve"}, Targets: []string{"opencode"}}},
+		Settings: config.Settings{OpenCode: map[string]any{"share": "manual"}},
 	}
 
 	cs, err := a.Plan(c, st)
@@ -44,9 +44,9 @@ func TestOpenCodeRemovedMCPIsPruned(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	del := findChange(cs2, "delete", "mcp.codegraph")
+	del := findChange(cs2, "delete", "setting.share")
 	if del == nil {
-		t.Fatalf("plan lacks a delete for the de-declared MCP: %+v", cs2.Changes)
+		t.Fatalf("plan lacks a delete for the de-declared setting: %+v", cs2.Changes)
 	}
 	if del.Old != adapter.SecretRedaction {
 		t.Fatalf("delete Old must always be redacted (stale provenance), got %q", del.Old)
@@ -56,11 +56,11 @@ func TestOpenCodeRemovedMCPIsPruned(t *testing.T) {
 	}
 	raw, _ := os.ReadFile(filepath.Join(home, ".config", "opencode", "opencode.jsonc"))
 	doc, _ := jsonutil.Standardize(raw)
-	if gjson.GetBytes(doc, "mcp.codegraph").Exists() {
-		t.Fatalf("de-declared MCP still on disk: %s", doc)
+	if gjson.GetBytes(doc, "share").Exists() {
+		t.Fatalf("de-declared setting still on disk: %s", doc)
 	}
-	if _, ok := st.Get("opencode", "mcp.codegraph"); ok {
-		t.Fatal("state still records the removed MCP")
+	if _, ok := st.Get("opencode", "setting.share"); ok {
+		t.Fatal("state still records the removed setting")
 	}
 }
 
@@ -105,13 +105,14 @@ func TestOpenCodeRemovedPluginIsRemovedFromArray(t *testing.T) {
 // Removing a skill from skills.own must prune its symlink here too.
 func TestOpenCodeRemovedSkillLinkIsPruned(t *testing.T) {
 	home := t.TempDir()
-	content := t.TempDir()
-	os.MkdirAll(filepath.Join(content, "skills", "foo"), 0o755)
-	a := New(home, content)
+	catalogRoot := t.TempDir()
+	os.MkdirAll(filepath.Join(catalogRoot, "foo"), 0o755)
+	a := New(home, t.TempDir()).WithCatalogRoot(catalogRoot)
 	st, _ := state.Load(t.TempDir())
+	c := &config.Config{Skills: map[string]config.Resource{"foo": {Source: "builtin:foo", Scope: "user"}}}
 
-	cs, _ := a.Plan(cfgWithSkills("user", "foo"), st)
-	if err := a.Apply(cfgWithSkills("user", "foo"), cs, noSecret(), st); err != nil {
+	cs, _ := a.Plan(c, st)
+	if err := a.Apply(c, cs, noSecret(), st); err != nil {
 		t.Fatal(err)
 	}
 	dst := filepath.Join(home, ".config", "opencode", "skills", "foo")
@@ -134,5 +135,66 @@ func TestOpenCodeRemovedSkillLinkIsPruned(t *testing.T) {
 	}
 	if _, ok := st.Get("opencode", "skill.foo"); ok {
 		t.Fatal("state still records the removed skill")
+	}
+}
+
+// TestOpenCodeReleasesOwnSkillLink covers the bring-your-own handover
+// (ADR 0085): a link to the user's own content (an earlier local: skill or
+// command) leaves state, and the symlink stays exactly where it was.
+func TestOpenCodeReleasesOwnSkillLink(t *testing.T) {
+	// User scope records absolute targets; project scope records relative
+	// ones (ADR 0026). Both must be recognised as the user's own content.
+	for _, scope := range []string{"user", "project"} {
+		t.Run(scope, func(t *testing.T) {
+			home, proj := t.TempDir(), t.TempDir()
+			content := filepath.Join(proj, "homonto")
+			os.MkdirAll(filepath.Join(content, "skills", "foo"), 0o755)
+			os.MkdirAll(filepath.Join(content, "commands"), 0o755)
+			os.WriteFile(filepath.Join(content, "commands", "bar.md"), []byte("body\n"), 0o644)
+			a := New(home, content).WithProjectRoot(proj)
+			st, _ := state.Load(t.TempDir())
+			c := cfgWithSkills(scope, "foo")
+			c.Commands = map[string]config.Resource{"bar": {Source: "local:bar", Scope: scope}}
+			cs, _ := a.Plan(c, st)
+			if err := a.Apply(c, cs, noSecret(), st); err != nil {
+				t.Fatal(err)
+			}
+			links := map[string]string{
+				"skill.foo":   filepath.Join(a.SkillsDir(scope), "foo"),
+				"command.bar": filepath.Join(a.CommandsDir(scope), "bar.md"),
+			}
+			before := map[string]string{}
+			for key, dst := range links {
+				target, err := os.Readlink(dst)
+				if err != nil {
+					t.Fatalf("precondition: %s link missing: %v", key, err)
+				}
+				before[key] = target
+			}
+
+			cs2, err := a.Plan(&config.Config{}, st)
+			if err != nil {
+				t.Fatal(err)
+			}
+			for key := range links {
+				if ch := findChange(cs2, "delete", key); ch == nil || ch.Cause != adapter.CauseRelease {
+					t.Fatalf("%s not released: %+v", key, cs2.Changes)
+				}
+			}
+			if err := a.Apply(&config.Config{}, cs2, noSecret(), st); err != nil {
+				t.Fatal(err)
+			}
+			for key, dst := range links {
+				if target, err := os.Readlink(dst); err != nil || target != before[key] {
+					t.Fatalf("released link %s changed: %q, %v", dst, target, err)
+				}
+				if _, ok := st.Get("opencode", key); ok {
+					t.Fatalf("state still records released %s", key)
+				}
+			}
+			if cs3, err := a.Plan(&config.Config{}, st); err != nil || len(cs3.Changes) != 0 {
+				t.Fatalf("released links still planned: %+v, %v", cs3.Changes, err)
+			}
+		})
 	}
 }

@@ -14,7 +14,6 @@ shell's working directory.
 | Table | Declares |
 |---|---|
 | [`schema_version`](#schema_version) | Config format version (top-level key) |
-| [`[mcps.<name>]`](#mcp-servers--mcpsname) | MCP servers |
 | [`[skills.<name>]`](#skills--skillsname) | Skills |
 | [`[commands.<name>]`](#commands--commandsname) | Slash commands |
 | [`[subagents.<name>]`](#subagents--subagentsname) | Agent definitions |
@@ -64,14 +63,13 @@ fail at load (support removed in v0.13.0).
 |---|---|
 | skills, commands, engines, workflows | required |
 | subagents | optional, default `project` |
-| MCP servers | optional, default `user` |
 
 **Sources.**
 
 | Source | Resolves from | Valid for |
 |---|---|---|
 | `builtin:<name>` | The catalog in the binary, materialized to `.homonto/catalog/` | skills, commands, subagents, engines, workflows |
-| `local:<name>` | `homonto/skills/<name>/`, `homonto/commands/<name>.md`, `homonto/subagents/<name>.md`, or a package root path | skills, commands, subagents, engines, workflows |
+| `local:<name>` | `homonto/subagents/<name>.md`, or a package root path | subagents, engines, workflows |
 | `remote:<url>` | A fetched archive; requires `digest` ([remote sources](remote-sources.md)) | subagents, engines, workflows |
 
 **Secrets** are written as `${pass:path}` or `${ENV_VAR}` and resolved only
@@ -94,37 +92,27 @@ A version newer than the binary supports fails at load: upgrade the binary.
 Changing the version of a config that already has workflow records is
 guarded, not migrated. See [workspaces](workspaces.md) before switching.
 
-## MCP servers — `[mcps.<name>]`
+## Bring your own MCP servers, skills and commands
 
-```toml
-[mcps.codegraph]
-command = ["codegraph", "serve", "--mcp"]
+homonto does not manage MCP servers or your own skills and commands. Put them
+where OpenCode looks: MCP servers in `opencode.jsonc` (global or per project),
+skills in `.opencode/skills/` or `~/.config/opencode/skills/`, commands in
+`.opencode/command/` or `~/.config/opencode/command/`. `apply` never touches
+them ([ADR 0085](../adr/0085-bring-your-own-mcp-servers-and-skills.md)).
 
-[mcps.github]
-command = ["github-mcp-server", "stdio"]
-env     = { GITHUB_PERSONAL_ACCESS_TOKEN = "${pass:dev/github-token}" }
-scope   = "project"
-```
+These fail at load, naming the fix: any `[mcps.*]` table, an `mcp` key under
+`[settings.opencode]`, and a `local:` source on `[skills.*]` or `[commands.*]`.
+Builtin skills and commands are still declared below.
 
-| Field | Required | Notes |
-|---|---|---|
-| `command` | yes | Non-empty argv array. First element is the executable. |
-| `env` | no | String map; values may be secret references. |
-| `scope` | no | `user` (default) → global `opencode.jsonc`; `project` → `<config-root>/opencode.jsonc`. |
-| `repo` | no | A `[repos]` alias; requires `scope = "project"`; writes that repository's `opencode.jsonc`. |
-| `targets` | no | `["opencode"]`. |
-
-Projected as an OpenCode `mcp` entry with `"type": "local"` and
-`"enabled": true`. Changing `scope` moves the server on the next apply (pruned
-from the old file, written to the new one).
+Upgrading: the first `apply` releases what an earlier release projected. MCP
+entries stay in `opencode.jsonc` byte for byte; links to your own
+`homonto/skills/` and `homonto/commands/` content stay where they are. Both
+drop out of homonto's state and are yours from then on. `plan` shows each as
+a `release`.
 
 ## Skills — `[skills.<name>]`
 
 ```toml
-[skills.house-style]
-source = "local:house-style"   # → homonto/skills/house-style/SKILL.md
-scope  = "project"
-
 [skills.handoff]
 source = "builtin:handoff"     # a catalog skill
 scope  = "user"                # available in every project
@@ -132,14 +120,13 @@ scope  = "user"                # available in every project
 
 | Field | Required | Notes |
 |---|---|---|
-| `source` | yes | `builtin:<name>` or `local:<name>`. |
+| `source` | yes | `builtin:<name>`. Your own skills are [bring-your-own](#bring-your-own-mcp-servers-skills-and-commands). |
 | `scope` | yes | `user` → `~/.config/opencode/skills/`; `project` → `.opencode/skills/`. |
 | `repo` | no | A `[repos]` alias; requires `scope = "project"`. |
 | `targets` | no | `["opencode"]`. |
 
-Skills are **symlinked**, so editing the source is live immediately. homonto
-never creates `homonto/skills/<name>/` for you — write the `SKILL.md` before
-applying. Changing `scope` relocates the link.
+Skills are **symlinked** from the materialized catalog. Changing `scope`
+relocates the link.
 
 Builtin skills you can declare on their own: `handoff`, `grilling`. Package
 skills (`onto-*`, `to-*`, `h-*`, `homonto`, `no`) come with their package;
@@ -151,10 +138,6 @@ don't declare them individually.
 [commands.grill]
 source = "builtin:grill"     # /grill
 scope  = "project"
-
-[commands.release-notes]
-source = "local:release-notes"   # → homonto/commands/release-notes.md
-scope  = "user"
 ```
 
 Same fields as skills. A command lands at `.opencode/command/<name>.md` (or
@@ -390,7 +373,7 @@ Reserved keys fail at load:
 
 | Key | Use instead |
 |---|---|
-| `mcp` | `[mcps.<name>]` |
+| `mcp` | Your own `opencode.jsonc` (MCP servers are bring-your-own) |
 | `plugin`, `plugins` | `[plugins.opencode.<name>]` |
 | `model_variant` | `variant` on a specific agent |
 
@@ -545,8 +528,8 @@ What declaring a repository does:
   (and their worktree namespaces), after a deny rule for every other external
   path. Read-only specialists can read them. Implementers are denied the
   records root. Custom agents get nothing.
-- **Per-repo resources.** Project-scoped skills, commands, subagents, and MCP
-  servers can target one repository with `repo = "<alias>"`. Each repository
+- **Per-repo resources.** Project-scoped skills, commands, and subagents can
+  target one repository with `repo = "<alias>"`. Each repository
   gets its own state partition (`.homonto/state.<alias>.json`) and is
   labelled `opencode@<alias>` in `plan` and `status`.
 - **Change scope.** `onto new` / `to new` select sources with `--repo <alias>`
@@ -556,15 +539,10 @@ What declaring a repository does:
 [repos]
 api = "../api"
 
-[skills.api-conventions]
-source = "local:api-conventions"
+[skills.handoff]
+source = "builtin:handoff"
 scope  = "project"
 repo   = "api"          # links into ../api/.opencode/skills/
-
-[mcps.api-db]
-command = ["pg-mcp", "--dsn", "${pass:api/dev-dsn}"]
-scope   = "project"
-repo    = "api"          # writes ../api/opencode.jsonc
 ```
 
 These grants are **not a sandbox**: OpenCode matches paths lexically, so a
@@ -640,6 +618,8 @@ Scripts must read those paths, not guess sibling locations. Run checks with
 | Table | Status |
 |---|---|
 | `[frameworks.*]` | Rejected. Use `[engines.*]` / `[workflows.*]`. |
+| `[mcps.*]` | Rejected. MCP servers are bring-your-own; configure them in `opencode.jsonc`. |
+| `local:` on `[skills.*]` / `[commands.*]` | Rejected. Your own skills and commands are bring-your-own. |
 | `[models.<tool>.<tier>]` | Rejected. Model tiers were removed; use per-agent `[subagents.<name>.opencode]`. |
 | `[agents.<name>]` | Parses; folds into a copy-mode `[subagents.<name>]`. |
 | `[settings.claude]`, `[plugins.claude.*]`, `[marketplaces.claude.*]`, `[subagents.<name>.claude]` | Rejected since v0.13.0. |
@@ -655,16 +635,8 @@ root = "docs"
 [repos]
 app = "."
 
-[mcps.codegraph]
-command = ["codegraph", "serve", "--mcp"]
-scope   = "project"
-
-[mcps.brave]
-command = ["npx", "-y", "@modelcontextprotocol/server-brave-search"]
-env     = { BRAVE_API_KEY = "${pass:ai/brave}" }
-
-[skills.house-style]
-source = "local:house-style"
+[skills.handoff]
+source = "builtin:handoff"
 scope  = "project"
 
 [commands.grill]

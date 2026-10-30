@@ -213,16 +213,12 @@ func TestRepoTargetMustBeDeclaredAndProjectScoped(t *testing.T) {
 	}
 
 	// Undeclared repo name.
-	if err := load("[skills.x]\nsource=\"local:x\"\nscope=\"project\"\nrepo=\"ghost\"\n"); err == nil || !strings.Contains(err.Error(), "not declared under [repos]") {
+	if err := load("[skills.x]\nsource=\"builtin:handoff\"\nscope=\"project\"\nrepo=\"ghost\"\n"); err == nil || !strings.Contains(err.Error(), "not declared under [repos]") {
 		t.Errorf("undeclared repo = %v, want a not-declared error", err)
 	}
 	// Repo requires project scope.
-	if err := load("[repos]\nsvc = \"" + svc + "\"\n\n[skills.x]\nsource=\"local:x\"\nscope=\"user\"\nrepo=\"svc\"\n"); err == nil || !strings.Contains(err.Error(), "requires scope") {
+	if err := load("[repos]\nsvc = \"" + svc + "\"\n\n[skills.x]\nsource=\"builtin:handoff\"\nscope=\"user\"\nrepo=\"svc\"\n"); err == nil || !strings.Contains(err.Error(), "requires scope") {
 		t.Errorf("user-scope repo skill = %v, want a scope error", err)
-	}
-	// MCPs: repo requires project scope too (default is user).
-	if err := load("[repos]\nsvc = \"" + svc + "\"\n\n[mcps.x]\ncommand=[\"x\"]\nrepo=\"svc\"\ntargets=[\"opencode\"]\n"); err == nil || !strings.Contains(err.Error(), "requires scope") {
-		t.Errorf("user-scope repo mcp = %v, want a scope error", err)
 	}
 	// Workflows and engines take no repo; the error names the table that parses.
 	if err := load("[repos]\nsvc = \"" + svc + "\"\n\n[engines.onto]\nsource=\"builtin:onto\"\nscope=\"project\"\nrepo=\"svc\"\n"); err == nil || !strings.Contains(err.Error(), "config repository only") || !strings.Contains(err.Error(), "engines.onto repo") {
@@ -232,7 +228,7 @@ func TestRepoTargetMustBeDeclaredAndProjectScoped(t *testing.T) {
 		t.Errorf("repo on workflow = %v, want a config-repo-only error naming workflows.homonto", err)
 	}
 	// The legal shapes load.
-	if err := load("[repos]\nsvc = \"" + svc + "\"\n\n[skills.x]\nsource=\"local:x\"\nscope=\"project\"\nrepo=\"svc\"\n\n[mcps.y]\ncommand=[\"y\"]\nscope=\"project\"\nrepo=\"svc\"\ntargets=[\"opencode\"]\n"); err != nil {
+	if err := load("[repos]\nsvc = \"" + svc + "\"\n\n[skills.x]\nsource=\"builtin:handoff\"\nscope=\"project\"\nrepo=\"svc\"\n"); err != nil {
 		t.Errorf("valid repo targets = %v, want clean load", err)
 	}
 }

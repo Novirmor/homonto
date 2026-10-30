@@ -12,7 +12,7 @@ func TestPlan_JSONOutput(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 	cfg := filepath.Join(t.TempDir(), "homonto.toml")
-	if err := os.WriteFile(cfg, []byte("[mcps.demo]\ncommand = [\"true\"]\n"), 0o644); err != nil {
+	if err := os.WriteFile(cfg, []byte("[settings.opencode]\nshare = \"manual\"\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	cmd := NewRootCmd()
@@ -39,7 +39,7 @@ func TestPlan_JSONOutput(t *testing.T) {
 	if err := json.Unmarshal([]byte(out.String()), &got); err != nil {
 		t.Fatalf("output is not a single JSON object: %v\n%s", err, out.String())
 	}
-	// the demo mcp on a fresh config yields at least one create change
+	// the demo setting on a fresh config yields at least one create change
 	if len(got.Changes) == 0 {
 		t.Errorf("expected pending changes for a fresh config, got none: %s", out.String())
 	}

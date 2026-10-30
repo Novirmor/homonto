@@ -85,7 +85,7 @@ func TestRenamedFrameworkProtectsNativeRecordsAndGrantsOnlyInstalledSkills(t *te
 	}
 	doc := strings.Replace(ontoFrameworkTOML, "[engines.onto]", "[engines.delivery]", 1)
 	doc = strings.Replace(doc, `scope = "project"`, `scope = "user"`, 1)
-	doc += "\n[skills.chosen]\nsource = 'local:chosen'\nscope = 'user'\n"
+	doc += "\n[skills.chosen]\nsource = 'builtin:handoff'\nscope = 'user'\n"
 	if err := os.WriteFile(filepath.Join(root, "homonto.toml"), []byte(doc), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -137,8 +137,7 @@ func TestRenamedFrameworkProtectsNativeRecordsAndGrantsOnlyInstalledSkills(t *te
 				filepath.Join(home, ".config", "opencode", "skills", "onto", "references", "state-yaml.md"),
 				filepath.Join(realHome, ".config", "opencode", "skills", "onto", "references", "state-yaml.md"),
 				filepath.Join(e.CatalogRoot, "onto", "references", "state-yaml.md"),
-				filepath.Join(content, "skills", "chosen", "references", "guide.md"),
-				filepath.Join(canonicalContent, "skills", "chosen", "references", "guide.md"),
+				filepath.Join(e.CatalogRoot, "handoff", "SKILL.md"),
 			} {
 				if permissionAction(permissions["external_directory"], path) != "allow" {
 					t.Errorf("%s cannot read installed skill %s", agent, path)

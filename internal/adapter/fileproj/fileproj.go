@@ -52,6 +52,19 @@ func recordedDst(desired string) (string, bool) {
 	return dst, found
 }
 
+// RecordedSrc extracts the link target from a recorded "dst -> src" value as
+// an absolute path; a relative target (ADR 0026) resolves against dst's dir.
+func RecordedSrc(desired string) (string, bool) {
+	dst, src, found := strings.Cut(desired, sep)
+	if !found {
+		return "", false
+	}
+	if !filepath.IsAbs(src) {
+		src = filepath.Join(filepath.Dir(dst), src)
+	}
+	return filepath.Clean(src), true
+}
+
 // Project emits the create / relocate(update) / relink(update) + adopt-unrecorded
 // changes for one link namespace. It plans NO deletes and does not sort (the
 // adapter's final sort handles ordering; keys are unique). It returns link.Plan's

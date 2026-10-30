@@ -20,8 +20,6 @@ var explainKinds = map[string][]string{
 	"command":      {"command."},
 	"subagent":     {"subagent."},
 	"subagentcopy": {"subagentcopy."},
-	"mcp":          {"mcp."},
-	"projmcp":      {"projmcp."},
 	"setting":      {"setting."},
 	"projsetting":  {"projsetting."},
 	"tui":          {"tui."},

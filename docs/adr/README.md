@@ -43,7 +43,7 @@ numbering: [`../agents/adr.md`](../agents/adr.md).
 | [0021](0021-onto-is-for-handoff-and-audit.md) | onto's axis is handoff and audit, not "enterprise" | Accepted |
 | [0022](0022-tooling-providers-are-declared-not-shipped.md) | Tooling providers are declared in config, not named in shipped prose | Accepted |
 | [0023](0023-develop-directly-without-comet.md) | Develop directly, without Comet | Accepted |
-| [0024](0024-multi-repo-designated-state-cross-repo-effect.md) | Multi-repo support — designated state, cross-repo effect | Accepted |
+| [0024](0024-multi-repo-designated-state-cross-repo-effect.md) | Multi-repo support — designated state, cross-repo effect | Partially superseded by 0085 |
 | [0025](0025-state-provenance-and-history.md) | Record resource provenance and last-change in state | Accepted |
 | [0026](0026-relative-project-links.md) | Use relative targets for same-move project links | Accepted |
 | [0027](0027-versioned-workflow-sidecars.md) | Keep workflow records in versioned sidecars; JSON handoffs are metadata-only | Accepted |
@@ -104,3 +104,4 @@ numbering: [`../agents/adr.md`](../agents/adr.md).
 | [0082](0082-support-harnesses-natively-in-tiers.md) | Support harnesses natively, in tiers | Accepted |
 | [0083](0083-pull-the-chosen-base-before-every-change.md) | Pull the chosen base before every change | Accepted |
 | [0084](0084-allow-draft-prs-at-any-phase.md) | Allow draft PRs at any phase | Accepted |
+| [0085](0085-bring-your-own-mcp-servers-and-skills.md) | Bring your own MCP servers and skills | Accepted |

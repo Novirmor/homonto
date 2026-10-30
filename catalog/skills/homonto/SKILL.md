@@ -31,21 +31,25 @@ Engine and h skills link these shared policies; load the one the step needs.
 
 homonto reads `homonto.toml` and projects declared resources into OpenCode. `homonto plan` previews changes; `homonto apply` reconciles them;
 `homonto status`, `homonto doctor`, and `homonto explain` inspect state. Treat
-`.homonto/` and projected `.opencode/` files as managed data. Change the source
-configuration and re-apply instead of editing projections.
+`.homonto/` and homonto-projected `.opencode/` links as managed data. Change the
+source configuration and re-apply instead of editing projections.
 
 The catalog ships skills, commands, and agents with the binary. A `[workflows.*]`
 or `[engines.*]` declaration installs its package. Each expanded agent needs
 its own `[subagents.<name>.opencode]` model route.
 
-## MCP servers and extra tools
+## MCP servers, own skills and extra tools
 
-`[mcps.<name>]` tables project MCP servers (command, env, scope) into OpenCode, and `[tooling]` declares shared providers such as a
-shell proxy or code intelligence. When a user asks for one, edit
-`homonto.toml`, then `homonto plan` (preview) and `homonto apply` (project) —
-never edit the projected `opencode.jsonc` MCP blocks by hand; homonto manages
-them and the next apply rewrites manual edits. `docs/guides/configuration.md`
-documents every field.
+MCP servers and the user's own skills and commands are bring-your-own: homonto
+does not manage them. When a user asks to add an MCP server, edit their
+`opencode.jsonc` (global or project) directly, referencing secrets with
+OpenCode's `{env:VAR}`; add their own skills under `.opencode/skills/` or
+`~/.config/opencode/skills/` and commands under the matching `command/`
+directory. Never add `[mcps.*]` or a `local:` skill or command to
+`homonto.toml`; both fail at load. `[tooling]` still declares shared providers
+such as a shell proxy or code intelligence, and builtin skills and commands are
+still declared in `homonto.toml`, followed by `homonto plan` and
+`homonto apply`. `docs/guides/configuration.md` documents every field.
 
 `[repos]` names trusted sibling Git worktrees. For installed engines or h,
 apply renders those resolved paths as OpenCode external-directory permissions

@@ -9,10 +9,8 @@ import (
 var files = map[string]string{
 	"homonto.toml": `# homonto — declarative config for AI coding tools.
 # Secrets are referenced, never stored: use ${pass:path} or ${ENV_VAR}.
-
-# [mcps.codegraph]
-# command = ["codegraph", "serve", "--mcp"]
-# targets = ["opencode"]              # default: every tool (OpenCode)
+# MCP servers and your own skills are bring-your-own: configure them in
+# OpenCode directly; homonto does not manage them.
 
 # [engines.onto]
 # source = "builtin:onto"
@@ -30,12 +28,12 @@ var files = map[string]string{
 # [subagents.onto-skeptic.opencode]
 # model = "anthropic/claude-opus-4-8"
 
-# [skills.graphify]
-# source = "local:graphify"
+# [skills.handoff]
+# source = "builtin:handoff"
 # scope = "project"
 
-# [commands.review]
-# source = "builtin:review"
+# [commands.grill]
+# source = "builtin:grill"
 # scope = "user"
 # targets = ["opencode"]
 

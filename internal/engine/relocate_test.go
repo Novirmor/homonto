@@ -15,11 +15,11 @@ import (
 // local skill, exercising both relocation domains.
 const relocateCfg = `
 [skills.projskill]
-source = "local:projskill"
+source = "builtin:handoff"
 scope = "project"
 
 [skills.userskill]
-source = "local:userskill"
+source = "builtin:handoff"
 scope = "user"
 `
 
@@ -27,7 +27,7 @@ func relocateSetup(t *testing.T) (home, repo string, e *Engine) {
 	t.Helper()
 	home = t.TempDir()
 	repo = t.TempDir()
-	os.MkdirAll(filepath.Join(repo, "homonto", "skills", "projskill"), 0o755)
+	os.MkdirAll(filepath.Join(repo, ".homonto", "catalog", "skills", "handoff"), 0o755)
 	os.WriteFile(filepath.Join(repo, "homonto", "skills", "projskill", "SKILL.md"), []byte("# proj\n"), 0o644)
 	os.MkdirAll(filepath.Join(repo, "homonto", "skills", "userskill"), 0o755)
 	os.WriteFile(filepath.Join(repo, "homonto", "skills", "userskill", "SKILL.md"), []byte("# user\n"), 0o644)
@@ -71,7 +71,7 @@ func TestRepoMoveConverges(t *testing.T) {
 	}
 
 	projLink := filepath.Join(moved, ".opencode", "skills", "projskill")
-	if resolved, err := filepath.EvalSymlinks(projLink); err != nil || !strings.HasSuffix(resolved, filepath.Join("homonto", "skills", "projskill")) {
+	if resolved, err := filepath.EvalSymlinks(projLink); err != nil || !strings.HasSuffix(resolved, filepath.Join(".homonto", "catalog", "skills", "handoff")) {
 		t.Fatalf("project link does not resolve after the move: %q (%v)", resolved, err)
 	}
 
@@ -112,14 +112,14 @@ func TestLegacyAbsoluteLinkRepair(t *testing.T) {
 	// (and the on-disk link) to the OLD absolute path.
 	stFile := filepath.Join(moved, ".homonto")
 	projLink := filepath.Join(moved, ".opencode", "skills", "projskill")
-	if err := os.Symlink(filepath.Join(repo, "homonto", "skills", "projskill"), projLink+".tmp"); err != nil {
+	if err := os.Symlink(filepath.Join(repo, ".homonto", "catalog", "skills", "handoff"), projLink+".tmp"); err != nil {
 		t.Fatal(err)
 	}
 	os.Remove(projLink)
 	if err := os.Rename(projLink+".tmp", projLink); err != nil {
 		t.Fatal(err)
 	}
-	oldDesired := filepath.Join(repo, ".opencode", "skills", "projskill") + " -> " + filepath.Join(repo, "homonto", "skills", "projskill")
+	oldDesired := filepath.Join(repo, ".opencode", "skills", "projskill") + " -> " + filepath.Join(repo, ".homonto", "catalog", "skills", "handoff")
 	st, err := state.Load(stFile)
 	if err != nil {
 		t.Fatal(err)
@@ -157,7 +157,7 @@ func TestLegacyAbsoluteLinkRepair(t *testing.T) {
 	if err := e2.Apply(context.Background(), sets); err != nil {
 		t.Fatalf("apply repair: %v", err)
 	}
-	if resolved, err := filepath.EvalSymlinks(projLink); err != nil || !strings.HasSuffix(resolved, filepath.Join("homonto", "skills", "projskill")) {
+	if resolved, err := filepath.EvalSymlinks(projLink); err != nil || !strings.HasSuffix(resolved, filepath.Join(".homonto", "catalog", "skills", "handoff")) {
 		t.Fatalf("repaired link does not resolve: %q (%v)", resolved, err)
 	}
 }

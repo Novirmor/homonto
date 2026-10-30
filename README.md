@@ -15,16 +15,18 @@ that is yours, an endpoint you named, or a real blocker.
 /h-resolve-issue 142
 ```
 
-Underneath is a declarative projector. You describe the workflows, MCP servers,
-skills, commands, agents, plugins, and settings once in `homonto.toml`; homonto
-shows you the diff, asks, and writes exactly that into OpenCode. When you
-delete a declaration, it removes it again.
+Underneath is a declarative projector. You describe the workflows, builtin
+skills and commands, agents, plugins, and settings once in `homonto.toml`;
+homonto shows you the diff, asks, and writes exactly that into OpenCode. When
+you delete a declaration, it removes it again. MCP servers and skills you
+write yourself are bring-your-own: they live in OpenCode's own files and
+homonto never touches them.
 
 ```console
 $ homonto plan
 opencode:
-  + projmcp.codegraph = {"command":["codegraph","serve","--mcp"],"enabled":true,"type":"local"}
-  + skill.house-style = …/.opencode/skills/house-style -> ../../homonto/skills/house-style
+  + setting.model = "anthropic/claude-opus-5-5"
+  + skill.handoff = …/.opencode/skills/handoff -> ../../.homonto/catalog/skills/handoff
 $ homonto apply
 Apply these changes? [y/N] y
 Applied.
@@ -96,14 +98,6 @@ homonto init           # homonto.toml, .gitignore, .env.example — nothing else
 
 ```toml
 # homonto.toml
-[mcps.codegraph]
-command = ["codegraph", "serve", "--mcp"]
-scope   = "project"
-
-[mcps.brave]
-command = ["npx", "-y", "@modelcontextprotocol/server-brave-search"]
-env     = { BRAVE_API_KEY = "${pass:ai/brave}" }
-
 [engines.to]                       # the minimal workflow engine
 source = "builtin:to"
 scope  = "project"

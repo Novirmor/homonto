@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
-# Suite: projection — homonto projects config into the tool, then the REAL
-# OpenCode CLI is asked to read it back (`opencode mcp list`). This proves
-# homonto's output is consumed by the actual tool, not just written to disk.
+# Suite: projection — homonto projects config into the tool alongside a
+# bring-your-own MCP server the user wrote by hand, then the REAL OpenCode CLI
+# is asked to read it back (`opencode mcp list`). This proves homonto's output
+# coexists with, and never rewrites, the user's own MCP configuration.
 # Parametrized by $E2E_TOOL (opencode, the only adapter since v0.13.0). No
 # account/network needed.
 set -uo pipefail
@@ -9,19 +10,17 @@ source /opt/e2e-suites/lib.sh
 TOOL="${E2E_TOOL:?E2E_TOOL required}"
 
 WORK="$(mktemp -d)"; cd "$WORK"
-mkdir -p homonto/skills/e2e-demo
-printf -- '---\nname: e2e-demo\ndescription: e2e projection skill\n---\nbody\n' \
-  > homonto/skills/e2e-demo/SKILL.md
 
 case "$TOOL" in
   opencode)
+    mkdir -p "$HOME/.config/opencode/skills/own-skill"
+    printf -- '---\nname: own-skill\ndescription: bring-your-own skill\n---\nbody\n' \
+      > "$HOME/.config/opencode/skills/own-skill/SKILL.md"
+    printf '{"mcp":{"e2e-probe":{"type":"local","command":["codegraph","serve","--mcp"],"enabled":true}}}\n' \
+      > "$HOME/.config/opencode/opencode.jsonc"
     cat > homonto.toml <<'EOF'
-[mcps.e2e-probe]
-command = ["codegraph", "serve", "--mcp"]
-targets = ["opencode"]
-
 [skills.e2e-demo]
-source = "local:e2e-demo"
+source = "builtin:handoff"
 scope = "user"
 
 [settings.opencode]
@@ -29,15 +28,18 @@ theme = "opencode-dark"
 EOF
     log "homonto apply → opencode"
     homonto apply --yes
-    log "opencode mcp list reads homonto's opencode.jsonc"
+    log "opencode mcp list still reads the user's own server"
     out="$(opencode mcp list 2>&1 || true)"; printf '%s\n' "$out"
-    contains "$out" "e2e-probe" "opencode mcp list did not show the homonto-projected server"
-    pass "opencode read the projected MCP server from opencode.jsonc"
+    contains "$out" "e2e-probe" "opencode mcp list lost the bring-your-own server"
+    pass "the bring-your-own MCP server survived homonto's projection"
     grep -q 'opencode-dark' "$HOME/.config/opencode/opencode.jsonc" || fail "opencode setting not projected"
     pass "opencode setting projected"
     link="$HOME/.config/opencode/skills/e2e-demo"
     [ -L "$link" ] || fail "opencode skill symlink not created"
-    pass "opencode skill symlinked to the owned source"
+    pass "opencode skill symlinked to the catalog source"
+    [ -f "$HOME/.config/opencode/skills/own-skill/SKILL.md" ] && [ ! -L "$HOME/.config/opencode/skills/own-skill" ] \
+      || fail "apply touched the bring-your-own skill"
+    pass "the bring-your-own skill was left alone"
     ;;
   *) fail "unknown E2E_TOOL: $TOOL" ;;
 esac

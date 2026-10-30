@@ -61,7 +61,7 @@ go build -ldflags "-X github.com/noviopenworks/homonto/internal/tocli.Version=ga
 "$work/to" version 2>&1 | grep -q "gate-smoke" || { echo "to version not stamped"; exit 1; }
 
 step "cli smoke (plan on a current-format config)"
-printf '[mcps.demo]\ncommand = ["true"]\n' > "$work/homonto.toml"
+printf '[settings.opencode]\nshare = "manual"\n' > "$work/homonto.toml"
 "$work/homonto" --config "$work/homonto.toml" plan >/dev/null
 
 step "agent docs reference only things that exist"

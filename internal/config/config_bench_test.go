@@ -9,10 +9,7 @@ import (
 func BenchmarkLoad(b *testing.B) {
 	dir := b.TempDir()
 	p := filepath.Join(dir, "homonto.toml")
-	body := `[mcps.demo]
-command = ["true"]
-
-[skills.a]
+	body := `[skills.a]
 source = "local:a"
 scope = "user"
 [skills.b]

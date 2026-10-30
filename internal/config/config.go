@@ -13,40 +13,6 @@ import (
 	"github.com/noviopenworks/homonto/internal/state"
 )
 
-// MCP is a declared MCP server. Env values may hold unresolved ${...} tokens.
-type MCP struct {
-	Command []string          `toml:"command"`
-	Env     map[string]string `toml:"env"`
-	Targets []string          `toml:"targets"`
-	// Repo optionally targets this server at a declared repository's
-	// project-level opencode.jsonc instead of the config repo's (ADR 0024
-	// stage 2). Requires scope = "project" and a name declared under [repos].
-	Repo string `toml:"repo"`
-	// Scope selects where the server projects: "user" (default) → the global
-	// tool config; "project" → the project-level config the tool merges over
-	// it (OpenCode <repo>/opencode.jsonc), so a repository's servers don't
-	// run in every other session.
-	Scope string `toml:"scope"`
-}
-
-// ScopeOrDefault returns the scope, defaulting to user (the historical
-// always-global projection) when unset.
-func (m MCP) ScopeOrDefault() string {
-	if m.Scope == "" {
-		return "user"
-	}
-	return m.Scope
-}
-
-// TargetsOrAll returns the explicit targets, or every tool when none are set
-// — OpenCode, the only adapter since v0.13.0.
-func (m MCP) TargetsOrAll() []string {
-	if len(m.Targets) == 0 {
-		return []string{"opencode"}
-	}
-	return m.Targets
-}
-
 // Resource is the common shape of every declarable managed resource: a source
 // string (builtin:|local:|remote:), an install scope, optional target-tool
 // restriction, and an optional content digest (required for remote: sources).
@@ -338,10 +304,12 @@ type Config struct {
 	// (pre-versioning) config and retains implicit-repository semantics; a value
 	// greater than CurrentConfigSchemaVersion is rejected fail-closed at load so
 	// an older binary never silently mis-applies a newer config.
-	SchemaVersion int            `toml:"schema_version,omitempty"`
-	Workflow      Workflow       `toml:"workflow"`
-	Worktrees     Worktrees      `toml:"worktrees"`
-	MCPs          map[string]MCP `toml:"mcps"`
+	SchemaVersion int       `toml:"schema_version,omitempty"`
+	Workflow      Workflow  `toml:"workflow"`
+	Worktrees     Worktrees `toml:"worktrees"`
+	// MCPs captures a removed [mcps.*] table so Load can reject it by name:
+	// MCP servers are bring-your-own (ADR 0085).
+	MCPs map[string]any `toml:"mcps"`
 	// Workflows provide user-facing coordination. Engines provide the work model
 	// and, when applicable, a companion binary. They are declared separately so
 	// a workflow such as h can be installed without an engine.

@@ -21,7 +21,7 @@ func writeConfig(t *testing.T, body string) string {
 }
 
 func TestLoad_RejectsFutureSchemaVersion(t *testing.T) {
-	p := writeConfig(t, "schema_version = 999\n[mcps.demo]\ncommand = [\"true\"]\n")
+	p := writeConfig(t, "schema_version = 999\n[settings.opencode]\nshare = \"manual\"\n")
 	_, err := Load(p)
 	if err == nil {
 		t.Fatal("Load of a future schema_version should error")
@@ -36,12 +36,12 @@ func TestLoad_RejectsFutureSchemaVersion(t *testing.T) {
 
 func TestLoad_AcceptsAbsentAndCurrentSchemaVersion(t *testing.T) {
 	// Absent (legacy) loads fine.
-	if _, err := Load(writeConfig(t, "[mcps.demo]\ncommand = [\"true\"]\n")); err != nil {
+	if _, err := Load(writeConfig(t, "[settings.opencode]\nshare = \"manual\"\n")); err != nil {
 		t.Errorf("absent schema_version should load: %v", err)
 	}
 	// Explicit current version loads fine.
 	for _, version := range []int{0, 1, CurrentConfigSchemaVersion} {
-		body := fmt.Sprintf("schema_version = %d\n[mcps.demo]\ncommand = [\"true\"]\n", version)
+		body := fmt.Sprintf("schema_version = %d\n[settings.opencode]\nshare = \"manual\"\n", version)
 		if _, err := Load(writeConfig(t, body)); err != nil {
 			t.Errorf("schema_version %d should load: %v", version, err)
 		}

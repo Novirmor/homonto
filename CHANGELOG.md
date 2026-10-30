@@ -20,6 +20,18 @@ list. Release candidates are folded into their stable release.
 - **`[integration.<name>] repos = ["*"]` covers every declared repository.**
   The check is selected when any repository changes and runs against all of
   their checkouts. `"*"` must be the only entry.
+- **Breaking: MCP servers and your own skills and commands are
+  bring-your-own (ADR 0085).**
+  - `[mcps.*]`, `mcp` under `[settings.opencode]`, and `local:` sources on
+    `[skills.*]` / `[commands.*]` fail at load and name the fix. Builtin
+    skills and commands, and `local:` agents and packages, are unchanged.
+  - Configure MCP servers in your own `opencode.jsonc` and put skills and
+    commands in `.opencode/skills/` and `.opencode/command/` (or the
+    `~/.config/opencode/` equivalents).
+  - Upgrading: delete those tables and apply once. What an earlier release
+    projected is released — dropped from state, left on disk unchanged — and
+    `plan` shows it as `>`.
+  - `homonto explain` no longer has `mcp` / `projmcp` kinds.
 - **Breaking: only the live version is supported (ADR 0081).**
   - `homonto workspace migrate` is removed, along with migration-adopted
     worktree bindings and retired-record handling. A registry entry adopted by

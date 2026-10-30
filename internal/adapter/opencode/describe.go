@@ -13,8 +13,8 @@ import (
 
 // Describe enumerates every managed key this adapter currently projects, with
 // its kind, name, destination, and declaration origin. It mirrors the same
-// desired-key construction Plan uses (desiredMCPs/desiredProjectMCPs/
-// desiredSettings/desiredTUI, the plugin loop, and the file/copy link
+// desired-key construction Plan uses (desiredSettings/desiredTUI, the
+// plugin loop, and the file/copy link
 // builders), so there is no second mapping to drift. An expansion failure
 // yields nil — explain then falls back to state-only facts rather than
 // failing on a broken tool file.
@@ -43,14 +43,6 @@ func (a *Adapter) Describe(c *config.Config) []adapter.ManagedResource {
 	}
 
 	if global {
-		for name, m := range c.MCPs {
-			if m.ScopeOrDefault() == "project" && a.ProjectRoot != "" {
-				continue
-			}
-			if _, ok := mcpValue(m); ok {
-				add("mcp", name, "mcp."+name, a.cfgFile(), &state.Origin{Kind: "direct", Scope: m.ScopeOrDefault()})
-			}
-		}
 		for k := range c.Settings.OpenCode {
 			add("setting", k, "setting."+k, a.cfgFile(), &state.Origin{Kind: "direct"})
 		}
@@ -67,17 +59,6 @@ func (a *Adapter) Describe(c *config.Config) []adapter.ManagedResource {
 			}
 		}
 	}
-	if a.ProjectRoot != "" {
-		for name, m := range c.MCPs {
-			if m.ScopeOrDefault() != "project" || m.Repo != a.RepoName {
-				continue
-			}
-			if _, ok := mcpValue(m); ok {
-				add("projmcp", name, "projmcp."+name, a.projectCfgFile(), &state.Origin{Kind: "direct", Scope: "project", Repo: m.Repo})
-			}
-		}
-	}
-
 	linkKind := func(links []fileLink, kind string, entries []config.NamedResource) {
 		byName := map[string]config.NamedResource{}
 		for _, e := range entries {

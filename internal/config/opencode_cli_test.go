@@ -169,14 +169,15 @@ small_model = "provider/small"
 permission = { bash = "ask" }
 agent = { review = { model = "provider/model" } }
 provider = { custom = { npm = "@ai-sdk/openai-compatible" } }
-[mcps.example]
-command = ["example", "serve"]
 [plugins.opencode.example]
 source = "example-plugin"
 `); err != nil {
 		t.Fatalf("supported V1 server config rejected: %v", err)
 	}
-	for _, key := range []string{"mcp", "plugin", "plugins"} {
+	if err := loadDoc(t, "[settings.opencode]\nmcp = {}"); err == nil || !strings.Contains(err.Error(), "bring-your-own") {
+		t.Fatalf("settings.opencode.mcp accepted or unexplained: %v", err)
+	}
+	for _, key := range []string{"plugin", "plugins"} {
 		err := loadDoc(t, "[settings.opencode]\n"+key+" = []")
 		if err == nil || !strings.Contains(err.Error(), key) || !strings.Contains(err.Error(), "reserved") {
 			t.Fatalf("conflicting %s accepted: %v", key, err)

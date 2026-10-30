@@ -26,11 +26,8 @@ model = "anthropic/claude-sonnet-4"
 [subagents.onto-skeptic.opencode]
 model = "anthropic/claude-opus-4-8"
 
-[mcps.demo]
-command = ["true"]
-
 [skills.projskill]
-source = "local:projskill"
+source = "builtin:handoff"
 scope = "project"
 
 [plugins.opencode.permission-observer]

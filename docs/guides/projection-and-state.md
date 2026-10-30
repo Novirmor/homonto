@@ -23,7 +23,6 @@ One apply lock covers the whole plan, including every declared repository.
 
 | Resource | Project scope | User scope |
 |---|---|---|
-| MCP server | `<root>/opencode.jsonc` → `mcp.<name>` | `~/.config/opencode/opencode.jsonc` |
 | Setting | — | `~/.config/opencode/opencode.jsonc` |
 | Plugin | — | `opencode.jsonc` → `plugin` array |
 | Terminal setting | — | `~/.config/opencode/cli.json` |
@@ -34,14 +33,18 @@ One apply lock covers the whole plan, including every declared repository.
 | Catalog content | `.homonto/catalog/` | — |
 | State | `.homonto/state.json` (+ `state.<alias>.json` per declared repo) | — |
 
-Plan keys name the kind: `mcp.`, `projmcp.`, `setting.`, `projsetting.`,
-`plugin.`, `tui.cli.`, `skill.`, `command.`, `subagent.`.
+Plan keys name the kind: `setting.`, `projsetting.`, `plugin.`, `tui.cli.`,
+`skill.`, `command.`, `subagent.`.
+
+MCP servers and your own skills and commands are bring-your-own and never
+appear here. On upgrade, entries an earlier release projected show once as
+`>` (released): they leave homonto's state and stay on disk unchanged.
 
 ## Surgical merge
 
 homonto writes **only keys it manages**:
 
-- your hand-added MCP servers, settings, and plugins survive every apply;
+- your MCP servers, hand-added settings, and plugins survive every apply;
 - a file is rewritten only when a managed key inside it changes — a
   skills-only apply leaves `opencode.jsonc` byte-for-byte untouched;
 - an unparseable file makes that adapter stop and report; homonto never
@@ -53,7 +56,8 @@ it are lost. No-op and link-only applies keep them.
 ## Links, not copies
 
 Skills, commands, and link-mode agents are symlinks to their source
-(`homonto/…` for `local:`, `.homonto/catalog/…` for `builtin:`). Editing the
+(`.homonto/catalog/…` for `builtin:`, `homonto/subagents/…` for a `local:`
+agent). Editing the
 source is live. Apply never replaces a real file or a symlink pointing
 elsewhere; it reports a **conflict**. Move the file aside and re-apply.
 
@@ -90,7 +94,7 @@ $ homonto status
 1 config change(s) awaiting apply (run `homonto apply`)    ← pending: you edited homonto.toml
 $ homonto status
 opencode setting.model drifted (will reset on apply)      ← drift: a file changed outside homonto
-opencode mcp.foo missing (deleted out of band)
+opencode skill.handoff missing (deleted out of band)
 $ homonto status
 No drift.
 ```
@@ -101,7 +105,7 @@ Declared-repository findings are labelled `opencode@<alias>`.
 ## Adoption
 
 If a declared resource already exists on disk **exactly** as homonto would
-write it — an MCP server you added by hand — apply records it in state
+write it — a setting you added by hand — apply records it in state
 without writing:
 
 ```text
@@ -137,14 +141,14 @@ command.
 ## Explaining a resource
 
 ```console
-$ homonto explain skill house-style
-skill         house-style          direct scope=project source=local:house-style
-    dst: …/notes/.opencode/skills/house-style
-    last: create (18dc732e, declare at 2026-10-27T17:37:54Z)
+$ homonto explain skill handoff
+skill         handoff              direct scope=project source=builtin:handoff
+    dst: …/notes/.opencode/skills/handoff
+    last: create (13f87c95, declare at 2026-10-29T14:38:10Z)
 ```
 
-Kinds: `skill`, `command`, `subagent`, `subagentcopy`, `mcp`, `projmcp`,
-`setting`, `projsetting`, `tui`, `plugin`. `--repo` picks a repository
+Kinds: `skill`, `command`, `subagent`, `subagentcopy`, `setting`,
+`projsetting`, `tui`, `plugin`. `--repo` picks a repository
 partition, `--json` for machines. Values are never printed.
 
 ## Updating catalog content

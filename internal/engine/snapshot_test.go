@@ -91,9 +91,7 @@ func TestLoadSnapshotPartitionReadsNamedState(t *testing.T) {
 const snapCfg = `
 [settings.opencode]
 theme = "opencode-dark"
-
-[mcps.demo]
-command = ["true"]
+share = "manual"
 `
 
 func snapSetup(t *testing.T) (home, cfg string, e *Engine) {
@@ -127,9 +125,7 @@ func TestSnapshotApplyUndoRestores(t *testing.T) {
 	// A second apply that changes something: edit the config first.
 	os.WriteFile(cfg, []byte(`[settings.opencode]
 theme = "new-theme"
-
-[mcps.demo]
-command = ["true"]
+share = "manual"
 `), 0o644)
 	e2, err := Build(context.Background(), cfg, home, "homonto")
 	if err != nil {
@@ -184,9 +180,7 @@ func TestSnapshotUndoRefusesUserEdit(t *testing.T) {
 	// Change the config so the snapshot has something to record.
 	os.WriteFile(cfg, []byte(`[settings.opencode]
 theme = "new-theme"
-
-[mcps.demo]
-command = ["true"]
+share = "manual"
 `), 0o644)
 	e2, err := Build(context.Background(), cfg, home, "homonto")
 	if err != nil {
@@ -220,9 +214,7 @@ func TestSnapshotFailureRollsBack(t *testing.T) {
 	// Change the config so the snapshot apply has work to fail on.
 	os.WriteFile(cfg, []byte(`[settings.opencode]
 theme = "new-theme"
-
-[mcps.demo]
-command = ["true"]
+share = "manual"
 `), 0o644)
 
 	// A secret-bearing change makes the broken resolver actually fail:
@@ -231,9 +223,7 @@ command = ["true"]
 	os.WriteFile(cfg, []byte(`[settings.opencode]
 theme = "new-theme"
 
-[mcps.sec]
-command = ["true"]
-env = { K = "${SNP_TOKEN}" }
+provider = { sec = { options = { apiKey = "${SNP_TOKEN}" } } }
 `), 0o644)
 
 	// A broken resolver makes the snapshot apply fail before any write.
@@ -318,7 +308,7 @@ func TestSnapshotLinkUndo(t *testing.T) {
 	os.MkdirAll(filepath.Join(repo, "homonto", "skills", "demo"), 0o755)
 	os.WriteFile(filepath.Join(repo, "homonto", "skills", "demo", "SKILL.md"), []byte("# demo\n"), 0o644)
 	cfg := filepath.Join(repo, "homonto.toml")
-	os.WriteFile(cfg, []byte("[skills.demo]\nsource = \"local:demo\"\nscope = \"project\"\n"), 0o644)
+	os.WriteFile(cfg, []byte("[skills.demo]\nsource = \"builtin:handoff\"\nscope = \"project\"\n"), 0o644)
 
 	e, err := Build(context.Background(), cfg, home, filepath.Join(repo, "homonto"))
 	if err != nil {
@@ -332,7 +322,7 @@ func TestSnapshotLinkUndo(t *testing.T) {
 	targetBefore, _ := os.Readlink(link)
 
 	// Re-apply as snapshot: the link already points at content; the snapshot
-	// records no change, but a second snapshot with a real change (a new mcp)
+	// records no change, but a second snapshot with a real change (a new setting)
 	// then undo restores the link untouched.
 	e2, err := Build(context.Background(), cfg, home, filepath.Join(repo, "homonto"))
 	if err != nil {

@@ -26,11 +26,11 @@ EOF
 
 OPEN_USER="$HOME/.config/opencode/skills/demo"
 OPEN_PROJ="$WORK/.opencode/skills/demo"
-SRC="$WORK/homonto/skills/demo"
+SRC="$WORK/.homonto/catalog/skills/handoff"
 
 # ---------------------------------------------------------------- user scope
 log "user scope: apply"
-printf '[skills.demo]\nsource = "local:demo"\nscope = "user"\n' > homonto.toml
+printf '[skills.demo]\nsource = "builtin:handoff"\nscope = "user"\n' > homonto.toml
 homonto apply --yes
 
 [ -L "$OPEN_USER" ]   || fail "opencode user link not created"
@@ -49,7 +49,7 @@ grep -q 'ok: skill "demo" linked (opencode)' /tmp/doctor.out || fail "doctor did
 
 # ------------------------------------------------------------- project scope
 log "project scope: apply relocates links into the repo"
-printf '[skills.demo]\nsource = "local:demo"\nscope = "project"\n' > homonto.toml
+printf '[skills.demo]\nsource = "builtin:handoff"\nscope = "project"\n' > homonto.toml
 homonto apply --yes
 
 [ -L "$OPEN_PROJ" ]   || fail "opencode project link not created"
@@ -71,39 +71,34 @@ log "project scope: doctor checks the project location"
 homonto doctor 2>&1 | tee /tmp/doctor2.out
 grep -q 'ok: skill "demo" linked (opencode)' /tmp/doctor2.out || fail "doctor did not confirm opencode project link"
 
-# --------------------------------------------- MCP + settings + secret refs
+# ------------------------------------------------- settings + secret refs
 # Assertions here are against the projected FILES and the state file, not against
 # homonto's stdout — the real proof that projection and secret resolution work.
-log "mcp + settings + secret: apply projects into opencode"
+log "settings + secret: apply projects into opencode"
 MWORK="$(mktemp -d)"; cd "$MWORK"
 SECRET_VALUE="smoke_do_not_leak_v4"
 export SMOKE_SECRET="$SECRET_VALUE"
 cat > homonto.toml <<'EOF'
-[mcps.codegraph]
-command = ["codegraph", "serve", "--mcp"]
-env = { API_KEY = "${SMOKE_SECRET}" }
-
 [settings.opencode]
 theme = "opencode-dark"
+provider = { smoke = { options = { apiKey = "${SMOKE_SECRET}" } } }
 EOF
 homonto apply --yes
 
 OJSONC="$HOME/.config/opencode/opencode.jsonc"
 MSTATE="$MWORK/.homonto/state.json"
 
-# OpenCode MCP server projected into opencode.jsonc, with the secret RESOLVED.
-grep -q 'codegraph' "$OJSONC"         || fail "opencode mcp server not projected into opencode.jsonc"
-grep -q '\["codegraph", "serve", "--mcp"\]' "$OJSONC" || fail "opencode mcp command not projected"
-grep -q "$SECRET_VALUE" "$OJSONC"     || fail "secret env ref not resolved into opencode.jsonc"
+# Provider setting projected into opencode.jsonc, with the secret RESOLVED.
+grep -q "$SECRET_VALUE" "$OJSONC"     || fail "secret ref not resolved into opencode.jsonc"
 # OpenCode setting projected into the same file, top level.
 grep -q 'opencode-dark' "$OJSONC"     || fail "opencode setting not projected"
 # The state file must record the REFERENCE, never the resolved secret value.
 grep -q 'SMOKE_SECRET' "$MSTATE"      || fail "state did not record the secret reference"
 if grep -q "$SECRET_VALUE" "$MSTATE"; then fail "state LEAKED the resolved secret value"; fi
 
-log "mcp + settings: second apply is idempotent"
+log "settings: second apply is idempotent"
 out="$(homonto apply --yes 2>&1)"; printf '%s\n' "$out"
-printf '%s' "$out" | grep -q "No changes" || fail "second mcp/settings apply was not idempotent"
+printf '%s' "$out" | grep -q "No changes" || fail "second settings apply was not idempotent"
 
 # ------------------------------------------------------------- init command
 log "init: scaffolds a fresh repo"
@@ -121,7 +116,7 @@ log "conflict: a real file at a skill dst aborts apply and is preserved"
 XWORK="$(mktemp -d)"; cd "$XWORK"
 mkdir -p homonto/skills/blocker
 printf 'skill body\n' > homonto/skills/blocker/SKILL.md
-printf '[skills.blocker]\nsource = "local:blocker"\nscope = "user"\n' > homonto.toml
+printf '[skills.blocker]\nsource = "builtin:handoff"\nscope = "user"\n' > homonto.toml
 mkdir -p "$HOME/.config/opencode/skills"
 printf 'user data\n' > "$HOME/.config/opencode/skills/blocker"
 if homonto apply --yes >/dev/null 2>&1; then fail "apply must abort on a real file at the skill dst"; fi

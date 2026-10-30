@@ -10,10 +10,8 @@ import (
 )
 
 const cfgTOML = `
-[mcps.brave]
-command = ["npx","server-brave"]
-env = { K = "${MISSING_VAR}" }
-targets = ["opencode"]
+[settings.opencode]
+provider = { brave = { options = { apiKey = "${MISSING_VAR}" } } }
 `
 
 func TestApplyAbortsBeforeWritingOnMissingSecret(t *testing.T) {
@@ -47,7 +45,7 @@ func TestRelativeContentDirResolvesAgainstConfig(t *testing.T) {
 	repo := t.TempDir()
 	home := t.TempDir()
 	os.MkdirAll(filepath.Join(repo, "content", "skills", "onto"), 0o755)
-	os.WriteFile(filepath.Join(repo, "homonto.toml"), []byte("[skills.onto]\nsource=\"local:onto\"\nscope=\"user\"\n"), 0o644)
+	os.WriteFile(filepath.Join(repo, "homonto.toml"), []byte("[skills.onto]\nsource=\"builtin:handoff\"\nscope=\"user\"\n"), 0o644)
 
 	wd, _ := os.Getwd()
 	other := t.TempDir()

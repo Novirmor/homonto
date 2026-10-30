@@ -28,7 +28,7 @@ func cfgWithSkills(scope string, names ...string) *config.Config {
 	return c
 }
 
-func TestOpenCodeProjectsMCPAndPreservesKeys(t *testing.T) {
+func TestOpenCodeProjectsSettingAndPreservesKeys(t *testing.T) {
 	home := t.TempDir()
 	dir := filepath.Join(home, ".config", "opencode")
 	os.MkdirAll(dir, 0o755)
@@ -37,8 +37,8 @@ func TestOpenCodeProjectsMCPAndPreservesKeys(t *testing.T) {
 	a := New(home, t.TempDir())
 	st, _ := state.Load(t.TempDir())
 	c := &config.Config{
-		MCPs:    map[string]config.MCP{"codegraph": {Command: []string{"codegraph", "serve"}, Targets: []string{"opencode"}}},
-		Plugins: config.Plugins{OpenCode: map[string]config.Plugin{"quota": {Source: "@slkiser/opencode-quota"}}},
+		Settings: config.Settings{OpenCode: map[string]any{"share": "manual"}},
+		Plugins:  config.Plugins{OpenCode: map[string]config.Plugin{"quota": {Source: "@slkiser/opencode-quota"}}},
 	}
 
 	cs, err := a.Plan(c, st)
@@ -54,17 +54,14 @@ func TestOpenCodeProjectsMCPAndPreservesKeys(t *testing.T) {
 	if gjson.GetBytes(doc, "theme").String() != "x" {
 		t.Fatal("unmanaged key lost")
 	}
-	if gjson.GetBytes(doc, "mcp.codegraph.type").String() != "local" {
-		t.Fatalf("mcp not projected: %s", doc)
-	}
-	if gjson.GetBytes(doc, "mcp.codegraph.command.0").String() != "codegraph" {
-		t.Fatal("mcp command missing")
+	if gjson.GetBytes(doc, "share").String() != "manual" {
+		t.Fatalf("setting not projected: %s", doc)
 	}
 	if plugins := gjson.GetBytes(doc, "plugin").Array(); len(plugins) != 2 {
 		t.Fatalf("plugin array = %v", plugins)
 	}
 
-	// idempotent second plan (plugin not duplicated, mcp noop)
+	// idempotent second plan (plugin not duplicated, setting noop)
 	cs2, _ := a.Plan(c, st)
 	for _, ch := range cs2.Changes {
 		if ch.Action != "noop" {
@@ -73,14 +70,12 @@ func TestOpenCodeProjectsMCPAndPreservesKeys(t *testing.T) {
 	}
 }
 
-func TestOpenCodeSecretMCPIsIdempotent(t *testing.T) {
+func TestOpenCodeSecretSettingIsIdempotent(t *testing.T) {
 	home := t.TempDir()
 	a := New(home, t.TempDir())
 	st, _ := state.Load(t.TempDir())
 	c := &config.Config{
-		MCPs: map[string]config.MCP{
-			"brave": {Command: []string{"npx", "server-brave"}, Env: map[string]string{"K": "${pass:ai/brave}"}, Targets: []string{"opencode"}},
-		},
+		Settings: config.Settings{OpenCode: map[string]any{"provider": map[string]any{"brave": map[string]any{"options": map[string]any{"apiKey": "${pass:ai/brave}"}}}}},
 	}
 	res := &secret.Resolver{Getenv: func(string) string { return "" }, Pass: func(string) (string, error) { return "SECRET", nil }}
 
@@ -91,7 +86,7 @@ func TestOpenCodeSecretMCPIsIdempotent(t *testing.T) {
 	cs2, _ := a.Plan(c, st)
 	for _, ch := range cs2.Changes {
 		if ch.Action != "noop" {
-			t.Fatalf("secret-backed MCP not idempotent: %+v", ch)
+			t.Fatalf("secret-backed setting not idempotent: %+v", ch)
 		}
 	}
 }
@@ -103,15 +98,13 @@ func TestOpenCodeStateAbsentDiskValueIsRedacted(t *testing.T) {
 	home := t.TempDir()
 	dir := filepath.Join(home, ".config", "opencode")
 	os.MkdirAll(dir, 0o755)
-	disk := `{"mcp":{"brave":{"type":"local","command":["npx","server-brave"],"enabled":true,"environment":{"K":"sk-previously-applied-secret"}}}}`
+	disk := `{"provider":{"brave":{"options":{"apiKey":"sk-previously-applied-secret"}}}}`
 	os.WriteFile(filepath.Join(dir, "opencode.jsonc"), []byte(disk), 0o600)
 
 	a := New(home, t.TempDir())
 	st, _ := state.Load(t.TempDir()) // empty state: provenance unknown
 	c := &config.Config{
-		MCPs: map[string]config.MCP{
-			"brave": {Command: []string{"npx", "server-brave"}, Env: map[string]string{"K": "literal"}, Targets: []string{"opencode"}},
-		},
+		Settings: config.Settings{OpenCode: map[string]any{"provider": map[string]any{"brave": map[string]any{"options": map[string]any{"apiKey": "literal"}}}}},
 	}
 	cs, err := a.Plan(c, st)
 	if err != nil {
@@ -119,7 +112,7 @@ func TestOpenCodeStateAbsentDiskValueIsRedacted(t *testing.T) {
 	}
 	var found bool
 	for _, ch := range cs.Changes {
-		if ch.Key != "mcp.brave" {
+		if ch.Key != "setting.provider" {
 			continue
 		}
 		found = true
@@ -134,7 +127,7 @@ func TestOpenCodeStateAbsentDiskValueIsRedacted(t *testing.T) {
 		}
 	}
 	if !found {
-		t.Fatal("expected an mcp.brave change")
+		t.Fatal("expected a setting.provider change")
 	}
 }
 
@@ -189,7 +182,7 @@ func TestOpenCodeCreateStillWritesFile(t *testing.T) {
 	a := New(home, t.TempDir())
 	st, _ := state.Load(t.TempDir())
 	c := &config.Config{
-		MCPs: map[string]config.MCP{"codegraph": {Command: []string{"codegraph", "serve"}, Targets: []string{"opencode"}}},
+		Settings: config.Settings{OpenCode: map[string]any{"share": "manual"}},
 	}
 	cs, _ := a.Plan(c, st)
 	if err := a.Apply(c, cs, noSecret(), st); err != nil {
@@ -199,8 +192,58 @@ func TestOpenCodeCreateStillWritesFile(t *testing.T) {
 	if err != nil {
 		t.Fatalf("create did not write the config file: %v", err)
 	}
-	if gjson.GetBytes(raw, "mcp.codegraph.type").String() != "local" {
-		t.Fatalf("mcp not written: %s", raw)
+	if gjson.GetBytes(raw, "share").String() != "manual" {
+		t.Fatalf("setting not written: %s", raw)
+	}
+}
+
+// TestOpenCodeReleasesProjectedMCPsWithoutTouchingFiles covers the
+// bring-your-own handover (ADR 0085): servers an earlier release projected
+// leave state, and both opencode.jsonc files stay byte-identical.
+func TestOpenCodeReleasesProjectedMCPsWithoutTouchingFiles(t *testing.T) {
+	home, project := t.TempDir(), t.TempDir()
+	dir := filepath.Join(home, ".config", "opencode")
+	os.MkdirAll(dir, 0o755)
+	global := "{\n  // mine now\n  \"mcp\": {\"codegraph\": {\"type\": \"local\", \"command\": [\"codegraph\"], \"enabled\": true}}\n}\n"
+	local := "{\"mcp\": {\"github\": {\"type\": \"local\", \"command\": [\"gh-mcp\"], \"enabled\": true}}}\n"
+	os.WriteFile(filepath.Join(dir, "opencode.jsonc"), []byte(global), 0o644)
+	os.WriteFile(filepath.Join(project, "opencode.jsonc"), []byte(local), 0o644)
+
+	a := New(home, t.TempDir()).WithProjectRoot(project)
+	st, _ := state.Load(t.TempDir())
+	st.Set("opencode", "mcp.codegraph", `{"type":"local"}`, "h1")
+	st.Set("opencode", "projmcp.github", `{"type":"local"}`, "h2")
+	c := &config.Config{}
+	cs, err := a.Plan(c, st)
+	if err != nil {
+		t.Fatal(err)
+	}
+	released := map[string]bool{}
+	for _, ch := range cs.Changes {
+		if ch.Cause == adapter.CauseRelease && ch.Action == "delete" {
+			released[ch.Key] = true
+		}
+	}
+	if !released["mcp.codegraph"] || !released["projmcp.github"] {
+		t.Fatalf("expected both MCP keys released, got %+v", cs.Changes)
+	}
+	if err := a.Apply(c, cs, noSecret(), st); err != nil {
+		t.Fatal(err)
+	}
+	for _, key := range []string{"mcp.codegraph", "projmcp.github"} {
+		if _, ok := st.Get("opencode", key); ok {
+			t.Fatalf("%s still in state", key)
+		}
+	}
+	if got, _ := os.ReadFile(filepath.Join(dir, "opencode.jsonc")); string(got) != global {
+		t.Fatalf("global config rewritten: %q", got)
+	}
+	if got, _ := os.ReadFile(filepath.Join(project, "opencode.jsonc")); string(got) != local {
+		t.Fatalf("project config rewritten: %q", got)
+	}
+	cs, err = a.Plan(c, st)
+	if err != nil || len(cs.Changes) != 0 {
+		t.Fatalf("released keys still planned: %+v, %v", cs.Changes, err)
 	}
 }
 

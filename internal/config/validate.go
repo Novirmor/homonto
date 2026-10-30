@@ -223,12 +223,6 @@ func validateRepoTargets(c *Config) error {
 			return err
 		}
 	}
-	for _, name := range sortedMCPNames(c) {
-		m := c.MCPs[name]
-		if err := check("mcps."+name, m.Repo, m.Scope, m.ScopeOrDefault() == "project"); err != nil {
-			return err
-		}
-	}
 	for _, name := range sortedResourceNames(c.Frameworks) {
 		if r := c.Frameworks[name]; r.Repo != "" {
 			table := "workflows"
@@ -245,16 +239,6 @@ func validateRepoTargets(c *Config) error {
 func sortedResourceNames(m map[string]Resource) []string {
 	out := make([]string, 0, len(m))
 	for k := range m {
-		out = append(out, k)
-	}
-	sort.Strings(out)
-	return out
-}
-
-// sortedMCPNames returns the map's keys in deterministic order.
-func sortedMCPNames(c *Config) []string {
-	out := make([]string, 0, len(c.MCPs))
-	for k := range c.MCPs {
 		out = append(out, k)
 	}
 	sort.Strings(out)
@@ -327,46 +311,22 @@ func sortedMarketplaceNames(m map[string]Marketplace) []string {
 	return out
 }
 
-// validateMCPs rejects MCP entries that could not project cleanly: names
-// unusable as JSON object keys, servers with no command, targets naming no
-// adapter (a silent typo), bad scopes, and the codex project-scope
-// combination the pilot cannot honor.
+// validateMCPs rejects any [mcps.*] table: MCP servers are bring-your-own
+// (ADR 0085), so a declaration would silently project nothing.
 func validateMCPs(c *Config) error {
-	// Every other name becomes a key written into a tool's JSON file. sjson
-	// treats index-like segments ("0", "-1") as array positions, silently
-	// turning the containing object into a JSON ARRAY; empty names address
-	// nothing. Reject both up front with the offending entry named.
-	for name, m := range c.MCPs {
-		if err := validateKey("mcps", name); err != nil {
-			return err
-		}
-		// An MCP with no command cannot project — both adapters would skip it,
-		// so a declared server would silently do nothing. Fail fast instead.
-		if len(m.Command) == 0 {
-			return fmt.Errorf("parse config: mcps entry %q has no command; an MCP server needs a command to run", name)
-		}
-		// A target that names no adapter means the MCP is projected nowhere —
-		// a silent typo. OpenCode is the only adapter since v0.13.0; a target
-		// naming a removed tool gets its own migration message.
-		for _, target := range m.Targets {
-			if target == "claude" {
-				return fmt.Errorf("parse config: mcps entry %q targets \"claude\", but Claude Code support was removed in v0.13.0; remove the target or delete the entry", name)
-			}
-			if target == "codex" {
-				return fmt.Errorf("parse config: mcps entry %q targets \"codex\", but the codex pilot was removed in v0.13.0; remove the target or delete the entry", name)
-			}
-			if !isMCPTarget(target) {
-				return fmt.Errorf("parse config: mcps entry %q targets unknown tool %q; the only valid target is \"opencode\"", name, target)
-			}
-		}
-		switch m.Scope {
-		case "", "user", "project":
-			// ok
-		default:
-			return fmt.Errorf("parse config: mcps entry %q scope %q is invalid; valid values are \"user\" and \"project\"", name, m.Scope)
-		}
+	if c.MCPs == nil {
+		return nil
 	}
-	return nil
+	names := make([]string, 0, len(c.MCPs))
+	for name := range c.MCPs {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	label := "mcps"
+	if len(names) > 0 {
+		label = "mcps." + names[0]
+	}
+	return fmt.Errorf("parse config: %s — homonto no longer manages MCP servers (ADR 0085); configure them in OpenCode's opencode.jsonc and delete the [mcps.*] tables. Servers an earlier apply wrote stay in place and are yours", label)
 }
 
 // validatePlugins rejects plugin declarations that would collide or silently
@@ -431,7 +391,10 @@ func validateSettingsAndTUI(c *Config) error {
 		if k == "plugins" {
 			return fmt.Errorf("parse config: settings.opencode key %q is reserved: native V2 plugins can override homonto's managed plugin array; use [plugins.opencode]", k)
 		}
-		if k == "mcp" || k == "plugin" {
+		if k == "mcp" {
+			return fmt.Errorf("parse config: settings.opencode key \"mcp\" is not accepted: MCP servers are bring-your-own (ADR 0085); configure them in OpenCode's opencode.jsonc")
+		}
+		if k == "plugin" {
 			return fmt.Errorf("parse config: settings.opencode key %q is reserved (homonto manages %s there); rename it", k, k)
 		}
 		if k == "model_variant" {
@@ -473,10 +436,10 @@ func validateResources(kind string, resources map[string]Resource) error {
 		default:
 			return fmt.Errorf("parse config: %s scope %q is invalid; valid values are \"user\" and \"project\"", label, r.Scope)
 		}
-		if err := validateSource(label, r.Source, r.Digest, false); err != nil {
-			return err
+		if strings.HasPrefix(r.Source, "local:") {
+			return fmt.Errorf("parse config: %s source %q — your own %s are bring-your-own (ADR 0085); put them in OpenCode's .opencode/%s or ~/.config/opencode/%s and delete the table. A link an earlier apply created stays in place and is yours", label, r.Source, kind, ownDir(kind), ownDir(kind))
 		}
-		if err := validateLocalPlainName(label, r.Source); err != nil {
+		if err := validateSource(label, r.Source, r.Digest, false); err != nil {
 			return err
 		}
 		for _, target := range r.Targets {
@@ -486,6 +449,14 @@ func validateResources(kind string, resources map[string]Resource) error {
 		}
 	}
 	return nil
+}
+
+// ownDir names OpenCode's directory for a bring-your-own resource kind.
+func ownDir(kind string) string {
+	if kind == "commands" {
+		return "command"
+	}
+	return kind
 }
 
 // validateFrameworkResources validates [workflows.X] or [engines.X] entries. A package
@@ -614,15 +585,12 @@ func validateSubagents(subagents map[string]Subagent) error {
 	return nil
 }
 
-// mcpTargetTools are valid MCP targets; resourceTargetTools are valid targets
-// for skills/commands/subagents/frameworks. OpenCode is the only adapter
+// resourceTargetTools are valid targets for skills/commands/subagents/frameworks. OpenCode is the only adapter
 // since v0.13.0 — Claude Code and the codex pilot were removed, and their
 // target values are rejected by validateTarget with a migration message
 // rather than a bare "unknown tool".
-var mcpTargetTools = []string{"opencode"}
 var resourceTargetTools = []string{"opencode"}
 
-func isMCPTarget(t string) bool      { return slices.Contains(mcpTargetTools, t) }
 func isResourceTarget(t string) bool { return slices.Contains(resourceTargetTools, t) }
 
 // validateTarget rejects one target value for a managed resource, naming the

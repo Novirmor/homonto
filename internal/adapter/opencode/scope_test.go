@@ -119,12 +119,12 @@ func TestRemoveAndSwitchLeavesNoOrphan(t *testing.T) {
 	home := t.TempDir()
 	os.MkdirAll(filepath.Join(home, ".config", "opencode"), 0o755)
 	proj := t.TempDir()
-	content := filepath.Join(proj, "content")
-	os.MkdirAll(filepath.Join(content, "skills", "foo"), 0o755)
+	catalogRoot := filepath.Join(proj, "catalog")
+	os.MkdirAll(filepath.Join(catalogRoot, "foo"), 0o755)
 	st, _ := state.Load(t.TempDir())
 
-	aU := New(home, content).WithProjectRoot(proj)
-	cU := cfgWithSkills("user", "foo")
+	aU := New(home, t.TempDir()).WithProjectRoot(proj).WithCatalogRoot(catalogRoot)
+	cU := &config.Config{Skills: map[string]config.Resource{"foo": {Source: "builtin:foo", Scope: "user"}}}
 	cs, _ := aU.Plan(cU, st)
 	if err := aU.Apply(cU, cs, noSecret(), st); err != nil {
 		t.Fatal(err)
@@ -134,7 +134,7 @@ func TestRemoveAndSwitchLeavesNoOrphan(t *testing.T) {
 		t.Fatalf("setup: user link missing: %v", err)
 	}
 
-	aP := New(home, content).WithProjectRoot(proj)
+	aP := New(home, t.TempDir()).WithProjectRoot(proj).WithCatalogRoot(catalogRoot)
 	cP := cfgWithSkills("project")
 	cs2, _ := aP.Plan(cP, st)
 	if err := aP.Apply(cP, cs2, noSecret(), st); err != nil {

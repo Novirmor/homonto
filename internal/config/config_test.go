@@ -10,20 +10,12 @@ import (
 )
 
 const sample = `
-[mcps.codegraph]
-command = ["codegraph", "serve", "--mcp"]
-
-[mcps.brave]
-command = ["npx", "-y", "server-brave"]
-env = { BRAVE_API_KEY = "${pass:ai/brave}" }
-targets = ["opencode"]
-
 [engines.onto]
 source = "builtin:onto"
 scope = "project"
 
 [skills.graphify]
-source = "local:graphify"
+source = "builtin:handoff"
 scope = "project"
 
 [skills.demo-skill]
@@ -65,19 +57,10 @@ func TestLoad(t *testing.T) {
 	if err != nil {
 		t.Fatalf("load: %v", err)
 	}
-	if got := c.MCPs["codegraph"].Command; len(got) != 3 || got[0] != "codegraph" {
-		t.Fatalf("codegraph command = %v", got)
-	}
-	if got := c.MCPs["brave"].Env["BRAVE_API_KEY"]; got != "${pass:ai/brave}" {
-		t.Fatalf("brave env = %q", got)
-	}
 	// OpenCode is the only adapter since v0.13.0, so an absent targets list
 	// defaults to exactly ["opencode"].
-	if got := c.MCPs["codegraph"].TargetsOrAll(); len(got) != 1 || got[0] != "opencode" {
+	if got := c.Skills["graphify"].TargetsOrAll(); len(got) != 1 || got[0] != "opencode" {
 		t.Fatalf("default targets = %v", got)
-	}
-	if got := c.MCPs["brave"].TargetsOrAll(); len(got) != 1 || got[0] != "opencode" {
-		t.Fatalf("brave targets = %v", got)
 	}
 	if got := c.Settings.OpenCode["model"]; got != "anthropic/claude-opus-4-8" {
 		t.Fatalf("opencode model = %v", got)
@@ -85,7 +68,7 @@ func TestLoad(t *testing.T) {
 	if got := c.Frameworks["onto"].Scope; got != "project" {
 		t.Fatalf("framework onto scope = %q", got)
 	}
-	if got := c.Skills["graphify"].Source; got != "local:graphify" {
+	if got := c.Skills["graphify"].Source; got != "builtin:handoff" {
 		t.Fatalf("skill graphify source = %q", got)
 	}
 	opencodeSkills := c.SkillEntriesForTool("opencode")
@@ -245,14 +228,12 @@ func TestLoadMissingFile(t *testing.T) {
 
 // TestLoadRejectsIndexLikeNames reproduces the verify round's corruption
 // finding: sjson treats all-digit keys ("0") and "-" + digits ("-1") as array
-// indices, so [mcps."0"] silently turns mcpServers into a JSON ARRAY. Empty
+// indices, so a "0" key silently turns its object into a JSON ARRAY. Empty
 // names address nothing. All such names must be a clear load-time error for
 // every key homonto writes into a tool file.
 func TestLoadRejectsIndexLikeNames(t *testing.T) {
 	bad := []struct{ label, doc, name string }{
-		{"mcp empty", "[mcps.\"\"]\ncommand = [\"x\"]\n", ""},
-		{"mcp zero", "[mcps.\"0\"]\ncommand = [\"x\"]\n", "0"},
-		{"mcp minus-one", "[mcps.\"-1\"]\ncommand = [\"x\"]\n", "-1"},
+		{"opencode setting zero", "[settings.opencode]\n\"0\" = \"x\"\n", "0"},
 		{"opencode setting", "[settings.opencode]\n\"-1\" = \"x\"\n", "-1"},
 		{"opencode plugin", "[plugins.opencode.\"\"]\nsource = \"x\"\n", ""},
 	}
@@ -272,7 +253,7 @@ func TestLoadRejectsIndexLikeNames(t *testing.T) {
 	good := []string{"corp.internal", "a0", "0a", "v2", "-x1"}
 	for _, name := range good {
 		p := filepath.Join(t.TempDir(), "homonto.toml")
-		doc := "[mcps." + strconv.Quote(name) + "]\ncommand = [\"x\"]\n"
+		doc := "[settings.opencode]\n" + strconv.Quote(name) + " = \"x\"\n"
 		if err := os.WriteFile(p, []byte(doc), 0o644); err != nil {
 			t.Fatal(err)
 		}
@@ -430,16 +411,16 @@ func TestSubagentScopeDefaultsToProject(t *testing.T) {
 	}
 }
 
-// TestLoadRejectsUnknownTargets reproduces NEXT_AGENT gap #3: an MCP whose
+// TestLoadRejectsUnknownTargets reproduces NEXT_AGENT gap #3: a resource whose
 // targets name a tool other than opencode (a silent typo) matches no adapter
 // and is silently projected nowhere. Load must fail naming the unknown target.
 // Targets naming a removed tool get their own removal message — see
 // TestRemovedToolTargetsRejected.
 func TestLoadRejectsUnknownTargets(t *testing.T) {
 	bad := []struct{ label, doc, offender string }{
-		{"typo", "[mcps.x]\ncommand=[\"c\"]\ntargets=[\"claud\"]\n", "claud"},
-		{"unknown tool", "[mcps.x]\ncommand=[\"c\"]\ntargets=[\"vscode\"]\n", "vscode"},
-		{"one good one bad", "[mcps.x]\ncommand=[\"c\"]\ntargets=[\"opencode\",\"opencde\"]\n", "opencde"},
+		{"typo", skillWithTargets(`["claud"]`), "claud"},
+		{"unknown tool", skillWithTargets(`["vscode"]`), "vscode"},
+		{"one good one bad", skillWithTargets(`["opencode","opencde"]`), "opencde"},
 	}
 	for _, tc := range bad {
 		err := loadDoc(t, tc.doc)
@@ -450,31 +431,17 @@ func TestLoadRejectsUnknownTargets(t *testing.T) {
 			t.Fatalf("%s: error does not name the offender %q: %v", tc.label, tc.offender, err)
 		}
 	}
-	if err := loadDoc(t, "[mcps.x]\ncommand=[\"c\"]\ntargets=[\"opencode\"]\n"); err != nil {
+	if err := loadDoc(t, skillWithTargets(`["opencode"]`)); err != nil {
 		t.Fatalf("valid targets rejected: %v", err)
 	}
 	// No targets means the default (opencode) — still valid.
-	if err := loadDoc(t, "[mcps.x]\ncommand=[\"c\"]\n"); err != nil {
+	if err := loadDoc(t, "[skills.x]\nsource=\"builtin:handoff\"\nscope=\"user\"\n"); err != nil {
 		t.Fatalf("default targets rejected: %v", err)
 	}
 }
 
-// TestLoadRejectsEmptyCommand reproduces gap #3: an MCP with no runnable
-// command is skipped by both adapters (desired() len(Command)==0), a silent
-// no-op. Load must fail naming the MCP that cannot project.
-func TestLoadRejectsEmptyCommand(t *testing.T) {
-	for _, tc := range []struct{ label, doc string }{
-		{"missing command", "[mcps.foo]\ntargets=[\"opencode\"]\n"},
-		{"empty command", "[mcps.foo]\ncommand=[]\n"},
-	} {
-		err := loadDoc(t, tc.doc)
-		if err == nil {
-			t.Fatalf("%s: accepted; want load error", tc.label)
-		}
-		if !strings.Contains(err.Error(), strconv.Quote("foo")) {
-			t.Fatalf("%s: error does not name the MCP %q: %v", tc.label, "foo", err)
-		}
-	}
+func skillWithTargets(targets string) string {
+	return "[skills.x]\nsource=\"builtin:handoff\"\nscope=\"user\"\ntargets=" + targets + "\n"
 }
 
 // TestLoadRejectsReservedSettingKeys: a [settings.opencode] key that collides
@@ -964,7 +931,7 @@ variant = " thinking"
 }
 
 func TestLoadDoesNotRequireModelsForSkillsOnly(t *testing.T) {
-	err := loadDoc(t, "[skills.graphify]\nsource=\"local:graphify\"\nscope=\"project\"\n")
+	err := loadDoc(t, "[skills.graphify]\nsource=\"builtin:handoff\"\nscope=\"project\"\n")
 	if err != nil {
 		t.Fatalf("skills-only config required model routing: %v", err)
 	}
@@ -1502,41 +1469,26 @@ func TestAgentsRejectTraversalLocalSource(t *testing.T) {
 	}
 }
 
-// TestResourcesRejectTraversalLocalSource: a local: source with path components
-// is rejected for skills AND commands (F28) — the same plain-name rule subagents
-// already enforce, so a local:../../x can never join a traversal suffix into a
-// provider path.
-func TestResourcesRejectTraversalLocalSource(t *testing.T) {
-	cases := []struct {
-		name string
-		doc  string
-	}{
-		{"skill", "[skills.x]\nsource = \"local:../../etc/x\"\nscope = \"user\"\n"},
-		{"command", "[commands.y]\nsource = \"local:../y\"\nscope = \"user\"\n"},
+// TestOwnSkillsAndCommandsAreRejected: your own skills and commands are
+// bring-your-own (ADR 0085). Any local: source on them fails at load naming
+// the entry and where the files go instead; builtin sources still load.
+func TestOwnSkillsAndCommandsAreRejected(t *testing.T) {
+	for _, tc := range []struct{ doc, label, dir string }{
+		{"[skills.x]\nsource = \"local:x\"\nscope = \"user\"\n", "skills.x", ".opencode/skills"},
+		{"[skills.x]\nsource = \"local:../../etc/x\"\nscope = \"user\"\n", "skills.x", ".opencode/skills"},
+		{"[commands.y]\nsource = \"local:y\"\nscope = \"user\"\n", "commands.y", ".opencode/command"},
+	} {
+		err := loadDoc(t, tc.doc)
+		if err == nil || !strings.Contains(err.Error(), tc.label) || !strings.Contains(err.Error(), "bring-your-own") || !strings.Contains(err.Error(), tc.dir) {
+			t.Fatalf("%q: want the bring-your-own rejection naming %s and %s, got %v", tc.doc, tc.label, tc.dir, err)
+		}
 	}
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			err := loadDoc(t, tc.doc)
-			if err == nil {
-				t.Fatalf("traversal local %s source accepted; want load error", tc.name)
-			}
-			if !strings.Contains(err.Error(), "plain name") {
-				t.Fatalf("error does not flag the bad source: %v", err)
-			}
-		})
-	}
-}
-
-// TestResourcesAcceptPlainLocalSource: a plain local: name passes for skills and
-// commands (the non-traversal counterpart to the rejection above).
-func TestResourcesAcceptPlainLocalSource(t *testing.T) {
-	docs := []string{
-		"[skills.x]\nsource = \"local:x\"\nscope = \"user\"\n",
-		"[commands.y]\nsource = \"local:y\"\nscope = \"user\"\n",
-	}
-	for _, doc := range docs {
+	for _, doc := range []string{
+		"[skills.x]\nsource = \"builtin:handoff\"\nscope = \"user\"\n",
+		"[commands.y]\nsource = \"builtin:grill\"\nscope = \"user\"\n",
+	} {
 		if err := loadDoc(t, doc); err != nil {
-			t.Fatalf("plain local source must load, got %v for:\n%s", err, doc)
+			t.Fatalf("builtin source must load, got %v for:\n%s", err, doc)
 		}
 	}
 }
@@ -1606,28 +1558,20 @@ func TestUnknownModelTierRejected(t *testing.T) {
 	}
 }
 
-// TestMCPScopeValidation: an MCP's scope is user|project (empty = user), and a
-// codex target is rejected outright — the codex pilot was removed in v0.13.0,
-// so no scope combination can honor it.
-func TestMCPScopeValidation(t *testing.T) {
-	p := filepath.Join(t.TempDir(), "homonto.toml")
-	load := func(doc string) error {
-		if err := os.WriteFile(p, []byte(doc), 0o644); err != nil {
-			t.Fatal(err)
+// TestMCPTablesAreRejected: MCP servers are bring-your-own (ADR 0085). Any
+// [mcps.*] table fails at load naming the entry and the fix, never silently
+// projecting nothing.
+func TestMCPTablesAreRejected(t *testing.T) {
+	for _, doc := range []string{
+		"[mcps.cg]\ncommand=[\"cg\"]\n",
+		"[mcps.cg]\ncommand=[\"cg\"]\nscope=\"project\"\n",
+	} {
+		err := loadDoc(t, doc)
+		if err == nil || !strings.Contains(err.Error(), "no longer manages MCP servers") || !strings.Contains(err.Error(), "opencode.jsonc") {
+			t.Fatalf("%q: want the bring-your-own rejection, got %v", doc, err)
 		}
-		_, err := Load(p)
-		return err
 	}
-
-	if err := load("[mcps.cg]\ncommand=[\"cg\"]\nscope=\"project\"\n"); err != nil {
-		t.Fatalf("a project-scoped MCP must load: %v", err)
-	}
-	err := load("[mcps.cg]\ncommand=[\"cg\"]\nscope=\"global\"\n")
-	if err == nil || !strings.Contains(err.Error(), `scope "global"`) {
-		t.Fatalf("an invalid MCP scope must be rejected naming the value, got: %v", err)
-	}
-	err = load("[mcps.cg]\ncommand=[\"cg\"]\nscope=\"project\"\ntargets=[\"codex\"]\n")
-	if err == nil || !strings.Contains(err.Error(), "codex") || !strings.Contains(err.Error(), "removed in v0.13.0") {
-		t.Fatalf("a codex MCP target must be rejected with the removal message, got: %v", err)
+	if err := loadDoc(t, "[mcps.cg]\ncommand=[\"cg\"]\n"); !strings.Contains(err.Error(), "mcps.cg") {
+		t.Fatalf("error must name the entry, got %v", err)
 	}
 }

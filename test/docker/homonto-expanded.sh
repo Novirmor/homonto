@@ -46,7 +46,7 @@ targets = ["opencode"]
 source = "@e2e/hud"
 
 [tui.opencode]
-theme = "gruvbox"
+theme.name = "gruvbox"
 EOF
 
 mkdir -p homonto/subagents

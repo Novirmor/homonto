@@ -45,8 +45,10 @@ Apply rechecks the live generation and every selected binding. `--yes` is not a
 force option. Dirty or ignored worktree content, hidden index flags, a HEAD that
 is neither integrated nor on the retained branch, changed ownership and
 ambiguous generations prevent removal. When `[tmp]` is declared, apply also
-deletes the change's scratch folder `<tmp>/<engine>/<change>/`. Active
-records must also be clean before moving to an unused dated archive directory.
+deletes the change's scratch folder `<tmp>/<engine>/<change>/` while holding
+the lifecycle/name lock. When multiple generations share that name, scratch
+ownership is ambiguous and the folder is retained; use `tmp clean` once no
+generation is live. Active records must also be clean before moving to an unused dated archive directory.
 Native state bytes are preserved; an abandoned workflow stays abandoned.
 
 Versioned receipts live under `<workflow-root>/.workflow/cleanup/`, outside the
@@ -77,4 +79,6 @@ of live onto and to changes (`<tmp>/onto/<change>/`, `<tmp>/to/<change>/`). A
 change is live while it is active or interrupted, or when its record cannot be
 read. Everything else — finished changes' folders, other workflows' scratch,
 loose files — is removed. `--json` emits `schema_version: 1` with `kept` and
-`removed` lists.
+`removed` lists. An incomplete workflow inventory refuses the sweep rather
+than treating unseen changes as inactive. The lifecycle/name lock excludes
+new changes between the inventory and deletion.

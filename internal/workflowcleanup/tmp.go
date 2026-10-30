@@ -40,6 +40,11 @@ func TmpClean(l workspace.Layout, yes bool) (TmpReport, error) {
 		}
 		return r, err
 	}
+	unlock, err := workspace.LockLifecycle(l)
+	if err != nil {
+		return r, err
+	}
+	defer unlock()
 	s := workflowstatus.ReadConfig(l.ConfigPath)
 	live := map[string]bool{}
 	for _, c := range s.Changes {
@@ -48,9 +53,10 @@ func TmpClean(l workspace.Layout, yes bool) (TmpReport, error) {
 		}
 	}
 	for _, f := range s.Findings {
-		if f.Change != "" {
-			live[f.Workflow+"/"+f.Change] = true
+		if f.Change == "" || (f.Workflow != "onto" && f.Workflow != "to") {
+			return r, fmt.Errorf("tmp clean: incomplete workflow inventory: %s", f.Message)
 		}
+		live[f.Workflow+"/"+f.Change] = true
 	}
 	entries, err := os.ReadDir(root)
 	if err != nil {

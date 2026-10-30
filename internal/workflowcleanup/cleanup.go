@@ -119,7 +119,7 @@ func inspect(l workspace.Layout, s workflowstatus.Snapshot, c workflowstatus.Cha
 		if ownsHistory && f.Workflow == "workspace" && f.Message == "workflow history pending; run homonto workspace recover" {
 			continue
 		}
-		if f.Workflow == "workspace" || (f.Workflow == c.Workflow && f.Change == c.Name) {
+		if f.Workflow == "workspace" || (f.Workflow == c.Workflow && (f.Change == "" || f.Change == c.Name)) {
 			p.Blockers = append(p.Blockers, f.Message)
 		}
 	}
@@ -157,6 +157,13 @@ func inspect(l workspace.Layout, s workflowstatus.Snapshot, c workflowstatus.Cha
 	sortRemovals(p.Worktrees)
 	if p.Tmp, err = changeTmp(l, c.Workflow, c.Name); err != nil {
 		p.Blockers = append(p.Blockers, err.Error())
+	}
+	// Scratch has a name, not a generation token. Once that name is reused,
+	// no generation can prove exclusive ownership; leave it to tmp clean.
+	for _, other := range s.Changes {
+		if other.Workflow == c.Workflow && other.Name == c.Name && other.Identity != c.Identity {
+			p.Tmp = ""
+		}
 	}
 	for _, w := range p.Worktrees {
 		if w.Blocker != "" {
@@ -231,11 +238,6 @@ func Apply(ctx context.Context, l workspace.Layout, workflow, change, identity s
 		}
 		return nil
 	}, scope)
-	if err == nil && p.Tmp != "" {
-		if rmErr := removeTmp(l, p.Tmp); rmErr != nil {
-			err = fmt.Errorf("cleanup pending; scratch %s not removed: %w", p.Tmp, rmErr)
-		}
-	}
 	updated, previewErr := Preview(l, workflow, change, identity)
 	if previewErr == nil {
 		p = updated
@@ -261,6 +263,13 @@ func finishCleanup(l workspace.Layout, p Plan) error {
 	}
 	if fresh.Record != p.Record || fresh.Archive != p.Archive || len(fresh.Worktrees) != 0 || len(fresh.Blockers) != 0 {
 		return fmt.Errorf("record or bindings changed; preview again")
+	}
+	// Recheck and remove while the lifecycle/name lock still excludes a new
+	// generation. Never delete from the earlier, unlocked preview.
+	if fresh.Tmp != "" {
+		if err := removeTmp(l, fresh.Tmp); err != nil {
+			return fmt.Errorf("scratch %s not removed: %w", fresh.Tmp, err)
+		}
 	}
 	if p.Archive == "" {
 		return writeReceipt(l, p, "cleanup-complete")

@@ -25,6 +25,19 @@ func validateIntegration(c *Config) error {
 		if c.SchemaVersion != 2 {
 			return fmt.Errorf("%s requires schema_version = 2 and explicit [repos]", label)
 		}
+		// repos = ["*"] covers every declared repository. Expanding it here
+		// lets selection, check inputs and definition hashes see real aliases.
+		if slices.Contains(check.Repos, "*") {
+			if len(check.Repos) != 1 {
+				return fmt.Errorf("%s: \"*\" must be the only repos entry", label)
+			}
+			check.Repos = make([]string, 0, len(c.Repos))
+			for alias := range c.Repos {
+				check.Repos = append(check.Repos, alias)
+			}
+			slices.Sort(check.Repos)
+			c.Integration[name] = check
+		}
 		seen := map[string]bool{}
 		for _, repo := range check.Repos {
 			if _, ok := c.Repos[repo]; !ok || seen[repo] {

@@ -17,6 +17,9 @@ list. Release candidates are folded into their stable release.
   whatever the verify result or the skeptics say, listing the phase, verify
   result and open findings. A draft records no receipt and changes no gate; at
   close the verified candidate is delivered to it and it is marked ready.
+- **`[integration.<name>] repos = ["*"]` covers every declared repository.**
+  The check is selected when any repository changes and runs against all of
+  their checkouts. `"*"` must be the only entry.
 - **Breaking: only the live version is supported (ADR 0081).**
   - `homonto workspace migrate` is removed, along with migration-adopted
     worktree bindings and retired-record handling. A registry entry adopted by

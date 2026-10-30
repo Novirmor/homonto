@@ -35,6 +35,12 @@ func runGit(t *testing.T, dir string, args ...string) string {
 
 func fixture(t *testing.T) *Store {
 	t.Helper()
+	return fixtureWithCheckRepos(t, "['api','web']")
+}
+
+// fixtureWithCheckRepos sets the pair check's repos list, as TOML.
+func fixtureWithCheckRepos(t *testing.T, repos string) *Store {
+	t.Helper()
 	root := t.TempDir()
 	for _, alias := range []string{"api", "web"} {
 		dir := filepath.Join(root, alias)
@@ -47,7 +53,7 @@ func fixture(t *testing.T) *Store {
 		runGit(t, dir, "add", ".")
 		runGit(t, dir, "commit", "-m", "base")
 	}
-	text := "schema_version=2\n[repos]\napi='../api'\nweb='../web'\n[workflow]\nroot='../records'\n[worktrees]\ndir='../allocated'\n[integration.pair]\nrepos=['api','web']\nrepo='api'\ncwd='.'\ncommand=['sh','check.sh']\n"
+	text := "schema_version=2\n[repos]\napi='../api'\nweb='../web'\n[workflow]\nroot='../records'\n[worktrees]\ndir='../allocated'\n[integration.pair]\nrepos=" + repos + "\nrepo='api'\ncwd='.'\ncommand=['sh','check.sh']\n"
 	for _, engine := range []string{"onto", "to", "no"} {
 		text += fmt.Sprintf("[engines.%s]\nsource='builtin:%s'\nscope='project'\n", engine, engine)
 	}
@@ -129,6 +135,25 @@ func TestCheckUsesAllocatedCandidatesAndInvalidatesEvidence(t *testing.T) {
 	}
 	if task.NeedsFallback {
 		t.Fatal("configured failure allowed fallback")
+	}
+}
+
+func TestWildcardCheckPinsEveryDeclaredRepo(t *testing.T) {
+	s := fixtureWithCheckRepos(t, "['*']")
+	task := createNo(t, s, "worktree")
+	if _, ok := task.Checkouts["web"]; !ok {
+		t.Fatalf("wildcard check did not add the unchanged repo: %+v", task.Checkouts)
+	}
+	r, err := s.RunCheck(context.Background(), task, "pair", nil)
+	if err != nil || r.Status != "passed" {
+		t.Fatalf("run = %+v, %v", r, err)
+	}
+	var got CheckContext
+	if err := readJSON(r.Context, &got); err != nil {
+		t.Fatal(err)
+	}
+	if len(got.Repos) != 2 || got.Repos["api"].Path != task.Checkouts["api"].Path || got.Repos["web"].Path != task.Checkouts["web"].Path {
+		t.Fatalf("check context repos = %+v", got.Repos)
 	}
 }
 

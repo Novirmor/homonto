@@ -600,7 +600,7 @@ command = ["npm", "run", "contract"]
 
 | Field | Notes |
 |---|---|
-| `repos` | Unique declared aliases. |
+| `repos` | Unique declared aliases, or `["*"]` for every repository in `[repos]`. `"*"` must be the only entry. |
 | `repo` | One of `repos`. |
 | `cwd` | Required; relative, no `..`, no symlink escape. |
 | `command` | Non-empty argv array (not a shell string). Use `["bash", "-c", "…"]` if you need a shell. |
@@ -619,6 +619,17 @@ with every participating checkout:
     "web": {"path": "/work/execution/web/…", "revision": "<commit>", "git_dir": "<git-dir>"}
   }
 }
+```
+
+A check over every repository selects on any change and pins all of their
+checkouts, so the whole set is verified together:
+
+```toml
+[integration.everything]
+repos   = ["*"]
+repo    = "web"
+cwd     = "."
+command = ["make", "e2e"]
 ```
 
 Scripts must read those paths, not guess sibling locations. Run checks with

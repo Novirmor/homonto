@@ -44,3 +44,43 @@ func TestIntegrationValidationAndAnyParticipantSelection(t *testing.T) {
 		t.Fatal("legacy integration accepted")
 	}
 }
+
+func TestIntegrationWildcardCoversEveryDeclaredRepo(t *testing.T) {
+	all := IntegrationCheck{Repos: []string{"*"}, Repo: "web", Cwd: ".", Command: []string{"sh", "check.sh"}}
+	c := &Config{SchemaVersion: 2, Repos: map[string]string{"web": "/web", "api": "/api", "docs": "/docs"}, Integration: map[string]IntegrationCheck{"all": all}}
+	if err := validateIntegration(c); err != nil {
+		t.Fatal(err)
+	}
+	if got := c.Integration["all"].Repos; !reflect.DeepEqual(got, []string{"api", "docs", "web"}) {
+		t.Fatalf("expanded repos = %v", got)
+	}
+	for _, changed := range [][]string{{"api"}, {"docs"}, {"web"}} {
+		if got := c.IntegrationChecksFor(changed); !reflect.DeepEqual(got, []string{"all"}) {
+			t.Fatalf("selection for %v = %v", changed, got)
+		}
+	}
+	for name, repos := range map[string][]string{
+		"mixed":     {"*", "api"},
+		"duplicate": {"*", "*"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			bad := all
+			bad.Repos = repos
+			c.Integration["all"] = bad
+			if err := validateIntegration(c); err == nil {
+				t.Fatal("invalid wildcard accepted")
+			}
+		})
+	}
+	bad := all
+	bad.Repo = "other"
+	c.Integration["all"] = bad
+	if err := validateIntegration(c); err == nil {
+		t.Fatal("wildcard with undeclared execution repo accepted")
+	}
+	c.Integration["all"] = all
+	c.SchemaVersion = 1
+	if err := validateIntegration(c); err == nil {
+		t.Fatal("legacy integration accepted")
+	}
+}

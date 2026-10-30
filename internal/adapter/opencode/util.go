@@ -47,7 +47,23 @@ func (a *Adapter) ownSkillLink(st *state.State, key string) bool {
 		return false
 	}
 	src, ok := fileproj.RecordedSrc(e.Desired)
-	return ok && strings.HasPrefix(src, filepath.Clean(dir)+string(filepath.Separator))
+	if !ok {
+		return false
+	}
+	if strings.HasPrefix(src, filepath.Clean(dir)+string(filepath.Separator)) {
+		return true
+	}
+	// A recorded absolute source still names the old root after a move.
+	// Recognize its project-relative content directory, not the current root.
+	// This only releases state; it never rewrites or removes the user's link.
+	if a.ProjectRoot == "" {
+		return false
+	}
+	rel, err := filepath.Rel(a.ProjectRoot, dir)
+	if err != nil || rel == "." || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+		return false
+	}
+	return strings.HasSuffix(filepath.Dir(src), string(filepath.Separator)+rel)
 }
 
 func managedPrefix(k string) bool {

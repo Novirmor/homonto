@@ -118,3 +118,20 @@ func TestOntoEntriesLoadDeliveryLoop(t *testing.T) {
 		}
 	}
 }
+
+func TestToCleanupFollowsIntegrationAndDelivery(t *testing.T) {
+	text := hPromptText(t, "skills/to-done/SKILL.md")
+	integration := strings.Index(text, "**Integration verification before push.**")
+	cleanup := strings.Index(text, "**Clean up after confirmed delivery.**")
+	if integration < 0 || cleanup <= integration {
+		t.Fatal("to-done must integrate and verify before cleanup")
+	}
+	if strings.Contains(text[:cleanup], "to cleanup apply") || strings.Contains(text[:cleanup], "#terminal-cleanup") {
+		t.Fatal("to-done authorizes cleanup before delivery")
+	}
+	for _, want := range []string{"every source's delivery is confirmed", "If verification or delivery is blocked, retain execution", "worktrees, receivers and scratch for recovery"} {
+		if !strings.Contains(text[cleanup:], want) {
+			t.Errorf("cleanup lacks recovery contract %q", want)
+		}
+	}
+}

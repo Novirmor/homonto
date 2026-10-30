@@ -110,10 +110,7 @@ steps 1–2 on the new candidate before finishing.
    the terminal state and directory move; do not manually stage managed records.
    Existing mode retains the manual commit of `## Verification`, terminal state,
    and archive move in the records' Git owner. Source integration remains in
-   each source repo, never a merge of workflow history. Once the change is done,
-   run [terminal cleanup](../homonto/references/execution.md#terminal-cleanup)
-   without asking: `to cleanup apply` removes the registered worktrees and the
-   change's scratch, and an unmerged PR keeps its commits on the retained branch.
+   each source repo, never a merge of workflow history.
 7. **Integration verification before push.** Integrate only the recorded verified
    candidate when integration/publication is authorized; this step grants no new
    push permission. Follow the shared [publication contract](../homonto/references/publication.md).
@@ -133,6 +130,13 @@ steps 1–2 on the new candidate before finishing.
    reverified candidate. Do not treat pre-merge tests or `--verified` as proof
    of a new integration tree. Record recovery evidence outside immutable archives
    in the handoff/publication report; never invent an onto receipt for to.
+8. **Clean up after confirmed delivery.** Only after integration verification
+   passes and every source's delivery is confirmed, run
+   [terminal cleanup](../homonto/references/execution.md#terminal-cleanup)
+   without asking. If verification or delivery is blocked, retain execution
+   worktrees, receivers and scratch for recovery. `to cleanup apply` removes
+   the registered worktrees and the change's scratch; an unmerged PR keeps its
+   commits on the retained branch.
 
 On completed recovery, discover the archive by canonical PR identity and source
 candidate/target evidence even when local PR HEAD is not ahead of upstream.

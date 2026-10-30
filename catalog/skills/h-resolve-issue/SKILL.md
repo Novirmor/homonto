@@ -13,7 +13,9 @@ workflow with the user if no path was specified, drive it to completion under
 its policy, and — after that workflow's verification passes — push the branch
 and open one pull request closing the issue. It is not consent to skip the
 spike, push before verification, or
-force-push.
+force-push. The exception is a
+[draft PR](../homonto/references/publication.md#draft-prs-at-any-phase), always
+available at any phase; it becomes the issue's one PR at delivery.
 
 **Success endpoint:** one verified PR closing the issue, the completed workflow
 record when the engine has one (including its integration receipt where required),

@@ -87,7 +87,10 @@ checks when applicable. If the head changes, reconcile before claiming readiness
 
 Watch pending checks with a bounded timeout. Diagnose failures and repair
 in-scope causes; do not bypass checks or rerun blindly. A draft requested by the
-user remains draft; changing that endpoint requires their decision. Otherwise
+user remains draft; changing that endpoint requires their decision. An
+[early draft](../../homonto/references/publication.md#draft-prs-at-any-phase)
+opened before verification passed is marked ready only after the verified
+candidate is delivered to it. Otherwise
 mark ready only within publication authority and tool permissions. Preserve
 linked-repo delivery obligations and required integration checks; do not call a
 partial delivery complete. Resolve only actually addressed feedback, using the

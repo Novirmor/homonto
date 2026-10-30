@@ -103,3 +103,4 @@ numbering: [`../agents/adr.md`](../agents/adr.md).
 | [0081](0081-support-only-the-live-version.md) | Support only the live version | Accepted |
 | [0082](0082-support-harnesses-natively-in-tiers.md) | Support harnesses natively, in tiers | Accepted |
 | [0083](0083-pull-the-chosen-base-before-every-change.md) | Pull the chosen base before every change | Accepted |
+| [0084](0084-allow-draft-prs-at-any-phase.md) | Allow draft PRs at any phase | Accepted |

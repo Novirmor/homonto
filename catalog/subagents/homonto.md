@@ -265,7 +265,8 @@ checkpoint as source code.
 **Publication.** Use the shared publication contract: exact recorded verified
 candidates, canonical head repo/host/owner/ref/OID, OPEN continuation preflight
 and push rechecks, workflow-specific to versus onto recovery, and origin-only
-bare closing markers.
+bare closing markers. A draft PR is available at any phase, whatever verify or
+the skeptics say; it is never delivery and never marked ready before a pass.
 
 ## Shell and tool permissions
 

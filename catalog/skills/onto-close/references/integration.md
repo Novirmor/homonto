@@ -69,7 +69,9 @@ gh pr list --repo HOST/OWNER/REPO --head "$CHANGE_BRANCH" --base "$BASE_BRANCH" 
 
 Paginate; list filters are candidates only. Independently fetch canonical head/base
 repository IDs and host, head owner/ref/OID and target. Reuse one exact OPEN match
-after delivery. Several matches require a decision; lookup failure is not no match.
+after delivery, including an
+[early draft](../../homonto/references/publication.md#draft-prs-at-any-phase):
+replace its body with `gh pr edit --body-file "$REPO_BODY_FILE"`. Several matches require a decision; lookup failure is not no match.
 Create only after complete enumeration proves absence, using fork-qualified head
 when required and quoted metadata rather than interpolated issue text:
 

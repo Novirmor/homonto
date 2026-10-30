@@ -201,6 +201,34 @@ it does not verify remote delivery. Never fabricate that claim to satisfy the
 flag. Legacy implicit config receipts omit `--repo` only; PR examples still use
 the observed `--head` and `--dir`. Merge/unchanged receipts never take `--head`.
 
+## Draft PRs at any phase
+
+A draft PR is always available: at any phase, whatever the verify result,
+open skeptic findings or reviewer disagreement. It shares work in progress and
+is not delivery. Open one when the user asks for a PR before the selected
+workflow completes, instead of refusing or bypassing a gate.
+
+- Push only committed work on the change's own execution branch, with an
+  explicit non-force refspec. Never push the base branch, dirty files or
+  rewritten history to it.
+- Enumerate and reuse under the exact PR identity rules above. Create with
+  `gh pr create --draft --repo HOST/OWNER/REPO --head "$QUALIFIED_HEAD" --base "$BASE_BRANCH" --title "$TITLE" --body-file "$DRAFT_BODY_FILE"`.
+- Render the body in session tmp: the current phase, the verify result, and
+  every open finding with its ID, severity and a one-line summary. Never claim
+  verification or readiness. Closing markers follow the closing-issues rules.
+- Later pushes to the same branch update the draft; refresh the body when the
+  phase, verify result or open findings change.
+- A draft records nothing: no `onto complete-integration` receipt, no `to done`,
+  no gate or phase change. Every gate still applies to the change.
+- Never mark it ready while verification is not passing. At close, deliver the
+  verified candidate to the same branch, reuse this PR as the exact match,
+  replace its body with the destination-specific body (`gh pr edit --body-file`),
+  record the receipt, then mark it ready with `gh pr ready` unless the user
+  asked for it to stay a draft.
+
+Engine-free h continuation is not covered: it updates an existing PR only with
+verified commits.
+
 ## Pending integration and feedback
 
 An archived pending onto operation can only finish its recorded integration.

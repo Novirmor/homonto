@@ -16,6 +16,21 @@ func TestOntoDeliveryPolicyScenarios(t *testing.T) {
 			"A skeptic report, failing test, unchecked final verification or recorded repair task is remaining work, not a stopping condition",
 			"Execute the next action in the same invocation", "precise repair task", "owning full or light route",
 		}},
+		{"draft PR is available before verification", "skills/homonto/references/publication.md", []string{
+			"A draft PR is always available: at any phase, whatever the verify result",
+			"instead of refusing or bypassing a gate", "gh pr create --draft",
+			"A draft records nothing: no `onto complete-integration` receipt, no `to done`",
+			"Never mark it ready while verification is not passing", "reuse this PR as the exact match",
+		}},
+		{"close reuses an early draft", "skills/onto-close/references/integration.md", []string{
+			"including an [early draft](../../homonto/references/publication.md#draft-prs-at-any-phase)",
+		}},
+		{"early draft becomes ready only after delivery", "skills/onto/references/delivery.md", []string{
+			"opened before verification passed is marked ready only after the verified candidate is delivered to it",
+		}},
+		{"resolve-issue permits an early draft", "skills/h-resolve-issue/SKILL.md", []string{
+			"push before verification", "publication.md#draft-prs-at-any-phase",
+		}},
 		{"missing evidence is actionable", "skills/onto-verify/references/adversarial.md", []string{
 			"A summary or one-line pack is insufficient", "checking access", "Run the discriminating probe",
 			"supported environments/scenarios", "exit statuses and full output",

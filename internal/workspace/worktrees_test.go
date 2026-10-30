@@ -10,6 +10,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/noviopenworks/homonto/internal/schema"
 	"github.com/noviopenworks/homonto/internal/workflowroot"
 )
 
@@ -87,6 +88,9 @@ func wtState(t *testing.T, l Layout, workflow, change, id string, terminal bool,
 		}
 	}
 	text := fmt.Sprintf("change: %s\nid: %q\ncreated: 2026-09-07\nphase: %s\narchived: %t\nrepos:\n", change, id, phase, terminal)
+	if workflow == "onto" {
+		text = fmt.Sprintf("schema_version: %d\n", schema.OntoStateVersion) + text
+	}
 	for _, repo := range repos {
 		text += fmt.Sprintf("  - %q\n", repo)
 	}

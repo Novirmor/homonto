@@ -16,6 +16,7 @@ import (
 	"github.com/noviopenworks/homonto/internal/bypasslog"
 	"github.com/noviopenworks/homonto/internal/fsutil"
 	"github.com/noviopenworks/homonto/internal/integrationrecord"
+	"github.com/noviopenworks/homonto/internal/schema"
 	"github.com/noviopenworks/homonto/internal/workcli"
 	"gopkg.in/yaml.v3"
 )
@@ -31,7 +32,7 @@ var validPhases = map[string]bool{
 }
 
 // CurrentSchemaVersion is the schema_version every write emits.
-const CurrentSchemaVersion = 3
+const CurrentSchemaVersion = schema.OntoStateVersion
 
 // RepoBase pins a source's object store. Anchors are required for explicit
 // scope and optional on legacy provenance carried through conversion.

@@ -5,7 +5,11 @@ release page for a tag shows only that release's notes
 ([`docs/release-notes.md`](docs/release-notes.md)) plus the generated commit
 list. Release candidates are folded into their stable release.
 
-## Unreleased
+## v0.35.0 — onto light and live-version support
+
+Breaking workflow and OpenCode compatibility changes. All three binaries are
+stamped v0.35.0. The embedded catalog is 0.35.0 (onto 0.27.0, to 0.24.0,
+h 0.13.0, and no 0.2.0).
 
 - **New changes start from a freshly pulled base (ADR 0083).** Before `onto
   new` or `to new`, the workflow skills ask which branch each repo starts from,
@@ -73,9 +77,29 @@ list. Release candidates are folded into their stable release.
   naming the exact command or resource. The coordinator first checks whether
   the action is needed and whether its own authority covers it. Then it asks
   you once: run it, send it the output or the missing information, continue
-  without it, or change scope. Both workflow plugin variants add a one-time
+  without it, or change scope. The OpenCode 2 workflow plugin adds a one-time
   notice to the coordinator's context when a worker's prompt was rejected,
   even if the worker returned nothing.
+- **Permission handback survives plugin reload and snapshot failure.** Resumed
+  workers' parent sessions are discovered on demand with a bounded lookup.
+  Rejection notices still reach a validated parent when workflow observation
+  fails; changed bindings and out-of-scope sessions do not receive them.
+- **Worktree state validation matches onto.** Allocation and recovery reject
+  unversioned, old, future, and removed-preset onto states before acting, rather
+  than accepting a format the lifecycle CLI cannot read.
+- **`onto scale --set` uses the guarded mutation path.** Abandoned and
+  archived states are immutable, and the state identity must match the requested
+  change. JSON measurement output is preserved.
+- **Harness architecture (ADR 0082):** OpenCode remains the primary and only
+  shipped harness. Native, tiered support for other harnesses is documented as
+  architecture; it is not implemented in this release.
+
+**Upgrade:** finish or abandon unsupported in-flight changes and migrated
+worktree bindings with the release that created them before upgrading. Remove
+V1 workflow-plugin declarations, replace V1 terminal-setting spellings with
+their named V2 keys, and use `onto light` for new bounded changes. Install all
+three matching v0.35.0 binaries, run `homonto plan` and `homonto apply` in each
+configured project, and restart OpenCode. No state conversion is provided.
 
 ## v0.34.0 — workflows, engines, and workspace tasks
 

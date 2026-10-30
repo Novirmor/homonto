@@ -23,6 +23,7 @@ export function createHandback(capacity = 4096) {
   const id = (...parts: string[]) => parts.join("\u0000")
   const quote = (value: string, limit: number) => JSON.stringify(value.length > limit ? `${value.slice(0, limit)}…` : value)
   return {
+    hasSession(sessionID: string) { return children.has(sessionID) },
     session(sessionID: string, parentID: string | undefined, agent: string | undefined) {
       if (!sessionID || !parentID || sessionID === parentID || children.size >= capacity) return
       children.set(sessionID, { parentID, agent: agent ?? "" })

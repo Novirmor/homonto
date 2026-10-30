@@ -29,12 +29,9 @@ func TestParseCurrent_OlderShapesRejected(t *testing.T) {
 
 func TestParseCurrent_RemovedPresetsAreInvalid(t *testing.T) {
 	for _, workflow := range []string{"fix", "tweak"} {
-		st, err := parseCurrent([]byte("schema_version: 3\nchange: c\nworkflow: "+workflow+"\nphase: verify\n"), "onto-state.yaml")
-		if err != nil {
-			t.Fatalf("%s: parse: %v", workflow, err)
-		}
-		if err := st.Validate(); err == nil || !strings.Contains(err.Error(), "full|light") {
-			t.Errorf("%s: Validate = %v, want full|light rejection", workflow, err)
+		_, err := parseCurrent([]byte("schema_version: 3\nchange: c\nworkflow: "+workflow+"\nphase: verify\n"), "onto-state.yaml")
+		if err == nil || !strings.Contains(err.Error(), "full|light") || !strings.Contains(err.Error(), "release that created it") {
+			t.Errorf("%s: parse = %v, want full|light rejection with recovery instruction", workflow, err)
 		}
 	}
 }

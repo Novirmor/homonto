@@ -469,7 +469,10 @@ Apply creates the directory, adds an anchored `/.tmp/` line to `.gitignore`,
 and writes `references/tmp.md` into the dispatcher skills and the shared
 `homonto` skill so agents put handoff drafts, fetched packets, and scratch
 output there instead of random `mktemp` paths. Removing the table withdraws
-the references. **homonto never deletes the directory's contents.**
+the references. A change keeps its scratch under `<dir>/<engine>/<change>/`;
+[cleanup](workflow-cleanup.md) deletes that folder at close, and
+`homonto tmp clean` empties scratch that belongs to no active change. `apply`
+itself never deletes the directory's contents.
 
 `dir` must be relative, below the config root, and may not overlap `.git`,
 `.opencode/`, `homonto/`, the workflow root, or `.homonto/{catalog,remote,cache}`.

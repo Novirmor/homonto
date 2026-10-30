@@ -51,9 +51,9 @@ JSON file with actual checkout paths and revisions. Changes invalidate affected
 results. Model-selected fallback applies only when no configured check matches,
 never to a configured failure. Ask before delivering a partial subset.
 
-After authorized integration, task cleanup removes only clean integrated owned
-allocations; onto/to native bindings still require their terminal lifecycle and
-`homonto worktree remove`. No worker performs allocation or cleanup.
+At delivery, task cleanup removes clean owned allocations without asking; an
+unmerged PR delivery keeps its branch. onto/to native bindings still require
+their terminal lifecycle and terminal cleanup. No worker performs allocation or cleanup.
 
 ### Worker availability
 
@@ -154,19 +154,26 @@ answer is available.
 
 ## Terminal cleanup
 
-After terminal onto/to delivery, inspect `<engine> cleanup list --dir "<configRoot>" --json`
-and preview the selected generation with `<engine> cleanup preview <name> --identity
-<identity> --dir "<configRoot>" --json`. Use `homonto workflow cleanup list --config
-"<config>" --json` for a cross-engine inventory. The binaries own eligibility,
-blockers and cleanup-pending/complete state; never infer them from checked tasks.
+Closing a change authorizes its cleanup: run it at close, without asking. As
+soon as onto/to delivery is terminal (archived with integration recorded,
+`to done`, or an explicit abandon), inspect `<engine> cleanup list --dir "<configRoot>" --json`,
+preview the generation with `<engine> cleanup preview <name> --identity
+<identity> --dir "<configRoot>" --json`, then run `<engine> cleanup apply <name>
+--identity <identity> --yes --dir "<configRoot>" --json` and inspect its result.
+Use `homonto workflow cleanup list --config "<config>" --json` for a cross-engine
+inventory. A PR delivery does not wait for the merge: the retained branch keeps
+its commits. The binaries own eligibility, blockers and cleanup-pending/complete
+state; never infer them from checked tasks.
 
-When removal is authorized, run `<engine> cleanup apply <name> --identity <identity>
---yes --dir "<configRoot>" --json` and inspect its result. Honor required tool approval;
-if a scope/authority decision is missing, use the native question dialog. Do not
-delete workflow directories, edit registries or force-remove checkouts yourself.
-Blocked cleanup remains reported and preserved, never relabeled complete. Retry
-the same identity after resolving the blocker; archives and native branches remain.
-No-task allocations retain `homonto workspace task cleanup`, not onto/to cleanup.
+Cleanup removes the change's worktrees and its scratch folder
+`<tmp>/<engine>/<name>/`. Do not delete workflow directories, edit registries or
+force-remove checkouts yourself. Blocked cleanup remains reported and preserved,
+never relabeled complete. Resolve the blocker under the dirty-work policy (a
+decision about the user's own changes goes through the native question dialog)
+and retry the same identity; archives and native branches remain. No-task
+allocations run `homonto workspace task cleanup NAME --yes` at the same point.
+`homonto tmp clean` previews, and with `--yes` empties, scratch that belongs to
+no active change.
 
 ## Reviewable tasks and commits
 

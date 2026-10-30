@@ -242,7 +242,7 @@ $ homonto workspace task cleanup api-contract --yes --config /work/control/homon
 | `create NAME --engine no\|to\|onto --repo A… --isolation existing\|worktree` | JSON out. `--change NAME` is required for onto/to (an active native change). `--isolation-override web=worktree` per repository. Repeating with the same choices resumes; different choices are refused. |
 | `inspect NAME` | JSON: recorded choices, checkout identities, check results and whether they're stale. |
 | `check NAME --writers-paused` | Runs every matching check (or `--check NAME`), `--timeout` per check (default 10m). Results JSON on stdout, command output on stderr, non-zero on failure. |
-| `cleanup NAME --yes` | Removes clean, integrated, task-owned worktrees and their integrated branches; keeps metadata. |
+| `cleanup NAME --yes` | Removes clean task-owned worktrees and releases their integrated branches (an unmerged PR keeps its branch); keeps metadata. |
 
 How checks pick inputs: changed repositories use their task checkout;
 unchanged participants are pinned to their clean commit at task creation.

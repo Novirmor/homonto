@@ -13,7 +13,7 @@ func TestRenderTmpDeterministicAndNamesDir(t *testing.T) {
 	if !bytes.Equal(a, b) {
 		t.Fatal("RenderTmp must be byte-deterministic for a given dir")
 	}
-	for _, want := range []string{".tmp", "never deletes", "without prompts"} {
+	for _, want := range []string{".tmp", "apply never deletes", "without prompts", "`.tmp/<engine>/<change>/`", "Cleanup at close deletes that", "homonto tmp clean"} {
 		if !strings.Contains(string(a), want) {
 			t.Errorf("tmp reference missing %q:\n%s", want, a)
 		}

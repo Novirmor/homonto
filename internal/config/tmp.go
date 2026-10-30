@@ -2,14 +2,17 @@ package config
 
 import (
 	"fmt"
+	"os"
 	"path/filepath"
 	"sort"
 	"strings"
+
+	toml "github.com/pelletier/go-toml/v2"
 )
 
 // DefaultTmpDir is the scratch directory used when [tmp] is declared without
-// a dir (ADR 0048): repo-root level, gitignored by apply, never cleaned by
-// homonto.
+// a dir (ADR 0048): repo-root level, gitignored by apply. Workflow cleanup
+// removes a change's own scratch folder (ADR 0086).
 const DefaultTmpDir = ".tmp"
 
 // tmpTable is the raw [tmp] table — a name→string map so an unknown key
@@ -90,4 +93,31 @@ func pathOverlaps(a, b string) bool {
 		return true
 	}
 	return false
+}
+
+// ReadTmp resolves [tmp] from a homonto.toml without loading the rest of the
+// config, so workflow cleanup in the onto and to binaries never fails on an
+// unrelated section. It returns the absolute scratch directory, or "" when
+// [tmp] is not declared.
+func ReadTmp(configPath string) (string, error) {
+	data, err := os.ReadFile(configPath)
+	if err != nil {
+		return "", err
+	}
+	var raw struct {
+		Tmp      *tmpTable `toml:"tmp"`
+		Workflow Workflow  `toml:"workflow"`
+	}
+	if err := toml.Unmarshal(data, &raw); err != nil {
+		return "", fmt.Errorf("parse config: %w", err)
+	}
+	c := &Config{Tmp: raw.Tmp, Workflow: raw.Workflow}
+	if err := validateTmp(c); err != nil {
+		return "", err
+	}
+	enabled, dir := c.ResolvedTmp()
+	if !enabled {
+		return "", nil
+	}
+	return filepath.Join(filepath.Dir(configPath), filepath.FromSlash(dir)), nil
 }

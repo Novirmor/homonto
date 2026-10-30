@@ -1122,14 +1122,15 @@ func ListWorktrees(l Layout) ([]Worktree, error) {
 }
 
 // RemoveWorktree removes only a clean, owned, terminal binding whose current
-// source HEAD is an ancestor of its recorded integration target. Branches are
-// deliberately retained. --yes acknowledges deletion, not a force override.
+// source HEAD is integrated into its recorded target or kept by its retained
+// branch (a PR delivery not yet merged, ADR 0086). Branches are deliberately
+// retained. --yes acknowledges deletion, not a force override.
 func RemoveWorktree(l Layout, workflow, change, repo string, yes bool) (Worktree, error) {
 	return RemoveWorktreeRole(l, workflow, change, repo, "execution", yes)
 }
 
 // RemoveWorktreeRole removes only the selected owned role. Receiver removal
-// obeys the same terminal, clean, and integrated checks as execution removal.
+// obeys the same terminal, clean, and retained-commit checks as execution removal.
 func RemoveWorktreeRole(l Layout, workflow, change, repo, role string, yes bool, expectedStateID ...string) (Worktree, error) {
 	var w Worktree
 	if role != "execution" && role != "receiver" {

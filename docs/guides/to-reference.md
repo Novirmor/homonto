@@ -39,7 +39,7 @@ commands need no install.
 | `to status [--all]` | Active changes; `--all` adds onto's. |
 | `to handoff <name> [--write]` | Recovery pack. |
 | `to doctor [--quiet]` | Workspace health. |
-| `to cleanup list\|preview\|apply` | Remove clean, integrated worktrees of finished or abandoned changes ([below](#to-cleanup)). |
+| `to cleanup list\|preview\|apply` | Remove clean worktrees (branches kept) and scratch of finished or abandoned changes ([below](#to-cleanup)). |
 | `to version` | Release version. |
 
 ### `to new`

@@ -679,7 +679,14 @@ func (s *Store) cleanup(ctx context.Context, t *Task) error {
 				return fmt.Errorf("%s has no recorded integration target", alias)
 			}
 			if _, err := git(ctx, c.Path, "merge-base", "--is-ancestor", "HEAD", "refs/heads/"+c.BaseBranch); err != nil {
-				return fmt.Errorf("%s is not integrated into %s: %w", alias, c.BaseBranch, err)
+				// A PR delivery not yet merged: the task-owned branch keeps the
+				// commits, and releaseBranch retains it (ADR 0086).
+				if !c.Owned || c.Branch == "" {
+					return fmt.Errorf("%s is not integrated into %s: %w", alias, c.BaseBranch, err)
+				}
+				if _, branchErr := git(ctx, c.Path, "merge-base", "--is-ancestor", "HEAD", "refs/heads/"+c.Branch); branchErr != nil {
+					return fmt.Errorf("%s is neither integrated into %s nor on its branch %s: %w", alias, c.BaseBranch, c.Branch, err)
+				}
 			}
 		} else if head != c.Base {
 			return fmt.Errorf("verification input %s moved from pinned revision %s; preserve its commits before cleanup", alias, c.Base)
@@ -708,7 +715,8 @@ func (s *Store) cleanup(ctx context.Context, t *Task) error {
 
 // releaseBranch deletes the branch of a removed, task-created worktree. It
 // deletes only a tip already integrated into the recorded target, and only if
-// the branch still points there, so no commit becomes unreachable.
+// the branch still points there, so no commit becomes unreachable. A branch
+// not yet integrated (an unmerged PR delivery) is retained.
 func (s *Store) releaseBranch(ctx context.Context, c Checkout) error {
 	if !c.Owned || !c.Changed || c.Branch == "" || c.BaseBranch == "" {
 		return nil
@@ -719,7 +727,7 @@ func (s *Store) releaseBranch(ctx context.Context, c Checkout) error {
 		return err
 	}
 	if _, err := git(ctx, c.Source, "merge-base", "--is-ancestor", tip, "refs/heads/"+c.BaseBranch); err != nil {
-		return fmt.Errorf("task branch %s is not integrated into %s; preserve its commits before cleanup: %w", c.Branch, c.BaseBranch, err)
+		return nil
 	}
 	_, err = git(ctx, c.Source, "update-ref", "-d", ref, tip)
 	return err

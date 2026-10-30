@@ -46,9 +46,10 @@ run when any listed repo changes, using pinned clean commits for unchanged
 inputs and the generated checkout-aware JSON context. Later changes invalidate
 results. Choose fallback verification only if no configured check matches;
 never substitute for a configured failure. Ask before partial delivery.
-After authorized integration, a recorded task's
-`homonto workspace task cleanup NAME --yes` removes only clean integrated
-task-owned worktrees and retains their branches.
+At delivery, run the recorded task's
+`homonto workspace task cleanup NAME --yes` without asking. It removes clean
+task-owned worktrees; an integrated branch is released, an unmerged PR
+delivery keeps its branch.
 
 For legacy configuration without workspace-task support, retain the confirmed
 checkout choice and evidence in the session/handoff; do not invoke unsupported

@@ -198,10 +198,12 @@ the OpenCode plugin's compaction context make this fast.
 
 ### Finished work is cleaned up by the binaries
 
-After an onto or to change reaches its endpoint, the coordinator reads
-`<engine> cleanup list` and previews the generation it just finished. It asks
-before `cleanup apply`, and never deletes workflow directories, edits
-registries, or force-removes checkouts itself. A blocked cleanup is reported
+After an onto or to change closes, the coordinator reads
+`<engine> cleanup list`, previews the generation it just finished, and runs
+`cleanup apply` without asking: closing authorizes it. That removes the
+change's worktrees (branches are kept, so an unmerged PR loses nothing) and its
+scratch folder. It never deletes workflow directories, edits registries, or
+force-removes checkouts itself. A blocked cleanup is reported
 as blocked. See [cleaning up terminal workflows](workflow-cleanup.md).
 
 ## Driving workflows by hand

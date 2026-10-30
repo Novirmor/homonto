@@ -156,8 +156,9 @@ issue delete/transfer/lock; release create/edit/delete/upload; workflow
 run/enable/disable, run cancel/delete; repository create/delete/edit/archive/
 rename; `rm -r`/`-f`, `sudo`, `doas`, `dd`, `mkfs`; `onto bypass`, `to bypass`,
 and flag-first `onto -…` / `to -…` forms; `homonto snapshot undo|recover`,
-`workspace recover`, `cache gc`, `worktree remove`; and `onto cleanup apply`,
-`to cleanup apply`, `homonto workflow cleanup apply`. With
+`workspace recover`, `cache gc`, `worktree remove`. Closing a change
+authorizes its cleanup, so `onto cleanup apply`, `to cleanup apply` and
+`homonto workflow cleanup apply` are allowed. With
 `[tooling] shell_proxy = "rtk"` it also gets an `rtk *` allow, with the
 protected asks still applied after it.
 

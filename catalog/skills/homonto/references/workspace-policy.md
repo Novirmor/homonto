@@ -139,15 +139,19 @@ bindings; coordinator state/history operations remain serial.
 
 ### Remove
 
-After terminal state and source integration, with removal authorized, run:
+At close, [terminal cleanup](execution.md#terminal-cleanup) removes every
+binding of the change without asking; closing authorizes it. A single binding
+can also be removed with:
 
 ```sh
 homonto worktree remove <change> --workflow onto --repo <alias> --yes
 ```
 
 Use `--workflow to` as appropriate. Removal refuses dirty (including ignored
-files), active, unowned, or unintegrated worktrees; `--yes` is not a force flag.
-Branches are retained. Report a refusal; never force-remove or prune around it.
+files), active, or unowned worktrees, and a HEAD neither integrated nor kept by
+the retained branch; `--yes` is not a force flag. Branches are retained, so an
+unmerged PR delivery loses nothing. Report a refusal; never force-remove or
+prune around it.
 
 ### Integration receivers
 
@@ -214,8 +218,9 @@ from the original checkout. Missing required config inputs remain a blocker.
 On resume use that recorded checkout. Workers run serially there and never edit
 workflow records. This is not schema-2 registered allocation or a denial fallback.
 After terminal state, integrate the pinned candidate into the recorded original
-target, verify the resulting tree, and remove only the authorized clean integrated
-path with `git worktree remove`, never force or prune around a refusal.
+target, verify the resulting tree, and at close remove the clean change path with
+`git worktree remove` without asking (its branch keeps the commits); never force
+or prune around a refusal.
 
 ## Engine-free h continuation checkouts
 
@@ -235,9 +240,9 @@ engine is needed. Missing configured space or directory access is a concrete
 isolation blocker, not permission to ignore the choice. This exception cannot
 replace an existing selected engine's binding or evade a lifecycle refusal.
 
-After confirmed delivery, remove only an explicitly authorized, clean, owned
-worktree whose commits are preserved on the verified destination. Retain branches
-and report any refusal; never force-remove or prune around it.
+After confirmed delivery, remove the clean, owned worktree without asking: its
+commits are preserved on the verified destination and its retained branch.
+Retain branches and report any refusal; never force-remove or prune around it.
 
 ## Task-local Git fixtures
 

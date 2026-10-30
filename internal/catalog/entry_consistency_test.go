@@ -73,8 +73,8 @@ func TestEntryPathPolicyConsistency(t *testing.T) {
 		{
 			name: "binary owned terminal cleanup",
 			files: map[string][]string{
-				"skills/homonto/references/execution.md": {"## Terminal cleanup", "cleanup list", "cleanup preview", "cleanup apply", "--identity", "native question dialog", "never relabeled complete", "archives and native branches remain"},
-				"subagents/homonto.md":                   {"execution.md#terminal-cleanup", "not manual deletion", "onto cleanup apply*", "to cleanup apply*", "homonto workflow cleanup apply*"},
+				"skills/homonto/references/execution.md": {"## Terminal cleanup", "cleanup list", "cleanup preview", "cleanup apply", "--identity", "native question dialog", "never relabeled complete", "archives and native branches remain", "Closing a change authorizes its cleanup: run it at close, without asking", "A PR delivery does not wait for the merge", "homonto tmp clean"},
+				"subagents/homonto.md":                   {"execution.md#terminal-cleanup", "not manual deletion", "Run cleanup at close", "closing a change authorizes it, so do not ask"},
 			},
 		},
 		{

@@ -49,7 +49,7 @@ Every `onto` command, flag, and gate. Concepts and a worked example:
 | `onto trace [c]` | no | Requirements → scenarios → tasks → evidence. |
 | `onto handoff <c>` | `--write` only | Recovery pack. |
 | `onto doctor` | no | Workspace health. |
-| `onto cleanup list\|preview\|apply` | `apply` only | Archive abandoned records and remove clean, integrated worktrees of terminal changes. |
+| `onto cleanup list\|preview\|apply` | `apply` only | Archive abandoned records and remove clean worktrees (branches kept) and scratch of terminal changes. |
 | `onto version` | no | Release version. |
 
 ## `onto init`

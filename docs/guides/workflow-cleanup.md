@@ -4,6 +4,11 @@ The binaries own cleanup eligibility and safety checks. No agent is needed.
 Cleanup does not finish or abandon active work, infer completion from age, or
 delete archives.
 
+Closing a change authorizes its cleanup
+([ADR 0086](../adr/0086-clean-up-at-close.md)): the coordinator runs it at
+close without asking. A PR delivery is cleaned at once, before the merge; its
+branch is retained, so no commit is lost.
+
 ## Inventory and preview
 
 ```bash
@@ -37,8 +42,10 @@ homonto workflow cleanup apply old-change --workflow onto --identity <identity> 
 ```
 
 Apply rechecks the live generation and every selected binding. `--yes` is not a
-force option. Dirty or ignored worktree content, hidden index flags, unintegrated
-commits, changed ownership and ambiguous generations prevent removal. Active
+force option. Dirty or ignored worktree content, hidden index flags, a HEAD that
+is neither integrated nor on the retained branch, changed ownership and
+ambiguous generations prevent removal. When `[tmp]` is declared, apply also
+deletes the change's scratch folder `<tmp>/<engine>/<change>/`. Active
 records must also be clean before moving to an unused dated archive directory.
 Native state bytes are preserved; an abandoned workflow stays abandoned.
 
@@ -54,5 +61,20 @@ cleanup does not prove remote delivery or authorize branch deletion.
 
 For `no` task-created checkouts, continue using
 `homonto workspace task cleanup <task> --yes --config <config>`. That command
-retains task metadata and removes only its owned integrated allocations and
-integrated task branches; it does not create an engine lifecycle.
+retains task metadata, removes its clean owned allocations, and releases task
+branches already integrated; an unmerged PR delivery keeps its branch. It does
+not create an engine lifecycle.
+
+## Scratch
+
+```bash
+homonto tmp clean --config /work/control/homonto.toml          # preview
+homonto tmp clean --yes --config /work/control/homonto.toml    # remove
+```
+
+`tmp clean` empties the declared `[tmp]` directory except the scratch folders
+of live onto and to changes (`<tmp>/onto/<change>/`, `<tmp>/to/<change>/`). A
+change is live while it is active or interrupted, or when its record cannot be
+read. Everything else — finished changes' folders, other workflows' scratch,
+loose files — is removed. `--json` emits `schema_version: 1` with `kept` and
+`removed` lists.

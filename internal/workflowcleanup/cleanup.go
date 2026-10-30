@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"github.com/noviopenworks/homonto/internal/applylock"
+	"github.com/noviopenworks/homonto/internal/config"
 	"github.com/noviopenworks/homonto/internal/fsutil"
 	"github.com/noviopenworks/homonto/internal/ontostate"
 	"github.com/noviopenworks/homonto/internal/tostate"
@@ -40,7 +41,10 @@ type Plan struct {
 	Record        string                      `json:"record"`
 	Archive       string                      `json:"archive,omitempty"`
 	Worktrees     []workspace.WorktreeRemoval `json:"worktrees"`
-	Blockers      []string                    `json:"blockers"`
+	// Tmp is the change's own scratch folder (<tmp>/<workflow>/<change>),
+	// deleted with the rest of the cleanup (ADR 0086).
+	Tmp      string   `json:"tmp,omitempty"`
+	Blockers []string `json:"blockers"`
 }
 
 type Inventory struct {
@@ -151,6 +155,9 @@ func inspect(l workspace.Layout, s workflowstatus.Snapshot, c workflowstatus.Cha
 		return block(err)
 	}
 	sortRemovals(p.Worktrees)
+	if p.Tmp, err = changeTmp(l, c.Workflow, c.Name); err != nil {
+		p.Blockers = append(p.Blockers, err.Error())
+	}
 	for _, w := range p.Worktrees {
 		if w.Blocker != "" {
 			p.Blockers = append(p.Blockers, w.Path+": "+w.Blocker)
@@ -158,7 +165,7 @@ func inspect(l workspace.Layout, s workflowstatus.Snapshot, c workflowstatus.Cha
 	}
 	if len(p.Blockers) != 0 {
 		p.Status = "blocked"
-	} else if p.Archive == "" && len(p.Worktrees) == 0 && (receipt == nil || receipt.Status == "cleanup-complete") {
+	} else if p.Archive == "" && len(p.Worktrees) == 0 && p.Tmp == "" && (receipt == nil || receipt.Status == "cleanup-complete") {
 		p.Status = "cleanup-complete"
 	}
 	return p
@@ -224,6 +231,11 @@ func Apply(ctx context.Context, l workspace.Layout, workflow, change, identity s
 		}
 		return nil
 	}, scope)
+	if err == nil && p.Tmp != "" {
+		if rmErr := removeTmp(l, p.Tmp); rmErr != nil {
+			err = fmt.Errorf("cleanup pending; scratch %s not removed: %w", p.Tmp, rmErr)
+		}
+	}
 	updated, previewErr := Preview(l, workflow, change, identity)
 	if previewErr == nil {
 		p = updated
@@ -271,6 +283,35 @@ func finishCleanup(l workspace.Layout, p Plan) error {
 		return err
 	}
 	return writeReceipt(l, p, "cleanup-complete")
+}
+
+// changeTmp returns the change's existing scratch folder, or "" when [tmp] is
+// undeclared or the folder is absent.
+func changeTmp(l workspace.Layout, workflow, change string) (string, error) {
+	root, err := config.ReadTmp(l.ConfigPath)
+	if err != nil || root == "" {
+		return "", err
+	}
+	dir := filepath.Join(root, workflow, change)
+	if _, err := os.Lstat(dir); os.IsNotExist(err) {
+		return "", nil
+	} else if err != nil {
+		return "", err
+	}
+	return dir, nil
+}
+
+// removeTmp deletes one scratch entry below the config root. A symlink is
+// removed, never followed, and a link in any parent refuses the removal.
+func removeTmp(l workspace.Layout, path string) error {
+	if err := removeTmpParents(l, filepath.Dir(path)); err != nil {
+		return err
+	}
+	return os.RemoveAll(path)
+}
+
+func removeTmpParents(l workspace.Layout, dir string) error {
+	return fsutil.RequireRealParents(l.ConfigRoot, dir)
 }
 
 func validateSelection(workflow, change string) error {

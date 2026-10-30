@@ -151,7 +151,7 @@ installs or runs them.
 | Adoption | Recording a hand-made, exactly matching resource into state without writing. |
 | Archive | Where a finished change's records move: `changes/archive/` or `tasks/archive/`. |
 | Candidate | The exact commit that was verified and will be delivered. |
-| Cleanup | `onto cleanup` / `to cleanup`: archiving abandoned records and removing clean, integrated worktrees of terminal changes. |
+| Cleanup | `onto cleanup` / `to cleanup`: run at close; archives abandoned records and removes clean worktrees and scratch of terminal changes, keeping branches. |
 | Config root | The directory containing `homonto.toml`. |
 | Coordinator | The `homonto` primary agent. |
 | Delta spec | onto's per-change spec edit, merged into `specs/` at close. |

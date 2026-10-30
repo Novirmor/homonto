@@ -420,16 +420,18 @@ func TestShippedWorkspaceExecutionRenderedPatterns(t *testing.T) {
 						check(prefix+route+" example", publication)
 					}
 				}
-				protected := "ask"
+				protected, cleanup := "ask", "allow"
 				if name != "homonto" {
-					protected = "deny"
+					protected, cleanup = "deny", "deny"
 				}
+				// Closing a change authorizes its cleanup (ADR 0086): the
+				// coordinator runs it without a prompt; workers never do.
 				for _, command := range []string{
 					"onto cleanup apply task --identity generation --yes", "to cleanup apply task --identity generation --yes",
 					"homonto workflow cleanup apply task --workflow onto --identity generation --yes",
 					"homonto --config /workspace/homonto.toml workflow cleanup apply task --workflow to --identity generation --yes",
 				} {
-					check(command, protected)
+					check(command, cleanup)
 				}
 				for _, route := range []string{
 					"pr merge", "pr lock", "pr unlock", "issue delete", "issue transfer", "issue lock", "issue unlock",

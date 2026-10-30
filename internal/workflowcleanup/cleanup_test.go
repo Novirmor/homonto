@@ -263,8 +263,8 @@ func TestCompletedCleanupAndIncompleteIntegration(t *testing.T) {
 	}
 }
 
-func TestCleanupRefusesDirtyIgnoredUnmergedAndChangedEvidence(t *testing.T) {
-	for _, kind := range []string{"dirty", "ignored", "unmerged", "record-dirty", "record-hidden", "symlink"} {
+func TestCleanupRefusesDirtyIgnoredAndChangedEvidence(t *testing.T) {
+	for _, kind := range []string{"dirty", "ignored", "record-dirty", "record-hidden", "symlink"} {
 		t.Run(kind, func(t *testing.T) {
 			l := fixture(t)
 			command(t, native("onto"), "new", "feature", "--repo", "source", "--dir", l.ConfigRoot)
@@ -283,10 +283,6 @@ func TestCleanupRefusesDirtyIgnoredUnmergedAndChangedEvidence(t *testing.T) {
 				git(t, w.Path, "commit", "-m", "ignore")
 				git(t, l.Repos["source"], "merge", "--ff-only", w.Branch)
 				write(t, filepath.Join(w.Path, "private"), "keep\n")
-			case "unmerged":
-				write(t, filepath.Join(w.Path, "new-work"), "keep\n")
-				git(t, w.Path, "add", "new-work")
-				git(t, w.Path, "commit", "-m", "unmerged")
 			case "record-dirty":
 				write(t, filepath.Join(l.WorkflowRoot, p.Record, "notes.md"), "uncommitted user notes\n")
 			case "record-hidden":
@@ -370,5 +366,98 @@ func TestCleanupJSONStableAndUnknownGenerationReadOnly(t *testing.T) {
 		if p.SchemaVersion != 1 || p.Worktrees == nil || p.Blockers == nil {
 			t.Fatalf("unstable JSON collections: %+v", p)
 		}
+	}
+}
+
+// TestCleanupRemovesUnmergedWorktreeKeepingBranchAndTmp covers ADR 0086: a
+// closed change whose commits only reached its own branch (a PR delivery not
+// yet merged) is cleaned at once. The branch keeps the commits, and the
+// change's own scratch folder goes with the worktree; other scratch stays.
+func TestCleanupRemovesUnmergedWorktreeKeepingBranchAndTmp(t *testing.T) {
+	l := fixture(t)
+	cfg, err := os.ReadFile(l.ConfigPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	write(t, l.ConfigPath, string(cfg)+"[tmp]\ndir = '.tmp'\n")
+	command(t, native("onto"), "new", "feature", "--repo", "source", "--dir", l.ConfigRoot)
+	w, err := workspace.CreateWorktree(l, "onto", "feature", "source", "main", "work/feature")
+	if err != nil {
+		t.Fatal(err)
+	}
+	write(t, filepath.Join(w.Path, "new-work"), "keep\n")
+	git(t, w.Path, "add", "new-work")
+	git(t, w.Path, "commit", "-m", "unmerged")
+	tip := git(t, w.Path, "rev-parse", "HEAD")
+	own := filepath.Join(l.ConfigRoot, ".tmp", "onto", "feature")
+	other := filepath.Join(l.ConfigRoot, ".tmp", "onto", "other")
+	write(t, filepath.Join(own, "draft.md"), "scratch\n")
+	write(t, filepath.Join(other, "draft.md"), "someone else's\n")
+	command(t, native("onto"), "abandon", "feature", "--dir", l.ConfigRoot)
+
+	p := preview(t, l, "onto", "feature", "")
+	if p.Status != "cleanup-pending" || p.Tmp != own {
+		t.Fatalf("preview = %+v, want pending with tmp %s", p, own)
+	}
+	got, err := workflowcleanup.Apply(context.Background(), l, "onto", "feature", p.Identity, true)
+	if err != nil || got.Status != "cleanup-complete" {
+		t.Fatalf("cleanup = %+v, %v", got, err)
+	}
+	if _, err := os.Stat(w.Path); !os.IsNotExist(err) {
+		t.Fatalf("worktree not removed: %v", err)
+	}
+	if got := git(t, l.Repos["source"], "rev-parse", "refs/heads/"+w.Branch); got != tip {
+		t.Fatalf("branch %s = %s, want retained tip %s", w.Branch, got, tip)
+	}
+	if _, err := os.Stat(own); !os.IsNotExist(err) {
+		t.Fatalf("change scratch not removed: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(other, "draft.md")); err != nil {
+		t.Fatalf("other change's scratch removed: %v", err)
+	}
+}
+
+// TestTmpCleanKeepsOnlyLiveChangeScratch: homonto tmp clean previews, then
+// removes every scratch entry except the folders of active onto/to changes.
+func TestTmpCleanKeepsOnlyLiveChangeScratch(t *testing.T) {
+	l := fixture(t)
+	if _, err := workflowcleanup.TmpClean(l, false); err == nil || !strings.Contains(err.Error(), "not declared") {
+		t.Fatalf("undeclared [tmp] = %v, want refusal", err)
+	}
+	cfg, err := os.ReadFile(l.ConfigPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	write(t, l.ConfigPath, string(cfg)+"[tmp]\ndir = '.tmp'\n")
+	command(t, native("onto"), "new", "live", "--repo", "source", "--dir", l.ConfigRoot)
+	command(t, native("onto"), "new", "gone", "--repo", "source", "--dir", l.ConfigRoot)
+	command(t, native("onto"), "abandon", "gone", "--dir", l.ConfigRoot)
+	tmp := filepath.Join(l.ConfigRoot, ".tmp")
+	for _, rel := range []string{"onto/live/a.md", "onto/gone/a.md", "to/never/a.md", "h/pr-12/body.md", "loose.txt"} {
+		write(t, filepath.Join(tmp, filepath.FromSlash(rel)), "scratch\n")
+	}
+
+	out := command(t, cli.NewRootCmd(), "tmp", "clean", "--config", l.ConfigPath)
+	if !strings.Contains(out, "would remove onto/gone") || !strings.Contains(out, "kept onto/live") {
+		t.Fatalf("preview output:\n%s", out)
+	}
+	if _, err := os.Stat(filepath.Join(tmp, "onto", "gone", "a.md")); err != nil {
+		t.Fatalf("preview removed scratch: %v", err)
+	}
+	r, err := workflowcleanup.TmpClean(l, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []string{"h", "loose.txt", "onto/gone", "to/never"}
+	if strings.Join(r.Removed, ",") != strings.Join(want, ",") || strings.Join(r.Kept, ",") != "onto/live" {
+		t.Fatalf("report = %+v, want removed %v and kept onto/live", r, want)
+	}
+	for _, rel := range want {
+		if _, err := os.Lstat(filepath.Join(tmp, filepath.FromSlash(rel))); !os.IsNotExist(err) {
+			t.Fatalf("%s survived: %v", rel, err)
+		}
+	}
+	if _, err := os.Stat(filepath.Join(tmp, "onto", "live", "a.md")); err != nil {
+		t.Fatalf("live change scratch removed: %v", err)
 	}
 }

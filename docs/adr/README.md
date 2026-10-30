@@ -67,7 +67,7 @@ numbering: [`../agents/adr.md`](../agents/adr.md).
 | [0045](0045-one-homonto-coordinator-for-both-workflows.md) | One homonto coordinator for both workflows | Accepted |
 | [0046](0046-integrate-onto-pr-continuations-into-the-pr-head.md) | Integrate onto PR continuations into the PR head | Accepted |
 | [0047](0047-deny-open-web-and-compound-shell-around-github-intake.md) | Deny open-web and compound-shell capability around GitHub intake | Partially superseded by 0049, 0051, 0054, 0055 |
-| [0048](0048-one-declared-workspace-tmp-directory.md) | One declared workspace tmp directory | Accepted |
+| [0048](0048-one-declared-workspace-tmp-directory.md) | One declared workspace tmp directory | Partially superseded by 0086 |
 | [0049](0049-permit-routine-workflow-evidence-recording.md) | Permit routine workflow evidence recording | Partially superseded by 0055 |
 | [0050](0050-observe-workflow-state-through-opencode.md) | Observe workflow state through OpenCode | Accepted |
 | [0051](0051-trust-workspace-execution-and-automate-h-routing.md) | Trust workspace execution and automate h routing | Partially superseded by 0054, 0059, 0062 |
@@ -94,7 +94,7 @@ numbering: [`../agents/adr.md`](../agents/adr.md).
 | [0072](0072-release-integrated-task-branches.md) | Release integrated workspace task branches | Accepted |
 | [0073](0073-require-approval-for-disproportionate-repairs.md) | Require approval for disproportionate repairs | Accepted |
 | [0074](0074-use-explorers-before-guessing.md) | Use explorers before guessing | Accepted |
-| [0075](0075-own-terminal-cleanup-in-the-binaries.md) | Own terminal cleanup in the binaries | Accepted |
+| [0075](0075-own-terminal-cleanup-in-the-binaries.md) | Own terminal cleanup in the binaries | Partially superseded by 0086 |
 | [0076](0076-separate-conflict-only-pr-resolution.md) | Separate conflict-only PR resolution | Accepted |
 | [0077](0077-hand-worker-permission-blocks-to-the-coordinator.md) | Hand worker permission blocks to the coordinator | Accepted |
 | [0078](0078-merge-onto-presets-into-light.md) | Merge onto fix and tweak into onto light | Accepted |
@@ -105,3 +105,4 @@ numbering: [`../agents/adr.md`](../agents/adr.md).
 | [0083](0083-pull-the-chosen-base-before-every-change.md) | Pull the chosen base before every change | Accepted |
 | [0084](0084-allow-draft-prs-at-any-phase.md) | Allow draft PRs at any phase | Accepted |
 | [0085](0085-bring-your-own-mcp-servers-and-skills.md) | Bring your own MCP servers and skills | Accepted |
+| [0086](0086-clean-up-at-close.md) | Clean up at close | Accepted |

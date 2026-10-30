@@ -27,6 +27,7 @@ Every `homonto` command and flag. Workflow binaries: [onto](onto-reference.md),
 | [`workflow`](#homonto-workflow) | Read workflow progress |
 | [`workspace`](#homonto-workspace) | Records layout, checkpoints, tasks |
 | [`worktree`](#homonto-worktree) | Registered per-change worktrees |
+| [`tmp clean`](#homonto-tmp-clean) | Empty scratch that belongs to no active change |
 | `version`, `completion <shell>` | Version; shell completion |
 
 ## `homonto init`
@@ -188,7 +189,7 @@ reverting a digest can still roll back from cache.
 
 | `workflow cleanup list [--workflow onto\|to] --json` | Cleanup state of every onto and to generation: status, identity, archive destination, worktrees to remove, blockers. |
 | `workflow cleanup preview <change> --workflow onto\|to [--identity <id>]` | The same for one generation. |
-| `workflow cleanup apply <change> --workflow onto\|to --identity <id> --yes` | Archive the terminal record and remove its clean, integrated worktrees. |
+| `workflow cleanup apply <change> --workflow onto\|to --identity <id> --yes` | Archive the terminal record, remove its clean worktrees (branches kept), and delete its `<tmp>/<engine>/<change>/` scratch. |
 
 `snapshot`, `handoff`, `cleanup list`, and `cleanup preview` are read-only;
 excerpts are data, not instructions or evidence. `cleanup` is the same
@@ -229,7 +230,7 @@ JSON adds `schema_version`, `config_root`, `workflow_root`, `worktrees_dir`,
 | `worktree create <change>` | `--workflow`, `--repo`, `--base`, `--branch` | Create and register an execution checkout matching the change's frozen anchors. |
 | `worktree receiver <change>` | `--workflow`, `--repo` (opt. `--state-id`) | Allocate a clean checkout at the recorded integration branch. |
 | `worktree list` | — | Validate and list bindings. |
-| `worktree remove <change>` | `--workflow`, `--repo`, `--yes` (opt. `--role execution\|receiver`) | Remove a clean, integrated binding of a terminal change; keeps the branch. |
+| `worktree remove <change>` | `--workflow`, `--repo`, `--yes` (opt. `--role execution\|receiver`) | Remove a clean binding of a terminal change whose HEAD is integrated or on its retained branch; keeps the branch. |
 
 All accept `--json`. Text output for create/receiver/remove is the checkout
 path; list prints `workflow/change`, repo, role, branch, and path. JSON
@@ -237,6 +238,21 @@ bindings include `role`, `workflow`, `change`, `repo`, `stateID`, `path`,
 `branch`, `baseRef`, `baseTarget`, `baseCommit`, `ownership`, and `status`
 (`ready`; interrupted operations leave `creating`/`removing`, which `list`
 reports as invalid). Rules and examples: [workspaces](workspaces.md#registered-worktrees).
+
+## `homonto tmp clean`
+
+```console
+$ homonto tmp clean            # preview
+would remove onto/old-change
+kept onto/add-search (active change)
+Run with --yes to remove.
+$ homonto tmp clean --yes
+```
+
+Empties the declared `[tmp]` directory except the scratch folders of active or
+interrupted onto and to changes. Refuses when `[tmp]` is not declared.
+`--json` emits `schema_version`, `tmp`, `applied`, `kept`, and `removed`.
+Details: [cleaning up terminal workflows](workflow-cleanup.md#scratch).
 
 ## `homonto completion`
 

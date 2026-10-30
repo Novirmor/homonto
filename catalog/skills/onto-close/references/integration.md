@@ -100,10 +100,10 @@ in its records owner and pushes it only when applicable and authorized. Legacy
 combined mode omits `--repo` for its implicit config receipt, plus records each
 selected sibling separately. Receipt completion is one-way and idempotent.
 
-After terminal integration, requested delivery checks and authorized cleanup, use
-registered
-`homonto worktree remove <name> --workflow onto --repo <alias> --yes`.
-A newly opened PR can still leave a source unintegrated for removal: retain it on
-refusal. Legacy raw worktrees use
+After terminal integration and requested delivery checks, run
+[terminal cleanup](../../homonto/references/execution.md#terminal-cleanup) at once:
+closing authorizes `onto cleanup apply`, which removes the registered worktrees
+and the change's scratch. A PR not merged yet does not block it; the retained
+branch keeps the commits. Legacy raw worktrees use
 [worktree-protocol.md](../../onto-build/references/worktree-protocol.md)'s exact-path
 clean/integrated teardown. Never force removal, prune around refusal or delete branches.

@@ -160,8 +160,8 @@ blocker it lists, then `cleanup apply <name> --identity <id> --yes`.
 
 **`cleanup apply` refuses.** `ineligible` means the change is still active or
 an onto integration receipt is missing: finish or abandon it. `blocked` names
-the reason: uncommitted or ignored record files (commit them), a dirty or
-unintegrated worktree, or two generations with one name (pass the
+the reason: uncommitted or ignored record files (commit them), a dirty
+worktree or one whose HEAD left its retained branch, or two generations with one name (pass the
 `--identity` from `cleanup list`).
 
 **Managed mutation blocked: pending checkpoint.** Fix the Git identity or hook

@@ -17,8 +17,6 @@ homonto:
   bash_ask: [
     "onto -*", "to -*",
     "onto bypass*", "to bypass*",
-    "onto cleanup apply*", "to cleanup apply*",
-    "homonto workflow cleanup apply*", "homonto -* workflow cleanup apply*",
     "git push --force*", "git push * --force*", "git push -f*", "git push * -f*",
     "git -* push --force*", "git -* push * --force*", "git -* push -f*", "git -* push * -f*",
     "git push --delete*", "git push * --delete*", "git push -d*", "git push * -d*",
@@ -138,9 +136,10 @@ its existing PR.
 - Give final skeptics a complete worker-readable evidence pack with
   candidate/base OIDs, diffs, literal commands, exit statuses and full output; a
   claim or prior coordinator output is not a pack.
-- Inspect terminal resources under `homonto/references/execution.md#terminal-cleanup`;
-  use the binary cleanup inventory and generation-bound apply, not manual deletion
-  or an agent-authored claim that cleanup succeeded.
+- Run cleanup at close under `homonto/references/execution.md#terminal-cleanup`:
+  closing a change authorizes it, so do not ask. Use the binary cleanup inventory
+  and generation-bound apply, not manual deletion or an agent-authored claim that
+  cleanup succeeded.
 
 ## One engine per task
 
@@ -312,7 +311,9 @@ you from fighting it:
   by editing projected files.
 - A config may declare `[tmp]` — one scratch directory inside the workspace that
   every writable agent (you, the implementers, and any custom agent) may use
-  freely with no prompts, already gitignored, never cleaned by homonto. When it
+  freely with no prompts, already gitignored. Put a change's scratch under
+  `<tmp>/<engine>/<change>/`: cleanup deletes it at close, and `homonto tmp
+  clean` empties scratch that belongs to no active change. When it
   is declared, `homonto apply` generates `references/tmp.md` in this skill and
   both dispatchers naming the path and the contract: put each workflow's
   transient files there instead of scattering `mktemp` results, whenever a later

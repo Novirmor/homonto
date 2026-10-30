@@ -32,6 +32,15 @@ list. Release candidates are folded into their stable release.
     projected is released — dropped from state, left on disk unchanged — and
     `plan` shows it as `>`.
   - `homonto explain` no longer has `mcp` / `projmcp` kinds.
+- **Cleanup runs at close (ADR 0086).** Closing an onto or to change
+  authorizes its cleanup: the coordinator runs `cleanup apply` without asking.
+  A worktree whose commits are only on its retained branch (a PR not merged
+  yet) is now removable; branches are still kept. Engine-free task cleanup
+  follows the same rule and keeps an unmerged task branch.
+- **Per-change scratch and `homonto tmp clean`.** A change keeps its scratch
+  under `<tmp>/<engine>/<change>/`, and cleanup deletes that folder.
+  `homonto tmp clean` previews, and with `--yes` removes, scratch that belongs
+  to no active change.
 - **Breaking: only the live version is supported (ADR 0081).**
   - `homonto workspace migrate` is removed, along with migration-adopted
     worktree bindings and retired-record handling. A registry entry adopted by

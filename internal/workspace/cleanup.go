@@ -102,9 +102,19 @@ func checkWorktreeRemoval(l Layout, w Worktree) (head, target string, removed bo
 	if err != nil {
 		return
 	}
-	if _, err = worktreeGit(w.Path, "merge-base", "--is-ancestor", head, target); err != nil {
-		err = fmt.Errorf("worktree: unmerged source commit %s is not integrated into configured base %q; refusing removal: %w", head, w.BaseRef, err)
+	if _, err = worktreeGit(w.Path, "merge-base", "--is-ancestor", head, target); err == nil {
+		return
 	}
+	// A closed change delivered through a PR is not in the base yet. Its commits
+	// stay safe on the retained execution branch, which removal never deletes
+	// (ADR 0086), so a HEAD that branch contains may go.
+	if w.Branch != "" {
+		if _, branchErr := worktreeGit(w.Path, "merge-base", "--is-ancestor", head, "refs/heads/"+w.Branch); branchErr == nil {
+			err = nil
+			return
+		}
+	}
+	err = fmt.Errorf("worktree: source commit %s is neither integrated into %q nor on the retained branch %q; refusing removal", head, w.BaseRef, w.Branch)
 	return
 }
 

@@ -1,6 +1,6 @@
 # One declared workspace tmp directory
 
-- **Status:** Accepted
+- **Status:** Partially superseded by [0086](0086-clean-up-at-close.md) (cleanup deletes a change's scratch; `homonto tmp clean`)
 - **Date:** 2026-09-06
 
 ## Context

@@ -1,6 +1,6 @@
 # Own terminal cleanup in the binaries
 
-- **Status:** Accepted
+- **Status:** Partially superseded by [0086](0086-clean-up-at-close.md) (cleanup runs at close; removal needs no integration into the base)
 - **Date:** 2026-10-27
 
 ## Context

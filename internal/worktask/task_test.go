@@ -180,9 +180,6 @@ func TestResumeEngineIsolationAndCleanup(t *testing.T) {
 	}
 	runGit(t, api, "add", ".")
 	runGit(t, api, "commit", "-m", "candidate")
-	if _, err := s.Cleanup(ctx, task.Name, true); err == nil {
-		t.Fatal("removed unintegrated candidate")
-	}
 	runGit(t, s.Layout.Repos["api"], "merge", "--ff-only", task.Checkouts["api"].Branch)
 	if _, err := s.Cleanup(ctx, task.Name, false); err == nil {
 		t.Fatal("cleanup without confirmation")
@@ -203,6 +200,30 @@ func TestResumeEngineIsolationAndCleanup(t *testing.T) {
 		if _, err := os.Stat(path); !os.IsNotExist(err) {
 			t.Fatalf("no created lifecycle/config Git state: %s", path)
 		}
+	}
+}
+
+// TestCleanupRemovesUnmergedCheckoutKeepingBranch covers ADR 0086: a task
+// delivered through a PR that is not merged yet is cleaned at once; its owned
+// branch keeps the commits instead of being released.
+func TestCleanupRemovesUnmergedCheckoutKeepingBranch(t *testing.T) {
+	s := fixture(t)
+	task := createNo(t, s, "worktree")
+	ctx := context.Background()
+	api := task.Checkouts["api"].Path
+	branch := task.Checkouts["api"].Branch
+	put(t, filepath.Join(api, "tracked"), "candidate\n")
+	runGit(t, api, "add", ".")
+	runGit(t, api, "commit", "-m", "candidate")
+	tip := runGit(t, api, "rev-parse", "HEAD")
+	if _, err := s.Cleanup(ctx, task.Name, true); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(api); !os.IsNotExist(err) {
+		t.Fatalf("owned checkout remains: %v", err)
+	}
+	if got := runGit(t, s.Layout.Repos["api"], "rev-parse", "refs/heads/"+branch); got != tip {
+		t.Fatalf("unmerged task branch = %q, want retained tip %s", got, tip)
 	}
 }
 

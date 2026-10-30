@@ -110,9 +110,10 @@ steps 1–2 on the new candidate before finishing.
    the terminal state and directory move; do not manually stage managed records.
    Existing mode retains the manual commit of `## Verification`, terminal state,
    and archive move in the records' Git owner. Source integration remains in
-   each source repo, never a merge of workflow history. Remove a registered
-   worktree only after source integration and authorized terminal cleanup via
-   `homonto worktree remove <name> --workflow to --repo <alias> --yes`.
+   each source repo, never a merge of workflow history. Once the change is done,
+   run [terminal cleanup](../homonto/references/execution.md#terminal-cleanup)
+   without asking: `to cleanup apply` removes the registered worktrees and the
+   change's scratch, and an unmerged PR keeps its commits on the retained branch.
 7. **Integration verification before push.** Integrate only the recorded verified
    candidate when integration/publication is authorized; this step grants no new
    push permission. Follow the shared [publication contract](../homonto/references/publication.md).

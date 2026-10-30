@@ -297,9 +297,15 @@ func TestWorktreeTerminalRemovalSafety(t *testing.T) {
 			wtGit(t, w.Path, "add", "tracked")
 			wtGit(t, w.Path, "commit", "-m", "source change")
 			wtState(t, l, workflow, "feature", "generation-one", true, "a", "b")
+			// A detached commit would be lost with the checkout: removal still
+			// refuses anything not on the retained branch.
+			wtGit(t, w.Path, "checkout", "--quiet", "--detach")
+			wtGit(t, w.Path, "commit", "--quiet", "--allow-empty", "-m", "orphan")
 			_, err = RemoveWorktree(l, workflow, "feature", "a", true)
-			wtError(t, err, "unmerged source commit")
-			wtGit(t, l.Repos["a"], "merge", "--ff-only", w.Branch)
+			wtError(t, err, "expected attached branch")
+			// Back on the retained branch: an unmerged closed change (a PR
+			// delivery) is removable because the branch keeps its commits.
+			wtGit(t, w.Path, "checkout", "--quiet", w.Branch)
 			for _, name := range []string{"untracked", "ignored"} {
 				if name == "ignored" {
 					wtWrite(t, filepath.Join(w.CommonDir, "info", "exclude"), "ignored\n")

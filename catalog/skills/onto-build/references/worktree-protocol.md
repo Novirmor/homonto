@@ -50,7 +50,7 @@ supports one binding per workflow/change/repo. Run same-repo tasks serially unti
 task-level bindings exist. Source commits stay there; workflow records stay at workflow.root.
 Integrate the verified source branch per onto-close, not the records history.
 
-After terminal state and source integration, with removal authorized:
+At close, without asking (closing authorizes removal; the branch is retained):
 
 ```sh
 homonto worktree remove <name> --workflow onto --repo <alias> --yes

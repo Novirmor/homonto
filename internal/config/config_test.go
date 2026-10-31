@@ -1575,3 +1575,26 @@ func TestMCPTablesAreRejected(t *testing.T) {
 		t.Fatalf("error must name the entry, got %v", err)
 	}
 }
+
+// validate promises the same error for the same config: within a section the
+// offender reported first is the lowest name, never whichever entry random
+// map order visited first.
+func TestValidateReportsLowestOffender(t *testing.T) {
+	cases := []struct{ name, doc, want string }{
+		{"skills", "[skills.zz]\nsource = \"builtin:handoff\"\n\n[skills.aa]\nsource = \"builtin:handoff\"\n\n[skills.mm]\nsource = \"builtin:handoff\"\n", "skills.aa "},
+		{"engines", "[engines.zz]\nsource = \"builtin:onto\"\nscope = \"bad\"\n\n[engines.aa]\nsource = \"builtin:onto\"\nscope = \"bad\"\n\n[engines.mm]\nsource = \"builtin:onto\"\nscope = \"bad\"\n", "engines.aa "},
+		{"subagents", "[subagents.zz]\nsource = \"builtin:x\"\nmode = \"bad\"\n\n[subagents.aa]\nsource = \"builtin:x\"\nmode = \"bad\"\n\n[subagents.mm]\nsource = \"builtin:x\"\nmode = \"bad\"\n", "subagents.aa "},
+		{"plugin sources", "[plugins.opencode.zz]\nsource = \"p\"\n\n[plugins.opencode.aa]\nsource = \"p\"\n\n[plugins.opencode.mm]\nsource = \"p\"\n", `"aa" and "mm"`},
+		{"settings", "[settings.opencode]\nplugin = 1\nmodel_variant = 1\nmcp = 1\n", `"mcp"`},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			for range 40 {
+				err := loadDoc(t, tc.doc)
+				if err == nil || !strings.Contains(err.Error(), tc.want) {
+					t.Fatalf("want error containing %q, got: %v", tc.want, err)
+				}
+			}
+		})
+	}
+}

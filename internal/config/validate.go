@@ -2,6 +2,7 @@ package config
 
 import (
 	"fmt"
+	"maps"
 	"path/filepath"
 	"slices"
 	"sort"
@@ -97,7 +98,7 @@ func validateWorkflow(c *Config) error {
 // cannot occupy both namespaces: model selection is dynamic, but a catalog
 // package has one role.
 func validatePackages(c *Config) error {
-	for name := range c.Workflows {
+	for _, name := range slices.Sorted(maps.Keys(c.Workflows)) {
 		if _, duplicate := c.Engines[name]; duplicate {
 			return fmt.Errorf("parse config: %q is declared as both a workflow and an engine", name)
 		}
@@ -353,7 +354,8 @@ func validatePlugins(c *Config) error {
 		// source would collide on one projected key with last-writer-wins over
 		// random map iteration order — a non-deterministic plan. Reject it.
 		seenSource := map[string]string{} // source -> first decl name
-		for declName, pl := range tool.m {
+		for _, declName := range sortedPluginNames(tool.m) {
+			pl := tool.m[declName]
 			if err := validateKey(tool.name, declName); err != nil {
 				return err
 			}
@@ -384,7 +386,7 @@ func validatePlugins(c *Config) error {
 // projects MCPs and plugins as the `mcp` and `plugin` structures in
 // opencode.jsonc.
 func validateSettingsAndTUI(c *Config) error {
-	for k := range c.Settings.OpenCode {
+	for _, k := range slices.Sorted(maps.Keys(c.Settings.OpenCode)) {
 		if err := validateKey("settings.opencode", k); err != nil {
 			return err
 		}
@@ -423,7 +425,8 @@ func validateKey(kind, name string) error {
 // validateResources checks name, scope, source, and targets for every declared
 // resource of a given kind (frameworks, skills, commands, subagents).
 func validateResources(kind string, resources map[string]Resource) error {
-	for name, r := range resources {
+	for _, name := range slices.Sorted(maps.Keys(resources)) {
+		r := resources[name]
 		if err := validateResourceName(kind, name); err != nil {
 			return err
 		}
@@ -468,7 +471,8 @@ func ownDir(kind string) string {
 // applied here. A bare name or a typo expands nothing and is rejected loudly
 // (F35); a digest on a builtin/local source is a no-op and rejected.
 func validateFrameworkResources(kind string, resources map[string]Resource) error {
-	for name, r := range resources {
+	for _, name := range slices.Sorted(maps.Keys(resources)) {
+		r := resources[name]
 		if err := validateResourceName(kind, name); err != nil {
 			return err
 		}
@@ -541,7 +545,8 @@ func validateLocalPlainName(label, source string) error {
 // omitted), and a mode of link. copy is reserved for the forthcoming copy-mode
 // projection and rejected until that lands, so the field is never a silent no-op.
 func validateSubagents(subagents map[string]Subagent) error {
-	for name, s := range subagents {
+	for _, name := range slices.Sorted(maps.Keys(subagents)) {
+		s := subagents[name]
 		if err := validateResourceName("subagents", name); err != nil {
 			return err
 		}

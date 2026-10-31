@@ -14,7 +14,6 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
-	"strings"
 
 	"github.com/Novirmor/homonto/internal/fsutil"
 )
@@ -106,6 +105,20 @@ func Plan(desired map[string][]byte, recorded map[string]string) ([]Op, error) {
 		if _, still := desired[dst]; still {
 			continue
 		}
+		fi, err := os.Lstat(dst)
+		if os.IsNotExist(err) {
+			continue // already gone
+		}
+		if err != nil {
+			return nil, err
+		}
+		// Ownership is of a regular file, not whatever now occupies its path.
+		// In particular, reading through a replacement symlink could match the
+		// recorded hash and authorize deleting a link we never created.
+		if !fi.Mode().IsRegular() {
+			ops = append(ops, Op{Dst: dst, Action: Conflict})
+			continue
+		}
 		cur, err := os.ReadFile(dst)
 		if os.IsNotExist(err) {
 			continue // already gone
@@ -149,7 +162,7 @@ func Apply(ops []Op, pruneRoots []string) (recorded map[string]string, pruned, r
 			// (F7). Delete only when it resolves under a managed root; otherwise
 			// refuse — the file is left intact and the caller retains ownership
 			// (the entry is not reported as pruned).
-			if !prunePermitted(op.Dst, pruneRoots) {
+			if !PrunePermitted(op.Dst, pruneRoots) {
 				refused = append(refused, op.Dst)
 				continue
 			}
@@ -166,19 +179,33 @@ func Apply(ops []Op, pruneRoots []string) (recorded map[string]string, pruned, r
 	return recorded, pruned, refused, nil
 }
 
-// prunePermitted reports whether dst resolves inside one of roots — the managed
-// provider directories a copy-mode file may legitimately live in. Both dst and
-// each root are cleaned first, so an absolute foreign path or a traversal that
-// escapes (…/root/../elsewhere) is rejected. An empty root set permits nothing
-// (fail-closed): a prune with no confinement roots is never allowed to delete.
-func prunePermitted(dst string, roots []string) bool {
-	clean := filepath.Clean(dst)
+// PrunePermitted reports whether dst is below a managed provider directory,
+// with no symlinked parents inside that root. The root itself may be an alias
+// (e.g. a dotfiles-managed agent directory). Callers must check before backing
+// up a de-declared local edit as well as before deleting it.
+// An empty root set permits nothing; a root itself is never a prune target.
+func PrunePermitted(dst string, roots []string) bool {
+	clean, err := filepath.Abs(dst)
+	if err != nil {
+		return false
+	}
 	for _, root := range roots {
 		if root == "" {
 			continue
 		}
-		root = filepath.Clean(root)
-		if clean == root || strings.HasPrefix(clean, root+string(os.PathSeparator)) {
+		root, err := filepath.Abs(root)
+		if err != nil {
+			continue
+		}
+		rel, err := filepath.Rel(root, clean)
+		if err != nil || rel == "." || !filepath.IsLocal(rel) {
+			continue
+		}
+		realRoot, err := filepath.EvalSymlinks(root)
+		if err != nil {
+			continue
+		}
+		if fsutil.RequireRealParents(realRoot, filepath.Join(realRoot, filepath.Dir(rel))) == nil {
 			return true
 		}
 	}

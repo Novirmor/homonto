@@ -11,6 +11,7 @@ package copyproj
 
 import (
 	"fmt"
+	"os"
 	"path/filepath"
 	"strings"
 
@@ -62,7 +63,22 @@ func Apply(tool string, desired map[string][]byte, st *state.State, pruneRoots [
 		case copyfile.Conflict:
 			return fmt.Errorf("%s: %s exists and is not a homonto-managed copy-mode subagent; not overwriting", tool, op.Dst)
 		case copyfile.LocalEdit:
-			if err := fsutil.WriteAtomic(op.Dst+".bak", op.OnDisk); err != nil {
+			// A refused removal must not write its backup outside the managed
+			// roots either. Leave the op and its state record untouched.
+			if op.Content == nil && !copyfile.PrunePermitted(op.Dst, pruneRoots) {
+				continue
+			}
+			backup := op.Dst + ".bak"
+			// Unlike tool configs, backups are regular content files. Following
+			// a foreign .bak symlink would overwrite its user's target.
+			if info, err := os.Lstat(backup); err == nil {
+				if !info.Mode().IsRegular() {
+					return fmt.Errorf("%s: backup %s is not a regular file; not overwriting", tool, backup)
+				}
+			} else if !os.IsNotExist(err) {
+				return err
+			}
+			if err := fsutil.WriteAtomic(backup, op.OnDisk); err != nil {
 				return err
 			}
 			if op.Content == nil {

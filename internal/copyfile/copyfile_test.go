@@ -132,6 +132,45 @@ func TestPlanPruneAndPruneLocalEdit(t *testing.T) {
 	}
 }
 
+func TestPlanPruneRejectsReplacedFile(t *testing.T) {
+	for _, kind := range []string{"matching symlink", "changed symlink", "dangling symlink", "directory"} {
+		t.Run(kind, func(t *testing.T) {
+			dir := t.TempDir()
+			p := filepath.Join(dir, "agent.md")
+			target := filepath.Join(dir, "user-agent.md")
+			original := []byte("managed content")
+			if kind == "directory" {
+				if err := os.Mkdir(p, 0o755); err != nil {
+					t.Fatal(err)
+				}
+			} else {
+				if kind == "matching symlink" {
+					write(t, target, original)
+				} else if kind == "changed symlink" {
+					write(t, target, []byte("user content"))
+				}
+				if err := os.Symlink(target, p); err != nil {
+					t.Fatal(err)
+				}
+			}
+			ops, err := Plan(nil, map[string]string{p: Hash(original)})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got := find(t, ops, p).Action; got != Conflict {
+				t.Fatalf("replaced copy-mode file must be a conflict on removal, got %s", got)
+			}
+			_, pruned, _, err := Apply(ops, []string{dir})
+			if err != nil || len(pruned) != 0 {
+				t.Fatalf("Apply: pruned = %v, err = %v", pruned, err)
+			}
+			if _, err := os.Lstat(p); err != nil {
+				t.Fatalf("user replacement removed: %v", err)
+			}
+		})
+	}
+}
+
 func TestApplyWritesPrunesAndRecords(t *testing.T) {
 	dir := t.TempDir()
 	create := filepath.Join(dir, "create.md")
@@ -243,6 +282,62 @@ func TestApplyRefusesAllPrunesWithoutRoots(t *testing.T) {
 	}
 	if len(pruned) != 0 || len(refused) != 1 {
 		t.Fatalf("pruned=%v refused=%v; want no prune, one refusal", pruned, refused)
+	}
+}
+
+func TestApplyRefusesPruneThroughEscapingParent(t *testing.T) {
+	root := t.TempDir()
+	outside := t.TempDir()
+	victim := filepath.Join(outside, "agent.md")
+	write(t, victim, []byte("user content"))
+	if err := os.Symlink(outside, filepath.Join(root, "escape")); err != nil {
+		t.Fatal(err)
+	}
+	dst := filepath.Join(root, "escape", "agent.md")
+	_, pruned, refused, err := Apply([]Op{{Dst: dst, Action: Prune}}, []string{root})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, err := os.ReadFile(victim); err != nil || string(got) != "user content" {
+		t.Fatalf("prune escaped the managed root: content = %q, err = %v", got, err)
+	}
+	if len(pruned) != 0 || len(refused) != 1 || refused[0] != dst {
+		t.Fatalf("pruned = %v, refused = %v; want only a refusal", pruned, refused)
+	}
+}
+
+func TestApplyRefusesPruningRootItself(t *testing.T) {
+	root := t.TempDir()
+	_, pruned, refused, err := Apply([]Op{{Dst: root, Action: Prune}}, []string{root})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(root); err != nil {
+		t.Fatalf("managed root removed: %v", err)
+	}
+	if len(pruned) != 0 || len(refused) != 1 {
+		t.Fatalf("pruned = %v, refused = %v; want root refused", pruned, refused)
+	}
+}
+
+func TestApplyPrunesWithinSymlinkedRoot(t *testing.T) {
+	dir := t.TempDir()
+	root := filepath.Join(dir, "agents")
+	realRoot := t.TempDir()
+	if err := os.Symlink(realRoot, root); err != nil {
+		t.Fatal(err)
+	}
+	dst := filepath.Join(root, "agent.md")
+	write(t, dst, []byte("managed content"))
+	_, pruned, refused, err := Apply([]Op{{Dst: dst, Action: Prune}}, []string{root})
+	if err != nil || len(pruned) != 1 || len(refused) != 0 {
+		t.Fatalf("prune in aliased root: pruned = %v, refused = %v, err = %v", pruned, refused, err)
+	}
+	if _, err := os.Stat(filepath.Join(realRoot, "agent.md")); !os.IsNotExist(err) {
+		t.Fatalf("managed file not removed: %v", err)
+	}
+	if _, err := os.Readlink(root); err != nil {
+		t.Fatalf("root alias not preserved: %v", err)
 	}
 }
 

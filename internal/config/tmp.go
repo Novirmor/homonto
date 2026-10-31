@@ -71,7 +71,7 @@ func validateTmp(c *Config) error {
 	// or inside the records root would gitignore real workflow records (dir ==
 	// root writes "/root/" into .gitignore) or bury scratch inside the
 	// audited tree the dirt gates and discovery watch.
-	root := c.Workflow.RootOrDefault()
+	root := filepath.ToSlash(filepath.Clean(strings.TrimSpace(c.Workflow.RootOrDefault())))
 	if pathOverlaps(dir, root) {
 		return fmt.Errorf("parse config: [tmp] dir %q overlaps the workflow records root %q", dir, root)
 	}

@@ -282,6 +282,45 @@ func loadPaths(configPath string) (l Layout, err error) {
 	return l, nil
 }
 
+// RequireScratchDisjoint refuses a scratch directory that cleanup may empty
+// when it overlaps the workflow records or the worktrees parent, or contains a
+// declared repository. Paths compare canonically, so a spelling such as
+// "./docs" or a symlink cannot disguise the overlap. Scratch inside a source
+// repository (a combined config root) stays allowed; it is gitignored there.
+func (l Layout) RequireScratchDisjoint(dir string) error {
+	dir, err := canonical(dir)
+	if err != nil {
+		return err
+	}
+	for _, owned := range []struct{ key, path string }{{"workflow.root", l.WorkflowRoot}, {"worktrees.dir", l.WorktreesDir}} {
+		if owned.path == "" {
+			continue
+		}
+		path, err := canonical(owned.path)
+		if err != nil {
+			return err
+		}
+		if overlaps(dir, path) {
+			return fmt.Errorf("[tmp] dir %q overlaps %s %q", dir, owned.key, path)
+		}
+	}
+	names := make([]string, 0, len(l.Repos))
+	for name := range l.Repos {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	for _, name := range names {
+		repo, err := canonical(l.Repos[name])
+		if err != nil {
+			return err
+		}
+		if within(dir, repo) {
+			return fmt.Errorf("[tmp] dir %q contains repos.%s %q", dir, name, repo)
+		}
+	}
+	return nil
+}
+
 func layoutPath(base, p string) (string, error) {
 	if strings.TrimSpace(p) == "" || strings.ContainsAny(p, "*?\\") || strings.IndexFunc(p, unicode.IsControl) >= 0 {
 		return "", fmt.Errorf("invalid path %q", p)

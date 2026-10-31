@@ -6,7 +6,6 @@ import (
 	"path/filepath"
 	"sort"
 
-	"github.com/noviopenworks/homonto/internal/config"
 	"github.com/noviopenworks/homonto/internal/workflowstatus"
 	"github.com/noviopenworks/homonto/internal/workspace"
 )
@@ -26,7 +25,7 @@ type TmpReport struct {
 // it is active or interrupted, or when its record could not be read.
 func TmpClean(l workspace.Layout, yes bool) (TmpReport, error) {
 	r := TmpReport{SchemaVersion: SchemaVersion, Applied: yes, Kept: []string{}, Removed: []string{}}
-	root, err := config.ReadTmp(l.ConfigPath)
+	root, err := scratchRoot(l)
 	if err != nil {
 		return r, err
 	}

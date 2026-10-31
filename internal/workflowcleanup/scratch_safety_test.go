@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/noviopenworks/homonto/internal/workflowcleanup"
+	"github.com/noviopenworks/homonto/internal/workspace"
 )
 
 func TestOldGenerationKeepsReusedNameScratch(t *testing.T) {
@@ -87,6 +88,44 @@ func TestTmpCleanRefusesIncompleteWorkflowInventory(t *testing.T) {
 				if _, err := os.Stat(path); err != nil {
 					t.Fatalf("deleted active scratch despite failed inventory: %v", err)
 				}
+			}
+		})
+	}
+}
+
+// A [tmp] dir that overlaps an owned tree must never be emptied: config
+// validation compares spellings, so the sweep rechecks canonical paths.
+func TestTmpCleanRefusesScratchOverlappingOwnedTrees(t *testing.T) {
+	for _, tc := range []struct{ name, config, dir, keep string }{
+		{"dotted workflow root", "root = 'records'\n", "./records", "records/changes"},
+		{"worktrees parent", "", "execution", "execution/keep.txt"},
+		{"repository", "", "source", "source/source.txt"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			l := fixture(t)
+			cfg, err := os.ReadFile(l.ConfigPath)
+			if err != nil {
+				t.Fatal(err)
+			}
+			doc := string(cfg)
+			if tc.config != "" {
+				doc = strings.Replace(doc, "root = 'records'\n", "root = './records'\n", 1)
+			}
+			write(t, l.ConfigPath, doc+"[tmp]\ndir = '"+tc.dir+"'\n")
+			keep := filepath.Join(l.ConfigRoot, filepath.FromSlash(tc.keep))
+			if _, err := os.Stat(keep); os.IsNotExist(err) {
+				write(t, keep, "owned\n")
+			}
+			if l, err = workspace.Load(l.ConfigPath); err != nil {
+				t.Fatal(err)
+			}
+			for _, yes := range []bool{false, true} {
+				if r, err := workflowcleanup.TmpClean(l, yes); err == nil || !strings.Contains(err.Error(), "[tmp] dir") {
+					t.Fatalf("yes=%v accepted overlapping scratch %q: %+v, %v", yes, tc.dir, r, err)
+				}
+			}
+			if _, err := os.Stat(keep); err != nil {
+				t.Fatalf("owned content removed: %v", err)
 			}
 		})
 	}

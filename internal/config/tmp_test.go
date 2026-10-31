@@ -1,6 +1,8 @@
 package config
 
 import (
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -56,6 +58,7 @@ func TestTmpValidation(t *testing.T) {
 		{"workflow root", "[tmp]\ndir = \"docs\"\n", "workflow records root"},
 		{"inside workflow root", "[tmp]\ndir = \"docs/tmp\"\n", "workflow records root"},
 		{"custom workflow root", "[workflow]\nroot = \"records\"\n\n[tmp]\ndir = \"records\"\n", "workflow records root"},
+		{"dotted workflow root", "[workflow]\nroot = \"./records\"\n\n[tmp]\ndir = \"records\"\n", "workflow records root"},
 		{"projection target", "[tmp]\ndir = \".opencode/scratch\"\n", "homonto owns"},
 		{"local skills root", "[tmp]\ndir = \"homonto\"\n", "homonto owns"},
 		{"materialized catalog", "[tmp]\ndir = \".homonto/catalog/x\"\n", "homonto owns"},
@@ -71,5 +74,18 @@ func TestTmpValidation(t *testing.T) {
 	// .homonto/tmp is legitimate: already covered by the scaffolded ignore.
 	if err := loadDoc(t, "[tmp]\ndir = \".homonto/tmp\"\n"); err != nil {
 		t.Fatalf(".homonto/tmp must validate: %v", err)
+	}
+}
+
+// ReadTmp skips the full load that cleans workflow.root, so its own [tmp]
+// check must compare the cleaned spelling or "./records" hides the overlap.
+func TestReadTmpRefusesDottedWorkflowRoot(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "homonto.toml")
+	doc := "[workflow]\nroot = \"./records\"\n\n[tmp]\ndir = \"records\"\n"
+	if err := os.WriteFile(path, []byte(doc), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := ReadTmp(path); err == nil || !strings.Contains(err.Error(), "workflow records root") {
+		t.Fatalf("want workflow records root overlap, got: %v", err)
 	}
 }

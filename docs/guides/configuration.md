@@ -476,7 +476,8 @@ itself never deletes the directory's contents.
 
 `dir` must be relative, below the config root, and may not overlap `.git`,
 `.opencode/`, `homonto/`, the workflow root, or `.homonto/{catalog,remote,cache}`.
-`[tmp]` takes only `dir`:
+Cleanup and `tmp clean` also refuse a `dir` that overlaps `[worktrees] dir` or
+contains a `[repos]` checkout. `[tmp]` takes only `dir`:
 
 ```text
 tmp.path ".tmp" is an unknown key — [tmp] takes only dir

@@ -297,7 +297,7 @@ func finishCleanup(l workspace.Layout, p Plan) error {
 // changeTmp returns the change's existing scratch folder, or "" when [tmp] is
 // undeclared or the folder is absent.
 func changeTmp(l workspace.Layout, workflow, change string) (string, error) {
-	root, err := config.ReadTmp(l.ConfigPath)
+	root, err := scratchRoot(l)
 	if err != nil || root == "" {
 		return "", err
 	}
@@ -308,6 +308,19 @@ func changeTmp(l workspace.Layout, workflow, change string) (string, error) {
 		return "", err
 	}
 	return dir, nil
+}
+
+// scratchRoot resolves the declared [tmp] directory, or "" when undeclared.
+// Cleanup deletes below it, so it must not overlap a tree the workspace owns.
+func scratchRoot(l workspace.Layout) (string, error) {
+	root, err := config.ReadTmp(l.ConfigPath)
+	if err != nil || root == "" {
+		return "", err
+	}
+	if err := l.RequireScratchDisjoint(root); err != nil {
+		return "", fmt.Errorf("tmp: %w", err)
+	}
+	return root, nil
 }
 
 // removeTmp deletes one scratch entry below the config root. A symlink is

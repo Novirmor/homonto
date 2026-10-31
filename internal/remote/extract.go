@@ -46,8 +46,21 @@ func ValidateTarGz(r io.Reader, lim Limits) (Tree, error) {
 	}
 	defer zr.Close()
 	// Bound decompressed input: one extra byte lets us detect an overflow read.
-	bounded := io.LimitReader(zr, lim.MaxTotalBytes+1)
-	return ValidateTar(bounded, lim)
+	bounded := &io.LimitedReader{R: zr, N: lim.MaxTotalBytes + 1}
+	tree, err := ValidateTar(bounded, lim)
+	if err != nil {
+		return Tree{}, err
+	}
+	// tar stops at its end marker, before gzip necessarily checks its trailer.
+	// Drain through the same bound to validate the checksum and count padding
+	// and additional gzip members without allowing unbounded decompression.
+	if _, err := io.Copy(io.Discard, bounded); err != nil {
+		return Tree{}, fmt.Errorf("remote: gzip: %w", err)
+	}
+	if bounded.N == 0 {
+		return Tree{}, fmt.Errorf("remote: archive exceeds the %d-byte decompressed cap", lim.MaxTotalBytes)
+	}
+	return tree, nil
 }
 
 // ValidateTar streams a tar archive, rejecting absolute paths, ".." traversal,
@@ -73,6 +86,12 @@ func ValidateTar(r io.Reader, lim Limits) (Tree, error) {
 		count++
 		if count > lim.MaxEntries {
 			return Tree{}, fmt.Errorf("remote: archive exceeds %d entries", lim.MaxEntries)
+		}
+
+		// Standard tar commands include the archive root when packing `.`.
+		// It is harmless only as a directory, not as a file or link.
+		if hdr.Typeflag == tar.TypeDir && (hdr.Name == "." || hdr.Name == "./") {
+			continue
 		}
 
 		clean, err := safeMemberPath(hdr.Name)

@@ -17,75 +17,47 @@ Windows on amd64 and arm64. Each binary is a separate archive, and one
 [installation guide](https://github.com/Novirmor/homonto/blob/main/docs/guides/installation.md).
 Earlier releases: [CHANGELOG.md](https://github.com/Novirmor/homonto/blob/main/CHANGELOG.md).
 
-### v0.36.0 — fresh bases, bring-your-own tools, and safe cleanup
+### v0.36.1 — safer cleanup, remote sources, and installation
 
-Breaking configuration change. All three binaries are stamped v0.36.0.
-The embedded catalog is 0.36.0 (onto 0.28.0, to 0.25.0, h 0.14.0, and no 0.3.0).
+All three binaries are stamped v0.36.1. The embedded catalog is 0.36.1
+(onto 0.28.0, to 0.25.0, h 0.14.0, and no 0.3.0).
 
-- **New changes start from a freshly pulled base (ADR 0083).** Before `onto
-  new` or `to new`, the workflow skills ask which branch each repo starts from,
-  then run the new `homonto workspace pull --repo <alias> --branch <branch>`.
-  It fetches the upstream and fast-forwards only that local branch. It refuses
-  a diverged branch, a missing upstream, a failed fetch, or a dirty checkout of
-  the branch, and never merges or resets.
-- **Draft PRs at any phase (ADR 0084).** The coordinator can open a draft PR
-  whatever the verify result or the skeptics say, listing the phase, verify
-  result and open findings. A draft records no receipt and changes no gate; at
-  close the verified candidate is delivered to it and it is marked ready.
-- **`[integration.<name>] repos = ["*"]` covers every declared repository.**
-  The check is selected when any repository changes and runs against all of
-  their checkouts. `"*"` must be the only entry.
-- **Breaking: MCP servers and your own skills and commands are
-  bring-your-own (ADR 0085).**
-  - `[mcps.*]`, `mcp` under `[settings.opencode]`, and `local:` sources on
-    `[skills.*]` / `[commands.*]` fail at load and name the fix. Builtin
-    skills and commands, and `local:` agents and packages, are unchanged.
-  - Configure MCP servers in your own `opencode.jsonc` and put skills and
-    commands in `.opencode/skills/` and `.opencode/command/` (or the
-    `~/.config/opencode/` equivalents).
-  - Upgrading: delete those tables and apply once. What an earlier release
-    projected is released — dropped from state, left on disk unchanged — and
-    `plan` shows it as `>`.
-  - `homonto explain` no longer has `mcp` / `projmcp` kinds.
-- **Cleanup runs at close (ADR 0086).** Closing an onto or to change
-  authorizes its cleanup: the coordinator runs `cleanup apply` without asking.
-  A worktree whose commits are only on its retained branch (a PR not merged
-  yet) is now removable; branches are still kept. Engine-free task cleanup
-  follows the same rule and keeps an unmerged task branch.
-- **Per-change scratch and `homonto tmp clean`.** A change keeps its scratch
-  under `<tmp>/<engine>/<change>/`, and cleanup deletes that folder.
-  `homonto tmp clean` previews, and with `--yes` removes, scratch that belongs
-  to no active change.
-- **Scratch deletion is generation-safe.** Cleanup retains scratch when a
-  name belongs to multiple generations. The global sweep refuses incomplete
-  workflow inventories, and deletion holds the lifecycle/name lock.
-- **Moved-repository handover preserves user links.** Former local skill and
-  command links are released unchanged at both project and user scope, even
-  when the repository moved before upgrading.
-- **`to-done` cleans up after delivery.** Integration verification and confirmed
-  source delivery precede cleanup; blocked delivery retains receivers,
-  execution worktrees, and scratch for recovery.
-- **Release lineage reconciled.** v0.35.0's state-schema guards, guarded
-  `onto scale --set`, permission handbacks, and regression tests remain present.
+- **Preserve user files and links.** Atomic config writes refuse unresolved
+  symlinks instead of replacing them. Copy-mode removal refuses user-replaced
+  symlinks and directory traversal through symlinked parents. Backups obey the
+  same removal boundary and refuse foreign `.bak` symlinks. Fallback skill and
+  command cleanup prunes only managed links.
+- **Keep scratch cleanup confined.** Canonical-path checks reject scratch
+  directories that overlap repository, workflow, or other owned trees.
+- **Validate complete remote archives.** Gzip checksum, truncation, and size
+  checks cover the full decompressed stream. Standard tarballs containing a
+  `./` root directory are accepted without weakening traversal checks.
+- **Redact remote credentials in failures.** HTTP errors, redirects, Git
+  diagnostics, malformed URLs, and `remote:`-prefixed locators no longer expose
+  the credentials covered by locator redaction. Original transport error causes
+  remain inspectable.
+- **Handle filesystem aliases and config encoding.** All three binaries resolve
+  symlinked working directories and explicit directory/config roots. A UTF-8
+  byte-order mark at the start of `homonto.toml` is accepted.
+- **More reliable diagnostics and spec merging.** Config validation, missing
+  secret references, and foreign-link errors report offenders deterministically.
+  Missing onto layout directories name `onto init` as the repair. Fenced code in
+  specs is preserved as body text during delta merges.
+- **Canonical installation paths.** Release downloads use `Novirmor/homonto`.
+  **Go install path change (ADR 0088):** use
+  `github.com/Novirmor/homonto@v0.36.1`, with `/cmd/onto` and `/cmd/to` for the
+  workflow binaries. Tags through v0.36.0 retain the old
+  `github.com/noviopenworks/homonto` module path.
+- **Pinned development tools.** `mise trust && mise install` provisions the
+  development toolchain, and the gate checks for pin drift.
 
-**Upgrade:** remove `[mcps.*]`, `mcp` under `[settings.opencode]`, and standalone
-`local:` skill/command declarations from `homonto.toml`; keep their OpenCode
-files. Install all three matching v0.36.0 binaries, run `homonto plan` and
-`homonto apply`, and restart OpenCode. Released links remain byte-for-byte;
-an absolute user link stranded by a repository move must be repaired by its owner.
+**Upgrade:** install all three matching v0.36.1 binaries, run `homonto plan`
+and `homonto apply`, and restart OpenCode. No configuration or workflow-state
+schema change is introduced by this patch.
 
 **Automated release gate:** race tests, vulnerability scanning, all nine Docker
 E2E suites, and release packaging are required before tagging. The release
 workflow repeats the complete gate before publishing.
-
-**Accepted validation gaps for v0.36.0:** the owner approved publication with
-the release checklist's live checks outstanding: the real OpenCode 2 host
-(plugin loading, panel, reload/unload, tools, context/compaction, idle
-notifications, permission observer, and V1 link removal); native GitHub draft
-denial/approval and authorization-boundary checks; real GitHub sandbox sends,
-receipts, actor/destination/PR changes, and uncertain-send reconciliation; and
-live-host migration checks in both directions. Automated contracts do not
-establish these live behaviors. This exception applies only to v0.36.0.
 
 ## Known limitations
 

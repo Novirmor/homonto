@@ -67,6 +67,9 @@ printf '[settings.opencode]\nshare = "manual"\n' > "$work/homonto.toml"
 step "agent docs reference only things that exist"
 ./scripts/agents-doc-check.sh
 
+step "tool pins agree (mise.toml, workflows)"
+./scripts/tool-pins-check.sh
+
 step "workflow skills shell out (no direct state writes)"
 ./scripts/onto-skills-shell-out-check.sh
 

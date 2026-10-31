@@ -1,6 +1,7 @@
 # Developer entry points (https://taskfile.dev). `task` lists them. The Go
-# toolchain is pinned by go.mod; `task tools` installs the pinned linter. The
-# pre-tag gate is scripts/gate.sh (`task gate`).
+# toolchain is pinned by go.mod; `mise install` (mise.toml) provisions every
+# pinned tool, or `task tools` installs just the linter. The pre-tag gate is
+# scripts/gate.sh (`task gate`).
 version: "3"
 
 vars:
@@ -80,7 +81,7 @@ tasks:
       - go tool cover -func=cover.out | tail -1
 
   check:
-    desc: "Fast pre-push check: gofmt, vet, lint, doc references, tests"
+    desc: "Fast pre-push check: gofmt, vet, lint, doc references, tool pins, tests"
     cmds:
       - cmd: |
           unformatted="$(gofmt -l .)"
@@ -89,11 +90,16 @@ tasks:
       - task: vet
       - task: lint
       - task: docs-check
+      - task: pins-check
       - task: test
 
   docs-check:
     desc: Agent docs and catalog reference only things that exist
     cmd: ./scripts/agents-doc-check.sh
+
+  pins-check:
+    desc: mise.toml and workflow tool pins match go.mod and scripts/gate.sh
+    cmd: ./scripts/tool-pins-check.sh
 
   vuln:
     desc: govulncheck under the pinned toolchain

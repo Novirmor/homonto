@@ -1,0 +1,12 @@
+# Developer toolchain (https://mise.jdx.dev): `mise trust && mise install`
+# puts every tool the tasks and the gate call on PATH. Taskfile.yml stays the
+# entry point (ADR 0087). The go and golangci-lint pins mirror go.mod's
+# toolchain and scripts/gate.sh; scripts/tool-pins-check.sh fails on drift.
+# Per-developer overrides go in mise.local.toml (gitignored).
+
+[tools]
+go = "1.26.10"
+golangci-lint = "2.12.2"
+task = "3.46.4"
+node = "24"
+pre-commit = "4.6.0"

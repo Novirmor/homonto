@@ -39,9 +39,13 @@ grounding you used when it affects a conclusion.
 
 ## Tooling
 
-`task` lists the developer tasks ([`Taskfile.yml`](Taskfile.yml)). go.mod pins
-the Go toolchain; `task tools` installs the pinned golangci-lint. Pre-commit
-hooks are in `.pre-commit-config.yaml` (`pre-commit install`).
+`task` lists the developer tasks ([`Taskfile.yml`](Taskfile.yml)).
+`mise trust && mise install` provisions the pinned Go, golangci-lint, task,
+Node, and pre-commit from [`mise.toml`](mise.toml)
+([ADR 0087](docs/adr/0087-provision-dev-tools-with-mise.md)); without mise,
+go.mod pins the Go toolchain and `task tools` installs the pinned
+golangci-lint. Pre-commit hooks are in `.pre-commit-config.yaml`
+(`pre-commit install`).
 
 ## Verification
 

@@ -14,6 +14,7 @@ Routine work does not need the full gate. `task` lists every task.
 | Tests CodeGraph links to your changes | `task affected` (lists them; [codegraph.md](codegraph.md)) |
 | Concurrency-sensitive | add `-race`, or `task race` |
 | Compile-wide effect | `task vet` and `task lint` |
+| Tool pin bump | `task pins-check` |
 | Formatting | `gofmt -l .` (empty output means clean), `task fmt` to fix |
 | Before pushing | `task check`: gofmt, vet, lint, doc references, all tests |
 | Everything, pre-tag | `task gate` (`./scripts/gate.sh`) |
@@ -28,8 +29,8 @@ a while — do not reach for it to check a one-package edit.
 
 In order: `gofmt -l`, `go mod tidy -diff`, `go vet`, `golangci-lint`,
 `go build`, `go test`, `go test -race`, version-stamp smoke for all three
-binaries, a CLI plan smoke, the agent-docs reference check, the workflow-skills
-shell-out check, the OpenCode permission-telemetry contract (needs Node 24),
+binaries, a CLI plan smoke, the agent-docs reference check, the tool-pin
+check, the workflow-skills shell-out check, the OpenCode permission-telemetry contract (needs Node 24),
 the installer's mocked-network tests, `govulncheck`, and the triple-binary
 Docker E2E suites, including a release-packaging smoke.
 
@@ -41,16 +42,18 @@ CI — one of the few places where that inference is sound.
 **The lint config is part of the gate.** `.golangci.yml` is checked by
 `task lint`, the pre-commit hook, and the gate. The golangci-lint version is
 pinned once, as `GOLANGCI_LINT_VERSION` in `scripts/gate.sh`; `Taskfile.yml`
-reads it from there, and `task tools` installs that version. `task lint` and
-the pre-commit hook run whatever `golangci-lint` is on `PATH`, so run
-`task tools` after a bump. Prefer fixing a finding over excluding it. An
+reads it from there, and `task tools` installs that version. `mise.toml`
+carries a copy for `mise install`. `task lint` and the pre-commit hook run
+whatever `golangci-lint` is on `PATH`, so run `mise install` (or
+`task tools`) after a bump. Prefer fixing a finding over excluding it. An
 exclusion carries a comment saying why.
 
-**The Go toolchain is pinned in three places.** `go.mod`'s `toolchain` line is
-what builds, tests, the gate, and `task tools` use. `.github/workflows/ci.yml`
-and `release.yml` provision Go with `setup-go`, whose `go-version` must match
-it. An older provisioned Go lets `govulncheck@latest` downgrade and fail the
-gate before it starts, so bump all three together.
+**The Go toolchain is pinned in four places.** `go.mod`'s `toolchain` line is
+what builds, tests, the gate, and `task tools` use. `mise.toml`, and the
+`setup-go` `go-version` in `.github/workflows/ci.yml` and `release.yml`, must
+match it. An older provisioned Go lets `govulncheck@latest` downgrade and fail
+the gate before it starts, so bump them together; `task pins-check` (also in
+`task check` and the gate) fails on any copy that drifted.
 
 **No base, no answer.** `task test-changed` and `task affected` diff against
 `main`, falling back to `origin/main`. If neither resolves (a shallow CI

@@ -32,3 +32,6 @@ test/e2e/.out/
 # ignores itself). Kept ignored so leftover output is never committed.
 /okf_bundle/
 /graphify-out/
+
+# Per-developer mise overrides (mise.toml holds the shared pins).
+/mise.local.toml

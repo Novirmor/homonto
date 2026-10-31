@@ -106,3 +106,4 @@ numbering: [`../agents/adr.md`](../agents/adr.md).
 | [0084](0084-allow-draft-prs-at-any-phase.md) | Allow draft PRs at any phase | Accepted |
 | [0085](0085-bring-your-own-mcp-servers-and-skills.md) | Bring your own MCP servers and skills | Accepted |
 | [0086](0086-clean-up-at-close.md) | Clean up at close | Accepted |
+| [0087](0087-provision-dev-tools-with-mise.md) | Provision dev tools with mise | Accepted |

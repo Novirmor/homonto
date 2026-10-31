@@ -217,3 +217,23 @@ func syncDirectory(dir string) error {
 	defer f.Close()
 	return f.Sync()
 }
+
+// UseRealWorkingDirectory moves the process to the real path of its working
+// directory. A shell started in a symlinked directory (macOS /tmp, a linked
+// ~/code) exports that logical path as $PWD, which os.Getwd returns, so every
+// relative path would carry the link into a workspace root where symlinked
+// parents are refused. Each binary calls it once, before reading any path.
+func UseRealWorkingDirectory() error {
+	wd, err := os.Getwd()
+	if err != nil {
+		return err
+	}
+	real, err := filepath.EvalSymlinks(wd)
+	if err != nil || real == wd {
+		return err
+	}
+	if err := os.Chdir(real); err != nil {
+		return err
+	}
+	return os.Setenv("PWD", real)
+}

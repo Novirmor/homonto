@@ -150,3 +150,35 @@ func TestRenameDurableSyncFailureLeavesMovedDestination(t *testing.T) {
 		t.Fatalf("source still exists after rename: %v", err)
 	}
 }
+
+// A shell in a symlinked directory reports the logical path through $PWD;
+// after the switch every relative path resolves through the real directory.
+func TestUseRealWorkingDirectory(t *testing.T) {
+	base, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	real := filepath.Join(base, "real")
+	if err := os.Mkdir(real, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	link := filepath.Join(base, "link")
+	if err := os.Symlink(real, link); err != nil {
+		t.Fatal(err)
+	}
+	t.Chdir(link)
+	t.Setenv("PWD", link)
+	if wd, _ := os.Getwd(); wd != link {
+		t.Skipf("os.Getwd ignores $PWD here (%q); nothing to resolve", wd)
+	}
+	if err := UseRealWorkingDirectory(); err != nil {
+		t.Fatal(err)
+	}
+	if wd, err := os.Getwd(); err != nil || wd != real {
+		t.Fatalf("working directory = %q, %v; want %q", wd, err, real)
+	}
+	abs, err := filepath.Abs("homonto.toml")
+	if err != nil || abs != filepath.Join(real, "homonto.toml") {
+		t.Fatalf("relative path resolved to %q, %v", abs, err)
+	}
+}

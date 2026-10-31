@@ -31,3 +31,32 @@ func TestWriteAtomicDirCreateFailureIsClean(t *testing.T) {
 		}
 	}
 }
+
+func TestWriteAtomicPreservesUnresolvableSymlink(t *testing.T) {
+	for _, kind := range []string{"dangling", "loop"} {
+		t.Run(kind, func(t *testing.T) {
+			dir := t.TempDir()
+			link := filepath.Join(dir, "config.json")
+			target := "missing.json"
+			if kind == "loop" {
+				target = filepath.Base(link)
+			}
+			if err := os.Symlink(target, link); err != nil {
+				t.Fatal(err)
+			}
+			if err := WriteAtomic(link, []byte("new config")); err == nil {
+				t.Error("writing through an unresolvable symlink must fail")
+			}
+			if got, err := os.Readlink(link); err != nil || got != target {
+				t.Fatalf("symlink changed: target = %q, err = %v; want %q", got, err, target)
+			}
+			entries, err := os.ReadDir(dir)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(entries) != 1 {
+				t.Fatalf("failed write left unexpected files: %v", entries)
+			}
+		})
+	}
+}

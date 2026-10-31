@@ -21,6 +21,17 @@ func WriteAtomic(path string, data []byte) error {
 	// at the resolved location instead; a missing file resolves to path as-is.
 	if resolved, err := filepath.EvalSymlinks(path); err == nil {
 		path = resolved
+	} else {
+		// A missing destination can be created, but an existing dangling link
+		// must not be mistaken for one and replaced by the rename below.
+		if !os.IsNotExist(err) {
+			return fmt.Errorf("resolve atomic write path %q: %w", path, err)
+		}
+		if _, statErr := os.Lstat(path); statErr == nil {
+			return fmt.Errorf("resolve atomic write path %q: %w", path, err)
+		} else if !os.IsNotExist(statErr) {
+			return fmt.Errorf("inspect atomic write path %q: %w", path, statErr)
+		}
 	}
 	dir := filepath.Dir(path)
 	if err := os.MkdirAll(dir, 0o755); err != nil {

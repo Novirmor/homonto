@@ -98,8 +98,10 @@ func Project(tool string, links []Link, st *state.State, roots []string) ([]adap
 				filtered[dst] = src
 			}
 		}
-		rest, err2 := link.Plan(filtered, roots...)
-		if err2 != nil {
+		// The first error may name a conflict a repair now covers; report
+		// what still blocks the remainder.
+		rest, err := link.Plan(filtered, roots...)
+		if err != nil {
 			return nil, err
 		}
 		ops = append(rest, repairs...)

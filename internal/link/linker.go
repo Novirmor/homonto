@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 )
 
@@ -134,9 +135,16 @@ type Op struct {
 // conflict error, and so is a symlink pointing outside every root — a
 // foreign, user-owned link that Apply must never repoint. Only a symlink
 // pointing inside one of roots (one of ours) is planned as a relink.
+// Destinations are visited in sorted order, so the reported conflict is stable.
 func Plan(srcs map[string]string, roots ...string) ([]Op, error) {
+	dsts := make([]string, 0, len(srcs))
+	for dst := range srcs {
+		dsts = append(dsts, dst)
+	}
+	sort.Strings(dsts)
 	var out []Op
-	for dst, src := range srcs {
+	for _, dst := range dsts {
+		src := srcs[dst]
 		fi, err := os.Lstat(dst)
 		if err != nil {
 			out = append(out, Op{Dst: dst, Src: src})

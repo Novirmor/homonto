@@ -3,6 +3,7 @@ package fileproj
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/noviopenworks/homonto/internal/adapter"
@@ -152,5 +153,40 @@ func TestApplyState_DeleteLeavesForeignFallbacks(t *testing.T) {
 	}
 	if _, ok := st.Get("claude", "skill.foo"); ok {
 		t.Errorf("state not deleted")
+	}
+}
+
+// When repairs rescue some conflicts but a foreign destination still blocks,
+// the error names that foreign destination, never a link the repair covers.
+func TestProject_RepairLeavesForeignConflictNamed(t *testing.T) {
+	base := t.TempDir()
+	oldDomain, domain := filepath.Join(base, "old"), filepath.Join(base, "new")
+	var links []Link
+	st, _ := state.Load(t.TempDir())
+	for _, name := range []string{"a", "b", "c", "d"} {
+		src := filepath.Join(domain, "content", name)
+		if err := os.MkdirAll(src, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		dst := filepath.Join(domain, "dest", name)
+		if err := os.MkdirAll(filepath.Dir(dst), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		oldSrc := filepath.Join(oldDomain, "content", name)
+		if err := os.Symlink(oldSrc, dst); err != nil {
+			t.Fatal(err)
+		}
+		recorded := filepath.Join(oldDomain, "dest", name) + sep + oldSrc
+		st.Set("claude", "skill."+name, recorded, secret.Hash(recorded))
+		links = append(links, Link{Dst: dst, Src: src, Key: "skill." + name, Domain: domain})
+	}
+	foreign := filepath.Join(domain, "dest", "zz")
+	if err := os.MkdirAll(foreign, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	links = append(links, Link{Dst: foreign, Src: filepath.Join(domain, "content", "a"), Key: "skill.zz", Domain: domain})
+	_, err := Project("claude", links, st, []string{filepath.Join(domain, "content")})
+	if err == nil || !strings.Contains(err.Error(), foreign) {
+		t.Fatalf("want conflict naming %s, got: %v", foreign, err)
 	}
 }

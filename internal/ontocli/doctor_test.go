@@ -140,6 +140,11 @@ func TestDoctorCommand_MissingDocsDir(t *testing.T) {
 	if want := filepath.Join("docs", "adr"); !strings.Contains(out, want) {
 		t.Errorf("out = %q, want it to mention %q", out, want)
 	}
+	// Git does not track empty directories, so a fresh clone lacks them:
+	// the finding names the idempotent repair.
+	if want := "run onto init"; !strings.Contains(out, want) {
+		t.Errorf("out = %q, want it to suggest %q", out, want)
+	}
 }
 
 // 3. malformed active state (malformed YAML) → non-nil, names change + "malformed".

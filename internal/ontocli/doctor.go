@@ -143,7 +143,9 @@ func runDoctor(cmd *cobra.Command, root string) error {
 			if workflowRoot(root) == filepath.Join(root, "docs") {
 				label = docsLayout[i]
 			}
-			findings = append(findings, "docs layout: missing directory "+label)
+			// Git keeps no empty directory, so a fresh clone lacks these
+			// until init recreates them; it never touches existing content.
+			findings = append(findings, "docs layout: missing directory "+label+" (run onto init)")
 		}
 	}
 

@@ -196,10 +196,10 @@ func verifyResultCmd() *cobra.Command {
 					st.Close.Merged = false
 					st.CloseConfirmed = ""
 				} else {
-					// Binding policy: outside git there is nothing to bind
-					// (legacy shape). Inside git, a capture failure — a
-					// missing scoped repository, an unreadable config — is a
-					// loud refusal, not a silently unbound pass.
+					// Binding policy: a pass is always bound to commits. A
+					// workspace outside git, or a capture failure — a missing
+					// scoped repository, an unreadable config — is a loud
+					// refusal, not a silently unbound pass.
 					if st.RepoMode != "explicit" && !inGitRepository(dir) {
 						return fmt.Errorf("onto set verify-result: %s is not a git repository; a pass cannot be bound to a commit here", dir)
 					}

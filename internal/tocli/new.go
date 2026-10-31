@@ -7,11 +7,11 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/noviopenworks/homonto/internal/opid"
-	"github.com/noviopenworks/homonto/internal/tomlutil"
-	"github.com/noviopenworks/homonto/internal/tostate"
-	"github.com/noviopenworks/homonto/internal/workcli"
-	"github.com/noviopenworks/homonto/internal/workspace"
+	"github.com/Novirmor/homonto/internal/opid"
+	"github.com/Novirmor/homonto/internal/tomlutil"
+	"github.com/Novirmor/homonto/internal/tostate"
+	"github.com/Novirmor/homonto/internal/workcli"
+	"github.com/Novirmor/homonto/internal/workspace"
 	"github.com/pelletier/go-toml/v2"
 	"github.com/spf13/cobra"
 )

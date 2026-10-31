@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/noviopenworks/homonto/internal/ontostate"
+	"github.com/Novirmor/homonto/internal/ontostate"
 )
 
 // TestValidChangeName_Valid covers the accepted shape: lowercase

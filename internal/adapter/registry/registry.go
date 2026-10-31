@@ -8,8 +8,8 @@ package registry
 import (
 	"fmt"
 
-	"github.com/noviopenworks/homonto/internal/adapter"
-	"github.com/noviopenworks/homonto/internal/adapter/opencode"
+	"github.com/Novirmor/homonto/internal/adapter"
+	"github.com/Novirmor/homonto/internal/adapter/opencode"
 )
 
 // Deps are the construction inputs shared across adapters. An adapter's Factory

@@ -6,7 +6,7 @@ import (
 	"regexp"
 	"testing"
 
-	"github.com/noviopenworks/homonto/internal/ontostate"
+	"github.com/Novirmor/homonto/internal/ontostate"
 )
 
 func newChange(t *testing.T, dir, name string) ontostate.State {

@@ -7,9 +7,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/noviopenworks/homonto/internal/bypasslog"
-	"github.com/noviopenworks/homonto/internal/ontostate"
-	"github.com/noviopenworks/homonto/internal/workspace"
+	"github.com/Novirmor/homonto/internal/bypasslog"
+	"github.com/Novirmor/homonto/internal/ontostate"
+	"github.com/Novirmor/homonto/internal/workspace"
 	"github.com/spf13/cobra"
 )
 

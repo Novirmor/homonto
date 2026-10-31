@@ -17,14 +17,14 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/noviopenworks/homonto/internal/adapter/copyproj"
-	"github.com/noviopenworks/homonto/internal/adapter/fileproj"
-	"github.com/noviopenworks/homonto/internal/agentfm"
-	"github.com/noviopenworks/homonto/internal/config"
-	"github.com/noviopenworks/homonto/internal/copyfile"
-	"github.com/noviopenworks/homonto/internal/fsutil"
-	"github.com/noviopenworks/homonto/internal/resourcepath"
-	"github.com/noviopenworks/homonto/internal/state"
+	"github.com/Novirmor/homonto/internal/adapter/copyproj"
+	"github.com/Novirmor/homonto/internal/adapter/fileproj"
+	"github.com/Novirmor/homonto/internal/agentfm"
+	"github.com/Novirmor/homonto/internal/config"
+	"github.com/Novirmor/homonto/internal/copyfile"
+	"github.com/Novirmor/homonto/internal/fsutil"
+	"github.com/Novirmor/homonto/internal/resourcepath"
+	"github.com/Novirmor/homonto/internal/state"
 )
 
 // Base holds the shared state of a homonto adapter that projects desired

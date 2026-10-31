@@ -7,8 +7,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/noviopenworks/homonto/internal/bypasslog"
-	"github.com/noviopenworks/homonto/internal/integrationrecord"
+	"github.com/Novirmor/homonto/internal/bypasslog"
+	"github.com/Novirmor/homonto/internal/integrationrecord"
 )
 
 func TestParse_ValidYAML_DerivesBuildPhase(t *testing.T) {

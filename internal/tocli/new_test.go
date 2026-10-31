@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/noviopenworks/homonto/internal/tostate"
+	"github.com/Novirmor/homonto/internal/tostate"
 )
 
 // TestNew_ScaffoldsExpectedFiles verifies `to new` produces exactly the

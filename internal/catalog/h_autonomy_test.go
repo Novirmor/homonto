@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	embedded "github.com/noviopenworks/homonto/catalog"
+	embedded "github.com/Novirmor/homonto/catalog"
 )
 
 func hPromptText(t *testing.T, file string) string {

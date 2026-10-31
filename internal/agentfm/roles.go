@@ -7,7 +7,7 @@ import (
 	"strings"
 	"sync"
 
-	embedded "github.com/noviopenworks/homonto/catalog"
+	embedded "github.com/Novirmor/homonto/catalog"
 )
 
 // Role is a builtin workflow subagent's place in the division of labor, read

@@ -12,8 +12,8 @@ import (
 	"sort"
 	"strings"
 
-	embedded "github.com/noviopenworks/homonto/catalog"
-	"github.com/noviopenworks/homonto/internal/schema"
+	embedded "github.com/Novirmor/homonto/catalog"
+	"github.com/Novirmor/homonto/internal/schema"
 	toml "github.com/pelletier/go-toml/v2"
 )
 

@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/noviopenworks/homonto/internal/tostate"
+	"github.com/Novirmor/homonto/internal/tostate"
 )
 
 // TestStatus_TextOutputShape verifies the text (non-JSON) rendering of status:

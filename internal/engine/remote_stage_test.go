@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/noviopenworks/homonto/internal/remote"
+	"github.com/Novirmor/homonto/internal/remote"
 )
 
 // TestRemoteStageBeforeMutateLeavesFirstIntactOnSecondFailure exercises F8: all

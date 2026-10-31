@@ -11,8 +11,8 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/noviopenworks/homonto/internal/fsutil"
-	"github.com/noviopenworks/homonto/internal/workcli"
+	"github.com/Novirmor/homonto/internal/fsutil"
+	"github.com/Novirmor/homonto/internal/workcli"
 )
 
 const mergeReceiptSchemaVersion = 1

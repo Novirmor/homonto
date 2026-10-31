@@ -10,7 +10,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/noviopenworks/homonto/internal/state"
+	"github.com/Novirmor/homonto/internal/state"
 )
 
 // Resource is the common shape of every declarable managed resource: a source

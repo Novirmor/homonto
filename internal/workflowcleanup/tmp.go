@@ -6,8 +6,8 @@ import (
 	"path/filepath"
 	"sort"
 
-	"github.com/noviopenworks/homonto/internal/workflowstatus"
-	"github.com/noviopenworks/homonto/internal/workspace"
+	"github.com/Novirmor/homonto/internal/workflowstatus"
+	"github.com/Novirmor/homonto/internal/workspace"
 )
 
 // TmpReport lists scratch that belongs to no live change (ADR 0086). Without

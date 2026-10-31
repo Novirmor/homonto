@@ -11,7 +11,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/noviopenworks/homonto/internal/fsutil"
+	"github.com/Novirmor/homonto/internal/fsutil"
 	"github.com/spf13/cobra"
 	"gopkg.in/yaml.v3"
 )

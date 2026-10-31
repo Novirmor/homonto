@@ -17,14 +17,14 @@ import (
 	"strings"
 	"time"
 
-	"github.com/noviopenworks/homonto/internal/applylock"
-	"github.com/noviopenworks/homonto/internal/config"
-	"github.com/noviopenworks/homonto/internal/fsutil"
-	"github.com/noviopenworks/homonto/internal/ontostate"
-	"github.com/noviopenworks/homonto/internal/tostate"
-	"github.com/noviopenworks/homonto/internal/workcli"
-	"github.com/noviopenworks/homonto/internal/workflowstatus"
-	"github.com/noviopenworks/homonto/internal/workspace"
+	"github.com/Novirmor/homonto/internal/applylock"
+	"github.com/Novirmor/homonto/internal/config"
+	"github.com/Novirmor/homonto/internal/fsutil"
+	"github.com/Novirmor/homonto/internal/ontostate"
+	"github.com/Novirmor/homonto/internal/tostate"
+	"github.com/Novirmor/homonto/internal/workcli"
+	"github.com/Novirmor/homonto/internal/workflowstatus"
+	"github.com/Novirmor/homonto/internal/workspace"
 )
 
 const SchemaVersion = 1

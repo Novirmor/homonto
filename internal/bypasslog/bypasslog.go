@@ -10,7 +10,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/noviopenworks/homonto/internal/fsutil"
+	"github.com/Novirmor/homonto/internal/fsutil"
 )
 
 const schemaVersion = 1

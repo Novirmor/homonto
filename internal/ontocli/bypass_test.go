@@ -6,8 +6,8 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/noviopenworks/homonto/internal/bypasslog"
-	"github.com/noviopenworks/homonto/internal/ontostate"
+	"github.com/Novirmor/homonto/internal/bypasslog"
+	"github.com/Novirmor/homonto/internal/ontostate"
 )
 
 func TestBypassCommandSkipsArtifactsAndRecordsAudit(t *testing.T) {

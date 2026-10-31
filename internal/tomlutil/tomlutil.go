@@ -11,7 +11,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/noviopenworks/homonto/internal/jsonutil"
+	"github.com/Novirmor/homonto/internal/jsonutil"
 	toml "github.com/pelletier/go-toml/v2"
 )
 

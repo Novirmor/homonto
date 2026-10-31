@@ -16,8 +16,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/noviopenworks/homonto/internal/config"
-	"github.com/noviopenworks/homonto/internal/fsutil"
+	"github.com/Novirmor/homonto/internal/config"
+	"github.com/Novirmor/homonto/internal/fsutil"
 )
 
 type Input struct {

@@ -6,8 +6,8 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/noviopenworks/homonto/internal/evidence"
-	"github.com/noviopenworks/homonto/internal/ontostate"
+	"github.com/Novirmor/homonto/internal/evidence"
+	"github.com/Novirmor/homonto/internal/ontostate"
 	"github.com/spf13/cobra"
 )
 

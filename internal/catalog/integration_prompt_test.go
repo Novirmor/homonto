@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	embedded "github.com/noviopenworks/homonto/catalog"
+	embedded "github.com/Novirmor/homonto/catalog"
 )
 
 // These are prompt contracts; executable lifecycle coverage lives separately in

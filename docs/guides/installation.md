@@ -238,10 +238,14 @@ their version at link time; a plain `go install` reports a development
 version.
 
 ```sh
-go install github.com/noviopenworks/homonto@latest            # homonto
-go install github.com/noviopenworks/homonto/cmd/onto@latest   # onto
-go install github.com/noviopenworks/homonto/cmd/to@latest     # to
+go install github.com/Novirmor/homonto@latest            # homonto
+go install github.com/Novirmor/homonto/cmd/onto@latest   # onto
+go install github.com/Novirmor/homonto/cmd/to@latest     # to
 ```
+
+Releases up to v0.36.0 declare the old module path, so `go install` them as
+`github.com/noviopenworks/homonto@<tag>`
+([ADR 0088](../adr/0088-module-path-matches-canonical-repository.md)).
 
 From a clone, `task install` installs all three with version stamps (see
 `Taskfile.yml`). If you keep a local `homonto/` content directory at the

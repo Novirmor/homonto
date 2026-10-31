@@ -3,7 +3,7 @@ package registry
 import (
 	"testing"
 
-	"github.com/noviopenworks/homonto/internal/adapter"
+	"github.com/Novirmor/homonto/internal/adapter"
 )
 
 // TestBuiltins_BuildsTheOpenCodeAdapter verifies the built-in registry builds

@@ -9,10 +9,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/noviopenworks/homonto/internal/config"
-	"github.com/noviopenworks/homonto/internal/schema"
-	"github.com/noviopenworks/homonto/internal/workflowroot"
-	"github.com/noviopenworks/homonto/internal/workspace"
+	"github.com/Novirmor/homonto/internal/config"
+	"github.com/Novirmor/homonto/internal/schema"
+	"github.com/Novirmor/homonto/internal/workflowroot"
+	"github.com/Novirmor/homonto/internal/workspace"
 )
 
 func put(t *testing.T, path, text string) {

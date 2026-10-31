@@ -12,12 +12,12 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/noviopenworks/homonto/internal/bypasslog"
-	"github.com/noviopenworks/homonto/internal/fsutil"
-	"github.com/noviopenworks/homonto/internal/integrationrecord"
-	"github.com/noviopenworks/homonto/internal/ontostate"
-	"github.com/noviopenworks/homonto/internal/tostate"
-	"github.com/noviopenworks/homonto/internal/workspace"
+	"github.com/Novirmor/homonto/internal/bypasslog"
+	"github.com/Novirmor/homonto/internal/fsutil"
+	"github.com/Novirmor/homonto/internal/integrationrecord"
+	"github.com/Novirmor/homonto/internal/ontostate"
+	"github.com/Novirmor/homonto/internal/tostate"
+	"github.com/Novirmor/homonto/internal/workspace"
 )
 
 // Snapshot is the stable, machine-readable view consumed by the OpenCode

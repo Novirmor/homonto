@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	embedded "github.com/noviopenworks/homonto/catalog"
+	embedded "github.com/Novirmor/homonto/catalog"
 	"gopkg.in/yaml.v3"
 )
 

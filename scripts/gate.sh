@@ -53,11 +53,11 @@ step "go test -race ./..."
 go test -race ./... -count=1 -timeout=20m
 
 step "version stamp smoke (homonto + onto + to)"
-go build -ldflags "-X github.com/noviopenworks/homonto/internal/cli.Version=gate-smoke" -o "$work/homonto" .
+go build -ldflags "-X github.com/Novirmor/homonto/internal/cli.Version=gate-smoke" -o "$work/homonto" .
 "$work/homonto" version 2>&1 | grep -q "gate-smoke" || { echo "homonto version not stamped"; exit 1; }
-go build -ldflags "-X github.com/noviopenworks/homonto/internal/ontocli.Version=gate-smoke" -o "$work/onto" ./cmd/onto
+go build -ldflags "-X github.com/Novirmor/homonto/internal/ontocli.Version=gate-smoke" -o "$work/onto" ./cmd/onto
 "$work/onto" version 2>&1 | grep -q "gate-smoke" || { echo "onto version not stamped"; exit 1; }
-go build -ldflags "-X github.com/noviopenworks/homonto/internal/tocli.Version=gate-smoke" -o "$work/to" ./cmd/to
+go build -ldflags "-X github.com/Novirmor/homonto/internal/tocli.Version=gate-smoke" -o "$work/to" ./cmd/to
 "$work/to" version 2>&1 | grep -q "gate-smoke" || { echo "to version not stamped"; exit 1; }
 
 step "cli smoke (plan on a current-format config)"

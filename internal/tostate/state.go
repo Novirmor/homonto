@@ -12,8 +12,8 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/noviopenworks/homonto/internal/fsutil"
-	"github.com/noviopenworks/homonto/internal/schema"
+	"github.com/Novirmor/homonto/internal/fsutil"
+	"github.com/Novirmor/homonto/internal/schema"
 	"gopkg.in/yaml.v3"
 )
 

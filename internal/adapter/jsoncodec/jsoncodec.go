@@ -10,8 +10,8 @@ import (
 	"bytes"
 	"encoding/json"
 
-	"github.com/noviopenworks/homonto/internal/adapter/structproj"
-	"github.com/noviopenworks/homonto/internal/jsonutil"
+	"github.com/Novirmor/homonto/internal/adapter/structproj"
+	"github.com/Novirmor/homonto/internal/jsonutil"
 )
 
 // Codec implements the structproj.Codec contract.

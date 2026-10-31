@@ -9,8 +9,8 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/noviopenworks/homonto/internal/integrationrecord"
-	"github.com/noviopenworks/homonto/internal/ontostate"
+	"github.com/Novirmor/homonto/internal/integrationrecord"
+	"github.com/Novirmor/homonto/internal/ontostate"
 )
 
 // fullCommitID matches the canonical object ids the capture path writes.

@@ -5,7 +5,7 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/noviopenworks/homonto/internal/workcli"
+	"github.com/Novirmor/homonto/internal/workcli"
 	"github.com/spf13/cobra"
 )
 

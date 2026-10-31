@@ -6,7 +6,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/noviopenworks/homonto/internal/workspace"
+	"github.com/Novirmor/homonto/internal/workspace"
 )
 
 const WorkspaceReferencePath = "references/workspace.md"

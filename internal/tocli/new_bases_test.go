@@ -7,8 +7,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/noviopenworks/homonto/internal/tostate"
-	"github.com/noviopenworks/homonto/internal/workspace"
+	"github.com/Novirmor/homonto/internal/tostate"
+	"github.com/Novirmor/homonto/internal/workspace"
 )
 
 func TestNewExplicitCapturesImmutableAnchors(t *testing.T) {

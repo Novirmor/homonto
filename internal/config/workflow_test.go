@@ -8,9 +8,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/noviopenworks/homonto/internal/workcli"
-	"github.com/noviopenworks/homonto/internal/workflowroot"
-	"github.com/noviopenworks/homonto/internal/workspace"
+	"github.com/Novirmor/homonto/internal/workcli"
+	"github.com/Novirmor/homonto/internal/workflowroot"
+	"github.com/Novirmor/homonto/internal/workspace"
 )
 
 func TestWorkflowLayoutParserParity(t *testing.T) {

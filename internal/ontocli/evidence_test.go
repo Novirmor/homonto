@@ -9,7 +9,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/noviopenworks/homonto/internal/ontostate"
+	"github.com/Novirmor/homonto/internal/ontostate"
 )
 
 // seedEvidenceChange creates a change with a delta spec carrying stable IDs

@@ -11,8 +11,8 @@ import (
 	"testing"
 	"testing/fstest"
 
-	embedded "github.com/noviopenworks/homonto/catalog"
-	"github.com/noviopenworks/homonto/internal/agentfm"
+	embedded "github.com/Novirmor/homonto/catalog"
+	"github.com/Novirmor/homonto/internal/agentfm"
 )
 
 func matFS() fstest.MapFS {

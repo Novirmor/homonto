@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	embedded "github.com/noviopenworks/homonto/catalog"
+	embedded "github.com/Novirmor/homonto/catalog"
 )
 
 // These scenarios check conflicting shipped instructions, not model compliance.

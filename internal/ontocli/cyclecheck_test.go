@@ -5,7 +5,7 @@ import (
 	"encoding/json"
 	"testing"
 
-	"github.com/noviopenworks/homonto/internal/ontostate"
+	"github.com/Novirmor/homonto/internal/ontostate"
 )
 
 // graphJSONCycles mirrors graphJSON plus the cycles array.

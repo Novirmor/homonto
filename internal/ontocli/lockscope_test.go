@@ -7,9 +7,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/noviopenworks/homonto/internal/applylock"
-	"github.com/noviopenworks/homonto/internal/integrationrecord"
-	"github.com/noviopenworks/homonto/internal/ontostate"
+	"github.com/Novirmor/homonto/internal/applylock"
+	"github.com/Novirmor/homonto/internal/integrationrecord"
+	"github.com/Novirmor/homonto/internal/ontostate"
 )
 
 func TestLegacyLockCommandsIgnoreUnselectedOfflineRepo(t *testing.T) {

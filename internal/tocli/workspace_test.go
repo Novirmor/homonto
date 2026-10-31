@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/noviopenworks/homonto/internal/tostate"
+	"github.com/Novirmor/homonto/internal/tostate"
 )
 
 // overrideToday pins todayFn to a fixed date for the test and restores it on

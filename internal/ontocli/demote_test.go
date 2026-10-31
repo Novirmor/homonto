@@ -10,11 +10,11 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/noviopenworks/homonto/internal/integrationrecord"
-	"github.com/noviopenworks/homonto/internal/ontostate"
-	"github.com/noviopenworks/homonto/internal/tocli"
-	"github.com/noviopenworks/homonto/internal/tostate"
-	"github.com/noviopenworks/homonto/internal/workspace"
+	"github.com/Novirmor/homonto/internal/integrationrecord"
+	"github.com/Novirmor/homonto/internal/ontostate"
+	"github.com/Novirmor/homonto/internal/tocli"
+	"github.com/Novirmor/homonto/internal/tostate"
+	"github.com/Novirmor/homonto/internal/workspace"
 )
 
 // toRun drives the `to` binary's command surface from these tests (tocli

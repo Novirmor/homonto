@@ -7,9 +7,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/noviopenworks/homonto/internal/buildinfo"
-	"github.com/noviopenworks/homonto/internal/integrationrecord"
-	"github.com/noviopenworks/homonto/internal/ontostate"
+	"github.com/Novirmor/homonto/internal/buildinfo"
+	"github.com/Novirmor/homonto/internal/integrationrecord"
+	"github.com/Novirmor/homonto/internal/ontostate"
 )
 
 // seedDocsLayout creates the full docs/{changes,specs,adr,guides} layout under

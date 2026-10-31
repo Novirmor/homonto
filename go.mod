@@ -1,4 +1,4 @@
-module github.com/noviopenworks/homonto
+module github.com/Novirmor/homonto
 
 // os.Root is used by the schema-2 migration writer to retain a checked parent
 // directory across a concurrent pathname replacement. Keep this floor narrow:

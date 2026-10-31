@@ -9,7 +9,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/noviopenworks/homonto/internal/secret"
+	"github.com/Novirmor/homonto/internal/secret"
 )
 
 // tryBuildEngine is buildEngine without t.Fatal — returns Build's error so a

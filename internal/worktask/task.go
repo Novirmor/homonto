@@ -13,10 +13,10 @@ import (
 	"strings"
 	"time"
 
-	"github.com/noviopenworks/homonto/internal/applylock"
-	"github.com/noviopenworks/homonto/internal/config"
-	"github.com/noviopenworks/homonto/internal/fsutil"
-	"github.com/noviopenworks/homonto/internal/workspace"
+	"github.com/Novirmor/homonto/internal/applylock"
+	"github.com/Novirmor/homonto/internal/config"
+	"github.com/Novirmor/homonto/internal/fsutil"
+	"github.com/Novirmor/homonto/internal/workspace"
 )
 
 type Checkout struct {

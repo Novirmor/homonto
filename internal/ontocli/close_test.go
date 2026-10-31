@@ -8,8 +8,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/noviopenworks/homonto/internal/integrationrecord"
-	"github.com/noviopenworks/homonto/internal/ontostate"
+	"github.com/Novirmor/homonto/internal/integrationrecord"
+	"github.com/Novirmor/homonto/internal/ontostate"
 )
 
 // seedCloseState writes st (a change at the close phase) plus every artifact

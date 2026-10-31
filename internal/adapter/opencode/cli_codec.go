@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/noviopenworks/homonto/internal/adapter/jsoncodec"
+	"github.com/Novirmor/homonto/internal/adapter/jsoncodec"
 	"github.com/tidwall/gjson"
 )
 

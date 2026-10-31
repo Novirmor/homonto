@@ -6,8 +6,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/noviopenworks/homonto/internal/config"
-	"github.com/noviopenworks/homonto/internal/state"
+	"github.com/Novirmor/homonto/internal/config"
+	"github.com/Novirmor/homonto/internal/state"
 )
 
 // A disabled plugin recorded in state but already absent on disk (removed out

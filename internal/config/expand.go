@@ -10,8 +10,8 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/noviopenworks/homonto/internal/catalog"
-	"github.com/noviopenworks/homonto/internal/remote"
+	"github.com/Novirmor/homonto/internal/catalog"
+	"github.com/Novirmor/homonto/internal/remote"
 )
 
 var (

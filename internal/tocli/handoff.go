@@ -12,9 +12,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/noviopenworks/homonto/internal/handoff"
-	"github.com/noviopenworks/homonto/internal/opid"
-	"github.com/noviopenworks/homonto/internal/tostate"
+	"github.com/Novirmor/homonto/internal/handoff"
+	"github.com/Novirmor/homonto/internal/opid"
+	"github.com/Novirmor/homonto/internal/tostate"
 	"github.com/spf13/cobra"
 )
 

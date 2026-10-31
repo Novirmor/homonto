@@ -5,10 +5,10 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/noviopenworks/homonto/internal/adapter"
-	"github.com/noviopenworks/homonto/internal/config"
-	"github.com/noviopenworks/homonto/internal/secret"
-	"github.com/noviopenworks/homonto/internal/state"
+	"github.com/Novirmor/homonto/internal/adapter"
+	"github.com/Novirmor/homonto/internal/config"
+	"github.com/Novirmor/homonto/internal/secret"
+	"github.com/Novirmor/homonto/internal/state"
 )
 
 func builtinCfg() *config.Config {

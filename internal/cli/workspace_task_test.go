@@ -9,7 +9,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/noviopenworks/homonto/internal/worktask"
+	"github.com/Novirmor/homonto/internal/worktask"
 )
 
 func TestWorkspaceTaskCLI(t *testing.T) {

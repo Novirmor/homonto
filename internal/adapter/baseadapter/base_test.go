@@ -6,8 +6,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/noviopenworks/homonto/internal/agentfm"
-	"github.com/noviopenworks/homonto/internal/config"
+	"github.com/Novirmor/homonto/internal/agentfm"
+	"github.com/Novirmor/homonto/internal/config"
 )
 
 func TestBuiltinAliasLinksAndCopiesSourceRenderedHostName(t *testing.T) {

@@ -6,8 +6,8 @@ import (
 	"path/filepath"
 	"sort"
 
-	"github.com/noviopenworks/homonto/internal/ontostate"
-	"github.com/noviopenworks/homonto/internal/workcli"
+	"github.com/Novirmor/homonto/internal/ontostate"
+	"github.com/Novirmor/homonto/internal/workcli"
 	"github.com/spf13/cobra"
 )
 

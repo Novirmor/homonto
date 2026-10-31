@@ -8,8 +8,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/noviopenworks/homonto/internal/ontostate"
-	"github.com/noviopenworks/homonto/internal/tostate"
+	"github.com/Novirmor/homonto/internal/ontostate"
+	"github.com/Novirmor/homonto/internal/tostate"
 )
 
 func TestDemotionPreservesExecutionScopeAndMultilineContracts(t *testing.T) {

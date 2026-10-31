@@ -10,8 +10,8 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/noviopenworks/homonto/internal/integrationrecord"
-	"github.com/noviopenworks/homonto/internal/ontostate"
+	"github.com/Novirmor/homonto/internal/integrationrecord"
+	"github.com/Novirmor/homonto/internal/ontostate"
 )
 
 var datedArchiveName = regexp.MustCompile(`^\d{4}-\d{2}-\d{2}-(.+)$`)

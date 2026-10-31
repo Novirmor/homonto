@@ -12,10 +12,10 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/noviopenworks/homonto/internal/evidence"
-	"github.com/noviopenworks/homonto/internal/integrationrecord"
-	"github.com/noviopenworks/homonto/internal/ontostate"
-	"github.com/noviopenworks/homonto/internal/workspace"
+	"github.com/Novirmor/homonto/internal/evidence"
+	"github.com/Novirmor/homonto/internal/integrationrecord"
+	"github.com/Novirmor/homonto/internal/ontostate"
+	"github.com/Novirmor/homonto/internal/workspace"
 )
 
 func TestAuditNoSpecRepeatedVerificationAndUnchangedCompletion(t *testing.T) {

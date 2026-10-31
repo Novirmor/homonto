@@ -13,7 +13,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/noviopenworks/homonto/internal/worktask"
+	"github.com/Novirmor/homonto/internal/worktask"
 )
 
 // interruptOnOutput sends this process SIGINT once the check starts writing,

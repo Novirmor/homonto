@@ -6,7 +6,7 @@ import (
 	"os/exec"
 	"path/filepath"
 
-	"github.com/noviopenworks/homonto/internal/config"
+	"github.com/Novirmor/homonto/internal/config"
 )
 
 // toolingProbe describes how to detect one provider. Detection is LookPath and

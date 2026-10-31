@@ -13,12 +13,12 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/noviopenworks/homonto/internal/applylock"
-	"github.com/noviopenworks/homonto/internal/cli"
-	"github.com/noviopenworks/homonto/internal/ontocli"
-	"github.com/noviopenworks/homonto/internal/ontostate"
-	"github.com/noviopenworks/homonto/internal/tocli"
-	"github.com/noviopenworks/homonto/internal/workspace"
+	"github.com/Novirmor/homonto/internal/applylock"
+	"github.com/Novirmor/homonto/internal/cli"
+	"github.com/Novirmor/homonto/internal/ontocli"
+	"github.com/Novirmor/homonto/internal/ontostate"
+	"github.com/Novirmor/homonto/internal/tocli"
+	"github.com/Novirmor/homonto/internal/workspace"
 	"github.com/spf13/cobra"
 )
 

@@ -7,10 +7,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/noviopenworks/homonto/internal/ontostate"
-	"github.com/noviopenworks/homonto/internal/tostate"
-	"github.com/noviopenworks/homonto/internal/workcli"
-	"github.com/noviopenworks/homonto/internal/workspace"
+	"github.com/Novirmor/homonto/internal/ontostate"
+	"github.com/Novirmor/homonto/internal/tostate"
+	"github.com/Novirmor/homonto/internal/workcli"
+	"github.com/Novirmor/homonto/internal/workspace"
 )
 
 func auditSource(t *testing.T, root, direction, name string) string {

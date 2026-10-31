@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	embedded "github.com/noviopenworks/homonto/catalog"
+	embedded "github.com/Novirmor/homonto/catalog"
 )
 
 // Shipped catalog content must name no tooling provider: provider prose lives

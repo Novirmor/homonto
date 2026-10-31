@@ -7,8 +7,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/noviopenworks/homonto/internal/config"
-	"github.com/noviopenworks/homonto/internal/secret"
+	"github.com/Novirmor/homonto/internal/config"
+	"github.com/Novirmor/homonto/internal/secret"
 )
 
 func TestOpenCodeV2PluginReadiness(t *testing.T) {

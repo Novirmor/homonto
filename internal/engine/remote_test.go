@@ -6,7 +6,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/noviopenworks/homonto/internal/remote"
+	"github.com/Novirmor/homonto/internal/remote"
 )
 
 // TestHasRemoteResources covers the small but CLI-critical HasRemoteResources

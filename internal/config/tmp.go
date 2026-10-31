@@ -7,7 +7,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/noviopenworks/homonto/internal/tomlutil"
+	"github.com/Novirmor/homonto/internal/tomlutil"
 	toml "github.com/pelletier/go-toml/v2"
 )
 

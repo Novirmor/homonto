@@ -7,8 +7,8 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/noviopenworks/homonto/internal/engine"
-	"github.com/noviopenworks/homonto/internal/state"
+	"github.com/Novirmor/homonto/internal/engine"
+	"github.com/Novirmor/homonto/internal/state"
 	"github.com/spf13/cobra"
 )
 

@@ -8,8 +8,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/noviopenworks/homonto/internal/evidence"
-	"github.com/noviopenworks/homonto/internal/ontostate"
+	"github.com/Novirmor/homonto/internal/evidence"
+	"github.com/Novirmor/homonto/internal/ontostate"
 )
 
 func TestScenarioDeclarationsRejectAmbiguousEvidence(t *testing.T) {

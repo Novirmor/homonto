@@ -7,8 +7,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/noviopenworks/homonto/internal/workflowcleanup"
-	"github.com/noviopenworks/homonto/internal/workspace"
+	"github.com/Novirmor/homonto/internal/workflowcleanup"
+	"github.com/Novirmor/homonto/internal/workspace"
 )
 
 func TestOldGenerationKeepsReusedNameScratch(t *testing.T) {

@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/noviopenworks/homonto/internal/ontostate"
+	"github.com/Novirmor/homonto/internal/ontostate"
 )
 
 func runOnto(t *testing.T, args ...string) (string, error) {

@@ -918,7 +918,7 @@ and internal cleanups. Catalog content is unchanged (catalog 0.11.0, onto
 onto's axis is now stated plainly: a change survives being handed to someone
 who was not there. `to` matches onto's code standards and skips its record;
 company size was never the distinction and is no longer claimed
-([ADR 0021](https://github.com/noviopenworks/homonto/blob/main/docs/adr/0021-onto-is-for-handoff-and-audit.md),
+([ADR 0021](https://github.com/Novirmor/homonto/blob/main/docs/adr/0021-onto-is-for-handoff-and-audit.md),
 catalog 0.11.0, onto 0.8.0, to 0.6.0).
 
 - **`onto doctor` now reports `tasks.md` ↔ `plan.md` drift** — a task number
@@ -930,8 +930,8 @@ catalog 0.11.0, onto 0.8.0, to 0.6.0).
   That is the unreported problem surfacing, not a regression. A change with no
   `plan.md` is a preset and reports nothing.
 - **Subagent concurrency follows write-scope, not framework**
-  ([ADR 0019](https://github.com/noviopenworks/homonto/blob/main/docs/adr/0019-parallelism-follows-write-scope.md),
-  [ADR 0020](https://github.com/noviopenworks/homonto/blob/main/docs/adr/0020-onto-parallel-implementers-are-supported.md)).
+  ([ADR 0019](https://github.com/Novirmor/homonto/blob/main/docs/adr/0019-parallelism-follows-write-scope.md),
+  [ADR 0020](https://github.com/Novirmor/homonto/blob/main/docs/adr/0020-onto-parallel-implementers-are-supported.md)).
   `to` previously forbade all subagent parallelism; the justification only ever
   covered agents that *write*, and three of its four never do. Read-only agents
   now run concurrently in both frameworks; the single implementer stays serial
@@ -960,7 +960,7 @@ catalog 0.11.0, onto 0.8.0, to 0.6.0).
 
 The `onto` and `to` frameworks no longer name `rtk` and `graphify` in their
 shipped prose. Which tools the workflow grounds against is now configuration
-([ADR 0022](https://github.com/noviopenworks/homonto/blob/main/docs/adr/0022-tooling-providers-are-declared-not-shipped.md),
+([ADR 0022](https://github.com/Novirmor/homonto/blob/main/docs/adr/0022-tooling-providers-are-declared-not-shipped.md),
 catalog 0.10.0, onto 0.7.0, to 0.5.0):
 
 ```toml
@@ -1207,11 +1207,11 @@ contract.
 - **`to handoff`** now excerpts what a resuming session needs: the plan head,
   every unchecked task contract, `Final Verify:`, and bounded notes.
 
-**Docs**: the `to` guides split into [workflow concepts](https://github.com/noviopenworks/homonto/blob/main/docs/guides/to-workflow.md)
-and a [command reference](https://github.com/noviopenworks/homonto/blob/main/docs/guides/to-reference.md)
+**Docs**: the `to` guides split into [workflow concepts](https://github.com/Novirmor/homonto/blob/main/docs/guides/to-workflow.md)
+and a [command reference](https://github.com/Novirmor/homonto/blob/main/docs/guides/to-reference.md)
 (mirroring onto's pair), and two principle guides —
-[YAGNI](https://github.com/noviopenworks/homonto/blob/v0.5.0/docs/guides/yagni.md) and
-[KISS](https://github.com/noviopenworks/homonto/blob/v0.5.0/docs/guides/kiss.md) —
+[YAGNI](https://github.com/Novirmor/homonto/blob/v0.5.0/docs/guides/yagni.md) and
+[KISS](https://github.com/Novirmor/homonto/blob/v0.5.0/docs/guides/kiss.md) —
 map where each framework structurally enforces building only what's needed,
 simply. Framework versions: onto 0.3.2, to 0.2.0; catalog 0.4.0.
 

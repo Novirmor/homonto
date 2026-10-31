@@ -9,8 +9,8 @@ import (
 	"strings"
 	"unicode"
 
-	"github.com/noviopenworks/homonto/internal/catalog"
-	"github.com/noviopenworks/homonto/internal/remote"
+	"github.com/Novirmor/homonto/internal/catalog"
+	"github.com/Novirmor/homonto/internal/remote"
 )
 
 // validate rejects a config that would project nothing or corrupt a tool file.

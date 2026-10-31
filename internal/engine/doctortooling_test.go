@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/noviopenworks/homonto/internal/config"
+	"github.com/Novirmor/homonto/internal/config"
 )
 
 func absentPath(string) (string, error) { return "", errors.New("not found") }

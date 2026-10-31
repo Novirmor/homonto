@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/noviopenworks/homonto/internal/tostate"
+	"github.com/Novirmor/homonto/internal/tostate"
 )
 
 // run executes the root command with args and returns combined output; when

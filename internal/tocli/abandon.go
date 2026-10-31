@@ -3,7 +3,7 @@ package tocli
 import (
 	"fmt"
 
-	"github.com/noviopenworks/homonto/internal/tostate"
+	"github.com/Novirmor/homonto/internal/tostate"
 	"github.com/spf13/cobra"
 )
 

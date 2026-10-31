@@ -8,10 +8,10 @@ import (
 	"strings"
 	"time"
 
-	"github.com/noviopenworks/homonto/internal/destlock"
-	"github.com/noviopenworks/homonto/internal/ontostate"
-	"github.com/noviopenworks/homonto/internal/workcli"
-	"github.com/noviopenworks/homonto/internal/workspace"
+	"github.com/Novirmor/homonto/internal/destlock"
+	"github.com/Novirmor/homonto/internal/ontostate"
+	"github.com/Novirmor/homonto/internal/workcli"
+	"github.com/Novirmor/homonto/internal/workspace"
 	"github.com/spf13/cobra"
 )
 

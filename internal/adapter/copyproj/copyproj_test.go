@@ -5,8 +5,8 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/noviopenworks/homonto/internal/copyfile"
-	"github.com/noviopenworks/homonto/internal/state"
+	"github.com/Novirmor/homonto/internal/copyfile"
+	"github.com/Novirmor/homonto/internal/state"
 )
 
 func TestName(t *testing.T) {

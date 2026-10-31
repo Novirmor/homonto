@@ -9,8 +9,8 @@ import (
 	"path/filepath"
 	"sort"
 
-	"github.com/noviopenworks/homonto/internal/agentfm"
-	"github.com/noviopenworks/homonto/internal/fsutil"
+	"github.com/Novirmor/homonto/internal/agentfm"
+	"github.com/Novirmor/homonto/internal/fsutil"
 )
 
 // Materialize extracts each named builtin skill from the embedded FS into

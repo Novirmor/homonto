@@ -9,8 +9,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/noviopenworks/homonto/internal/schema"
-	"github.com/noviopenworks/homonto/internal/workflowroot"
+	"github.com/Novirmor/homonto/internal/schema"
+	"github.com/Novirmor/homonto/internal/workflowroot"
 )
 
 func TestWorkflowRootRejectsConfigRootAliases(t *testing.T) {

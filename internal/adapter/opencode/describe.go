@@ -5,10 +5,10 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/noviopenworks/homonto/internal/adapter"
-	"github.com/noviopenworks/homonto/internal/adapter/fileproj"
-	"github.com/noviopenworks/homonto/internal/config"
-	"github.com/noviopenworks/homonto/internal/state"
+	"github.com/Novirmor/homonto/internal/adapter"
+	"github.com/Novirmor/homonto/internal/adapter/fileproj"
+	"github.com/Novirmor/homonto/internal/config"
+	"github.com/Novirmor/homonto/internal/state"
 )
 
 // Describe enumerates every managed key this adapter currently projects, with

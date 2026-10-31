@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/noviopenworks/homonto/internal/catalog"
+	"github.com/Novirmor/homonto/internal/catalog"
 )
 
 const ontoProjectTOML = `

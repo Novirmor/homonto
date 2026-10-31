@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/noviopenworks/homonto/internal/applylock"
+	"github.com/Novirmor/homonto/internal/applylock"
 )
 
 // onto and to mirror the Framework values each workflow CLI constructs, so the

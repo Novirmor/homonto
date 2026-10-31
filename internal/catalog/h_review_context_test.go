@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	embedded "github.com/noviopenworks/homonto/catalog"
+	embedded "github.com/Novirmor/homonto/catalog"
 )
 
 // These are embedded prompt contracts, not runtime proof of fetches or worker behavior.

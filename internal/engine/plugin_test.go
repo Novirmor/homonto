@@ -12,11 +12,11 @@ import (
 	"testing"
 	"time"
 
-	"github.com/noviopenworks/homonto/internal/config"
-	"github.com/noviopenworks/homonto/internal/jsonutil"
-	"github.com/noviopenworks/homonto/internal/secret"
-	"github.com/noviopenworks/homonto/internal/workflowroot"
-	"github.com/noviopenworks/homonto/internal/workflowstatus"
+	"github.com/Novirmor/homonto/internal/config"
+	"github.com/Novirmor/homonto/internal/jsonutil"
+	"github.com/Novirmor/homonto/internal/secret"
+	"github.com/Novirmor/homonto/internal/workflowroot"
+	"github.com/Novirmor/homonto/internal/workflowstatus"
 )
 
 func TestWorkflowBindingCoordinatorAndGithubScope(t *testing.T) {

@@ -8,9 +8,9 @@ import (
 	"sort"
 	"sync"
 
-	"github.com/noviopenworks/homonto/internal/config"
-	"github.com/noviopenworks/homonto/internal/fsutil"
-	"github.com/noviopenworks/homonto/internal/remote"
+	"github.com/Novirmor/homonto/internal/config"
+	"github.com/Novirmor/homonto/internal/fsutil"
+	"github.com/Novirmor/homonto/internal/remote"
 )
 
 // HasRemoteResources reports whether any declared subagent uses a remote:

@@ -17,9 +17,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/noviopenworks/homonto/internal/applylock"
-	"github.com/noviopenworks/homonto/internal/fsutil"
-	"github.com/noviopenworks/homonto/internal/workflowroot"
+	"github.com/Novirmor/homonto/internal/applylock"
+	"github.com/Novirmor/homonto/internal/fsutil"
+	"github.com/Novirmor/homonto/internal/workflowroot"
 )
 
 const ownershipFile = ".homonto-workflow.json"

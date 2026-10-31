@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/noviopenworks/homonto/internal/jsonutil"
+	"github.com/Novirmor/homonto/internal/jsonutil"
 )
 
 func TestVersionCommand(t *testing.T) {

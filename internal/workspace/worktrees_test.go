@@ -10,8 +10,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/noviopenworks/homonto/internal/schema"
-	"github.com/noviopenworks/homonto/internal/workflowroot"
+	"github.com/Novirmor/homonto/internal/schema"
+	"github.com/Novirmor/homonto/internal/workflowroot"
 )
 
 func wtGit(t *testing.T, dir string, args ...string) string {

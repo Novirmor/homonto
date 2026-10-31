@@ -7,9 +7,9 @@ import (
 	"path/filepath"
 	"time"
 
-	"github.com/noviopenworks/homonto/internal/fsutil"
-	"github.com/noviopenworks/homonto/internal/opid"
-	"github.com/noviopenworks/homonto/internal/workcli"
+	"github.com/Novirmor/homonto/internal/fsutil"
+	"github.com/Novirmor/homonto/internal/opid"
+	"github.com/Novirmor/homonto/internal/workcli"
 )
 
 // tryRestore converts back to the immediately-prior workflow when nothing

@@ -6,9 +6,9 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/noviopenworks/homonto/internal/plan"
-	"github.com/noviopenworks/homonto/internal/secret"
-	"github.com/noviopenworks/homonto/internal/state"
+	"github.com/Novirmor/homonto/internal/plan"
+	"github.com/Novirmor/homonto/internal/secret"
+	"github.com/Novirmor/homonto/internal/state"
 )
 
 // TestProjectScopeEndToEnd exercises the compiled apply path at project scope:

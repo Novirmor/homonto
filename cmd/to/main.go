@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/noviopenworks/homonto/internal/fsutil"
-	"github.com/noviopenworks/homonto/internal/tocli"
+	"github.com/Novirmor/homonto/internal/fsutil"
+	"github.com/Novirmor/homonto/internal/tocli"
 )
 
 func main() {

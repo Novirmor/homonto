@@ -8,7 +8,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/noviopenworks/homonto/internal/jsonutil"
+	"github.com/Novirmor/homonto/internal/jsonutil"
 )
 
 var openCodeCLIRules = map[string]string{

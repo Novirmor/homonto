@@ -3,8 +3,8 @@ package main
 import (
 	"os"
 
-	"github.com/noviopenworks/homonto/internal/cli"
-	"github.com/noviopenworks/homonto/internal/fsutil"
+	"github.com/Novirmor/homonto/internal/cli"
+	"github.com/Novirmor/homonto/internal/fsutil"
 )
 
 func main() {

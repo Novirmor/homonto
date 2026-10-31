@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/noviopenworks/homonto/internal/secret"
+	"github.com/Novirmor/homonto/internal/secret"
 )
 
 // TestUnparseableToolFileSkipsAdapterWithWarning: with OpenCode the only

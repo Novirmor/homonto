@@ -7,7 +7,7 @@ import (
 	"os"
 	"sort"
 
-	"github.com/noviopenworks/homonto/internal/fsutil"
+	"github.com/Novirmor/homonto/internal/fsutil"
 )
 
 // LockEntry records the provenance of one materialized remote install. It holds

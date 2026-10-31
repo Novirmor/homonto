@@ -6,9 +6,9 @@ import (
 	"os"
 	"strings"
 
-	"github.com/noviopenworks/homonto/internal/applylock"
-	"github.com/noviopenworks/homonto/internal/engine"
-	"github.com/noviopenworks/homonto/internal/snapshot"
+	"github.com/Novirmor/homonto/internal/applylock"
+	"github.com/Novirmor/homonto/internal/engine"
+	"github.com/Novirmor/homonto/internal/snapshot"
 	"github.com/spf13/cobra"
 )
 

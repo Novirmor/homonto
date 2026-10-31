@@ -3,8 +3,8 @@ package engine
 import (
 	"fmt"
 
-	"github.com/noviopenworks/homonto/internal/catalog"
-	"github.com/noviopenworks/homonto/internal/config"
+	"github.com/Novirmor/homonto/internal/catalog"
+	"github.com/Novirmor/homonto/internal/config"
 )
 
 // checkFrameworkCompat enforces each declared framework's [compat].homonto range

@@ -1,9 +1,9 @@
 package cli
 
 import (
-	"github.com/noviopenworks/homonto/internal/buildinfo"
-	"github.com/noviopenworks/homonto/internal/config"
-	"github.com/noviopenworks/homonto/internal/engine"
+	"github.com/Novirmor/homonto/internal/buildinfo"
+	"github.com/Novirmor/homonto/internal/config"
+	"github.com/Novirmor/homonto/internal/engine"
 	"github.com/spf13/cobra"
 )
 

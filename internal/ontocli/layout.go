@@ -3,7 +3,7 @@ package ontocli
 import (
 	"path/filepath"
 
-	"github.com/noviopenworks/homonto/internal/workcli"
+	"github.com/Novirmor/homonto/internal/workcli"
 )
 
 func workflowRoot(root string) string { return workcli.WorkflowRootOrDefault(root) }

@@ -8,8 +8,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/noviopenworks/homonto/internal/adapter"
-	"github.com/noviopenworks/homonto/internal/jsonutil"
+	"github.com/Novirmor/homonto/internal/adapter"
+	"github.com/Novirmor/homonto/internal/jsonutil"
 )
 
 // TestHasAnyPrefix verifies the shared managed-key matcher: hit on any listed

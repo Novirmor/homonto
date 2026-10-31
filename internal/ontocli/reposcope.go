@@ -9,8 +9,8 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/noviopenworks/homonto/internal/ontostate"
-	"github.com/noviopenworks/homonto/internal/workspace"
+	"github.com/Novirmor/homonto/internal/ontostate"
+	"github.com/Novirmor/homonto/internal/workspace"
 )
 
 // scopedDirt is the live git audit for one repository participating in an

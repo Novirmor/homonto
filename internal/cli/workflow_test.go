@@ -8,7 +8,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/noviopenworks/homonto/internal/workflowstatus"
+	"github.com/Novirmor/homonto/internal/workflowstatus"
 )
 
 func TestWorkflowSnapshotWritesJSONToStdout(t *testing.T) {

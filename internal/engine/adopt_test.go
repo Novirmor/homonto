@@ -6,8 +6,8 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/noviopenworks/homonto/internal/adapter"
-	"github.com/noviopenworks/homonto/internal/secret"
+	"github.com/Novirmor/homonto/internal/adapter"
+	"github.com/Novirmor/homonto/internal/secret"
 )
 
 const adoptTOML = `

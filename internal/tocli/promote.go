@@ -4,10 +4,10 @@ import (
 	"fmt"
 	"path/filepath"
 
-	"github.com/noviopenworks/homonto/internal/convert"
-	"github.com/noviopenworks/homonto/internal/destlock"
-	"github.com/noviopenworks/homonto/internal/opid"
-	"github.com/noviopenworks/homonto/internal/workcli"
+	"github.com/Novirmor/homonto/internal/convert"
+	"github.com/Novirmor/homonto/internal/destlock"
+	"github.com/Novirmor/homonto/internal/opid"
+	"github.com/Novirmor/homonto/internal/workcli"
 	"github.com/spf13/cobra"
 )
 

@@ -8,8 +8,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/noviopenworks/homonto/internal/opid"
-	"github.com/noviopenworks/homonto/internal/tostate"
+	"github.com/Novirmor/homonto/internal/opid"
+	"github.com/Novirmor/homonto/internal/tostate"
 )
 
 func testOps() opid.Supplier {

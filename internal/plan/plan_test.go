@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/noviopenworks/homonto/internal/adapter"
+	"github.com/Novirmor/homonto/internal/adapter"
 )
 
 func TestRenderShowsChangesNotNoops(t *testing.T) {

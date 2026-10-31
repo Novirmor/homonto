@@ -3,10 +3,10 @@ package structproj
 import (
 	"testing"
 
-	"github.com/noviopenworks/homonto/internal/adapter"
-	"github.com/noviopenworks/homonto/internal/secret"
-	"github.com/noviopenworks/homonto/internal/state"
-	"github.com/noviopenworks/homonto/internal/tomlutil"
+	"github.com/Novirmor/homonto/internal/adapter"
+	"github.com/Novirmor/homonto/internal/secret"
+	"github.com/Novirmor/homonto/internal/state"
+	"github.com/Novirmor/homonto/internal/tomlutil"
 )
 
 // tomlTestCodec adapts the tomlutil package funcs to the Codec interface.

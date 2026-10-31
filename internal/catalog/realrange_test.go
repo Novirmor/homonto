@@ -6,7 +6,7 @@ import (
 	"sort"
 	"testing"
 
-	embedded "github.com/noviopenworks/homonto/catalog"
+	embedded "github.com/Novirmor/homonto/catalog"
 )
 
 // TestNew_CatalogShipsOnlyNativeFrameworks pins the shipped-framework

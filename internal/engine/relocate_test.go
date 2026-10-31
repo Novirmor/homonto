@@ -7,8 +7,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/noviopenworks/homonto/internal/secret"
-	"github.com/noviopenworks/homonto/internal/state"
+	"github.com/Novirmor/homonto/internal/secret"
+	"github.com/Novirmor/homonto/internal/state"
 )
 
 // relocateCfg declares one project-scoped local skill and one user-scoped

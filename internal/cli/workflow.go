@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"path/filepath"
 
-	"github.com/noviopenworks/homonto/internal/workflowcleanup"
-	"github.com/noviopenworks/homonto/internal/workflowstatus"
+	"github.com/Novirmor/homonto/internal/workflowcleanup"
+	"github.com/Novirmor/homonto/internal/workflowstatus"
 	"github.com/spf13/cobra"
 )
 

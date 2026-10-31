@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/noviopenworks/homonto/internal/config"
+	"github.com/Novirmor/homonto/internal/config"
 )
 
 // The scaffolded homonto.toml ships commented examples of every resource kind.

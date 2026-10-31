@@ -17,7 +17,7 @@ linters:
         - fmt.Fprintln
         # Always deferred. The kernel hold drops when the process exits, and a
         # later acquirer recovers a leftover claim (see applylock's package doc).
-        - (*github.com/noviopenworks/homonto/internal/applylock.Lock).Release
+        - (*github.com/Novirmor/homonto/internal/applylock.Lock).Release
     staticcheck:
       checks:
         - all

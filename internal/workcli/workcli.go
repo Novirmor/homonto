@@ -17,11 +17,11 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/noviopenworks/homonto/internal/applylock"
-	"github.com/noviopenworks/homonto/internal/schema"
-	"github.com/noviopenworks/homonto/internal/tomlutil"
-	"github.com/noviopenworks/homonto/internal/workflowroot"
-	"github.com/noviopenworks/homonto/internal/workspace"
+	"github.com/Novirmor/homonto/internal/applylock"
+	"github.com/Novirmor/homonto/internal/schema"
+	"github.com/Novirmor/homonto/internal/tomlutil"
+	"github.com/Novirmor/homonto/internal/workflowroot"
+	"github.com/Novirmor/homonto/internal/workspace"
 	"github.com/pelletier/go-toml/v2"
 )
 

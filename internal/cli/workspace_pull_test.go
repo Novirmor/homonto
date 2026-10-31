@@ -9,7 +9,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/noviopenworks/homonto/internal/workspace"
+	"github.com/Novirmor/homonto/internal/workspace"
 )
 
 func TestWorkspacePullCLIFastForwardsBase(t *testing.T) {

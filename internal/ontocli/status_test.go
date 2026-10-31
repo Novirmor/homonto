@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/noviopenworks/homonto/internal/integrationrecord"
+	"github.com/Novirmor/homonto/internal/integrationrecord"
 )
 
 // treeSnapshot walks dir and records each file's relative path, size, and

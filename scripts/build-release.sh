@@ -53,9 +53,9 @@ mkdir -p dist
 for target in $TARGETS; do
   goos="${target%/*}"
   goarch="${target#*/}"
-  build_one homonto . github.com/noviopenworks/homonto/internal/cli "$goos" "$goarch"
-  build_one onto ./cmd/onto github.com/noviopenworks/homonto/internal/ontocli "$goos" "$goarch"
-  build_one to ./cmd/to github.com/noviopenworks/homonto/internal/tocli "$goos" "$goarch"
+  build_one homonto . github.com/Novirmor/homonto/internal/cli "$goos" "$goarch"
+  build_one onto ./cmd/onto github.com/Novirmor/homonto/internal/ontocli "$goos" "$goarch"
+  build_one to ./cmd/to github.com/Novirmor/homonto/internal/tocli "$goos" "$goarch"
 done
 
 cd dist

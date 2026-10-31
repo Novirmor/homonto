@@ -13,9 +13,9 @@ vars:
   VERSION:
     sh: git describe --tags --always --dirty 2>/dev/null || echo dev
   LDFLAGS: >-
-    -X github.com/noviopenworks/homonto/internal/cli.Version={{.VERSION}}
-    -X github.com/noviopenworks/homonto/internal/ontocli.Version={{.VERSION}}
-    -X github.com/noviopenworks/homonto/internal/tocli.Version={{.VERSION}}
+    -X github.com/Novirmor/homonto/internal/cli.Version={{.VERSION}}
+    -X github.com/Novirmor/homonto/internal/ontocli.Version={{.VERSION}}
+    -X github.com/Novirmor/homonto/internal/tocli.Version={{.VERSION}}
 
 tasks:
   default:

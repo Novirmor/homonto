@@ -9,13 +9,13 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/noviopenworks/homonto/internal/agentfm"
-	"github.com/noviopenworks/homonto/internal/catalog"
-	"github.com/noviopenworks/homonto/internal/config"
-	"github.com/noviopenworks/homonto/internal/fsutil"
-	"github.com/noviopenworks/homonto/internal/link"
-	"github.com/noviopenworks/homonto/internal/remote"
-	"github.com/noviopenworks/homonto/internal/resourcepath"
+	"github.com/Novirmor/homonto/internal/agentfm"
+	"github.com/Novirmor/homonto/internal/catalog"
+	"github.com/Novirmor/homonto/internal/config"
+	"github.com/Novirmor/homonto/internal/fsutil"
+	"github.com/Novirmor/homonto/internal/link"
+	"github.com/Novirmor/homonto/internal/remote"
+	"github.com/Novirmor/homonto/internal/resourcepath"
 )
 
 // Status reports two independent facts about the managed surface:

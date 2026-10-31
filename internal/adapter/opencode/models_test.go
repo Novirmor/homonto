@@ -3,7 +3,7 @@ package opencode
 import (
 	"testing"
 
-	"github.com/noviopenworks/homonto/internal/config"
+	"github.com/Novirmor/homonto/internal/config"
 )
 
 // With no [settings.opencode].model and no route-derived default, the adapter

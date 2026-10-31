@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/noviopenworks/homonto/internal/schema"
+	"github.com/Novirmor/homonto/internal/schema"
 )
 
 func writeConfig(t *testing.T, body string) string {

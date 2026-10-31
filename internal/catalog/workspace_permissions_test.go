@@ -5,11 +5,11 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/noviopenworks/homonto/internal/agentfm"
-	"github.com/noviopenworks/homonto/internal/catalog"
-	"github.com/noviopenworks/homonto/internal/ontocli"
-	"github.com/noviopenworks/homonto/internal/tocli"
-	"github.com/noviopenworks/homonto/internal/workspace"
+	"github.com/Novirmor/homonto/internal/agentfm"
+	"github.com/Novirmor/homonto/internal/catalog"
+	"github.com/Novirmor/homonto/internal/ontocli"
+	"github.com/Novirmor/homonto/internal/tocli"
+	"github.com/Novirmor/homonto/internal/workspace"
 	"gopkg.in/yaml.v3"
 )
 

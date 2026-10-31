@@ -20,8 +20,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/noviopenworks/homonto/internal/fsutil"
-	"github.com/noviopenworks/homonto/internal/state"
+	"github.com/Novirmor/homonto/internal/fsutil"
+	"github.com/Novirmor/homonto/internal/state"
 )
 
 // SchemaVersion is the journal format version.

@@ -9,8 +9,8 @@ import (
 	"os"
 	"strings"
 
-	"github.com/noviopenworks/homonto/internal/adapter"
-	"github.com/noviopenworks/homonto/internal/jsonutil"
+	"github.com/Novirmor/homonto/internal/adapter"
+	"github.com/Novirmor/homonto/internal/jsonutil"
 )
 
 // HasAnyPrefix reports whether s starts with any of prefixes. The adapters'

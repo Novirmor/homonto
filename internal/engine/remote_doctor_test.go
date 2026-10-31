@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/noviopenworks/homonto/internal/remote"
+	"github.com/Novirmor/homonto/internal/remote"
 )
 
 func applyReviewer(t *testing.T, home, repo, tarPath string, pin remote.Digest) *Engine {

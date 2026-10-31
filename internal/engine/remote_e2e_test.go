@@ -9,7 +9,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/noviopenworks/homonto/internal/remote"
+	"github.com/Novirmor/homonto/internal/remote"
 )
 
 // buildSubagentTarGz writes a tar.gz containing <name>.md and returns its path.

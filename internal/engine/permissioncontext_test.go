@@ -10,7 +10,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/noviopenworks/homonto/internal/agentfm"
+	"github.com/Novirmor/homonto/internal/agentfm"
 	"gopkg.in/yaml.v3"
 )
 

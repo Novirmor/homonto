@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/noviopenworks/homonto/internal/workspace"
+	"github.com/Novirmor/homonto/internal/workspace"
 )
 
 func TestRenderWorkspaceResolvedLayout(t *testing.T) {

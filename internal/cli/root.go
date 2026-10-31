@@ -3,8 +3,8 @@ package cli
 import (
 	"path/filepath"
 
-	"github.com/noviopenworks/homonto/internal/buildinfo"
-	"github.com/noviopenworks/homonto/internal/fsutil"
+	"github.com/Novirmor/homonto/internal/buildinfo"
+	"github.com/Novirmor/homonto/internal/fsutil"
 	"github.com/spf13/cobra"
 )
 

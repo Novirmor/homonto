@@ -11,9 +11,9 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/noviopenworks/homonto/internal/evidence"
-	"github.com/noviopenworks/homonto/internal/ontostate"
-	"github.com/noviopenworks/homonto/internal/opid"
+	"github.com/Novirmor/homonto/internal/evidence"
+	"github.com/Novirmor/homonto/internal/ontostate"
+	"github.com/Novirmor/homonto/internal/opid"
 	"github.com/spf13/cobra"
 )
 

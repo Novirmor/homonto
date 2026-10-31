@@ -24,7 +24,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/noviopenworks/homonto/internal/ontostate"
+	"github.com/Novirmor/homonto/internal/ontostate"
 )
 
 // stateView is the subset of `onto state --json` output the conformance

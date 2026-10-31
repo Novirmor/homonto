@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/noviopenworks/homonto/internal/adapter"
+	"github.com/Novirmor/homonto/internal/adapter"
 )
 
 // HasChanges reports whether any change is a visible change — a create, update,

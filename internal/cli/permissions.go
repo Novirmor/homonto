@@ -7,7 +7,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/noviopenworks/homonto/internal/config"
+	"github.com/Novirmor/homonto/internal/config"
 	"github.com/spf13/cobra"
 )
 

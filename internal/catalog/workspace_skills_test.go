@@ -9,7 +9,7 @@ import (
 	"strings"
 	"testing"
 
-	embedded "github.com/noviopenworks/homonto/catalog"
+	embedded "github.com/Novirmor/homonto/catalog"
 )
 
 func TestStandaloneSkillsMaterializeWithoutSharedPolicy(t *testing.T) {

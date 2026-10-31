@@ -14,7 +14,7 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/noviopenworks/homonto/internal/fsutil"
+	"github.com/Novirmor/homonto/internal/fsutil"
 )
 
 // SchemaVersion is the sidecar format version this binary writes. Loaders

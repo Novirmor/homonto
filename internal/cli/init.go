@@ -1,7 +1,7 @@
 package cli
 
 import (
-	"github.com/noviopenworks/homonto/internal/scaffold"
+	"github.com/Novirmor/homonto/internal/scaffold"
 	"github.com/spf13/cobra"
 )
 

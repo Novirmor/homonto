@@ -14,7 +14,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/noviopenworks/homonto/internal/applylock"
+	"github.com/Novirmor/homonto/internal/applylock"
 	"github.com/spf13/cobra"
 )
 

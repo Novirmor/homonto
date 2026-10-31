@@ -128,9 +128,9 @@ Run all of these from **outside** the repository, in a clean environment.
 ```sh
 TAG=vX.Y.Z
 GOBIN=$(mktemp -d); export GOBIN
-go install "github.com/noviopenworks/homonto@$TAG"
-go install "github.com/noviopenworks/homonto/cmd/onto@$TAG"
-go install "github.com/noviopenworks/homonto/cmd/to@$TAG"
+go install "github.com/Novirmor/homonto@$TAG"
+go install "github.com/Novirmor/homonto/cmd/onto@$TAG"
+go install "github.com/Novirmor/homonto/cmd/to@$TAG"
 "$GOBIN"/homonto version    # each prints the tag
 "$GOBIN"/onto version
 "$GOBIN"/to version

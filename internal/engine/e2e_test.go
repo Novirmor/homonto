@@ -6,8 +6,8 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/noviopenworks/homonto/internal/plan"
-	"github.com/noviopenworks/homonto/internal/secret"
+	"github.com/Novirmor/homonto/internal/plan"
+	"github.com/Novirmor/homonto/internal/secret"
 	"github.com/tidwall/gjson"
 )
 

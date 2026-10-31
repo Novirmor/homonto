@@ -237,3 +237,14 @@ func UseRealWorkingDirectory() error {
 	}
 	return os.Setenv("PWD", real)
 }
+
+// RealDir returns the real path of an existing directory, or dir unchanged
+// when it cannot be resolved (the command reports that itself). Like
+// UseRealWorkingDirectory, it is for a workspace root a user names: links
+// inside the workspace stay refused.
+func RealDir(dir string) string {
+	if real, err := filepath.EvalSymlinks(dir); err == nil {
+		return real
+	}
+	return dir
+}

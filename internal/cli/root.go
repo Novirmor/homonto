@@ -1,7 +1,10 @@
 package cli
 
 import (
+	"path/filepath"
+
 	"github.com/noviopenworks/homonto/internal/buildinfo"
+	"github.com/noviopenworks/homonto/internal/fsutil"
 	"github.com/spf13/cobra"
 )
 
@@ -23,6 +26,17 @@ func NewRootCmd() *cobra.Command {
 		SilenceErrors: true,
 	}
 	root.PersistentFlags().String("config", "homonto.toml", "path to homonto config")
+	// A config reached through a symlinked directory names the same project
+	// as its real path. Only the directory resolves: a symlinked homonto.toml
+	// must not move the project root to wherever the file lives.
+	root.PersistentPreRun = func(cmd *cobra.Command, _ []string) {
+		if f := cmd.Flags().Lookup("config"); f != nil && f.Changed {
+			p := f.Value.String()
+			if abs, err := filepath.Abs(p); err == nil {
+				_ = f.Value.Set(filepath.Join(fsutil.RealDir(filepath.Dir(abs)), filepath.Base(abs)))
+			}
+		}
+	}
 
 	root.AddCommand(&cobra.Command{
 		Use:   "version",

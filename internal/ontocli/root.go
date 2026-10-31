@@ -2,6 +2,7 @@ package ontocli
 
 import (
 	"github.com/noviopenworks/homonto/internal/buildinfo"
+	"github.com/noviopenworks/homonto/internal/fsutil"
 	"github.com/noviopenworks/homonto/internal/workflowcleanup"
 	"github.com/noviopenworks/homonto/internal/workspace"
 	"github.com/spf13/cobra"
@@ -23,6 +24,13 @@ func NewRootCmd() *cobra.Command {
 		Version:       version,
 		SilenceUsage:  true,
 		SilenceErrors: true,
+	}
+	// A --dir reached through a symlink names the same workspace root as its
+	// real path; resolve it before any command checks for symlinked parents.
+	root.PersistentPreRun = func(cmd *cobra.Command, _ []string) {
+		if f := cmd.Flags().Lookup("dir"); f != nil && f.Changed {
+			_ = f.Value.Set(fsutil.RealDir(f.Value.String()))
+		}
 	}
 
 	root.AddCommand(&cobra.Command{

@@ -2,6 +2,7 @@ package secret
 
 import (
 	"encoding/json"
+	"strings"
 	"testing"
 )
 
@@ -42,6 +43,17 @@ func TestResolveJSONMissingRefErrors(t *testing.T) {
 	r := &Resolver{Getenv: os_Getenv_none, Pass: func(string) (string, error) { return "", nil }}
 	if _, err := r.ResolveJSON(`{"env":{"K":"${MISSING}"}}`); err == nil {
 		t.Fatal("expected error for missing ref")
+	}
+}
+
+// Several missing refs always report the one under the lowest key.
+func TestResolveJSONMissingRefIsDeterministic(t *testing.T) {
+	r := &Resolver{Getenv: os_Getenv_none, Pass: func(string) (string, error) { return "", nil }}
+	for range 40 {
+		_, err := r.ResolveJSON(`{"zz":"${ZZ}","aa":"${AA}","mm":"${MM}"}`)
+		if err == nil || !strings.Contains(err.Error(), "AA") {
+			t.Fatalf("want error naming AA, got: %v", err)
+		}
 	}
 }
 

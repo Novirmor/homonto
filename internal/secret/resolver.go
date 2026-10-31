@@ -4,9 +4,11 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"maps"
 	"os"
 	"os/exec"
 	"regexp"
+	"slices"
 	"strings"
 	"time"
 )
@@ -71,8 +73,9 @@ func (r *Resolver) resolveValue(v any) (any, error) {
 	case string:
 		return r.Resolve(t)
 	case map[string]any:
-		for k, e := range t {
-			rv, err := r.resolveValue(e)
+		// Key order, so the same document always reports the same failing ref.
+		for _, k := range slices.Sorted(maps.Keys(t)) {
+			rv, err := r.resolveValue(t[k])
 			if err != nil {
 				return nil, err
 			}

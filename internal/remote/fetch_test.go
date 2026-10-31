@@ -2,12 +2,73 @@ package remote
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
+
+func TestFetchHTTPSCanceledErrorRedactsCredentials(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	_, _, err := fetchHTTPS(ctx, "https://user:s3cret@host/archive?token=s3cret", DefaultLimits, nil)
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("want cancellation cause preserved, got %v", err)
+	}
+	if strings.Contains(err.Error(), "s3cret") {
+		t.Fatalf("fetch error leaked source credentials: %v", err)
+	}
+}
+
+func TestFetchHTTPSRedirectErrorRedactsCredentials(t *testing.T) {
+	srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, "/again?token=s3cret", http.StatusFound)
+	}))
+	defer srv.Close()
+	_, _, err := fetchHTTPS(context.Background(), srv.URL+"/archive", DefaultLimits, srv.Client())
+	if err == nil {
+		t.Fatal("want redirect limit error")
+	}
+	if strings.Contains(err.Error(), "s3cret") {
+		t.Fatalf("fetch error leaked redirected credentials: %v", err)
+	}
+}
+
+func TestFetchHTTPSMalformedURLErrorRedactsCredentials(t *testing.T) {
+	_, _, err := fetchHTTPS(context.Background(), "https://user:s3cret@host/%zz?token=s3cret", DefaultLimits, nil)
+	if err == nil {
+		t.Fatal("want URL parse error")
+	}
+	if strings.Contains(err.Error(), "s3cret") {
+		t.Fatalf("parse error leaked source credentials: %v", err)
+	}
+}
+
+func TestFetchHTTPSMalformedRedirectRedactsCredentials(t *testing.T) {
+	for _, location := range []string{
+		"/%zz?token=s3cret",
+		"https://user:s3cret@host/%zz?token=s3cret",
+		"https://user:s3cret with space@host/%zz?token=s3cret",
+	} {
+		t.Run(location, func(t *testing.T) {
+			srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				w.Header().Set("Location", location)
+				w.WriteHeader(http.StatusFound)
+			}))
+			defer srv.Close()
+			_, _, err := fetchHTTPS(context.Background(), srv.URL+"/archive", DefaultLimits, srv.Client())
+			if err == nil {
+				t.Fatal("want malformed redirect error")
+			}
+			if strings.Contains(err.Error(), "s3cret") {
+				t.Fatalf("malformed redirect error leaked credentials: %v", err)
+			}
+		})
+	}
+}
 
 func writeFixtureTarGz(t *testing.T, dir, name string) string {
 	t.Helper()

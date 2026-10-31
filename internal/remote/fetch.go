@@ -68,11 +68,11 @@ func fetchHTTPS(ctx context.Context, url string, lim Limits, client *http.Client
 	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
-		return Tree{}, 0, fmt.Errorf("remote: %w", err)
+		return Tree{}, 0, fmt.Errorf("remote: %w", redactTransportError(err))
 	}
 	resp, err := c.Do(req)
 	if err != nil {
-		return Tree{}, 0, fmt.Errorf("remote: fetch %q: %w", RedactLocator(url), err)
+		return Tree{}, 0, fmt.Errorf("remote: fetch %q: %w", RedactLocator(url), redactTransportError(err))
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
@@ -158,13 +158,15 @@ func fetchGit(ctx context.Context, url string, lim Limits) (Tree, int64, error) 
 		cmd := exec.CommandContext(ctx, "git", append([]string{"-C", tmp, "-c", "protocol.file.allow=always", "-c", "advice.detachedHead=false"}, args...)...)
 		out, err := cmd.CombinedOutput()
 		if err != nil {
-			// Args may include the clone URL (with embedded credentials); redact
-			// each so a failing git invocation cannot leak a secret to logs.
+			// Git can repeat the clone URL in stderr, sometimes with quotes in
+			// the credentials themselves. Replace that known URL intact before
+			// redacting any other locators in its diagnostic.
 			safe := make([]string, len(args))
 			for i, a := range args {
 				safe[i] = RedactLocator(a)
 			}
-			return out, fmt.Errorf("remote: git %v failed: %w: %s", safe, err, out)
+			diagnostic := strings.ReplaceAll(string(out), cloneURL, RedactLocator(cloneURL))
+			return out, fmt.Errorf("remote: git %v failed: %w: %s", safe, err, redactDiagnostic(diagnostic))
 		}
 		return out, nil
 	}

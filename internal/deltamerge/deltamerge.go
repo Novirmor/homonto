@@ -152,7 +152,12 @@ func Applied(capability, living, delta string) bool {
 func Lint(merged string) []string {
 	var findings []string
 	seen := map[string]bool{}
-	for _, ln := range strings.Split(merged, "\n") {
+	lines := strings.Split(merged, "\n")
+	fence := fencedLines(lines)
+	for i, ln := range lines {
+		if fence[i] {
+			continue
+		}
 		if sectionHeading.MatchString(ln) {
 			findings = append(findings, "leaked delta section heading: "+strings.TrimSpace(ln))
 		}
@@ -177,16 +182,28 @@ func splitLiving(capability, living string) (preamble []string, reqs []requireme
 		return []string{"# " + capability, "", "## Requirements"}, nil, nil
 	}
 	lines := strings.Split(strings.ReplaceAll(living, "\r\n", "\n"), "\n")
+	fence := fencedLines(lines)
+	isReq := func(i int) bool { return !fence[i] && reqHeading.MatchString(lines[i]) }
+	// The preamble ends at the first requirement, or at the first section after
+	// `## Requirements` when there is none yet, so ADDED never lands after it.
+	requirementsHeading := false
 	i := 0
-	for i < len(lines) && !reqHeading.MatchString(lines[i]) {
+	for i < len(lines) && !isReq(i) {
+		if !fence[i] && topHeading.MatchString(lines[i]) {
+			if requirementsHeading {
+				break
+			}
+			requirementsHeading = strings.TrimSpace(lines[i]) == "## Requirements"
+		}
 		preamble = append(preamble, lines[i])
 		i++
 	}
 	for i < len(lines) {
-		if m := reqHeading.FindStringSubmatch(lines[i]); m != nil {
+		if isReq(i) {
+			m := reqHeading.FindStringSubmatch(lines[i])
 			block := []string{lines[i]}
 			i++
-			for i < len(lines) && !reqHeading.MatchString(lines[i]) && !topHeading.MatchString(lines[i]) {
+			for i < len(lines) && !isReq(i) && (fence[i] || !topHeading.MatchString(lines[i])) {
 				block = append(block, lines[i])
 				i++
 			}
@@ -206,6 +223,7 @@ func splitLiving(capability, living string) (preamble []string, reqs []requireme
 func parseDelta(delta string) (renamed [][2]string, modified, removed []requirement, added []requirement, err error) {
 	// note: removed carries names in requirement.name (block unused).
 	lines := strings.Split(strings.ReplaceAll(delta, "\r\n", "\n"), "\n")
+	fence := fencedLines(lines)
 	section := ""
 	var pendingFrom string
 	seenSections := map[string]bool{}
@@ -213,6 +231,13 @@ func parseDelta(delta string) (renamed [][2]string, modified, removed []requirem
 	i := 0
 	for i < len(lines) {
 		ln := lines[i]
+		if fence[i] {
+			if section == "RENAMED" {
+				return nil, nil, nil, nil, fmt.Errorf("deltamerge: invalid RENAMED line %q", strings.TrimSpace(ln))
+			}
+			i++
+			continue
+		}
 		if m := sectionHeading.FindStringSubmatch(ln); m != nil {
 			if section != "" && sectionOps[section] == 0 {
 				return nil, nil, nil, nil, fmt.Errorf("deltamerge: %s section has no operations", section)
@@ -240,7 +265,7 @@ func parseDelta(delta string) (renamed [][2]string, modified, removed []requirem
 			if m := reqHeading.FindStringSubmatch(ln); m != nil {
 				block := []string{ln}
 				i++
-				for i < len(lines) && !reqHeading.MatchString(lines[i]) && !topHeading.MatchString(lines[i]) {
+				for i < len(lines) && (fence[i] || (!reqHeading.MatchString(lines[i]) && !topHeading.MatchString(lines[i]))) {
 					block = append(block, lines[i])
 					i++
 				}
@@ -287,6 +312,29 @@ func parseDelta(delta string) (renamed [][2]string, modified, removed []requirem
 		return nil, nil, nil, nil, fmt.Errorf("deltamerge: delta has no operations")
 	}
 	return renamed, modified, removed, added, nil
+}
+
+// fencedLines marks each line that opens, sits inside, or closes a fenced code
+// block, so example Markdown in a requirement body is never read as structure.
+// A fence closes on a bare run of its own character at least as long.
+func fencedLines(lines []string) []bool {
+	out := make([]bool, len(lines))
+	open := ""
+	for i, raw := range lines {
+		line := strings.TrimSpace(raw)
+		if open != "" {
+			out[i] = true
+			if strings.HasPrefix(line, open) && strings.Trim(line, open[:1]) == "" {
+				open = ""
+			}
+			continue
+		}
+		if strings.HasPrefix(line, "```") || strings.HasPrefix(line, "~~~") {
+			out[i] = true
+			open = line[:len(line)-len(strings.TrimLeft(line, line[:1]))]
+		}
+	}
+	return out
 }
 
 // trimBlock removes trailing blank lines from a requirement block.

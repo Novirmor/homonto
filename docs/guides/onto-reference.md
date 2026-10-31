@@ -160,10 +160,13 @@ nothing is written unless every delta merges cleanly. Writes a receipt
 images so an interrupted merge resumes, and a changed delta or unexpected
 spec fails closed. Refuses until `close-confirmed` is recorded.
 
-Delta lint rules: only the four section headings; each ADDED/MODIFIED
-requirement's first normative line contains SHALL or MUST; each has ≥1
-scenario with WHEN and THEN bullets; MODIFIED/REMOVED/RENAMED names match the
-living spec exactly.
+The binary refuses a delta with any other section heading, an empty section,
+an unpaired RENAMED `FROM:`/`TO:`, or a MODIFIED/REMOVED/RENAMED name that is
+not in the living spec exactly, and a merge that would leak a delta heading or
+duplicate a requirement name. Headings inside fenced code blocks are body
+text. The onto-close lint checklist adds the content rules the binary does not
+check: each ADDED/MODIFIED requirement's first normative line contains SHALL
+or MUST, and each has ≥1 scenario with WHEN and THEN bullets.
 
 ## `onto close <change>`
 

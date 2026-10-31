@@ -239,3 +239,31 @@ Background prose.
 		t.Errorf("Applied must hold when trailing sections survive the merge:\n%s", livingWithTrailer)
 	}
 }
+
+// Example Markdown inside a fenced block is requirement body, not structure:
+// its headings must neither end the requirement nor start a section.
+func TestMerge_FencedExamplesAreBody(t *testing.T) {
+	fencedLiving := living + "\n### Requirement: Docs\n\nThe system SHALL render docs.\n\n````md\n## Notes\n### Requirement: Login\n````\n\n### Requirement: Audit\n\nThe system SHALL audit.\n"
+	delta := "## MODIFIED Requirements\n\n### Requirement: Audit\n\nThe system SHALL audit every login.\n\n## ADDED Requirements\n\n### Requirement: Export\n\nThe system SHALL export.\n\n```md\n## Notes\n### Requirement: Logout\n```\n"
+	out := mustMerge(t, "auth", fencedLiving, delta)
+	for _, want := range []string{"````md\n## Notes\n### Requirement: Login\n````\n\n### Requirement: Audit\n\nThe system SHALL audit every login.", "```md\n## Notes\n### Requirement: Logout\n```"} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("merged spec lost fenced body %q:\n%s", want, out)
+		}
+	}
+	if !Applied("auth", out, delta) {
+		t.Fatalf("merged spec is not recognized as applied:\n%s", out)
+	}
+}
+
+// A spec with no requirements yet keeps its trailing sections after the
+// requirements an ADDED delta introduces.
+func TestMerge_AddedBeforeTrailingSectionsOfEmptyRequirements(t *testing.T) {
+	empty := "# Auth\n\n## Purpose\n\nAuth.\n\n## Requirements\n\n## Notes\n\nKeep me last.\n"
+	delta := "## ADDED Requirements\n\n### Requirement: Login\n\nThe system SHALL log in.\n"
+	out := mustMerge(t, "auth", empty, delta)
+	want := "## Requirements\n\n### Requirement: Login\n\nThe system SHALL log in.\n\n## Notes\n\nKeep me last.\n"
+	if !strings.HasSuffix(out, want) {
+		t.Fatalf("merged spec order wrong, want suffix %q:\n%s", want, out)
+	}
+}

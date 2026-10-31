@@ -145,7 +145,7 @@ binaries, install directory, decline initialization.
 TAG=vX.Y.Z
 TMPBIN=$(mktemp -d)
 curl -fsSL -o /tmp/homonto-install.sh \
-  "https://raw.githubusercontent.com/noviopenworks/homonto/$TAG/scripts/install.sh"
+  "https://raw.githubusercontent.com/Novirmor/homonto/$TAG/scripts/install.sh"
 printf '%s\nnone\n%s\nn\n' "$TAG" "$TMPBIN" | bash /tmp/homonto-install.sh
 "$TMPBIN"/homonto version
 ```

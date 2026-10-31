@@ -17,7 +17,7 @@
 # Usage: scripts/install.sh [--help]
 set -euo pipefail
 
-REPO="noviopenworks/homonto"
+REPO="Novirmor/homonto"
 BASE_URL="https://github.com/${REPO}/releases/download"
 API_LATEST="https://api.github.com/repos/${REPO}/releases/latest"
 

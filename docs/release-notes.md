@@ -14,8 +14,8 @@ Three binaries, `homonto` (configuration projector), `onto` (evidence-gated
 workflow), and `to` (minimal workflow bookkeeper), for Linux, macOS, and
 Windows on amd64 and arm64. Each binary is a separate archive, and one
 `SHA256SUMS` covers them all. Install with mise or the installer:
-[installation guide](https://github.com/noviopenworks/homonto/blob/main/docs/guides/installation.md).
-Earlier releases: [CHANGELOG.md](https://github.com/noviopenworks/homonto/blob/main/CHANGELOG.md).
+[installation guide](https://github.com/Novirmor/homonto/blob/main/docs/guides/installation.md).
+Earlier releases: [CHANGELOG.md](https://github.com/Novirmor/homonto/blob/main/CHANGELOG.md).
 
 ### v0.36.0 — fresh bases, bring-your-own tools, and safe cleanup
 
@@ -116,5 +116,5 @@ homonto is young and deliberately narrow. For the 0.x line:
   still applies, but shell commands can execute arbitrary repository code.
   Permission rules do not enforce every effect of an allowed script.
 
-Details: [README › Scope and limits](https://github.com/noviopenworks/homonto/blob/main/README.md#scope-and-limits)
-and [troubleshooting](https://github.com/noviopenworks/homonto/blob/main/docs/guides/troubleshooting.md).
+Details: [README › Scope and limits](https://github.com/Novirmor/homonto/blob/main/README.md#scope-and-limits)
+and [troubleshooting](https://github.com/Novirmor/homonto/blob/main/docs/guides/troubleshooting.md).

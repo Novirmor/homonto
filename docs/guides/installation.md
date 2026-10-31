@@ -170,7 +170,7 @@ use the same binaries.
 Linux and macOS (amd64, arm64). Download the script, read it, then run it:
 
 ```sh
-curl -fsSL -o install.sh https://raw.githubusercontent.com/noviopenworks/homonto/main/scripts/install.sh
+curl -fsSL -o install.sh https://raw.githubusercontent.com/Novirmor/homonto/main/scripts/install.sh
 less install.sh
 bash install.sh
 ```

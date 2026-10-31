@@ -38,8 +38,10 @@ while [ $# -gt 0 ]; do
 done
 emit() { if [ -n "$out" ]; then printf '%s' "$1" >"$out"; else printf '%s' "$1"; fi; }
 case "$url" in
-  *api.github.com*releases/latest*) emit '{"tag_name":"v9.9.9"}' ;;
-  *releases/download*)
+  # Only the canonical repository: a renamed-away owner works today through
+  # GitHub's redirect, which a new owner of the old name could take over.
+  https://api.github.com/repos/Novirmor/homonto/releases/latest) emit '{"tag_name":"v9.9.9"}' ;;
+  https://github.com/Novirmor/homonto/releases/download/*)
     name="$(basename "$url")"
     [ -f "$MOCK_ASSETS/$name" ] || { echo "mock curl: no asset $name" >&2; exit 1; }
     cp "$MOCK_ASSETS/$name" "$out"

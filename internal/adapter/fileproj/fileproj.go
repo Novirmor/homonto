@@ -278,18 +278,24 @@ func ApplyState(tool string, changes []adapter.Change, st *state.State, roots []
 			// dsts cover the CURRENT locations at both scopes, so a repository
 			// move between the apply that recorded the entry and this prune
 			// leaves no orphan (L5): Remove is guarded to our own symlinks.
-			var dsts []string
 			if e, ok := st.Get(tool, c.Key); ok {
 				if d, found := recordedDst(e.Desired); found {
-					dsts = append(dsts, d)
+					if err := link.Remove(d, roots...); err != nil {
+						return err
+					}
 				}
 			}
+			// A fallback is only a guess at where the link moved to. The same
+			// name there may be the user's own skill or another install's link,
+			// which is no conflict with this prune: remove only our symlinks.
 			if fallbackDst != nil {
-				dsts = append(dsts, fallbackDst(c.Key)...)
-			}
-			for _, dst := range dsts {
-				if err := link.Remove(dst, roots...); err != nil {
-					return err
+				for _, dst := range fallbackDst(c.Key) {
+					if !link.IsManaged(dst, roots...) {
+						continue
+					}
+					if err := link.Remove(dst, roots...); err != nil {
+						return err
+					}
 				}
 			}
 			st.Delete(tool, c.Key)

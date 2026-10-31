@@ -116,3 +116,41 @@ func TestApplyState_DeleteRemovesLinkAndState(t *testing.T) {
 		t.Errorf("state not deleted")
 	}
 }
+
+// A fallback location holding the user's own same-named content, or another
+// install's link, is not this prune's conflict: it stays, and the prune completes.
+func TestApplyState_DeleteLeavesForeignFallbacks(t *testing.T) {
+	root, src, dst := setup(t)
+	st, _ := state.Load(t.TempDir())
+	if err := os.Symlink(src, dst); err != nil {
+		t.Fatal(err)
+	}
+	st.Set("claude", "skill.foo", dst+" -> "+src, secret.Hash(dst+" -> "+src))
+	own := filepath.Join(root, "user", "foo")
+	if err := os.MkdirAll(own, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	foreign := filepath.Join(root, "other", "foo")
+	if err := os.MkdirAll(filepath.Dir(foreign), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(t.TempDir(), foreign); err != nil {
+		t.Fatal(err)
+	}
+	del := []adapter.Change{{Action: "delete", Key: "skill.foo", Old: adapter.SecretRedaction}}
+	fallback := func(k string) []string { return []string{own, foreign, dst} }
+	if err := ApplyState("claude", del, st, []string{filepath.Join(root, "content")}, fallback); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Lstat(dst); !os.IsNotExist(err) {
+		t.Errorf("managed link not removed: %v", err)
+	}
+	for _, kept := range []string{own, foreign} {
+		if _, err := os.Lstat(kept); err != nil {
+			t.Errorf("%s removed: %v", kept, err)
+		}
+	}
+	if _, ok := st.Get("claude", "skill.foo"); ok {
+		t.Errorf("state not deleted")
+	}
+}

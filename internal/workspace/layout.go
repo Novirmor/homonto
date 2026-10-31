@@ -12,6 +12,7 @@ import (
 	"unicode"
 
 	"github.com/noviopenworks/homonto/internal/schema"
+	"github.com/noviopenworks/homonto/internal/tomlutil"
 	"github.com/noviopenworks/homonto/internal/workflowroot"
 	"github.com/pelletier/go-toml/v2"
 )
@@ -68,7 +69,7 @@ func loadPaths(configPath string) (l Layout, err error) {
 		} `toml:"worktrees"`
 		Repos map[string]string `toml:"repos"`
 	}
-	if err := toml.Unmarshal(data, &c); err != nil {
+	if err := toml.Unmarshal(tomlutil.StripBOM(data), &c); err != nil {
 		return l, fmt.Errorf("parse config: %w", err)
 	}
 	l.SchemaVersion = c.SchemaVersion

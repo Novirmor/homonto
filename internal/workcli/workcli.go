@@ -19,6 +19,7 @@ import (
 
 	"github.com/noviopenworks/homonto/internal/applylock"
 	"github.com/noviopenworks/homonto/internal/schema"
+	"github.com/noviopenworks/homonto/internal/tomlutil"
 	"github.com/noviopenworks/homonto/internal/workflowroot"
 	"github.com/noviopenworks/homonto/internal/workspace"
 	"github.com/pelletier/go-toml/v2"
@@ -78,7 +79,7 @@ type HomontoConfig struct {
 }
 
 func decodeHomontoConfig(data []byte, cfg *HomontoConfig) error {
-	if err := toml.Unmarshal(data, cfg); err != nil {
+	if err := toml.Unmarshal(tomlutil.StripBOM(data), cfg); err != nil {
 		return err
 	}
 	if cfg.SchemaVersion > 2 {

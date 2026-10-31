@@ -329,3 +329,15 @@ func TestLayoutSchemaGuards(t *testing.T) {
 		}
 	}
 }
+
+func TestLoadAcceptsUTF8ByteOrderMark(t *testing.T) {
+	root := t.TempDir()
+	write(t, filepath.Join(root, "homonto.toml"), "\xef\xbb\xbf[workflow]\nroot = \"records\"\n")
+	l, err := workspace.LoadRoot(root)
+	if err != nil {
+		t.Fatalf("load: %v", err)
+	}
+	if filepath.Base(l.WorkflowRoot) != "records" {
+		t.Fatalf("workflow root = %q, want records", l.WorkflowRoot)
+	}
+}

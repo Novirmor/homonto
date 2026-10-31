@@ -20,6 +20,7 @@ import (
 	"github.com/noviopenworks/homonto/internal/applylock"
 	"github.com/noviopenworks/homonto/internal/fsutil"
 	"github.com/noviopenworks/homonto/internal/schema"
+	"github.com/noviopenworks/homonto/internal/tomlutil"
 	"github.com/noviopenworks/homonto/internal/workflowroot"
 	"github.com/pelletier/go-toml/v2"
 	"gopkg.in/yaml.v3"
@@ -660,7 +661,7 @@ func LoadScopeRoot(root string, aliases []string) (l Layout, err error) {
 		} `toml:"worktrees"`
 		Repos map[string]string `toml:"repos"`
 	}
-	if err := toml.Unmarshal(data, &c); err != nil {
+	if err := toml.Unmarshal(tomlutil.StripBOM(data), &c); err != nil {
 		return l, fmt.Errorf("parse config: %w", err)
 	}
 	if c.SchemaVersion < 0 || c.SchemaVersion >= 2 || len(aliases) != 0 || c.Workflow.Git != nil || c.Worktrees != nil {

@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/noviopenworks/homonto/internal/opid"
+	"github.com/noviopenworks/homonto/internal/tomlutil"
 	"github.com/noviopenworks/homonto/internal/tostate"
 	"github.com/noviopenworks/homonto/internal/workcli"
 	"github.com/noviopenworks/homonto/internal/workspace"
@@ -58,7 +59,7 @@ func runNewWithRepos(cmd *cobra.Command, root, name string, jsonMode bool, repos
 	var cfg struct {
 		SchemaVersion int `toml:"schema_version"`
 	}
-	if err := toml.Unmarshal(data, &cfg); err != nil {
+	if err := toml.Unmarshal(tomlutil.StripBOM(data), &cfg); err != nil {
 		return fmt.Errorf("to new: %w", err)
 	}
 	l := workspace.Layout{SchemaVersion: cfg.SchemaVersion}

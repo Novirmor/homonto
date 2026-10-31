@@ -15,6 +15,13 @@ import (
 	toml "github.com/pelletier/go-toml/v2"
 )
 
+// StripBOM drops a leading UTF-8 byte-order mark. Some Windows editors save
+// one; TOML parsers read it as a stray key character, so every homonto.toml
+// reader strips it before decoding.
+func StripBOM(doc []byte) []byte {
+	return bytes.TrimPrefix(doc, []byte("\xef\xbb\xbf"))
+}
+
 // EnsureRoot normalizes an empty or whitespace-only document to an empty TOML
 // object so a first Set has a root to write into.
 func EnsureRoot(doc []byte) ([]byte, error) {

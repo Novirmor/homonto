@@ -89,3 +89,21 @@ func TestReadTmpRefusesDottedWorkflowRoot(t *testing.T) {
 		t.Fatalf("want workflow records root overlap, got: %v", err)
 	}
 }
+
+// Some Windows editors save UTF-8 with a byte-order mark; it is not content.
+func TestLoadAcceptsUTF8ByteOrderMark(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "homonto.toml")
+	if err := os.WriteFile(path, []byte("\xef\xbb\xbf[tmp]\ndir = \"scratch\"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	c, err := Load(path)
+	if err != nil {
+		t.Fatalf("load: %v", err)
+	}
+	if enabled, dir := c.ResolvedTmp(); !enabled || dir != "scratch" {
+		t.Fatalf("[tmp] = (%v, %q), want (true, scratch)", enabled, dir)
+	}
+	if dir, err := ReadTmp(path); err != nil || filepath.Base(dir) != "scratch" {
+		t.Fatalf("ReadTmp = %q, %v", dir, err)
+	}
+}

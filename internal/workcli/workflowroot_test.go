@@ -336,3 +336,14 @@ func TestValidateWorkflowRootChangeUsesSharedDiagnostics(t *testing.T) {
 		})
 	}
 }
+
+func TestWorkflowRootAcceptsUTF8ByteOrderMark(t *testing.T) {
+	root := t.TempDir()
+	if err := os.WriteFile(filepath.Join(root, "homonto.toml"), []byte("\xef\xbb\xbf[workflow]\nroot = \"records\"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	got, err := WorkflowRoot(root)
+	if err != nil || filepath.Base(got) != "records" {
+		t.Fatalf("WorkflowRoot = %q, %v", got, err)
+	}
+}

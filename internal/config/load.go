@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"github.com/noviopenworks/homonto/internal/schema"
+	"github.com/noviopenworks/homonto/internal/tomlutil"
 	"github.com/noviopenworks/homonto/internal/workflowroot"
 	"github.com/noviopenworks/homonto/internal/workspace"
 	toml "github.com/pelletier/go-toml/v2"
@@ -18,6 +19,7 @@ import (
 // decode parses the raw TOML and enforces the schema-version forward-safety
 // guard. It is the first config-loading phase.
 func decode(data []byte) (*Config, error) {
+	data = tomlutil.StripBOM(data)
 	var c Config
 	if err := toml.Unmarshal(data, &c); err != nil {
 		return nil, fmt.Errorf("parse config: %w", err)

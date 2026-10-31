@@ -7,6 +7,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/noviopenworks/homonto/internal/tomlutil"
 	toml "github.com/pelletier/go-toml/v2"
 )
 
@@ -108,7 +109,7 @@ func ReadTmp(configPath string) (string, error) {
 		Tmp      *tmpTable `toml:"tmp"`
 		Workflow Workflow  `toml:"workflow"`
 	}
-	if err := toml.Unmarshal(data, &raw); err != nil {
+	if err := toml.Unmarshal(tomlutil.StripBOM(data), &raw); err != nil {
 		return "", fmt.Errorf("parse config: %w", err)
 	}
 	c := &Config{Tmp: raw.Tmp, Workflow: raw.Workflow}

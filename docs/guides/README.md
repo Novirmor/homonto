@@ -45,6 +45,8 @@
 
 ## Beyond the guides
 
+- [Roadmap](../roadmap.md) — proposed milestones to 1.0 and beyond, grounded in
+  the current implementation.
 - [`../adr/`](../adr/) — architecture decision records: why things are the
   way they are.
 - [`../to-framework-design.md`](../to-framework-design.md) — the design

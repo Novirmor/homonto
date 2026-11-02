@@ -6,6 +6,8 @@ import (
 	"path/filepath"
 	"testing"
 	"time"
+
+	"github.com/Novirmor/homonto/internal/testbin"
 )
 
 func TestGithubDraftRuntime(t *testing.T) {
@@ -19,6 +21,7 @@ func TestGithubDraftRuntime(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 	cmd := exec.CommandContext(ctx, "node", "testdata/github-runtime.mjs", source)
+	cmd.Env = testbin.Env(t)
 	if out, err := cmd.CombinedOutput(); err != nil {
 		t.Fatalf("GitHub draft runtime: %v\n%s", err, out)
 	}

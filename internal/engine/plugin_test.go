@@ -15,6 +15,7 @@ import (
 	"github.com/Novirmor/homonto/internal/config"
 	"github.com/Novirmor/homonto/internal/jsonutil"
 	"github.com/Novirmor/homonto/internal/secret"
+	"github.com/Novirmor/homonto/internal/testbin"
 	"github.com/Novirmor/homonto/internal/workflowroot"
 	"github.com/Novirmor/homonto/internal/workflowstatus"
 )
@@ -761,6 +762,7 @@ func TestWorkflowContextRuntimeUsesMaterializedConfigBinding(t *testing.T) {
 				defer cancel()
 				cmd := exec.CommandContext(ctx, "node", script, filepath.Join(e.workflowContextDestination(), "index.ts"), configPath, fixture)
 				cmd.Dir = launch
+				cmd.Env = testbin.Env(t)
 				if out, err := cmd.CombinedOutput(); err != nil {
 					t.Fatalf("native projected V2 context runtime contract: %v\n%s", err, out)
 				}

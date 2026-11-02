@@ -60,10 +60,18 @@ commit, and keep the evidence:
    standalone, unregistered server must not be able to authorize publication.
    A local model with a fake `gh` proves no external send happened, not that
    GitHub accepted a receipt.
-3. **Real GitHub sandbox** in a throwaway repository and account: a denied
-   send, one permitted send with a matching receipt, changed actor,
-   destination, and PR OIDs, and reconciliation of an uncertain send. Never
-   use a production issue or PR.
+3. **Hosting sandboxes** (`scripts/hosting-sandbox.sh`, fixtures in
+   `test/e2e/hosting/sandbox.env`): for each of GitHub, GitLab.com and
+   Bitbucket Cloud whose release content changed, the runtime layer (draft,
+   unapproved publish is a no-op, native approval, publish, reconcile,
+   cleanup against the real host) and the process layer (every read-only
+   `/h-*` process ends at a shown draft with nothing published). With
+   `--write`, the write processes push to and then reset their fixtures.
+   Throwaway repositories and accounts only, never a production issue or
+   PR. A host without a sandbox reports SKIP, and a SKIP is not a pass. The
+   output links [hosting provider differences](guides/hosting-differences.md);
+   confirm every **(unverified)** claim the run exercised and update the
+   page.
 4. **Migration both ways** in throwaway projects. OpenCode 2 reads supported
    V1 server config, but its terminal settings live in the global `cli.json`;
    V1 files stay untouched, and snapshot undo does not restore their terminal

@@ -35,3 +35,4 @@ test/e2e/.out/
 
 # Per-developer mise overrides (mise.toml holds the shared pins).
 /mise.local.toml
+test/e2e/hosting/sandbox.env

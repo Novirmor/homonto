@@ -25,7 +25,7 @@ const fakeOID = "1111111111111111111111111111111111111111"
 
 func (*fakeProvider) ID() string    { return "fake" }
 func (*fakeProvider) Label() string { return "Fake" }
-func (*fakeProvider) CLI() string   { return "fakecli" }
+func (*fakeProvider) CLI() []string { return []string{"fakecli"} }
 
 func (*fakeProvider) ParseTarget(raw string) (Target, error) {
 	var n int64

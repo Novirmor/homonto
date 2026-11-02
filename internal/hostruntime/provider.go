@@ -135,8 +135,8 @@ type Provider interface {
 	ID() string
 	// Label names the host in progress stages and messages ("GitHub").
 	Label() string
-	// CLI is the host CLI's executable; reads through it report "Reading <Label>".
-	CLI() string
+	// CLI is the host command prefix; reads through it report "Reading <Label>".
+	CLI() []string
 	// ParseTarget validates and parses a destination URL.
 	ParseTarget(raw string) (Target, error)
 	// ValidateItem checks the kind-specific fields of one input against its target.

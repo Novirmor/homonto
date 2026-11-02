@@ -21,7 +21,7 @@ const GitLabHost = "gitlab.com"
 
 func (GitLab) ID() string    { return "gitlab" }
 func (GitLab) Label() string { return "GitLab" }
-func (GitLab) CLI() string   { return "glab" }
+func (GitLab) CLI() []string { return []string{"glab"} }
 
 var (
 	gitlabTarget  = regexp.MustCompile(`^https://([^/]+)/(.+)/-/(issues|merge_requests)/([1-9][0-9]*)$`)

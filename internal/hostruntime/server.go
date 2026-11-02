@@ -21,7 +21,7 @@ const maxMessage = 16 * 1024 * 1024
 var errCancelled = errors.New("invocation cancelled")
 
 // Providers lists the hosts the runtime can bind.
-var Providers = map[string]Provider{"github": GitHub{}, "gitlab": GitLab{}}
+var Providers = map[string]Provider{"github": GitHub{}, "gitlab": GitLab{}, "bitbucket": Bitbucket{}}
 
 type message struct {
 	JSONRPC string          `json:"jsonrpc"`

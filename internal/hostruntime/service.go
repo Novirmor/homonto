@@ -184,7 +184,7 @@ func (t transport) Run(argv []string, stdin *string) (string, error) {
 		return "", err
 	}
 	if stdin == nil {
-		if len(argv) > 0 && argv[0] == t.s.provider.CLI() {
+		if cli := t.s.provider.CLI(); len(argv) >= len(cli) && slices.Equal(argv[:len(cli)], cli) {
 			t.c.Progress("Reading " + t.s.label())
 		} else {
 			t.c.Progress("Checking workspace")

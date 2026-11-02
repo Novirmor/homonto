@@ -15,7 +15,7 @@ type GitHub struct{}
 
 func (GitHub) ID() string    { return "github" }
 func (GitHub) Label() string { return "GitHub" }
-func (GitHub) CLI() string   { return "gh" }
+func (GitHub) CLI() []string { return []string{"gh"} }
 
 var (
 	githubTarget = regexp.MustCompile(`^https://([^/]+)/([^/]+/[^/]+)/(issues|pull)/([1-9][0-9]*)$`)

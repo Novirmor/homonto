@@ -719,6 +719,12 @@ func (s *Service) publishOne(c Call, x Transport, d *draft, i *Item) (attempted 
 		i.Receipt, i.Status = &matches[0], "published"
 		return false, nil
 	}
+	if err := s.provider.Preflight(x, i); err != nil {
+		return false, err
+	}
+	if err := s.live(c, d); err != nil {
+		return false, err
+	}
 	c.Progress("Ready to publish " + s.label() + " draft")
 	if err := s.live(c, d); err != nil {
 		return false, err

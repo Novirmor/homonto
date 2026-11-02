@@ -247,6 +247,9 @@ func githubReceipt(v any, i *Item) (Receipt, error) {
 	return Receipt{ID: NumberID(id), URL: m["html_url"].(string)}, nil
 }
 
+// Preflight has nothing to check on GitHub.
+func (GitHub) Preflight(Transport, *Item) error { return nil }
+
 func (GitHub) Publish(x Transport, i *Item) (Receipt, error) {
 	payload := i.Payload
 	out, err := x.Run(githubArgv(i.Target.Host, githubEndpoint(i), "POST", false), &payload)

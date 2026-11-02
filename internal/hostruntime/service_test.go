@@ -83,6 +83,8 @@ func (*fakeProvider) Payload(i *Item) (string, error) {
 	return marshal(map[string]string{"body": i.Body}, false), nil
 }
 
+func (*fakeProvider) Preflight(Transport, *Item) error { return nil }
+
 func (*fakeProvider) PublishCommand(i *Item) []string {
 	return []string{"fakecli", "post", i.Target.URL}
 }

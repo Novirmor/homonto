@@ -155,6 +155,9 @@ type Provider interface {
 	Payload(i *Item) (string, error)
 	// PublishCommand is the command the publication permission request names.
 	PublishCommand(i *Item) []string
+	// Preflight checks host preconditions right before sending; a failure
+	// blocks the item without counting as an attempted send.
+	Preflight(x Transport, i *Item) error
 	// Publish sends one approved item and validates its receipt.
 	Publish(x Transport, i *Item) (Receipt, error)
 	// Existing lists remote publications that match an item exactly.

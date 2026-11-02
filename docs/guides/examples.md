@@ -15,7 +15,7 @@ offer.
 | 6 | [Audited team on onto](#6-audited-team-on-onto) | `[engines.onto]`, variants, steps |
 | 7 | [Everything: onto + to + no + h](#7-everything-onto--to--no--h) | all packages |
 | 8 | [Just `no`](#8-just-no) | `[engines.no]` |
-| 9 | [GitHub review only](#9-github-review-only) | `[workflows.h]` |
+| 9 | [GitHub review only](#9-github-review-only) | `[workflows.h-workflow-gh]` |
 | 10 | [Cost-tuned models](#10-cost-tuned-models) | per-agent models |
 | 11 | [Tooling and scratch](#11-tooling-and-a-scratch-directory) | `[tooling]`, `[tmp]` |
 | 12 | [Sibling repositories (legacy)](#12-sibling-repositories-legacy-layout) | `[repos]`, `repo =` |
@@ -274,8 +274,8 @@ scope  = "project"
 source = "builtin:no"
 scope  = "project"
 
-[workflows.h]
-source = "builtin:h"
+[workflows.h-workflow-gh]
+source = "builtin:h-workflow-gh"
 scope  = "project"
 
 [subagents.homonto.opencode]
@@ -340,8 +340,8 @@ Spike issues and review or continue PRs without installing an engine.
 (`/h-resolve-issue` additionally needs an engine.)
 
 ```toml
-[workflows.h]
-source = "builtin:h"
+[workflows.h-workflow-gh]
+source = "builtin:h-workflow-gh"
 scope  = "project"
 
 [subagents.homonto.opencode]

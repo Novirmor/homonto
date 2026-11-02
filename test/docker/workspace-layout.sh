@@ -45,8 +45,8 @@ for repo in api web; do
 done
 
 cat > "$HOME/framework.toml" <<'EOF'
-[workflows.h]
-source = "builtin:h"
+[workflows.h-workflow-gh]
+source = "builtin:h-workflow-gh"
 scope = "project"
 [engines.onto]
 source = "builtin:onto"

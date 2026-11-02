@@ -8,6 +8,10 @@ linters:
     - misspell
     - unconvert
   settings:
+    misspell:
+      # GitLab's REST field names (noteable_iid, noteable_type).
+      ignore-rules:
+        - noteable
     errcheck:
       exclude-functions:
         # Best-effort writes to the CLI's own output stream. A failed write

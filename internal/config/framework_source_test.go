@@ -108,8 +108,8 @@ scope = "project"
 
 func TestLoad_AcceptsStandaloneHWorkflow(t *testing.T) {
 	p := filepath.Join(t.TempDir(), "homonto.toml")
-	if err := os.WriteFile(p, []byte(`[workflows.h]
-source = "builtin:h"
+	if err := os.WriteFile(p, []byte(`[workflows.h-workflow-gh]
+source = "builtin:h-workflow-gh"
 scope = "project"
 `+modelsFor("homonto", "h-spike", "h-review")), 0o644); err != nil {
 		t.Fatal(err)
@@ -118,7 +118,7 @@ scope = "project"
 	if err != nil {
 		t.Fatalf("standalone h workflow rejected at load: %v", err)
 	}
-	if _, ok := cfg.Workflows["h"]; !ok {
+	if _, ok := cfg.Workflows["h-workflow-gh"]; !ok {
 		t.Fatal("h workflow missing from loaded config")
 	}
 	if len(cfg.Engines) != 0 {
@@ -163,7 +163,7 @@ func TestLoad_RejectsBuiltinPackageKindMismatch(t *testing.T) {
 		text string
 		want string
 	}{
-		{"workflow as engine", "[engines.h]\nsource = \"builtin:h\"", "a workflow, not an engine"},
+		{"workflow as engine", "[engines.h-workflow-gh]\nsource = \"builtin:h-workflow-gh\"", "a workflow, not an engine"},
 		{"engine as workflow", "[workflows.onto]\nsource = \"builtin:onto\"", "an engine, not a workflow"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -238,5 +238,54 @@ func TestLoad_AllEnginesMayBeInstalled(t *testing.T) {
 	text += ontoFrameworkModels() + toSpecialistsOnly() + modelsFor("no-implementer", "no-reviewer")
 	if _, err := Load(writeConfig(t, text)); err != nil {
 		t.Fatalf("all three engines must coexist at installation: %v", err)
+	}
+}
+
+func TestLoad_RejectsRetiredHWorkflowNamingReplacement(t *testing.T) {
+	for _, text := range []string{
+		"[workflows.h]\nsource = \"builtin:h\"",
+		"[workflows.github]\nsource = \"builtin:h\"",
+		"[workflows.h]\nsource = \"builtin:h-workflow-gh\"",
+		"[engines.h]\nsource = \"builtin:h\"",
+	} {
+		p := filepath.Join(t.TempDir(), "homonto.toml")
+		if err := os.WriteFile(p, []byte(text+"\nscope = \"project\"\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		_, err := Load(p)
+		if err == nil || !strings.Contains(err.Error(), "renamed") || !strings.Contains(err.Error(), `[workflows.h-workflow-gh] source = "builtin:h-workflow-gh"`) {
+			t.Fatalf("%q: Load() error = %v, want the rename and its replacement", text, err)
+		}
+	}
+}
+
+func TestLoad_CoInstallsEveryHostingWorkflow(t *testing.T) {
+	p := filepath.Join(t.TempDir(), "homonto.toml")
+	text := ""
+	for _, name := range []string{"h-workflow-gh", "h-workflow-gl", "h-workflow-bb"} {
+		text += "[workflows." + name + "]\nsource = \"builtin:" + name + "\"\nscope = \"project\"\n"
+	}
+	if err := os.WriteFile(p, []byte(text+modelsFor("homonto", "h-spike", "h-review")), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := Load(p)
+	if err != nil {
+		t.Fatalf("co-installed hosting workflows rejected: %v", err)
+	}
+	skills, err := cfg.ExpandedSkillEntriesForTool("opencode")
+	if err != nil {
+		t.Fatalf("shared process skills must deduplicate across hosting workflows: %v", err)
+	}
+	names := map[string]bool{}
+	for _, s := range skills {
+		names[s.Name] = true
+	}
+	for _, want := range []string{"h-review-pr", "h-host-gh", "h-host-gl", "h-host-bb", "homonto"} {
+		if !names[want] {
+			t.Errorf("expanded skills missing %s: %v", want, names)
+		}
+	}
+	if hosts := cfg.HostingProviders(); !hosts["github"] || !hosts["gitlab"] || !hosts["bitbucket"] {
+		t.Fatalf("hosting providers = %v", hosts)
 	}
 }

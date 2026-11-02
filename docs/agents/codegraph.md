@@ -10,8 +10,15 @@ choice ([ADR 0022](../adr/0022-tooling-providers-are-declared-not-shipped.md)).
 
 ## Setup
 
-Install the CLI (`npm install -g @colbymchenry/codegraph`), then from the repo
-root:
+The CLI is pinned in `mise.toml`. Install it from the repo root:
+
+```bash
+mise trust
+mise install
+```
+
+Without mise, install `@colbymchenry/codegraph@1.6.2` with `npm install -g`
+and ensure npm's global bin directory is on `PATH`. Then from the repo root:
 
 ```bash
 task index            # first run: codegraph init (builds .codegraph/)

@@ -1,6 +1,6 @@
 ---
 name: h-resolve-issue
-description: Use when the user asks to implement, fix, or resolve a GitHub issue end to end — invoked by /h-resolve-issue; resolves through a spike, evidence-based workflow selection, and a verified pull request.
+description: Use when the user asks to implement, fix, or resolve an issue end to end (GitHub or GitLab.com issue, or a Bitbucket Cloud brief) — invoked by /h-resolve-issue; resolves through a spike, evidence-based workflow selection, and a verified pull request.
 ---
 
 # h-resolve-issue
@@ -35,6 +35,21 @@ Legacy schemas 0/1 also admit the implicit config source as a candidate; schema 
 requires explicit aliases. Apply canonical host/repository-ID checks to either.
 Follow [verified source publication](../homonto/references/publication.md) for
 candidate pinning, exact PR reuse, recovery, and repository-qualified issue intent.
+
+## Host
+
+This process is shared by every hosting workflow (`h-workflow-gh`,
+`h-workflow-gl`, `h-workflow-bb`). Before resolving input, identify the host
+from the target URL, or from the selected source's `origin` when the input is
+a bare number or branch: github.com or a GitHub Enterprise host → `h-host-gh`;
+gitlab.com → `h-host-gl`; bitbucket.org → `h-host-bb`. Load that host skill.
+The commands below are GitHub's forms. On another host, perform the same
+operation with the host skill's form and follow its adaptations and
+unsupported steps. If the matching host skill is unavailable, name the hosting
+workflow to install and stop.
+
+On Bitbucket Cloud there is no issue tracker: the input is a brief, as
+`h-host-bb` describes, and nothing is posted back to an issue.
 
 ## Required order
 

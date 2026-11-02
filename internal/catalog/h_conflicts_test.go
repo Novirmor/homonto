@@ -62,7 +62,7 @@ func TestHResolveConflictsMaterializesWithoutEngines(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	entries, err := c.Expand([]string{"h"})
+	entries, err := c.Expand([]string{"h-workflow-gh"})
 	if err != nil {
 		t.Fatal(err)
 	}

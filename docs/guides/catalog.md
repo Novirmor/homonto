@@ -12,11 +12,15 @@ item is for. How the pieces work together is in [workflows](workflows.md).
 | `onto` | `[engines.onto]` | `homonto`, `onto`, `onto-open`, `onto-design`, `onto-build`, `onto-verify`, `onto-close`, `onto-light`, `onto-no-slop` | `/onto`, `/onto-open`, `/onto-design`, `/onto-build`, `/onto-verify`, `/onto-close`, `/onto-light`, `/onto-no-slop`, `/onto-bypass` | `homonto`, `onto-explorer`, `onto-implementer`, `onto-reviewer`, `onto-skeptic` | `onto` |
 | `to` | `[engines.to]` | `homonto`, `to`, `to-plan`, `to-do`, `to-done`, `to-no-slop` | `/to`, `/to-plan`, `/to-do`, `/to-done`, `/to-no-slop`, `/to-bypass` | `homonto`, `to-explorer`, `to-implementer`, `to-reviewer`, `to-skeptic` | `to` |
 | `no` | `[engines.no]` | `no` | `/no` | `no-implementer`, `no-reviewer` | — |
-| `h` | `[workflows.h]` | `homonto`, `h-spike-issue`, `h-resolve-issue`, `h-review-pr`, `h-continue-pr`, `h-resolve-conflicts`, `h-review-batch` | `/h-spike-issue`, `/h-resolve-issue`, `/h-review-pr`, `/h-continue-pr`, `/h-resolve-conflicts`, `/h-review-batch` | `homonto`, `h-spike`, `h-review` | — |
+| `h-workflow-gh` | `[workflows.h-workflow-gh]` | `homonto`, `h-host-gh`, `h-spike-issue`, `h-resolve-issue`, `h-review-pr`, `h-continue-pr`, `h-resolve-conflicts`, `h-review-batch` | `/h-spike-issue`, `/h-resolve-issue`, `/h-review-pr`, `/h-continue-pr`, `/h-resolve-conflicts`, `/h-review-batch` | `homonto`, `h-spike`, `h-review` | — |
+| `h-workflow-gl` | `[workflows.h-workflow-gl]` | the same, with `h-host-gl` | the same | the same | — (uses `glab`) |
+| `h-workflow-bb` | `[workflows.h-workflow-bb]` | the same, with `h-host-bb` | the same | the same | — (uses `homonto host bitbucket`) |
 
-`onto`, `to`, and `h` also install the `homonto-workflow` OpenCode plugin
+`onto`, `to`, and the hosting workflows also install the `homonto-workflow` OpenCode plugin
 ([OpenCode integration](opencode.md)). Items shared between packages
-(`homonto` skill and agent) are installed once.
+(`homonto` skill and agent, and every process skill, command and worker the
+three hosting workflows share) are installed once, so the hosting workflows can
+be installed together.
 
 Standalone items: skills `handoff` and `grilling`; commands `/handoff` and
 `/grill`; plugin `permission-observer`.
@@ -58,7 +62,13 @@ Standalone items: skills `handoff` and `grilling`; commands `/handoff` and
 |---|---|
 | `no` | Inventory of the two `no` workers. Its `references/execution.md` is the coordination contract for `/no` and for `h-resolve-issue` when `no` is chosen: one implementer per repository, parent-owned commits, review before delivery, optional shared workspace-task bookkeeping. |
 
-### h workflow
+### Hosting workflows (h-workflow-gh, h-workflow-gl, h-workflow-bb)
+
+The six process skills are shared. Each package adds one host skill that maps
+every host operation to its own form: `h-host-gh` (GitHub, `gh`), `h-host-gl`
+(GitLab.com, `glab`) and `h-host-bb` (Bitbucket Cloud,
+`homonto host bitbucket`). [Hosting provider differences](hosting-differences.md)
+lists what each host does differently.
 
 | Skill | Purpose |
 |---|---|

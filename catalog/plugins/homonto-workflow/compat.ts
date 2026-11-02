@@ -22,6 +22,8 @@ export type Binding = {
   configRoot: string
   coordinator: string
   githubEnabled: boolean
+  gitlabEnabled: boolean
+  bitbucketEnabled: boolean
 }
 
 export function requireLiveContext(context: ToolContext): void {

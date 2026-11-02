@@ -434,10 +434,11 @@ func (e *Engine) subagentRenderContextFor(targets map[string]map[string]bool) (m
 	workflowFrameworkInstalled := false
 	for _, resource := range e.Cfg.Frameworks {
 		switch resource.Source {
-		case "builtin:onto", "builtin:to", "builtin:no", "builtin:h":
+		case "builtin:onto", "builtin:to", "builtin:no":
 			workflowFrameworkInstalled = true
 		}
 	}
+	workflowFrameworkInstalled = workflowFrameworkInstalled || len(e.Cfg.HostingProviders()) > 0
 	if workflowFrameworkInstalled {
 		// Grant only selected skill installations and their desired content roots,
 		// never all of HOME or even all user-installed skills.
@@ -827,15 +828,16 @@ func (e *Engine) workflowBinding() ([]byte, error) {
 			coordinator = name
 		}
 	}
-	h, githubEnabled := e.Cfg.Frameworks["h"]
-	githubEnabled = githubEnabled && h.Source == "builtin:h"
+	hosts := e.Cfg.HostingProviders()
 	data, err := json.MarshalIndent(struct {
-		Version       int    `json:"version"`
-		ConfigPath    string `json:"configPath"`
-		ConfigRoot    string `json:"configRoot"`
-		Coordinator   string `json:"coordinator"`
-		GithubEnabled bool   `json:"githubEnabled"`
-	}{1, e.ConfigPath, e.ProjectRoot, coordinator, githubEnabled}, "", "  ")
+		Version          int    `json:"version"`
+		ConfigPath       string `json:"configPath"`
+		ConfigRoot       string `json:"configRoot"`
+		Coordinator      string `json:"coordinator"`
+		GithubEnabled    bool   `json:"githubEnabled"`
+		GitlabEnabled    bool   `json:"gitlabEnabled"`
+		BitbucketEnabled bool   `json:"bitbucketEnabled"`
+	}{1, e.ConfigPath, e.ProjectRoot, coordinator, hosts["github"], hosts["gitlab"], hosts["bitbucket"]}, "", "  ")
 	if err != nil {
 		return nil, err
 	}

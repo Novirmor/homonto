@@ -75,15 +75,15 @@ sense together. Declaring one installs all of it. Packages come in two roles:
 | Role | Table | Builtin | What it provides |
 |---|---|---|---|
 | **Engine** | `[engines.<name>]` | `onto`, `to`, `no` | A work model for implementing changes. `onto` and `to` also have a binary that owns lifecycle state. |
-| **Workflow** | `[workflows.<name>]` | `h` | User-facing coordination that uses engines, e.g. GitHub issue and PR work. |
+| **Workflow** | `[workflows.<name>]` | `h-workflow-gh` | User-facing coordination that uses engines, e.g. GitHub issue and PR work. |
 
 Engines can coexist. Each **task** uses exactly one engine and keeps it on
-resume. `h` needs no engine to research issues or review PRs; resolving an
+resume. `h-workflow-gh` needs no engine to research issues or review PRs; resolving an
 issue needs one installed.
 
 ## The coordinator and its specialists
 
-The `onto`, `to`, and `h` packages all install the same primary agent,
+The `onto`, `to`, and `h-workflow-gh` packages all install the same primary agent,
 **`homonto`** — the coordinator. Every `/onto*`, `/to*`, and `/h-*` slash
 command runs in it. The coordinator:
 
@@ -164,5 +164,5 @@ installs or runs them.
 | Preset | onto's reduced path: `light`, with no design phase and no skeptics. |
 | Receipt | onto's record of how an archived change was integrated (`merge:`, `pr:`, `unchanged:`). |
 | Skeptic | A read-only agent prompted to refute a verification claim. |
-| Workflow (package) | A user-facing package such as `h`. |
+| Workflow (package) | A user-facing package such as `h-workflow-gh`. |
 | Workflow root | `[workflow] root`, the records directory. |

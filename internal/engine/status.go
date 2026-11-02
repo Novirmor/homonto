@@ -194,10 +194,10 @@ func (e *Engine) OpenCodeV2Warnings() []string {
 		}
 	}
 	if e.Cfg.WorkflowContextEnabled() {
-		for _, framework := range e.Cfg.Frameworks {
-			if framework.Source == "builtin:h" {
-				out = append(out, "OpenCode V2 GitHub publication requires a bound local service, native question approval, and a live host verification; fail closed if the matching service cannot be discovered")
-				break
+		hosts := e.Cfg.HostingProviders()
+		for _, host := range []struct{ id, label string }{{"github", "GitHub"}, {"gitlab", "GitLab"}, {"bitbucket", "Bitbucket"}} {
+			if hosts[host.id] {
+				out = append(out, "OpenCode V2 "+host.label+" publication requires a bound local service, native question approval, and a live host verification; fail closed if the matching service cannot be discovered")
 			}
 		}
 	}

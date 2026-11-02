@@ -8,7 +8,7 @@ homonto ships three binaries from one repository and one release:
 | `onto` | You declare `[engines.onto]` (the evidence-gated workflow). |
 | `to` | You declare `[engines.to]` (the minimal workflow). |
 
-The `no` engine and the `h` GitHub workflow have no binary of their own.
+The `no` engine and the `h-workflow-gh` GitHub workflow have no binary of their own.
 
 Every tagged release attaches one archive per binary per platform
 (`<binary>_<tag>_<os>_<arch>.tar.gz`, `.zip` on Windows) for Linux, macOS, and
@@ -191,7 +191,7 @@ confirm, and only for a newly created `homonto.toml`, it also asks:
 - where workflow records live (`[workflow] root`, default `docs`);
 - whether to declare a workspace scratch directory (`[tmp]`);
 - which sibling Git repositories to trust (`[repos]`);
-- which engines to enable (`onto`, `to`) and whether to add the `h` GitHub
+- which engines to enable (`onto`, `to`) and whether to add the `h-workflow-gh` GitHub
   workflow;
 - one model, written to `[settings.opencode]` **and** every installed agent's
   model block.

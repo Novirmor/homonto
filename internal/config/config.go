@@ -375,11 +375,11 @@ func (c *Config) WorkflowContextEnabled() bool {
 	}
 	for _, framework := range c.Frameworks {
 		switch framework.Source {
-		case "builtin:onto", "builtin:to", "builtin:h":
+		case "builtin:onto", "builtin:to":
 			return true
 		}
 	}
-	return false
+	return len(c.HostingProviders()) > 0
 }
 
 // Workflow configures the shared home for onto or to artifacts.

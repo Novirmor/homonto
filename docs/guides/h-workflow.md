@@ -1,15 +1,26 @@
-# The h GitHub workflow
+# The hosting workflows
 
-`h` brings GitHub issues and pull requests into the coordinator: research an
-issue, resolve it into a PR, review a PR, continue a PR from its feedback,
-resolve its merge conflicts, or review a batch. It is a workflow package, not an engine — it uses an
-installed engine only when resolving an issue.
+`h-workflow-gh` (GitHub), `h-workflow-gl` (GitLab.com) and `h-workflow-bb`
+(Bitbucket Cloud) bring issues and pull requests into the coordinator: research
+an issue, resolve it into a PR, review a PR, continue a PR from its feedback,
+resolve its merge conflicts, or review a batch. They are workflow packages, not
+engines, and use an installed engine only when resolving an issue.
+
+All three share the same six commands and process skills. Each adds one host
+skill (`h-host-gh`, `h-host-gl`, `h-host-bb`) with that host's forms, and the
+target's host picks which one applies, so you can install several side by side
+([ADR 0089](../adr/0089-name-hosting-workflows-per-host-with-shared-processes.md)).
+On GitLab.com, "PR" means merge request. Bitbucket Cloud has no issue tracker,
+so `/h-spike-issue` and `/h-resolve-issue` start from a brief you paste, for
+example a Jira issue's text. Every difference is listed in
+[hosting provider differences](hosting-differences.md). The examples below use
+GitHub.
 
 ## Install
 
 ```toml
-[workflows.h]
-source = "builtin:h"
+[workflows.h-workflow-gh]
+source = "builtin:h-workflow-gh"
 scope  = "project"
 
 [subagents.homonto.opencode]
@@ -26,7 +37,25 @@ scope  = "project"
 # … plus its agents' model blocks
 ```
 
-Requirements: `gh` on PATH and authenticated (`gh auth status`), and a local
+For GitLab.com or Bitbucket Cloud, declare `[workflows.h-workflow-gl]`
+(`source = "builtin:h-workflow-gl"`) or `[workflows.h-workflow-bb]`
+(`source = "builtin:h-workflow-bb"`) the same way, in addition to or instead of
+the GitHub workflow.
+
+Host requirements:
+
+- **GitHub:** `gh` on PATH and authenticated (`gh auth status`).
+- **GitLab.com:** `glab` on PATH and authenticated
+  (`glab auth status --hostname gitlab.com`). Self-managed GitLab is not
+  supported.
+- **Bitbucket Cloud:** a scoped Bitbucket API token in
+  `HOMONTO_BITBUCKET_TOKEN`, as the value or as a `${pass:...}` reference,
+  checked with `homonto host bitbucket auth status`. Set
+  `HOMONTO_BITBUCKET_EMAIL` to use Basic auth. App passwords no longer work.
+  The token never appears in output or errors
+  ([ADR 0091](../adr/0091-own-the-bitbucket-cloud-transport.md)).
+
+Requirements: the host CLI above, and a local
 checkout whose `origin` is the issue's or PR's repository (renamed and
 transferred repositories are resolved by GitHub repository ID). In schema 2,
 that checkout must be a declared `[repos]` alias; the config directory itself
@@ -176,8 +205,12 @@ counts and URLs. "All open PRs" over ten asks about cost once.
 
 ## OpenCode draft tools
 
-With `h` installed and OpenCode 2, the workflow plugin registers
-`homonto_github_draft`, `homonto_github_status`, and `homonto_github_publish`.
+With a hosting workflow installed and OpenCode 2, the workflow plugin registers
+that host's draft tools: `homonto_github_*`, `homonto_gitlab_*` or
+`homonto_bitbucket_*`, each `_draft`, `_status` and `_publish`. Their
+lifecycle runs in the `homonto` binary (`homonto runtime serve`, started by the
+plugin; [ADR 0090](../adr/0090-move-the-draft-publication-core-into-the-binary.md)),
+so the plugin needs a matching `homonto` on PATH.
 The coordinator stages issue comments, PR comments, or formal reviews
 (`COMMENT` / `REQUEST_CHANGES`), shows the exact preview, and publishes only
 items you approve through OpenCode's native question dialog — a permission

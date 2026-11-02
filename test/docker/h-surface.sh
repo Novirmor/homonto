@@ -13,8 +13,8 @@ git config user.name e2e
 
 cat > homonto.toml <<'EOF'
 # h alone installs only its own shared coordinator and read-only workers.
-[workflows.h]
-source = "builtin:h"
+[workflows.h-workflow-gh]
+source = "builtin:h-workflow-gh"
 scope = "project"
 
 [subagents.homonto.opencode]

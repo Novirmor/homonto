@@ -388,7 +388,7 @@ t20_guided_project_setup() {
   config="$s/homonto.toml"
   expect_exit "t20: guided project setup" 0
   expect_stderr "t20: configures a new project" "Configured homonto.toml"
-  expect_stderr "t20: h is standalone" "standalone h GitHub workflow"
+  expect_stderr "t20: h is standalone" "standalone GitHub workflow"
   expect_not_stderr "t20: h is not an engine" "h GitHub engine"
   expect_stderr "t20: lifecycle choices are named" "Lifecycle workflows to configure"
   expect_stderr "t20: model scope is disclosed" "global OpenCode settings"
@@ -399,7 +399,7 @@ t20_guided_project_setup() {
     && grep -qF "api = \"$s/repo-a\"" "$config" \
     && grep -qF '[engines.onto]' "$config" \
     && grep -qF '[engines.to]' "$config" \
-    && grep -qF '[workflows.h]' "$config" \
+    && grep -qF '[workflows.h-workflow-gh]' "$config" \
     && grep -qF '[subagents.homonto.opencode]' "$config" \
     && grep -qF '[subagents.h-spike.opencode]' "$config" \
     && grep -qF 'model = "test-provider/test-model"' "$config" \
@@ -462,7 +462,7 @@ t24_h_with_onto_stays_independent() {
   expect_exit "t24: onto + h guided setup" 0
   expect_next_steps absent "t24: h does not enable to" "/to"
   if grep -qF '[engines.onto]' "$config" \
-    && grep -qF '[workflows.h]' "$config" \
+    && grep -qF '[workflows.h-workflow-gh]' "$config" \
     && ! grep -qF '[engines.to]' "$config" \
     && ! grep -qF '[subagents.to-explorer.opencode]' "$config" \
     && grep -qF '[subagents.h-spike.opencode]' "$config"; then
@@ -488,7 +488,7 @@ t25_h_with_to_stays_independent() {
   expect_exit "t25: to + h guided setup" 0
   expect_next_steps absent "t25: h does not enable onto" "/onto"
   if grep -qF '[engines.to]' "$config" \
-    && grep -qF '[workflows.h]' "$config" \
+    && grep -qF '[workflows.h-workflow-gh]' "$config" \
     && ! grep -qF '[engines.onto]' "$config" \
     && ! grep -qF '[subagents.onto-explorer.opencode]' "$config" \
     && grep -qF '[subagents.h-review.opencode]' "$config"; then
@@ -835,7 +835,7 @@ t39_standalone_h_without_lifecycle_binaries() {
   expect_next_steps present "t39: standalone h commands advertised" '/h-*'
   expect_next_steps absent "t39: no onto advice" '/onto'
   expect_next_steps absent "t39: no to advice" '/to'
-  if grep -qF '[workflows.h]' "$config" \
+  if grep -qF '[workflows.h-workflow-gh]' "$config" \
     && grep -qF '[subagents.homonto.opencode]' "$config" \
     && grep -qF '[subagents.h-spike.opencode]' "$config" \
     && grep -qF '[subagents.h-review.opencode]' "$config" \

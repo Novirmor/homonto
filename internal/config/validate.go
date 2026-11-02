@@ -98,6 +98,9 @@ func validateWorkflow(c *Config) error {
 // cannot occupy both namespaces: model selection is dynamic, but a catalog
 // package has one role.
 func validatePackages(c *Config) error {
+	if err := rejectRetiredPackages(c); err != nil {
+		return err
+	}
 	for _, name := range slices.Sorted(maps.Keys(c.Workflows)) {
 		if _, duplicate := c.Engines[name]; duplicate {
 			return fmt.Errorf("parse config: %q is declared as both a workflow and an engine", name)
@@ -110,6 +113,27 @@ func validatePackages(c *Config) error {
 		return err
 	}
 	return validateBuiltinPackageKinds(c)
+}
+
+// GitHubWorkflow is the bundled GitHub hosting workflow (ADR 0089).
+const GitHubWorkflow = "h-workflow-gh"
+
+// rejectRetiredPackages fails a declaration of a renamed builtin package and
+// names its replacement. There is no alias or migration shim (ADR 0081): the
+// old spelling must be rewritten before the config loads.
+func rejectRetiredPackages(c *Config) error {
+	for _, group := range []struct {
+		table     string
+		resources map[string]Resource
+	}{{"workflows", c.Workflows}, {"engines", c.Engines}} {
+		for _, name := range sortedResourceNames(group.resources) {
+			if group.resources[name].Source == "builtin:h" || (name == "h" && strings.HasPrefix(group.resources[name].Source, "builtin:")) {
+				return fmt.Errorf("parse config: %s.%s: the h workflow was renamed; replace [%s.%s] source = %q with [workflows.%s] source = \"builtin:%s\" (ADR 0089)",
+					group.table, name, group.table, name, group.resources[name].Source, GitHubWorkflow, GitHubWorkflow)
+			}
+		}
+	}
+	return nil
 }
 
 // validateBuiltinPackageKinds makes the public split semantic rather than a

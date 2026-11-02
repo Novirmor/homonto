@@ -375,7 +375,7 @@ func (c *Config) WorkflowContextEnabled() bool {
 	}
 	for _, framework := range c.Frameworks {
 		switch framework.Source {
-		case "builtin:onto", "builtin:to", "builtin:h":
+		case "builtin:onto", "builtin:to", "builtin:h-workflow-gh":
 			return true
 		}
 	}

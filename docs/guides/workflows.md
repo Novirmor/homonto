@@ -7,7 +7,7 @@ share. Each has its own page: [onto](onto-workflow.md), [to](to-workflow.md),
 
 ## At a glance
 
-| | **onto** | **to** | **no** | **h** |
+| | **onto** | **to** | **no** | **h-workflow-gh** |
 |---|---|---|---|---|
 | Kind | engine | engine | engine | workflow (GitHub) |
 | Phases | `open → design → build → verify → close` (+ `light` preset) | `plan → do → done` | none | per skill |

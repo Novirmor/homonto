@@ -155,8 +155,8 @@ model = "anthropic/claude-opus-4-8"
 // hFrameworkTOML installs the standalone h workflow and only its coordinator
 // and two read-only workers.
 const hFrameworkTOML = `
-[workflows.h]
-source = "builtin:h"
+[workflows.h-workflow-gh]
+source = "builtin:h-workflow-gh"
 scope = "project"
 
 [subagents.homonto.opencode]

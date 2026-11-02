@@ -1,4 +1,4 @@
-name = "h"
+name = "h-workflow-gh"
 kind = "workflow"
 version = "0.14.0"
 description = "Standalone GitHub workflow skill bundle — spike, resolve, review, continue, conflict resolution, batch review"

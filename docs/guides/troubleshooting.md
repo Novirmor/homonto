@@ -43,8 +43,9 @@ Errors name the file, the key, and usually the fix:
 |---|---|
 | `subagents.<name>.opencode model is required` | Add a model block for that agent; every builtin agent a package installs needs one. |
 | `declares a model override, but its source "local:…" is not builtin:` | Remove the block; put `model:` in the local agent file. |
-| `is a workflow, not an engine` | Move `builtin:h` to `[workflows.h]` (or `onto`/`to`/`no` to `[engines]`). |
+| `is a workflow, not an engine` | Move `builtin:h-workflow-gh` to `[workflows.h-workflow-gh]` (or `onto`/`to`/`no` to `[engines]`). |
 | `unknown configuration fields` + `[frameworks.…]` | Rename to `[engines.*]` / `[workflows.*]`. |
+| `the h workflow was renamed` | Replace `[workflows.h]` `source = "builtin:h"` with `[workflows.h-workflow-gh]` `source = "builtin:h-workflow-gh"`. |
 | `models.opencode.<tier> is an unknown table` | Model tiers were removed; use per-agent `[subagents.<name>.opencode]`. |
 | `is missing required scope` | Add `scope = "project"` or `"user"`. |
 | `is tune-only; scope, repo, mode… would be ignored` | A block without `source` tunes an installed agent; remove declaration fields or add a `source`. |
@@ -99,7 +100,7 @@ findings.
 ## onto
 
 **Mutating commands refuse: "has no [engines.onto] table" / "run `homonto apply`".**
-Declare `[engines.onto]` and apply. `[workflows.h]` alone doesn't install
+Declare `[engines.onto]` and apply. `[workflows.h-workflow-gh]` alone doesn't install
 onto.
 
 **`advance` refuses.** The message names the gate. `onto gate <change>`
@@ -177,7 +178,7 @@ entries, and whether the target branch locally contains the worktree HEAD.
 onto/to/h package (or `workflow_context = true`), and a session started
 inside the config root. Restart OpenCode after apply.
 
-**GitHub draft tools fail.** They need `[workflows.h]`, OpenCode 2's bound
+**GitHub draft tools fail.** They need `[workflows.h-workflow-gh]`, OpenCode 2's bound
 local service, and native question support; headless clients can't approve.
 
 **`workflow_bridge` — the OpenCode 1 workflow bridge was removed.** Delete the

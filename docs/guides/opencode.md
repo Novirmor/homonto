@@ -6,7 +6,7 @@ limits of observing a workflow from inside the tool.
 
 ## The workflow plugin
 
-Declaring `builtin:onto`, `builtin:to`, or `builtin:h` installs the
+Declaring `builtin:onto`, `builtin:to`, or `builtin:h-workflow-gh` installs the
 `homonto-workflow` plugin as a project-local link:
 
 ```text
@@ -66,7 +66,7 @@ the next skill. Neither writes anything.
 
 ## GitHub draft tools
 
-With `[workflows.h]`, the plugin registers:
+With `[workflows.h-workflow-gh]`, the plugin registers:
 
 | Tool | Does |
 |---|---|

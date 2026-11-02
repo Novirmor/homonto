@@ -6,9 +6,9 @@ agent: homonto
 # /h-resolve-conflicts
 
 Load and follow the `h-resolve-conflicts` skill. If it is unavailable, say the
-required skill is unavailable, direct the user to install or reapply the `h`
-GitHub skill bundle (declare `[workflows.h]` if needed and run `homonto apply`),
-and stop.
+required skill is unavailable, direct the user to install or reapply the
+`h-workflow-gh` GitHub skill bundle (declare `[workflows.h-workflow-gh]` if
+needed and run `homonto apply`), and stop.
 
 `$ARGUMENTS` is one unambiguous PR reference: a GitHub PR URL,
 `OWNER/REPO#NUMBER`, a number, or a unique head branch resolved against the

@@ -21,10 +21,10 @@ import (
 
 func TestWorkflowBindingCoordinatorAndGithubScope(t *testing.T) {
 	root := t.TempDir()
-	for _, source := range []string{"", "builtin:h", "local:h"} {
+	for _, source := range []string{"", "builtin:h-workflow-gh", "local:h-workflow-gh"} {
 		for _, name := range []string{"homonto", "coordinator"} {
 			e := &Engine{ConfigPath: filepath.Join(root, "selected.toml"), ProjectRoot: root, Cfg: &config.Config{
-				Frameworks: map[string]config.Resource{"h": {Source: source}},
+				Frameworks: map[string]config.Resource{"h-workflow-gh": {Source: source}},
 				Subagents:  map[string]config.Subagent{name: {Source: "builtin:homonto"}},
 			}}
 			data, err := e.workflowBinding()
@@ -38,7 +38,7 @@ func TestWorkflowBindingCoordinatorAndGithubScope(t *testing.T) {
 			if err := json.Unmarshal(data, &binding); err != nil {
 				t.Fatal(err)
 			}
-			if binding.Coordinator != name || binding.GithubEnabled != (source == "builtin:h") {
+			if binding.Coordinator != name || binding.GithubEnabled != (source == "builtin:h-workflow-gh") {
 				t.Fatalf("source=%q alias=%q binding=%s", source, name, data)
 			}
 		}

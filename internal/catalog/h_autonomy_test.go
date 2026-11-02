@@ -22,7 +22,7 @@ func TestHSkillBundleNamingAndEntryPoints(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	h, ok := c.Framework("h")
+	h, ok := c.Framework("h-workflow-gh")
 	if !ok {
 		t.Fatal("missing h bundle manifest")
 	}
@@ -40,8 +40,8 @@ func TestHSkillBundleNamingAndEntryPoints(t *testing.T) {
 			}
 			command := hPromptText(t, "commands/"+name+".md")
 			for _, want := range []string{
-				"required skill is unavailable", "install or reapply the `h` GitHub skill bundle",
-				"[workflows.h]", "homonto apply",
+				"required skill is unavailable", "`h-workflow-gh` GitHub skill bundle",
+				"[workflows.h-workflow-gh]", "homonto apply",
 			} {
 				if !strings.Contains(command, want) {
 					t.Errorf("command missing skill recovery guidance %q", want)
@@ -57,7 +57,7 @@ func TestHSkillBundleNamingAndEntryPoints(t *testing.T) {
 func TestHomontoDistinguishesHSkillsFromLifecycleWorkflows(t *testing.T) {
 	text := hPromptText(t, "subagents/homonto.md")
 	for _, want := range []string{
-		"`h` GitHub skill bundle", "`onto` and `to` own the lifecycle workflows",
+		"`h-workflow-gh` GitHub skill bundle", "`onto` and `to` own the lifecycle workflows",
 		"h-* GitHub intake skills", "Review skills draft findings",
 	} {
 		if !strings.Contains(text, want) {

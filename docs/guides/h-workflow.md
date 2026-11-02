@@ -1,6 +1,6 @@
-# The h GitHub workflow
+# The h-workflow-gh GitHub workflow
 
-`h` brings GitHub issues and pull requests into the coordinator: research an
+`h-workflow-gh` brings GitHub issues and pull requests into the coordinator: research an
 issue, resolve it into a PR, review a PR, continue a PR from its feedback,
 resolve its merge conflicts, or review a batch. It is a workflow package, not an engine — it uses an
 installed engine only when resolving an issue.
@@ -8,8 +8,8 @@ installed engine only when resolving an issue.
 ## Install
 
 ```toml
-[workflows.h]
-source = "builtin:h"
+[workflows.h-workflow-gh]
+source = "builtin:h-workflow-gh"
 scope  = "project"
 
 [subagents.homonto.opencode]

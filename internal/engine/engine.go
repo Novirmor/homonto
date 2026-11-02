@@ -434,7 +434,7 @@ func (e *Engine) subagentRenderContextFor(targets map[string]map[string]bool) (m
 	workflowFrameworkInstalled := false
 	for _, resource := range e.Cfg.Frameworks {
 		switch resource.Source {
-		case "builtin:onto", "builtin:to", "builtin:no", "builtin:h":
+		case "builtin:onto", "builtin:to", "builtin:no", "builtin:h-workflow-gh":
 			workflowFrameworkInstalled = true
 		}
 	}
@@ -827,8 +827,8 @@ func (e *Engine) workflowBinding() ([]byte, error) {
 			coordinator = name
 		}
 	}
-	h, githubEnabled := e.Cfg.Frameworks["h"]
-	githubEnabled = githubEnabled && h.Source == "builtin:h"
+	gh, githubEnabled := e.Cfg.Frameworks[config.GitHubWorkflow]
+	githubEnabled = githubEnabled && gh.Source == "builtin:"+config.GitHubWorkflow
 	data, err := json.MarshalIndent(struct {
 		Version       int    `json:"version"`
 		ConfigPath    string `json:"configPath"`

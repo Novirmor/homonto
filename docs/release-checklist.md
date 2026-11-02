@@ -37,7 +37,7 @@ never touched:
 | `workspace-layout` | Schema-2 control, records, sources, and execution roots through the real CLIs |
 | `onto-lifecycle` | onto's install gate, init, gated phase advances (including a failing gate), doctor, dependency-aware close, archive |
 | `to-lifecycle` | to's install gate, the self-asserted `--verified`, abandon, archive, config-free read-only commands, onto + to side by side |
-| `h-surface` | The standalone h workflow: command and worker projection, worker permissions, rejection by the engine binaries' gates |
+| `h-surface` | The standalone h-workflow-gh workflow: command and worker projection, worker permissions, rejection by the engine binaries' gates |
 | `release-packaging` | The real release build: 18 archives, `SHA256SUMS`, extraction, stamped versions, a smoke of an *extracted* binary |
 | `v015-surface` | explain and provenance, links surviving a repo move, evidence and trace, promote, permission suggestions, snapshot undo |
 

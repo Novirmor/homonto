@@ -162,7 +162,7 @@ automatic engine switch.
 
 ## GitHub intake
 
-GitHub work reaches you through the `h` GitHub skill bundle (`h-spike-issue`,
+GitHub work reaches you through the `h-workflow-gh` GitHub skill bundle (`h-spike-issue`,
 `h-resolve-issue`, `h-review-pr`, `h-continue-pr`, `h-resolve-conflicts`,
 `h-review-batch`). These skills handle intake, research, review, and
 publication; `onto` and `to` own the lifecycle workflows:

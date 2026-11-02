@@ -195,7 +195,7 @@ func (e *Engine) OpenCodeV2Warnings() []string {
 	}
 	if e.Cfg.WorkflowContextEnabled() {
 		for _, framework := range e.Cfg.Frameworks {
-			if framework.Source == "builtin:h" {
+			if framework.Source == "builtin:h-workflow-gh" {
 				out = append(out, "OpenCode V2 GitHub publication requires a bound local service, native question approval, and a live host verification; fail closed if the matching service cannot be discovered")
 				break
 			}

@@ -301,8 +301,8 @@ content. `remote:` requires `digest`.
 ## Workflows — `[workflows.<name>]`
 
 ```toml
-[workflows.h]
-source = "builtin:h"
+[workflows.h-workflow-gh]
+source = "builtin:h-workflow-gh"
 scope  = "project"
 
 [subagents.homonto.opencode]
@@ -313,15 +313,15 @@ model = "anthropic/claude-sonnet-5-5"
 model = "anthropic/claude-opus-5-5"
 ```
 
-`builtin:h` installs the `homonto` skill and coordinator, five `h-*` skills
+`builtin:h-workflow-gh` installs the `homonto` skill and coordinator, five `h-*` skills
 and commands, the `h-spike` and `h-review` workers, the workflow plugin, and
 the GitHub draft tools. It installs **no** engine. `/h-resolve-issue` needs
 one installed engine to implement with; the other `h` commands do not.
 
-Builtin roles are fixed. `builtin:h` under `[engines]` fails:
+Builtin roles are fixed. `builtin:h-workflow-gh` under `[engines]` fails:
 
 ```text
-parse config: engines.h source "builtin:h" is a workflow, not an engine
+parse config: engines.h-workflow-gh source "builtin:h-workflow-gh" is a workflow, not an engine
 ```
 
 Legacy `[frameworks.*]` tables are rejected; rename them to `[engines.*]` or
@@ -416,7 +416,7 @@ workflow_context = true    # V2 read-only context + status panel
 
 | Key | Default | Meaning |
 |---|---|---|
-| `workflow_context` | `true` when `builtin:onto`, `builtin:to`, or `builtin:h` is declared; else `false` | Links `.opencode/plugins/homonto-workflow-context`: workflow context for model requests and compaction, the **Open workflow status** panel, `homonto_status` / `homonto_handoff` tools, and (with `h`) GitHub draft tools. |
+| `workflow_context` | `true` when `builtin:onto`, `builtin:to`, or `builtin:h-workflow-gh` is declared; else `false` | Links `.opencode/plugins/homonto-workflow-context`: workflow context for model requests and compaction, the **Open workflow status** panel, `homonto_status` / `homonto_handoff` tools, and (with `h`) GitHub draft tools. |
 
 The OpenCode 1 bridge is removed: `workflow_bridge = true`, or an enabled plugin
 declared with `source = "homonto-workflow"`, fails at load and names the key.
@@ -655,8 +655,8 @@ scope  = "project"
 source = "builtin:to"
 scope  = "project"
 
-[workflows.h]
-source = "builtin:h"
+[workflows.h-workflow-gh]
+source = "builtin:h-workflow-gh"
 scope  = "project"
 
 [tooling]

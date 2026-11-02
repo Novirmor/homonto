@@ -33,7 +33,7 @@ func TestNew_CatalogShipsOnlyNativeFrameworks(t *testing.T) {
 		}
 	}
 	sort.Strings(names)
-	if want := []string{"h", "no", "onto", "to"}; !reflect.DeepEqual(names, want) {
+	if want := []string{"h-workflow-gh", "no", "onto", "to"}; !reflect.DeepEqual(names, want) {
 		t.Errorf("shipped frameworks = %v, want exactly %v", names, want)
 	}
 }

@@ -1,6 +1,6 @@
 ---
 name: h-review-pr
-description: Use when the user asks to review a GitHub pull request — invoked by /h-review-pr or when a PR needs findings before a merge decision.
+description: Use when the user asks to review a pull request (GitHub, GitLab.com merge request, or Bitbucket Cloud) — invoked by /h-review-pr or when a PR needs findings before a merge decision.
 ---
 
 # h-review-pr
@@ -23,6 +23,18 @@ asks to pause. Follow
 [h GitHub skill autonomy](../h-resolve-issue/references/autonomy.md) for failure
 recovery, trusted workspace execution, and permission boundaries; it never
 replaces explicit approval of the shown draft.
+
+## Host
+
+This process is shared by every hosting workflow (`h-workflow-gh`,
+`h-workflow-gl`, `h-workflow-bb`). Before resolving input, identify the host
+from the target URL, or from the selected source's `origin` when the input is
+a bare number or branch: github.com or a GitHub Enterprise host → `h-host-gh`;
+gitlab.com → `h-host-gl`; bitbucket.org → `h-host-bb`. Load that host skill.
+The commands below are GitHub's forms. On another host, perform the same
+operation with the host skill's form and follow its adaptations and
+unsupported steps. If the matching host skill is unavailable, name the hosting
+workflow to install and stop.
 
 ## Required order
 

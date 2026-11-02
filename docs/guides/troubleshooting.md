@@ -45,6 +45,8 @@ Errors name the file, the key, and usually the fix:
 | `declares a model override, but its source "local:…" is not builtin:` | Remove the block; put `model:` in the local agent file. |
 | `is a workflow, not an engine` | Move `builtin:h-workflow-gh` to `[workflows.h-workflow-gh]` (or `onto`/`to`/`no` to `[engines]`). |
 | `unknown configuration fields` + `[frameworks.…]` | Rename to `[engines.*]` / `[workflows.*]`. |
+| `[runtime_unavailable]` / `[runtime_mismatch]` from a draft tool | The workflow plugin could not start a matching `homonto runtime serve`. Put the same `homonto` that ran `apply` on PATH and restart OpenCode. |
+| `HOMONTO_BITBUCKET_TOKEN is not set` | Create a scoped Bitbucket API token and export it, or a `${pass:...}` reference to it, in the environment that starts OpenCode. |
 | `the h workflow was renamed` | Replace `[workflows.h]` `source = "builtin:h"` with `[workflows.h-workflow-gh]` `source = "builtin:h-workflow-gh"`. |
 | `models.opencode.<tier> is an unknown table` | Model tiers were removed; use per-agent `[subagents.<name>.opencode]`. |
 | `is missing required scope` | Add `scope = "project"` or `"user"`. |

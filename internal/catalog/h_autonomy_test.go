@@ -2,6 +2,7 @@ package catalog
 
 import (
 	"io/fs"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -30,8 +31,24 @@ func TestHSkillBundleNamingAndEntryPoints(t *testing.T) {
 		t.Errorf("h description must identify a GitHub workflow skill bundle: %q", h.Description)
 	}
 	entries := []string{"h-spike-issue", "h-resolve-issue", "h-review-pr", "h-continue-pr", "h-resolve-conflicts", "h-review-batch"}
-	if len(h.Skills) != len(entries)+1 || len(h.Commands) != len(entries) {
-		t.Errorf("h must declare its shared skill plus %d skill/command entry points, got %d skills and %d commands", len(entries), len(h.Skills), len(h.Commands))
+	if len(h.Skills) != len(entries)+2 || len(h.Commands) != len(entries) || h.Skills["h-host-gh"] != "skills/h-host-gh" {
+		t.Errorf("h must declare its shared skill, its host skill and %d skill/command entry points, got %d skills and %d commands", len(entries), len(h.Skills), len(h.Commands))
+	}
+	// Every hosting workflow ships the same process content; only the host skill differs (ADR 0089).
+	for _, host := range []string{"gl", "bb"} {
+		other, ok := c.Framework("h-workflow-" + host)
+		if !ok || other.Kind != "workflow" {
+			t.Fatalf("missing h-workflow-%s workflow package", host)
+		}
+		for name, path := range h.Skills {
+			if name != "h-host-gh" && other.Skills[name] != path {
+				t.Errorf("h-workflow-%s skill %s = %q, want the shared %q", host, name, other.Skills[name], path)
+			}
+		}
+		if other.Skills["h-host-"+host] != "skills/h-host-"+host || len(other.Skills) != len(h.Skills) ||
+			!reflect.DeepEqual(other.Commands, h.Commands) || !reflect.DeepEqual(other.Subagents, h.Subagents) || !reflect.DeepEqual(other.Plugins, h.Plugins) {
+			t.Errorf("h-workflow-%s must share every process resource with h-workflow-gh: %+v", host, other)
+		}
 	}
 	for _, name := range entries {
 		t.Run(name, func(t *testing.T) {
@@ -40,7 +57,7 @@ func TestHSkillBundleNamingAndEntryPoints(t *testing.T) {
 			}
 			command := hPromptText(t, "commands/"+name+".md")
 			for _, want := range []string{
-				"required skill is unavailable", "`h-workflow-gh` GitHub skill bundle",
+				"required skill is unavailable", "hosting workflow for the target's host", "[workflows.h-workflow-gl]", "[workflows.h-workflow-bb]", "`h-host-gl`",
 				"[workflows.h-workflow-gh]", "homonto apply",
 			} {
 				if !strings.Contains(command, want) {
@@ -57,7 +74,7 @@ func TestHSkillBundleNamingAndEntryPoints(t *testing.T) {
 func TestHomontoDistinguishesHSkillsFromLifecycleWorkflows(t *testing.T) {
 	text := hPromptText(t, "subagents/homonto.md")
 	for _, want := range []string{
-		"`h-workflow-gh` GitHub skill bundle", "`onto` and `to` own the lifecycle workflows",
+		"hosting workflows (`h-workflow-gh`,", "`onto` and `to` own the lifecycle workflows",
 		"h-* GitHub intake skills", "Review skills draft findings",
 	} {
 		if !strings.Contains(text, want) {

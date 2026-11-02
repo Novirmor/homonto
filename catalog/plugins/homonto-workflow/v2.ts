@@ -8,11 +8,13 @@ import { fileURLToPath } from "node:url"
 import { createRunner } from "./runner.ts"
 import { WorkflowPanelRPC } from "./rpc.ts"
 import { createAuthorization } from "./authorization.ts"
-import { createGithubDrafts } from "./github.ts"
+import { HOSTS, createHostDrafts } from "./github.ts"
+import type { Host } from "./github.ts"
 import { requireCoordinator, requireLiveContext, strictArgs } from "./compat.ts"
 import { CONTINUATION_POLICY, CONTEXT_SNAPSHOT_LIMIT, HANDBACK_LIMIT, createHandback } from "./continuation.ts"
 
-type Binding = { version: 1; configPath: string; configRoot: string; coordinator: string; githubEnabled: boolean }
+type Binding = { version: 1; configPath: string; configRoot: string; coordinator: string; githubEnabled: boolean; gitlabEnabled: boolean; bitbucketEnabled: boolean }
+const HOST_FLAGS = { github: "githubEnabled", gitlab: "gitlabEnabled", bitbucket: "bitbucketEnabled" } as const
 type Change = {
   identity: string; status: string; path: string; workflow: string; name: string; phase: string
   derivedPhase?: string; tasksCompleted: number; tasksTotal: number; verifyResult?: string
@@ -48,12 +50,13 @@ async function selectedBinding(signal?: AbortSignal): Promise<Binding> {
   if (!object(binding) || binding.version !== 1 || !absolute(binding.configPath) || !absolute(binding.configRoot) ||
       dirname(binding.configPath) !== binding.configRoot || await realpath(binding.configRoot) !== dirname(control) ||
       (binding.coordinator !== undefined && !text(binding.coordinator)) ||
-      (binding.githubEnabled !== undefined && typeof binding.githubEnabled !== "boolean")) {
+      Object.values(HOST_FLAGS).some(flag => binding[flag] !== undefined && typeof binding[flag] !== "boolean")) {
     throw new Error("invalid selected workflow config; run homonto apply")
   }
   return { version: 1, configPath: binding.configPath, configRoot: binding.configRoot,
     coordinator: typeof binding.coordinator === "string" ? binding.coordinator : "homonto",
-    githubEnabled: binding.githubEnabled === true }
+    githubEnabled: binding.githubEnabled === true, gitlabEnabled: binding.gitlabEnabled === true,
+    bitbucketEnabled: binding.bitbucketEnabled === true }
 }
 
 function parseSnapshot(raw: string, binding: Binding): Snapshot {
@@ -133,15 +136,16 @@ export default {
     let previousFindings = ""
     let initialized = false
     const authorization = createAuthorization(ctx, identity)
-    const github = binding.githubEnabled ? createGithubDrafts({
-      configPath: binding.configPath, run: processes.at(() => binding.configRoot),
-    }) : undefined
+    // One draft/publication service per enabled hosting workflow (ADR 0089, ADR 0090).
+    const hosts = (Object.keys(HOSTS) as Host[]).filter(host => binding[HOST_FLAGS[host]]).map(host => createHostDrafts({
+      host, configPath: binding.configPath, run: processes.at(() => binding.configRoot),
+    }))
     const handback = createHandback()
 
     async function checkBinding(signal: AbortSignal) {
       const current = await selectedBinding(signal)
       if (current.configPath !== binding.configPath || current.configRoot !== binding.configRoot ||
-          current.coordinator !== binding.coordinator || current.githubEnabled !== binding.githubEnabled) {
+          current.coordinator !== binding.coordinator || Object.values(HOST_FLAGS).some(flag => current[flag] !== binding[flag])) {
         throw new Error("workflow binding changed; reload the plugin")
       }
     }
@@ -158,7 +162,7 @@ export default {
       lifetime.abort()
       processes.dispose()
       authorization.dispose()
-      github?.dispose()
+      for (const host of hosts) host.dispose()
       handback.clear()
       for (const controller of requests) controller.abort()
       requests.clear()
@@ -265,7 +269,7 @@ export default {
           if (result.text) event.system.push({ type: "text", text: bounded(result.text, CONTEXT_SNAPSHOT_LIMIT - (blocked ? HANDBACK_LIMIT : 0)) })
           if (blocked) event.system.push({ type: "text", text: blocked })
         }
-        if (!disposed && !signal.aborted && github) event.system.push({ type: "text", text: github.context(event.sessionID) })
+        if (!disposed && !signal.aborted) for (const host of hosts) event.system.push({ type: "text", text: host.context(event.sessionID) })
       } catch {
         if (!disposed) event.system.push({ type: "text", text: unavailable })
       } finally {
@@ -403,11 +407,9 @@ export default {
       await toolContext(call).ask({ permission: "homonto_read", patterns: [binding.configPath], metadata: { tool: name } })
     }
 
-    const githubTool = async (name: keyof NonNullable<typeof github>["tools"], input: unknown,
-      call: Invocation) => {
-      if (!github) throw new Error("GitHub tools are unavailable")
+    const hostTool = async (host: (typeof hosts)[number], name: string, input: unknown, call: Invocation) => {
       await permitted(call)
-      const result = await github.tools[name].execute(input, toolContext(call))
+      const result = await host.tools[name].execute(input, toolContext(call))
       await permitted(call)
       return result
     }
@@ -446,20 +448,20 @@ export default {
             await permitted(call)
             return { content: bounded(raw, 16384) }
           } })
-        if (!github) return
-        for (const name of ["homonto_github_draft", "homonto_github_status", "homonto_github_publish"] as const) {
-          const definition = github.tools[name]
-          editor.add({ name, description: definition.description, options: { codemode: false },
-            input: { type: "object", properties: definition.args, required: Object.keys(definition.args), additionalProperties: false },
-            execute: async (input, call) => {
-              const result = await githubTool(name, input, call)
-              return { content: result }
-            } })
+        for (const host of hosts) {
+          for (const [name, definition] of Object.entries(host.tools)) {
+            editor.add({ name, description: definition.description, options: { codemode: false },
+              input: { type: "object", properties: definition.args, required: Object.keys(definition.args), additionalProperties: false },
+              execute: async (input, call) => {
+                const result = await hostTool(host, name, input, call)
+                return { content: result }
+              } })
+          }
         }
       }))
-      if (github) {
+      if (hosts.length) {
         registrations.push(await ctx.tool.hook("execute.before", (event) => {
-          github.before({ tool: event.tool, sessionID: event.sessionID, callID: event.id }, { args: event.input })
+          for (const host of hosts) host.before({ tool: event.tool, sessionID: event.sessionID, callID: event.id }, { args: event.input })
         }))
       }
       const rpc = await ctx.rpc.register(WorkflowPanelRPC, {
@@ -472,7 +474,7 @@ export default {
         try {
           for await (const event of subscriber) {
             if (disposed) return
-            if (github) github.event({ event })
+            for (const host of hosts) host.event({ event })
             await observeHandback(event)
             if (event.type !== "session.idle" || !object(event.data) || typeof event.data.sessionID !== "string") continue
             const sessionID = event.data.sessionID

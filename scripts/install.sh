@@ -524,14 +524,14 @@ write_package_config() {
   printf '\n[subagents.homonto.opencode]\nmodel = "%s"\n' "$WORKFLOW_MODEL"
   for package in "$@"; do
     case "$package" in
-      h-workflow-gh) table=workflows ;;
+      h-workflow-gh | h-workflow-gl | h-workflow-bb) table=workflows ;;
       *) table=engines ;;
     esac
     printf '\n[%s.%s]\nsource = "builtin:%s"\nscope = "project"\n' "$table" "$package" "$package"
     case "$package" in
       onto) names+=(onto-explorer onto-reviewer onto-implementer onto-skeptic) ;;
       to) names+=(to-explorer to-reviewer to-implementer to-skeptic) ;;
-      h-workflow-gh) names+=(h-spike h-review) ;;
+      h-workflow-gh | h-workflow-gl | h-workflow-bb) names+=(h-spike h-review) ;;
     esac
   done
   for name in ${names[@]+"${names[@]}"}; do
@@ -630,6 +630,8 @@ next_steps() {
     done
     if [ "$SETUP_H" = yes ]; then
       printf '  After apply, /h-* commands provide the standalone h-workflow-gh GitHub workflow.\n' >&2
+      printf '  For GitLab.com or Bitbucket Cloud, also declare [workflows.h-workflow-gl] or\n' >&2
+      printf '  [workflows.h-workflow-bb]; the same /h-* commands serve every host.\n' >&2
     fi
   elif [ "$INIT_RAN" -eq 1 ]; then
     printf '\nNext steps\n' >&2

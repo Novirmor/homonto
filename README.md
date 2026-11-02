@@ -148,6 +148,7 @@ Four packages in the bundled catalog:
 | **to** | `[engines.to]` | `plan → do → done` with one `plan.md`. Real verification and a skeptic pass, recorded as a self-asserted claim. For fast focused work. |
 | **no** | `[engines.no]` | An implementer and a reviewer. No binary, no records. |
 | **h-workflow-gh** | `[workflows.h-workflow-gh]` | `/h-spike-issue`, `/h-resolve-issue`, `/h-review-pr`, `/h-continue-pr`, `/h-resolve-conflicts`, `/h-review-batch`. Comments and reviews require approval of the shown draft; conflict resolution authorizes only its verified same-PR push. |
+| **h-workflow-gl** / **h-workflow-bb** | `[workflows.h-workflow-gl]` / `[workflows.h-workflow-bb]` | The same six commands on GitLab.com merge requests and issues, or on Bitbucket Cloud pull requests (no issue tracker there, so spikes and resolves start from a pasted brief). Installable alongside the GitHub workflow. |
 
 Plus standalone skills and commands (`handoff`, `grilling` / `/grill`) and an
 OpenCode 2 plugin that shows workflow status in a panel and carries workflow

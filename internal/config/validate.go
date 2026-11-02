@@ -118,6 +118,28 @@ func validatePackages(c *Config) error {
 // GitHubWorkflow is the bundled GitHub hosting workflow (ADR 0089).
 const GitHubWorkflow = "h-workflow-gh"
 
+// HostingWorkflows maps each bundled hosting workflow to the runtime provider
+// whose draft tools it enables (ADR 0089, ADR 0090).
+var HostingWorkflows = map[string]string{
+	GitHubWorkflow:  "github",
+	"h-workflow-gl": "gitlab",
+	"h-workflow-bb": "bitbucket",
+}
+
+// HostingProviders reports the runtime providers the config's builtin hosting
+// workflows enable.
+func (c *Config) HostingProviders() map[string]bool {
+	out := map[string]bool{}
+	for _, r := range c.Frameworks {
+		if name, ok := strings.CutPrefix(r.Source, "builtin:"); ok {
+			if provider, ok := HostingWorkflows[name]; ok {
+				out[provider] = true
+			}
+		}
+	}
+	return out
+}
+
 // rejectRetiredPackages fails a declaration of a renamed builtin package and
 // names its replacement. There is no alias or migration shim (ADR 0081): the
 // old spelling must be rewritten before the config loads.

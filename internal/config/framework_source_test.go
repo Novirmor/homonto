@@ -258,3 +258,34 @@ func TestLoad_RejectsRetiredHWorkflowNamingReplacement(t *testing.T) {
 		}
 	}
 }
+
+func TestLoad_CoInstallsEveryHostingWorkflow(t *testing.T) {
+	p := filepath.Join(t.TempDir(), "homonto.toml")
+	text := ""
+	for _, name := range []string{"h-workflow-gh", "h-workflow-gl", "h-workflow-bb"} {
+		text += "[workflows." + name + "]\nsource = \"builtin:" + name + "\"\nscope = \"project\"\n"
+	}
+	if err := os.WriteFile(p, []byte(text+modelsFor("homonto", "h-spike", "h-review")), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := Load(p)
+	if err != nil {
+		t.Fatalf("co-installed hosting workflows rejected: %v", err)
+	}
+	skills, err := cfg.ExpandedSkillEntriesForTool("opencode")
+	if err != nil {
+		t.Fatalf("shared process skills must deduplicate across hosting workflows: %v", err)
+	}
+	names := map[string]bool{}
+	for _, s := range skills {
+		names[s.Name] = true
+	}
+	for _, want := range []string{"h-review-pr", "h-host-gh", "h-host-gl", "h-host-bb", "homonto"} {
+		if !names[want] {
+			t.Errorf("expanded skills missing %s: %v", want, names)
+		}
+	}
+	if hosts := cfg.HostingProviders(); !hosts["github"] || !hosts["gitlab"] || !hosts["bitbucket"] {
+		t.Fatalf("hosting providers = %v", hosts)
+	}
+}

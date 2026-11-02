@@ -29,7 +29,7 @@
 | [onto workflow](onto-workflow.md) | The evidence-gated lifecycle, phase by phase |
 | [to workflow](to-workflow.md) | The minimal plan → do → done loop |
 | [no engine](no-workflow.md) | Implement and review without records |
-| [h-workflow-gh GitHub workflow](h-workflow.md) | Issues and pull requests |
+| [Hosting workflows](h-workflow.md) | Issues and pull requests on GitHub, GitLab.com and Bitbucket Cloud |
 | [Hosting provider differences](hosting-differences.md) | GitHub, GitLab.com and Bitbucket Cloud, process by process |
 | [Workspaces](workspaces.md) | Several repositories, worktrees, managed records, workspace tasks |
 | [Cleaning up terminal workflows](workflow-cleanup.md) | Archive abandoned records and remove finished worktrees safely |

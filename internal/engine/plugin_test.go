@@ -20,6 +20,27 @@ import (
 	"github.com/Novirmor/homonto/internal/workflowstatus"
 )
 
+func TestWorkflowBindingEnablesEachInstalledHost(t *testing.T) {
+	root := t.TempDir()
+	e := &Engine{ConfigPath: filepath.Join(root, "selected.toml"), ProjectRoot: root, Cfg: &config.Config{
+		Frameworks: map[string]config.Resource{
+			"h-workflow-gl": {Source: "builtin:h-workflow-gl"},
+			"h-workflow-bb": {Source: "builtin:h-workflow-bb"},
+		},
+	}}
+	data, err := e.workflowBinding()
+	if err != nil {
+		t.Fatal(err)
+	}
+	var binding map[string]any
+	if err := json.Unmarshal(data, &binding); err != nil {
+		t.Fatal(err)
+	}
+	if binding["githubEnabled"] != false || binding["gitlabEnabled"] != true || binding["bitbucketEnabled"] != true {
+		t.Fatalf("binding = %s", data)
+	}
+}
+
 func TestWorkflowBindingCoordinatorAndGithubScope(t *testing.T) {
 	root := t.TempDir()
 	for _, source := range []string{"", "builtin:h-workflow-gh", "local:h-workflow-gh"} {
@@ -807,7 +828,7 @@ func TestWorkflowBindingRepairsAndConfigSwitchesAllSchemas(t *testing.T) {
 					fingerprint = next
 				}
 				bindingPath := e.workflowBindingPath()
-				want, err := json.MarshalIndent(map[string]any{"version": 1, "configPath": configPath, "configRoot": repo, "coordinator": "homonto", "githubEnabled": false}, "", "  ")
+				want, err := json.MarshalIndent(map[string]any{"version": 1, "configPath": configPath, "configRoot": repo, "coordinator": "homonto", "githubEnabled": false, "gitlabEnabled": false, "bitbucketEnabled": false}, "", "  ")
 				if err != nil {
 					t.Fatal(err)
 				}

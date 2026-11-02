@@ -117,7 +117,7 @@ func TestHomontoPrimaryPromptIsComplete(t *testing.T) {
 	}
 	for _, want := range []string{
 		"`onto` and `to` dispatcher skills are your doctrine",
-		"## GitHub intake",
+		"## Hosting intake",
 		"without an explicit approval",
 		"homonto/references/workflow-selection.md",
 		"recommend and ask once among viable `no`, `to`",

@@ -1,5 +1,5 @@
 ---
-description: Resolve only an existing GitHub PR's merge conflicts, verify the resolution, and push to the same head without requiring an engine.
+description: Resolve only an existing PR's merge conflicts, verify the resolution, and push to the same head without requiring an engine.
 agent: homonto
 ---
 
@@ -7,8 +7,10 @@ agent: homonto
 
 Load and follow the `h-resolve-conflicts` skill. If it is unavailable, say the
 required skill is unavailable, direct the user to install or reapply the
-`h-workflow-gh` GitHub skill bundle (declare `[workflows.h-workflow-gh]` if
-needed and run `homonto apply`), and stop.
+hosting workflow for the target's host (declare `[workflows.h-workflow-gh]`,
+`[workflows.h-workflow-gl]` or `[workflows.h-workflow-bb]` if needed and run
+`homonto apply`), and stop. The target's host skill (`h-host-gh`, `h-host-gl`
+or `h-host-bb`) supplies that host's forms of every reference below.
 
 `$ARGUMENTS` is one unambiguous PR reference: a GitHub PR URL,
 `OWNER/REPO#NUMBER`, a number, or a unique head branch resolved against the

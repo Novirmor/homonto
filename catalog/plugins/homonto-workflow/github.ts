@@ -15,8 +15,8 @@ type Pending = { resolve(v: unknown): void; reject(e: Error): void }
 type Call = { ctx: ToolContext; runs: Map<number, AbortController> }
 type SessionState = { sessionID: string; deleted: boolean; drafts: { draftID: string; expiresAt: number; items: { itemID: string; status: string }[] }[] }
 
-const PROVIDER = "github"
-const LABEL = "GitHub"
+export const HOSTS = { github: "GitHub", gitlab: "GitLab", bitbucket: "Bitbucket" } as const
+export type Host = keyof typeof HOSTS
 const RELAYED = new Set(["session.deleted", "form.created", "form.replied", "form.cancelled", "question.asked", "question.rejected", "question.replied"])
 const record = (v: unknown): v is Record<string, unknown> => !!v && typeof v === "object" && !Array.isArray(v)
 const pathOK = (v: unknown): v is string => typeof v === "string" && isAbsolute(v) && normalize(v) === v && !/[\x00-\x1f\x7f*?]/.test(v)
@@ -28,11 +28,16 @@ const draftArgs = { items: { type: "array", minItems: 1, maxItems: 10, items: { 
     baseOID: { type: "string" }, headOID: { type: "string" }, reviewEvent: { type: "string", enum: ["", "COMMENT", "REQUEST_CHANGES"] },
   } } } }
 const idArgs = { draftID: { type: "string" } }
-const definitions = {
-  homonto_github_draft: { description: "Stage an immutable, memory-only GitHub batch. PR bodies gain reviewed OIDs before preview. Formal reviews support COMMENT/REQUEST_CHANGES only. Submit the returned question arguments unchanged to native question; approval is workflow confirmation, not human-only attestation. New batches invalidate earlier session drafts.", args: draftArgs },
-  homonto_github_status: { description: "Read the session's draft statuses, exact full preview and native question arguments.", args: idArgs },
-  homonto_github_publish: { description: "Publish only items approved through correlated native question events, after permission and fresh scope/actor/destination checks. Uncertain outcomes are never blindly retried.", args: idArgs },
-} as const
+type Definition = { description: string; args: Record<string, unknown> }
+// Mirrors hostruntime.ToolDefinitions; the shim checks the core's tools/list against it.
+function definitionsFor(host: Host): Record<string, Definition> {
+  const label = HOSTS[host]
+  return {
+    [`homonto_${host}_draft`]: { description: `Stage an immutable, memory-only ${label} batch. PR bodies gain reviewed OIDs before preview. Formal reviews support COMMENT/REQUEST_CHANGES only. Submit the returned question arguments unchanged to native question; approval is workflow confirmation, not human-only attestation. New batches invalidate earlier session drafts.`, args: draftArgs },
+    [`homonto_${host}_status`]: { description: "Read the session's draft statuses, exact full preview and native question arguments.", args: idArgs },
+    [`homonto_${host}_publish`]: { description: "Publish only items approved through correlated native question events, after permission and fresh scope/actor/destination checks. Uncertain outcomes are never blindly retried.", args: idArgs },
+  }
+}
 
 function canonical(v: unknown): string {
   if (Array.isArray(v)) return `[${v.map(canonical).join(",")}]`
@@ -40,8 +45,14 @@ function canonical(v: unknown): string {
   return JSON.stringify(v)
 }
 
-export function createGithubDrafts({ run, configPath, command = ["homonto", "runtime", "serve"] }: { run: Run; configPath: string; command?: string[] }) {
+type Options = { run: Run; configPath: string; command?: string[] }
+
+export function createGithubDrafts(options: Options) { return createHostDrafts({ ...options, host: "github" }) }
+
+export function createHostDrafts({ run, configPath, host, command = ["homonto", "runtime", "serve"] }: Options & { host: Host }) {
   check(typeof run === "function" && pathOK(configPath), "runner and bound absolute configPath are required")
+  check(Object.hasOwn(HOSTS, host), "unknown hosting provider")
+  const PROVIDER = host, LABEL = HOSTS[host], definitions = definitionsFor(host)
   const lifetime = new AbortController()
   const pending = new Map<number, Pending>()
   const calls = new Map<number, Call>()
@@ -168,7 +179,7 @@ export function createGithubDrafts({ run, configPath, command = ["homonto", "run
   })()
   ready.catch(() => {})
 
-  async function execute(name: keyof typeof definitions, args: unknown, ctx: ToolContext): Promise<string> {
+  async function execute(name: string, args: unknown, ctx: ToolContext): Promise<string> {
     requireLiveContext(ctx)
     check(!disposed, `[plugin_disposed] ${LABEL} plugin disposed; restart OpenCode in a compatible live session and stage a new draft`)
     await ready
@@ -209,9 +220,10 @@ export function createGithubDrafts({ run, configPath, command = ["homonto", "run
   }
 
   return {
+    host,
     tools: Object.fromEntries(Object.entries(definitions).map(([name, d]) => [name, { description: d.description, args: d.args,
-      execute: (args: unknown, ctx: ToolContext) => execute(name as keyof typeof definitions, args, ctx) }])) as
-      Record<keyof typeof definitions, { description: string; args: Record<string, unknown>; execute(args: unknown, ctx: ToolContext): Promise<string> }>,
+      execute: (args: unknown, ctx: ToolContext) => execute(name, args, ctx) }])) as
+      Record<string, { description: string; args: Record<string, unknown>; execute(args: unknown, ctx: ToolContext): Promise<string> }>,
     event,
     before,
     dispose,

@@ -41,9 +41,11 @@ conflict-only scope, including the no-conflicts no-op.
 
 ## OpenCode comment and review drafts
 
-When available, use `homonto_github_draft`, `homonto_github_status`, and
-`homonto_github_publish` for issue comments, PR summary comments, and formal
-`COMMENT` or `REQUEST_CHANGES` reviews. These tools belong to the coordinator;
+When available, use the target host's draft tools — `homonto_github_*` on
+GitHub, `homonto_gitlab_*` on GitLab.com, `homonto_bitbucket_*` on Bitbucket
+Cloud, each `_draft`, `_status` and `_publish`, as the host skill names them —
+for issue comments, PR summary comments, and formal `COMMENT` or
+`REQUEST_CHANGES` reviews. One batch targets one host. These tools belong to the coordinator;
 workers cannot stage or publish. They do not push, create PRs, resolve threads,
 or replace source verification. Existing resolve/continue authorization for
 those other operations remains unchanged.
@@ -66,7 +68,7 @@ show it again; staging invalidates unpublished approvals from the previous batch
 Publish unaffected approved items before staging revisions when appropriate.
 No question tool or no reply means no publication.
 
-Call `homonto_github_publish` with the returned `draftID` after the decision.
+Call the host's `_publish` tool with the returned `draftID` after the decision.
 It sends only approved items, rechecks remote context after tool permission,
 and returns per-item states and confirmed URLs. Stale items need a fresh review
 and draft. Uncertain sends are reconcile-only: do not switch to shell posting,
@@ -83,7 +85,9 @@ can answer questions, and trusted shell execution is not a sandbox.
 If these tools are absent, use the skill's existing shown-draft approval and
 body-file commands. A tool denial, stale draft, or uncertain outcome is not
 tool absence. Formal `APPROVE` reviews remain on the existing commit-bound
-review path, only when explicitly selected and with no critical or major findings.
+review path, only when explicitly selected and with no critical or major findings,
+and only on a host whose approval can be bound to the reviewed head (the host
+skill says which).
 
 ## Pin and reconcile
 

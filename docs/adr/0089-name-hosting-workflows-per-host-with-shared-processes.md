@@ -23,12 +23,14 @@ ADR 0067 and ADR 0081, there is no alias and no migration shim.
 
 Every host keeps the same process names: `/h-spike-issue`,
 `/h-resolve-issue`, `/h-review-pr`, `/h-continue-pr`, `/h-resolve-conflicts`
-and `/h-review-batch`. The process skills and commands are host-neutral and
+and `/h-review-batch`. The process skills, commands, plugin and workers are
 identical in every hosting package, so co-installing packages deduplicates
 them the way the shared `homonto` skill is deduplicated across engines
-(ADR 0042). Each package adds only its host-specific parts: transport,
-publication reference and permission rules. The target repository's origin
-selects the host.
+(ADR 0042). Each package adds one host skill (`h-host-gh`, `h-host-gl`,
+`h-host-bb`). The process skills spell host operations in GitHub's form as
+the reference. The host skill maps every operation to its host's form and
+lists that host's adaptations and unsupported steps. The target's URL, or the
+selected source's origin, picks the host skill.
 
 Hosting workflows may be installed together in one config.
 
@@ -38,8 +40,10 @@ Existing configs must be rewritten by hand before they load. The commands
 users type do not change, and neither does the GitHub process.
 
 A shared process skill must not take on host-specific behavior. Host
-differences go in the host package, or in the documented difference map
-(M1.3), never in a per-host fork of a process. "PR" stays the process
+differences go in the host skill, or in the documented difference map
+(M1.3), never in a per-host fork of a process. Keeping GitHub as the reference
+spelling means the GitHub process did not change. The cost is that on the
+other hosts the model translates each step through the host skill. "PR" stays the process
 vocabulary on GitLab, where the object is a merge request. `/h-review-pr`
 reviewing an MR is a naming cost we accept so that every host has one
 command set.

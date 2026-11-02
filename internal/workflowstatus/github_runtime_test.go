@@ -27,6 +27,23 @@ func TestGithubDraftRuntime(t *testing.T) {
 	}
 }
 
+func TestHostDraftRuntimes(t *testing.T) {
+	if _, err := exec.LookPath("node"); err != nil {
+		t.Skip("Node unavailable; hosting draft runtime contract not run")
+	}
+	source, err := filepath.Abs("../../catalog/plugins/homonto-workflow/github.ts")
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, "node", "testdata/host-runtime.mjs", source)
+	cmd.Env = testbin.Env(t)
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("hosting draft runtimes: %v\n%s", err, out)
+	}
+}
+
 func TestWorkflowAuthorizationV2(t *testing.T) {
 	if _, err := exec.LookPath("node"); err != nil {
 		t.Skip("Node unavailable; V2 permission authorization contract not run")

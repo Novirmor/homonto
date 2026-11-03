@@ -1,0 +1,3 @@
+prompt = "Use the no engine: implement Reverse in strutil.go so the tests pass. It must reverse by rune, not by byte. Run go test ./... before finishing."
+agent = "homonto"
+verify = "go test ./..."

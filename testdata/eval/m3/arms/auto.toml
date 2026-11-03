@@ -1,0 +1,26 @@
+# Auto arm: the coordinator stays on the static model; the no engine's
+# agents are selected from what OpenCode reports, cheapest qualifying first.
+# Describe the candidates' cost (your unit) and tags before a paid run.
+[engines.no]
+source = "builtin:no"
+scope = "project"
+
+[routing.default.opencode]
+model = "anthropic/claude-sonnet-5"
+
+[routing.engines.no.opencode]
+mode = "auto"
+candidates = ["anthropic/claude-haiku-5", "openai/gpt-6-mini", "anthropic/claude-sonnet-5"]
+needs = ["tools"]
+prefer = "cost"
+fallback = "anthropic/claude-sonnet-5"
+
+[routing.models.opencode."anthropic/claude-haiku-5"]
+cost = 1.0
+tags = ["tools"]
+[routing.models.opencode."openai/gpt-6-mini"]
+cost = 0.6
+tags = ["tools"]
+[routing.models.opencode."anthropic/claude-sonnet-5"]
+cost = 3.0
+tags = ["tools", "reasoning"]

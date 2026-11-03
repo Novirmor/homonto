@@ -1,0 +1,8 @@
+# Static arm: one fixed execution model for every agent. Replace the model
+# with one your OpenCode can run.
+[engines.no]
+source = "builtin:no"
+scope = "project"
+
+[routing.default.opencode]
+model = "anthropic/claude-sonnet-5"

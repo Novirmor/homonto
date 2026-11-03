@@ -10,6 +10,11 @@ entry = ["no"]
 operations = ["start", "resume", "integration-check", "release"]
 stages = ["implement", "review"]
 
+# Which stage each worker serves (ADR 0099).
+[engine.agent_stages]
+no-implementer = ["implement"]
+no-reviewer = ["review"]
+
 [requires]
 harness = ["skills", "commands", "subagents", "question-dialog"]
 

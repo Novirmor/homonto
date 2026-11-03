@@ -19,6 +19,9 @@ operations = ["start", "resume", "integration-check", "release"]
 stages = ["plan", "build", "review"]
 coordinator = "shared"           # optional: run under the shared homonto coordinator
 
+[engine.agent_stages]            # optional: which stages each of your agents serves
+my-reviewer = ["review"]
+
 [requires]
 harness = ["skills", "commands", "subagents", "question-dialog"]
 
@@ -34,6 +37,7 @@ my-engine = "skills/my-engine"
 | `operations` | Subset of `start`, `resume`, `integration-check`, `release`. `start` and `resume` are required. |
 | `stages` | At least one identifier (`[a-z][a-z0-9-]*`), unique. Stages are the addressable units model-routing policies target. |
 | `coordinator` | Empty or `shared`. An engine never ships its own coordinator. |
+| `agent_stages` | Maps each of the engine's own `[subagents]` to the declared stages it serves. A stage routing policy reaches an agent only through this binding ([routing.md](routing.md), [ADR 0099](../adr/0099-route-models-by-policy.md)). An unbound agent follows the engine-level policy. |
 
 ## Task integration
 

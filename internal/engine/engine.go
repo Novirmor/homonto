@@ -20,6 +20,7 @@ import (
 	"github.com/Novirmor/homonto/internal/config"
 	"github.com/Novirmor/homonto/internal/fsutil"
 	"github.com/Novirmor/homonto/internal/resourcepath"
+	"github.com/Novirmor/homonto/internal/routing"
 	"github.com/Novirmor/homonto/internal/scaffold"
 	"github.com/Novirmor/homonto/internal/secret"
 	"github.com/Novirmor/homonto/internal/state"
@@ -71,6 +72,11 @@ type Engine struct {
 	// renderedExternal holds the rendered local:/remote: subagents that carry
 	// a homonto: intent block, keyed by config name (ADR 0096).
 	renderedExternal map[string][]byte
+	// RouteDiscoverer lists the harness's models for auto routing policies
+	// (ADR 0100); nil runs `opencode models` in the project root.
+	RouteDiscoverer routing.Discoverer
+	routeReport     *RouteReport
+	routeErr        error
 }
 
 // RepoTarget is one declared repository's projection pair.
@@ -248,6 +254,11 @@ func (e *Engine) Plan() ([]adapter.ChangeSet, error) {
 		}
 		sets = append(sets, cs)
 	}
+	routes, err := e.Routes()
+	if err != nil {
+		return nil, err
+	}
+	e.Warnings = append(e.Warnings, routes.routeWarnings()...)
 	return sets, nil
 }
 
@@ -378,6 +389,9 @@ func (e *Engine) Apply(ctx context.Context, sets []adapter.ChangeSet) error {
 		}
 	}
 	e.recordVersions()
+	if err := e.recordRoutes(); err != nil {
+		return fmt.Errorf("record routing: %w", err)
+	}
 	return e.State.Save(e.StateDir)
 }
 
@@ -523,8 +537,20 @@ func (e *Engine) subagentRenderContextFor(targets map[string]map[string]bool) (m
 			}
 		}
 	}
+	routes, err := e.Routes()
+	if err != nil {
+		return nil, err
+	}
 	overrides := func(pick func(config.Subagent) config.ModelRoute) map[string]agentfm.ModelSpec {
 		m := map[string]agentfm.ModelSpec{}
+		// Policy-routed agents first (ADR 0099): a pin without a model still
+		// contributes its steps and bash additions below, and a pin with one
+		// replaces the policy's choice entirely.
+		for _, r := range routes.Routes {
+			if r.Selection != nil && r.CatalogKeyed {
+				m[r.Agent] = agentfm.ModelSpec{Model: r.Selection.Model, Variant: r.Selection.Variant}
+			}
+		}
 		for key, sa := range e.Cfg.Subagents {
 			r := pick(sa)
 			if !r.IsSet() {
@@ -542,7 +568,13 @@ func (e *Engine) subagentRenderContextFor(targets map[string]map[string]bool) (m
 				}
 				name = cat
 			}
-			m[name] = agentfm.ModelSpec{Model: r.Model, Variant: r.Variant, Effort: r.Effort, Steps: r.Steps, BashAllowAdd: r.BashAllowAdd}
+			spec := agentfm.ModelSpec{Model: r.Model, Variant: r.Variant, Effort: r.Effort, Steps: r.Steps, BashAllowAdd: r.BashAllowAdd}
+			if spec.Model == "" {
+				if routed, ok := m[name]; ok {
+					spec.Model, spec.Variant = routed.Model, routed.Variant
+				}
+			}
+			m[name] = spec
 		}
 		return m
 	}

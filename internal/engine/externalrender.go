@@ -78,7 +78,15 @@ func (e *Engine) renderExternalSubagents() (map[string][]byte, error) {
 			continue
 		}
 		if route.Model == "" {
-			return nil, fmt.Errorf("subagents.%s renders from its homonto: intent block; set [subagents.%s.opencode] model", entry.Name, entry.Name)
+			routes, err := e.Routes()
+			if err != nil {
+				return nil, err
+			}
+			sel, ok := routes.policyModel(entry.Name)
+			if !ok {
+				return nil, fmt.Errorf("subagents.%s renders from its homonto: intent block; set [subagents.%s.opencode] model or cover it with a [routing] policy", entry.Name, entry.Name)
+			}
+			route.Model, route.Variant = sel.Model, sel.Variant
 		}
 		if base.Names == nil {
 			ctxs, err := e.subagentRenderContext()

@@ -35,7 +35,7 @@ numbering: [`../agents/adr.md`](../agents/adr.md).
 | [0013](0013-remote-source-trust-boundary.md) | Establish a pinned, fail-closed remote-source trust boundary | Accepted |
 | [0014](0014-adapter-contract.md) | Adopt a format-agnostic adapter contract for tool projection | Accepted |
 | [0015](0015-ship-only-onto-frameworks.md) | Ship only homonto-native frameworks (onto, and later `to`) | Accepted |
-| [0016](0016-remove-model-tiers.md) | Declare subagent models explicitly; drop model tiers | Accepted |
+| [0016](0016-remove-model-tiers.md) | Declare subagent models explicitly; drop model tiers | Partially superseded by 0099 |
 | [0017](0017-stop-committing-workflow-artifacts.md) | Stop committing workflow artifacts; the ADR is the record | Accepted |
 | [0018](0018-tasks-md-is-the-single-checkoff.md) | Make tasks.md onto's single checkoff; plan.md carries detail only | Accepted |
 | [0019](0019-parallelism-follows-write-scope.md) | Gate subagent parallelism on write-scope, not on framework | Superseded by 0035 |
@@ -118,3 +118,5 @@ numbering: [`../agents/adr.md`](../agents/adr.md).
 | [0096](0096-render-external-agents-by-intent.md) | Render external agents by intent | Accepted |
 | [0097](0097-require-harness-capabilities-by-name.md) | Require harness capabilities by name | Accepted |
 | [0098](0098-reserve-routing-and-decision-surfaces.md) | Reserve routing and decision surfaces | Accepted |
+| [0099](0099-route-models-by-policy.md) | Route models by policy | Accepted |
+| [0100](0100-select-models-automatically-at-plan.md) | Select models automatically at plan | Accepted |

@@ -207,7 +207,9 @@ func explainCmd() *cobra.Command {
 			"projects, which operation last touched it, and — for removed resources — " +
 			"which operation removed them. Values are never shown; secrets cannot leak.\n\n" +
 			"`explain settings [package]` instead lists each package's resolved settings " +
-			"and process definitions, marking manifest defaults.",
+			"and process definitions, marking manifest defaults.\n\n" +
+			"`explain routing [agent]` shows which pin or routing policy chose each " +
+			"agent's model, and why an auto policy selected or fell back (ADR 0099, 0100).",
 		Args: cobra.RangeArgs(0, 2),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			cfgPath, _ := cmd.Flags().GetString("config")
@@ -225,6 +227,9 @@ func explainCmd() *cobra.Command {
 			}
 			if kind == "settings" {
 				return explainSettings(cmd, e, name, asJSON)
+			}
+			if kind == "routing" {
+				return explainRouting(cmd, e, name, asJSON)
 			}
 			rows := buildRows(e)
 
@@ -411,6 +416,69 @@ func settingsLines(packages []config.PackageSettings) []string {
 		for _, process := range processes {
 			out = append(out, fmt.Sprintf("process: %s.%s.%s", ps.Table, ps.Package, process))
 		}
+	}
+	return out
+}
+
+// explainRouting prints each agent's model source (ADR 0099, ADR 0100).
+func explainRouting(cmd *cobra.Command, e *engine.Engine, agent string, asJSON bool) error {
+	report, err := e.Routes()
+	if err != nil {
+		return err
+	}
+	if agent != "" {
+		var only []engine.ResolvedRoute
+		for _, r := range report.Routes {
+			if r.Agent == agent {
+				only = append(only, r)
+			}
+		}
+		if len(only) == 0 {
+			return fmt.Errorf("explain: no rendered agent named %q", agent)
+		}
+		report.Routes = only
+	}
+	if asJSON {
+		b, err := json.MarshalIndent(report, "", "  ")
+		if err != nil {
+			return err
+		}
+		cmd.Println(string(b))
+		return nil
+	}
+	for _, line := range routingLines(report.Routes) {
+		cmd.Println(line)
+	}
+	switch report.Discovery {
+	case "ok":
+		cmd.Printf("discovery: ok (%d models)\n", report.Models)
+	case "failed":
+		cmd.Printf("discovery: failed (%s)\n", report.DiscoveryError)
+	}
+	return nil
+}
+
+// routingLines renders one line per agent: model, source and reason.
+func routingLines(routes []engine.ResolvedRoute) []string {
+	var out []string
+	for _, r := range routes {
+		var line string
+		switch {
+		case r.From == config.RouteFromPin:
+			line = fmt.Sprintf("route: %s → %s (pinned by %s)", r.Agent, r.Pin.Model, r.Selector)
+		case r.Selection != nil:
+			model := r.Selection.Model
+			if r.Selection.Variant != "" {
+				model += " variant " + r.Selection.Variant
+			}
+			line = fmt.Sprintf("route: %s → %s (%s; %s)", r.Agent, model, r.Selector, r.Selection.Reason)
+		default:
+			line = fmt.Sprintf("route: %s → no model source", r.Agent)
+		}
+		if r.Note != "" {
+			line += " — " + r.Note
+		}
+		out = append(out, line)
 	}
 	return out
 }

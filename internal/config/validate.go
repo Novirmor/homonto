@@ -32,6 +32,9 @@ func validate(c *Config) error {
 	if err := rejectReserved(c); err != nil {
 		return err
 	}
+	if err := validateRouting(c); err != nil {
+		return err
+	}
 	if err := validateTooling(c.Tooling); err != nil {
 		return err
 	}
@@ -76,9 +79,6 @@ func validate(c *Config) error {
 
 // rejectReserved fails a config using a table reserved for M3 (ADR 0098).
 func rejectReserved(c *Config) error {
-	if len(c.Routing) > 0 {
-		return fmt.Errorf("parse config: [routing] is reserved for model-routing policies (M3) and not implemented yet; set each agent's model with [subagents.<name>.opencode] (docs/contracts/routing.md)")
-	}
 	if len(c.Decisions) > 0 {
 		return fmt.Errorf("parse config: [decisions] is reserved for decision-model providers (M3) and not implemented yet (docs/contracts/routing.md)")
 	}
@@ -744,7 +744,7 @@ func validateModelSpec(tool, label string, r ModelRoute, requireModel bool) erro
 	variant := strings.TrimSpace(r.Variant)
 	effort := strings.TrimSpace(r.Effort)
 	if requireModel && model == "" {
-		return fmt.Errorf("parse config: %s model is required", label)
+		return fmt.Errorf("parse config: %s model is required (or cover the agent with a [routing] policy, docs/contracts/routing.md)", label)
 	}
 	switch tool {
 	case "opencode":
@@ -838,6 +838,11 @@ func validateModels(c *Config) error {
 		}
 	}
 	for _, tool := range c.EnabledModelTools() {
+		// A routing policy is a model source too (ADR 0099): an agent it
+		// covers needs no pin. Expansion errors are tolerated here exactly as
+		// in the framework walk below.
+		routes, _ := c.AgentRoutes(tool)
+		required := func(identity string) bool { return routes[identity].From != RouteFromPolicy }
 		for _, name := range sortedSubagentNames(c) {
 			sa := c.Subagents[name]
 			// A tune-only entry declares no agent; its overrides (if any) are
@@ -857,7 +862,8 @@ func validateModels(c *Config) error {
 				continue
 			}
 			label := "subagents." + name + "." + tool
-			if err := validateModelSpec(tool, label, sa.ModelOverrideFor(tool), true); err != nil {
+			cat, _ := SubagentCatalogName(sa.Source)
+			if err := validateModelSpec(tool, label, sa.ModelOverrideFor(tool), required(cat)); err != nil {
 				return err
 			}
 		}
@@ -932,7 +938,7 @@ func validateModels(c *Config) error {
 				continue // explicit declaration; checked above
 			}
 			label := "subagents." + cat + "." + tool
-			if err := validateModelSpec(tool, label, routeByCat[cat], true); err != nil {
+			if err := validateModelSpec(tool, label, routeByCat[cat], required(cat)); err != nil {
 				return err
 			}
 		}

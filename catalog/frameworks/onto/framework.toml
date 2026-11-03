@@ -12,6 +12,14 @@ operations = ["start", "resume", "integration-check", "release"]
 stages = ["open", "design", "build", "verify", "close"]
 coordinator = "shared"
 
+# Which stages each specialist serves (ADR 0099). A stage routing policy
+# reaches an agent through this binding.
+[engine.agent_stages]
+onto-explorer = ["open", "design", "build", "verify"]
+onto-implementer = ["build", "verify"]
+onto-reviewer = ["build"]
+onto-skeptic = ["verify"]
+
 [requires]
 harness = ["skills", "commands", "subagents", "agent-tool-limits", "shell-rules", "question-dialog", "context-hooks", "permission-events"]
 

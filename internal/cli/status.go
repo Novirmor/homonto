@@ -36,12 +36,20 @@ func statusCmd() *cobra.Command {
 			if exitFlag {
 				setExitCode(statusExitCode(len(drift) > 0, pending))
 			}
+			routes, routed, err := e.AppliedRoutes()
+			if err != nil {
+				return err
+			}
 			if output == "json" {
 				payload := struct {
-					Drift    []string `json:"drift"`
-					Pending  int      `json:"pending"`
-					Warnings []string `json:"warnings"`
+					Drift    []string              `json:"drift"`
+					Pending  int                   `json:"pending"`
+					Warnings []string              `json:"warnings"`
+					Routing  *engine.RoutingRecord `json:"routing,omitempty"`
 				}{Drift: drift, Pending: pending, Warnings: append(e.OpenCodeV2Warnings(), e.Warnings...)}
+				if routed {
+					payload.Routing = &routes
+				}
 				if payload.Drift == nil {
 					payload.Drift = []string{}
 				}
@@ -60,6 +68,22 @@ func statusCmd() *cobra.Command {
 			}
 			for _, l := range drift {
 				cmd.Println(l)
+			}
+			// The routes the last apply stamped into agents (ADR 0102): only
+			// policy-routed agents, since a pin is visible in the config.
+			if routed {
+				var policyRouted []engine.ResolvedRoute
+				for _, r := range routes.Routes {
+					if r.Selection != nil {
+						policyRouted = append(policyRouted, r)
+					}
+				}
+				for _, l := range routingLines(policyRouted) {
+					cmd.Println(l)
+				}
+				if routes.Discovery == "failed" {
+					cmd.Printf("route discovery failed at last apply (%s): auto policies used their fallbacks\n", routes.DiscoveryError)
+				}
 			}
 			if pending > 0 {
 				cmd.Println(fmt.Sprintf("%d config change(s) awaiting apply (run `homonto apply`)", pending))

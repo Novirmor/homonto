@@ -139,9 +139,8 @@ func TestNoEngineIsolationSetting(t *testing.T) {
 	}
 }
 
-func TestReservedRoutingAndDecisionTables(t *testing.T) {
+func TestReservedDecisionTable(t *testing.T) {
 	for _, tc := range []struct{ config, want string }{
-		{"[routing.engines.onto.stages.build]\npolicy = \"fast\"\n", "[routing] is reserved for model-routing policies"},
 		{"[decisions.default]\nprovider = \"x\"\n", "[decisions] is reserved for decision-model providers"},
 	} {
 		path := writeTree(t, t.TempDir(), map[string]string{"homonto.toml": tc.config})

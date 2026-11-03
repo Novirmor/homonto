@@ -10,6 +10,9 @@ entry = ["example-engine"]
 operations = ["start", "resume", "integration-check", "release"]
 stages = ["implement", "review"]
 
+[engine.agent_stages]
+example-reviewer = ["review"]
+
 [requires]
 harness = ["skills", "commands", "subagents", "agent-tool-limits", "question-dialog"]
 

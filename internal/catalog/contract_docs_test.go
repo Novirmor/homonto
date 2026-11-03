@@ -36,6 +36,12 @@ func TestContractDocsDescribeTheBuiltins(t *testing.T) {
 		if !strings.Contains(routing, stages) {
 			t.Errorf("routing.md lacks the stage row %q", stages)
 		}
+		for agent, bound := range fw.Engine.AgentStages {
+			binding := "| `" + name + "` | `" + agent + "` | " + strings.Join(bound, ", ") + " |"
+			if !strings.Contains(routing, binding) {
+				t.Errorf("routing.md lacks the binding row %q", binding)
+			}
+		}
 	}
 	service := readContractDoc(t, "service.md")
 	for _, name := range []string{"host-gh", "host-gl", "host-bb"} {

@@ -71,6 +71,9 @@ func (c *Config) ResolvePackages() error {
 	if err := c.validatePackageSettings(cl); err != nil {
 		return err
 	}
+	if err := c.validateRoutingStages(cl); err != nil {
+		return err
+	}
 	// Remote packages' agents are known only once their roots are injected;
 	// overrides that load had to defer are judged now.
 	if len(c.remoteFrameworkDirs) > 0 {

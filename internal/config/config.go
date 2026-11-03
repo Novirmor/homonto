@@ -313,10 +313,10 @@ type Config struct {
 	SchemaVersion int       `toml:"schema_version,omitempty"`
 	Workflow      Workflow  `toml:"workflow"`
 	Worktrees     Worktrees `toml:"worktrees"`
-	// Routing and Decisions capture the tables reserved for model-routing
-	// policies and decision providers (ADR 0098). Both are rejected by name
-	// until M3 defines them, so nothing can depend on an unsettled shape.
-	Routing   map[string]any `toml:"routing"`
+	// Routing holds the model-routing policies (ADR 0099, ADR 0100).
+	Routing Routing `toml:"routing"`
+	// Decisions captures the table reserved for decision providers
+	// (ADR 0098), rejected by name until its fields are defined.
 	Decisions map[string]any `toml:"decisions"`
 	// MCPs captures a removed [mcps.*] table so Load can reject it by name:
 	// MCP servers are bring-your-own (ADR 0085).

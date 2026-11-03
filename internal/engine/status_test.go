@@ -31,6 +31,9 @@ func TestOpenCodeV2PluginReadiness(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			e := &Engine{Cfg: &tc.cfg}
+			if err := e.Cfg.ResolveServices(); err != nil {
+				t.Fatal(err)
+			}
 			got := e.OpenCodeV2Warnings()
 			if len(got) != len(tc.want) {
 				t.Fatalf("warnings = %v, want %v", got, tc.want)

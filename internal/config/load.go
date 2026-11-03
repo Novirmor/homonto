@@ -105,11 +105,14 @@ func normalize(c *Config) {
 	// The old [frameworks.*] table is deliberately not decoded. Keep a single
 	// effective package set for projection internals while public configuration
 	// distinguishes workflows from engines.
-	c.Frameworks = make(map[string]Resource, len(c.Workflows)+len(c.Engines))
+	c.Frameworks = make(map[string]Resource, len(c.Workflows)+len(c.Engines)+len(c.Services))
 	for name, r := range c.Workflows {
 		c.Frameworks[name] = r
 	}
 	for name, r := range c.Engines {
+		c.Frameworks[name] = r
+	}
+	for name, r := range c.Services {
 		c.Frameworks[name] = r
 	}
 	// Subagents default to project scope when omitted (skills and commands still
@@ -161,6 +164,9 @@ func Load(path string) (c *Config, err error) {
 	// against the config file rather than the process's working directory.
 	c.baseDir = filepath.Dir(abs)
 	if err := validate(c); err != nil {
+		return nil, err
+	}
+	if err := c.ResolveServices(); err != nil {
 		return nil, err
 	}
 	if c.SchemaVersion >= 2 {

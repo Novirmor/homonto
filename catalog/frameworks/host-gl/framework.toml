@@ -1,0 +1,22 @@
+manifest_schema = 2
+name = "host-gl"
+kind = "service"
+version = "0.1.0"
+description = "GitLab.com service: issue and merge request reads, homonto drafts and publication through glab"
+
+# The draft/publication core runs in the homonto binary (ADR 0090); this
+# service enables its GitLab provider. Publication approval goes through the
+# harness's native question dialog.
+[service]
+id = "gitlab"
+runtime = "gitlab"
+operations = ["read", "draft", "publish"]
+transport = "glab"
+credentials = [{ kind = "cli", check = "glab auth status" }]
+
+[requires]
+harness = ["question-dialog"]
+
+# No [permissions]: the coordinator and implementer baselines already cover
+# glab, because engines deliver through it even when no service is installed
+# (ADR 0094).

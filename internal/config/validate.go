@@ -106,10 +106,21 @@ func validatePackages(c *Config) error {
 			return fmt.Errorf("parse config: %q is declared as both a workflow and an engine", name)
 		}
 	}
+	for _, name := range slices.Sorted(maps.Keys(c.Services)) {
+		if _, duplicate := c.Workflows[name]; duplicate {
+			return fmt.Errorf("parse config: %q is declared as both a workflow and a service", name)
+		}
+		if _, duplicate := c.Engines[name]; duplicate {
+			return fmt.Errorf("parse config: %q is declared as both an engine and a service", name)
+		}
+	}
 	if err := validateFrameworkResources("workflows", c.Workflows); err != nil {
 		return err
 	}
 	if err := validateFrameworkResources("engines", c.Engines); err != nil {
+		return err
+	}
+	if err := validateFrameworkResources("services", c.Services); err != nil {
 		return err
 	}
 	return validateBuiltinPackageKinds(c)
@@ -117,28 +128,6 @@ func validatePackages(c *Config) error {
 
 // GitHubWorkflow is the bundled GitHub hosting workflow (ADR 0089).
 const GitHubWorkflow = "h-workflow-gh"
-
-// HostingWorkflows maps each bundled hosting workflow to the runtime provider
-// whose draft tools it enables (ADR 0089, ADR 0090).
-var HostingWorkflows = map[string]string{
-	GitHubWorkflow:  "github",
-	"h-workflow-gl": "gitlab",
-	"h-workflow-bb": "bitbucket",
-}
-
-// HostingProviders reports the runtime providers the config's builtin hosting
-// workflows enable.
-func (c *Config) HostingProviders() map[string]bool {
-	out := map[string]bool{}
-	for _, r := range c.Frameworks {
-		if name, ok := strings.CutPrefix(r.Source, "builtin:"); ok {
-			if provider, ok := HostingWorkflows[name]; ok {
-				out[provider] = true
-			}
-		}
-	}
-	return out
-}
 
 // rejectRetiredPackages fails a declaration of a renamed builtin package and
 // names its replacement. There is no alias or migration shim (ADR 0081): the
@@ -174,7 +163,7 @@ func validatePackageKinds(c *Config, cl *catalog.Catalog, builtinOnly bool) erro
 	for _, group := range []struct {
 		kind      string
 		resources map[string]Resource
-	}{{"workflow", c.Workflows}, {"engine", c.Engines}} {
+	}{{"workflow", c.Workflows}, {"engine", c.Engines}, {"service", c.Services}} {
 		for _, name := range sortedResourceNames(group.resources) {
 			r := group.resources[name]
 			if builtinOnly && !strings.HasPrefix(r.Source, "builtin:") {

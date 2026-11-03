@@ -12,6 +12,7 @@ The kinds are:
 |---|---|---|---|
 | `engine` | implementation stages, transitions, repair loop | `[engines.<name>]` | [engine.md](engine.md) |
 | `workflow` | the external process: intake, engine invocation, review, delivery | `[workflows.<name>]` | [workflow.md](workflow.md) |
+| `service` | a reusable host or ticket service: operations, transport, credentials, shell rules | `[services.<name>]` | [service.md](service.md) |
 
 Harness requirements: [capabilities.md](capabilities.md).
 
@@ -29,6 +30,9 @@ homonto = ">=0.37.0"         # optional homonto version range
 
 [requires]
 harness = ["skills", "subagents"]   # harness capabilities (capabilities.md)
+
+[requires.services]
+github = "host-gh"                  # service id = default service package (service.md)
 
 [dependencies]
 frameworks = ["other@>=0.2.0"]      # packages installed with this one

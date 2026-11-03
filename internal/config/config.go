@@ -315,6 +315,10 @@ type Config struct {
 	// a workflow such as h can be installed without an engine.
 	Workflows map[string]Resource `toml:"workflows"`
 	Engines   map[string]Resource `toml:"engines"`
+	// Services are reusable host or ticket service packages (ADR 0094). A
+	// workflow that requires a service the config does not declare gets the
+	// workflow's default service package (see ResolveServices).
+	Services map[string]Resource `toml:"services"`
 	// Frameworks is the normalized union of Workflows and Engines. It is kept
 	// internal to the config API while the projection pipeline is generalized;
 	// it is never decoded from a [frameworks] TOML table.
@@ -354,6 +358,10 @@ type Config struct {
 	// through the Expanded* method signatures. Empty for a config not built via
 	// Load (e.g. decode in tests): local frameworks then resolve relative to cwd.
 	baseDir string
+
+	// impliedServices maps each default service package ResolveServices
+	// added to Frameworks to the package that required it.
+	impliedServices map[string]string
 
 	// remoteFrameworkDirs maps a package source="remote:<url>" name to the
 	// verified cache dir the engine resolved through the remote trust pipeline

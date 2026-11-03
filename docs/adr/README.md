@@ -113,4 +113,5 @@ numbering: [`../agents/adr.md`](../agents/adr.md).
 | [0091](0091-own-the-bitbucket-cloud-transport.md) | Own the Bitbucket Cloud transport | Accepted |
 | [0092](0092-publish-the-package-contract.md) | Publish the package contract | Accepted |
 | [0093](0093-describe-engines-instead-of-naming-them.md) | Describe engines instead of naming them | Accepted |
+| [0094](0094-package-host-services-separately.md) | Package host services separately | Accepted |
 | [0097](0097-require-harness-capabilities-by-name.md) | Require harness capabilities by name | Accepted |

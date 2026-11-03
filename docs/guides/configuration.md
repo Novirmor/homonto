@@ -19,7 +19,8 @@ shell's working directory.
 | [`[subagents.<name>]`](#subagents--subagentsname) | Agent definitions |
 | [`[subagents.<name>.opencode]`](#agent-models--subagentsnameopencode) | Each agent's model, variant, step budget, extra allowed commands |
 | [`[engines.<name>]`](#engines--enginesname) | Work-model packages: `onto`, `to`, `no` |
-| [`[workflows.<name>]`](#workflows--workflowsname) | User-facing packages: `h` |
+| [`[workflows.<name>]`](#workflows--workflowsname) | User-facing packages: `h-workflow-gh`, `h-workflow-gl`, `h-workflow-bb` |
+| [`[services.<name>]`](#services--servicesname) | Host or ticket service packages: `host-gh`, `host-gl`, `host-bb` |
 | [`[plugins.opencode.<name>]`](#plugins--pluginsopencodename) | OpenCode plugins |
 | [`[settings.opencode]`](#settings--settingsopencode) | OpenCode settings |
 | [`[tui.opencode]`](#terminal-settings--tuiopencode) | OpenCode terminal settings |
@@ -326,6 +327,31 @@ parse config: engines.h-workflow-gh source "builtin:h-workflow-gh" is a workflow
 
 Legacy `[frameworks.*]` tables are rejected; rename them to `[engines.*]` or
 `[workflows.*]`.
+
+## Services — `[services.<name>]`
+
+A service package connects a host or ticket service: its operations, the CLI
+or transport it uses, the credentials it needs, and any shell rules it adds to
+rendered agents ([service contract](../contracts/service.md)).
+
+```toml
+# GitHub drafts and publication for a custom workflow, with no h workflow.
+[services.host-gh]
+source = "builtin:host-gh"
+scope  = "project"
+```
+
+| Builtin | Service | Runtime provider | Transport |
+|---|---|---|---|
+| `builtin:host-gh` | `github` | GitHub draft tools | `gh` |
+| `builtin:host-gl` | `gitlab` | GitLab draft tools | `glab` |
+| `builtin:host-bb` | `bitbucket` | Bitbucket draft tools | `homonto host bitbucket api` |
+
+A workflow names the services it needs and a default package for each. The
+`h-workflow-*` packages default to the matching `host-*`, so
+`[workflows.h-workflow-gh]` alone works as before. Declaring a service with the
+same service id replaces the default. Two installed packages implementing one
+service id fail at load.
 
 ## Plugins — `[plugins.opencode.<name>]`
 

@@ -177,6 +177,10 @@ func Build(ctx context.Context, configPath, home, contentDir string) (*Engine, e
 	}
 	if len(dirs) > 0 {
 		cfg.SetRemoteFrameworkDirs(dirs)
+		// Remote packages' service requirements are known only now.
+		if err := cfg.ResolveServices(); err != nil {
+			return nil, err
+		}
 	}
 	// Fan out one adapter+state pair per declared repository (ADR 0024 stage
 	// 2). Each shares the config repo's materialized catalog roots (links
@@ -529,8 +533,14 @@ func (e *Engine) subagentRenderContextFor(targets map[string]map[string]bool) (m
 		}
 		return m
 	}
+	rules := e.Cfg.InstalledServiceRules()
 	return map[string]agentfm.RenderContext{
 		"opencode": {
+			ServiceRules: agentfm.ServiceRules{
+				CoordinatorAsk:  rules.CoordinatorAsk,
+				CoordinatorDeny: rules.CoordinatorDeny,
+				WorkerDeny:      rules.WorkerDeny,
+			},
 			Names:                          names,
 			Overrides:                      overrides(func(s config.Subagent) config.ModelRoute { return s.OpenCode }),
 			ShellProxy:                     e.Cfg.ResolvedTooling().ShellProxy,
@@ -1303,6 +1313,18 @@ func renderFingerprint(ctx map[string]agentfm.RenderContext) string {
 		}
 		digestSpecs("override", tool, ctx[tool].Overrides)
 		fmt.Fprintf(h, "shell-proxy\x00%s\x00%s\x00", tool, ctx[tool].ShellProxy)
+		for _, group := range []struct {
+			kind     string
+			patterns []string
+		}{
+			{"service-coordinator-ask", ctx[tool].ServiceRules.CoordinatorAsk},
+			{"service-coordinator-deny", ctx[tool].ServiceRules.CoordinatorDeny},
+			{"service-worker-deny", ctx[tool].ServiceRules.WorkerDeny},
+		} {
+			for _, pattern := range group.patterns {
+				fmt.Fprintf(h, "%s\x00%s\x00%s\x00", group.kind, tool, pattern)
+			}
+		}
 		for _, group := range []struct {
 			kind string
 			dirs map[string][]string

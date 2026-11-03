@@ -36,6 +36,7 @@ import (
 	"bytes"
 	"fmt"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strings"
 	"unicode"
@@ -98,6 +99,27 @@ type RenderContext struct {
 	// Targets names actually projected to this tool. It lets materialization skip
 	// an unselected tool variant without weakening validation for selected agents.
 	Targets map[string]bool
+	// ServiceRules are the shell rules installed service packages contribute
+	// (ADR 0094). They only tighten: primaries gain coordinator asks and
+	// denies, every other shell-capable agent gains worker denies.
+	ServiceRules ServiceRules
+}
+
+// ServiceRules are contributed shell patterns, rendered after an agent's own.
+type ServiceRules struct {
+	CoordinatorAsk  []string
+	CoordinatorDeny []string
+	WorkerDeny      []string
+}
+
+// appendNew appends the patterns not already in list, in order.
+func appendNew(list []string, patterns ...string) []string {
+	for _, p := range patterns {
+		if !slices.Contains(list, p) {
+			list = append(list, p)
+		}
+	}
+	return list
 }
 
 // NeedsTransform reports whether content carries a `homonto:` frontmatter block
@@ -232,6 +254,14 @@ func Render(name string, content []byte, tool string, ctx *RenderContext) ([]byt
 				}
 			}
 			h.Spawn = &spawn
+		}
+		if h.Bash == nil || *h.Bash {
+			if h.Primary {
+				h.BashAsk = appendNew(h.BashAsk, ctx.ServiceRules.CoordinatorAsk...)
+				h.BashDeny = appendNew(h.BashDeny, ctx.ServiceRules.CoordinatorDeny...)
+			} else {
+				h.BashDeny = appendNew(h.BashDeny, ctx.ServiceRules.WorkerDeny...)
+			}
 		}
 	}
 

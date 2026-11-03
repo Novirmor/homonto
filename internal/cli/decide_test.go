@@ -130,4 +130,7 @@ func TestDecideFailureExitCodes(t *testing.T) {
 	if _, err := runCmd(t, t.TempDir(), `{"point":"no.x","kind":"yes-no","question":"q","answer":"yes"}`, "decide", "--config", cfg); err == nil || !strings.Contains(err.Error(), `unknown field "answer"`) {
 		t.Fatalf("unknown request field: %v", err)
 	}
+	if _, err := runCmd(t, t.TempDir(), `{"point":"no.x","kind":"yes-no","question":"q"}{}`, "decide", "--config", cfg); err == nil || !strings.Contains(err.Error(), "exactly one JSON value") {
+		t.Fatalf("trailing request JSON: %v", err)
+	}
 }

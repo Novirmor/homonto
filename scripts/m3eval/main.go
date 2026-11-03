@@ -101,11 +101,21 @@ func runDecisions(ctx context.Context, args []string, stdout io.Writer) error {
 	}
 	names := slices.Sorted(maps.Keys(cfg.Decisions.Providers))
 	if *only != "" {
-		names = strings.Split(*only, ",")
-		for _, n := range names {
+		names = nil
+		seen := map[string]bool{}
+		for _, raw := range strings.Split(*only, ",") {
+			n := strings.TrimSpace(raw)
+			if n == "" {
+				return fmt.Errorf("decisions: --providers contains an empty provider name")
+			}
+			if seen[n] {
+				return fmt.Errorf("decisions: --providers names provider %q more than once", n)
+			}
 			if _, ok := cfg.Decisions.Providers[n]; !ok {
 				return fmt.Errorf("decisions: provider %q is not in %s", n, *cfgPath)
 			}
+			seen[n] = true
+			names = append(names, n)
 		}
 	}
 	if len(names) == 0 {
@@ -168,6 +178,9 @@ func loadItems(path string) ([]Item, error) {
 		if err := dec.Decode(&it); err != nil {
 			return nil, fmt.Errorf("%s:%d: %w", path, line, err)
 		}
+		if err := dec.Decode(&struct{}{}); err != io.EOF {
+			return nil, fmt.Errorf("%s:%d: expected exactly one JSON value", path, line)
+		}
 		if err := it.Request.Validate(); err != nil {
 			return nil, fmt.Errorf("%s:%d %s: %w", path, line, it.ID, err)
 		}
@@ -195,11 +208,11 @@ func expectation(it Item) (string, [2]float64, error) {
 		}
 		return s, [2]float64{}, nil
 	default:
-		var r [2]float64
-		if err := json.Unmarshal(it.Expect, &r); err != nil || r[0] > r[1] {
-			return "", r, errors.New("a score expect is [lo, hi]")
+		var r []float64
+		if it.Request.Kind != decision.Score || it.Request.Scale == nil || json.Unmarshal(it.Expect, &r) != nil || len(r) != 2 || r[0] > r[1] || r[0] < it.Request.Scale.Min || r[1] > it.Request.Scale.Max {
+			return "", [2]float64{}, errors.New("a score expect is [lo, hi]")
 		}
-		return "", r, nil
+		return "", [2]float64{r[0], r[1]}, nil
 	}
 }
 
@@ -325,6 +338,9 @@ func runRouting(ctx context.Context, args []string, stdout io.Writer) error {
 	if err := fl.Parse(args); err != nil {
 		return err
 	}
+	if *reps <= 0 {
+		return errors.New("routing: --reps must be positive")
+	}
 	arms, err := parseArms(*armsFlag)
 	if err != nil {
 		return err
@@ -366,8 +382,12 @@ func parseArms(s string) (map[string]string, error) {
 	arms := map[string]string{}
 	for _, part := range strings.Split(s, ",") {
 		name, path, ok := strings.Cut(strings.TrimSpace(part), "=")
+		name, path = strings.TrimSpace(name), strings.TrimSpace(path)
 		if !ok || name == "" || path == "" {
 			return nil, fmt.Errorf("routing: --arms wants name=fragment.toml,... (got %q)", s)
+		}
+		if _, exists := arms[name]; exists {
+			return nil, fmt.Errorf("routing: --arms names arm %q more than once", name)
 		}
 		data, err := os.ReadFile(path)
 		if err != nil {
@@ -398,6 +418,12 @@ func loadTasks(dir string) (map[string]Task, error) {
 		}
 		if t.Prompt == "" || t.Agent == "" || t.Verify == "" {
 			return nil, fmt.Errorf("%s/task.toml: prompt, agent and verify are required", e.Name())
+		}
+		if t.Timeout != "" {
+			d, err := time.ParseDuration(t.Timeout)
+			if err != nil || d <= 0 {
+				return nil, fmt.Errorf("%s/task.toml: timeout %q must be a positive duration", e.Name(), t.Timeout)
+			}
 		}
 		if _, err := os.Stat(filepath.Join(dir, e.Name(), "repo")); err != nil {
 			return nil, fmt.Errorf("%s: %w", e.Name(), err)

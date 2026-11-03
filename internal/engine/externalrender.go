@@ -115,6 +115,65 @@ func (e *Engine) renderExternalSubagents() (map[string][]byte, error) {
 	return rendered, nil
 }
 
+// validateExternalSubagents preserves Build's fail-fast validation for local
+// and already-materialized remote agents without resolving routing policies.
+// In particular, an auto policy must not run `opencode models` until Plan.
+func (e *Engine) validateExternalSubagents() error {
+	entries, err := e.Cfg.ExpandedSubagentEntriesForTool("opencode")
+	if err != nil {
+		return nil // expansion errors surface through plan and doctor
+	}
+	routes, err := e.Cfg.AgentRoutes("opencode")
+	if err != nil {
+		return err
+	}
+	for _, entry := range entries {
+		if strings.HasPrefix(entry.Resource.Source, "builtin:") {
+			continue
+		}
+		path, ok := e.externalSubagentSource(entry)
+		if !ok {
+			continue
+		}
+		data, err := os.ReadFile(path)
+		if err != nil {
+			return fmt.Errorf("subagents.%s: %w", entry.Name, err)
+		}
+		route := e.Cfg.Subagents[entry.Name].OpenCode
+		intent, err := agentfm.NeedsTransform(data)
+		if err != nil {
+			return fmt.Errorf("subagents.%s: %w", entry.Name, err)
+		}
+		if !intent {
+			if route.IsSet() {
+				return fmt.Errorf("subagents.%s declares a model override, but %s has no homonto: intent block, so it is projected verbatim and the override could never apply; add a homonto: block to render it, or remove [subagents.%s.opencode]", entry.Name, entry.Resource.Source, entry.Name)
+			}
+			continue
+		}
+		if route.Model == "" && routes[entry.Name].From != config.RouteFromPolicy {
+			return fmt.Errorf("subagents.%s renders from its homonto: intent block; set [subagents.%s.opencode] model or cover it with a [routing] policy", entry.Name, entry.Name)
+		}
+		// Render with a placeholder model to exercise all intent validation
+		// (including frontmatter keys that rendering owns) without selecting an
+		// auto policy. The real render happens during Plan.
+		key := externalRenderKey(entry.Name)
+		model := route.Model
+		if model == "" {
+			model = "validation/model"
+		}
+		ctx := &agentfm.RenderContext{
+			Names: map[string]string{key: entry.Name},
+			Overrides: map[string]agentfm.ModelSpec{key: {
+				Model: model, Variant: route.Variant, Effort: route.Effort, Steps: route.Steps, BashAllowAdd: route.BashAllowAdd,
+			}},
+		}
+		if _, err := agentfm.Render(key, data, "opencode", ctx); err != nil {
+			return fmt.Errorf("subagents.%s: %w", entry.Name, err)
+		}
+	}
+	return nil
+}
+
 // refreshExternalRenders recomputes the rendered external subagents and hands
 // them to every adapter.
 func (e *Engine) refreshExternalRenders() error {

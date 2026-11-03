@@ -211,7 +211,7 @@ func Build(ctx context.Context, configPath, home, contentDir string) (*Engine, e
 			WithRepo(name)
 		e.RepoTargets = append(e.RepoTargets, RepoTarget{Name: name, Dir: cfg.RepoDirs()[name], Adapter: a, State: st})
 	}
-	if err := e.refreshExternalRenders(); err != nil {
+	if err := e.validateExternalSubagents(); err != nil {
 		return nil, err
 	}
 	return e, nil
@@ -237,6 +237,12 @@ func (e *Engine) Plan() ([]adapter.ChangeSet, error) {
 		return nil, err
 	}
 	e.Warnings = nil
+	// Rendered external agents may obtain their model from an auto policy.
+	// Resolve that policy as part of planning, not engine construction, so
+	// non-planning commands never invoke model discovery.
+	if err := e.refreshExternalRenders(); err != nil {
+		return nil, err
+	}
 	var sets []adapter.ChangeSet
 	for _, a := range e.Adapters {
 		cs, err := a.Plan(e.Cfg, e.State)

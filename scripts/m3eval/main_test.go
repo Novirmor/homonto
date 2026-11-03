@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -10,6 +11,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/Novirmor/homonto/internal/decision"
 )
 
 const repoRoot = "../.."
@@ -47,6 +50,21 @@ func TestDecisionsDryRunCallsNothing(t *testing.T) {
 	err := runDecisions(context.Background(), []string{"--config", writeEvalConfig(t, srv.URL, srv.URL), "--set", filepath.Join(repoRoot, "testdata/eval/m3/decisions.jsonl")}, &out)
 	if err != nil || calls != 0 || !strings.Contains(out.String(), "dry run: 12 items × 2 providers (jev, openai) = 24 calls") {
 		t.Fatalf("err=%v calls=%d out=%s", err, calls, out.String())
+	}
+}
+
+func TestDecisionProviderSelectionRejectsInvalidLists(t *testing.T) {
+	path := writeEvalConfig(t, "http://127.0.0.1", "http://127.0.0.1")
+	set := filepath.Join(repoRoot, "testdata/eval/m3/decisions.jsonl")
+	for _, providers := range []string{"openai,openai", "openai,"} {
+		err := runDecisions(context.Background(), []string{"--config", path, "--set", set, "--providers", providers}, io.Discard)
+		if err == nil || !strings.Contains(err.Error(), "--providers") {
+			t.Errorf("providers %q: %v", providers, err)
+		}
+	}
+	var out strings.Builder
+	if err := runDecisions(context.Background(), []string{"--config", path, "--set", set, "--providers", "openai, jev"}, &out); err != nil || !strings.Contains(out.String(), "2 providers (openai, jev)") {
+		t.Fatalf("trimmed providers: err=%v out=%s", err, out.String())
 	}
 }
 
@@ -108,6 +126,43 @@ func TestRoutingDryRunLoadsTasksAndArms(t *testing.T) {
 	}
 	if !strings.Contains(out.String(), "dry run: 3 tasks × 2 arms (auto, static) × 2 reps = 12 OpenCode runs") {
 		t.Fatalf("out = %s", out.String())
+	}
+}
+
+func TestRoutingInputValidation(t *testing.T) {
+	arm := filepath.Join(repoRoot, "testdata/eval/m3/arms/static.toml")
+	if err := runRouting(context.Background(), []string{"--tasks", filepath.Join(repoRoot, "testdata/eval/m3/tasks"), "--arms", "static=" + arm, "--reps", "0"}, io.Discard); err == nil || !strings.Contains(err.Error(), "--reps must be positive") {
+		t.Fatalf("reps: %v", err)
+	}
+	if _, err := parseArms("one=" + arm + ",one=" + arm); err == nil || !strings.Contains(err.Error(), "more than once") {
+		t.Fatalf("duplicate arms: %v", err)
+	}
+	tasks := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(tasks, "bad", "repo"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(tasks, "bad", "task.toml"), []byte("prompt = \"p\"\nagent = \"a\"\nverify = \"true\"\ntimeout = \"never\"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := loadTasks(tasks); err == nil || !strings.Contains(err.Error(), "must be a positive duration") {
+		t.Fatalf("timeout: %v", err)
+	}
+}
+
+func TestScoreExpectationMustFitItsScale(t *testing.T) {
+	it := Item{Request: decision.Request{Point: "eval.score", Kind: decision.Score, Question: "q", Scale: &decision.Scale{Min: 0, Max: 10}, Levels: []string{"low", "high"}}, Expect: json.RawMessage(`[0,11]`)}
+	if _, _, err := expectation(it); err == nil {
+		t.Fatal("accepted expectation outside its score scale")
+	}
+}
+
+func TestDecisionSetRejectsTrailingJSON(t *testing.T) {
+	set := filepath.Join(t.TempDir(), "set.jsonl")
+	if err := os.WriteFile(set, []byte(`{"id":"x","request":{"point":"eval.x","kind":"yes-no","question":"q"},"expect":"yes"}{}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := loadItems(set); err == nil || !strings.Contains(err.Error(), "exactly one JSON value") {
+		t.Fatalf("trailing JSON: %v", err)
 	}
 }
 

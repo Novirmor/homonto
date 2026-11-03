@@ -85,6 +85,9 @@ func decideCmd() *cobra.Command {
 				if err := dec.Decode(&req); err != nil {
 					return fmt.Errorf("decide: read request: %w", err)
 				}
+				if err := dec.Decode(&struct{}{}); err != io.EOF {
+					return fmt.Errorf("decide: request must contain exactly one JSON value")
+				}
 			}
 			svc := decision.Service{RouteFor: func(point string) (decision.Route, error) {
 				return decisionRoute(cfg, point)

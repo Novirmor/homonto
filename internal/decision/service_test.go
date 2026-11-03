@@ -91,6 +91,28 @@ func TestRecordsKeepNoQuestionOrContext(t *testing.T) {
 	}
 }
 
+func TestRecordsOmitProviderErrorsThatEchoRequestInput(t *testing.T) {
+	dir := t.TempDir()
+	out := Outcome{
+		At:      fixed().Format(time.RFC3339),
+		Point:   choiceReq.Point,
+		Kind:    choiceReq.Kind,
+		Status:  StatusFailed,
+		Failure: FailRejected,
+		Error:   "provider echoed: " + choiceReq.Question + "; " + ticket["ticket"],
+	}
+	if err := Append(dir, out); err != nil {
+		t.Fatal(err)
+	}
+	data, err := os.ReadFile(dir + "/" + RecordFile)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(data), choiceReq.Question) || strings.Contains(string(data), ticket["ticket"]) || strings.Contains(string(data), `"error"`) {
+		t.Fatalf("record carries provider error input: %s", data)
+	}
+}
+
 // TestLiveDecisionSmoke calls a real provider. It is opt-in because it
 // spends money: HOMONTO_LIVE_DECISIONS=openai-decisions|systemone, with
 // HOMONTO_LIVE_DECISIONS_KEY, _MODEL and (systemone) _ENDPOINT.

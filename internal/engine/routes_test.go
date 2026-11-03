@@ -174,3 +174,49 @@ func TestRoutingRecordRemovedWithoutPolicies(t *testing.T) {
 		t.Fatalf("stale routing record kept: %v %v", ok, err)
 	}
 }
+
+func TestExternalAutoRoutingDiscoversDuringPlanNotBuild(t *testing.T) {
+	home, repo := t.TempDir(), t.TempDir()
+	config := `[subagents.external]
+source = "local:external"
+scope = "project"
+
+[routing.default.opencode]
+mode = "auto"
+fallback = "p/fallback"
+`
+	agent := `---
+name: external
+description: external
+mode: subagent
+homonto:
+  read_only: true
+  bash: false
+  network: false
+  dialogs: false
+  spawn: []
+---
+body
+`
+	if err := os.MkdirAll(filepath.Join(repo, "content", "subagents"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(repo, "homonto.toml"), []byte(config), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(repo, "content", "subagents", "external.md"), []byte(agent), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	discover := &fakeModels{ids: []string{"p/available", "p/fallback"}}
+	useDiscoverer(t, discover)
+	e := buildEngine(t, home, repo)
+	if discover.calls != 0 {
+		t.Fatalf("Build ran discovery %d times", discover.calls)
+	}
+	if _, err := e.Plan(); err != nil {
+		t.Fatal(err)
+	}
+	if discover.calls != 1 {
+		t.Fatalf("Plan ran discovery %d times, want 1", discover.calls)
+	}
+}

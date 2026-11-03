@@ -119,12 +119,16 @@ func Certainty(res Result) float64 {
 // RecordFile is the decision log under the state directory.
 const RecordFile = "decisions.jsonl"
 
-// Append writes one outcome to the log in stateDir.
+// Append writes one outcome to the log in stateDir. Error text is useful to
+// the immediate caller, but providers can echo request input in it. Keep the
+// durable audit record to the documented, non-sensitive outcome fields.
 func Append(stateDir string, out Outcome) error {
 	if err := os.MkdirAll(stateDir, 0o755); err != nil {
 		return err
 	}
-	data, err := json.Marshal(out)
+	toRecord := out
+	toRecord.Error = ""
+	data, err := json.Marshal(toRecord)
 	if err != nil {
 		return err
 	}

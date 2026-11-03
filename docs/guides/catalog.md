@@ -15,12 +15,19 @@ item is for. How the pieces work together is in [workflows](workflows.md).
 | `h-workflow-gh` | `[workflows.h-workflow-gh]` | `homonto`, `h-host-gh`, `h-spike-issue`, `h-resolve-issue`, `h-review-pr`, `h-continue-pr`, `h-resolve-conflicts`, `h-review-batch` | `/h-spike-issue`, `/h-resolve-issue`, `/h-review-pr`, `/h-continue-pr`, `/h-resolve-conflicts`, `/h-review-batch` | `homonto`, `h-spike`, `h-review` | — |
 | `h-workflow-gl` | `[workflows.h-workflow-gl]` | the same, with `h-host-gl` | the same | the same | — (uses `glab`) |
 | `h-workflow-bb` | `[workflows.h-workflow-bb]` | the same, with `h-host-bb` | the same | the same | — (uses `homonto host bitbucket`) |
+| `host-gh` | `[services.host-gh]` | — | — | — | — (enables the GitHub draft tools; uses `gh`) |
+| `host-gl` | `[services.host-gl]` | — | — | — | — (enables the GitLab draft tools; uses `glab`) |
+| `host-bb` | `[services.host-bb]` | — | — | — | — (enables the Bitbucket draft tools; uses `homonto host bitbucket`) |
 
 `onto`, `to`, and the hosting workflows also install the `homonto-workflow` OpenCode plugin
 ([OpenCode integration](opencode.md)). Items shared between packages
 (`homonto` skill and agent, and every process skill, command and worker the
 three hosting workflows share) are installed once, so the hosting workflows can
 be installed together.
+
+Each hosting workflow installs its `host-*` service unless the config declares
+another service for that host ([services](configuration.md#services--servicesname)).
+Writing your own package: [package contracts](../contracts/README.md).
 
 Standalone items: skills `handoff` and `grilling`; commands `/handoff` and
 `/grill`; plugin `permission-observer`.

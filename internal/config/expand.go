@@ -67,6 +67,16 @@ func (c *Config) FrameworkCatalog() (*catalog.Catalog, error) {
 	return cl, nil
 }
 
+// remotePending reports whether name is a remote package whose verified
+// root has not been injected yet.
+func (c *Config) remotePending(name string) bool {
+	if !remote.IsRemoteSource(c.Frameworks[name].Source) {
+		return false
+	}
+	_, injected := c.remoteFrameworkDirs[name]
+	return !injected
+}
+
 // frameworkCatalogName maps a [engines.X] declaration to the catalog
 // framework name to expand, and reports whether it is expandable. A builtin:<n>
 // source expands framework n from the embedded catalog; a local:<path> or
@@ -148,6 +158,12 @@ func (c *Config) expandEntriesForTool(tool, kind string, base []NamedResource, e
 			continue
 		}
 		if !slices.Contains(fwRes.TargetsOrAll(), tool) {
+			continue
+		}
+		// A remote package's content exists only once the engine has fetched
+		// and verified it; until then (config load) it expands to nothing, and
+		// ResolvePackages re-validates once the verified root is injected.
+		if c.remotePending(fwName) {
 			continue
 		}
 		if cl == nil {

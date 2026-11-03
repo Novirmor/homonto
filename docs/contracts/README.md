@@ -1,5 +1,9 @@
 # Package contracts
 
+New to writing a package? Start with [authoring.md](authoring.md) and the
+[example packages](../../testdata/examples/README.md), and check yours with
+`homonto package check`.
+
 A homonto package is a directory with a `framework.toml` manifest and the
 skills, commands, subagents and plugins it lists. homonto installs it from the
 bundled catalog (`builtin:<name>`), a local directory (`local:<path>`) or a
@@ -61,4 +65,5 @@ The shared coordinator (agent `homonto`, skill `homonto`, plugin
 that runs under it sets `coordinator = "shared"` in its kind table.
 
 Schema 0/1 manifests still load as resource bundles, but they carry no
-contract: they cannot be selected as an engine in a workspace task.
+contract: they cannot be selected as an engine in a workspace task, declare
+settings, or pass `homonto package check`.

@@ -19,7 +19,7 @@ Every `homonto` command and flag. Workflow binaries: [onto](onto-reference.md),
 | [`apply`](#homonto-apply) | Project the config |
 | [`status`](#homonto-status) | Drift and pending changes |
 | [`doctor`](#homonto-doctor) | Environment health |
-| [`explain`](#homonto-explain) | Why a managed resource exists |
+| [`explain`](#homonto-explain) | Why a managed resource exists; resolved package settings |
 | [`update`](#homonto-update) | Bring catalog content to this binary's version |
 | [`snapshot`](#homonto-snapshot) | Undo or recover snapshot applies |
 | [`permissions suggest`](#homonto-permissions-suggest) | Render `bash_allow_add` entries |
@@ -28,6 +28,7 @@ Every `homonto` command and flag. Workflow binaries: [onto](onto-reference.md),
 | [`workspace`](#homonto-workspace) | Records layout, checkpoints, tasks |
 | [`worktree`](#homonto-worktree) | Registered per-change worktrees |
 | [`tmp clean`](#homonto-tmp-clean) | Empty scratch that belongs to no active change |
+| [`package check`](#homonto-package-check) | Check packages against the package contract |
 | `version`, `completion <shell>` | Version; shell completion |
 
 ## `homonto init`
@@ -143,6 +144,16 @@ skill         handoff              direct scope=project source=builtin:handoff
     last: create (13f87c95, declare at 2026-10-29T14:38:10Z)
 ```
 
+`homonto explain settings [package] [--json]` lists each installed package's
+resolved settings and process definitions, defaults marked
+([settings contract](../contracts/settings.md)). `plan` prints the same
+`setting:` lines.
+
+```console
+$ homonto explain settings
+setting: engines.no.isolation = "ask" (default)
+```
+
 ## `homonto update`
 
 `--yes` skips confirmation. Re-materializes the catalog embedded in this
@@ -253,6 +264,24 @@ Empties the declared `[tmp]` directory except the scratch folders of active or
 interrupted onto and to changes. Refuses when `[tmp]` is not declared.
 `--json` emits `schema_version`, `tmp`, `applied`, `kept`, and `removed`.
 Details: [cleaning up terminal workflows](workflow-cleanup.md#scratch).
+
+## `homonto package check`
+
+```text
+homonto package check [--builtin] [DIR...]
+```
+
+Loads each package directory (a `framework.toml` root) as a config would
+install it, then checks it against the [package contract](../contracts/README.md):
+manifest schema, kind table, resources, skill frontmatter, agent rendering and
+OpenCode's harness capabilities. Directories load together, so check a
+workflow with the non-builtin service it requires. `--builtin` also checks
+every shipped package. Exits non-zero naming each failed check.
+
+```console
+$ homonto package check testdata/examples/example-engine
+ok example-engine (engine 0.1.0)
+```
 
 ## `homonto completion`
 

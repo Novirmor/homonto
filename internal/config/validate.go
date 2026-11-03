@@ -1060,6 +1060,9 @@ func validateSubagentOverrides(c *Config) error {
 			if err != nil {
 				return err
 			}
+			if !known[cat] && c.anyRemotePending() {
+				continue // a pending remote package may ship it; rechecked after injection
+			}
 			if !known[cat] {
 				return fmt.Errorf("parse config: subagents.%s tunes an agent that is not installed — no framework or [subagents.*] declaration provides builtin:%s; if this is a retired onto/to primary, rename the model block to subagents.homonto", name, cat)
 			}

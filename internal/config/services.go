@@ -68,7 +68,26 @@ func (c *Config) ResolvePackages() error {
 			implementedBy[id] = def
 		}
 	}
-	return c.validatePackageSettings(cl)
+	if err := c.validatePackageSettings(cl); err != nil {
+		return err
+	}
+	// Remote packages' agents are known only once their roots are injected;
+	// overrides that load had to defer are judged now.
+	if len(c.remoteFrameworkDirs) > 0 {
+		return validateSubagentOverrides(c)
+	}
+	return nil
+}
+
+// anyRemotePending reports whether a remote package still awaits its
+// verified root.
+func (c *Config) anyRemotePending() bool {
+	for name := range c.Frameworks {
+		if c.remotePending(name) {
+			return true
+		}
+	}
+	return false
 }
 
 // ImpliedServices maps each service package installed only as a default to

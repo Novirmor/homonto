@@ -57,6 +57,13 @@ type Base struct {
 	SubagentCatalogRoot string // materialized builtin subagent root (.homonto/catalog/subagents)
 	PluginCatalogRoot   string // materialized bundled plugin root (.homonto/catalog/plugins)
 	RemoteSubagentRoot  string // materialized remote subagent root (.homonto/remote/subagents)
+	// RenderedSubagentRoot holds the rendered variants of local:/remote:
+	// subagents that carry a homonto: intent block (.homonto/rendered/subagents,
+	// ADR 0096). RenderedSubagents maps each such config name to its rendered
+	// bytes, computed by the engine before planning; the engine writes them to
+	// RenderedSubagentRoot before any adapter links them.
+	RenderedSubagentRoot string
+	RenderedSubagents    map[string][]byte
 
 	Skills    []config.NamedResource
 	Commands  []config.NamedResource
@@ -96,6 +103,9 @@ func (b *Base) ManagedRoots() []string {
 	}
 	if b.RemoteSubagentRoot != "" {
 		roots = append(roots, b.RemoteSubagentRoot)
+	}
+	if b.RenderedSubagentRoot != "" {
+		roots = append(roots, b.RenderedSubagentRoot)
 	}
 	return roots
 }
@@ -290,10 +300,19 @@ func (b *Base) subagentSource(entry config.NamedResource) string {
 		}
 		return filepath.Join(b.SubagentCatalogRoot, name+".md")
 	}
+	if _, rendered := b.RenderedSubagents[entry.Name]; rendered && b.RenderedSubagentRoot != "" {
+		return filepath.Join(b.RenderedSubagentRoot, entry.Name+b.VariantSuffix)
+	}
 	if strings.HasPrefix(entry.Resource.Source, "remote:") {
 		return filepath.Join(b.RemoteSubagentRoot, entry.Name+".md")
 	}
 	return filepath.Join(b.Content, "subagents", LocalSourceName(entry.Resource.Source, entry.Name)+".md")
+}
+
+// SetRenderedSubagents installs the engine's rendered external subagents.
+func (b *Base) SetRenderedSubagents(root string, rendered map[string][]byte) {
+	b.RenderedSubagentRoot = root
+	b.RenderedSubagents = rendered
 }
 
 // skipsSubagent reports whether a builtin subagent must NOT be projected for
@@ -353,6 +372,10 @@ func (b *Base) copySubagentDesired() (map[string][]byte, error) {
 	out := map[string][]byte{}
 	for _, entry := range b.Subagents {
 		if entry.Mode != "copy" || b.SkipsSubagent(entry) {
+			continue
+		}
+		if rendered, ok := b.RenderedSubagents[entry.Name]; ok {
+			out[filepath.Join(b.SubagentsDir(entry.Resource.Scope), entry.Name+".md")] = rendered
 			continue
 		}
 		content, err := os.ReadFile(b.subagentSource(entry))

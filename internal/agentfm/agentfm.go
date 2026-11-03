@@ -112,6 +112,21 @@ type ServiceRules struct {
 	WorkerDeny      []string
 }
 
+// renderOwnedKeys lists the top-level frontmatter keys Render emits itself.
+func renderOwnedKeys(fm []byte) ([]string, error) {
+	var header map[string]any
+	if err := yaml.Unmarshal(fm, &header); err != nil {
+		return nil, fmt.Errorf("agentfm: malformed frontmatter: %w", err)
+	}
+	var out []string
+	for _, key := range []string{"model", "variant", "steps", "permission"} {
+		if _, ok := header[key]; ok {
+			out = append(out, key)
+		}
+	}
+	return out, nil
+}
+
 // appendNew appends the patterns not already in list, in order.
 func appendNew(list []string, patterns ...string) []string {
 	for _, p := range patterns {
@@ -204,6 +219,14 @@ func Render(name string, content []byte, tool string, ctx *RenderContext) ([]byt
 			}
 		}
 		return content, nil
+	}
+	// The render owns these keys: an intent agent declaring one itself would
+	// emit it twice, and a hand-written permission map would silently compete
+	// with the rendered one.
+	if owned, err := renderOwnedKeys(fm); err != nil {
+		return nil, err
+	} else if len(owned) > 0 {
+		return nil, fmt.Errorf("agentfm: agent %q declares %s in its frontmatter, which the homonto: block renders; remove them (models come from [subagents.<name>.<tool>], permissions from the homonto: block)", name, strings.Join(owned, ", "))
 	}
 	// A non-nil context marks a production render after framework expansion.
 	// Unlike the nil catalog-test context, it must resolve a non-empty model.

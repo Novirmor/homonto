@@ -1032,7 +1032,14 @@ func validateSubagentOverrides(c *Config) error {
 		if !sa.IsTuneOnly() {
 			var ok bool
 			if cat, ok = SubagentCatalogName(sa.Source); !ok {
-				return fmt.Errorf("parse config: subagents.%s declares a model override, but its source %q is not builtin: — local:/remote: agents are projected verbatim and never rendered, so the override could never apply", name, sa.Source)
+				// A local:/remote: agent renders, and takes the override, only
+				// when its content carries a homonto: intent block; the engine
+				// reads that content and rejects an override on a verbatim
+				// agent (ADR 0096). Its fragment is still checked here.
+				if err := validateModelSpec("opencode", "subagents."+name+".opencode", sa.OpenCode, false); err != nil {
+					return err
+				}
+				continue
 			}
 		} else {
 			known, err := installedBuiltins()

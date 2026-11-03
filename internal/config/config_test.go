@@ -844,19 +844,23 @@ model = "test/model"
 		}
 	})
 
-	// Overrides on local:/remote: sources were validated as if meaningful, then
-	// silently discarded — local/remote content is projected verbatim and never
-	// rendered, so the override could never apply.
-	t.Run("an override on a non-builtin source is a load error", func(t *testing.T) {
-		err := loadDoc(t, `[subagents.mine]
+	// An override on a local:/remote: source applies when its content carries
+	// a homonto: intent block; the engine reads the content and rejects it on
+	// a verbatim agent (ADR 0096). Load still checks the fragment itself.
+	t.Run("an override on a non-builtin source is judged by its content", func(t *testing.T) {
+		doc := `[subagents.mine]
 source = "local:mine"
 scope = "project"
 targets = ["opencode"]
 [subagents.mine.opencode]
 model = "anthropic/claude-opus-4-8"
-`)
-		if err == nil || !strings.Contains(err.Error(), "never apply") {
-			t.Fatalf("an override on a local: source must be rejected, got: %v", err)
+`
+		if err := loadDoc(t, doc); err != nil {
+			t.Fatalf("a well-formed override on a local: source must load: %v", err)
+		}
+		if err := loadDoc(t, strings.Replace(doc, `model = "anthropic/claude-opus-4-8"`, `model = "anthropic/claude-opus-4-8"
+effort = "high"`, 1)); err == nil {
+			t.Fatal("a malformed override fragment on a local: source must still fail at load")
 		}
 	})
 }

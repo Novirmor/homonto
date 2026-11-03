@@ -68,6 +68,9 @@ type Engine struct {
 	// Warnings collects non-fatal per-adapter failures from the last Plan (e.g.
 	// an unparseable tool file); other tools still proceed.
 	Warnings []string
+	// renderedExternal holds the rendered local:/remote: subagents that carry
+	// a homonto: intent block, keyed by config name (ADR 0096).
+	renderedExternal map[string][]byte
 }
 
 // RepoTarget is one declared repository's projection pair.
@@ -202,6 +205,9 @@ func Build(ctx context.Context, configPath, home, contentDir string) (*Engine, e
 			WithRepo(name)
 		e.RepoTargets = append(e.RepoTargets, RepoTarget{Name: name, Dir: cfg.RepoDirs()[name], Adapter: a, State: st})
 	}
+	if err := e.refreshExternalRenders(); err != nil {
+		return nil, err
+	}
 	return e, nil
 }
 
@@ -297,9 +303,16 @@ func (e *Engine) Apply(ctx context.Context, sets []adapter.ChangeSet) error {
 	if err := e.materializeRemotes(ctx); err != nil {
 		return err
 	}
+	// Remote subagent content exists only now; render any that carry intent.
+	if err := e.refreshExternalRenders(); err != nil {
+		return err
+	}
 	// Materialize builtin skills before any adapter links them, so no symlink is
 	// created ahead of its target.
 	if err := e.materializeCatalog(); err != nil {
+		return err
+	}
+	if err := e.writeRenderedSubagents(); err != nil {
 		return err
 	}
 	// The declared [tmp] directory is workspace surface, not catalog content:

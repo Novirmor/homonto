@@ -115,4 +115,5 @@ numbering: [`../agents/adr.md`](../agents/adr.md).
 | [0093](0093-describe-engines-instead-of-naming-them.md) | Describe engines instead of naming them | Accepted |
 | [0094](0094-package-host-services-separately.md) | Package host services separately | Accepted |
 | [0095](0095-declare-package-settings-in-the-manifest.md) | Declare package settings in the manifest | Accepted |
+| [0096](0096-render-external-agents-by-intent.md) | Render external agents by intent | Accepted |
 | [0097](0097-require-harness-capabilities-by-name.md) | Require harness capabilities by name | Accepted |

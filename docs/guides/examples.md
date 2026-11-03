@@ -171,8 +171,8 @@ Read `git log main..HEAD` and draft an "Unreleased" entry grouped by
 Added / Changed / Fixed. $ARGUMENTS
 ```
 
-`homonto/subagents/security-review.md` (projected verbatim — set its model
-here, not in `homonto.toml`):
+`homonto/subagents/security-review.md` (no `homonto:` block, so it is projected
+verbatim — set its model here, not in `homonto.toml`):
 
 ```markdown
 ---

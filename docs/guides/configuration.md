@@ -149,7 +149,8 @@ the user-scope equivalent). Packages bring their own commands (`/onto`,
 ## Subagents — `[subagents.<name>]`
 
 ```toml
-# Your own agent file, projected verbatim (put model: in its frontmatter).
+# Your own agent file: projected verbatim (put model: in its frontmatter), or
+# rendered like a catalog agent when it has a homonto: block.
 [subagents.security-review]
 source = "local:security-review"       # → homonto/subagents/security-review.md
 scope  = "project"
@@ -177,13 +178,15 @@ copy-mode subagent.
 
 ## Agent models — `[subagents.<name>.opencode]`
 
-**Every builtin agent needs a model** — whether a package installs it or you
-declare it with a `builtin:` source. There are no defaults, tiers, or
-inheritance. `local:` and `remote:` agents are projected verbatim and may
-**not** have this block; set `model:` in their own frontmatter instead:
+**Every rendered agent needs a model** — a builtin agent, whether a package
+installs it or you declare it with a `builtin:` source, and a `local:` or
+`remote:` agent whose file carries a `homonto:` block. There are no defaults,
+tiers, or inheritance. An agent file without a `homonto:` block is projected
+verbatim and may **not** have this block; set `model:` in its own frontmatter
+instead:
 
 ```text
-parse config: subagents.security-review declares a model override, but its source "local:security-review" is not builtin: — local:/remote: agents are projected verbatim and never rendered, so the override could never apply
+subagents.security-review declares a model override, but local:security-review has no homonto: intent block, so it is projected verbatim and the override could never apply; add a homonto: block to render it, or remove [subagents.security-review.opencode]
 ```
 
 ```toml

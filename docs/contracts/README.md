@@ -15,7 +15,8 @@ The kinds are:
 | `service` | a reusable host or ticket service: operations, transport, credentials, shell rules | `[services.<name>]` | [service.md](service.md) |
 
 Harness requirements: [capabilities.md](capabilities.md). Package settings and
-process definitions: [settings.md](settings.md).
+process definitions: [settings.md](settings.md). Reserved model-routing and
+decision surfaces: [routing.md](routing.md).
 
 Every kind shares these manifest fields:
 

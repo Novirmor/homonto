@@ -29,6 +29,9 @@ func validate(c *Config) error {
 	if err := rejectLegacyModels(c.Models); err != nil {
 		return err
 	}
+	if err := rejectReserved(c); err != nil {
+		return err
+	}
 	if err := validateTooling(c.Tooling); err != nil {
 		return err
 	}
@@ -69,6 +72,17 @@ func validate(c *Config) error {
 		return err
 	}
 	return validateSettingsAndTUI(c)
+}
+
+// rejectReserved fails a config using a table reserved for M3 (ADR 0098).
+func rejectReserved(c *Config) error {
+	if len(c.Routing) > 0 {
+		return fmt.Errorf("parse config: [routing] is reserved for model-routing policies (M3) and not implemented yet; set each agent's model with [subagents.<name>.opencode] (docs/contracts/routing.md)")
+	}
+	if len(c.Decisions) > 0 {
+		return fmt.Errorf("parse config: [decisions] is reserved for decision-model providers (M3) and not implemented yet (docs/contracts/routing.md)")
+	}
+	return nil
 }
 
 func validateWorkflow(c *Config) error {

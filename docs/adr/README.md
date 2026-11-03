@@ -117,3 +117,4 @@ numbering: [`../agents/adr.md`](../agents/adr.md).
 | [0095](0095-declare-package-settings-in-the-manifest.md) | Declare package settings in the manifest | Accepted |
 | [0096](0096-render-external-agents-by-intent.md) | Render external agents by intent | Accepted |
 | [0097](0097-require-harness-capabilities-by-name.md) | Require harness capabilities by name | Accepted |
+| [0098](0098-reserve-routing-and-decision-surfaces.md) | Reserve routing and decision surfaces | Accepted |

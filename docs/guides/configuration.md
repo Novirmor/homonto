@@ -19,7 +19,8 @@ shell's working directory.
 | [`[subagents.<name>]`](#subagents--subagentsname) | Agent definitions |
 | [`[subagents.<name>.opencode]`](#agent-models--subagentsnameopencode) | Each agent's model, variant, step budget, extra allowed commands |
 | [`[engines.<name>]`](#engines--enginesname) | Work-model packages: `onto`, `to`, `no` |
-| [`[workflows.<name>]`](#workflows--workflowsname) | User-facing packages: `h` |
+| [`[workflows.<name>]`](#workflows--workflowsname) | User-facing packages: `h-workflow-gh`, `h-workflow-gl`, `h-workflow-bb` |
+| [`[services.<name>]`](#services--servicesname) | Host or ticket service packages: `host-gh`, `host-gl`, `host-bb` |
 | [`[plugins.opencode.<name>]`](#plugins--pluginsopencodename) | OpenCode plugins |
 | [`[settings.opencode]`](#settings--settingsopencode) | OpenCode settings |
 | [`[tui.opencode]`](#terminal-settings--tuiopencode) | OpenCode terminal settings |
@@ -148,7 +149,8 @@ the user-scope equivalent). Packages bring their own commands (`/onto`,
 ## Subagents — `[subagents.<name>]`
 
 ```toml
-# Your own agent file, projected verbatim (put model: in its frontmatter).
+# Your own agent file: projected verbatim (put model: in its frontmatter), or
+# rendered like a catalog agent when it has a homonto: block.
 [subagents.security-review]
 source = "local:security-review"       # → homonto/subagents/security-review.md
 scope  = "project"
@@ -176,13 +178,15 @@ copy-mode subagent.
 
 ## Agent models — `[subagents.<name>.opencode]`
 
-**Every builtin agent needs a model** — whether a package installs it or you
-declare it with a `builtin:` source. There are no defaults, tiers, or
-inheritance. `local:` and `remote:` agents are projected verbatim and may
-**not** have this block; set `model:` in their own frontmatter instead:
+**Every rendered agent needs a model** — a builtin agent, whether a package
+installs it or you declare it with a `builtin:` source, and a `local:` or
+`remote:` agent whose file carries a `homonto:` block. There are no defaults,
+tiers, or inheritance. An agent file without a `homonto:` block is projected
+verbatim and may **not** have this block; set `model:` in its own frontmatter
+instead:
 
 ```text
-parse config: subagents.security-review declares a model override, but its source "local:security-review" is not builtin: — local:/remote: agents are projected verbatim and never rendered, so the override could never apply
+subagents.security-review declares a model override, but local:security-review has no homonto: intent block, so it is projected verbatim and the override could never apply; add a homonto: block to render it, or remove [subagents.security-review.opencode]
 ```
 
 ```toml
@@ -293,6 +297,18 @@ scope  = "project"
 | `builtin:to` | 6 skills, 6 commands, workflow plugin | `homonto`, `to-explorer`, `to-implementer`, `to-reviewer`, `to-skeptic` |
 | `builtin:no` | `no` skill, `/no` command | `no-implementer`, `no-reviewer` |
 
+`no` takes one setting, `isolation` (`ask`, `existing` or `worktree`;
+default `ask`):
+
+```toml
+[engines.no.settings]
+isolation = "worktree"
+```
+
+Any package can declare settings and named process definitions in its
+manifest; `homonto explain settings` lists them with defaults marked
+([settings contract](../contracts/settings.md)).
+
 Engines coexist; `homonto` is declared once even when several packages
 install it. The full inventory is in the [catalog](catalog.md). A `local:` or
 `remote:` package root may be declared too; its `framework.toml` defines its
@@ -326,6 +342,31 @@ parse config: engines.h-workflow-gh source "builtin:h-workflow-gh" is a workflow
 
 Legacy `[frameworks.*]` tables are rejected; rename them to `[engines.*]` or
 `[workflows.*]`.
+
+## Services — `[services.<name>]`
+
+A service package connects a host or ticket service: its operations, the CLI
+or transport it uses, the credentials it needs, and any shell rules it adds to
+rendered agents ([service contract](../contracts/service.md)).
+
+```toml
+# GitHub drafts and publication for a custom workflow, with no h workflow.
+[services.host-gh]
+source = "builtin:host-gh"
+scope  = "project"
+```
+
+| Builtin | Service | Runtime provider | Transport |
+|---|---|---|---|
+| `builtin:host-gh` | `github` | GitHub draft tools | `gh` |
+| `builtin:host-gl` | `gitlab` | GitLab draft tools | `glab` |
+| `builtin:host-bb` | `bitbucket` | Bitbucket draft tools | `homonto host bitbucket api` |
+
+A workflow names the services it needs and a default package for each. The
+`h-workflow-*` packages default to the matching `host-*`, so
+`[workflows.h-workflow-gh]` alone works as before. Declaring a service with the
+same service id replaces the default. Two installed packages implementing one
+service id fail at load.
 
 ## Plugins — `[plugins.opencode.<name>]`
 

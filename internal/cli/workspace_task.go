@@ -37,7 +37,7 @@ func workspaceTaskCmd() *cobra.Command {
 		}
 		return json.NewEncoder(cmd.OutOrStdout()).Encode(t)
 	}}
-	create.Flags().StringVar(&engine, "engine", "", "selected engine: no, onto, or to (immutable for this task)")
+	create.Flags().StringVar(&engine, "engine", "", "selected installed engine, such as no, onto or to (immutable for this task)")
 	create.Flags().StringVar(&change, "change", "", "existing active lifecycle change (required for onto/to)")
 	create.Flags().StringVar(&isolation, "isolation", "", "user-selected isolation: existing or worktree")
 	create.Flags().StringArrayVar(&repos, "repo", nil, "changed repository alias (repeatable)")

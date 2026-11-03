@@ -81,7 +81,7 @@ tasks:
       - go tool cover -func=cover.out | tail -1
 
   check:
-    desc: "Fast pre-push check: gofmt, vet, lint, doc references, tool pins, tests"
+    desc: "Fast pre-push check: gofmt, vet, lint, doc references, tool pins, package contracts, tests"
     cmds:
       - cmd: |
           unformatted="$(gofmt -l .)"
@@ -91,7 +91,12 @@ tasks:
       - task: lint
       - task: docs-check
       - task: pins-check
+      - task: contracts
       - task: test
+
+  contracts:
+    desc: Every shipped package and the example packages conform to the package contract
+    cmd: go run . package check --builtin testdata/examples/example-engine testdata/examples/example-workflow testdata/examples/example-service
 
   docs-check:
     desc: Agent docs and catalog reference only things that exist

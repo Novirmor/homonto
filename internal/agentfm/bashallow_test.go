@@ -189,7 +189,7 @@ func TestShippedWorkspaceExecutionRenderedPatterns(t *testing.T) {
 				if err != nil {
 					t.Fatal(err)
 				}
-				renderCtx := &RenderContext{ShellProxy: shellProxy, Overrides: map[string]ModelSpec{
+				renderCtx := &RenderContext{ShellProxy: shellProxy, RuntimeProviders: []string{"github"}, Overrides: map[string]ModelSpec{
 					name: {Model: "test/model"},
 				}}
 				out, err := Render(name, content, "opencode", renderCtx)
@@ -522,7 +522,7 @@ func TestShippedReadOnlyWorkersKeepCoordinatorToolsDenied(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			out, err := Render(name, content, "opencode", &RenderContext{Overrides: map[string]ModelSpec{name: {Model: "test/model"}}})
+			out, err := Render(name, content, "opencode", &RenderContext{RuntimeProviders: []string{"github"}, Overrides: map[string]ModelSpec{name: {Model: "test/model"}}})
 			if err != nil {
 				t.Fatal(err)
 			}

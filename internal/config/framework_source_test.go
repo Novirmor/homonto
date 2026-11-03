@@ -29,11 +29,21 @@ func TestLoad_RejectsUnsupportedPackageSource(t *testing.T) {
 }
 
 // TestLoad_AcceptsLocalPackage: an [engines.X] source="local:<path>" is
-// accepted at load post-E1. Validation checks only the source shape; the local
-// framework root is resolved later at expansion/materialization time.
+// accepted at load. Load reads the package's manifest (service resolution
+// needs it, ADR 0094), so a missing root fails at load naming the package.
 func TestLoad_AcceptsLocalPackage(t *testing.T) {
-	p := filepath.Join(t.TempDir(), "homonto.toml")
+	dir := t.TempDir()
+	p := filepath.Join(dir, "homonto.toml")
 	if err := os.WriteFile(p, []byte("[engines.myfw]\nsource = \"local:./myfw\"\nscope = \"user\"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Load(p); err == nil || !strings.Contains(err.Error(), `local framework "myfw"`) {
+		t.Fatalf("missing local root: %v", err)
+	}
+	if err := os.MkdirAll(filepath.Join(dir, "myfw"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "myfw", "framework.toml"), []byte("name = \"myfw\"\nversion = \"0.1.0\"\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := Load(p); err != nil {
@@ -208,15 +218,18 @@ func TestExpansionValidatesLocalAndRemotePackageKinds(t *testing.T) {
 					if err := os.WriteFile(path, []byte(text), 0o644); err != nil {
 						t.Fatal(err)
 					}
+					// A local package is read at load (service resolution needs
+					// its manifest); a remote one only once its verified root is
+					// injected. Either way the kind mismatch names the table.
 					c, err := Load(path)
-					if err != nil {
-						t.Fatal(err)
+					var entries []NamedResource
+					if err == nil {
+						if sourceType == "remote" {
+							// The resolver supplies the verified cache root before expansion.
+							c.SetRemoteFrameworkDirs(map[string]string{"demo": pkg})
+						}
+						entries, err = c.ExpandedSkillEntriesForTool("opencode")
 					}
-					if sourceType == "remote" {
-						// The resolver supplies the verified cache root before expansion.
-						c.SetRemoteFrameworkDirs(map[string]string{"demo": pkg})
-					}
-					entries, err := c.ExpandedSkillEntriesForTool("opencode")
 					if kind != "" && kind+"s" != namespace {
 						if err == nil || !strings.Contains(err.Error(), namespace+".demo") || !strings.Contains(err.Error(), "not "+article(strings.TrimSuffix(namespace, "s"))) {
 							t.Fatalf("kind mismatch accepted or misreported: %v", err)
@@ -287,5 +300,28 @@ func TestLoad_CoInstallsEveryHostingWorkflow(t *testing.T) {
 	}
 	if hosts := cfg.HostingProviders(); !hosts["github"] || !hosts["gitlab"] || !hosts["bitbucket"] {
 		t.Fatalf("hosting providers = %v", hosts)
+	}
+}
+
+// TestLoad_ResolvesLocalPackagesAgainstTheConfigDuringValidation: validation
+// expands packages (tune-only overrides must name an installed agent), so a
+// local root must resolve against the config file, not the working directory.
+func TestLoad_ResolvesLocalPackagesAgainstTheConfigDuringValidation(t *testing.T) {
+	dir := t.TempDir()
+	for path, data := range map[string]string{
+		"myfw/framework.toml":      "name = \"myfw\"\nversion = \"0.1.0\"\n[subagents]\nworker = \"subagents/worker.md\"\n",
+		"myfw/subagents/worker.md": "---\nname: worker\nmode: subagent\nhomonto:\n  read_only: true\n---\nwork",
+		"homonto.toml":             "[engines.myfw]\nsource = \"local:./myfw\"\nscope = \"user\"\n[subagents.worker.opencode]\nmodel = \"test/model\"\n",
+	} {
+		if err := os.MkdirAll(filepath.Dir(filepath.Join(dir, path)), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(dir, path), []byte(data), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	t.Chdir(t.TempDir())
+	if _, err := Load(filepath.Join(dir, "homonto.toml")); err != nil {
+		t.Fatalf("local package resolved against the working directory: %v", err)
 	}
 }

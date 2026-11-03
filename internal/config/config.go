@@ -30,6 +30,12 @@ type Resource struct {
 	Repo string `toml:"repo"`
 	// Digest is the sha256 content pin required when Source is a remote: source.
 	Digest string `toml:"digest"`
+	// Settings and Processes configure a workflow, engine or service package
+	// against the schema its manifest declares (ADR 0095); a skill or command
+	// declaration may not carry them. Processes are named definitions the
+	// package interprets, never engine stages.
+	Settings  map[string]any            `toml:"settings"`
+	Processes map[string]map[string]any `toml:"processes"`
 }
 
 // TargetsOrAll returns the explicit targets, or every tool when none are set
@@ -307,6 +313,11 @@ type Config struct {
 	SchemaVersion int       `toml:"schema_version,omitempty"`
 	Workflow      Workflow  `toml:"workflow"`
 	Worktrees     Worktrees `toml:"worktrees"`
+	// Routing and Decisions capture the tables reserved for model-routing
+	// policies and decision providers (ADR 0098). Both are rejected by name
+	// until M3 defines them, so nothing can depend on an unsettled shape.
+	Routing   map[string]any `toml:"routing"`
+	Decisions map[string]any `toml:"decisions"`
 	// MCPs captures a removed [mcps.*] table so Load can reject it by name:
 	// MCP servers are bring-your-own (ADR 0085).
 	MCPs map[string]any `toml:"mcps"`
@@ -315,6 +326,10 @@ type Config struct {
 	// a workflow such as h can be installed without an engine.
 	Workflows map[string]Resource `toml:"workflows"`
 	Engines   map[string]Resource `toml:"engines"`
+	// Services are reusable host or ticket service packages (ADR 0094). A
+	// workflow that requires a service the config does not declare gets the
+	// workflow's default service package (see ResolvePackages).
+	Services map[string]Resource `toml:"services"`
 	// Frameworks is the normalized union of Workflows and Engines. It is kept
 	// internal to the config API while the projection pipeline is generalized;
 	// it is never decoded from a [frameworks] TOML table.
@@ -354,6 +369,10 @@ type Config struct {
 	// through the Expanded* method signatures. Empty for a config not built via
 	// Load (e.g. decode in tests): local frameworks then resolve relative to cwd.
 	baseDir string
+
+	// impliedServices maps each default service package ResolvePackages
+	// added to Frameworks to the package that required it.
+	impliedServices map[string]string
 
 	// remoteFrameworkDirs maps a package source="remote:<url>" name to the
 	// verified cache dir the engine resolved through the remote trust pipeline

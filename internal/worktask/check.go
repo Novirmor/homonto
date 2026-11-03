@@ -16,6 +16,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/Novirmor/homonto/internal/catalog"
 	"github.com/Novirmor/homonto/internal/config"
 	"github.com/Novirmor/homonto/internal/fsutil"
 )
@@ -114,6 +115,13 @@ const snapshotTimeout = time.Minute
 // RunCheck requires the parent to pause participating writers. Pre/post snapshots
 // detect observed changes; this deliberately does not reserve or sandbox checkouts.
 func (s *Store) RunCheck(ctx context.Context, t *Task, name string, output io.Writer) (Result, error) {
+	engine, err := s.engine(t.Engine)
+	if err != nil {
+		return Result{}, err
+	}
+	if err := engine.requireOperation(catalog.OpIntegrationCheck); err != nil {
+		return Result{}, err
+	}
 	check, ok := s.Config.Integration[name]
 	if !ok || !slices.Contains(s.Config.IntegrationChecksFor(t.Changed), name) {
 		return Result{}, fmt.Errorf("integration check %q does not match this task", name)

@@ -7,6 +7,8 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/Novirmor/homonto/internal/catalog"
+	"github.com/Novirmor/homonto/internal/config"
 	"github.com/Novirmor/homonto/internal/engine"
 	"github.com/Novirmor/homonto/internal/state"
 	"github.com/spf13/cobra"
@@ -203,7 +205,9 @@ func explainCmd() *cobra.Command {
 		Short: "Explain managed resources: origin, destination, last change, removal",
 		Long: "Explain why each managed resource exists: who declared it, where it " +
 			"projects, which operation last touched it, and — for removed resources — " +
-			"which operation removed them. Values are never shown; secrets cannot leak.",
+			"which operation removed them. Values are never shown; secrets cannot leak.\n\n" +
+			"`explain settings [package]` instead lists each package's resolved settings " +
+			"and process definitions, marking manifest defaults.",
 		Args: cobra.RangeArgs(0, 2),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			cfgPath, _ := cmd.Flags().GetString("config")
@@ -218,6 +222,9 @@ func explainCmd() *cobra.Command {
 			}
 			if len(args) > 1 {
 				name = args[1]
+			}
+			if kind == "settings" {
+				return explainSettings(cmd, e, name, asJSON)
 			}
 			rows := buildRows(e)
 
@@ -342,4 +349,68 @@ func nonEmptyDefault(v, fallback string) string {
 		return fallback
 	}
 	return v
+}
+
+// explainSettings prints the resolved package settings (ADR 0095).
+func explainSettings(cmd *cobra.Command, e *engine.Engine, name string, asJSON bool) error {
+	all, err := e.Cfg.ResolvedSettings()
+	if err != nil {
+		return err
+	}
+	packages := all[:0:0]
+	for _, ps := range all {
+		if name == "" || ps.Package == name {
+			packages = append(packages, ps)
+		}
+	}
+	if name != "" && len(packages) == 0 {
+		return fmt.Errorf("explain: no installed package %q declares settings", name)
+	}
+	if asJSON {
+		if name != "" {
+			b, err := json.MarshalIndent(packages[0], "", "  ")
+			if err != nil {
+				return err
+			}
+			cmd.Println(string(b))
+			return nil
+		}
+		b, err := json.MarshalIndent(packages, "", "  ")
+		if err != nil {
+			return err
+		}
+		cmd.Println(string(b))
+		return nil
+	}
+	for _, line := range settingsLines(packages) {
+		cmd.Println(line)
+	}
+	return nil
+}
+
+// settingsLines renders resolved settings, one line per setting and process.
+func settingsLines(packages []config.PackageSettings) []string {
+	var out []string
+	for _, ps := range packages {
+		for _, s := range ps.Settings {
+			value := "unset"
+			if s.Value != nil {
+				value = catalog.Describe(s.Value)
+			}
+			line := fmt.Sprintf("setting: %s.%s.%s = %s", ps.Table, ps.Package, s.Name, value)
+			if s.Default {
+				line += " (default)"
+			}
+			out = append(out, line)
+		}
+		processes := make([]string, 0, len(ps.Processes))
+		for process := range ps.Processes {
+			processes = append(processes, process)
+		}
+		sort.Strings(processes)
+		for _, process := range processes {
+			out = append(out, fmt.Sprintf("process: %s.%s.%s", ps.Table, ps.Package, process))
+		}
+	}
+	return out
 }

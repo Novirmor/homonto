@@ -1,7 +1,25 @@
+manifest_schema = 2
 name = "no"
 kind = "engine"
 version = "0.3.0"
 description = "Minimal model-directed development and review engine"
+
+[engine]
+lifecycle = "stateless"
+entry = ["no"]
+operations = ["start", "resume", "integration-check", "release"]
+stages = ["implement", "review"]
+
+[requires]
+harness = ["skills", "commands", "subagents", "question-dialog"]
+
+# Read by the no execution reference through `homonto explain settings no
+# --json` (ADR 0095).
+[settings.isolation]
+type = "string"
+enum = ["ask", "existing", "worktree"]
+default = "ask"
+description = "Checkout isolation for a new no task: ask once, or always use existing checkouts or worktrees"
 
 [dependencies]
 frameworks = []

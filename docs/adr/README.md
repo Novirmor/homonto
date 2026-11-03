@@ -111,3 +111,10 @@ numbering: [`../agents/adr.md`](../agents/adr.md).
 | [0089](0089-name-hosting-workflows-per-host-with-shared-processes.md) | Name hosting workflows per host, with shared process names | Accepted |
 | [0090](0090-move-the-draft-publication-core-into-the-binary.md) | Move the draft/publication core into the binary | Accepted |
 | [0091](0091-own-the-bitbucket-cloud-transport.md) | Own the Bitbucket Cloud transport | Accepted |
+| [0092](0092-publish-the-package-contract.md) | Publish the package contract | Accepted |
+| [0093](0093-describe-engines-instead-of-naming-them.md) | Describe engines instead of naming them | Accepted |
+| [0094](0094-package-host-services-separately.md) | Package host services separately | Accepted |
+| [0095](0095-declare-package-settings-in-the-manifest.md) | Declare package settings in the manifest | Accepted |
+| [0096](0096-render-external-agents-by-intent.md) | Render external agents by intent | Accepted |
+| [0097](0097-require-harness-capabilities-by-name.md) | Require harness capabilities by name | Accepted |
+| [0098](0098-reserve-routing-and-decision-surfaces.md) | Reserve routing and decision surfaces | Accepted |

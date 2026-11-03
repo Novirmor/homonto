@@ -1,0 +1,30 @@
+manifest_schema = 2
+name = "example-workflow"
+kind = "workflow"
+version = "0.1.0"
+description = "Example workflow: triage a tracker issue, then hand it to an installed engine"
+
+[workflow]
+coordinator = "shared"
+entry = ["example-triage"]
+
+[requires]
+harness = ["skills", "commands", "subagents", "question-dialog"]
+
+# The tracker service comes from example-service, which a config must
+# declare: a default that is not builtin is never installed implicitly.
+[requires.services]
+tracker = "example-service"
+
+[processes]
+description = "Named triage processes the example-triage skill runs"
+
+[processes.fields.steps]
+type = "list"
+required = true
+
+[skills]
+example-triage = "skills/example-triage"
+
+[commands]
+example-triage = "commands/example-triage.md"

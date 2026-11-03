@@ -13,6 +13,7 @@ import (
 	"github.com/Novirmor/homonto/internal/adapter/fileproj"
 	"github.com/Novirmor/homonto/internal/adapter/jsoncodec"
 	"github.com/Novirmor/homonto/internal/adapter/structproj"
+	"github.com/Novirmor/homonto/internal/capability"
 	"github.com/Novirmor/homonto/internal/config"
 	"github.com/Novirmor/homonto/internal/copyfile"
 	"github.com/Novirmor/homonto/internal/fsutil"
@@ -31,6 +32,9 @@ type Adapter struct {
 // owned catalog content and projects by their materialized path when a
 // config declares them by bare name (ADR 0029).
 var catalogPluginNames = map[string]bool{"permission-observer": true, "homonto-workflow": true}
+
+// Capabilities declares what OpenCode 2 provides (ADR 0082, ADR 0097).
+func (a *Adapter) Capabilities() capability.Declaration { return capability.OpenCode() }
 
 // New builds an OpenCode adapter at user scope. home is $HOME; content holds
 // owned skills. Use WithProjectRoot to install project-scope skills.

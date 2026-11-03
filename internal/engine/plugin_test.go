@@ -28,6 +28,9 @@ func TestWorkflowBindingEnablesEachInstalledHost(t *testing.T) {
 			"h-workflow-bb": {Source: "builtin:h-workflow-bb"},
 		},
 	}}
+	if err := e.Cfg.ResolvePackages(); err != nil {
+		t.Fatal(err)
+	}
 	data, err := e.workflowBinding()
 	if err != nil {
 		t.Fatal(err)
@@ -49,6 +52,11 @@ func TestWorkflowBindingCoordinatorAndGithubScope(t *testing.T) {
 				Frameworks: map[string]config.Resource{"h-workflow-gh": {Source: source}},
 				Subagents:  map[string]config.Subagent{name: {Source: "builtin:homonto"}},
 			}}
+			// A local root that does not exist resolves no services; Load
+			// would have rejected it already.
+			if err := e.Cfg.ResolvePackages(); err != nil && source != "local:h-workflow-gh" {
+				t.Fatal(err)
+			}
 			data, err := e.workflowBinding()
 			if err != nil {
 				t.Fatal(err)
@@ -64,6 +72,68 @@ func TestWorkflowBindingCoordinatorAndGithubScope(t *testing.T) {
 				t.Fatalf("source=%q alias=%q binding=%s", source, name, data)
 			}
 		}
+	}
+}
+
+// TestWorkflowBindingFollowsInstalledServices: a service enables its runtime
+// provider with no hosting workflow installed, and a declared service
+// replaces a workflow's default (ADR 0094).
+func TestWorkflowBindingFollowsInstalledServices(t *testing.T) {
+	root := t.TempDir()
+	for _, tc := range []struct {
+		name       string
+		frameworks map[string]config.Resource
+		want       map[string]bool
+	}{
+		{"service alone", map[string]config.Resource{"host-gl": {Source: "builtin:host-gl"}}, map[string]bool{"gitlab": true}},
+		{"workflow default", map[string]config.Resource{"h-workflow-bb": {Source: "builtin:h-workflow-bb"}}, map[string]bool{"bitbucket": true}},
+		{"engine only", map[string]config.Resource{"onto": {Source: "builtin:onto"}}, map[string]bool{}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			e := &Engine{ConfigPath: filepath.Join(root, "selected.toml"), ProjectRoot: root, Cfg: &config.Config{Frameworks: tc.frameworks}}
+			if err := e.Cfg.ResolvePackages(); err != nil {
+				t.Fatal(err)
+			}
+			data, err := e.workflowBinding()
+			if err != nil {
+				t.Fatal(err)
+			}
+			var binding map[string]any
+			if err := json.Unmarshal(data, &binding); err != nil {
+				t.Fatal(err)
+			}
+			for key, provider := range map[string]string{"githubEnabled": "github", "gitlabEnabled": "gitlab", "bitbucketEnabled": "bitbucket"} {
+				if binding[key] != tc.want[provider] {
+					t.Errorf("%s = %v, want %v", key, binding[key], tc.want[provider])
+				}
+			}
+		})
+	}
+}
+
+func TestRenderContextRuntimeProvidersFollowInstalledServices(t *testing.T) {
+	for _, tc := range []struct {
+		name       string
+		frameworks map[string]config.Resource
+		want       []string
+	}{
+		{"service alone", map[string]config.Resource{"host-gl": {Source: "builtin:host-gl"}}, []string{"gitlab"}},
+		{"workflow defaults", map[string]config.Resource{"h-workflow-gh": {Source: "builtin:h-workflow-gh"}, "h-workflow-bb": {Source: "builtin:h-workflow-bb"}}, []string{"bitbucket", "github"}},
+		{"no host service", map[string]config.Resource{"onto": {Source: "builtin:onto"}}, []string{}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			e := &Engine{Cfg: &config.Config{Frameworks: tc.frameworks}}
+			if err := e.Cfg.ResolvePackages(); err != nil {
+				t.Fatal(err)
+			}
+			contexts, err := e.subagentRenderContext()
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got := contexts["opencode"].RuntimeProviders; !reflect.DeepEqual(got, tc.want) {
+				t.Errorf("runtime providers = %v, want %v", got, tc.want)
+			}
+		})
 	}
 }
 

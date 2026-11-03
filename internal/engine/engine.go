@@ -68,6 +68,9 @@ type Engine struct {
 	// Warnings collects non-fatal per-adapter failures from the last Plan (e.g.
 	// an unparseable tool file); other tools still proceed.
 	Warnings []string
+	// renderedExternal holds the rendered local:/remote: subagents that carry
+	// a homonto: intent block, keyed by config name (ADR 0096).
+	renderedExternal map[string][]byte
 }
 
 // RepoTarget is one declared repository's projection pair.
@@ -177,6 +180,10 @@ func Build(ctx context.Context, configPath, home, contentDir string) (*Engine, e
 	}
 	if len(dirs) > 0 {
 		cfg.SetRemoteFrameworkDirs(dirs)
+		// Remote packages' service requirements are known only now.
+		if err := cfg.ResolvePackages(); err != nil {
+			return nil, err
+		}
 	}
 	// Fan out one adapter+state pair per declared repository (ADR 0024 stage
 	// 2). Each shares the config repo's materialized catalog roots (links
@@ -198,6 +205,9 @@ func Build(ctx context.Context, configPath, home, contentDir string) (*Engine, e
 			WithRepo(name)
 		e.RepoTargets = append(e.RepoTargets, RepoTarget{Name: name, Dir: cfg.RepoDirs()[name], Adapter: a, State: st})
 	}
+	if err := e.refreshExternalRenders(); err != nil {
+		return nil, err
+	}
 	return e, nil
 }
 
@@ -215,6 +225,9 @@ func (e *Engine) SubagentDir() string { return e.SubagentCatalogRoot }
 // file is never written. Warnings from the run are recorded on e.Warnings.
 func (e *Engine) Plan() ([]adapter.ChangeSet, error) {
 	if err := e.checkFrameworkCompat(); err != nil {
+		return nil, err
+	}
+	if err := e.checkHarnessCapabilities(); err != nil {
 		return nil, err
 	}
 	e.Warnings = nil
@@ -290,9 +303,16 @@ func (e *Engine) Apply(ctx context.Context, sets []adapter.ChangeSet) error {
 	if err := e.materializeRemotes(ctx); err != nil {
 		return err
 	}
+	// Remote subagent content exists only now; render any that carry intent.
+	if err := e.refreshExternalRenders(); err != nil {
+		return err
+	}
 	// Materialize builtin skills before any adapter links them, so no symlink is
 	// created ahead of its target.
 	if err := e.materializeCatalog(); err != nil {
+		return err
+	}
+	if err := e.writeRenderedSubagents(); err != nil {
 		return err
 	}
 	// The declared [tmp] directory is workspace surface, not catalog content:
@@ -526,8 +546,20 @@ func (e *Engine) subagentRenderContextFor(targets map[string]map[string]bool) (m
 		}
 		return m
 	}
+	rules := e.Cfg.InstalledServiceRules()
+	providers := e.Cfg.HostingProviders()
+	runtimeProviders := make([]string, 0, len(providers))
+	for provider := range providers {
+		runtimeProviders = append(runtimeProviders, provider)
+	}
+	sort.Strings(runtimeProviders)
 	return map[string]agentfm.RenderContext{
 		"opencode": {
+			ServiceRules: agentfm.ServiceRules{
+				CoordinatorAsk:  rules.CoordinatorAsk,
+				CoordinatorDeny: rules.CoordinatorDeny,
+				WorkerDeny:      rules.WorkerDeny,
+			},
 			Names:                          names,
 			Overrides:                      overrides(func(s config.Subagent) config.ModelRoute { return s.OpenCode }),
 			ShellProxy:                     e.Cfg.ResolvedTooling().ShellProxy,
@@ -535,6 +567,7 @@ func (e *Engine) subagentRenderContextFor(targets map[string]map[string]bool) (m
 			ExternalDirectoryDeniesByAgent: externalDirectoryDeniesByAgent,
 			EditDirectoryDeniesByAgent:     editDirectoryDeniesByAgent,
 			Targets:                        targets["opencode"],
+			RuntimeProviders:               runtimeProviders,
 		},
 	}, nil
 }
@@ -1300,6 +1333,18 @@ func renderFingerprint(ctx map[string]agentfm.RenderContext) string {
 		}
 		digestSpecs("override", tool, ctx[tool].Overrides)
 		fmt.Fprintf(h, "shell-proxy\x00%s\x00%s\x00", tool, ctx[tool].ShellProxy)
+		for _, group := range []struct {
+			kind     string
+			patterns []string
+		}{
+			{"service-coordinator-ask", ctx[tool].ServiceRules.CoordinatorAsk},
+			{"service-coordinator-deny", ctx[tool].ServiceRules.CoordinatorDeny},
+			{"service-worker-deny", ctx[tool].ServiceRules.WorkerDeny},
+		} {
+			for _, pattern := range group.patterns {
+				fmt.Fprintf(h, "%s\x00%s\x00%s\x00", group.kind, tool, pattern)
+			}
+		}
 		for _, group := range []struct {
 			kind string
 			dirs map[string][]string

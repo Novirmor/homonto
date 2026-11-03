@@ -18,9 +18,12 @@ before writes and preserve unrelated work. Ask once about exact dirty paths when
 no existing disposition covers them. Never initialize Git, stash, reset, copy
 private inputs or commit user edits as automatic setup.
 
-For a new task, ask once whether to use existing checkouts or worktrees unless
-the request already selects them, including per-repo exceptions; preserve the
-answer on resume. In schema 2 with declared
+For a new task, read the configured isolation with
+`homonto explain settings no --json --config CONFIG`. When `isolation` is
+`existing` or `worktree`, use it without asking; per-repo exceptions still come
+from the request. When it is `ask`, or the command is unavailable, ask once
+whether to use existing checkouts or worktrees unless the request already
+selects them, including per-repo exceptions. Preserve the choice on resume. In schema 2 with declared
 repos, the parent creates or resumes the shared task with
 `homonto workspace task create NAME --engine no --repo ALIAS --isolation MODE`
 (repeat `--repo`), then `homonto workspace task inspect NAME`. Pass the actual

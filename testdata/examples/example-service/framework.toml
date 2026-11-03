@@ -1,0 +1,20 @@
+manifest_schema = 2
+name = "example-service"
+kind = "service"
+version = "0.1.0"
+description = "Example tracker service: reads and publishes through tracker-cli"
+
+[service]
+id = "tracker"
+operations = ["read", "publish"]
+transport = "tracker-cli"
+credentials = [
+  { kind = "env", name = "TRACKER_TOKEN" },
+  { kind = "cli", check = "tracker-cli auth status" },
+]
+
+[permissions.coordinator]
+bash_ask = ["tracker-cli issue delete*", "tracker-cli project *"]
+
+[permissions.workers]
+bash_deny = ["tracker-cli *"]

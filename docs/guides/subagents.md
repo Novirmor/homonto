@@ -16,7 +16,8 @@ scope  = "project"
 [subagents.onto-reviewer.opencode]
 model = "anthropic/claude-opus-5-5"
 
-# Your own agent: homonto/subagents/security-review.md, projected verbatim
+# Your own agent: homonto/subagents/security-review.md (rendered when it has
+# a homonto: block, projected verbatim otherwise)
 [subagents.security-review]
 source = "local:security-review"
 mode   = "copy"                     # editable managed file instead of a link
@@ -68,8 +69,15 @@ selects a provider option such as `high` or `max`; it is not part of the model
 ID). `steps` overrides the iteration budget and must be positive. OpenCode has
 no effort setting; declaring one is an error.
 
-`local:` and `remote:` agents are projected **verbatim** and may not carry
-this block — put `model:` in the agent file's own frontmatter.
+A `local:` or `remote:` agent takes this block only when its file has a
+[`homonto:` block](#the-neutral-homonto-block): it then renders exactly like a
+catalog agent and **needs** a model here. An agent file without one is
+projected verbatim, so put `model:` in its own frontmatter. A model block on a
+verbatim agent fails, because nothing would apply it:
+
+```text
+subagents.security-review declares a model override, but local:security-review has no homonto: intent block, so it is projected verbatim and the override could never apply; add a homonto: block to render it, or remove [subagents.security-review.opencode]
+```
 
 ## The agent file
 
@@ -88,11 +96,21 @@ When a frontmatter `name` is present it must match the installed name.
 
 ## The neutral `homonto:` block
 
-Catalog agents describe their capabilities once, tool-neutrally, in a
-`homonto:` frontmatter block. Apply renders it into OpenCode's `permission:`
-map and writes the result next to the source as `<name>.opencode.md`; the
-projected link points at that rendered file. The block is stripped from the
-output. Files without a `homonto:` block are projected unchanged.
+Agents describe their capabilities once, tool-neutrally, in a `homonto:`
+frontmatter block, whether they ship in the catalog or come from `local:` or
+`remote:` ([ADR 0096](../adr/0096-render-external-agents-by-intent.md)).
+Apply renders it into OpenCode's `permission:` map and writes the result as
+`<name>.opencode.md` (catalog agents next to their source, your own under
+`.homonto/rendered/subagents/`); the projected link points at that rendered
+file. The block is stripped from the output, and `model`, `variant`, `steps`
+and `permission` come only from the render, so an agent with a `homonto:`
+block must not declare them itself. Files without a `homonto:` block are
+projected unchanged.
+
+Your own agents render with the permissions their block declares and the
+shell rules of installed services. They never get the workspace directory
+grants or workflow tools homonto computes for its bundled roles, whatever
+name their frontmatter uses.
 
 ```yaml
 ---

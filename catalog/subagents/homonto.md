@@ -37,6 +37,8 @@ homonto:
     "glab repo transfer*", "glab -* mr merge*", "glab -* mr delete*", "glab -* issue delete*", "glab -* release create*", "glab -* release delete*",
     "glab -* release upload*", "glab -* ci cancel*", "glab -* ci delete*", "glab -* ci run*", "glab -* repo create*", "glab -* repo delete*",
     "glab -* repo archive*", "glab -* repo transfer*",
+    "homonto host bitbucket api*DELETE*", "homonto host bitbucket api*delete*", "homonto host bitbucket api*Delete*",
+    "homonto -* host bitbucket api*DELETE*", "homonto -* host bitbucket api*delete*", "homonto -* host bitbucket api*Delete*",
     "rm -r*", "rm -R*", "rm -f*", "rm --recursive*", "rm --force*",
     "rm * -r*", "rm * -R*", "rm * -f*", "rm * --recursive*", "rm * --force*",
     "sudo", "sudo *", "doas", "doas *", "dd", "dd *", "mkfs", "mkfs *", "mkfs.*",
@@ -289,7 +291,9 @@ Ordinary pushes, raw `gh api`, routine PR/issue publication and CI reruns allow
 for the coordinator. Use that capability only within task authority, after the
 required verification and any required shown-draft approval. Known
 forced/deleting pushes, PR merge, repository/release administration, workflow
-controls, non-Git destructive commands and direct workflow bypasses retain asks.
+controls, Bitbucket API DELETE calls, non-Git destructive commands and direct
+workflow bypasses retain asks. Installed service packages may add asks for
+their own host commands.
 Local Git commands remain allowed. Flag-first `onto`/`to` requests also ask.
 
 The host may evaluate parsed commands independently. These exceptions match

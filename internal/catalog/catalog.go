@@ -14,7 +14,6 @@ import (
 
 	embedded "github.com/Novirmor/homonto/catalog"
 	"github.com/Novirmor/homonto/internal/schema"
-	toml "github.com/pelletier/go-toml/v2"
 )
 
 // Framework is one catalog framework's parsed metadata.
@@ -39,6 +38,30 @@ type Framework struct {
 	Commands  map[string]string // command name -> catalog-relative path ("commands/<n>.md")
 	Subagents map[string]string // subagent name -> catalog-relative path ("subagents/<n>.md")
 	Plugins   map[string]string // plugin name -> catalog-relative path ("plugins/<n>")
+	// ManifestSchema is the declared manifest_schema (0 for an unversioned
+	// manifest). Only ContractManifestSchema and later carry the contract.
+	ManifestSchema int
+	// HarnessRequirements are the harness capabilities the package needs
+	// ([requires].harness, ADR 0097).
+	HarnessRequirements []string
+	// RequiredServices maps a service id the package needs to the service
+	// package installed when the config declares none for it ([requires.services]).
+	RequiredServices map[string]string
+	// Engine, Workflow and Service are the kind-specific contracts of a
+	// schema 2 manifest; nil otherwise or for another kind.
+	Engine   *EngineContract
+	Workflow *WorkflowContract
+	Service  *ServiceContract
+	// Permissions are a service's contributed agent shell rules.
+	Permissions PermissionRules
+	// Settings and Processes are the package's configuration schema
+	// (ADR 0095): the [<table>.<name>.settings] keys it accepts and the shape
+	// of its [<table>.<name>.processes.*] definitions. Empty: it takes none.
+	Settings  map[string]SettingSchema
+	Processes *ProcessSchema
+	// SharedCoordinator reports that the package uses the shared coordinator,
+	// whose agent, skill and plugin the catalog added to its resources.
+	SharedCoordinator bool
 	// srcFS is the filesystem this framework was read from (the embedded base or
 	// a local overlay). Resource paths are relative to it; carried so a consumer
 	// can resolve overlay content later. The base's is the common case.
@@ -69,7 +92,7 @@ type Catalog struct {
 // fail-closed at load, so an older binary never silently half-reads a newer
 // manifest (E1 phase-1 forward-safety, mirroring the config/state schema
 // versions). Absent/0 is a legacy manifest, treated as the current version.
-const CurrentManifestSchemaVersion = 1
+const CurrentManifestSchemaVersion = ContractManifestSchema
 
 type frameworkTOML struct {
 	ManifestSchema int    `toml:"manifest_schema"`
@@ -87,10 +110,17 @@ type frameworkTOML struct {
 	Compat struct {
 		Homonto string `toml:"homonto"`
 	} `toml:"compat"`
-	Skills    map[string]string `toml:"skills"`
-	Commands  map[string]string `toml:"commands"`
-	Subagents map[string]string `toml:"subagents"`
-	Plugins   map[string]string `toml:"plugins"`
+	Requires    requiresTOML             `toml:"requires"`
+	Engine      *EngineContract          `toml:"engine"`
+	Workflow    *WorkflowContract        `toml:"workflow"`
+	Service     *ServiceContract         `toml:"service"`
+	Permissions PermissionRules          `toml:"permissions"`
+	Settings    map[string]SettingSchema `toml:"settings"`
+	Processes   *ProcessSchema           `toml:"processes"`
+	Skills      map[string]string        `toml:"skills"`
+	Commands    map[string]string        `toml:"commands"`
+	Subagents   map[string]string        `toml:"subagents"`
+	Plugins     map[string]string        `toml:"plugins"`
 }
 
 // New loads the production catalog from the embedded filesystem.
@@ -130,6 +160,12 @@ func LoadOverlays(base fs.FS, overlays ...fs.FS) (*Catalog, error) {
 	if err := c.validateCapabilities(); err != nil {
 		return nil, err
 	}
+	if err := c.validateSharedCoordinator(); err != nil {
+		return nil, err
+	}
+	if err := c.validateRequiredServices(); err != nil {
+		return nil, err
+	}
 	return c, nil
 }
 
@@ -163,6 +199,12 @@ func LoadWithLocal(base fs.FS, locals map[string]fs.FS) (*Catalog, error) {
 		return nil, err
 	}
 	if err := c.validateCapabilities(); err != nil {
+		return nil, err
+	}
+	if err := c.validateSharedCoordinator(); err != nil {
+		return nil, err
+	}
+	if err := c.validateRequiredServices(); err != nil {
 		return nil, err
 	}
 	return c, nil
@@ -262,8 +304,8 @@ func (c *Catalog) mergeSource(src fs.FS) error {
 		if err != nil {
 			return fmt.Errorf("catalog: read %s: %w", tp, err)
 		}
-		var ft frameworkTOML
-		if err := toml.Unmarshal(b, &ft); err != nil {
+		ft, err := decodeManifest(b)
+		if err != nil {
 			return fmt.Errorf("catalog: parse %s: %w", tp, err)
 		}
 		// Forward-safety: refuse a manifest from a newer schema before indexing
@@ -369,6 +411,9 @@ func validResourceName(kind, name string) error {
 // source. Shared by mergeSource (base/overlay frameworks under frameworks/<dir>)
 // and mergeFrameworkRoot (a local single-framework root).
 func (c *Catalog) indexFramework(name string, src fs.FS, ft frameworkTOML) error {
+	if err := validateContract(name, ft); err != nil {
+		return err
+	}
 	for skill, sp := range ft.Skills {
 		if err := validResourceName("skill", skill); err != nil {
 			return err
@@ -476,7 +521,26 @@ func (c *Catalog) indexFramework(name string, src fs.FS, ft frameworkTOML) error
 			depConstraints[dep] = constraint
 		}
 	}
+	shared := usesSharedCoordinator(ft)
+	if shared {
+		// The shared coordinator comes from the base catalog by name, never
+		// from this package's root; validateSharedCoordinator checks the base
+		// provides it once every source is merged.
+		ft.Skills = withEntry(ft.Skills, SharedCoordinatorSkill, path.Join("skills", SharedCoordinatorSkill))
+		ft.Subagents = withEntry(ft.Subagents, SharedCoordinatorAgent, path.Join("subagents", SharedCoordinatorAgent+".md"))
+		ft.Plugins = withEntry(ft.Plugins, SharedCoordinatorPlugin, path.Join("plugins", SharedCoordinatorPlugin))
+	}
 	c.frameworks[name] = Framework{
+		ManifestSchema:        ft.ManifestSchema,
+		HarnessRequirements:   ft.Requires.Harness,
+		RequiredServices:      ft.Requires.Services,
+		Engine:                ft.Engine,
+		Workflow:              ft.Workflow,
+		Service:               ft.Service,
+		Permissions:           ft.Permissions,
+		Settings:              ft.Settings,
+		Processes:             ft.Processes,
+		SharedCoordinator:     shared,
 		srcFS:                 src,
 		Name:                  ft.Name,
 		Kind:                  ft.Kind,
@@ -491,6 +555,33 @@ func (c *Catalog) indexFramework(name string, src fs.FS, ft frameworkTOML) error
 		Commands:              ft.Commands,
 		Subagents:             ft.Subagents,
 		Plugins:               ft.Plugins,
+	}
+	return nil
+}
+
+// withEntry returns a copy of m with key=value added.
+func withEntry(m map[string]string, key, value string) map[string]string {
+	out := make(map[string]string, len(m)+1)
+	for k, v := range m {
+		out[k] = v
+	}
+	out[key] = value
+	return out
+}
+
+// validateRequiredServices checks every [requires.services] default names a
+// loaded service package that implements that service id.
+func (c *Catalog) validateRequiredServices() error {
+	for name, fw := range c.frameworks {
+		for id, def := range fw.RequiredServices {
+			target, ok := c.frameworks[def]
+			if !ok {
+				return fmt.Errorf("catalog: package %q requires service %q with default package %q, which is not a known package", name, id, def)
+			}
+			if target.Service == nil || target.Service.ID != id {
+				return fmt.Errorf("catalog: package %q names %q as its default %q service, but %q does not implement service %q", name, def, id, def, id)
+			}
+		}
 	}
 	return nil
 }
@@ -552,8 +643,8 @@ func (c *Catalog) mergeFrameworkRoot(name string, src fs.FS) error {
 	if err != nil {
 		return fmt.Errorf("catalog: read local framework %q framework.toml: %w", name, err)
 	}
-	var ft frameworkTOML
-	if err := toml.Unmarshal(b, &ft); err != nil {
+	ft, err := decodeManifest(b)
+	if err != nil {
 		return fmt.Errorf("catalog: parse local framework %q framework.toml: %w", name, err)
 	}
 	// Forward-safety mirrors mergeSource: refuse a newer manifest schema before

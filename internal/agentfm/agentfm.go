@@ -36,6 +36,7 @@ import (
 	"bytes"
 	"fmt"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strings"
 	"unicode"
@@ -98,6 +99,63 @@ type RenderContext struct {
 	// Targets names actually projected to this tool. It lets materialization skip
 	// an unselected tool variant without weakening validation for selected agents.
 	Targets map[string]bool
+	// ServiceRules are the shell rules installed service packages contribute
+	// (ADR 0094). They only tighten: primaries gain coordinator asks and
+	// denies, every other shell-capable agent gains worker denies.
+	ServiceRules ServiceRules
+	// RuntimeProviders names the installed host services whose draft runtime
+	// tools this render may use. Their tool permissions are generated rather
+	// than hard-coded so a GitLab or Bitbucket service receives the same
+	// coordinator/worker boundary as GitHub.
+	RuntimeProviders []string
+}
+
+// ServiceRules are contributed shell patterns, rendered after an agent's own.
+type ServiceRules struct {
+	CoordinatorAsk  []string
+	CoordinatorDeny []string
+	WorkerDeny      []string
+}
+
+// renderOwnedKeys lists the top-level frontmatter keys Render emits itself.
+func renderOwnedKeys(fm []byte) ([]string, error) {
+	var header map[string]any
+	if err := yaml.Unmarshal(fm, &header); err != nil {
+		return nil, fmt.Errorf("agentfm: malformed frontmatter: %w", err)
+	}
+	var out []string
+	for _, key := range []string{"model", "variant", "steps", "permission"} {
+		if _, ok := header[key]; ok {
+			out = append(out, key)
+		}
+	}
+	return out, nil
+}
+
+// appendNew appends the patterns not already in list, in order.
+func appendNew(list []string, patterns ...string) []string {
+	for _, p := range patterns {
+		if !slices.Contains(list, p) {
+			list = append(list, p)
+		}
+	}
+	return list
+}
+
+// runtimeTools returns the coordinator tools plus the tools of each installed
+// host runtime provider. Keep the list deterministic: rendered agent content
+// is part of projection drift detection.
+func runtimeTools(providers []string) []string {
+	tools := []string{"homonto_status", "homonto_handoff", "homonto_read"}
+	providers = slices.Clone(providers)
+	slices.Sort(providers)
+	providers = slices.Compact(providers)
+	for _, provider := range providers {
+		for _, operation := range []string{"draft", "status", "publish", "read"} {
+			tools = append(tools, "homonto_"+provider+"_"+operation)
+		}
+	}
+	return tools
 }
 
 // NeedsTransform reports whether content carries a `homonto:` frontmatter block
@@ -183,6 +241,14 @@ func Render(name string, content []byte, tool string, ctx *RenderContext) ([]byt
 		}
 		return content, nil
 	}
+	// The render owns these keys: an intent agent declaring one itself would
+	// emit it twice, and a hand-written permission map would silently compete
+	// with the rendered one.
+	if owned, err := renderOwnedKeys(fm); err != nil {
+		return nil, err
+	} else if len(owned) > 0 {
+		return nil, fmt.Errorf("agentfm: agent %q declares %s in its frontmatter, which the homonto: block renders; remove them (models come from [subagents.<name>.<tool>], permissions from the homonto: block)", name, strings.Join(owned, ", "))
+	}
 	// A non-nil context marks a production render after framework expansion.
 	// Unlike the nil catalog-test context, it must resolve a non-empty model.
 	var (
@@ -232,6 +298,14 @@ func Render(name string, content []byte, tool string, ctx *RenderContext) ([]byt
 				}
 			}
 			h.Spawn = &spawn
+		}
+		if h.Bash == nil || *h.Bash {
+			if h.Primary {
+				h.BashAsk = appendNew(h.BashAsk, ctx.ServiceRules.CoordinatorAsk...)
+				h.BashDeny = appendNew(h.BashDeny, ctx.ServiceRules.CoordinatorDeny...)
+			} else {
+				h.BashDeny = appendNew(h.BashDeny, ctx.ServiceRules.WorkerDeny...)
+			}
 		}
 	}
 
@@ -295,7 +369,11 @@ func Render(name string, content []byte, tool string, ctx *RenderContext) ([]byt
 				if role.Coordinator && !h.ReadOnly && (h.Bash == nil || *h.Bash) {
 					action = "allow"
 				}
-				for _, tool := range []string{"homonto_status", "homonto_handoff", "homonto_read", "homonto_github_draft", "homonto_github_status", "homonto_github_publish", "homonto_github_read"} {
+				var providers []string
+				if ctx != nil {
+					providers = ctx.RuntimeProviders
+				}
+				for _, tool := range runtimeTools(providers) {
 					perm += "\n  " + tool + ": " + action
 				}
 			}

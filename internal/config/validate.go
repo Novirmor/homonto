@@ -29,6 +29,9 @@ func validate(c *Config) error {
 	if err := rejectLegacyModels(c.Models); err != nil {
 		return err
 	}
+	if err := rejectReserved(c); err != nil {
+		return err
+	}
 	if err := validateTooling(c.Tooling); err != nil {
 		return err
 	}
@@ -71,6 +74,17 @@ func validate(c *Config) error {
 	return validateSettingsAndTUI(c)
 }
 
+// rejectReserved fails a config using a table reserved for M3 (ADR 0098).
+func rejectReserved(c *Config) error {
+	if len(c.Routing) > 0 {
+		return fmt.Errorf("parse config: [routing] is reserved for model-routing policies (M3) and not implemented yet; set each agent's model with [subagents.<name>.opencode] (docs/contracts/routing.md)")
+	}
+	if len(c.Decisions) > 0 {
+		return fmt.Errorf("parse config: [decisions] is reserved for decision-model providers (M3) and not implemented yet (docs/contracts/routing.md)")
+	}
+	return nil
+}
+
 func validateWorkflow(c *Config) error {
 	if c.SchemaVersion >= 2 {
 		if c.Workflow.Git != "" && c.Workflow.Git != "existing" && c.Workflow.Git != "managed" {
@@ -106,10 +120,21 @@ func validatePackages(c *Config) error {
 			return fmt.Errorf("parse config: %q is declared as both a workflow and an engine", name)
 		}
 	}
+	for _, name := range slices.Sorted(maps.Keys(c.Services)) {
+		if _, duplicate := c.Workflows[name]; duplicate {
+			return fmt.Errorf("parse config: %q is declared as both a workflow and a service", name)
+		}
+		if _, duplicate := c.Engines[name]; duplicate {
+			return fmt.Errorf("parse config: %q is declared as both an engine and a service", name)
+		}
+	}
 	if err := validateFrameworkResources("workflows", c.Workflows); err != nil {
 		return err
 	}
 	if err := validateFrameworkResources("engines", c.Engines); err != nil {
+		return err
+	}
+	if err := validateFrameworkResources("services", c.Services); err != nil {
 		return err
 	}
 	return validateBuiltinPackageKinds(c)
@@ -117,28 +142,6 @@ func validatePackages(c *Config) error {
 
 // GitHubWorkflow is the bundled GitHub hosting workflow (ADR 0089).
 const GitHubWorkflow = "h-workflow-gh"
-
-// HostingWorkflows maps each bundled hosting workflow to the runtime provider
-// whose draft tools it enables (ADR 0089, ADR 0090).
-var HostingWorkflows = map[string]string{
-	GitHubWorkflow:  "github",
-	"h-workflow-gl": "gitlab",
-	"h-workflow-bb": "bitbucket",
-}
-
-// HostingProviders reports the runtime providers the config's builtin hosting
-// workflows enable.
-func (c *Config) HostingProviders() map[string]bool {
-	out := map[string]bool{}
-	for _, r := range c.Frameworks {
-		if name, ok := strings.CutPrefix(r.Source, "builtin:"); ok {
-			if provider, ok := HostingWorkflows[name]; ok {
-				out[provider] = true
-			}
-		}
-	}
-	return out
-}
 
 // rejectRetiredPackages fails a declaration of a renamed builtin package and
 // names its replacement. There is no alias or migration shim (ADR 0081): the
@@ -174,7 +177,7 @@ func validatePackageKinds(c *Config, cl *catalog.Catalog, builtinOnly bool) erro
 	for _, group := range []struct {
 		kind      string
 		resources map[string]Resource
-	}{{"workflow", c.Workflows}, {"engine", c.Engines}} {
+	}{{"workflow", c.Workflows}, {"engine", c.Engines}, {"service", c.Services}} {
 		for _, name := range sortedResourceNames(group.resources) {
 			r := group.resources[name]
 			if builtinOnly && !strings.HasPrefix(r.Source, "builtin:") {
@@ -477,6 +480,9 @@ func validateResources(kind string, resources map[string]Resource) error {
 			return err
 		}
 		label := kind + "." + name
+		if len(r.Settings) > 0 || len(r.Processes) > 0 {
+			return fmt.Errorf("parse config: %s declares settings or processes; only [workflows.*], [engines.*] and [services.*] packages take them", label)
+		}
 		switch r.Scope {
 		case "user", "project":
 			// ok
@@ -1040,12 +1046,22 @@ func validateSubagentOverrides(c *Config) error {
 		if !sa.IsTuneOnly() {
 			var ok bool
 			if cat, ok = SubagentCatalogName(sa.Source); !ok {
-				return fmt.Errorf("parse config: subagents.%s declares a model override, but its source %q is not builtin: — local:/remote: agents are projected verbatim and never rendered, so the override could never apply", name, sa.Source)
+				// A local:/remote: agent renders, and takes the override, only
+				// when its content carries a homonto: intent block; the engine
+				// reads that content and rejects an override on a verbatim
+				// agent (ADR 0096). Its fragment is still checked here.
+				if err := validateModelSpec("opencode", "subagents."+name+".opencode", sa.OpenCode, false); err != nil {
+					return err
+				}
+				continue
 			}
 		} else {
 			known, err := installedBuiltins()
 			if err != nil {
 				return err
+			}
+			if !known[cat] && c.anyRemotePending() {
+				continue // a pending remote package may ship it; rechecked after injection
 			}
 			if !known[cat] {
 				return fmt.Errorf("parse config: subagents.%s tunes an agent that is not installed — no framework or [subagents.*] declaration provides builtin:%s; if this is a retired onto/to primary, rename the model block to subagents.homonto", name, cat)

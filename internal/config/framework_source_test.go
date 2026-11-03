@@ -289,3 +289,26 @@ func TestLoad_CoInstallsEveryHostingWorkflow(t *testing.T) {
 		t.Fatalf("hosting providers = %v", hosts)
 	}
 }
+
+// TestLoad_ResolvesLocalPackagesAgainstTheConfigDuringValidation: validation
+// expands packages (tune-only overrides must name an installed agent), so a
+// local root must resolve against the config file, not the working directory.
+func TestLoad_ResolvesLocalPackagesAgainstTheConfigDuringValidation(t *testing.T) {
+	dir := t.TempDir()
+	for path, data := range map[string]string{
+		"myfw/framework.toml":      "name = \"myfw\"\nversion = \"0.1.0\"\n[subagents]\nworker = \"subagents/worker.md\"\n",
+		"myfw/subagents/worker.md": "---\nname: worker\nmode: subagent\nhomonto:\n  read_only: true\n---\nwork",
+		"homonto.toml":             "[engines.myfw]\nsource = \"local:./myfw\"\nscope = \"user\"\n[subagents.worker.opencode]\nmodel = \"test/model\"\n",
+	} {
+		if err := os.MkdirAll(filepath.Dir(filepath.Join(dir, path)), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(dir, path), []byte(data), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	t.Chdir(t.TempDir())
+	if _, err := Load(filepath.Join(dir, "homonto.toml")); err != nil {
+		t.Fatalf("local package resolved against the working directory: %v", err)
+	}
+}

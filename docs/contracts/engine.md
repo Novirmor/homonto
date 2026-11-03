@@ -35,6 +35,33 @@ my-engine = "skills/my-engine"
 | `stages` | At least one identifier (`[a-z][a-z0-9-]*`), unique. Stages are the addressable units model-routing policies target. |
 | `coordinator` | Empty or `shared`. An engine never ships its own coordinator. |
 
+## Task integration
+
+A coordinator runs an engine's work as a workspace task
+(`homonto workspace task create NAME --engine ENGINE --repo ALIAS ...`). The
+task reads the engine's contract, never its name
+([ADR 0093](../adr/0093-describe-engines-instead-of-naming-them.md)):
+
+| Operation | Command | Without it |
+|---|---|---|
+| `start` | `task create` | required |
+| `resume` | every later load, including a repeated `create` | required |
+| `integration-check` | `task check` | refused |
+| `release` | `task cleanup` | refused |
+
+- **Stateless** engines take no `--change`. Writable repositories get
+  task-owned worktrees (or the existing checkout), and the task keeps only the
+  engine name and lifecycle.
+- **Native** engines require `--change` naming their active lifecycle record.
+  They bind writable checkouts through homonto's worktree registry under the
+  engine name (`homonto worktree create CHANGE --workflow ENGINE ...`). That
+  binding is how the engine reports state to the coordinator: the task
+  validates its recorded generation and bindings against it on every resume.
+  Only builtin native engines can run tasks today. External lifecycle
+  reporting through the same registry is #67.
+- A task records the lifecycle it was created with. If the installed engine
+  later declares a different one, resume fails and names both.
+
 ## Builtins
 
 | Engine | Lifecycle | Binary | Stages |

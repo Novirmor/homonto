@@ -157,10 +157,12 @@ func Load(path string) (c *Config, err error) {
 	}
 	migrate(c)
 	normalize(c)
+	// Validation expands packages, so local:<path> roots must already resolve
+	// against the config file rather than the process's working directory.
+	c.baseDir = filepath.Dir(abs)
 	if err := validate(c); err != nil {
 		return nil, err
 	}
-	c.baseDir = filepath.Dir(abs)
 	if c.SchemaVersion >= 2 {
 		layout, err := workspace.Load(abs)
 		if err != nil {

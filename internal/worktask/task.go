@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/Novirmor/homonto/internal/applylock"
+	"github.com/Novirmor/homonto/internal/catalog"
 	"github.com/Novirmor/homonto/internal/config"
 	"github.com/Novirmor/homonto/internal/fsutil"
 	"github.com/Novirmor/homonto/internal/workspace"
@@ -36,10 +37,14 @@ type Checkout struct {
 }
 
 type Task struct {
-	NativeID      string              `json:"native_id,omitempty"`
-	Version       int                 `json:"version"`
-	Name          string              `json:"name"`
-	Engine        string              `json:"engine"`
+	NativeID string `json:"native_id,omitempty"`
+	Version  int    `json:"version"`
+	Name     string `json:"name"`
+	Engine   string `json:"engine"`
+	// Lifecycle records the engine's declared lifecycle when the task was
+	// created, so resume refuses a task whose engine changed contract under
+	// it. Empty only in tasks created before engine descriptors (ADR 0093).
+	Lifecycle     string              `json:"lifecycle,omitempty"`
 	Change        string              `json:"change,omitempty"`
 	Config        string              `json:"config"`
 	Changed       []string            `json:"changed"`
@@ -179,8 +184,18 @@ func (s *Store) Load(ctx context.Context, name string) (*Task, error) {
 	if err := readJSON(filepath.Join(dir, "task.json"), &t); err != nil {
 		return nil, err
 	}
-	if t.Version != 1 || t.Name != name || t.Config != s.Layout.ConfigPath || !s.installed(t.Engine) {
+	if t.Version != 1 || t.Name != name || t.Config != s.Layout.ConfigPath {
 		return nil, fmt.Errorf("workspace task identity/config/selected engine no longer matches")
+	}
+	engine, err := s.engine(t.Engine)
+	if err != nil {
+		return nil, fmt.Errorf("workspace task identity/config/selected engine no longer matches: %w", err)
+	}
+	if err := engine.requireOperation(catalog.OpResume); err != nil {
+		return nil, err
+	}
+	if t.Lifecycle != "" && t.Lifecycle != engine.Lifecycle {
+		return nil, fmt.Errorf("engine %q changed its lifecycle from %s to %s since this task was created; finish the task with the engine it started with, or clean it up", t.Engine, t.Lifecycle, engine.Lifecycle)
 	}
 	if len(t.Changed) == 0 || len(t.Checkouts) == 0 {
 		return nil, fmt.Errorf("workspace task has no repositories")
@@ -191,9 +206,12 @@ func (s *Store) Load(ctx context.Context, name string) (*Task, error) {
 			return nil, fmt.Errorf("invalid changed repository selection")
 		}
 	}
-	if t.Engine == "no" {
+	if t.Lifecycle == "" {
+		t.Lifecycle = engine.Lifecycle
+	}
+	if !engine.OwnsLifecycle() {
 		if t.Change != "" || t.NativeID != "" {
-			return nil, fmt.Errorf("no cannot own lifecycle state")
+			return nil, fmt.Errorf("%s cannot own lifecycle state", t.Engine)
 		}
 	} else {
 		if t.NativeID == "" {
@@ -224,18 +242,6 @@ func (s *Store) Load(ctx context.Context, name string) (*Task, error) {
 	return &t, nil
 }
 
-func (s *Store) installed(engine string) bool {
-	if engine != "no" && engine != "onto" && engine != "to" {
-		return false
-	}
-	for _, r := range s.Config.Engines {
-		if r.Source == "builtin:"+engine {
-			return true
-		}
-	}
-	return false
-}
-
 // Create records an explicit isolation decision. Overrides permit per-repository choices.
 // Repeating creation resumes only the identical task, including an interrupted
 // allocation; it cannot switch engines or bases.
@@ -244,8 +250,12 @@ func (s *Store) Create(ctx context.Context, name, engine, change, isolation stri
 	if err != nil {
 		return nil, err
 	}
-	if !s.installed(engine) {
-		return nil, fmt.Errorf("select one installed engine: no, onto, or to")
+	desc, err := s.engine(engine)
+	if err != nil {
+		return nil, err
+	}
+	if err := desc.requireOperation(catalog.OpStart); err != nil {
+		return nil, err
 	}
 	if isolation != "existing" && isolation != "worktree" {
 		return nil, fmt.Errorf("choose isolation explicitly: existing or worktree")
@@ -305,7 +315,7 @@ func (s *Store) Create(ctx context.Context, name, engine, change, isolation stri
 	var native map[string]string
 	var nativeID string
 	var anchors map[string]workspace.SourceAnchor
-	if engine != "no" {
+	if desc.OwnsLifecycle() {
 		if change == "" {
 			return nil, fmt.Errorf("%s requires its existing active --change", engine)
 		}
@@ -323,9 +333,9 @@ func (s *Store) Create(ctx context.Context, name, engine, change, isolation stri
 			return nil, err
 		}
 	} else if change != "" {
-		return nil, fmt.Errorf("no has no lifecycle change")
+		return nil, fmt.Errorf("%s has no lifecycle change", engine)
 	}
-	t := &Task{Version: 1, Name: name, Engine: engine, Change: change, NativeID: nativeID, Config: s.Layout.ConfigPath, Changed: changed, Checkouts: map[string]Checkout{}, Results: map[string]Result{}, NeedsFallback: len(checks) == 0}
+	t := &Task{Version: 1, Name: name, Engine: engine, Lifecycle: desc.Lifecycle, Change: change, NativeID: nativeID, Config: s.Layout.ConfigPath, Changed: changed, Checkouts: map[string]Checkout{}, Results: map[string]Result{}, NeedsFallback: len(checks) == 0}
 	// Preflight every input before allocation; dirty originals may be left untouched
 	// only when the user explicitly chose a separate worktree.
 	for _, alias := range inputs {
@@ -365,7 +375,7 @@ func (s *Store) Create(ctx context.Context, name, engine, change, isolation stri
 			}
 			base, baseBranch = anchor.Commit, anchor.Branch
 		}
-		if mode == "worktree" && (engine == "no" || !write) {
+		if mode == "worktree" && (!desc.OwnsLifecycle() || !write) {
 			destination := filepath.Join(s.Layout.WorktreesDir, alias, "workspace-"+name)
 			if err := fsutil.RequireRealParents(filepath.Dir(s.Layout.WorktreesDir), destination); err != nil {
 				return nil, err
@@ -391,7 +401,7 @@ func (s *Store) allocate(ctx context.Context, t *Task, inputs []string) error {
 		if c.Ready {
 			continue
 		}
-		if c.Changed && t.Engine != "no" {
+		if c.Changed && t.ownsLifecycle() {
 			if c.Path == c.Source {
 				// The recorded base, not the branch's current tip: the branch may
 				// have moved on since the change began.
@@ -448,6 +458,11 @@ func (s *Store) allocate(ctx context.Context, t *Task, inputs []string) error {
 	return nil
 }
 
+// ownsLifecycle reports whether the task's engine binds its writable
+// checkouts through a native lifecycle (onto, to) rather than task-owned
+// worktrees (no).
+func (t *Task) ownsLifecycle() bool { return t.Lifecycle == catalog.LifecycleNative }
+
 // taskBranch separates name and alias with "/", which neither may contain, so
 // distinct (name, alias) pairs never share a branch.
 func taskBranch(name, alias string) string { return "work-" + name + "/" + alias }
@@ -498,10 +513,10 @@ func (s *Store) validateCheckout(ctx context.Context, t *Task, alias string, c C
 		if s.Layout.WorktreesDir == "" || c.Path != filepath.Join(s.Layout.WorktreesDir, alias, "workspace-"+t.Name) {
 			return "", fmt.Errorf("owned checkout path changed for %s", alias)
 		}
-		if c.Changed && t.Engine != "no" {
+		if c.Changed && t.ownsLifecycle() {
 			return "", fmt.Errorf("lifecycle checkout must use native bindings")
 		}
-	} else if c.Changed && t.Engine != "no" {
+	} else if c.Changed && t.ownsLifecycle() {
 		// A pending binding still records its source until allocation.
 		if c.Ready || c.Path != c.Source {
 			dirs, err := workspace.SourceDirsForLayout(s.Layout, t.Engine, t.Change, t.Changed)
@@ -620,6 +635,13 @@ func (s *Store) Cleanup(ctx context.Context, name string, yes bool) (*Task, erro
 	defer unlock()
 	t, err := s.Load(ctx, name)
 	if err != nil {
+		return nil, err
+	}
+	engine, err := s.engine(t.Engine)
+	if err != nil {
+		return nil, err
+	}
+	if err := engine.requireOperation(catalog.OpRelease); err != nil {
 		return nil, err
 	}
 	return t, s.cleanup(ctx, t)

@@ -1,6 +1,6 @@
 ---
 name: h-continue-pr
-description: Use when a GitHub pull request has review feedback to address — invoked by /h-continue-pr or when the user asks to continue, respond to reviews on, or push fixes for a PR.
+description: Use when a pull request (GitHub, GitLab.com merge request, or Bitbucket Cloud) has review feedback to address — invoked by /h-continue-pr or when the user asks to continue, respond to reviews on, or push fixes for a PR.
 ---
 
 # h-continue-pr
@@ -23,6 +23,18 @@ URLs plus any unresolved feedback. Continue to this endpoint unless the user
 names an earlier endpoint or asks to pause.
 
 Follow the shared [workspace and dirty-work policy](../homonto/references/workspace-policy.md), [GitHub publication policy](../homonto/references/publication.md), and [h autonomy policy](../h-resolve-issue/references/autonomy.md).
+
+## Host
+
+This process is shared by every hosting workflow (`h-workflow-gh`,
+`h-workflow-gl`, `h-workflow-bb`). Before resolving input, identify the host
+from the target URL, or from the selected source's `origin` when the input is
+a bare number or branch: github.com or a GitHub Enterprise host → `h-host-gh`;
+gitlab.com → `h-host-gl`; bitbucket.org → `h-host-bb`. Load that host skill.
+The commands below are GitHub's forms. On another host, perform the same
+operation with the host skill's form and follow its adaptations and
+unsupported steps. If the matching host skill is unavailable, name the hosting
+workflow to install and stop.
 
 ## Required order
 

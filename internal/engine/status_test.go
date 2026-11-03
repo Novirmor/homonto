@@ -21,13 +21,13 @@ func TestOpenCodeV2PluginReadiness(t *testing.T) {
 		{name: "no plugins"},
 		{name: "context only", cfg: config.Config{Integrations: config.Integrations{OpenCode: config.OpenCodeIntegrations{WorkflowContext: &enabled}}}},
 		{name: "context replaces default", cfg: config.Config{Frameworks: map[string]config.Resource{"onto": {Source: "builtin:onto"}}, Integrations: config.Integrations{OpenCode: config.OpenCodeIntegrations{WorkflowContext: &enabled}}}},
-		{name: "context with github", cfg: config.Config{Frameworks: map[string]config.Resource{"github": {Source: "builtin:h"}}, Integrations: config.Integrations{OpenCode: config.OpenCodeIntegrations{WorkflowContext: &enabled}}}, want: []string{"GitHub publication requires a bound local service"}},
+		{name: "context with github", cfg: config.Config{Frameworks: map[string]config.Resource{"github": {Source: "builtin:h-workflow-gh"}}, Integrations: config.Integrations{OpenCode: config.OpenCodeIntegrations{WorkflowContext: &enabled}}}, want: []string{"GitHub publication requires a bound local service"}},
 		{name: "context retains explicit observer warning", cfg: config.Config{Integrations: config.Integrations{OpenCode: config.OpenCodeIntegrations{WorkflowContext: &enabled}}, Plugins: config.Plugins{OpenCode: map[string]config.Plugin{"observer": {Source: "permission-observer"}}}}, want: []string{"only two correlated explicit 'once' approvals"}},
 		{name: "default V2 workflow", cfg: config.Config{Frameworks: map[string]config.Resource{"onto": {Source: "builtin:onto"}}}},
 		{name: "stale bridge opt-out", cfg: config.Config{Frameworks: map[string]config.Resource{"to": {Source: "builtin:to"}}, Integrations: config.Integrations{OpenCode: config.OpenCodeIntegrations{WorkflowBridge: &disabled}}}},
 		{name: "disabled observer", cfg: config.Config{Plugins: config.Plugins{OpenCode: map[string]config.Plugin{"observer": {Source: "permission-observer", Enabled: &disabled}}}}},
 		{name: "enabled observer", cfg: config.Config{Plugins: config.Plugins{OpenCode: map[string]config.Plugin{"observer": {Source: "permission-observer"}}}}, want: []string{"only two correlated explicit 'once' approvals"}},
-		{name: "deduplicate and sort", cfg: config.Config{Frameworks: map[string]config.Resource{"h": {Source: "builtin:h"}}, Plugins: config.Plugins{OpenCode: map[string]config.Plugin{"observer": {Source: "permission-observer"}, "external": {Source: "external-plugin"}}}}, want: []string{`compatibility unverified for plugin "external-plugin"`, "only two correlated explicit 'once' approvals", "GitHub publication requires a bound local service"}},
+		{name: "deduplicate and sort", cfg: config.Config{Frameworks: map[string]config.Resource{"h-workflow-gh": {Source: "builtin:h-workflow-gh"}}, Plugins: config.Plugins{OpenCode: map[string]config.Plugin{"observer": {Source: "permission-observer"}, "external": {Source: "external-plugin"}}}}, want: []string{`compatibility unverified for plugin "external-plugin"`, "only two correlated explicit 'once' approvals", "GitHub publication requires a bound local service"}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			e := &Engine{Cfg: &tc.cfg}

@@ -155,8 +155,8 @@ model = "anthropic/claude-opus-4-8"
 // hFrameworkTOML installs the standalone h workflow and only its coordinator
 // and two read-only workers.
 const hFrameworkTOML = `
-[workflows.h]
-source = "builtin:h"
+[workflows.h-workflow-gh]
+source = "builtin:h-workflow-gh"
 scope = "project"
 
 [subagents.homonto.opencode]
@@ -475,10 +475,11 @@ func TestApplyRerendersSubagentPatternsWhenShellProxyChanges(t *testing.T) {
 						t.Errorf("%s missing %s", agent, want)
 					}
 				}
-				protected := []string{"onto bypass*", "to bypass*"}
+				protected := []string{"onto bypass*", "to bypass*", "glab mr merge*", "glab -* repo delete*"}
 				action := "ask"
 				if agent != "homonto" {
-					protected = []string{"onto *", "to *", "homonto *", "git push", "git push *", "gh pr comment*", "gh api*"}
+					protected = []string{"onto *", "to *", "homonto *", "git push", "git push *", "gh pr comment*", "gh api*",
+						"glab api*", "glab -* api*", "glab mr note*", "glab mr create*", "glab mr approve*", "glab issue note*"}
 					action = "deny"
 				}
 				for _, pattern := range protected {
@@ -542,7 +543,7 @@ func TestHWorkflowRendersCoordinatorAndReadonlyWorkers(t *testing.T) {
 			t.Errorf("homonto primary (via h) missing %q:\n%s", want, primary)
 		}
 	}
-	for _, obsolete := range []string{`"git push *": ask`, `"gh pr comment*": ask`, `"gh api*": ask`} {
+	for _, obsolete := range []string{`"git push *": ask`, `"gh pr comment*": ask`, `"gh api*": ask`, `"glab api*": ask`, `"glab mr note*": ask`} {
 		if strings.Contains(string(primary), obsolete) {
 			t.Errorf("coordinator must trust task-authorized delivery, found %s", obsolete)
 		}

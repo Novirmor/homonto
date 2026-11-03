@@ -1,6 +1,6 @@
 ---
 name: h-resolve-conflicts
-description: Resolve merge conflicts on an existing GitHub PR without expanding into review feedback, test hardening, or unrelated fixes. Use for /h-resolve-conflicts or a request to make a conflicting PR mergeable; no engine is required.
+description: Resolve merge conflicts on an existing PR (GitHub, GitLab.com merge request, or Bitbucket Cloud) without expanding into review feedback, test hardening, or unrelated fixes. Use for /h-resolve-conflicts or a request to make a conflicting PR mergeable; no engine is required.
 ---
 
 # h-resolve-conflicts
@@ -31,6 +31,18 @@ Follow shared [workspace policy](../homonto/references/workspace-policy.md),
 Use OpenCode's built-in `question` tool for every question to the user, including
 identity, isolation, intent and scope decisions. No chat or shell-prompt fallback;
 if the dialog is unavailable or dismissed, preserve state and report the pending input.
+
+## Host
+
+This process is shared by every hosting workflow (`h-workflow-gh`,
+`h-workflow-gl`, `h-workflow-bb`). Before resolving input, identify the host
+from the target URL, or from the selected source's `origin` when the input is
+a bare number or branch: github.com or a GitHub Enterprise host → `h-host-gh`;
+gitlab.com → `h-host-gl`; bitbucket.org → `h-host-bb`. Load that host skill.
+The commands below are GitHub's forms. On another host, perform the same
+operation with the host skill's form and follow its adaptations and
+unsupported steps. If the matching host skill is unavailable, name the hosting
+workflow to install and stop.
 
 ## Required order
 

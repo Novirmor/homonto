@@ -1,14 +1,16 @@
 ---
-description: Continue a GitHub PR — address feedback, verify fixes, and update the same PR without requiring an engine.
+description: Continue a PR (GitHub, GitLab.com or Bitbucket Cloud) — address feedback, verify fixes, and update the same PR without requiring an engine.
 agent: homonto
 ---
 
 # /h-continue-pr
 
 Load and follow the `h-continue-pr` skill. If it is unavailable, say the
-required skill is unavailable, direct the user to install or reapply the `h`
-GitHub skill bundle (declare `[workflows.h]` if needed and run `homonto apply`),
-and stop.
+required skill is unavailable, direct the user to install or reapply the
+hosting workflow for the target's host (declare `[workflows.h-workflow-gh]`,
+`[workflows.h-workflow-gl]` or `[workflows.h-workflow-bb]` if needed and run
+`homonto apply`), and stop. The target's host skill (`h-host-gh`, `h-host-gl`
+or `h-host-bb`) supplies that host's forms of every reference below.
 
 `$ARGUMENTS` is one unambiguous PR reference: a GitHub PR URL,
 `OWNER/REPO#NUMBER`, a number, or a unique head branch resolved against the

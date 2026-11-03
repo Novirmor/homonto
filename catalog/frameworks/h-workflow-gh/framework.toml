@@ -1,0 +1,41 @@
+name = "h-workflow-gh"
+kind = "workflow"
+version = "0.14.0"
+description = "Standalone GitHub workflow skill bundle — spike, resolve, review, continue, conflict resolution, batch review"
+
+[dependencies]
+frameworks = []
+
+[skills]
+homonto = "skills/homonto"
+h-host-gh = "skills/h-host-gh"
+h-spike-issue = "skills/h-spike-issue"
+h-resolve-issue = "skills/h-resolve-issue"
+h-review-pr = "skills/h-review-pr"
+h-continue-pr = "skills/h-continue-pr"
+h-resolve-conflicts = "skills/h-resolve-conflicts"
+h-review-batch = "skills/h-review-batch"
+
+[commands]
+h-spike-issue = "commands/h-spike-issue.md"
+h-resolve-issue = "commands/h-resolve-issue.md"
+h-review-pr = "commands/h-review-pr.md"
+h-continue-pr = "commands/h-continue-pr.md"
+h-resolve-conflicts = "commands/h-resolve-conflicts.md"
+h-review-batch = "commands/h-review-batch.md"
+
+[plugins]
+homonto-workflow = "plugins/homonto-workflow"
+
+# The coordinator is the shared homonto primary (same catalog path every
+# package declares; ADR 0045), so installing any hosting workflow, onto, or to
+# connects the same coordinator. The process skills, commands, plugin and
+# workers are shared by h-workflow-gh/gl/bb and deduplicate when co-installed;
+# only the host skill differs (ADR 0089). The two workers are read-only (ADR 0035):
+# the coordinator fetches from GitHub and hands them packets; they never
+# post, edit, or spawn. Do NOT also declare these in a top-level
+# [subagents.*] table (that collides with the framework declaration).
+[subagents]
+homonto = "subagents/homonto.md"
+h-spike = "subagents/h-spike.md"
+h-review = "subagents/h-review.md"

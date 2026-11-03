@@ -15,16 +15,38 @@ import (
 	"github.com/Novirmor/homonto/internal/config"
 	"github.com/Novirmor/homonto/internal/jsonutil"
 	"github.com/Novirmor/homonto/internal/secret"
+	"github.com/Novirmor/homonto/internal/testbin"
 	"github.com/Novirmor/homonto/internal/workflowroot"
 	"github.com/Novirmor/homonto/internal/workflowstatus"
 )
 
+func TestWorkflowBindingEnablesEachInstalledHost(t *testing.T) {
+	root := t.TempDir()
+	e := &Engine{ConfigPath: filepath.Join(root, "selected.toml"), ProjectRoot: root, Cfg: &config.Config{
+		Frameworks: map[string]config.Resource{
+			"h-workflow-gl": {Source: "builtin:h-workflow-gl"},
+			"h-workflow-bb": {Source: "builtin:h-workflow-bb"},
+		},
+	}}
+	data, err := e.workflowBinding()
+	if err != nil {
+		t.Fatal(err)
+	}
+	var binding map[string]any
+	if err := json.Unmarshal(data, &binding); err != nil {
+		t.Fatal(err)
+	}
+	if binding["githubEnabled"] != false || binding["gitlabEnabled"] != true || binding["bitbucketEnabled"] != true {
+		t.Fatalf("binding = %s", data)
+	}
+}
+
 func TestWorkflowBindingCoordinatorAndGithubScope(t *testing.T) {
 	root := t.TempDir()
-	for _, source := range []string{"", "builtin:h", "local:h"} {
+	for _, source := range []string{"", "builtin:h-workflow-gh", "local:h-workflow-gh"} {
 		for _, name := range []string{"homonto", "coordinator"} {
 			e := &Engine{ConfigPath: filepath.Join(root, "selected.toml"), ProjectRoot: root, Cfg: &config.Config{
-				Frameworks: map[string]config.Resource{"h": {Source: source}},
+				Frameworks: map[string]config.Resource{"h-workflow-gh": {Source: source}},
 				Subagents:  map[string]config.Subagent{name: {Source: "builtin:homonto"}},
 			}}
 			data, err := e.workflowBinding()
@@ -38,7 +60,7 @@ func TestWorkflowBindingCoordinatorAndGithubScope(t *testing.T) {
 			if err := json.Unmarshal(data, &binding); err != nil {
 				t.Fatal(err)
 			}
-			if binding.Coordinator != name || binding.GithubEnabled != (source == "builtin:h") {
+			if binding.Coordinator != name || binding.GithubEnabled != (source == "builtin:h-workflow-gh") {
 				t.Fatalf("source=%q alias=%q binding=%s", source, name, data)
 			}
 		}
@@ -761,6 +783,7 @@ func TestWorkflowContextRuntimeUsesMaterializedConfigBinding(t *testing.T) {
 				defer cancel()
 				cmd := exec.CommandContext(ctx, "node", script, filepath.Join(e.workflowContextDestination(), "index.ts"), configPath, fixture)
 				cmd.Dir = launch
+				cmd.Env = testbin.Env(t)
 				if out, err := cmd.CombinedOutput(); err != nil {
 					t.Fatalf("native projected V2 context runtime contract: %v\n%s", err, out)
 				}
@@ -805,7 +828,7 @@ func TestWorkflowBindingRepairsAndConfigSwitchesAllSchemas(t *testing.T) {
 					fingerprint = next
 				}
 				bindingPath := e.workflowBindingPath()
-				want, err := json.MarshalIndent(map[string]any{"version": 1, "configPath": configPath, "configRoot": repo, "coordinator": "homonto", "githubEnabled": false}, "", "  ")
+				want, err := json.MarshalIndent(map[string]any{"version": 1, "configPath": configPath, "configRoot": repo, "coordinator": "homonto", "githubEnabled": false, "gitlabEnabled": false, "bitbucketEnabled": false}, "", "  ")
 				if err != nil {
 					t.Fatal(err)
 				}

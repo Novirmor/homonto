@@ -9,3 +9,4 @@ graphify-out
 docs
 *.md
 !README.md
+test/e2e/hosting/sandbox.env

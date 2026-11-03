@@ -23,6 +23,18 @@ pause. Follow
 recovery, trusted workspace execution, and permission boundaries; it never
 replaces explicit approval of the shown drafts.
 
+## Host
+
+This process is shared by every hosting workflow (`h-workflow-gh`,
+`h-workflow-gl`, `h-workflow-bb`). Before resolving input, identify the host
+from the target URL, or from the selected source's `origin` when the input is
+a bare number or branch: github.com or a GitHub Enterprise host → `h-host-gh`;
+gitlab.com → `h-host-gl`; bitbucket.org → `h-host-bb`. Load that host skill.
+The commands below are GitHub's forms. On another host, perform the same
+operation with the host skill's form and follow its adaptations and
+unsupported steps. If the matching host skill is unavailable, name the hosting
+workflow to install and stop.
+
 ## Required order
 
 For comment publication, prefer the shared

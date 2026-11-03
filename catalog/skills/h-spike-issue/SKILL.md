@@ -1,6 +1,6 @@
 ---
 name: h-spike-issue
-description: Use when a GitHub issue needs research before anyone implements it — the user invokes /h-spike-issue, or asks to spike, scope, or investigate an issue without code changes yet.
+description: Use when an issue (GitHub or GitLab.com, or a Bitbucket Cloud brief) needs research before anyone implements it — the user invokes /h-spike-issue, or asks to spike, scope, or investigate an issue without code changes yet.
 ---
 
 # h-spike-issue
@@ -29,6 +29,21 @@ When called by `h-resolve-issue`, completion is the research endpoint: report th
 validated brief and skip the optional comment steps unless the user separately
 requests issue-comment publication. Resolving an issue does not itself authorize
 posting a spike comment or require a publication dialog before implementation.
+
+## Host
+
+This process is shared by every hosting workflow (`h-workflow-gh`,
+`h-workflow-gl`, `h-workflow-bb`). Before resolving input, identify the host
+from the target URL, or from the selected source's `origin` when the input is
+a bare number or branch: github.com or a GitHub Enterprise host → `h-host-gh`;
+gitlab.com → `h-host-gl`; bitbucket.org → `h-host-bb`. Load that host skill.
+The commands below are GitHub's forms. On another host, perform the same
+operation with the host skill's form and follow its adaptations and
+unsupported steps. If the matching host skill is unavailable, name the hosting
+workflow to install and stop.
+
+On Bitbucket Cloud there is no issue tracker: the input is a brief, as
+`h-host-bb` describes, and nothing is posted back to an issue.
 
 ## Required order
 

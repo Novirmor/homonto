@@ -199,7 +199,7 @@ func TestHWorkflowInstallsOnlyItsOwnResources(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	skills, err := c.Expand([]string{"h"})
+	skills, err := c.Expand([]string{"h-workflow-gh"})
 	if err != nil {
 		t.Fatalf("expand h: %v", err)
 	}
@@ -221,7 +221,7 @@ func TestHWorkflowInstallsOnlyItsOwnResources(t *testing.T) {
 			t.Errorf("h expansion missing skill %q", name)
 		}
 	}
-	subs, err := c.ExpandSubagents([]string{"h"})
+	subs, err := c.ExpandSubagents([]string{"h-workflow-gh"})
 	if err != nil {
 		t.Fatalf("expand h subagents: %v", err)
 	}
@@ -239,7 +239,7 @@ func TestHWorkflowInstallsOnlyItsOwnResources(t *testing.T) {
 			t.Errorf("h expansion must not carry the retired %q primary (ADR 0045)", unwanted)
 		}
 	}
-	cmds, err := c.ExpandCommands([]string{"h"})
+	cmds, err := c.ExpandCommands([]string{"h-workflow-gh"})
 	if err != nil {
 		t.Fatalf("expand h commands: %v", err)
 	}

@@ -42,7 +42,17 @@ homonto:
     "gh run rerun*", "gh run cancel*", "gh run delete*", "gh workflow run*", "gh workflow enable*", "gh workflow disable*",
     "gh -* run rerun*", "gh -* run cancel*", "gh -* run delete*", "gh -* workflow run*", "gh -* workflow enable*", "gh -* workflow disable*",
     "gh repo create*", "gh repo delete*", "gh repo edit*", "gh repo archive*", "gh repo rename*",
-    "gh -* repo create*", "gh -* repo delete*", "gh -* repo edit*", "gh -* repo archive*", "gh -* repo rename*"
+    "gh -* repo create*", "gh -* repo delete*", "gh -* repo edit*", "gh -* repo archive*", "gh -* repo rename*",
+    "glab api*", "glab mr create*", "glab mr note*", "glab mr approve*", "glab mr unapprove*", "glab mr merge*",
+    "glab mr update*", "glab mr close*", "glab mr reopen*", "glab mr delete*", "glab mr rebase*", "glab issue create*",
+    "glab issue note*", "glab issue update*", "glab issue close*", "glab issue reopen*", "glab issue delete*", "glab release create*",
+    "glab release delete*", "glab release upload*", "glab ci run*", "glab ci retry*", "glab ci cancel*", "glab ci delete*",
+    "glab ci trigger*", "glab repo create*", "glab repo delete*", "glab repo archive*", "glab repo transfer*", "glab -* api*",
+    "glab -* mr create*", "glab -* mr note*", "glab -* mr approve*", "glab -* mr unapprove*", "glab -* mr merge*", "glab -* mr update*",
+    "glab -* mr close*", "glab -* mr reopen*", "glab -* mr delete*", "glab -* mr rebase*", "glab -* issue create*", "glab -* issue note*",
+    "glab -* issue update*", "glab -* issue close*", "glab -* issue reopen*", "glab -* issue delete*", "glab -* release create*", "glab -* release delete*",
+    "glab -* release upload*", "glab -* ci run*", "glab -* ci retry*", "glab -* ci cancel*", "glab -* ci delete*", "glab -* ci trigger*",
+    "glab -* repo create*", "glab -* repo delete*", "glab -* repo archive*", "glab -* repo transfer*"
   ]
   dialogs: false
   spawn: []

@@ -137,9 +137,11 @@ versions before any tier is assigned.
 
 Today the workflow runtime is the OpenCode TypeScript plugin
 (`catalog/plugins/homonto-workflow`): coordinator-only `homonto_status` and
-`homonto_handoff` tools, GitHub draft/approve/publish tools, context injection
-at request and compaction, the status panel, and the worker permission
-handback (ADR 0077).
+`homonto_handoff` tools, context injection at request and compaction, the
+status panel, and the worker permission handback (ADR 0077). The hosting
+draft/approve/publish lifecycle and its host providers already run in Go
+(`internal/hostruntime`, `homonto runtime serve`, ADR 0090); the plugin is
+their shim and still executes their commands.
 
 Target shape:
 

@@ -50,7 +50,7 @@ func TestBuiltinPackageKinds(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for name, want := range map[string]string{"h": "workflow", "onto": "engine", "to": "engine", "no": "engine"} {
+	for name, want := range map[string]string{"h-workflow-gh": "workflow", "h-workflow-gl": "workflow", "h-workflow-bb": "workflow", "onto": "engine", "to": "engine", "no": "engine"} {
 		pkg, ok := c.Framework(name)
 		if !ok || pkg.Kind != want {
 			t.Errorf("%s kind = %q, want %q", name, pkg.Kind, want)

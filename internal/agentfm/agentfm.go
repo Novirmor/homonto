@@ -103,6 +103,11 @@ type RenderContext struct {
 	// (ADR 0094). They only tighten: primaries gain coordinator asks and
 	// denies, every other shell-capable agent gains worker denies.
 	ServiceRules ServiceRules
+	// RuntimeProviders names the installed host services whose draft runtime
+	// tools this render may use. Their tool permissions are generated rather
+	// than hard-coded so a GitLab or Bitbucket service receives the same
+	// coordinator/worker boundary as GitHub.
+	RuntimeProviders []string
 }
 
 // ServiceRules are contributed shell patterns, rendered after an agent's own.
@@ -135,6 +140,22 @@ func appendNew(list []string, patterns ...string) []string {
 		}
 	}
 	return list
+}
+
+// runtimeTools returns the coordinator tools plus the tools of each installed
+// host runtime provider. Keep the list deterministic: rendered agent content
+// is part of projection drift detection.
+func runtimeTools(providers []string) []string {
+	tools := []string{"homonto_status", "homonto_handoff", "homonto_read"}
+	providers = slices.Clone(providers)
+	slices.Sort(providers)
+	providers = slices.Compact(providers)
+	for _, provider := range providers {
+		for _, operation := range []string{"draft", "status", "publish", "read"} {
+			tools = append(tools, "homonto_"+provider+"_"+operation)
+		}
+	}
+	return tools
 }
 
 // NeedsTransform reports whether content carries a `homonto:` frontmatter block
@@ -348,7 +369,11 @@ func Render(name string, content []byte, tool string, ctx *RenderContext) ([]byt
 				if role.Coordinator && !h.ReadOnly && (h.Bash == nil || *h.Bash) {
 					action = "allow"
 				}
-				for _, tool := range []string{"homonto_status", "homonto_handoff", "homonto_read", "homonto_github_draft", "homonto_github_status", "homonto_github_publish", "homonto_github_read"} {
+				var providers []string
+				if ctx != nil {
+					providers = ctx.RuntimeProviders
+				}
+				for _, tool := range runtimeTools(providers) {
 					perm += "\n  " + tool + ": " + action
 				}
 			}

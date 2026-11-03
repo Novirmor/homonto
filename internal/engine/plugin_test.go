@@ -111,6 +111,32 @@ func TestWorkflowBindingFollowsInstalledServices(t *testing.T) {
 	}
 }
 
+func TestRenderContextRuntimeProvidersFollowInstalledServices(t *testing.T) {
+	for _, tc := range []struct {
+		name       string
+		frameworks map[string]config.Resource
+		want       []string
+	}{
+		{"service alone", map[string]config.Resource{"host-gl": {Source: "builtin:host-gl"}}, []string{"gitlab"}},
+		{"workflow defaults", map[string]config.Resource{"h-workflow-gh": {Source: "builtin:h-workflow-gh"}, "h-workflow-bb": {Source: "builtin:h-workflow-bb"}}, []string{"bitbucket", "github"}},
+		{"no host service", map[string]config.Resource{"onto": {Source: "builtin:onto"}}, []string{}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			e := &Engine{Cfg: &config.Config{Frameworks: tc.frameworks}}
+			if err := e.Cfg.ResolvePackages(); err != nil {
+				t.Fatal(err)
+			}
+			contexts, err := e.subagentRenderContext()
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got := contexts["opencode"].RuntimeProviders; !reflect.DeepEqual(got, tc.want) {
+				t.Errorf("runtime providers = %v, want %v", got, tc.want)
+			}
+		})
+	}
+}
+
 // TestBundledPluginMaterializesAndProjects (A3): with the onto framework
 // declared, the permission-observer plugin materializes under
 // .homonto/catalog/plugins/; declaring it in [plugins.opencode] projects its

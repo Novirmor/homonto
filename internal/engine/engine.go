@@ -547,6 +547,12 @@ func (e *Engine) subagentRenderContextFor(targets map[string]map[string]bool) (m
 		return m
 	}
 	rules := e.Cfg.InstalledServiceRules()
+	providers := e.Cfg.HostingProviders()
+	runtimeProviders := make([]string, 0, len(providers))
+	for provider := range providers {
+		runtimeProviders = append(runtimeProviders, provider)
+	}
+	sort.Strings(runtimeProviders)
 	return map[string]agentfm.RenderContext{
 		"opencode": {
 			ServiceRules: agentfm.ServiceRules{
@@ -561,6 +567,7 @@ func (e *Engine) subagentRenderContextFor(targets map[string]map[string]bool) (m
 			ExternalDirectoryDeniesByAgent: externalDirectoryDeniesByAgent,
 			EditDirectoryDeniesByAgent:     editDirectoryDeniesByAgent,
 			Targets:                        targets["opencode"],
+			RuntimeProviders:               runtimeProviders,
 		},
 	}, nil
 }

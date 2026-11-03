@@ -321,6 +321,16 @@ func validateService(label string, ft frameworkTOML) error {
 	if err := validateSubset(label+" [service].operations", s.Operations, serviceOperations); err != nil {
 		return err
 	}
+	if s.Runtime != "" {
+		// The built-in runtime exposes the complete draft/publication lifecycle;
+		// allowing a service to advertise only (for example) "read" would still
+		// register its publish-capable tools and make the contract misleading.
+		for _, operation := range serviceOperations {
+			if !slices.Contains(s.Operations, operation) {
+				return fmt.Errorf("%s [service]: runtime %q exposes the draft/publication lifecycle; operations must include %q", label, s.Runtime, operation)
+			}
+		}
+	}
 	if slices.Contains(s.Operations, ServiceDraft) && s.Runtime == "" {
 		return fmt.Errorf("%s [service]: the %q operation is served by the binary's draft runtime; declare runtime", label, ServiceDraft)
 	}

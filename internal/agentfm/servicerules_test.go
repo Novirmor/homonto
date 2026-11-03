@@ -47,3 +47,26 @@ func TestServiceRulesOnlyTighten(t *testing.T) {
 		t.Errorf("shell-less agent changed:\n%s", reader)
 	}
 }
+
+func TestRuntimeProviderToolsFollowInstalledServices(t *testing.T) {
+	ctx := &RenderContext{
+		Overrides:        map[string]ModelSpec{"homonto": {Model: "m"}},
+		RuntimeProviders: []string{"bitbucket", "gitlab"},
+	}
+	out, err := Render("homonto", []byte("---\nname: homonto\nhomonto:\n  primary: true\n  bash: true\n---\nbody\n"), "opencode", ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := string(out)
+	for _, tool := range []string{
+		"homonto_gitlab_draft", "homonto_gitlab_status", "homonto_gitlab_publish", "homonto_gitlab_read",
+		"homonto_bitbucket_draft", "homonto_bitbucket_status", "homonto_bitbucket_publish", "homonto_bitbucket_read",
+	} {
+		if !strings.Contains(got, tool+": allow") {
+			t.Errorf("missing permission for %s:\n%s", tool, got)
+		}
+	}
+	if strings.Contains(got, "homonto_github_draft") {
+		t.Errorf("uninstalled GitHub service received runtime permissions:\n%s", got)
+	}
+}

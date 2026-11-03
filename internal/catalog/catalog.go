@@ -54,6 +54,11 @@ type Framework struct {
 	Service  *ServiceContract
 	// Permissions are a service's contributed agent shell rules.
 	Permissions PermissionRules
+	// Settings and Processes are the package's configuration schema
+	// (ADR 0095): the [<table>.<name>.settings] keys it accepts and the shape
+	// of its [<table>.<name>.processes.*] definitions. Empty: it takes none.
+	Settings  map[string]SettingSchema
+	Processes *ProcessSchema
 	// SharedCoordinator reports that the package uses the shared coordinator,
 	// whose agent, skill and plugin the catalog added to its resources.
 	SharedCoordinator bool
@@ -105,15 +110,17 @@ type frameworkTOML struct {
 	Compat struct {
 		Homonto string `toml:"homonto"`
 	} `toml:"compat"`
-	Requires    requiresTOML      `toml:"requires"`
-	Engine      *EngineContract   `toml:"engine"`
-	Workflow    *WorkflowContract `toml:"workflow"`
-	Service     *ServiceContract  `toml:"service"`
-	Permissions PermissionRules   `toml:"permissions"`
-	Skills      map[string]string `toml:"skills"`
-	Commands    map[string]string `toml:"commands"`
-	Subagents   map[string]string `toml:"subagents"`
-	Plugins     map[string]string `toml:"plugins"`
+	Requires    requiresTOML             `toml:"requires"`
+	Engine      *EngineContract          `toml:"engine"`
+	Workflow    *WorkflowContract        `toml:"workflow"`
+	Service     *ServiceContract         `toml:"service"`
+	Permissions PermissionRules          `toml:"permissions"`
+	Settings    map[string]SettingSchema `toml:"settings"`
+	Processes   *ProcessSchema           `toml:"processes"`
+	Skills      map[string]string        `toml:"skills"`
+	Commands    map[string]string        `toml:"commands"`
+	Subagents   map[string]string        `toml:"subagents"`
+	Plugins     map[string]string        `toml:"plugins"`
 }
 
 // New loads the production catalog from the embedded filesystem.
@@ -531,6 +538,8 @@ func (c *Catalog) indexFramework(name string, src fs.FS, ft frameworkTOML) error
 		Workflow:              ft.Workflow,
 		Service:               ft.Service,
 		Permissions:           ft.Permissions,
+		Settings:              ft.Settings,
+		Processes:             ft.Processes,
 		SharedCoordinator:     shared,
 		srcFS:                 src,
 		Name:                  ft.Name,

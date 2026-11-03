@@ -219,3 +219,35 @@ func embeddedForTestCatalog(t *testing.T) *Catalog {
 	}
 	return c
 }
+
+func TestSettingsSchemaValidation(t *testing.T) {
+	for _, tc := range []struct{ name, schema, want string }{
+		{"valid", "[settings.depth]\ntype = \"string\"\nenum = [\"a\", \"b\"]\ndefault = \"a\"\n[processes]\n[processes.fields.steps]\ntype = \"list\"\nrequired = true\n", ""},
+		{"unknown type", "[settings.depth]\ntype = \"float\"\n", `type "float" must be one of`},
+		{"required with default", "[settings.depth]\ntype = \"integer\"\nrequired = true\ndefault = 1\n", "a required setting has no default"},
+		{"enum on boolean", "[settings.flag]\ntype = \"boolean\"\nenum = [true]\n", "enum applies only to string and integer"},
+		{"default of the wrong type", "[settings.depth]\ntype = \"integer\"\ndefault = \"deep\"\n", `default: "deep" is not an integer`},
+		{"default outside enum", "[settings.depth]\ntype = \"string\"\nenum = [\"a\"]\ndefault = \"b\"\n", `default: "b" is not one of a`},
+		{"bad name", "[settings.Depth]\ntype = \"string\"\n", `"Depth" is not a setting name`},
+		{"processes without fields", "[processes]\ndescription = \"x\"\n", "declare at least one field"},
+		{"unknown schema key", "[settings.depth]\ntype = \"string\"\nmin = 1\n", "unknown manifest fields"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			_, err := loadContract(t, statelessEngine+tc.schema)
+			if tc.want == "" {
+				if err != nil {
+					t.Fatal(err)
+				}
+				return
+			}
+			if err == nil || !strings.Contains(err.Error(), tc.want) {
+				t.Fatalf("err = %v, want %q", err, tc.want)
+			}
+		})
+	}
+	// A legacy manifest cannot declare a schema nothing would validate.
+	_, err := LoadWithLocal(baseFS(), map[string]fs.FS{"pkg": contractRoot("name = \"pkg\"\nversion = \"0.1.0\"\n[settings.x]\ntype = \"string\"\n")})
+	if err == nil || !strings.Contains(err.Error(), "set manifest_schema = 2") {
+		t.Fatalf("legacy settings: %v", err)
+	}
+}

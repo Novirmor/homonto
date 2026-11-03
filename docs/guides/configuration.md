@@ -294,6 +294,18 @@ scope  = "project"
 | `builtin:to` | 6 skills, 6 commands, workflow plugin | `homonto`, `to-explorer`, `to-implementer`, `to-reviewer`, `to-skeptic` |
 | `builtin:no` | `no` skill, `/no` command | `no-implementer`, `no-reviewer` |
 
+`no` takes one setting, `isolation` (`ask`, `existing` or `worktree`;
+default `ask`):
+
+```toml
+[engines.no.settings]
+isolation = "worktree"
+```
+
+Any package can declare settings and named process definitions in its
+manifest; `homonto explain settings` lists them with defaults marked
+([settings contract](../contracts/settings.md)).
+
 Engines coexist; `homonto` is declared once even when several packages
 install it. The full inventory is in the [catalog](catalog.md). A `local:` or
 `remote:` package root may be declared too; its `framework.toml` defines its

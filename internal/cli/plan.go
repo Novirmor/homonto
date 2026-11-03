@@ -64,6 +64,16 @@ func planCmd() *cobra.Command {
 			for _, line := range renderRepos(e.Cfg.RepoDirs()) {
 				cmd.Println(line)
 			}
+			// Package settings the selected plugins will read, defaults marked
+			// (ADR 0095). They change no projected file, so they are context,
+			// not changes.
+			resolved, err := e.Cfg.ResolvedSettings()
+			if err != nil {
+				return err
+			}
+			for _, line := range settingsLines(resolved) {
+				cmd.Println(line)
+			}
 			if !plan.HasChanges(sets) && len(repins) == 0 {
 				if err := coverageComplete(e.Warnings); err != nil {
 					return err

@@ -28,7 +28,7 @@ func TestWorkflowBindingEnablesEachInstalledHost(t *testing.T) {
 			"h-workflow-bb": {Source: "builtin:h-workflow-bb"},
 		},
 	}}
-	if err := e.Cfg.ResolveServices(); err != nil {
+	if err := e.Cfg.ResolvePackages(); err != nil {
 		t.Fatal(err)
 	}
 	data, err := e.workflowBinding()
@@ -54,7 +54,7 @@ func TestWorkflowBindingCoordinatorAndGithubScope(t *testing.T) {
 			}}
 			// A local root that does not exist resolves no services; Load
 			// would have rejected it already.
-			if err := e.Cfg.ResolveServices(); err != nil && source != "local:h-workflow-gh" {
+			if err := e.Cfg.ResolvePackages(); err != nil && source != "local:h-workflow-gh" {
 				t.Fatal(err)
 			}
 			data, err := e.workflowBinding()
@@ -91,7 +91,7 @@ func TestWorkflowBindingFollowsInstalledServices(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			e := &Engine{ConfigPath: filepath.Join(root, "selected.toml"), ProjectRoot: root, Cfg: &config.Config{Frameworks: tc.frameworks}}
-			if err := e.Cfg.ResolveServices(); err != nil {
+			if err := e.Cfg.ResolvePackages(); err != nil {
 				t.Fatal(err)
 			}
 			data, err := e.workflowBinding()

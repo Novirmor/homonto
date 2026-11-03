@@ -8,17 +8,21 @@ import (
 	"github.com/Novirmor/homonto/internal/catalog"
 )
 
-// ResolveServices settles which service package implements each service a
-// declared package requires (ADR 0094). A service the config declares under
-// [services.*] wins; otherwise the requiring package's default service
-// package is installed beside it, with the requirer's scope and targets. Two
+// ResolvePackages settles the package set once the catalog can read every
+// package: which service package implements each service a declared package
+// requires (ADR 0094), and whether each package's settings and process
+// definitions fit the schema its manifest declares (ADR 0095).
+//
+// A service the config declares under [services.*] wins for its id;
+// otherwise the requiring package's default service package is installed
+// beside it, with the requirer's scope and targets. Two
 // installed packages implementing one service id is an error: the runtime
 // and the agents would not know whose operations to use.
 //
 // Load runs it once the config's local roots resolve; the engine runs it
 // again after injecting verified remote package roots, whose requirements
 // are only known then.
-func (c *Config) ResolveServices() error {
+func (c *Config) ResolvePackages() error {
 	for name := range c.impliedServices {
 		delete(c.Frameworks, name)
 	}
@@ -64,7 +68,7 @@ func (c *Config) ResolveServices() error {
 			implementedBy[id] = def
 		}
 	}
-	return nil
+	return c.validatePackageSettings(cl)
 }
 
 // ImpliedServices maps each service package installed only as a default to

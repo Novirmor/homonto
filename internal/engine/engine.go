@@ -178,7 +178,7 @@ func Build(ctx context.Context, configPath, home, contentDir string) (*Engine, e
 	if len(dirs) > 0 {
 		cfg.SetRemoteFrameworkDirs(dirs)
 		// Remote packages' service requirements are known only now.
-		if err := cfg.ResolveServices(); err != nil {
+		if err := cfg.ResolvePackages(); err != nil {
 			return nil, err
 		}
 	}

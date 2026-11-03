@@ -116,14 +116,14 @@ func TestServiceDeclarationErrors(t *testing.T) {
 func TestHostingWorkflowsInstallTheirDefaultService(t *testing.T) {
 	for workflow, provider := range map[string]string{"h-workflow-gh": "github", "h-workflow-gl": "gitlab", "h-workflow-bb": "bitbucket"} {
 		c := &Config{Frameworks: map[string]Resource{workflow: {Source: "builtin:" + workflow}}}
-		if err := c.ResolveServices(); err != nil {
+		if err := c.ResolvePackages(); err != nil {
 			t.Fatal(err)
 		}
 		if got := c.HostingProviders(); len(got) != 1 || !got[provider] {
 			t.Errorf("%s providers = %v, want %s", workflow, got, provider)
 		}
 		// Resolving again (after remote roots are injected) is idempotent.
-		if err := c.ResolveServices(); err != nil || len(c.ImpliedServices()) != 1 {
+		if err := c.ResolvePackages(); err != nil || len(c.ImpliedServices()) != 1 {
 			t.Errorf("%s re-resolve: %v %v", workflow, c.ImpliedServices(), err)
 		}
 	}

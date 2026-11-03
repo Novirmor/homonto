@@ -162,6 +162,11 @@ func decodeManifest(b []byte) (frameworkTOML, error) {
 // runs before any resource is indexed. name labels errors.
 func validateContract(name string, ft frameworkTOML) error {
 	if ft.ManifestSchema < ContractManifestSchema {
+		// The lax legacy decode would otherwise accept a settings schema
+		// nothing validates.
+		if len(ft.Settings) > 0 || ft.Processes != nil {
+			return fmt.Errorf("catalog: package %q declares [settings] or [processes]; set manifest_schema = 2 (docs/contracts/settings.md)", name)
+		}
 		return nil
 	}
 	label := fmt.Sprintf("catalog: package %q", name)
@@ -195,6 +200,9 @@ func validateContract(name string, ft frameworkTOML) error {
 		if reserved.has {
 			return fmt.Errorf("%s declares the shared coordinator's %s %q; set coordinator = \"shared\" in its [%s] table instead (ADR 0092)", label, reserved.kind, reserved.name, ft.Kind)
 		}
+	}
+	if err := validateSettingsSchema(label, ft.Settings, ft.Processes); err != nil {
+		return err
 	}
 	if !ft.Permissions.Empty() && ft.Kind != KindService {
 		return fmt.Errorf("%s: only a service may contribute [permissions]", label)

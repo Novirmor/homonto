@@ -166,7 +166,7 @@ func Load(path string) (c *Config, err error) {
 	if err := validate(c); err != nil {
 		return nil, err
 	}
-	if err := c.ResolveServices(); err != nil {
+	if err := c.ResolvePackages(); err != nil {
 		return nil, err
 	}
 	if c.SchemaVersion >= 2 {

@@ -466,6 +466,9 @@ func validateResources(kind string, resources map[string]Resource) error {
 			return err
 		}
 		label := kind + "." + name
+		if len(r.Settings) > 0 || len(r.Processes) > 0 {
+			return fmt.Errorf("parse config: %s declares settings or processes; only [workflows.*], [engines.*] and [services.*] packages take them", label)
+		}
 		switch r.Scope {
 		case "user", "project":
 			// ok

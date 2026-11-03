@@ -14,7 +14,8 @@ The kinds are:
 | `workflow` | the external process: intake, engine invocation, review, delivery | `[workflows.<name>]` | [workflow.md](workflow.md) |
 | `service` | a reusable host or ticket service: operations, transport, credentials, shell rules | `[services.<name>]` | [service.md](service.md) |
 
-Harness requirements: [capabilities.md](capabilities.md).
+Harness requirements: [capabilities.md](capabilities.md). Package settings and
+process definitions: [settings.md](settings.md).
 
 Every kind shares these manifest fields:
 
@@ -45,6 +46,9 @@ capabilities = ["review@1"]
 [commands]     # name = "path/to/command.md"
 [subagents]    # name = "path/to/agent.md"
 [plugins]      # name = "path/to/plugin-dir" (holds index.ts)
+
+[settings.<name>]   # configuration the package accepts (settings.md)
+[processes]         # named definitions the package interprets (settings.md)
 ```
 
 Schema 2 manifests decode strictly: an unknown key is an error that names it.

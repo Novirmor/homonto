@@ -217,6 +217,9 @@ func (e *Engine) Plan() ([]adapter.ChangeSet, error) {
 	if err := e.checkFrameworkCompat(); err != nil {
 		return nil, err
 	}
+	if err := e.checkHarnessCapabilities(); err != nil {
+		return nil, err
+	}
 	e.Warnings = nil
 	var sets []adapter.ChangeSet
 	for _, a := range e.Adapters {

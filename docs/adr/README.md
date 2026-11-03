@@ -111,3 +111,5 @@ numbering: [`../agents/adr.md`](../agents/adr.md).
 | [0089](0089-name-hosting-workflows-per-host-with-shared-processes.md) | Name hosting workflows per host, with shared process names | Accepted |
 | [0090](0090-move-the-draft-publication-core-into-the-binary.md) | Move the draft/publication core into the binary | Accepted |
 | [0091](0091-own-the-bitbucket-cloud-transport.md) | Own the Bitbucket Cloud transport | Accepted |
+| [0092](0092-publish-the-package-contract.md) | Publish the package contract | Accepted |
+| [0097](0097-require-harness-capabilities-by-name.md) | Require harness capabilities by name | Accepted |

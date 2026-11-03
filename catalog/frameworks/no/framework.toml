@@ -1,7 +1,17 @@
+manifest_schema = 2
 name = "no"
 kind = "engine"
 version = "0.3.0"
 description = "Minimal model-directed development and review engine"
+
+[engine]
+lifecycle = "stateless"
+entry = ["no"]
+operations = ["start", "resume", "integration-check", "release"]
+stages = ["implement", "review"]
+
+[requires]
+harness = ["skills", "commands", "subagents", "question-dialog"]
 
 [dependencies]
 frameworks = []

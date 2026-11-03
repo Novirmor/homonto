@@ -1,0 +1,47 @@
+# Engine contract
+
+An engine owns the implementation stages of a change: how work is planned,
+built, verified and repaired. A workflow or the user selects one installed
+engine per task (ADR 0067). It runs the same on every harness that provides
+what it requires.
+
+```toml
+manifest_schema = 2
+name = "my-engine"
+kind = "engine"
+version = "0.1.0"
+
+[engine]
+lifecycle = "stateless"          # stateless | native
+# binary = "my-engine"           # required for native: the CLI that owns the lifecycle
+entry = ["my-engine"]            # entry skills; each must be declared in [skills]
+operations = ["start", "resume", "integration-check", "release"]
+stages = ["plan", "build", "review"]
+coordinator = "shared"           # optional: run under the shared homonto coordinator
+
+[requires]
+harness = ["skills", "commands", "subagents", "question-dialog"]
+
+[skills]
+my-engine = "skills/my-engine"
+```
+
+| Field | Rule |
+|---|---|
+| `lifecycle` | `stateless`: the engine keeps no durable state; a workspace task records only its name. `native`: the engine owns a lifecycle record through `binary` and binds source checkouts through homonto's worktree registry (see Task integration). |
+| `binary` | Plain command name. Required for `native`, forbidden for `stateless`. |
+| `entry` | At least one skill the coordinator or a command loads to start the engine. |
+| `operations` | Subset of `start`, `resume`, `integration-check`, `release`. `start` and `resume` are required. |
+| `stages` | At least one identifier (`[a-z][a-z0-9-]*`), unique. Stages are the addressable units model-routing policies target. |
+| `coordinator` | Empty or `shared`. An engine never ships its own coordinator. |
+
+## Builtins
+
+| Engine | Lifecycle | Binary | Stages |
+|---|---|---|---|
+| `onto` | native | `onto` | open, design, build, verify, close |
+| `to` | native | `to` | plan, do, done |
+| `no` | stateless | — | implement, review |
+
+`no` has no coordinator (ADR 0067). It ships one entry skill and two
+subagents.

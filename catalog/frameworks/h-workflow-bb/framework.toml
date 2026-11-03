@@ -1,13 +1,20 @@
+manifest_schema = 2
 name = "h-workflow-bb"
 kind = "workflow"
 version = "0.1.0"
 description = "Standalone Bitbucket Cloud workflow skill bundle — spike and resolve from a brief, review, continue, conflict resolution, batch review of pull requests"
 
+[workflow]
+coordinator = "shared"
+entry = ["h-spike-issue", "h-resolve-issue", "h-review-pr", "h-continue-pr", "h-resolve-conflicts", "h-review-batch"]
+
+[requires]
+harness = ["skills", "commands", "subagents", "agent-tool-limits", "shell-rules", "question-dialog", "context-hooks", "permission-events"]
+
 [dependencies]
 frameworks = []
 
 [skills]
-homonto = "skills/homonto"
 h-host-bb = "skills/h-host-bb"
 h-spike-issue = "skills/h-spike-issue"
 h-resolve-issue = "skills/h-resolve-issue"
@@ -24,18 +31,14 @@ h-continue-pr = "commands/h-continue-pr.md"
 h-resolve-conflicts = "commands/h-resolve-conflicts.md"
 h-review-batch = "commands/h-review-batch.md"
 
-[plugins]
-homonto-workflow = "plugins/homonto-workflow"
-
-# The coordinator is the shared homonto primary (same catalog path every
-# package declares; ADR 0045), so installing any hosting workflow, onto, or to
-# connects the same coordinator. The process skills, commands, plugin and
+# coordinator = "shared" connects the one homonto primary, its skill and its
+# runtime plugin (ADR 0045, ADR 0092), so installing any hosting workflow,
+# onto, or to connects the same coordinator. The process skills, commands and
 # workers are shared by h-workflow-gh/gl/bb and deduplicate when co-installed;
 # only the host skill differs (ADR 0089). The two workers are read-only (ADR 0035):
 # the coordinator fetches from Bitbucket Cloud and hands them packets; they never
 # post, edit, or spawn. Do NOT also declare these in a top-level
 # [subagents.*] table (that collides with the framework declaration).
 [subagents]
-homonto = "subagents/homonto.md"
 h-spike = "subagents/h-spike.md"
 h-review = "subagents/h-review.md"

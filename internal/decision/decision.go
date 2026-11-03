@@ -1,8 +1,9 @@
-// Package decision defines the plugin-facing shape of typed decision calls
-// (ADR 0098): a package asks a question of a decision model and gets a typed,
-// validated answer. M2 fixes the request and result shapes only. No provider
-// exists yet; providers and their protocols (Jev/System One-compatible
-// endpoints, native OpenAI Decisions) arrive in M3 (#55–#58) behind Decider.
+// Package decision is the plugin-facing typed decision capability
+// (ADR 0098, ADR 0101): a package asks a question of a decision model and
+// gets a typed, validated answer. Providers speak a registered Protocol
+// (System One-compatible endpoints and native OpenAI Decisions ship); a
+// Service routes each decision point to a configured provider, applies the
+// confidence threshold and classifies failures (ADR 0102).
 package decision
 
 import (
@@ -36,12 +37,16 @@ type Scale struct {
 // package declares, "<package>.<point>" (for example "onto.triage-severity"),
 // so routing policies and audit can address it.
 type Request struct {
-	Point    string            `json:"point"`
-	Kind     Kind              `json:"kind"`
-	Question string            `json:"question"`
-	Options  []string          `json:"options,omitempty"` // choice only
-	Scale    *Scale            `json:"scale,omitempty"`   // score only
-	Context  map[string]string `json:"context,omitempty"` // evidence the provider may see
+	Point    string   `json:"point"`
+	Kind     Kind     `json:"kind"`
+	Question string   `json:"question"`
+	Options  []string `json:"options,omitempty"` // choice only
+	Scale    *Scale   `json:"scale,omitempty"`   // score only
+	// Levels names the score's ordered levels, lowest first (score only).
+	// Both shipped protocols score on named levels and require them; the
+	// answer's level position is mapped linearly onto Scale.
+	Levels  []string          `json:"levels,omitempty"`
+	Context map[string]string `json:"context,omitempty"` // evidence the provider may see
 }
 
 // Result is a typed answer. Exactly the field for the request's kind is set.
@@ -62,8 +67,9 @@ type Decider interface {
 	Decide(ctx context.Context, req Request) (Result, error)
 }
 
-// ErrNoProvider is what every decision call returns until M3 configures one.
-var ErrNoProvider = errors.New("decision: no decision provider is configured (decision models arrive in M3, #32)")
+// ErrNoProvider is returned when the config names no decision provider for
+// a point.
+var ErrNoProvider = errors.New("decision: no decision provider is configured; declare [decisions.providers.<name>] and [decisions].default (docs/contracts/decisions.md)")
 
 var point = regexp.MustCompile(`^[a-z][a-z0-9-]*\.[a-z][a-z0-9-]*$`)
 
@@ -87,12 +93,12 @@ func (r Request) Validate() error {
 			}
 			seen[o] = true
 		}
-		if r.Scale != nil {
-			return fmt.Errorf("decision %s: a choice takes no scale", r.Point)
+		if r.Scale != nil || len(r.Levels) > 0 {
+			return fmt.Errorf("decision %s: a choice takes no scale or levels", r.Point)
 		}
 	case YesNo:
-		if len(r.Options) > 0 || r.Scale != nil {
-			return fmt.Errorf("decision %s: a yes-no question takes no options or scale", r.Point)
+		if len(r.Options) > 0 || r.Scale != nil || len(r.Levels) > 0 {
+			return fmt.Errorf("decision %s: a yes-no question takes no options, scale or levels", r.Point)
 		}
 	case Score:
 		if r.Scale == nil || !(r.Scale.Min < r.Scale.Max) || isBad(r.Scale.Min) || isBad(r.Scale.Max) {
@@ -100,6 +106,18 @@ func (r Request) Validate() error {
 		}
 		if len(r.Options) > 0 {
 			return fmt.Errorf("decision %s: a score takes no options", r.Point)
+		}
+		if len(r.Levels) > 0 {
+			if len(r.Levels) < 2 || len(r.Levels) > 10 {
+				return fmt.Errorf("decision %s: a score takes 2 to 10 levels", r.Point)
+			}
+			seen := map[string]bool{}
+			for _, l := range r.Levels {
+				if l == "" || seen[l] {
+					return fmt.Errorf("decision %s: levels must be non-empty and distinct", r.Point)
+				}
+				seen[l] = true
+			}
 		}
 	default:
 		return fmt.Errorf("decision %s: unknown kind %q (choice, yes-no, score)", r.Point, r.Kind)

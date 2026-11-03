@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 
+	"github.com/Novirmor/homonto/internal/decision"
 	"github.com/Novirmor/homonto/internal/engine"
 	"github.com/spf13/cobra"
 )
@@ -40,13 +41,20 @@ func statusCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
+			// Recorded decision signals (ADR 0102): the latest calls, so a
+			// workflow's judgments are visible next to its routes.
+			decisions, torn, err := decision.Recent(e.StateDir, 20)
+			if err != nil {
+				return err
+			}
 			if output == "json" {
 				payload := struct {
-					Drift    []string              `json:"drift"`
-					Pending  int                   `json:"pending"`
-					Warnings []string              `json:"warnings"`
-					Routing  *engine.RoutingRecord `json:"routing,omitempty"`
-				}{Drift: drift, Pending: pending, Warnings: append(e.OpenCodeV2Warnings(), e.Warnings...)}
+					Drift     []string              `json:"drift"`
+					Pending   int                   `json:"pending"`
+					Warnings  []string              `json:"warnings"`
+					Routing   *engine.RoutingRecord `json:"routing,omitempty"`
+					Decisions []decision.Outcome    `json:"decisions,omitempty"`
+				}{Drift: drift, Pending: pending, Warnings: append(e.OpenCodeV2Warnings(), e.Warnings...), Decisions: decisions}
 				if routed {
 					payload.Routing = &routes
 				}
@@ -84,6 +92,15 @@ func statusCmd() *cobra.Command {
 				if routes.Discovery == "failed" {
 					cmd.Printf("route discovery failed at last apply (%s): auto policies used their fallbacks\n", routes.DiscoveryError)
 				}
+			}
+			if len(decisions) > 5 {
+				decisions = decisions[len(decisions)-5:]
+			}
+			for _, l := range decisionLines(decisions) {
+				cmd.Println(l)
+			}
+			if torn > 0 {
+				cmd.Printf("warn: %d unreadable line(s) in .homonto/%s\n", torn, decision.RecordFile)
 			}
 			if pending > 0 {
 				cmd.Println(fmt.Sprintf("%d config change(s) awaiting apply (run `homonto apply`)", pending))

@@ -377,14 +377,14 @@ func explainSettings(cmd *cobra.Command, e *engine.Engine, name string, asJSON b
 			if err != nil {
 				return err
 			}
-			cmd.Println(string(b))
+			fmt.Fprintln(cmd.OutOrStdout(), string(b))
 			return nil
 		}
 		b, err := json.MarshalIndent(packages, "", "  ")
 		if err != nil {
 			return err
 		}
-		cmd.Println(string(b))
+		fmt.Fprintln(cmd.OutOrStdout(), string(b))
 		return nil
 	}
 	for _, line := range settingsLines(packages) {
@@ -443,7 +443,7 @@ func explainRouting(cmd *cobra.Command, e *engine.Engine, agent string, asJSON b
 		if err != nil {
 			return err
 		}
-		cmd.Println(string(b))
+		fmt.Fprintln(cmd.OutOrStdout(), string(b))
 		return nil
 	}
 	for _, line := range routingLines(report.Routes) {

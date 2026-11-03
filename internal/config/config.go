@@ -315,9 +315,8 @@ type Config struct {
 	Worktrees     Worktrees `toml:"worktrees"`
 	// Routing holds the model-routing policies (ADR 0099, ADR 0100).
 	Routing Routing `toml:"routing"`
-	// Decisions captures the table reserved for decision providers
-	// (ADR 0098), rejected by name until its fields are defined.
-	Decisions map[string]any `toml:"decisions"`
+	// Decisions holds the decision-model providers (ADR 0101).
+	Decisions Decisions `toml:"decisions"`
 	// MCPs captures a removed [mcps.*] table so Load can reject it by name:
 	// MCP servers are bring-your-own (ADR 0085).
 	MCPs map[string]any `toml:"mcps"`

@@ -1,0 +1,1 @@
+{"id":"gen-dec-0002","model":"typesafe/jev-1.14-20260917","provider":"TypeSafe","answers":{"answer":{"choice":"feature","confidence":0.75,"probabilities":{"bug":0.2,"feature":0.75,"question":0.05}}},"usage":{"input_tokens":140,"output_tokens":20,"cost":0.000006}}

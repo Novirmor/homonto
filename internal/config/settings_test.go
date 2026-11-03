@@ -138,14 +138,3 @@ func TestNoEngineIsolationSetting(t *testing.T) {
 		t.Fatalf("err = %v", err)
 	}
 }
-
-func TestReservedDecisionTable(t *testing.T) {
-	for _, tc := range []struct{ config, want string }{
-		{"[decisions.default]\nprovider = \"x\"\n", "[decisions] is reserved for decision-model providers"},
-	} {
-		path := writeTree(t, t.TempDir(), map[string]string{"homonto.toml": tc.config})
-		if _, err := Load(path); err == nil || !strings.Contains(err.Error(), tc.want) {
-			t.Fatalf("err = %v, want %q", err, tc.want)
-		}
-	}
-}

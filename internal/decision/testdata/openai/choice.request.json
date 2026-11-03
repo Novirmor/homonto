@@ -1,0 +1,1 @@
+{"model":"gpt-6-luna","input":"ticket:\nCheckout shows a blank screen after paying.\n\n","questions":[{"type":"choice","name":"answer","instructions":"Which process handles this issue?","choices":[{"value":"bug","description":"bug"},{"value":"feature","description":"feature"},{"value":"question","description":"question"}]}]}

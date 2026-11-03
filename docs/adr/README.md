@@ -117,6 +117,8 @@ numbering: [`../agents/adr.md`](../agents/adr.md).
 | [0095](0095-declare-package-settings-in-the-manifest.md) | Declare package settings in the manifest | Accepted |
 | [0096](0096-render-external-agents-by-intent.md) | Render external agents by intent | Accepted |
 | [0097](0097-require-harness-capabilities-by-name.md) | Require harness capabilities by name | Accepted |
-| [0098](0098-reserve-routing-and-decision-surfaces.md) | Reserve routing and decision surfaces | Accepted |
+| [0098](0098-reserve-routing-and-decision-surfaces.md) | Reserve routing and decision surfaces | Partially superseded by 0099, 0101 |
 | [0099](0099-route-models-by-policy.md) | Route models by policy | Accepted |
 | [0100](0100-select-models-automatically-at-plan.md) | Select models automatically at plan | Accepted |
+| [0101](0101-deliver-typed-decisions-through-the-binary.md) | Deliver typed decisions through the binary | Accepted |
+| [0102](0102-classify-and-record-route-and-decision-outcomes.md) | Classify and record route and decision outcomes | Accepted |

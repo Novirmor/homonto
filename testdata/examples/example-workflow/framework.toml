@@ -16,8 +16,12 @@ harness = ["skills", "commands", "subagents", "question-dialog"]
 [requires.services]
 tracker = "example-service"
 
+# The skill classifies each issue with a typed decision at the point
+# example-workflow.classify (choice: bug, feature, question) and runs the
+# process of that name. A config routes the point under [decisions]
+# (docs/contracts/decisions.md).
 [processes]
-description = "Named triage processes the example-triage skill runs"
+description = "Named triage processes, one per decision class: bug, feature, question"
 
 [processes.fields.steps]
 type = "list"

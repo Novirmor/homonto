@@ -20,6 +20,7 @@
 | [Projection and state](projection-and-state.md) | How apply writes, drift vs. pending, adoption, pruning, snapshots |
 | [Remote sources](remote-sources.md) | Pinned, verified `remote:` installs |
 | [OpenCode integration](opencode.md) | Workflow plugin, status panel, GitHub draft tools, terminal settings, supported version |
+| [Claude Code](claude-code.md) | Enabling Claude Code, what apply writes, workspace trust, how guarantees are kept, accepted limitations |
 | [Package contracts](../contracts/README.md) | Writing your own engine, workflow or service: manifest, settings, checks |
 | [Building a ticket-driven workflow](ticket-workflow.md) | A worked external engine, workflow and service: company ticket → engine → review → delivery, on OpenCode and Claude Code |
 

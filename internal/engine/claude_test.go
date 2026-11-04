@@ -201,3 +201,76 @@ func TestClaudeAgentNeedsAClaudeModel(t *testing.T) {
 		t.Fatalf("missing Claude model: %v", err)
 	}
 }
+
+// One selector structure routes both harnesses (M4.6): the same agents get a
+// policy from the same selector on each, with each harness's own model ids.
+func TestRoutingSelectsTheSameSelectorsOnBothHarnesses(t *testing.T) {
+	e, _, _ := claudeEngine(t, claudeConfig+`
+[routing.engines.onto.stages.verify.opencode]
+model = "p/verify"
+`)
+	oc, err := e.RoutesFor("opencode")
+	if err != nil {
+		t.Fatal(err)
+	}
+	cc, err := e.RoutesFor("claude")
+	if err != nil {
+		t.Fatal(err)
+	}
+	byAgent := func(r RouteReport) map[string]ResolvedRoute {
+		m := map[string]ResolvedRoute{}
+		for _, route := range r.Routes {
+			m[route.Agent] = route
+		}
+		return m
+	}
+	o, c := byAgent(oc), byAgent(cc)
+	if len(o) == 0 || len(o) != len(c) {
+		t.Fatalf("route sets differ: %d opencode, %d claude", len(o), len(c))
+	}
+	for agent, or := range o {
+		cr := c[agent]
+		if strings.TrimSuffix(or.Selector, ".opencode") != strings.TrimSuffix(cr.Selector, ".claude") || or.From != cr.From {
+			t.Errorf("%s: opencode %s/%s, claude %s/%s", agent, or.From, or.Selector, cr.From, cr.Selector)
+		}
+	}
+	if c["onto-skeptic"].Selection == nil || c["onto-skeptic"].Selection.Model != "opus" || o["onto-skeptic"].Selection.Model != "p/verify" {
+		t.Errorf("verify-stage agent: claude %+v, opencode %+v", c["onto-skeptic"].Selection, o["onto-skeptic"].Selection)
+	}
+	if c["onto-implementer"].Selection.Model != "sonnet" || o["onto-implementer"].Selection.Model != "p/default" {
+		t.Errorf("default-routed agent: claude %+v, opencode %+v", c["onto-implementer"].Selection, o["onto-implementer"].Selection)
+	}
+}
+
+// Claude Code cannot list its models, so an auto policy chooses among the
+// models the config describes, and falls back when it describes none.
+func TestClaudeAutoRoutingUsesDescribedModels(t *testing.T) {
+	auto := strings.Replace(claudeConfig, "[routing.default.claude]\nmodel = \"sonnet\"\n", `[routing.default.claude]
+mode = "auto"
+prefer = "cost"
+fallback = "sonnet"
+
+[routing.models.claude.haiku]
+cost = 1.0
+[routing.models.claude.opus]
+cost = 5.0
+`, 1)
+	e, _, _ := claudeEngine(t, auto)
+	cc, err := e.RoutesFor("claude")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, r := range cc.Routes {
+		if r.Agent == "onto-implementer" && (r.Selection == nil || r.Selection.Model != "haiku" || r.Selection.Fallback) {
+			t.Fatalf("auto selection: %+v", r.Selection)
+		}
+	}
+	none := strings.Replace(auto, "[routing.models.claude.haiku]\ncost = 1.0\n[routing.models.claude.opus]\ncost = 5.0\n", "", 1)
+	e, _, _ = claudeEngine(t, none)
+	cc, _ = e.RoutesFor("claude")
+	for _, r := range cc.Routes {
+		if r.Agent == "onto-implementer" && (r.Selection == nil || !r.Selection.Fallback || r.Selection.Model != "sonnet") {
+			t.Fatalf("no described models must fall back: %+v", r.Selection)
+		}
+	}
+}

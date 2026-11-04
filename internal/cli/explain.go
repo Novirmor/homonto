@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"slices"
 	"sort"
 	"strings"
 
@@ -199,6 +200,7 @@ func explainCmd() *cobra.Command {
 	var (
 		repoFlag string
 		asJSON   bool
+		harness  string
 	)
 	cmd := &cobra.Command{
 		Use:   "explain [kind] [name]",
@@ -229,7 +231,7 @@ func explainCmd() *cobra.Command {
 				return explainSettings(cmd, e, name, asJSON)
 			}
 			if kind == "routing" {
-				return explainRouting(cmd, e, name, asJSON)
+				return explainRouting(cmd, e, name, harness, asJSON)
 			}
 			rows := buildRows(e)
 
@@ -337,6 +339,7 @@ func explainCmd() *cobra.Command {
 	}
 	cmd.Flags().StringVar(&repoFlag, "repo", "", "restrict to a declared repository partition")
 	cmd.Flags().BoolVar(&asJSON, "json", false, "emit the explanation as JSON")
+	cmd.Flags().StringVar(&harness, "harness", "opencode", "harness whose routing to explain (explain routing only)")
 	return cmd
 }
 
@@ -421,8 +424,11 @@ func settingsLines(packages []config.PackageSettings) []string {
 }
 
 // explainRouting prints each agent's model source (ADR 0099, ADR 0100).
-func explainRouting(cmd *cobra.Command, e *engine.Engine, agent string, asJSON bool) error {
-	report, err := e.Routes()
+func explainRouting(cmd *cobra.Command, e *engine.Engine, agent, harness string, asJSON bool) error {
+	if !slices.Contains(config.HarnessIDs(), harness) {
+		return fmt.Errorf("explain routing: --harness %q is not one of %s", harness, strings.Join(config.HarnessIDs(), ", "))
+	}
+	report, err := e.RoutesFor(harness)
 	if err != nil {
 		return err
 	}

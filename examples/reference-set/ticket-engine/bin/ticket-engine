@@ -1,0 +1,63 @@
+#!/bin/sh
+# Reference engine binary: owns ticket-engine's lifecycle records.
+#
+#   ticket-engine start  CHANGE --root WORKFLOW_ROOT --repo ALIAS --base COMMIT --branch BRANCH
+#   ticket-engine phase  CHANGE --root WORKFLOW_ROOT PHASE      (plan | implement | review)
+#   ticket-engine finish CHANGE --root WORKFLOW_ROOT            (terminal: completed)
+#   ticket-engine abandon CHANGE --root WORKFLOW_ROOT           (terminal: abandoned)
+#   ticket-engine status CHANGE --root WORKFLOW_ROOT            (prints the record)
+#
+# The record is the report homonto reads; homonto never writes it.
+set -eu
+usage() { sed -n '3,9p' "$0" >&2; exit 2; }
+cmd=${1:-}; change=${2:-}; [ -n "$cmd" ] && [ -n "$change" ] || usage
+shift 2
+case "$change" in *[!a-z0-9-]*|"") echo "change must be lowercase letters, digits and '-'" >&2; exit 2 ;; esac
+root= repo= base= branch= arg=
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --root) root=$2; shift 2 ;;
+    --repo) repo=$2; shift 2 ;;
+    --base) base=$2; shift 2 ;;
+    --branch) branch=$2; shift 2 ;;
+    *) arg=$1; shift ;;
+  esac
+done
+[ -n "$root" ] || usage
+dir="$root/engines/ticket-engine/$change"
+record="$dir/ticket-engine-state.yaml"
+write() { tmp="$record.tmp"; cat > "$tmp"; mv "$tmp" "$record"; }
+field() { sed -n "s/^$1: //p" "$record"; }
+case "$cmd" in
+  start)
+    [ -n "$repo" ] && [ -n "$base" ] && [ -n "$branch" ] || usage
+    [ -e "$record" ] && { echo "change $change already exists" >&2; exit 1; }
+    mkdir -p "$dir"
+    id=$(od -An -N16 -tx1 /dev/urandom | tr -d ' \n')
+    write <<YAML
+schema_version: 1
+workflow: ticket-engine
+change: $change
+id: $id
+phase: plan
+repo_mode: explicit
+repos: [$repo]
+repo_bases:
+  $repo:
+    base_ref: $base
+    base_branch: $branch
+YAML
+    echo "$id" ;;
+  phase)
+    [ -f "$record" ] || { echo "no change $change" >&2; exit 1; }
+    case "$arg" in plan|implement|review) ;; *) echo "phase must be plan, implement or review" >&2; exit 2 ;; esac
+    sed "s/^phase: .*/phase: $arg/" "$record" | write ;;
+  finish|abandon)
+    [ -f "$record" ] || { echo "no change $change" >&2; exit 1; }
+    final=completed; [ "$cmd" = abandon ] && final=abandoned
+    sed "s/^phase: .*/phase: $final/" "$record" | write ;;
+  status)
+    [ -f "$record" ] || { echo "no change $change" >&2; exit 1; }
+    cat "$record" ;;
+  *) usage ;;
+esac

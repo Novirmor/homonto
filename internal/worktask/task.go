@@ -63,6 +63,13 @@ func Open(path string) (*Store, error) {
 	if err != nil {
 		return nil, err
 	}
+	return OpenConfig(c, path)
+}
+
+// OpenConfig opens tasks over an already loaded config, such as one whose
+// verified remote: package roots the engine has injected, so a remote
+// engine runs workspace tasks like a local one.
+func OpenConfig(c *config.Config, path string) (*Store, error) {
 	l, err := workspace.Load(path)
 	if err != nil {
 		return nil, err

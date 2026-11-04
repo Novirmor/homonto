@@ -1,0 +1,29 @@
+#!/bin/sh
+# Reference ticket-cli: a file-backed tracker standing in for Jira, Linear or
+# an in-house system. Tickets are JSON files in $TICKET_DIR (<KEY>.json).
+# Swap this script for a real client with the same commands.
+set -eu
+dir=${TICKET_DIR:?set TICKET_DIR to the tracker directory}
+cmd=${1:-}; [ $# -gt 0 ] && shift
+case "$cmd" in
+  auth)
+    [ "${1:-}" = status ] && [ -n "${TICKET_TOKEN:-}" ] && { echo "authenticated"; exit 0; }
+    echo "not authenticated: set TICKET_TOKEN" >&2; exit 1 ;;
+  view)
+    key=${1:?ticket key}; file="$dir/$key.json"
+    [ -f "$file" ] || { echo "no ticket $key" >&2; exit 1; }
+    cat "$file" ;;
+  comment)
+    key=${1:?ticket key}; [ "${2:-}" = --body-file ] || { echo "usage: ticket-cli comment KEY --body-file FILE" >&2; exit 2; }
+    body=${3:?body file}; file="$dir/$key.json"
+    [ -f "$file" ] || { echo "no ticket $key" >&2; exit 1; }
+    mkdir -p "$dir/comments"; cat "$body" >> "$dir/comments/$key.md"; printf '\n---\n' >> "$dir/comments/$key.md"
+    echo "commented on $key" ;;
+  transition)
+    key=${1:?ticket key}; state=${2:?state}; file="$dir/$key.json"
+    [ -f "$file" ] || { echo "no ticket $key" >&2; exit 1; }
+    case "$state" in todo|in-progress|in-review|done) ;; *) echo "unknown state $state" >&2; exit 2 ;; esac
+    tmp="$file.tmp"; sed "s/\"state\": *\"[a-z-]*\"/\"state\": \"$state\"/" "$file" > "$tmp" && mv "$tmp" "$file"
+    echo "$key -> $state" ;;
+  *) echo "usage: ticket-cli auth status | view KEY | comment KEY --body-file FILE | transition KEY STATE" >&2; exit 2 ;;
+esac

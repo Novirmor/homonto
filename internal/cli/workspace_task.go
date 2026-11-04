@@ -10,6 +10,7 @@ import (
 	"syscall"
 	"time"
 
+	engineapi "github.com/Novirmor/homonto/internal/engine"
 	"github.com/Novirmor/homonto/internal/worktask"
 	"github.com/spf13/cobra"
 )
@@ -21,7 +22,14 @@ func workspaceTaskCmd() *cobra.Command {
 		if err != nil {
 			return nil, err
 		}
-		return worktask.Open(path)
+		// Build resolves remote: packages through the verified cache, as
+		// plan does, so their engine contracts are known (M4.8).
+		home, _ := os.UserHomeDir()
+		e, err := engineapi.Build(cmd.Context(), path, home, "homonto")
+		if err != nil {
+			return nil, err
+		}
+		return worktask.OpenConfig(e.Cfg, e.ConfigPath)
 	}
 	var engine, change, isolation string
 	var repos []string

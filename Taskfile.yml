@@ -96,7 +96,7 @@ tasks:
 
   contracts:
     desc: Every shipped package and the example packages conform to the package contract
-    cmd: go run . package check --builtin testdata/examples/example-engine testdata/examples/example-workflow testdata/examples/example-service
+    cmd: go run . package check --builtin testdata/examples/example-engine testdata/examples/example-workflow testdata/examples/example-service examples/reference-set/ticket-engine examples/reference-set/ticket-workflow examples/reference-set/ticket-service
 
   docs-check:
     desc: Agent docs and catalog reference only things that exist

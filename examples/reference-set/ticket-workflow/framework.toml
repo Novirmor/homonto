@@ -1,0 +1,41 @@
+manifest_schema = 2
+name = "ticket-workflow"
+kind = "workflow"
+version = "0.1.0"
+description = "Reference workflow: company ticket -> installed engine -> review -> delivery, with the ticket kept in step"
+
+[workflow]
+coordinator = "shared"
+entry = ["ticket"]
+
+[requires]
+harness = ["skills", "commands", "subagents", "question-dialog"]
+
+[requires.services]
+tickets = "ticket-service"
+
+[settings.delivery]
+type = "string"
+enum = ["draft-pr", "branch"]
+default = "draft-pr"
+description = "How a finished change is delivered"
+
+# Named processes the workflow interprets, chosen by the ticket's type.
+[processes]
+description = "One process per ticket type: bug, story, chore"
+
+[processes.fields.steps]
+type = "list"
+required = true
+description = "Ordered steps the coordinator follows for this ticket type"
+
+[processes.fields.review]
+type = "boolean"
+default = true
+description = "Whether the engine's reviewer must pass before delivery"
+
+[skills]
+ticket-to-delivery = "skills/ticket-to-delivery"
+
+[commands]
+ticket = "commands/ticket.md"

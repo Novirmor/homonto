@@ -9,6 +9,7 @@ import (
 	"fmt"
 
 	"github.com/Novirmor/homonto/internal/adapter"
+	"github.com/Novirmor/homonto/internal/adapter/claude"
 	"github.com/Novirmor/homonto/internal/adapter/opencode"
 )
 
@@ -63,8 +64,7 @@ func (r *Registry) Build(d Deps) []adapter.Adapter {
 // Builtins returns a fresh registry with the built-in adapters registered. This
 // is the single place built-in adapters are wired: adding one is one Register
 // line here. A fresh registry per call keeps it free of global mutable state.
-// OpenCode is the only adapter since v0.13.0 (Claude Code and the codex pilot
-// were removed; see the v0.13.0 entry in CHANGELOG.md).
+// OpenCode is first (ADR 0082); Claude Code returned in M4.4.
 func Builtins() *Registry {
 	r := New()
 	r.Register("opencode", func(d Deps) adapter.Adapter {
@@ -74,6 +74,14 @@ func Builtins() *Registry {
 			WithCommandCatalogRoot(d.CommandCatalogDir).
 			WithSubagentCatalogRoot(d.SubagentCatalogDir).
 			WithPluginCatalogRoot(d.PluginCatalogDir).
+			WithRemoteSubagentRoot(d.RemoteSubagentDir)
+	})
+	r.Register("claude", func(d Deps) adapter.Adapter {
+		return claude.New(d.Home, d.ContentDir).
+			WithProjectRoot(d.ProjectRoot).
+			WithCatalogRoot(d.CatalogDir).
+			WithCommandCatalogRoot(d.CommandCatalogDir).
+			WithSubagentCatalogRoot(d.SubagentCatalogDir).
 			WithRemoteSubagentRoot(d.RemoteSubagentDir)
 	})
 	return r

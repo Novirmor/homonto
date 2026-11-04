@@ -72,6 +72,7 @@ func runtimeMCPCmd() *cobra.Command {
 
 func runtimeHookCmd() *cobra.Command {
 	var configPath string
+	var agentDirs []string
 	c := &cobra.Command{
 		Use:   "hook",
 		Short: "Handle one Claude Code hook event (started by Claude Code hooks)",
@@ -82,10 +83,12 @@ func runtimeHookCmd() *cobra.Command {
 					b, err := json.Marshal(workflowstatus.ReadConfig(path))
 					return string(b), err
 				},
-				Relay: hostruntime.RelaySocket,
+				Relay:     hostruntime.RelaySocket,
+				AgentDirs: agentDirs,
 			})
 		},
 	}
 	c.Flags().StringVar(&configPath, "config", "", "absolute path of the selected homonto config")
+	c.Flags().StringArrayVar(&agentDirs, "agents-dir", nil, "directory of rendered Claude Code agents whose homonto policies apply; repeatable")
 	return c
 }

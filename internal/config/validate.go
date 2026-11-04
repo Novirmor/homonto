@@ -295,33 +295,25 @@ func sortedResourceNames(m map[string]Resource) []string {
 // them a stale config would fail with an opaque decode error instead of a
 // migration message.
 func validateRemovedTools(c *Config) error {
-	if len(c.Settings.Claude) > 0 {
-		keys := sortedKeys(c.Settings.Claude)
-		return fmt.Errorf("parse config: settings.claude.%s — Claude Code support was removed in v0.13.0; OpenCode is the only adapter, move the key to [settings.opencode] or delete it", keys[0])
-	}
 	if len(c.Plugins.Claude) > 0 {
 		names := sortedPluginNames(c.Plugins.Claude)
-		return fmt.Errorf("parse config: plugins.claude.%s — Claude Code support was removed in v0.13.0; delete the block", names[0])
+		return fmt.Errorf("parse config: plugins.claude.%s — homonto does not manage Claude Code plugins; enable your own in Claude Code's settings.json (enabledPlugins) and delete the block", names[0])
 	}
 	if len(c.Marketplaces.Claude) > 0 {
 		names := sortedMarketplaceNames(c.Marketplaces.Claude)
-		return fmt.Errorf("parse config: marketplaces.claude.%s — marketplaces were a Claude-only feature removed with the adapter in v0.13.0; delete the block", names[0])
+		return fmt.Errorf("parse config: marketplaces.claude.%s — homonto does not manage Claude Code marketplaces; declare your own in Claude Code's settings.json (extraKnownMarketplaces) and delete the block", names[0])
 	}
-	for _, name := range sortedSubagentNames(c) {
-		if sa := c.Subagents[name]; sa.Claude.IsSet() {
-			return fmt.Errorf("parse config: subagents.%s.claude — Claude Code support was removed in v0.13.0; move the model block to [subagents.%s.opencode] or delete it", name, name)
+	seen := map[string]bool{}
+	for _, h := range c.Harnesses {
+		if !isResourceTarget(h) {
+			return fmt.Errorf("parse config: harnesses names unknown harness %q; valid harnesses are \"opencode\" and \"claude\"", h)
 		}
+		if seen[h] {
+			return fmt.Errorf("parse config: harnesses lists %q twice", h)
+		}
+		seen[h] = true
 	}
 	return nil
-}
-
-func sortedKeys(m map[string]any) []string {
-	out := make([]string, 0, len(m))
-	for k := range m {
-		out = append(out, k)
-	}
-	sort.Strings(out)
-	return out
 }
 
 // sortedStringKeys returns the map's keys in deterministic order, so a config
@@ -638,22 +630,23 @@ func validateSubagents(subagents map[string]Subagent) error {
 // since v0.13.0 — Claude Code and the codex pilot were removed, and their
 // target values are rejected by validateTarget with a migration message
 // rather than a bare "unknown tool".
-var resourceTargetTools = []string{"opencode"}
+var resourceTargetTools = []string{"opencode", "claude"}
 
 func isResourceTarget(t string) bool { return slices.Contains(resourceTargetTools, t) }
+
+// HarnessIDs lists every harness a declaration can target, OpenCode first.
+func HarnessIDs() []string { return slices.Clone(resourceTargetTools) }
 
 // validateTarget rejects one target value for a managed resource, naming the
 // removed tools separately from an unknown one so a stale config gets a
 // migration message instead of a typo report.
 func validateTarget(label, target string) error {
 	switch target {
-	case "claude":
-		return fmt.Errorf("parse config: %s targets \"claude\", but Claude Code support was removed in v0.13.0; remove the target", label)
 	case "codex":
 		return fmt.Errorf("parse config: %s targets \"codex\", but the codex pilot was removed in v0.13.0; remove the target", label)
 	}
 	if !isResourceTarget(target) {
-		return fmt.Errorf("parse config: %s targets unknown tool %q; the only valid target is \"opencode\"", label, target)
+		return fmt.Errorf("parse config: %s targets unknown tool %q; valid targets are \"opencode\" and \"claude\"", label, target)
 	}
 	return nil
 }
@@ -750,6 +743,21 @@ func validateModelSpec(tool, label string, r ModelRoute, requireModel bool) erro
 			if err := variantToken(label, variant); err != nil {
 				return err
 			}
+		}
+		for _, add := range r.BashAllowAdd {
+			if err := bashAllowAddToken(label, add); err != nil {
+				return err
+			}
+		}
+	case "claude":
+		// Claude Code takes one model per agent: an alias (sonnet, opus,
+		// haiku, inherit) or a full model id. It has no variants, and the
+		// effort of a subagent is not a frontmatter setting.
+		if variant != "" || effort != "" {
+			return fmt.Errorf("parse config: %s sets a variant or effort, but a Claude Code agent takes only a model (an alias such as sonnet, or a full model id)", label)
+		}
+		if strings.ContainsAny(model, " \t#/") {
+			return fmt.Errorf("parse config: %s model %q must be a Claude Code alias (sonnet, opus, haiku, inherit) or a model id such as claude-sonnet-5-5", label, model)
 		}
 		for _, add := range r.BashAllowAdd {
 			if err := bashAllowAddToken(label, add); err != nil {
@@ -1011,7 +1019,7 @@ func validateSubagentOverrides(c *Config) error {
 			return installed, nil
 		}
 		installed = map[string]bool{}
-		for _, tool := range []string{"opencode"} {
+		for _, tool := range resourceTargetTools {
 			entries, err := c.ExpandedSubagentEntriesForTool(tool)
 			if err != nil {
 				return nil, err
@@ -1031,7 +1039,7 @@ func validateSubagentOverrides(c *Config) error {
 	}{} // catalog name -> tool -> first override seen
 	for _, name := range names {
 		sa := c.Subagents[name]
-		hasOverride := sa.OpenCode.IsSet()
+		hasOverride := sa.OpenCode.IsSet() || sa.Claude.IsSet()
 		if !hasOverride {
 			continue
 		}
@@ -1048,8 +1056,10 @@ func validateSubagentOverrides(c *Config) error {
 				// when its content carries a homonto: intent block; the engine
 				// reads that content and rejects an override on a verbatim
 				// agent (ADR 0096). Its fragment is still checked here.
-				if err := validateModelSpec("opencode", "subagents."+name+".opencode", sa.OpenCode, false); err != nil {
-					return err
+				for _, tool := range resourceTargetTools {
+					if err := validateModelSpec(tool, "subagents."+name+"."+tool, sa.ModelOverrideFor(tool), false); err != nil {
+						return err
+					}
 				}
 				continue
 			}
@@ -1066,7 +1076,7 @@ func validateSubagentOverrides(c *Config) error {
 			}
 		}
 
-		for _, tool := range []string{"opencode"} {
+		for _, tool := range resourceTargetTools {
 			ov := sa.ModelOverrideFor(tool)
 			if !ov.IsSet() {
 				continue

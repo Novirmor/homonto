@@ -7,12 +7,15 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"maps"
 	"os"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strings"
 
 	"github.com/Novirmor/homonto/internal/adapter"
+	"github.com/Novirmor/homonto/internal/adapter/claude"
 	"github.com/Novirmor/homonto/internal/adapter/opencode"
 	"github.com/Novirmor/homonto/internal/adapter/registry"
 	"github.com/Novirmor/homonto/internal/agentfm"
@@ -71,12 +74,14 @@ type Engine struct {
 	Warnings []string
 	// renderedExternal holds the rendered local:/remote: subagents that carry
 	// a homonto: intent block, keyed by config name (ADR 0096).
-	renderedExternal map[string][]byte
+	renderedExternal map[string]map[string][]byte
 	// RouteDiscoverer lists the harness's models for auto routing policies
 	// (ADR 0100); nil runs `opencode models` in the project root.
 	RouteDiscoverer routing.Discoverer
 	routeReport     *RouteReport
 	routeErr        error
+	// otherRoutes caches the resolved routing of every harness but OpenCode.
+	otherRoutes map[string]RouteReport
 }
 
 // RepoTarget is one declared repository's projection pair.
@@ -211,10 +216,67 @@ func Build(ctx context.Context, configPath, home, contentDir string) (*Engine, e
 			WithRepo(name)
 		e.RepoTargets = append(e.RepoTargets, RepoTarget{Name: name, Dir: cfg.RepoDirs()[name], Adapter: a, State: st})
 	}
+	e.configureHarnesses()
 	if err := e.validateExternalSubagents(); err != nil {
 		return nil, err
 	}
 	return e, nil
+}
+
+// configureHarnesses keeps only the adapters of targeted harnesses (or of
+// harnesses whose earlier projection still has state to prune) and binds the
+// Claude Code runtime integration (M4.4). OpenCode keeps its place first.
+func (e *Engine) configureHarnesses() {
+	kept := e.Adapters[:0]
+	for _, a := range e.Adapters {
+		if a.Name() != "opencode" && !e.Cfg.TargetsHarness(a.Name()) && len(e.State.Keys(a.Name())) == 0 {
+			continue
+		}
+		if c, ok := a.(*claude.Adapter); ok {
+			e.bindClaude(c)
+		}
+		kept = append(kept, a)
+	}
+	e.Adapters = kept
+	if !e.Cfg.TargetsHarness("claude") {
+		return
+	}
+	for _, name := range sortedRepoNames(e.Cfg.Repos) {
+		st, err := state.LoadNamed(e.StateDir, name)
+		if err != nil {
+			continue
+		}
+		a := claude.New(e.Home, e.ContentDir).
+			WithProjectRoot(e.Cfg.RepoDirs()[name]).
+			WithCatalogRoot(e.CatalogRoot).
+			WithCommandCatalogRoot(e.CommandCatalogRoot).
+			WithSubagentCatalogRoot(e.SubagentCatalogRoot).
+			WithRemoteSubagentRoot(filepath.Join(e.RemoteRoot, "subagents")).
+			WithRepo(name)
+		e.RepoTargets = append(e.RepoTargets, RepoTarget{Name: name, Dir: e.Cfg.RepoDirs()[name], Adapter: a, State: st})
+	}
+}
+
+// bindClaude enables the agent-policy hook whenever Claude Code is targeted,
+// and the full workflow integration when the workflow runtime is enabled.
+func (e *Engine) bindClaude(c *claude.Adapter) {
+	if !e.Cfg.TargetsHarness("claude") {
+		return
+	}
+	c.WithPolicyHook(true)
+	if !e.Cfg.WorkflowContextEnabled() {
+		return
+	}
+	hosts := slices.Sorted(maps.Keys(e.Cfg.HostingProviders()))
+	coordinator := ""
+	if entries, err := e.Cfg.ExpandedSubagentEntriesForTool("claude"); err == nil {
+		for _, entry := range entries {
+			if name, ok := config.SubagentCatalogName(entry.Resource.Source); ok && name == catalog.SharedCoordinatorAgent {
+				coordinator = entry.Name
+			}
+		}
+	}
+	c.WithWorkflow(&claude.Workflow{ConfigPath: e.ConfigPath, Hosts: hosts, Coordinator: coordinator})
 }
 
 // CatalogDir returns the materialized builtin catalog root.
@@ -547,7 +609,7 @@ func (e *Engine) subagentRenderContextFor(targets map[string]map[string]bool) (m
 	if err != nil {
 		return nil, err
 	}
-	overrides := func(pick func(config.Subagent) config.ModelRoute) map[string]agentfm.ModelSpec {
+	overrides := func(pick func(config.Subagent) config.ModelRoute, routes RouteReport) map[string]agentfm.ModelSpec {
 		m := map[string]agentfm.ModelSpec{}
 		// Policy-routed agents first (ADR 0099): a pin without a model still
 		// contributes its steps and bash additions below, and a pin with one
@@ -584,6 +646,11 @@ func (e *Engine) subagentRenderContextFor(targets map[string]map[string]bool) (m
 		}
 		return m
 	}
+	claudeRoutes, err := e.RoutesFor("claude")
+	if err != nil {
+		return nil, err
+	}
+	claudeOverrides := overrides(func(s config.Subagent) config.ModelRoute { return s.Claude }, claudeRoutes)
 	rules := e.Cfg.InstalledServiceRules()
 	providers := e.Cfg.HostingProviders()
 	runtimeProviders := make([]string, 0, len(providers))
@@ -599,12 +666,29 @@ func (e *Engine) subagentRenderContextFor(targets map[string]map[string]bool) (m
 				WorkerDeny:      rules.WorkerDeny,
 			},
 			Names:                          names,
-			Overrides:                      overrides(func(s config.Subagent) config.ModelRoute { return s.OpenCode }),
+			Overrides:                      overrides(func(s config.Subagent) config.ModelRoute { return s.OpenCode }, routes),
 			ShellProxy:                     e.Cfg.ResolvedTooling().ShellProxy,
 			ExternalDirectoriesByAgent:     externalDirectoriesByAgent,
 			ExternalDirectoryDeniesByAgent: externalDirectoryDeniesByAgent,
 			EditDirectoryDeniesByAgent:     editDirectoryDeniesByAgent,
 			Targets:                        targets["opencode"],
+			RuntimeProviders:               runtimeProviders,
+		},
+		// Claude Code renders the same intent; its agents take the record
+		// roots as absolute path denies (agentfm.ClaudePolicy).
+		"claude": {
+			ServiceRules: agentfm.ServiceRules{
+				CoordinatorAsk:  rules.CoordinatorAsk,
+				CoordinatorDeny: rules.CoordinatorDeny,
+				WorkerDeny:      rules.WorkerDeny,
+			},
+			Names:                          names,
+			Overrides:                      claudeOverrides,
+			ShellProxy:                     e.Cfg.ResolvedTooling().ShellProxy,
+			ExternalDirectoriesByAgent:     externalDirectoriesByAgent,
+			ExternalDirectoryDeniesByAgent: externalDirectoryDeniesByAgent,
+			EditDirectoryDeniesByAgent:     map[string][]string{},
+			Targets:                        targets["claude"],
 			RuntimeProviders:               runtimeProviders,
 		},
 	}, nil
@@ -827,7 +911,9 @@ func gcCatalogRoots(skillRoot, cmdRoot, subRoot, pluginRoot string, p *catalogPl
 		for _, e := range entries {
 			// Owner name: strip .md, then an optional per-tool variant suffix.
 			name := strings.TrimSuffix(e.Name(), ".md")
-			name = strings.TrimSuffix(name, ".opencode")
+			for _, tool := range config.HarnessIDs() {
+				name = strings.TrimSuffix(name, "."+tool)
+			}
 			if !subs[name] {
 				if err := os.RemoveAll(filepath.Join(subRoot, e.Name())); err != nil {
 					return err
@@ -1119,8 +1205,9 @@ func (e *Engine) planCatalog() (*catalogPlan, error) {
 	cmdSet := map[string]bool{}
 	subSet := map[string]bool{}
 	pluginSet := map[string]bool{}
-	targetedSubagents := map[string]map[string]bool{"opencode": {}}
-	for _, tool := range []string{"opencode"} {
+	targetedSubagents := map[string]map[string]bool{}
+	for _, tool := range config.HarnessIDs() {
+		targetedSubagents[tool] = map[string]bool{}
 		sEntries, err := e.Cfg.ExpandedSkillEntriesForTool(tool)
 		if err != nil {
 			return nil, err

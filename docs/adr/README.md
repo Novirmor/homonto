@@ -123,3 +123,4 @@ numbering: [`../agents/adr.md`](../agents/adr.md).
 | [0101](0101-deliver-typed-decisions-through-the-binary.md) | Deliver typed decisions through the binary | Accepted |
 | [0102](0102-classify-and-record-route-and-decision-outcomes.md) | Classify and record route and decision outcomes | Accepted |
 | [0103](0103-serve-the-runtime-core-to-every-harness.md) | Serve the runtime core to every harness | Accepted |
+| [0104](0104-project-claude-code-natively.md) | Project Claude Code natively | Accepted |

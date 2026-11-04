@@ -375,7 +375,7 @@ func (e *Engine) doctorSubagents(tool string, entries []config.NamedResource) []
 					}
 				}
 				return shared, false
-			case e.renderedExternal[entry.Name] != nil:
+			case e.renderedExternal[tool][entry.Name] != nil:
 				return filepath.Join(e.renderedSubagentDir(), entry.Name+"."+tool+".md"), false
 			case strings.HasPrefix(entry.Resource.Source, "remote:"):
 				return filepath.Join(e.remoteSubagentDir(), entry.Name+".md"), false

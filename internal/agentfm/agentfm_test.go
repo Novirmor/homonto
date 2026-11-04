@@ -291,10 +291,10 @@ func TestRender_NoHomontoBlock_Unchanged(t *testing.T) {
 	}
 }
 
-// The removed adapters are gone for good: Render must reject them like any
-// other unknown tool rather than render something for them.
+// The removed codex adapter is gone for good: Render must reject it like any
+// other unknown tool rather than render something for it.
 func TestRender_UnknownTool(t *testing.T) {
-	for _, tool := range []string{"claude", "codex"} {
+	for _, tool := range []string{"codex", "cursor"} {
 		if _, err := Render("onto-reviewer", []byte(readOnlyReviewer), tool, ctx()); err == nil {
 			t.Errorf("Render(%s): unknown tool should error", tool)
 		}

@@ -24,6 +24,7 @@ import (
 	"testing"
 
 	"github.com/Novirmor/homonto/internal/adapter"
+	"github.com/Novirmor/homonto/internal/adapter/claude"
 	"github.com/Novirmor/homonto/internal/adapter/opencode"
 	"github.com/Novirmor/homonto/internal/config"
 	"github.com/Novirmor/homonto/internal/jsonutil"
@@ -79,9 +80,44 @@ func noSecret() *secret.Resolver {
 }
 
 func cases() []adapterCase {
-	// OpenCode is the only adapter since v0.13.0; the table stays so a future
-	// second adapter re-enters through the same contract.
+	// Every registered harness adapter runs the same contract (ADR 0014).
 	return []adapterCase{
+		{
+			name:       "claude",
+			newAdapter: func(home, content string) adapter.Adapter { return claude.New(home, content) },
+			newConfig: func() *config.Config {
+				return &config.Config{Settings: config.Settings{Claude: map[string]any{"theme": "dark"}}}
+			},
+			managedDir: func(home string) string { return filepath.Join(home, ".claude") },
+			driftKey:   "setting.theme",
+			driftMutate: func(t *testing.T, home string) {
+				t.Helper()
+				p := filepath.Join(home, ".claude", "settings.json")
+				raw, err := os.ReadFile(p)
+				if err != nil {
+					t.Fatalf("read claude settings for drift mutation: %v", err)
+				}
+				doc, err := jsonutil.Standardize(raw)
+				if err != nil {
+					t.Fatal(err)
+				}
+				out, err := jsonutil.SetJSON(doc, "theme", "light")
+				if err != nil {
+					t.Fatal(err)
+				}
+				mustWrite(t, p, string(out))
+			},
+			malformed: func(t *testing.T, home string) {
+				t.Helper()
+				dir := filepath.Join(home, ".claude")
+				mustMkdir(t, dir)
+				mustWrite(t, filepath.Join(dir, "settings.json"), `{"theme": }`)
+			},
+			secretConfig: func() *config.Config {
+				return &config.Config{Settings: config.Settings{Claude: map[string]any{"env": map[string]any{"API_KEY": "${pass:ai/key}"}}}}
+			},
+			secretKey: "setting.env",
+		},
 		{
 			name:       "opencode",
 			newAdapter: func(home, content string) adapter.Adapter { return opencode.New(home, content) },

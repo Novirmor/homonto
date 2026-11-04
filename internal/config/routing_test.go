@@ -144,7 +144,8 @@ func TestRoutingRejectsInvalidPolicies(t *testing.T) {
 		{"[routing.default.opencode]\nmode = \"auto\"\nfallback = \"p/x\"\ncandidates = [\"p/a\", \"p/a\"]\n", "candidates must be distinct"},
 		{"[routing.default.opencode]\nmode = \"turbo\"\nmodel = \"p/m\"\n", `mode "turbo" is not static or auto`},
 		{"[routing.models.opencode.\"p/m\"]\ncost = -2.0\n", "must be non-negative"},
-		{"[routing.default.claude]\nmodel = \"p/m\"\n", "unknown configuration fields"},
+		{"[routing.default.claude]\nmodel = \"p/m\"\n", "must be a Claude Code alias"},
+		{"[routing.default.claude]\nmode = \"auto\"\nfallback = \"sonnet\"\nproviders = [\"anthropic\"]\n", "providers do not apply to Claude Code"},
 	} {
 		if _, err := loadRouting(t, tc.body); err == nil || !strings.Contains(err.Error(), tc.want) {
 			t.Errorf("%q: err = %v, want %q", tc.body, err, tc.want)

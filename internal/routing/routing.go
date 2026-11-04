@@ -30,6 +30,19 @@ type Discoverer interface {
 	Models(ctx context.Context) ([]string, error)
 }
 
+// Static is a fixed model list, for a harness that cannot list its models:
+// the ids the config describes. An empty list is a discovery failure, so an
+// auto policy falls back.
+type Static []string
+
+// Models returns the list.
+func (s Static) Models(context.Context) ([]string, error) {
+	if len(s) == 0 {
+		return nil, errors.New("this harness cannot list its models; describe candidates under [routing.models.<harness>]")
+	}
+	return append([]string(nil), s...), nil
+}
+
 // Selection is the resolved model for one policy.
 type Selection struct {
 	Model    string `json:"model"`

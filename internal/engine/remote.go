@@ -336,7 +336,7 @@ func (e *Engine) GCRemoteCache(dryRun bool) ([]remote.Digest, error) {
 // de-duplicated by name.
 func (e *Engine) declaredRemoteSubagents() (map[string]config.Resource, error) {
 	out := map[string]config.Resource{}
-	for _, tool := range []string{"opencode"} {
+	for _, tool := range config.HarnessIDs() {
 		entries, err := e.Cfg.ExpandedSubagentEntriesForTool(tool)
 		if err != nil {
 			return nil, err

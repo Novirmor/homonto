@@ -6,8 +6,12 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/Novirmor/homonto/internal/agentfm"
 )
 
 type claudeView struct {
@@ -241,5 +245,44 @@ func TestDirectServerSpeaksMCPAndRelaysHooksOverItsSocket(t *testing.T) {
 	}
 	if _, err := RelaySocket(testConfig, "ses", HookEvent{Event: "Stop"}); err == nil {
 		t.Fatal("socket outlived the server")
+	}
+}
+
+func TestClaudeHookEnforcesTheRunningAgentsPolicy(t *testing.T) {
+	dir := t.TempDir()
+	policy := agentfm.EncodeClaudePolicy(agentfm.ClaudePolicy{Bash: []agentfm.PolicyRule{{Pattern: "*", Action: "ask"}, {Pattern: "go test*", Action: "allow"}, {Pattern: "git push*", Action: "deny"}}})
+	if err := os.WriteFile(filepath.Join(dir, "onto-implementer.md"), []byte("---\nname: onto-implementer\nhomonto_policy: \""+policy+"\"\n---\nbody\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	deps := HookDeps{AgentDirs: []string{dir}, Snapshot: func(string) (string, error) { return "", errors.New("unused") },
+		Relay: func(string, string, HookEvent) (HookReply, error) { return HookReply{}, nil }}
+	decide := func(agent, command string) string {
+		var out bytes.Buffer
+		in, _ := json.Marshal(map[string]any{"session_id": "s", "hook_event_name": "PreToolUse", "agent_id": "a", "agent_type": agent,
+			"tool_name": "Bash", "tool_input": map[string]any{"command": command}})
+		if err := RunClaudeHook(bytes.NewReader(in), &out, testConfig, deps); err != nil {
+			t.Fatal(err)
+		}
+		var got struct {
+			HookSpecificOutput struct {
+				PermissionDecision string `json:"permissionDecision"`
+			} `json:"hookSpecificOutput"`
+		}
+		_ = json.Unmarshal(out.Bytes(), &got)
+		return got.HookSpecificOutput.PermissionDecision
+	}
+	for cmd, want := range map[string]string{"go test ./...": "allow", "git push origin": "deny", "make": "ask"} {
+		if got := decide("onto-implementer", cmd); got != want {
+			t.Errorf("%q: %q, want %q", cmd, got, want)
+		}
+	}
+	if got := decide("someone-else", "git push origin"); got != "" {
+		t.Errorf("an agent homonto did not render has no policy: %q", got)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "broken.md"), []byte("---\nhomonto_policy: \"%%%\"\n---\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if got := decide("broken", "ls"); got != "deny" {
+		t.Errorf("an unreadable policy must fail closed: %q", got)
 	}
 }

@@ -6,16 +6,16 @@ import (
 	"github.com/Novirmor/homonto/internal/adapter"
 )
 
-// TestBuiltins_BuildsTheOpenCodeAdapter verifies the built-in registry builds
-// exactly the registered built-ins in order — OpenCode alone since v0.13.0,
-// which is also the assertion that no removed adapter quietly re-registers.
-func TestBuiltins_BuildsTheOpenCodeAdapter(t *testing.T) {
+// TestBuiltins_BuildsTheHarnessAdapters verifies the built-in registry builds
+// exactly the registered built-ins in order: OpenCode first, then Claude Code
+// (M4.4); no removed adapter (codex) quietly re-registers.
+func TestBuiltins_BuildsTheHarnessAdapters(t *testing.T) {
 	adapters := Builtins().Build(Deps{Home: "/home/u", ContentDir: "/repo/content"})
 	got := make([]string, len(adapters))
 	for i, a := range adapters {
 		got[i] = a.Name()
 	}
-	want := []string{"opencode"}
+	want := []string{"opencode", "claude"}
 	if len(got) != len(want) {
 		t.Fatalf("built %d adapters %v, want %v", len(got), got, want)
 	}

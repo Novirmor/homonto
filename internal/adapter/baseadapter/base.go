@@ -309,6 +309,9 @@ func (b *Base) subagentSource(entry config.NamedResource) string {
 	return filepath.Join(b.Content, "subagents", LocalSourceName(entry.Resource.Source, entry.Name)+".md")
 }
 
+// HarnessID is the adapter's harness, without a repo suffix.
+func (b *Base) HarnessID() string { return b.Tool }
+
 // SetRenderedSubagents installs the engine's rendered external subagents.
 func (b *Base) SetRenderedSubagents(root string, rendered map[string][]byte) {
 	b.RenderedSubagentRoot = root

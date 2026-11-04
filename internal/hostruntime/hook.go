@@ -6,8 +6,12 @@ import (
 	"errors"
 	"io"
 	"net"
+	"os"
+	"path/filepath"
 	"strings"
 	"time"
+
+	"github.com/Novirmor/homonto/internal/agentfm"
 )
 
 // ClaudeContextLimit is Claude Code's cap on one additionalContext string
@@ -25,6 +29,7 @@ type ClaudeHookInput struct {
 	ToolUseID    string          `json:"tool_use_id"`
 	ToolInput    json.RawMessage `json:"tool_input"`
 	ToolResponse json.RawMessage `json:"tool_response"`
+	Cwd          string          `json:"cwd"`
 	Reason       string          `json:"reason"`
 	Error        string          `json:"error"`
 }
@@ -36,6 +41,29 @@ type HookDeps struct {
 	// Relay sends an event to the session's direct server; it fails when no
 	// server is listening.
 	Relay func(configPath, sessionID string, ev HookEvent) (HookReply, error)
+	// AgentDirs are where rendered agents live, searched in order for the
+	// running agent's homonto policy.
+	AgentDirs []string
+}
+
+// agentPolicy finds the running agent's rendered policy. An agent homonto did
+// not render has none; a rendered agent whose file cannot be read or parsed
+// fails closed.
+func agentPolicy(dirs []string, agent string) (agentfm.ClaudePolicy, bool, error) {
+	if agent == "" || strings.ContainsAny(agent, `/\`) || agent == "." || agent == ".." {
+		return agentfm.ClaudePolicy{}, false, nil
+	}
+	for _, dir := range dirs {
+		data, err := os.ReadFile(filepath.Join(dir, agent+".md"))
+		if errors.Is(err, os.ErrNotExist) {
+			continue
+		}
+		if err != nil {
+			return agentfm.ClaudePolicy{}, false, err
+		}
+		return agentfm.ClaudePolicyOf(data)
+	}
+	return agentfm.ClaudePolicy{}, false, nil
 }
 
 // coordinatorTool names the MCP tools only the coordinator may call.
@@ -64,6 +92,24 @@ func RunClaudeHook(in io.Reader, out io.Writer, configPath string, deps HookDeps
 	if input.Event == "PreToolUse" && input.AgentID != "" && coordinatorTool(input.ToolName) {
 		return writeHook(out, input.Event, "", "[wrong_agent] homonto tools are coordinator-only; worker "+jsonText(input.AgentType)+" cannot call "+input.ToolName)
 	}
+	// The running agent's shell, path and spawn rules (agent-tool-limits,
+	// shell-rules): a deny ends the call here; allow and ask stand unless the
+	// core denies.
+	var policy agentfm.Decision
+	if input.Event == "PreToolUse" {
+		p, ok, err := agentPolicy(deps.AgentDirs, input.AgentType)
+		if err != nil {
+			return writeHook(out, input.Event, "", "[policy_unavailable] homonto cannot read this agent's policy; re-run homonto apply")
+		}
+		if ok {
+			var args map[string]any
+			_ = json.Unmarshal(input.ToolInput, &args)
+			policy = p.Evaluate(input.ToolName, args, input.Cwd)
+			if policy.Action == "deny" {
+				return writeHook(out, input.Event, "", policy.Reason)
+			}
+		}
+	}
 	reply, relayErr := deps.Relay(configPath, input.SessionID, ev)
 	if relayErr != nil {
 		reply = HookReply{}
@@ -80,10 +126,24 @@ func RunClaudeHook(in io.Reader, out io.Writer, configPath string, deps HookDeps
 		}
 		return writeHook(out, input.Event, joinContext(ContextBlocksWithin(snap, configPath, reply.Context, ClaudeContextLimit)), "")
 	case "PreToolUse":
-		return writeHook(out, input.Event, "", reply.Deny)
+		if reply.Deny != "" {
+			return writeHook(out, input.Event, "", reply.Deny)
+		}
+		return writeDecision(out, policy.Action)
 	default:
 		return writeHook(out, input.Event, reply.Context, "")
 	}
+}
+
+// writeDecision emits an allow or ask decision; anything else leaves the
+// harness's own permission rules in charge.
+func writeDecision(out io.Writer, action string) error {
+	if action != "allow" && action != "ask" {
+		return nil
+	}
+	return json.NewEncoder(out).Encode(map[string]any{"hookSpecificOutput": map[string]any{
+		"hookEventName": "PreToolUse", "permissionDecision": action,
+		"permissionDecisionReason": "homonto policy for this agent"}})
 }
 
 func joinContext(blocks []string) string { return strings.Join(blocks, "\n\n") }

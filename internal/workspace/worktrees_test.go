@@ -253,8 +253,11 @@ func TestWorktreeNamesAndPreconditions(t *testing.T) {
 	}
 	_, err := CreateWorktree(l, "onto", "feature", "../a", "main", "work/test")
 	wtError(t, err, "unsafe path")
-	_, err = CreateWorktree(l, "other", "feature", "a", "main", "work/test")
+	_, err = CreateWorktree(l, "Other!", "feature", "a", "main", "work/test")
 	wtError(t, err, "workflow must")
+	// An external native engine needs its own lifecycle record (#67).
+	_, err = CreateWorktree(l, "other", "feature", "a", "main", "work/test")
+	wtError(t, err, "matching active state required for other/feature")
 	missing := l
 	missing.WorktreesDir = ""
 	_, err = CreateWorktree(missing, "onto", "feature", "a", "main", "work/test")

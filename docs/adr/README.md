@@ -125,3 +125,4 @@ numbering: [`../agents/adr.md`](../agents/adr.md).
 | [0103](0103-serve-the-runtime-core-to-every-harness.md) | Serve the runtime core to every harness | Accepted |
 | [0104](0104-project-claude-code-natively.md) | Project Claude Code natively | Accepted |
 | [0105](0105-accept-limited-claude-code-capabilities-per-guarantee.md) | Accept limited Claude Code capabilities per guarantee | Accepted |
+| [0106](0106-let-external-engines-own-lifecycle-records.md) | Let external engines own lifecycle records | Accepted |

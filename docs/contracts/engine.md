@@ -61,8 +61,26 @@ task reads the engine's contract, never its name
   engine name (`homonto worktree create CHANGE --workflow ENGINE ...`). That
   binding is how the engine reports state to the coordinator: the task
   validates its recorded generation and bindings against it on every resume.
-  Only builtin native engines can run tasks today. External lifecycle
-  reporting through the same registry is #67.
+  External native engines report the same way. The engine's binary keeps one
+  lifecycle record per change at
+  `<workflow root>/engines/<engine>/<change>/<engine>-state.yaml`:
+
+  ```yaml
+  schema_version: 1
+  workflow: my-engine      # the engine's name
+  change: my-change
+  id: 2f1c…                # stable generation id; required
+  phase: work              # the engine's own phase names
+  repo_mode: explicit
+  repos: [api]
+  repo_bases:
+    api: {base_ref: <commit>, base_branch: main}
+  # abandoned: true / archived: true, or phase completed|abandoned, is terminal
+  ```
+
+  `homonto worktree create CHANGE --workflow my-engine ...` binds checkouts
+  against it, and a task validates the record's generation and bindings on
+  every resume ([ADR 0106](../adr/0106-let-external-engines-own-lifecycle-records.md)).
 - A task records the lifecycle it was created with. If the installed engine
   later declares a different one, resume fails and names both.
 

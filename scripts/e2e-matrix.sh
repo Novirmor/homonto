@@ -4,10 +4,12 @@
 # Builds one image containing homonto + onto (from source) and the ACTUAL
 # OpenCode CLI, then runs a matrix of suites against it:
 #
-#   suite \ tool   opencode
-#   projection     ✓          (homonto apply → real tool reads config)
-#   live           ✓          (real account prompt → PONG)
+#   suite \ tool   opencode   claude
+#   projection     ✓          ✓        (homonto apply → real tool reads config)
+#   live           ✓                   (real account prompt → PONG)
+#   recovery       ✓          ✓        (start/resume/compaction context, runtime tool)
 #   onto           shared, tool-independent (full open→…→close workflow)
+#   reference      shared (remote reference set, both harnesses, native lifecycle)
 #
 # The `live` cells reuse the invoking user's own accounts by mounting their
 # credentials READ-ONLY at run time (never baked into the image). OpenCode uses a
@@ -26,7 +28,8 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 IMAGE="${HOMONTO_E2E_IMAGE:-homonto-e2e}"
 OUT="$ROOT/test/e2e/.out"
 OPENCODE_AUTH="${OPENCODE_AUTH:-$HOME/.local/share/opencode/auth.json}"
-OPENCODE_MODEL="${E2E_OPENCODE_MODEL:-opencode/north-mini-code-free}"
+OPENCODE_MODEL="${E2E_OPENCODE_MODEL:-opencode/deepseek-v4.1-flash-free}"
+CLAUDE_AUTH="${CLAUDE_AUTH:-$HOME/.claude/.credentials.json}"
 
 DO_BUILD=1
 SKIP_LIVE=0
@@ -78,7 +81,9 @@ fi
 
 # --- matrix -----------------------------------------------------------------
 run_cell projection opencode
+run_cell projection claude
 run_cell onto ""
+run_cell reference ""
 
 if [ "$SKIP_LIVE" -eq 1 ]; then
   skip_cell live/opencode
@@ -87,6 +92,23 @@ else
     run_cell live opencode -v "$OPENCODE_AUTH:/root/.local/share/opencode/auth.json:ro"
   else
     echo "   (no opencode auth at $OPENCODE_AUTH — skipping live/opencode)"; skip_cell live/opencode
+  fi
+fi
+
+# Real-harness recovery (M4.11): startup, resume and compaction context on
+# both harnesses, and a runtime tool call from inside a Claude Code session.
+if [ "$SKIP_LIVE" -eq 1 ]; then
+  skip_cell recovery/opencode; skip_cell recovery/claude
+else
+  if [ -f "$OPENCODE_AUTH" ]; then
+    run_cell recovery opencode -v "$OPENCODE_AUTH:/root/.local/share/opencode/auth.json:ro"
+  else
+    skip_cell recovery/opencode
+  fi
+  if [ -f "$CLAUDE_AUTH" ]; then
+    run_cell recovery claude -v "$CLAUDE_AUTH:/root/.claude/.credentials.json:ro"
+  else
+    echo "   (no claude credentials at $CLAUDE_AUTH — skipping recovery/claude)"; skip_cell recovery/claude
   fi
 fi
 

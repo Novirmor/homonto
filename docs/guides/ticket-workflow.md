@@ -93,7 +93,7 @@ checks the recorded generation on every resume:
 
 ```sh
 ticket-engine start abc-12 --root <workflow root> --repo api --base <commit> --branch main
-homonto worktree create abc-12 --workflow ticket-engine --repo api --base <commit> --branch ticket/abc-12 --json
+homonto worktree create abc-12 --workflow ticket-engine --repo api --base main --branch ticket/abc-12 --json
 homonto workspace task create abc-12 --engine ticket-engine --change abc-12 --repo api --isolation existing
 ticket-engine phase abc-12 --root <workflow root> implement
 ```

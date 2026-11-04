@@ -18,7 +18,7 @@ The coordinator runs this engine. Workers never run `ticket-engine` or
 
    ```sh
    ticket-engine start CHANGE --root <workflowRoot> --repo ALIAS --base <commit> --branch <base branch>
-   homonto worktree create CHANGE --workflow ticket-engine --repo ALIAS --base <commit> --branch ticket/CHANGE --json
+   homonto worktree create CHANGE --workflow ticket-engine --repo ALIAS --base <base branch> --branch ticket/CHANGE --json
    homonto workspace task create CHANGE --engine ticket-engine --change CHANGE --repo ALIAS --isolation existing
    ```
 

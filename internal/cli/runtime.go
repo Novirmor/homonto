@@ -3,6 +3,7 @@ package cli
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 
@@ -50,7 +51,12 @@ func runtimeMCPCmd() *cobra.Command {
 			if !filepath.IsAbs(configPath) {
 				return errors.New("runtime mcp: --config must be the absolute selected config path")
 			}
+			// Health checks (claude mcp list) start the server outside any
+			// session; it serves tools but no hook ever reaches it.
 			session := os.Getenv(claudeSessionEnv)
+			if session == "" {
+				session = fmt.Sprintf("unbound-%d", os.Getpid())
+			}
 			srv, err := hostruntime.NewDirectServer(cmd.InOrStdin(), cmd.OutOrStdout(), hostruntime.DirectOptions{
 				ConfigPath: configPath, Hosts: hosts, SessionID: session, Dialect: hostruntime.DialectClaude,
 				Version: buildinfo.Resolve(Version, buildinfo.DevVersion)})

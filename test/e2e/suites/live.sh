@@ -13,7 +13,7 @@ case "$TOOL" in
   opencode)
     [ -f "$HOME/.local/share/opencode/auth.json" ] || \
       fail "opencode auth not mounted (orchestrator must mount ~/.local/share/opencode/auth.json read-only)"
-    MODEL="${E2E_OPENCODE_MODEL:-opencode/north-mini-code-free}"
+    MODEL="${E2E_OPENCODE_MODEL:-opencode/deepseek-v4.1-flash-free}"
     log "opencode live prompt via mounted account (model: $MODEL)"
     out="$(opencode run -m "$MODEL" "$PROMPT" 2>&1)"; printf '%s\n' "$out"
     contains "$out" "PONG" "opencode did not return PONG"

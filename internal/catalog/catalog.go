@@ -70,6 +70,7 @@ type Framework struct {
 
 // Catalog is the loaded, indexed catalog.
 type Catalog struct {
+	harnessRef []byte // generated harness map for the shared skill (SetHarnessReference)
 	fsys       fs.FS
 	frameworks map[string]Framework
 	skills     map[string]string // skill name -> source-relative path (global index)

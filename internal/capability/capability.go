@@ -57,13 +57,25 @@ const (
 	// asked to follow. It never satisfies a requirement; plan names it so the
 	// gap is not mistaken for a missing adapter feature.
 	InstructionOnly Level = "instruction-only"
+	// Limited: the harness provides the capability with a gap the
+	// limited-mode policy accepted (ADR 0105). It satisfies a requirement,
+	// and doctor and the generated harness map name the limitation.
+	Limited Level = "limited"
 )
+
+// Satisfies reports whether a level meets a requirement.
+func (l Level) Satisfies() bool { return l == Enforced || l == Limited }
 
 // Declaration is what one adapter's harness provides at a pinned version.
 type Declaration struct {
 	Harness  string
 	Version  string
 	Provides map[Name]Level
+	// Native spells each provided capability in the harness's own terms,
+	// for the generated harness map the doctrine links to.
+	Native map[Name]string
+	// Limitations explains every Limited or InstructionOnly capability.
+	Limitations map[Name]string
 }
 
 // Gap is one required capability a declaration does not satisfy.
@@ -79,7 +91,8 @@ func (g Gap) String() string {
 	return fmt.Sprintf("%s (%s only)", g.Name, g.Level)
 }
 
-// Gaps returns the required capabilities d does not provide as enforced,
+// Gaps returns the required capabilities d does not provide (enforced or with
+// an accepted limitation),
 // sorted by name. Unknown names are reported as absent; ValidateNames is the
 // place that rejects them by name.
 func (d Declaration) Gaps(required []string) []Gap {
@@ -91,9 +104,7 @@ func (d Declaration) Gaps(required []string) []Gap {
 			continue
 		}
 		seen[n] = true
-		switch level := d.Provides[n]; level {
-		case Enforced:
-		default:
+		if level := d.Provides[n]; !level.Satisfies() {
 			out = append(out, Gap{Name: n, Level: level})
 		}
 	}
@@ -152,5 +163,80 @@ func OpenCode() Declaration {
 	for _, n := range vocabulary {
 		provides[n] = Enforced
 	}
-	return Declaration{Harness: "opencode", Version: "2", Provides: provides}
+	return Declaration{Harness: "opencode", Version: "2", Provides: provides, Native: map[Name]string{
+		Skills:           "skills under `.opencode/skills/`, loaded by the `skill` tool",
+		Commands:         "slash commands under `.opencode/command/`",
+		Subagents:        "the `task` tool with the agent's name",
+		AgentToolLimits:  "each agent's `permission` map",
+		ShellRules:       "`permission.bash` allow/ask/deny patterns",
+		QuestionDialog:   "the built-in `question` tool",
+		ContextHooks:     "the workflow plugin's context and compaction hooks",
+		PermissionEvents: "the workflow plugin's `permission.asked`/`permission.replied` events",
+		MCP:              "configured MCP servers; homonto's runtime tools come from the workflow plugin",
+		StatusUI:         "the workflow plugin's TUI status panel",
+	}}
 }
+
+// ClaudeCode is the Claude Code declaration, verified against 2.1.318
+// (docs/harness-architecture.md). Limitations follow ADR 0105.
+func ClaudeCode() Declaration {
+	return Declaration{Harness: "claude", Version: "2.1", Provides: map[Name]Level{
+		Skills:           Enforced,
+		Commands:         Enforced,
+		Subagents:        Enforced,
+		AgentToolLimits:  Enforced,
+		ShellRules:       Limited,
+		QuestionDialog:   Limited,
+		ContextHooks:     Enforced,
+		PermissionEvents: Limited,
+		MCP:              Enforced,
+	}, Native: map[Name]string{
+		Skills:           "skills under `.claude/skills/`, loaded by the `Skill` tool",
+		Commands:         "slash commands under `.claude/commands/`",
+		Subagents:        "the `Agent` tool with `subagent_type` set to the agent's name",
+		AgentToolLimits:  "each agent's `tools`/`disallowedTools` frontmatter and homonto's `PreToolUse` hook",
+		ShellRules:       "`permissions` `Bash(...)` allow/ask/deny rules in `settings.json`",
+		QuestionDialog:   "the `AskUserQuestion` tool",
+		ContextHooks:     "homonto's `SessionStart` hook (startup, resume, clear and compaction)",
+		PermissionEvents: "homonto's `PermissionRequest`, `PermissionDenied` and `SubagentStop` hooks",
+		MCP:              "`.mcp.json` servers; homonto's runtime tools are `mcp__homonto__<tool>`",
+	}, Limitations: map[Name]string{
+		ShellRules:       "Bash rules match command prefixes; a command reached through a wrapper the rules do not name is not caught. Coordinator-only tool access is also guarded by homonto's hook.",
+		QuestionDialog:   "AskUserQuestion is unavailable in non-interactive (`claude -p`) sessions and takes at most four questions, so a publication draft holds at most four items. A question that arrives pre-answered is denied.",
+		PermissionEvents: "Claude Code reports a worker's permission prompt but not the user's answer. A prompt whose tool never ran before the worker stopped is handed back as refused.",
+	}}
+}
+
+// Tier is the highest workflow support level a declaration reaches (ADR 0082).
+type Tier string
+
+const (
+	TierWorkflow   Tier = "workflow"
+	TierLite       Tier = "lite"
+	TierProjection Tier = "projection"
+)
+
+var tierRequirements = []struct {
+	tier  Tier
+	needs []Name
+}{
+	{TierWorkflow, []Name{Skills, Commands, Subagents, AgentToolLimits, ShellRules, QuestionDialog, ContextHooks, MCP}},
+	{TierLite, []Name{Skills, Subagents, QuestionDialog, MCP}},
+}
+
+// Tier derives the declaration's tier from what it provides.
+func (d Declaration) Tier() Tier {
+	for _, t := range tierRequirements {
+		ok := true
+		for _, n := range t.needs {
+			ok = ok && d.Provides[n].Satisfies()
+		}
+		if ok {
+			return t.tier
+		}
+	}
+	return TierProjection
+}
+
+// Declarations returns every built-in harness declaration, OpenCode first.
+func Declarations() []Declaration { return []Declaration{OpenCode(), ClaudeCode()} }

@@ -26,4 +26,4 @@ not permission to claim a red run. New bug tasks still start with red.
 If a test passes before the fix, investigate whether it exercises the claimed
 behavior. If a faithful reproduction needs unavailable infrastructure, record the
 blocker rather than silently switching a bug to direct mode. Ask through the
-coordinator's built-in `question` tool only when a user-owned decision is needed.
+coordinator's native question dialog ([harness map](../../homonto/references/harness.md)) only when a user-owned decision is needed.

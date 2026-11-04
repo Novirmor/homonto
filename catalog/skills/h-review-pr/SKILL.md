@@ -39,7 +39,7 @@ workflow to install and stop.
 ## Required order
 
 For supported comments and reviews, prefer the shared
-[OpenCode draft flow](../homonto/references/publication.md#opencode-comment-and-review-drafts)
+[draft flow](../homonto/references/publication.md#comment-and-review-drafts)
 when its tools are available. It implements the draft, decision, and posting steps
 below without an extra approval dialog; context validation remains required.
 

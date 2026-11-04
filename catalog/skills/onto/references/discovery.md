@@ -20,7 +20,7 @@ inside the archive.
 | Inventory / request | Route |
 |---|---|
 | No match, new work requested | Shared workflow selection, then selected entry skill |
-| No match, no work described | Ask what to work on through the built-in `question` tool |
+| No match, no work described | Ask what to work on through the native question dialog ([harness map](../../homonto/references/harness.md)) |
 | Unique matching active change | Resume its recorded workflow |
 | One active change, request fits scope | Continue it |
 | Named or uniquely matching change among several | Resume that change |

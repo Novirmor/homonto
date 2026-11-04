@@ -78,7 +78,7 @@ and append the repair task. Keep the recorded phase and existing isolation.
 
 Return through verification before close. Preset repairs do not require a new
 plan or design unless eligibility triggers escalation. Scope expansion needs a
-decision through OpenCode's built-in `question` tool.
+decision through the harness's native question dialog ([harness map](../../homonto/references/harness.md)).
 
 An archived pending change only finishes its recorded integration. A defect in
 completed history is new work, referencing that archive and following normal

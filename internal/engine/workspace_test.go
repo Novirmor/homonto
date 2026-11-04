@@ -141,6 +141,10 @@ func TestWorkspaceProjectionAndPermissions(t *testing.T) {
 			e := build()
 			apply(e)
 			checkPermissions(e, parent, "")
+			if data, err := os.ReadFile(filepath.Join(e.CatalogDir(), "homonto", catalog.HarnessReferencePath)); err != nil ||
+				!bytes.Equal(data, catalog.RenderHarness(e.harnessDeclarations())) || !strings.Contains(string(data), "## OpenCode") {
+				t.Fatalf("generated harness map missing or stale: %v", err)
+			}
 			for _, skill := range []string{"homonto"} {
 				ref := filepath.Join(e.CatalogDir(), skill, catalog.WorkspaceReferencePath)
 				data, err := os.ReadFile(ref)

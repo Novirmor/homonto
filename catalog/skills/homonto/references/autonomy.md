@@ -57,9 +57,8 @@ task only when that triage ends in a refusal or no available answer.
 
 ## Decide before asking
 
-Whenever user input is required, the coordinator uses OpenCode's built-in
-`question` tool to display a native dialog box. Every question to the user goes
-through this tool: clarifications, free-form questions, confirmations and approval
+Whenever user input is required, the coordinator uses the harness's native question dialog ([harness map](harness.md)) to display a native dialog box. Every question to the user goes
+through this dialog: clarifications, free-form questions, confirmations and approval
 requests, even a single yes/no question. This applies throughout all workflows
 and direct skill entry, not only at decision gates.
 Present a focused prompt with viable choices, short trade-offs,
@@ -67,7 +66,7 @@ and the recommended choice first when one exists; free-form answers remain
 available. Do not substitute a question in ordinary chat, a shell prompt, or an
 invented dialog. This applies to workflow selection, scope, dirty-work treatment,
 waivers and publication decisions. For plugin draft approval, pass the returned
-native question unchanged under the publication contract. If the question tool
+native question unchanged under the publication contract. If the question dialog
 is unavailable, denied, or dismissed, preserve state and report the pending
 decision; never infer consent or switch channels around it. Subagents return
 questions to the coordinator rather than prompting the user themselves.

@@ -634,6 +634,7 @@ func (e *Engine) materializeCatalog() error {
 			return err
 		}
 	}
+	p.cl.SetHarnessReference(p.harnessRef)
 	if err := p.cl.Materialize(e.CatalogRoot, p.skills, p.shellProxy, p.codeIntel, p.tmpDir, p.workspaceRef); err != nil {
 		return err
 	}
@@ -853,6 +854,7 @@ type catalogPlan struct {
 	// declared) rendered into the dispatchers and the shared knowledge skill.
 	tmpDir          string
 	workspaceRef    []byte
+	harnessRef      []byte
 	workflowBinding []byte
 	fingerprint     string
 	upToDate        bool
@@ -1234,7 +1236,12 @@ func (e *Engine) planCatalog() (*catalogPlan, error) {
 	}
 	tmpFP := catalog.TmpFingerprint(tmpEnabled, tmpDir)
 	workspaceRef := catalog.RenderWorkspace(e.WorkspaceLayout)
+	harnessRef := catalog.RenderHarness(e.harnessDeclarations())
 	fingerprint := renderFingerprint(renderCtx) + ":" + contentFP + ":" + toolingFP + ":" + tmpFP
+	if len(harnessRef) > 0 {
+		harnessFP := sha256.Sum256(harnessRef)
+		fingerprint += ":h" + hex.EncodeToString(harnessFP[:])
+	}
 	if len(workspaceRef) > 0 {
 		workspaceFP := sha256.Sum256(workspaceRef)
 		fingerprint += ":" + hex.EncodeToString(workspaceFP[:])
@@ -1252,6 +1259,7 @@ func (e *Engine) planCatalog() (*catalogPlan, error) {
 		e.State.RenderFingerprintRecorded() == fingerprint &&
 		allSkillDirsExist(e.CatalogRoot, skillNames, cl, tmpDir) &&
 		allWorkspaceReferencesExist(e.CatalogRoot, skillNames, workspaceRef) &&
+		allHarnessReferencesExist(e.CatalogRoot, skillNames, harnessRef) &&
 		allCommandFilesExist(e.CommandCatalogRoot, cmdNames) &&
 		allSubagentFilesExist(e.SubagentCatalogRoot, subNames, cl, renderCtx) &&
 		allPluginDirsExist(e.PluginCatalogRoot, pluginNames, e.Cfg.WorkflowContextEnabled()) &&
@@ -1267,6 +1275,7 @@ func (e *Engine) planCatalog() (*catalogPlan, error) {
 		codeIntel:       tooling.CodeIntel,
 		tmpDir:          tmpDir,
 		workspaceRef:    workspaceRef,
+		harnessRef:      harnessRef,
 		workflowBinding: workflowBinding,
 		fingerprint:     fingerprint,
 		upToDate:        upToDate,
@@ -1308,6 +1317,21 @@ func allWorkspaceReferencesExist(root string, names []string, ref []byte) bool {
 	for _, name := range names {
 		if catalog.HasWorkspaceReference(name) {
 			fi, err := os.Stat(filepath.Join(root, name, filepath.FromSlash(catalog.WorkspaceReferencePath)))
+			if err != nil || !fi.Mode().IsRegular() {
+				return false
+			}
+		}
+	}
+	return true
+}
+
+func allHarnessReferencesExist(root string, names []string, ref []byte) bool {
+	if len(ref) == 0 {
+		return true
+	}
+	for _, name := range names {
+		if catalog.HasHarnessReference(name) {
+			fi, err := os.Stat(filepath.Join(root, name, filepath.FromSlash(catalog.HarnessReferencePath)))
 			if err != nil || !fi.Mode().IsRegular() {
 				return false
 			}

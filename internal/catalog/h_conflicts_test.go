@@ -11,7 +11,7 @@ func TestHResolveConflictsScopeAndDelivery(t *testing.T) {
 	text := hPromptText(t, "skills/h-resolve-conflicts/SKILL.md")
 	for _, want := range []string{
 		"Do not require an engine", "Do not create lifecycle records",
-		"OpenCode's built-in `question` tool", "every question to the user",
+		"the harness's native question dialog", "every question to the user",
 		"conflict-resolution-only", "pre-existing test hardening", "cumulative repair scope",
 		"before editing beyond that boundary", "references/review-triage.md",
 		"canonical host/repository IDs", "state: OPEN", "baseRefOid", "headRefOid",

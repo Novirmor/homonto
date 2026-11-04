@@ -30,7 +30,7 @@ diagnostic probe does not authorize changing everything it uncovers.
 Check **cumulative repair scope**, not just each small finding: extra rounds must
 not turn a narrow task into a broad cleanup. If a proposed repair materially
 expands behavior, acceptance criteria, affected components, effort or risk beyond
-the request, ask through OpenCode's built-in `question` tool **before appending or
+the request, ask through the harness's native question dialog ([harness map](harness.md)) **before appending or
 dispatching repair tasks** or making those edits. Explain the finding, why the
 larger repair is needed, its expected scope/cost, and the bounded alternative
 (including leaving it as a follow-up). Wait for explicit approval; no answer is

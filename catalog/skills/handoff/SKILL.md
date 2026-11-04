@@ -26,7 +26,7 @@ directory when `references/tmp.md` names one, as
 `handoff-<YYYYMMDD-HHMMSS>.md`. Otherwise return the handoff in conversation;
 do not require an external-directory write.
 
-Use OpenCode's built-in `question` tool for every question to the user, including
+Use the harness's native question dialog for every question to the user, including
 clarifications and free-form input, in standalone mode too. Always display the
 native dialog box. If unavailable, denied or dismissed, return the handoff with
 the decision pending; do not substitute chat/shell prompts or assume consent.

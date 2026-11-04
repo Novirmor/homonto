@@ -208,7 +208,7 @@ one instead of implementing it. When `plan.md` marks tasks
 in independent repositories, dispatch their reviews (and any needed
 `onto-explorer` investigation) **concurrently** — one subagent invocation per
 task — through the Task tool; send several independent read-only tasks in one
-turn so OpenCode runs them as parallel child sessions. The reviews then
+turn so the harness runs them as parallel subagents. The reviews then
 proceed in parallel while you implement in unrelated repositories. Pause writers
 in every reviewed checkout. Tasks in the same repository stay serial.
 

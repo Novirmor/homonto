@@ -107,6 +107,17 @@ func (c *Catalog) Materialize(dstRoot string, skillNames []string, shellProxy, c
 				return werr
 			}
 		}
+		if len(c.harnessRef) > 0 && HasHarnessReference(name) {
+			target := filepath.Join(staging, filepath.FromSlash(HarnessReferencePath))
+			if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
+				_ = os.RemoveAll(staging)
+				return err
+			}
+			if err := fsutil.WriteControlPlane(target, c.harnessRef, 0o644); err != nil {
+				_ = os.RemoveAll(staging)
+				return err
+			}
+		}
 		if len(workspaceRef) > 0 && HasWorkspaceReference(name) {
 			target := filepath.Join(staging, filepath.FromSlash(WorkspaceReferencePath))
 			if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {

@@ -37,8 +37,8 @@ with the matched archive identity; an unsupported API/occupied target is a block
 git merge --no-ff <sourceCommit>
 ```
 
-Resolve mechanical conflicts from evidence; abort and use the built-in `question`
-tool when resolution needs product intent. Verify the actual receiving tree under
+Resolve mechanical conflicts from evidence; abort and use the native question
+dialog ([harness map](../../homonto/references/harness.md)) when resolution needs product intent. Verify the actual receiving tree under
 the publication contract before push. Record the successful merge:
 
 ```sh

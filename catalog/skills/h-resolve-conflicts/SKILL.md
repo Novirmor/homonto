@@ -28,7 +28,7 @@ Follow shared [workspace policy](../homonto/references/workspace-policy.md),
 [verified source publication](../homonto/references/publication.md),
 [h autonomy](../h-resolve-issue/references/autonomy.md), and
 [proportionality before repair](../homonto/references/review-triage.md#proportionality-before-repair).
-Use OpenCode's built-in `question` tool for every question to the user, including
+Use the harness's native question dialog ([harness map](../homonto/references/harness.md)) for every question to the user, including
 identity, isolation, intent and scope decisions. No chat or shell-prompt fallback;
 if the dialog is unavailable or dismissed, preserve state and report the pending input.
 

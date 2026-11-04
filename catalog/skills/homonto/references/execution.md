@@ -134,7 +134,7 @@ Triage before you ask the user:
    result; that is ownership, not a workaround. A rejected prompt is the user's
    decision: never re-run that action on your own, by any tool.
 3. **Ask once.** For a rejected prompt, or an action outside your own authority,
-   use the native `question` dialog. Name the worker, the exact command or
+   use the native question dialog. Name the worker, the exact command or
    resource, why the task needs it and what is already done. Offer the viable
    choices, recommended first: you run it with the user's approval; the user runs
    it and sends you the output or the missing information; continue without it

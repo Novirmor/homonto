@@ -5,6 +5,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/Novirmor/homonto/internal/capability"
 	"github.com/Novirmor/homonto/internal/catalog"
 	"github.com/Novirmor/homonto/internal/config"
 )
@@ -46,6 +47,15 @@ func (s *Store) engine(name string) (Engine, error) {
 		fw, ok := cl.Framework(catName)
 		if !ok || fw.Engine == nil {
 			return Engine{}, fmt.Errorf("engine %q has no schema 2 [engine] contract; it cannot run workspace tasks (docs/contracts/engine.md)", name)
+		}
+		// Selection refuses an engine a target harness cannot run, naming the
+		// gap, before any task state exists (ADR 0082, ADR 0097).
+		for _, tool := range res.TargetsOrAll() {
+			if d, ok := capability.ForHarness(tool); ok {
+				if err := d.Check(catName, fw.HarnessRequirements); err != nil {
+					return Engine{}, fmt.Errorf("engine %q cannot run workspace tasks on %s: %w", name, tool, err)
+				}
+			}
 		}
 		e := Engine{Name: name, Builtin: strings.HasPrefix(res.Source, "builtin:"), EngineContract: *fw.Engine}
 		if e.OwnsLifecycle() && !e.Builtin {

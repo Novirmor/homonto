@@ -3,6 +3,7 @@ package engine
 import (
 	"bytes"
 	"fmt"
+	"github.com/Novirmor/homonto/internal/capability"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -163,6 +164,9 @@ func (e *Engine) Doctor() []string {
 		out = append(out, fmt.Sprintf("warn: cannot expand opencode subagents: %v", osaerr))
 	} else {
 		out = append(out, e.doctorSubagents("opencode", opencodeSubagents)...)
+	}
+	for _, d := range e.harnessDeclarations() {
+		out = append(out, d.Report().Findings()...)
 	}
 	out = append(out, e.doctorTooling()...)
 	for _, warning := range e.OpenCodeV2Warnings() {
@@ -383,4 +387,14 @@ func (e *Engine) doctorSubagents(tool string, entries []config.NamedResource) []
 			return filepath.Join(resourcepath.Dir(resourcepath.Subagent, tool, entry.Resource.Scope, e.Home, e.ProjectRoot), entry.Name+".md")
 		},
 	})
+}
+
+// HarnessReports summarizes every targeted harness's capability declaration
+// for doctor's JSON output (ADR 0082 tiers).
+func (e *Engine) HarnessReports() []capability.Report {
+	out := []capability.Report{}
+	for _, d := range e.harnessDeclarations() {
+		out = append(out, d.Report())
+	}
+	return out
 }

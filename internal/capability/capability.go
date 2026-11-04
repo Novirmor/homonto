@@ -240,3 +240,65 @@ func (d Declaration) Tier() Tier {
 
 // Declarations returns every built-in harness declaration, OpenCode first.
 func Declarations() []Declaration { return []Declaration{OpenCode(), ClaudeCode()} }
+
+// ForHarness returns the built-in declaration for a harness id.
+func ForHarness(harness string) (Declaration, bool) {
+	for _, d := range Declarations() {
+		if d.Harness == harness {
+			return d, true
+		}
+	}
+	return Declaration{}, false
+}
+
+// Report is one harness's capability summary for doctor.
+type Report struct {
+	Harness      string            `json:"harness"`
+	Version      string            `json:"version"`
+	Tier         Tier              `json:"tier"`
+	Capabilities map[string]Level  `json:"capabilities"`
+	Limitations  map[string]string `json:"limitations,omitempty"`
+}
+
+// Report summarizes the declaration; a capability it does not provide is
+// reported as "absent".
+func (d Declaration) Report() Report {
+	r := Report{Harness: d.Harness, Version: d.Version, Tier: d.Tier(), Capabilities: map[string]Level{}}
+	for _, n := range vocabulary {
+		level, ok := d.Provides[n]
+		if !ok {
+			level = "absent"
+		}
+		r.Capabilities[string(n)] = level
+		if note := d.Limitations[n]; note != "" {
+			if r.Limitations == nil {
+				r.Limitations = map[string]string{}
+			}
+			r.Limitations[string(n)] = note
+		}
+	}
+	return r
+}
+
+// Findings renders the report as doctor lines: the tier, then each
+// capability grouped by level, then every accepted limitation.
+func (r Report) Findings() []string {
+	groups := map[Level][]string{}
+	for _, n := range vocabulary {
+		level := r.Capabilities[string(n)]
+		groups[level] = append(groups[level], string(n))
+	}
+	line := fmt.Sprintf("ok: harness %s %s: %s tier", r.Harness, r.Version, r.Tier)
+	for _, level := range []Level{Enforced, Limited, InstructionOnly, "absent"} {
+		if len(groups[level]) > 0 {
+			line += fmt.Sprintf("; %s: %s", level, strings.Join(groups[level], ", "))
+		}
+	}
+	out := []string{line}
+	for _, n := range vocabulary {
+		if note := r.Limitations[string(n)]; note != "" {
+			out = append(out, fmt.Sprintf("info: harness %s: %s is %s (accepted, ADR 0105): %s", r.Harness, n, r.Capabilities[string(n)], note))
+		}
+	}
+	return out
+}

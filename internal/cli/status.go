@@ -3,6 +3,7 @@ package cli
 import (
 	"encoding/json"
 	"fmt"
+	"github.com/Novirmor/homonto/internal/capability"
 	"os"
 
 	"github.com/Novirmor/homonto/internal/decision"
@@ -151,8 +152,9 @@ func doctorCmd() *cobra.Command {
 					findings = []string{}
 				}
 				b, merr := json.MarshalIndent(struct {
-					Findings []string `json:"findings"`
-				}{Findings: findings}, "", "  ")
+					Findings  []string            `json:"findings"`
+					Harnesses []capability.Report `json:"harnesses"`
+				}{Findings: findings, Harnesses: e.HarnessReports()}, "", "  ")
 				if merr != nil {
 					return merr
 				}

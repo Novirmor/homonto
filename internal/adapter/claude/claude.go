@@ -125,6 +125,9 @@ func (a *Adapter) hookCommand() string {
 			parts = append(parts, "--agents-dir", shellQuote(dir))
 		}
 	}
+	if a.workflow != nil && a.workflow.Coordinator != "" {
+		parts = append(parts, "--coordinator", shellQuote(a.workflow.Coordinator))
+	}
 	return strings.Join(parts, " ")
 }
 

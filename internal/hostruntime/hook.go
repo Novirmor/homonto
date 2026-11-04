@@ -44,6 +44,9 @@ type HookDeps struct {
 	// AgentDirs are where rendered agents live, searched in order for the
 	// running agent's homonto policy.
 	AgentDirs []string
+	// Coordinator is the agent the runtime tools belong to; empty accepts
+	// any main-thread agent.
+	Coordinator string
 }
 
 // agentPolicy finds the running agent's rendered policy. An agent homonto did
@@ -89,8 +92,13 @@ func RunClaudeHook(in io.Reader, out io.Writer, configPath string, deps HookDeps
 
 	// Coordinator-only tool access (ADR 0047): a worker never reaches the
 	// workflow or hosting tools, whatever its agent file says.
-	if input.Event == "PreToolUse" && input.AgentID != "" && coordinatorTool(input.ToolName) {
-		return writeHook(out, input.Event, "", "[wrong_agent] homonto tools are coordinator-only; worker "+jsonText(input.AgentType)+" cannot call "+input.ToolName)
+	if input.Event == "PreToolUse" && coordinatorTool(input.ToolName) {
+		if input.AgentID != "" {
+			return writeHook(out, input.Event, "", "[wrong_agent] homonto tools are coordinator-only; worker "+jsonText(input.AgentType)+" cannot call "+input.ToolName)
+		}
+		if deps.Coordinator != "" && input.AgentType != "" && input.AgentType != deps.Coordinator {
+			return writeHook(out, input.Event, "", "[wrong_agent] homonto tools are coordinator-only: expected="+jsonText(deps.Coordinator)+", observed="+jsonText(input.AgentType)+"; run the session as the coordinator agent")
+		}
 	}
 	// The running agent's shell, path and spawn rules (agent-tool-limits,
 	// shell-rules): a deny ends the call here; allow and ask stand unless the

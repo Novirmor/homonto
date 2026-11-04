@@ -195,14 +195,14 @@ func ClaudeCode() Declaration {
 		Commands:         "slash commands under `.claude/commands/`",
 		Subagents:        "the `Agent` tool with `subagent_type` set to the agent's name",
 		AgentToolLimits:  "each agent's `tools`/`disallowedTools` frontmatter and homonto's `PreToolUse` hook",
-		ShellRules:       "`permissions` `Bash(...)` allow/ask/deny rules in `settings.json`",
+		ShellRules:       "each agent's shell rules, enforced by homonto's `PreToolUse` policy hook",
 		QuestionDialog:   "the `AskUserQuestion` tool",
 		ContextHooks:     "homonto's `SessionStart` hook (startup, resume, clear and compaction)",
 		PermissionEvents: "homonto's `PermissionRequest`, `PermissionDenied` and `SubagentStop` hooks",
 		MCP:              "`.mcp.json` servers; homonto's runtime tools are `mcp__homonto__<tool>`",
 	}, Limitations: map[Name]string{
-		ShellRules:       "Bash rules match command prefixes; a command reached through a wrapper the rules do not name is not caught. Coordinator-only tool access is also guarded by homonto's hook.",
-		QuestionDialog:   "AskUserQuestion is unavailable in non-interactive (`claude -p`) sessions and takes at most four questions, so a publication draft holds at most four items. A question that arrives pre-answered is denied.",
+		ShellRules:       "The policy hook applies the agent's last-match-wins rules to the raw command, as OpenCode does; a session not started as the coordinator agent carries no policy.",
+		QuestionDialog:   "AskUserQuestion takes at most four questions, so a publication draft holds at most four items, and it is absent in `claude -p`, where a required decision stays pending. Approval is correlated through hooks over a local socket; a pre-answered question is denied.",
 		PermissionEvents: "Claude Code reports a worker's permission prompt but not the user's answer. A prompt whose tool never ran before the worker stopped is handed back as refused.",
 	}}
 }

@@ -286,3 +286,18 @@ func TestClaudeHookEnforcesTheRunningAgentsPolicy(t *testing.T) {
 		t.Errorf("an unreadable policy must fail closed: %q", got)
 	}
 }
+
+func TestClaudeHookKeepsRuntimeToolsWithTheCoordinator(t *testing.T) {
+	deps := HookDeps{Coordinator: "homonto", Snapshot: func(string) (string, error) { return "", errors.New("unused") },
+		Relay: func(string, string, HookEvent) (HookReply, error) { return HookReply{}, nil }}
+	for agent, denied := range map[string]bool{"homonto": false, "": false, "general-purpose": true} {
+		var out bytes.Buffer
+		in, _ := json.Marshal(map[string]any{"session_id": "s", "hook_event_name": "PreToolUse", "agent_type": agent, "tool_name": "mcp__homonto__homonto_status"})
+		if err := RunClaudeHook(bytes.NewReader(in), &out, testConfig, deps); err != nil {
+			t.Fatal(err)
+		}
+		if got := strings.Contains(out.String(), "wrong_agent"); got != denied {
+			t.Errorf("main agent %q: denied=%v (%s)", agent, got, out.String())
+		}
+	}
+}

@@ -737,7 +737,7 @@ func allPluginDirsExist(root string, names []string, workflowContext bool) bool 
 			files = append(files, "continuation.ts")
 		}
 		if n == workflowBridgePlugin && workflowContext {
-			files = append(files, "tui.tsx", "rpc.ts", "v2.ts", "runner.ts", "github.ts", "authorization.ts", "compat.ts")
+			files = append(files, "tui.tsx", "rpc.ts", "v2.ts", "runner.ts", "github.ts", "authorization.ts", "compat.ts", "core.ts", "workflow.ts", "snapshot.ts")
 		}
 		for _, file := range files {
 			fi, err := os.Lstat(filepath.Join(root, n, file))

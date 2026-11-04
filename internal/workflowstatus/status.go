@@ -6,6 +6,7 @@ package workflowstatus
 import (
 	"bufio"
 	"fmt"
+	"gopkg.in/yaml.v3"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -101,6 +102,7 @@ func readLayout(l workspace.Layout, bounded bool) Snapshot {
 	}
 	readOnto(filepath.Join(l.WorkflowRoot, "changes"), false, &out, bounded)
 	readTo(filepath.Join(l.WorkflowRoot, "tasks"), false, &out, bounded)
+	readExternal(filepath.Join(l.WorkflowRoot, "engines"), &out)
 	sort.Slice(out.Changes, func(i, j int) bool {
 		if out.Changes[i].Workflow == out.Changes[j].Workflow {
 			if out.Changes[i].Name != out.Changes[j].Name {
@@ -280,6 +282,72 @@ func readTo(dir string, archived bool, out *Snapshot, bounded bool) {
 			Workflow: "to", Name: state.Change, Phase: state.Phase,
 			TasksCompleted: completed, TasksTotal: total, Pending: pending,
 		})
+	}
+}
+
+// externalRecord is the lifecycle record an external native engine keeps
+// (ADR 0106); only what the snapshot reports is read.
+type externalRecord struct {
+	SchemaVersion int    `yaml:"schema_version"`
+	Workflow      string `yaml:"workflow"`
+	Change        string `yaml:"change"`
+	ID            string `yaml:"id"`
+	Phase         string `yaml:"phase"`
+	Archived      bool   `yaml:"archived"`
+	Abandoned     bool   `yaml:"abandoned"`
+}
+
+// readExternal reports every external native engine's changes. An engine
+// tracks no tasks homonto can count, so progress stays 0/0.
+func readExternal(root string, out *Snapshot) {
+	if err := fsutil.RequireRealParents(out.WorkflowRoot, root); err != nil {
+		out.Findings = append(out.Findings, Finding{Workflow: "engines", Message: err.Error()})
+		return
+	}
+	engines, err := os.ReadDir(root)
+	if err != nil {
+		if !os.IsNotExist(err) {
+			out.Findings = append(out.Findings, Finding{Workflow: "engines", Message: fmt.Sprintf("cannot read engine records: %v", err)})
+		}
+		return
+	}
+	for _, engine := range engines {
+		if !engine.IsDir() || !workspace.External(engine.Name()) {
+			continue
+		}
+		dir := filepath.Join(root, engine.Name())
+		changes, err := os.ReadDir(dir)
+		if err != nil {
+			out.Findings = append(out.Findings, Finding{Workflow: engine.Name(), Message: err.Error()})
+			continue
+		}
+		for _, change := range changes {
+			if !change.IsDir() || change.Type()&os.ModeSymlink != 0 {
+				continue
+			}
+			changeDir := filepath.Join(dir, change.Name())
+			data, err := os.ReadFile(filepath.Join(changeDir, engine.Name()+"-state.yaml"))
+			var rec externalRecord
+			if err == nil {
+				err = yaml.Unmarshal(data, &rec)
+			}
+			if err == nil && (rec.SchemaVersion != workspace.ExternalStateVersion || rec.Workflow != engine.Name() || rec.Change != change.Name() || rec.ID == "" || rec.Phase == "") {
+				err = fmt.Errorf("invalid lifecycle record")
+			}
+			if err != nil {
+				out.Findings = append(out.Findings, Finding{Workflow: engine.Name(), Change: change.Name(), Message: err.Error()})
+				continue
+			}
+			status := "active"
+			switch {
+			case rec.Abandoned || rec.Phase == "abandoned":
+				status = "abandoned"
+			case rec.Archived || rec.Phase == "completed":
+				status = "completed"
+			}
+			out.Changes = append(out.Changes, Change{Identity: rec.ID, Status: status, Path: recordPath(out, changeDir),
+				Workflow: engine.Name(), Name: rec.Change, Phase: rec.Phase, Pending: []string{}})
+		}
 	}
 }
 

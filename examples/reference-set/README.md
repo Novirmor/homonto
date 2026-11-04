@@ -7,6 +7,12 @@ own source never names them. They are the backing code for the
 entry of the real-harness matrix, and they run unchanged on OpenCode and
 Claude Code.
 
+They are published separately at
+[Novirmor/homonto-reference-set](https://github.com/Novirmor/homonto-reference-set),
+whose releases carry the pinned archives and whose CI drives them against a
+pinned homonto commit. This copy is the offline fixture for homonto's own tests;
+change both together.
+
 | Package | Kind | Shows |
 |---|---|---|
 | [`ticket-service`](ticket-service/framework.toml) | service | a company ticket tracker behind `ticket-cli` (a file-backed stand-in for Jira or Linear), credentials, tighten-only shell rules |

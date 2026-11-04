@@ -21,6 +21,7 @@
 | [Remote sources](remote-sources.md) | Pinned, verified `remote:` installs |
 | [OpenCode integration](opencode.md) | Workflow plugin, status panel, GitHub draft tools, terminal settings, supported version |
 | [Package contracts](../contracts/README.md) | Writing your own engine, workflow or service: manifest, settings, checks |
+| [Building a ticket-driven workflow](ticket-workflow.md) | A worked external engine, workflow and service: company ticket → engine → review → delivery, on OpenCode and Claude Code |
 
 ## Work
 

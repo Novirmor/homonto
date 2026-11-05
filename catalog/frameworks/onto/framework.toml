@@ -4,6 +4,9 @@ kind = "engine"
 version = "0.28.0"
 description = "Onto self-contained development workflow"
 
+[compat]
+contract = "1.0"
+
 [engine]
 lifecycle = "native"
 binary = "onto"

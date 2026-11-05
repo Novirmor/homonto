@@ -127,3 +127,4 @@ numbering: [`../agents/adr.md`](../agents/adr.md).
 | [0105](0105-accept-limited-claude-code-capabilities-per-guarantee.md) | Accept limited Claude Code capabilities per guarantee | Accepted |
 | [0106](0106-let-external-engines-own-lifecycle-records.md) | Let external engines own lifecycle records | Accepted |
 | [0107](0107-register-the-runtime-mcp-server-as-homontos-own.md) | Register the runtime MCP server as homonto's own | Accepted |
+| [0108](0108-version-the-package-contracts.md) | Version the package contracts | Accepted |

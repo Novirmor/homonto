@@ -4,6 +4,9 @@ kind = "workflow"
 version = "0.1.0"
 description = "Reference workflow: company ticket -> installed engine -> review -> delivery, with the ticket kept in step"
 
+[compat]
+contract = "1.0"
+
 [workflow]
 coordinator = "shared"
 entry = ["ticket"]

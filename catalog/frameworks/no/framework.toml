@@ -4,6 +4,9 @@ kind = "engine"
 version = "0.3.0"
 description = "Minimal model-directed development and review engine"
 
+[compat]
+contract = "1.0"
+
 [engine]
 lifecycle = "stateless"
 entry = ["no"]

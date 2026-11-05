@@ -33,7 +33,10 @@ type Framework struct {
 	// Compat is the [compat].homonto version constraint the framework declares
 	// (empty = unconstrained). The catalog stores it version-agnostically; the
 	// engine, which knows the running homonto version, enforces it.
-	Compat    string
+	Compat string
+	// Contract is the [compat].contract version of the kind's contract the
+	// package was written against (ADR 0108); zero below manifest_schema 2.
+	Contract  ContractVersion
 	Skills    map[string]string // skill name -> catalog-relative path ("skills/<n>")
 	Commands  map[string]string // command name -> catalog-relative path ("commands/<n>.md")
 	Subagents map[string]string // subagent name -> catalog-relative path ("subagents/<n>.md")
@@ -109,7 +112,8 @@ type frameworkTOML struct {
 		Capabilities []string `toml:"capabilities"`
 	} `toml:"provides"`
 	Compat struct {
-		Homonto string `toml:"homonto"`
+		Homonto  string `toml:"homonto"`
+		Contract string `toml:"contract"`
 	} `toml:"compat"`
 	Requires    requiresTOML             `toml:"requires"`
 	Engine      *EngineContract          `toml:"engine"`
@@ -522,6 +526,11 @@ func (c *Catalog) indexFramework(name string, src fs.FS, ft frameworkTOML) error
 			depConstraints[dep] = constraint
 		}
 	}
+	var contract ContractVersion
+	if ft.ManifestSchema >= ContractManifestSchema {
+		// validateContract already accepted it.
+		contract, _ = ParseContractVersion(ft.Compat.Contract)
+	}
 	shared := usesSharedCoordinator(ft)
 	if shared {
 		// The shared coordinator comes from the base catalog by name, never
@@ -552,6 +561,7 @@ func (c *Catalog) indexFramework(name string, src fs.FS, ft frameworkTOML) error
 		Provides:              ft.Provides.Capabilities,
 		RequiredCapabilities:  ft.Dependencies.Capabilities,
 		Compat:                ft.Compat.Homonto,
+		Contract:              contract,
 		Skills:                ft.Skills,
 		Commands:              ft.Commands,
 		Subagents:             ft.Subagents,

@@ -2,6 +2,7 @@ package catalog
 
 import (
 	"io/fs"
+	"maps"
 	"slices"
 	"strings"
 	"testing"
@@ -21,7 +22,7 @@ func contractRoot(manifest string) fstest.MapFS {
 	}
 }
 
-const engineHeader = "manifest_schema = 2\nname = \"pkg\"\nkind = \"engine\"\nversion = \"0.1.0\"\n[skills]\nentry = \"skills/entry\"\n"
+const engineHeader = "manifest_schema = 2\nname = \"pkg\"\nkind = \"engine\"\nversion = \"0.1.0\"\n[compat]\ncontract = \"1.0\"\n[skills]\nentry = \"skills/entry\"\n"
 
 const statelessEngine = engineHeader + `[engine]
 lifecycle = "stateless"
@@ -52,6 +53,8 @@ harness = ["skills", "subagents"]
 name = "pkg"
 kind = "workflow"
 version = "0.1.0"
+[compat]
+contract = "1.0"
 [workflow]
 coordinator = "shared"
 entry = ["entry"]
@@ -62,6 +65,8 @@ entry = "commands/entry.md"
 name = "pkg"
 kind = "service"
 version = "0.1.0"
+[compat]
+contract = "1.0"
 [service]
 id = "tracker"
 operations = ["read", "publish"]
@@ -85,8 +90,8 @@ func TestContractRejectsInvalidManifests(t *testing.T) {
 	for _, tc := range []struct {
 		name, manifest, want string
 	}{
-		{"missing kind", "manifest_schema = 2\nname = \"pkg\"\nversion = \"0.1.0\"\n", "kind is required"},
-		{"unknown kind", "manifest_schema = 2\nname = \"pkg\"\nkind = \"agent\"\nversion = \"0.1.0\"\n", `unknown kind "agent"`},
+		{"missing kind", "manifest_schema = 2\nname = \"pkg\"\nversion = \"0.1.0\"\n[compat]\ncontract = \"1.0\"\n", "kind is required"},
+		{"unknown kind", "manifest_schema = 2\nname = \"pkg\"\nkind = \"agent\"\nversion = \"0.1.0\"\n[compat]\ncontract = \"1.0\"\n", `unknown kind "agent"`},
 		{"missing version", "manifest_schema = 2\nname = \"pkg\"\nkind = \"engine\"\n", "version is required"},
 		{"engine without table", engineHeader, "has no [engine] table"},
 		{"misspelled key", statelessEngine + "stagez = []\n", "unknown manifest fields"},
@@ -104,18 +109,25 @@ func TestContractRejectsInvalidManifests(t *testing.T) {
 		{"declares shared agent", statelessEngine + "[subagents]\nhomonto = \"subagents/worker.md\"\n", `shared coordinator's subagent "homonto"`},
 		{"unknown harness capability", statelessEngine + "[requires]\nharness = [\"telepathy\"]\n", `unknown harness capability "telepathy"`},
 		{"engine contributes permissions", statelessEngine + "[permissions.workers]\nbash_deny = [\"x\"]\n", "only a service may contribute"},
-		{"workflow without entry", "manifest_schema = 2\nname = \"pkg\"\nkind = \"workflow\"\nversion = \"0.1.0\"\n[workflow]\n", "entry must name at least one entry command"},
-		{"service draft without runtime", "manifest_schema = 2\nname = \"pkg\"\nkind = \"service\"\nversion = \"0.1.0\"\n[service]\nid = \"t\"\noperations = [\"draft\"]\ntransport = \"t\"\n", "declare runtime"},
-		{"service unknown runtime", "manifest_schema = 2\nname = \"pkg\"\nkind = \"service\"\nversion = \"0.1.0\"\n[service]\nid = \"t\"\nruntime = \"jira\"\noperations = [\"read\"]\ntransport = \"t\"\n", `runtime "jira" is not a provider`},
-		{"runtime without lifecycle operations", "manifest_schema = 2\nname = \"pkg\"\nkind = \"service\"\nversion = \"0.1.0\"\n[service]\nid = \"t\"\nruntime = \"github\"\noperations = [\"read\"]\ntransport = \"t\"\n", `runtime "github" exposes the draft/publication lifecycle; operations must include "draft"`},
-		{"service with subagent", "manifest_schema = 2\nname = \"pkg\"\nkind = \"service\"\nversion = \"0.1.0\"\n[service]\nid = \"t\"\noperations = [\"read\"]\ntransport = \"t\"\n[subagents]\nworker = \"subagents/worker.md\"\n", "ships no subagents"},
-		{"service bad env", "manifest_schema = 2\nname = \"pkg\"\nkind = \"service\"\nversion = \"0.1.0\"\n[service]\nid = \"t\"\noperations = [\"read\"]\ntransport = \"t\"\ncredentials = [{ kind = \"env\", name = \"lower\" }]\n", "is not an environment variable name"},
-		{"service multiline rule", "manifest_schema = 2\nname = \"pkg\"\nkind = \"service\"\nversion = \"0.1.0\"\n[service]\nid = \"t\"\noperations = [\"read\"]\ntransport = \"t\"\n[permissions.coordinator]\nbash_ask = [\"a\\nb\"]\n", "single-line pattern"},
+		{"workflow without entry", "manifest_schema = 2\nname = \"pkg\"\nkind = \"workflow\"\nversion = \"0.1.0\"\n[compat]\ncontract = \"1.0\"\n[workflow]\n", "entry must name at least one entry command"},
+		{"service draft without runtime", "manifest_schema = 2\nname = \"pkg\"\nkind = \"service\"\nversion = \"0.1.0\"\n[compat]\ncontract = \"1.0\"\n[service]\nid = \"t\"\noperations = [\"draft\"]\ntransport = \"t\"\n", "declare runtime"},
+		{"service unknown runtime", "manifest_schema = 2\nname = \"pkg\"\nkind = \"service\"\nversion = \"0.1.0\"\n[compat]\ncontract = \"1.0\"\n[service]\nid = \"t\"\nruntime = \"jira\"\noperations = [\"read\"]\ntransport = \"t\"\n", `runtime "jira" is not a provider`},
+		{"runtime without lifecycle operations", "manifest_schema = 2\nname = \"pkg\"\nkind = \"service\"\nversion = \"0.1.0\"\n[compat]\ncontract = \"1.0\"\n[service]\nid = \"t\"\nruntime = \"github\"\noperations = [\"read\"]\ntransport = \"t\"\n", `runtime "github" exposes the draft/publication lifecycle; operations must include "draft"`},
+		{"service with subagent", "manifest_schema = 2\nname = \"pkg\"\nkind = \"service\"\nversion = \"0.1.0\"\n[compat]\ncontract = \"1.0\"\n[service]\nid = \"t\"\noperations = [\"read\"]\ntransport = \"t\"\n[subagents]\nworker = \"subagents/worker.md\"\n", "ships no subagents"},
+		{"service bad env", "manifest_schema = 2\nname = \"pkg\"\nkind = \"service\"\nversion = \"0.1.0\"\n[compat]\ncontract = \"1.0\"\n[service]\nid = \"t\"\noperations = [\"read\"]\ntransport = \"t\"\ncredentials = [{ kind = \"env\", name = \"lower\" }]\n", "is not an environment variable name"},
+		{"service multiline rule", "manifest_schema = 2\nname = \"pkg\"\nkind = \"service\"\nversion = \"0.1.0\"\n[compat]\ncontract = \"1.0\"\n[service]\nid = \"t\"\noperations = [\"read\"]\ntransport = \"t\"\n[permissions.coordinator]\nbash_ask = [\"a\\nb\"]\n", "single-line pattern"},
 		{"agent_stages unknown agent", statelessEngine + "[engine.agent_stages]\nghost = [\"work\"]\n", `"ghost" is not a subagent declared`},
 		{"agent_stages unknown stage", statelessEngine + "[engine.agent_stages]\nworker = [\"ship\"]\n[subagents]\nworker = \"subagents/worker.md\"\n", `names stage "ship", which is not in [engine].stages`},
 		{"agent_stages empty", statelessEngine + "[engine.agent_stages]\nworker = []\n[subagents]\nworker = \"subagents/worker.md\"\n", "worker must name at least one stage"},
 		{"agent_stages duplicate", statelessEngine + "[engine.agent_stages]\nworker = [\"work\", \"work\"]\n[subagents]\nworker = \"subagents/worker.md\"\n", `lists stage "work" twice`},
 		{"unknown default service", statelessEngine + "[requires.services]\ntracker = \"nope\"\n", `default package "nope", which is not a known package`},
+		// ADR 0108: the contract version is explicit, and a binary never
+		// interprets a contract it does not implement.
+		{"no contract version", strings.Replace(statelessEngine, "[compat]\ncontract = \"1.0\"\n", "", 1), `[compat].contract is required; declare the engine contract the package was written against, for example contract = "1.0"`},
+		{"malformed contract version", strings.Replace(statelessEngine, `contract = "1.0"`, `contract = "1"`, 1), `[compat].contract "1" is not MAJOR.MINOR`},
+		{"newer contract major", strings.Replace(statelessEngine, `contract = "1.0"`, `contract = "2.0"`, 1), "requires engine contract 2.0, but this homonto implements engine contract 1.0 and cannot interpret a newer major; upgrade homonto"},
+		{"newer contract minor", strings.Replace(statelessEngine, `contract = "1.0"`, `contract = "1.7"`, 1), "requires engine contract 1.7, but this homonto implements engine contract 1.0; upgrade homonto"},
+		{"retired contract major", strings.Replace(statelessEngine, `contract = "1.0"`, `contract = "0.9"`, 1), "was written against engine contract 0.9, which this homonto no longer implements (it implements 1.0); update the package to contract 1.0"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			_, err := loadContract(t, tc.manifest)
@@ -165,7 +177,7 @@ func TestContractSharedCoordinatorNeedsABaseThatProvidesIt(t *testing.T) {
 }
 
 func TestContractLegacyManifestsStayResourceBundles(t *testing.T) {
-	c, err := LoadWithLocal(baseFS(), map[string]fs.FS{"pkg": contractRoot("name = \"pkg\"\nversion = \"0.1.0\"\nunknown_key = 1\n[skills]\nentry = \"skills/entry\"\n")})
+	c, err := LoadWithLocal(baseFS(), map[string]fs.FS{"pkg": contractRoot("name = \"pkg\"\nversion = \"0.1.0\"\n[compat]\ncontract = \"1.0\"\nunknown_key = 1\n[skills]\nentry = \"skills/entry\"\n")})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -251,7 +263,7 @@ func TestSettingsSchemaValidation(t *testing.T) {
 		})
 	}
 	// A legacy manifest cannot declare a schema nothing would validate.
-	_, err := LoadWithLocal(baseFS(), map[string]fs.FS{"pkg": contractRoot("name = \"pkg\"\nversion = \"0.1.0\"\n[settings.x]\ntype = \"string\"\n")})
+	_, err := LoadWithLocal(baseFS(), map[string]fs.FS{"pkg": contractRoot("name = \"pkg\"\nversion = \"0.1.0\"\n[compat]\ncontract = \"1.0\"\n[settings.x]\ntype = \"string\"\n")})
 	if err == nil || !strings.Contains(err.Error(), "set manifest_schema = 2") {
 		t.Fatalf("legacy settings: %v", err)
 	}
@@ -288,5 +300,33 @@ func TestBuiltinEnginesBindEveryWorker(t *testing.T) {
 				t.Errorf("%s: subagent %s is bound to no stage", name, agent)
 			}
 		}
+	}
+}
+
+// The contract version a package declares is carried on the loaded package.
+func TestContractVersionIsRecorded(t *testing.T) {
+	c, err := loadContract(t, statelessEngine)
+	if err != nil {
+		t.Fatal(err)
+	}
+	fw, _ := c.Framework("pkg")
+	if fw.Contract != (ContractVersion{1, 0}) {
+		t.Fatalf("contract = %v", fw.Contract)
+	}
+}
+
+// The conformance suite certifies exactly the contracts the binary
+// implements (ADR 0108): bumping a contract without updating the suite fails.
+func TestConformanceSuiteIsPinnedToTheContracts(t *testing.T) {
+	if !maps.Equal(Contracts, ConformanceSuiteContracts) {
+		t.Fatalf("contracts %v, conformance suite verifies %v", Contracts, ConformanceSuiteContracts)
+	}
+	for _, kind := range []string{KindEngine, KindWorkflow, KindService} {
+		if _, ok := Contracts[kind]; !ok {
+			t.Errorf("kind %s has no published contract version", kind)
+		}
+	}
+	if err := checkSuiteContract(KindEngine, ContractVersion{1, 1}); err == nil {
+		t.Error("the suite certified a contract minor it does not verify")
 	}
 }

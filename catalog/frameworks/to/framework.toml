@@ -4,6 +4,9 @@ kind = "engine"
 version = "0.25.0"
 description = "to — minimal coding framework for LLMs (plan → do → done)"
 
+[compat]
+contract = "1.0"
+
 [engine]
 lifecycle = "native"
 binary = "to"

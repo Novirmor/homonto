@@ -26,6 +26,8 @@ const customWorkflow = `manifest_schema = 2
 name = "custom"
 kind = "workflow"
 version = "0.1.0"
+[compat]
+contract = "1.0"
 [workflow]
 entry = ["triage"]
 [requires.services]
@@ -68,6 +70,8 @@ func TestDeclaredServiceReplacesTheDefault(t *testing.T) {
 name = "ghe"
 kind = "service"
 version = "0.1.0"
+[compat]
+contract = "1.0"
 [service]
 id = "github"
 operations = ["read", "publish"]

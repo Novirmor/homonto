@@ -26,7 +26,18 @@ type Conformance struct {
 	Package string
 	Kind    string
 	Version string
-	Checks  []Check
+	// Contract is the kind's contract version the package declares (ADR 0108).
+	Contract string
+	Checks   []Check
+}
+
+// ConformanceSuiteContracts are the contract versions this suite verifies
+// (ADR 0108). They must equal Contracts: a contract change that the suite was
+// not updated for fails TestConformanceSuiteIsPinnedToTheContracts.
+var ConformanceSuiteContracts = map[string]ContractVersion{
+	KindEngine:   {1, 0},
+	KindWorkflow: {1, 0},
+	KindService:  {1, 0},
 }
 
 // Passed reports whether every check passed.
@@ -55,11 +66,23 @@ func (c *Catalog) Conformance(name string) (Conformance, error) {
 		return r, nil
 	}
 	add("manifest", nil)
+	r.Contract = fw.Contract.String()
+	add("contract", checkSuiteContract(fw.Kind, fw.Contract))
 
 	add("skills", c.checkSkills(fw))
 	add("subagents", c.checkSubagents(fw))
 	add("harness", capability.OpenCode().Check(name, fw.HarnessRequirements))
 	return r, nil
+}
+
+// checkSuiteContract refuses to certify a package against a contract this
+// suite does not verify.
+func checkSuiteContract(kind string, v ContractVersion) error {
+	suite, ok := ConformanceSuiteContracts[kind]
+	if !ok || v.Major != suite.Major || v.Minor > suite.Minor {
+		return fmt.Errorf("the conformance suite verifies %s contract %s, not %s", kind, suite, v)
+	}
+	return nil
 }
 
 // checkSkills requires every declared skill to hold a SKILL.md whose

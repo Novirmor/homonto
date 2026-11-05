@@ -4,6 +4,9 @@ kind = "service"
 version = "0.1.0"
 description = "Example tracker service: reads and publishes through tracker-cli"
 
+[compat]
+contract = "1.0"
+
 [service]
 id = "tracker"
 operations = ["read", "publish"]

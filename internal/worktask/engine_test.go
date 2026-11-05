@@ -104,7 +104,7 @@ func withLocalEngine(t *testing.T, s *Store, engineTable string) *Store {
 	t.Helper()
 	pkg := filepath.Join(filepath.Dir(s.Layout.ConfigPath), "ext")
 	put(t, filepath.Join(pkg, "skills", "ext", "SKILL.md"), "---\nname: ext\n---\next")
-	put(t, filepath.Join(pkg, "framework.toml"), "manifest_schema = 2\nname = \"ext\"\nkind = \"engine\"\nversion = \"0.1.0\"\n"+engineTable+"[skills]\next = \"skills/ext\"\n")
+	put(t, filepath.Join(pkg, "framework.toml"), "manifest_schema = 2\nname = \"ext\"\nkind = \"engine\"\nversion = \"0.1.0\"\n[compat]\ncontract = \"1.0\"\n"+engineTable+"[skills]\next = \"skills/ext\"\n")
 	data, err := os.ReadFile(s.Layout.ConfigPath)
 	if err != nil {
 		t.Fatal(err)
@@ -192,7 +192,7 @@ func TestExternalEngineSelection(t *testing.T) {
 		s := fixture(t)
 		pkg := filepath.Join(filepath.Dir(s.Layout.ConfigPath), "ext")
 		put(t, filepath.Join(pkg, "skills", "ext", "SKILL.md"), "---\nname: ext\n---\next")
-		put(t, filepath.Join(pkg, "framework.toml"), "name = \"ext\"\nkind = \"engine\"\nversion = \"0.1.0\"\n[skills]\next = \"skills/ext\"\n")
+		put(t, filepath.Join(pkg, "framework.toml"), "name = \"ext\"\nkind = \"engine\"\nversion = \"0.1.0\"\n[compat]\ncontract = \"1.0\"\n[skills]\next = \"skills/ext\"\n")
 		data, _ := os.ReadFile(s.Layout.ConfigPath)
 		put(t, s.Layout.ConfigPath, string(data)+"[engines.ext]\nsource='local:./ext'\nscope='project'\n")
 		s, err := Open(s.Layout.ConfigPath)

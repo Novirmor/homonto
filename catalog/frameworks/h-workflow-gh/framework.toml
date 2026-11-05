@@ -4,6 +4,9 @@ kind = "workflow"
 version = "0.14.0"
 description = "Standalone GitHub workflow skill bundle — spike, resolve, review, continue, conflict resolution, batch review"
 
+[compat]
+contract = "1.0"
+
 [workflow]
 coordinator = "shared"
 entry = ["h-spike-issue", "h-resolve-issue", "h-review-pr", "h-continue-pr", "h-resolve-conflicts", "h-review-batch"]

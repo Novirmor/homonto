@@ -216,6 +216,9 @@ func validateContract(name string, ft frameworkTOML) error {
 	if !ft.Permissions.Empty() && ft.Kind != KindService {
 		return fmt.Errorf("%s: only a service may contribute [permissions]", label)
 	}
+	if _, err := checkContractVersion(label, ft.Kind, ft.Compat.Contract); err != nil {
+		return err
+	}
 	switch ft.Kind {
 	case KindEngine:
 		if ft.Engine == nil {

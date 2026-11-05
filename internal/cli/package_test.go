@@ -25,7 +25,7 @@ func TestPackageCheckExamplesAndBuiltins(t *testing.T) {
 	if err != nil {
 		t.Fatalf("package check: %v\n%s", err, out)
 	}
-	for _, want := range []string{"ok example-engine (engine 0.1.0)", "ok example-workflow (workflow 0.1.0)", "ok example-service (service 0.1.0)", "ok onto (engine", "ok host-gh (service"} {
+	for _, want := range []string{"ok example-engine (engine 0.1.0, contract 1.0)", "ok example-workflow (workflow 0.1.0, contract 1.0)", "ok example-service (service 0.1.0, contract 1.0)", "ok onto (engine", "ok host-gh (service"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("output lacks %q:\n%s", want, out)
 		}
@@ -49,7 +49,7 @@ func writePackage(t *testing.T, files map[string]string) string {
 
 func TestPackageCheckFailures(t *testing.T) {
 	ex := examplesDir(t)
-	engine := "manifest_schema = 2\nname = \"bad\"\nkind = \"engine\"\nversion = \"0.1.0\"\n[engine]\nlifecycle = \"stateless\"\nentry = [\"bad\"]\noperations = [\"start\", \"resume\"]\nstages = [\"work\"]\n[skills]\nbad = \"skills/bad\"\n"
+	engine := "manifest_schema = 2\nname = \"bad\"\nkind = \"engine\"\nversion = \"0.1.0\"\n[compat]\ncontract = \"1.0\"\n[engine]\nlifecycle = \"stateless\"\nentry = [\"bad\"]\noperations = [\"start\", \"resume\"]\nstages = [\"work\"]\n[skills]\nbad = \"skills/bad\"\n"
 	for _, tc := range []struct {
 		name string
 		dirs func() []string
@@ -57,7 +57,7 @@ func TestPackageCheckFailures(t *testing.T) {
 	}{
 		{"workflow without its non-builtin service", func() []string { return []string{filepath.Join(ex, "example-workflow")} }, `default package "example-service", which is not a known package`},
 		{"legacy manifest", func() []string {
-			return []string{writePackage(t, map[string]string{"framework.toml": "name = \"bad\"\nversion = \"0.1.0\"\n"})}
+			return []string{writePackage(t, map[string]string{"framework.toml": "name = \"bad\"\nversion = \"0.1.0\"\n[compat]\ncontract = \"1.0\"\n"})}
 		}, "manifest: manifest_schema 0 carries no contract"},
 		{"skill without frontmatter name", func() []string {
 			return []string{writePackage(t, map[string]string{"framework.toml": engine, "skills/bad/SKILL.md": "no frontmatter\n"})}
@@ -77,5 +77,18 @@ func TestPackageCheckFailures(t *testing.T) {
 				t.Fatalf("err = %v, want %q\n%s", err, tc.want, out)
 			}
 		})
+	}
+}
+
+// The contract versions are published by the binary (ADR 0108).
+func TestPackageContractsPublishesTheVersions(t *testing.T) {
+	out, err := runCmd(t, t.TempDir(), "", "package", "contracts", "--output", "json")
+	if err != nil {
+		t.Fatalf("package contracts: %v\n%s", err, out)
+	}
+	for _, want := range []string{`"manifest_schema": 2`, `"config_schema": 2`, `"engine": "1.0"`, `"workflow": "1.0"`, `"service": "1.0"`} {
+		if !strings.Contains(out, want) {
+			t.Errorf("output lacks %s:\n%s", want, out)
+		}
 	}
 }

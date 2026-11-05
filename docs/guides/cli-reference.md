@@ -29,6 +29,7 @@ Every `homonto` command and flag. Workflow binaries: [onto](onto-reference.md),
 | [`worktree`](#homonto-worktree) | Registered per-change worktrees |
 | [`tmp clean`](#homonto-tmp-clean) | Empty scratch that belongs to no active change |
 | [`package check`](#homonto-package-check) | Check packages against the package contract |
+| [`package contracts`](#homonto-package-contracts) | Print the contract versions this binary implements |
 | `version`, `completion <shell>` | Version; shell completion |
 
 ## `homonto init`
@@ -273,14 +274,34 @@ homonto package check [--builtin] [DIR...]
 
 Loads each package directory (a `framework.toml` root) as a config would
 install it, then checks it against the [package contract](../contracts/README.md):
-manifest schema, kind table, resources, skill frontmatter, agent rendering and
-OpenCode's harness capabilities. Directories load together, so check a
+manifest schema, contract version, kind table, resources, skill frontmatter,
+agent rendering and OpenCode's harness capabilities. Directories load together, so check a
 workflow with the non-builtin service it requires. `--builtin` also checks
 every shipped package. Exits non-zero naming each failed check.
 
 ```console
 $ homonto package check testdata/examples/example-engine
-ok example-engine (engine 0.1.0)
+ok example-engine (engine 0.1.0, contract 1.0)
+```
+
+## `homonto package contracts`
+
+```text
+homonto package contracts [--output text|json]
+```
+
+Prints the manifest schema, the config schema, and each package kind's
+contract version this binary implements. A package declares the one it was
+written against as `[compat].contract`
+([versions](../contracts/README.md#versions)).
+
+```console
+$ homonto package contracts
+manifest_schema 2
+config schema_version 2
+engine contract 1.0
+service contract 1.0
+workflow contract 1.0
 ```
 
 ## `homonto completion`

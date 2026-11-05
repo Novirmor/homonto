@@ -241,10 +241,21 @@ func (e *Engine) configureHarnesses() {
 	if !e.Cfg.TargetsHarness("claude") {
 		return
 	}
+	// Repository adapters for different harnesses share one state.<repo>.json
+	// partition. Reuse the OpenCode target's loaded instance so applying Claude
+	// cannot later save a stale copy over the OpenCode records (or vice versa).
+	repoStates := make(map[string]*state.State, len(e.RepoTargets))
+	for _, target := range e.RepoTargets {
+		repoStates[target.Name] = target.State
+	}
 	for _, name := range sortedRepoNames(e.Cfg.Repos) {
-		st, err := state.LoadNamed(e.StateDir, name)
-		if err != nil {
-			continue
+		st := repoStates[name]
+		if st == nil {
+			var err error
+			st, err = state.LoadNamed(e.StateDir, name)
+			if err != nil {
+				continue
+			}
 		}
 		a := claude.New(e.Home, e.ContentDir).
 			WithProjectRoot(e.Cfg.RepoDirs()[name]).

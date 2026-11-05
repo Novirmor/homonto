@@ -159,6 +159,139 @@ repo = "svc"
 	}
 }
 
+// Repository state is partitioned by harness as well as repository. In
+// particular, Claude state must not be read through OpenCode's key namespace
+// when status checks for drift.
+func TestMultiRepoClaudeDriftIsReported(t *testing.T) {
+	home := t.TempDir()
+	base := t.TempDir()
+	cfgRepo := filepath.Join(base, "cfg")
+	svc := newGitWorktree(t, filepath.Join(base, "svc"))
+	content := filepath.Join(cfgRepo, "homonto")
+	for _, d := range []string{cfgRepo, content} {
+		if err := os.MkdirAll(d, 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	cfgPath := filepath.Join(cfgRepo, "homonto.toml")
+	cfg := `
+harnesses = ["claude"]
+
+[repos]
+svc = "../svc"
+
+[skills.svc-skill]
+source = "builtin:handoff"
+scope = "project"
+repo = "svc"
+`
+	if err := os.WriteFile(cfgPath, []byte(cfg), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	build := func() *Engine {
+		e, err := Build(context.Background(), cfgPath, home, content)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return e
+	}
+	e := build()
+	sets, err := e.Plan()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := e.Apply(context.Background(), sets); err != nil {
+		t.Fatal(err)
+	}
+	link := filepath.Join(svc, ".claude", "skills", "svc-skill")
+	if err := os.Remove(link); err != nil {
+		t.Fatal(err)
+	}
+
+	drift, _, err := build().Status()
+	if err != nil {
+		t.Fatal(err)
+	}
+	joined := strings.Join(drift, "\n")
+	if !strings.Contains(joined, "claude@svc skill.svc-skill missing") {
+		t.Errorf("Claude repository drift was not reported:\n%s", joined)
+	}
+}
+
+// OpenCode and Claude project into different harness directories, but their
+// repository records live together in state.<repo>.json. Applying one harness
+// must retain the other harness's records.
+func TestMultiRepoHarnessesShareTheirStatePartition(t *testing.T) {
+	home := t.TempDir()
+	base := t.TempDir()
+	cfgRepo := filepath.Join(base, "cfg")
+	svc := newGitWorktree(t, filepath.Join(base, "svc"))
+	content := filepath.Join(cfgRepo, "homonto")
+	for _, d := range []string{cfgRepo, content} {
+		if err := os.MkdirAll(d, 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	cfgPath := filepath.Join(cfgRepo, "homonto.toml")
+	cfg := `
+harnesses = ["opencode", "claude"]
+
+[repos]
+svc = "../svc"
+
+[skills.svc-skill]
+source = "builtin:handoff"
+scope = "project"
+repo = "svc"
+`
+	if err := os.WriteFile(cfgPath, []byte(cfg), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	build := func() *Engine {
+		e, err := Build(context.Background(), cfgPath, home, content)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return e
+	}
+	e := build()
+	sets, err := e.Plan()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := e.Apply(context.Background(), sets); err != nil {
+		t.Fatal(err)
+	}
+	for _, link := range []string{
+		filepath.Join(svc, ".opencode", "skills", "svc-skill"),
+		filepath.Join(svc, ".claude", "skills", "svc-skill"),
+	} {
+		if _, err := os.Lstat(link); err != nil {
+			t.Fatalf("projection missing at %s: %v", link, err)
+		}
+	}
+	for _, target := range build().RepoTargets {
+		keys := target.State.Keys(target.Adapter.Name())
+		if target.Adapter.Name() == "opencode@svc" {
+			keys = target.State.Keys("opencode")
+		}
+		if len(keys) == 0 {
+			t.Errorf("state has no records for %s", target.Adapter.Name())
+		}
+	}
+	sets, err = build().Plan()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, cs := range sets {
+		for _, change := range cs.Changes {
+			if change.Action != "noop" {
+				t.Errorf("replan after dual-harness apply is not idempotent: %s %s %s", cs.Tool, change.Action, change.Key)
+			}
+		}
+	}
+}
+
 // TestMultiRepoPruneStaysScoped verifies de-declaring a repo-tagged resource
 // prunes it from ITS repository only, via the repo's own state partition.
 func TestMultiRepoPruneStaysScoped(t *testing.T) {

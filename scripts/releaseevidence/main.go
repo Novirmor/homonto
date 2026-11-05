@@ -263,6 +263,13 @@ func run(args []string, stdout io.Writer) error {
 		if err != nil {
 			return err
 		}
+		commit, err := head()
+		if err != nil {
+			return err
+		}
+		if commit != m.Commit {
+			return fmt.Errorf("releaseevidence check: HEAD is %s but the manifest is for %s; evidence from another commit does not allow this tag", commit, m.Commit)
+		}
 		fmt.Fprintf(stdout, "%s at %s\n", m.Version, m.Commit)
 		for _, c := range m.Claimable() {
 			host := c[0]

@@ -215,19 +215,20 @@ func (a *Adapter) RuntimeFindings(lookPath func(string) (string, error)) []strin
 	path := a.projectMCPFile()
 	doc, err := readDoc(path)
 	if err != nil {
-		return []string{fmt.Sprintf("warn: claude: runtime MCP server: cannot read %s: %v", path, err)}
-	}
-	codec := jsoncodec.Codec{}
-	got, present, err := codec.Get(doc, projMCPDocPath("projmcp."+RuntimeServer))
-	switch {
-	case err != nil:
-		out = append(out, fmt.Sprintf("warn: claude: runtime MCP server: %s: %v", path, err))
-	case !present:
-		out = append(out, fmt.Sprintf("warn: claude: runtime MCP server %q is not registered in %s (run `homonto apply`)", RuntimeServer, path))
-	case got != codec.Canonical(want):
-		out = append(out, fmt.Sprintf("warn: claude: runtime MCP server %q in %s differs from the selected config (run `homonto apply`)", RuntimeServer, path))
-	default:
-		out = append(out, fmt.Sprintf("ok: claude: runtime MCP server %q registered in %s", RuntimeServer, path))
+		out = append(out, fmt.Sprintf("warn: claude: runtime MCP server: cannot read %s: %v", path, err))
+	} else {
+		codec := jsoncodec.Codec{}
+		got, present, err := codec.Get(doc, projMCPDocPath("projmcp."+RuntimeServer))
+		switch {
+		case err != nil:
+			out = append(out, fmt.Sprintf("warn: claude: runtime MCP server: %s: %v", path, err))
+		case !present:
+			out = append(out, fmt.Sprintf("warn: claude: runtime MCP server %q is not registered in %s (run `homonto apply`)", RuntimeServer, path))
+		case got != codec.Canonical(want):
+			out = append(out, fmt.Sprintf("warn: claude: runtime MCP server %q in %s differs from the selected config (run `homonto apply`)", RuntimeServer, path))
+		default:
+			out = append(out, fmt.Sprintf("ok: claude: runtime MCP server %q registered in %s", RuntimeServer, path))
+		}
 	}
 	if _, err := lookPath("homonto"); err != nil {
 		out = append(out, "warn: claude: `homonto` is not on PATH; Claude Code cannot start the runtime MCP server or its hooks")

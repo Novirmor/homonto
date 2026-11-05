@@ -108,3 +108,16 @@ func TestRecordRefusesOtherCommitsAndBadValues(t *testing.T) {
 		t.Error("init reset an existing manifest")
 	}
 }
+
+func TestCheckRefusesEvidenceForAnotherCommit(t *testing.T) {
+	fakeGit(t, "abc123", "")
+	path := filepath.Join(t.TempDir(), "evidence.json")
+	runOK(t, "init", "--version", "v1.0.0", "--out", path)
+
+	fakeGit(t, "def456", "")
+	var out bytes.Buffer
+	err := run([]string{"check", path}, &out)
+	if err == nil || !strings.Contains(err.Error(), "evidence from another commit does not allow this tag") {
+		t.Fatalf("check accepted another commit's evidence: %v\n%s", err, out.String())
+	}
+}

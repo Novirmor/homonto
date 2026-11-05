@@ -5,6 +5,42 @@ release page for a tag shows only that release's notes
 ([`docs/release-notes.md`](docs/release-notes.md)) plus the generated commit
 list. Release candidates are folded into their stable release.
 
+## Unreleased — 1.0 stabilization (M5)
+
+Not yet tagged. The M1–M4 entries (hosting workflows, plugin contracts,
+model routing and decisions, BYO and Claude Code) are written into this
+section from their pull requests when the release is cut.
+
+- **Package contract versions (breaking for package authors, ADR 0108).**
+  Engine, workflow and service contracts are each at 1.0, and
+  `homonto package contracts` prints them. A `manifest_schema = 2` package
+  must declare `[compat] contract = "1.0"`. A missing, newer or retired
+  contract fails at load and names the fix. `homonto package check` reports
+  the contract it certified.
+- **1.x compatibility policy (ADR 0109).** From 1.0, configs, persisted
+  state, package contracts and machine-readable output stay readable with
+  the same meaning across 1.x. Deprecations warn and are removed only in 2.0.
+  Frozen fixtures in `testdata/compat/` enforce this.
+- **Ready-made starting configurations (ADR 0110).** `homonto init --harness
+  … --engine … --host … --model <harness>=<model>` writes a validated config
+  for any supported host × harness × engine combination
+  ([supported combinations](docs/guides/supported-combinations.md)). The
+  installer collects the answers and calls it. **Installer change:** it no
+  longer writes `[settings.opencode] model`, so your global OpenCode session
+  model is left alone. Agents get their model from `[routing.default.<harness>]`.
+- **Runtime MCP registration (ADR 0107).** homonto owns only
+  `mcpServers.homonto` in `.mcp.json`. `homonto doctor` reports whether it is
+  registered and current, and whether `homonto` is on `PATH`.
+- **Configuration reference and diagnostics.** The reference's key index and
+  builtin package settings are generated from the schema. Every load error
+  names its key, value and fix. `[frameworks.*]` names its rename, and an
+  unknown key points at the index.
+- **Fix:** a Claude Code-only `[subagents.<name>.claude]` block now tunes an
+  installed package agent. It used to fail with `source "" is invalid`.
+
+**Upgrade:** add `[compat] contract = "1.0"` to every `manifest_schema = 2`
+package you maintain, then `homonto plan` and `homonto apply`.
+
 ## v0.36.1 — safer cleanup, remote sources, and installation
 
 All three binaries are stamped v0.36.1. The embedded catalog is 0.36.1

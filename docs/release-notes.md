@@ -61,11 +61,13 @@ workflow repeats the complete gate before publishing.
 
 ## Known limitations
 
-homonto is young and deliberately narrow. For the 0.x line:
+homonto is young and deliberately narrow:
 
-- **OpenCode 2 is the only target.** Claude Code and Codex support was removed
-  in v0.13.0; a config naming them fails at load and names the key. Support for
-  other harnesses is architecture only (ADR 0082).
+- **OpenCode 2 and Claude Code are the targets.** Claude Code runs every
+  engine with the limitations accepted in ADR 0105, which `homonto doctor`
+  reports. Codex and Antigravity are architecture only (ADR 0082). The
+  supported host × harness × engine cells, and the evidence each needs, are in
+  [supported combinations](https://github.com/Novirmor/homonto/blob/main/docs/guides/supported-combinations.md).
 - **`opencode.jsonc` comments are not preserved** by an apply that rewrites
   the file; it is written back as normalized JSON. No-op and link-only applies
   leave it alone.

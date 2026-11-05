@@ -309,7 +309,7 @@ func validateRemovedTools(c *Config) error {
 			return fmt.Errorf("parse config: harnesses names unknown harness %q; valid harnesses are \"opencode\" and \"claude\"", h)
 		}
 		if seen[h] {
-			return fmt.Errorf("parse config: harnesses lists %q twice", h)
+			return fmt.Errorf("parse config: harnesses lists %q twice; list each harness once", h)
 		}
 		seen[h] = true
 	}
@@ -396,12 +396,12 @@ func validatePlugins(c *Config) error {
 			// no plugin-array value), so a declared plugin would silently do
 			// nothing. Fail fast naming the plugin.
 			if strings.TrimSpace(pl.Source) == "" {
-				return fmt.Errorf("parse config: %s plugin %q has an empty source", tool.name, declName)
+				return fmt.Errorf("parse config: %s.%s has an empty source; set source to the plugin's npm package or path, or delete the table", tool.name, declName)
 			}
 			// OpenCode plugins are a plain array on disk with no per-plugin
 			// config slot, so a declared config could project nowhere. Reject it.
 			if tool.name == "plugins.opencode" && len(pl.Config) > 0 {
-				return fmt.Errorf("parse config: %s plugin %q declares config, but OpenCode has no per-plugin config on disk (its plugins are a plain array); remove config", tool.name, declName)
+				return fmt.Errorf("parse config: %s.%s declares config, but OpenCode has no per-plugin config on disk (its plugins are a plain array); remove config", tool.name, declName)
 			}
 			if prev, dup := seenSource[pl.Source]; dup {
 				return fmt.Errorf("parse config: %s plugins %q and %q share source %q", tool.name, prev, declName, pl.Source)

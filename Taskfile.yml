@@ -103,6 +103,10 @@ tasks:
     desc: Frozen 1.x compatibility fixtures only gained files since the last release tag (ADR 0109)
     cmd: ./scripts/compat-fixtures-check.sh {{.CLI_ARGS}}
 
+  docs-config:
+    desc: Regenerate the configuration reference's key index from the config schema
+    cmd: HOMONTO_UPDATE_REFERENCE=1 go test ./internal/config -run TestConfigReferenceMatchesTheSchema -count=1
+
   docs-check:
     desc: Agent docs and catalog reference only things that exist
     cmd: ./scripts/agents-doc-check.sh

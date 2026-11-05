@@ -162,8 +162,8 @@ scope = "project"
 		t.Fatal(err)
 	}
 	_, err := Load(p)
-	if err == nil || !strings.Contains(err.Error(), "frameworks") || !strings.Contains(err.Error(), "unknown configuration fields") {
-		t.Fatalf("legacy declaration error = %v, want strict rejection of [frameworks.*]", err)
+	if err == nil || !strings.Contains(err.Error(), `frameworks entry "onto"`) || !strings.Contains(err.Error(), "[engines.onto] or [workflows.onto]") {
+		t.Fatalf("legacy declaration error = %v, want [frameworks.*] rejected with its rename", err)
 	}
 }
 

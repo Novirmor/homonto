@@ -1,0 +1,94 @@
+# A 1.0 config exercising every public table that loads without a real Git
+# workspace. Frozen: see ../README.md.
+harnesses = ["opencode", "claude"]
+
+[engines.onto]
+source = "builtin:onto"
+scope = "project"
+
+[engines.to]
+source = "builtin:to"
+scope = "project"
+
+[engines.no]
+source = "builtin:no"
+scope = "project"
+
+[engines.no.settings]
+isolation = "worktree"
+
+[workflows.h-workflow-gh]
+source = "builtin:h-workflow-gh"
+scope = "project"
+
+[skills.handoff]
+source = "builtin:handoff"
+scope = "project"
+
+[commands.grill]
+source = "builtin:grill"
+scope = "user"
+
+[routing.default.opencode]
+model = "anthropic/claude-sonnet-5-5"
+
+[routing.default.claude]
+model = "sonnet"
+
+[routing.engines.no.opencode]
+mode = "auto"
+candidates = ["openai/gpt-6-mini", "anthropic/claude-haiku-5-5"]
+needs = ["tools"]
+prefer = "cost"
+fallback = "anthropic/claude-sonnet-5-5"
+
+[routing.engines.onto.stages.verify.claude]
+model = "opus"
+
+[routing.models.opencode."openai/gpt-6-mini"]
+cost = 0.6
+latency = 0.8
+tags = ["tools"]
+
+[decisions]
+default = "openai"
+min_confidence = 0.6
+timeout = "30s"
+
+[decisions.providers.openai]
+protocol = "openai-decisions"
+model = "gpt-6-luna"
+api_key_env = "OPENAI_API_KEY"
+
+[subagents.onto-skeptic.opencode]
+model = "anthropic/claude-opus-5-5"
+variant = "high"
+steps = 160
+
+[subagents.onto-skeptic.claude]
+model = "opus"
+
+[plugins.opencode.permission-observer]
+source = "permission-observer"
+
+[settings.opencode]
+autoupdate = false
+
+[settings.claude]
+theme = "dark"
+
+[tui.opencode]
+theme = { name = "gruvbox", mode = "system" }
+
+[integrations.opencode]
+workflow_context = true
+
+[tooling]
+shell_proxy = "rtk"
+code_intel = "none"
+
+[tmp]
+dir = ".tmp"
+
+[workflow]
+root = "docs"

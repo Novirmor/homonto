@@ -100,7 +100,7 @@ numbering: [`../agents/adr.md`](../agents/adr.md).
 | [0078](0078-merge-onto-presets-into-light.md) | Merge onto fix and tweak into onto light | Accepted |
 | [0079](0079-drop-the-opencode-1-workflow-plugin.md) | Drop the OpenCode 1 workflow plugin | Accepted |
 | [0080](0080-freeze-workspace-migration.md) | Freeze workspace migration | Superseded by 0081 |
-| [0081](0081-support-only-the-live-version.md) | Support only the live version | Accepted |
+| [0081](0081-support-only-the-live-version.md) | Support only the live version | Partially superseded by 0109 |
 | [0082](0082-support-harnesses-natively-in-tiers.md) | Support harnesses natively, in tiers | Accepted |
 | [0083](0083-pull-the-chosen-base-before-every-change.md) | Pull the chosen base before every change | Accepted |
 | [0084](0084-allow-draft-prs-at-any-phase.md) | Allow draft PRs at any phase | Accepted |
@@ -128,3 +128,4 @@ numbering: [`../agents/adr.md`](../agents/adr.md).
 | [0106](0106-let-external-engines-own-lifecycle-records.md) | Let external engines own lifecycle records | Accepted |
 | [0107](0107-register-the-runtime-mcp-server-as-homontos-own.md) | Register the runtime MCP server as homonto's own | Accepted |
 | [0108](0108-version-the-package-contracts.md) | Version the package contracts | Accepted |
+| [0109](0109-keep-1x-compatible-within-the-major.md) | Keep 1.x compatible within the major | Accepted |

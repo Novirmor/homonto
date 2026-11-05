@@ -41,6 +41,25 @@ never touched:
 | `release-packaging` | The real release build: 18 archives, `SHA256SUMS`, extraction, stamped versions, a smoke of an *extracted* binary |
 | `v015-surface` | explain and provenance, links surviving a repo move, evidence and trace, promote, permission suggestions, snapshot undo |
 
+### Compatibility (1.x)
+
+From 1.0 on, every release keeps the 1.x promise
+([ADR 0109](adr/0109-keep-1x-compatible-within-the-major.md)). Check each row
+for the candidate:
+
+| Surface | Check | Evidence |
+|---|---|---|
+| Config, state, contracts | `go test ./internal/compat/` passes (part of the gate's `go test`) | gate log |
+| Frozen fixtures | `task compat-fixtures` (needs tags; `scripts/compat-fixtures-check.sh <previous tag>`): `testdata/compat/` only gained files | command output |
+| New format versions | each format version the release introduces has a new `testdata/compat/<version>/` directory and an `internal/compat` test | diff |
+| Deprecations | every deprecated key, flag, value or JSON field warns in `plan`/`doctor`, names its replacement, and is listed in the release notes. Nothing deprecated is removed before 2.0 | release notes |
+| Upgrade in place | with the previous 1.x release, `homonto init` + `apply` a disposable project, start an onto change and a to task, then switch to the candidate binaries. `homonto plan` shows only expected changes, `homonto status` reports no drift after apply, and `onto status`/`to status` list the in-flight work | transcript |
+| Contract versions | `homonto package contracts` matches [contracts › versions](contracts/README.md#versions). No contract major bump within 1.x | command output |
+| Harness and host matrix | the release notes list every host × harness version × engine cell this release was verified on (section 2), and nothing else is claimed | release notes |
+
+A release that cannot meet a row is not a 1.x release. It waits, or it
+becomes 2.0.
+
 ## 2. Live host checks
 
 The gate never boots a real OpenCode 2 host or publishes to GitHub. When a

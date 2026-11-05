@@ -104,8 +104,8 @@ tasks:
     cmd: ./scripts/compat-fixtures-check.sh {{.CLI_ARGS}}
 
   docs-config:
-    desc: Regenerate the configuration reference's key index from the config schema
-    cmd: HOMONTO_UPDATE_REFERENCE=1 go test ./internal/config -run TestConfigReferenceMatchesTheSchema -count=1
+    desc: Regenerate the generated reference sections (config key index, supported combinations)
+    cmd: HOMONTO_UPDATE_REFERENCE=1 go test ./internal/config ./internal/starter -run "TestConfigReferenceMatchesTheSchema|TestSupportedCombinationsDocMatchesTheMatrix" -count=1
 
   docs-check:
     desc: Agent docs and catalog reference only things that exist

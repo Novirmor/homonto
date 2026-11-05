@@ -3,9 +3,10 @@
 # Asks a few questions, downloads the release archives from GitHub, verifies
 # them against the release SHA256SUMS, and installs the binaries into a
 # directory you choose — and, on your explicit confirmation only, runs
-# `homonto init` in the current directory to scaffold homonto.toml and offers
-# to configure workflow frameworks, models, records, the workspace tmp
-# directory, and sibling repositories.
+# `homonto init` in the current directory: for a new project it asks for the
+# harness, engines, hosting workflow, models, records root, workspace tmp
+# directory and sibling repositories, and `homonto init` generates and
+# validates the configuration from them (ADR 0110).
 #
 # Prompts use gum (https://github.com/charmbracelet/gum) when it is on PATH and
 # stdin is a TTY, then dialog, then plain reads. Scripted runs keep
@@ -28,9 +29,12 @@ INIT_RAN=0
 SETUP_RAN=0
 SETUP_FRAMEWORKS="none"
 SETUP_H="no"
+SETUP_HOST="none"     # none | github | gitlab | bitbucket
+SETUP_HARNESSES="opencode" # opencode | claude | both
 SETUP_TMP="no"
 WORKFLOW_ROOT="docs"
-WORKFLOW_MODEL=""
+MODEL_OPENCODE=""
+MODEL_CLAUDE=""
 REPO_NAMES=()
 REPO_PATHS=()
 REPO_CANONICAL_PATHS=()
@@ -358,13 +362,13 @@ maybe_init() {
   [ -e homonto.toml ] && config_existed=1
   ui_hint "Optional: scaffold this directory now. Existing homonto.toml files are never overwritten."
   if ui_confirm "Generate homonto.toml here (runs homonto init in $(pwd))?"; then
-    printf 'running homonto init in %s\n' "$(pwd)" >&2
-    "$INSTALL_DIR/homonto" init >&2
-    INIT_RAN=1
-    if [ "$config_existed" -eq 0 ] && [ -f homonto.toml ]; then
-      configure_new_project
-    elif [ "$config_existed" -eq 1 ]; then
+    if [ "$config_existed" -eq 1 ]; then
+      printf 'running homonto init in %s\n' "$(pwd)" >&2
+      "$INSTALL_DIR/homonto" init >&2
+      INIT_RAN=1
       ui_hint "homonto.toml already exists, so its configuration was left unchanged."
+    else
+      configure_new_project
     fi
   fi
 }
@@ -515,39 +519,71 @@ collect_repositories() {
   done
 }
 
-write_package_config() {
-  local package name table
-  local names=()
-  local emitted=()
-  # The shared homonto coordinator is emitted exactly once. Every builtin
-  # workflow/engine that uses it needs the same model block.
-  printf '\n[subagents.homonto.opencode]\nmodel = "%s"\n' "$WORKFLOW_MODEL"
-  for package in "$@"; do
-    case "$package" in
-      h-workflow-gh | h-workflow-gl | h-workflow-bb) table=workflows ;;
-      *) table=engines ;;
-    esac
-    printf '\n[%s.%s]\nsource = "builtin:%s"\nscope = "project"\n' "$table" "$package" "$package"
-    case "$package" in
-      onto) names+=(onto-explorer onto-reviewer onto-implementer onto-skeptic) ;;
-      to) names+=(to-explorer to-reviewer to-implementer to-skeptic) ;;
-      h-workflow-gh | h-workflow-gl | h-workflow-bb) names+=(h-spike h-review) ;;
-    esac
-  done
-  for name in ${names[@]+"${names[@]}"}; do
-    [[ " ${emitted[*]-} " == *" $name "* ]] && continue
-    emitted+=("$name")
-    printf '\n[subagents.%s.opencode]\nmodel = "%s"\n' "$name" "$WORKFLOW_MODEL"
-  done
+ask_setup_harnesses() {
+  SETUP_HARNESSES="$(ui_select "Harness to configure" opencode claude both)"
 }
 
+ask_setup_host() {
+  SETUP_HOST="$(ui_select "Hosting workflow to configure (/h-spike-issue, /h-resolve-issue, /h-review-pr, /h-continue-pr, /h-resolve-conflicts, /h-review-batch)" none github gitlab bitbucket)"
+  [ "$SETUP_HOST" = none ] || SETUP_H=yes
+}
+
+# ask_model <harness> -> sets MODEL_<harness>. The model is the user's
+# explicit choice; homonto init refuses a selection without one.
+ask_model() {
+  local harness="$1" default_model model retry=no
+  case "$harness" in
+    opencode)
+      default_model="$(default_workflow_model)"
+      if ! valid_model "$default_model"; then
+        ui_hint "Ignoring invalid detected model \"$default_model\"; choose a provider/model without a #variant suffix."
+        default_model=opencode-go/qwen3.7-plus
+      fi
+      ui_hint "Every OpenCode agent of the selected workflows runs on this model ([routing.default.opencode]); your own OpenCode session model is left alone."
+      while :; do
+        model="$(ui_input "Model for every OpenCode workflow agent" "$default_model" "$retry")" || return 1
+        retry=yes
+        safe_toml_value "$model"
+        if valid_model "$model"; then
+          MODEL_OPENCODE="$model"
+          return 0
+        fi
+        printf 'install: "%s" is not a model — use provider/model without a #variant suffix (e.g. %s)\n' "$model" "$default_model" >&2
+      done
+      ;;
+    claude)
+      ui_hint "Every Claude Code agent of the selected workflows runs on this model ([routing.default.claude])."
+      while :; do
+        model="$(ui_input "Model for every Claude Code workflow agent (sonnet, opus, haiku, or a model id)" "sonnet" "$retry")" || return 1
+        retry=yes
+        safe_toml_value "$model"
+        case "$model" in
+          '' | *[[:space:]/#]*)
+            printf 'install: "%s" is not a Claude Code model — use an alias (sonnet, opus, haiku) or a model id\n' "$model" >&2
+            ;;
+          *) MODEL_CLAUDE="$model"; return 0 ;;
+        esac
+      done
+      ;;
+  esac
+}
+
+# configure_new_project collects the selection and hands it to homonto init,
+# which owns the starter matrix, validates the result and writes the file
+# (ADR 0110). Nothing here writes TOML.
 configure_new_project() {
-  local i packages=()
+  local i args=()
   ui_section "Configure project"
-  ui_hint "Choose onto and/or to engines for this new repository."
+  ui_hint "Choose the harness, engines and hosting workflow for this new repository."
+  ask_setup_harnesses
   ask_setup_frameworks
-  if ui_confirm "Configure the standalone GitHub workflow? ([workflows.h-workflow-gh]: /h-spike-issue, /h-resolve-issue, /h-review-pr, /h-continue-pr, /h-resolve-conflicts, /h-review-batch)"; then
-    SETUP_H=yes
+  ask_setup_host
+  if [ "$SETUP_FRAMEWORKS" = none ] && [ "$SETUP_H" != yes ]; then
+    ui_hint "No engine or hosting workflow selected: writing the commented scaffold instead."
+    printf 'running homonto init in %s\n' "$(pwd)" >&2
+    "$INSTALL_DIR/homonto" init >&2 || die "homonto init failed"
+    INIT_RAN=1
+    return 0
   fi
   ask_workflow_root
   if ui_confirm "Declare a workspace tmp directory? ([tmp] dir = \".tmp\": scratch every agent can write; apply creates it and keeps it gitignored; homonto never deletes content)"; then
@@ -557,52 +593,33 @@ configure_new_project() {
       ask_workflow_root yes
     done
   fi
-  if [ "$SETUP_FRAMEWORKS" != none ] || [ "$SETUP_H" = yes ]; then
-    local default_model model retry=no
-    default_model="$(default_workflow_model)"
-    if ! valid_model "$default_model"; then
-      ui_hint "Ignoring invalid detected model \"$default_model\"; choose a provider/model without a #variant suffix."
-      default_model=opencode-go/qwen3.7-plus
-    fi
-    ui_hint "On homonto apply, this model updates global OpenCode settings (affecting other projects) and all selected workflow agents."
-    while :; do
-      model="$(ui_input "Model for OpenCode and all workflow agents" "$default_model" "$retry")" || return 1
-      retry=yes
-      safe_toml_value "$model"
-      if valid_model "$model"; then
-        WORKFLOW_MODEL="$model"
-        break
-      fi
-      printf 'install: "%s" is not a model — use provider/model without a #variant suffix (e.g. %s)\n' "$model" "$default_model" >&2
-    done
-  fi
   collect_repositories
 
-  case "$SETUP_FRAMEWORKS" in
-    both) packages=(onto to) ;;
-    onto) packages=(onto) ;;
-    to) packages=(to) ;;
+  case "$SETUP_HARNESSES" in
+    both) args+=(--harness opencode --harness claude) ;;
+    *) args+=(--harness "$SETUP_HARNESSES") ;;
   esac
-  if [ "$SETUP_H" = yes ]; then
-    packages+=(h-workflow-gh)
+  case "$SETUP_FRAMEWORKS" in
+    both) args+=(--engine onto --engine to) ;;
+    onto | to) args+=(--engine "$SETUP_FRAMEWORKS") ;;
+  esac
+  [ "$SETUP_H" = yes ] && args+=(--host "$SETUP_HOST")
+  if [ "$SETUP_HARNESSES" != claude ]; then
+    ask_model opencode
+    args+=(--model "opencode=$MODEL_OPENCODE")
   fi
-  {
-    printf '\n# Generated by scripts/install.sh. Adjust these values as your project evolves.\n'
-    printf '\n[workflow]\nroot = "%s"\n' "$WORKFLOW_ROOT"
-    if [ -n "${REPO_NAMES[*]-}" ]; then
-      printf '\n[repos]\n'
-      for i in "${!REPO_NAMES[@]}"; do
-        printf '%s = "%s"\n' "${REPO_NAMES[$i]}" "${REPO_PATHS[$i]}"
-      done
-    fi
-    if [ "$SETUP_TMP" = yes ]; then
-      printf '\n# Scratch space every agent can write without prompts (ADR 0048).\n[tmp]\ndir = ".tmp"\n'
-    fi
-    if [ -n "${packages[*]-}" ]; then
-      printf '\n[settings.opencode]\nmodel = "%s"\n' "$WORKFLOW_MODEL"
-      write_package_config "${packages[@]}"
-    fi
-  } >> homonto.toml
+  if [ "$SETUP_HARNESSES" != opencode ]; then
+    ask_model claude
+    args+=(--model "claude=$MODEL_CLAUDE")
+  fi
+  args+=(--records "$WORKFLOW_ROOT")
+  [ "$SETUP_TMP" = yes ] && args+=(--tmp)
+  for i in ${REPO_NAMES[@]+"${!REPO_NAMES[@]}"}; do
+    args+=(--repo "${REPO_NAMES[$i]}=${REPO_PATHS[$i]}")
+  done
+  printf 'running homonto init %s\n' "${args[*]}" >&2
+  "$INSTALL_DIR/homonto" init "${args[@]}" >&2 || die "homonto init refused the selection; nothing was written"
+  INIT_RAN=1
   SETUP_RAN=1
   ui_hint "Configured homonto.toml. Review it before applying changes."
 }
@@ -629,9 +646,13 @@ next_steps() {
       fi
     done
     if [ "$SETUP_H" = yes ]; then
-      printf '  After apply, /h-* commands provide the standalone h-workflow-gh GitHub workflow.\n' >&2
-      printf '  For GitLab.com or Bitbucket Cloud, also declare [workflows.h-workflow-gl] or\n' >&2
-      printf '  [workflows.h-workflow-bb]; the same /h-* commands serve every host.\n' >&2
+      printf '  After apply, /h-* commands provide the standalone %s hosting workflow.\n' "$SETUP_HOST" >&2
+      printf '  Add another host with homonto init on a fresh directory, or declare its\n' >&2
+      printf '  [workflows.h-workflow-gh|gl|bb] table; the same /h-* commands serve every host.\n' >&2
+    fi
+    if [ "$SETUP_HARNESSES" != opencode ]; then
+      printf '  Claude Code: start claude in this directory once and trust the folder,\n' >&2
+      printf '  or homonto'"'"'s hooks and runtime server stay inactive.\n' >&2
     fi
   elif [ "$INIT_RAN" -eq 1 ]; then
     printf '\nNext steps\n' >&2

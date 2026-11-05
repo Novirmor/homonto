@@ -186,19 +186,24 @@ It downloads the archives, verifies each against the release `SHA256SUMS`
 for you to add. It never edits your shell profile.
 
 Then it offers to run `homonto init` in the current directory. Only if you
-confirm, and only for a newly created `homonto.toml`, it also asks:
+confirm, and only when there is no `homonto.toml` yet, it asks:
 
+- which harness to configure (OpenCode, Claude Code, or both);
+- which engines to enable (`onto`, `to`) and which hosting workflow (GitHub,
+  GitLab.com, Bitbucket Cloud, or none);
 - where workflow records live (`[workflow] root`, default `docs`);
 - whether to declare a workspace scratch directory (`[tmp]`);
 - which sibling Git repositories to trust (`[repos]`);
-- which engines to enable (`onto`, `to`) and whether to add the `h-workflow-gh` GitHub
-  workflow;
-- one model, written to `[settings.opencode]` **and** every installed agent's
-  model block.
+- one model per harness, which every workflow agent on it runs on
+  (`[routing.default.<harness>]`). Your own OpenCode session model is left
+  alone.
 
-> `[settings.opencode] model` projects into your **global** OpenCode config on
-> apply, so it affects every project. Review the generated file before
-> `homonto apply`.
+The installer only collects the answers. `homonto init --harness … --engine …`
+generates and validates the file
+([ADR 0110](../adr/0110-generate-starting-configurations-in-the-binary.md)),
+so a scripted setup can call it directly. Choosing no engine and no host
+writes the commented scaffold instead. Review the generated file before
+`homonto apply`.
 
 An existing `homonto.toml` is never modified. Prompts use
 [gum](https://github.com/charmbracelet/gum) when installed, then `dialog`,

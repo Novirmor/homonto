@@ -1,6 +1,7 @@
 package scaffold
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -70,6 +71,26 @@ var files = map[string]string{
 // that already has a .gitignore still ignores /.homonto/ and .env) rather than
 // silently skipping it. It returns the files it created and the ones it updated.
 func Init(dir string) (created, updated []string, err error) {
+	return initFiles(dir, files)
+}
+
+// InitConfig scaffolds like Init, but with config as homonto.toml: a
+// generated starting configuration (internal/starter). It never replaces an
+// existing homonto.toml.
+func InitConfig(dir, config string) (created, updated []string, err error) {
+	p := filepath.Join(dir, "homonto.toml")
+	if _, statErr := os.Lstat(p); statErr == nil {
+		return nil, nil, fmt.Errorf("init: %s already exists; init never edits an existing config", p)
+	}
+	set := make(map[string]string, len(files))
+	for name, body := range files {
+		set[name] = body
+	}
+	set["homonto.toml"] = config
+	return initFiles(dir, set)
+}
+
+func initFiles(dir string, files map[string]string) (created, updated []string, err error) {
 	for name, body := range files {
 		p := filepath.Join(dir, name)
 		if _, statErr := os.Stat(p); statErr == nil {

@@ -47,6 +47,31 @@ Writes a commented `homonto.toml`, a `.gitignore` with `/.homonto/` and
 Never overwrites, never runs `git init`, never installs a package, never
 creates `homonto/skills/`.
 
+With selections it writes a complete starting configuration instead
+([ADR 0110](../adr/0110-generate-starting-configurations-in-the-binary.md)):
+
+```console
+$ homonto init --harness opencode --harness claude --host github --engine onto \
+    --model opencode=anthropic/claude-sonnet-5-5 --model claude=sonnet --tmp
+```
+
+| Flag | Values |
+|---|---|
+| `--harness` | `opencode`, `claude` (repeatable; at least one) |
+| `--engine` | `onto`, `to`, `no` (repeatable) |
+| `--host` | `github`, `gitlab`, `bitbucket` (repeatable): adds `h-workflow-gh`, `-gl` or `-bb` |
+| `--model <harness>=<model>` | required once per selected harness; becomes `[routing.default.<harness>]` |
+| `--records <dir>` | `[workflow] root` (default `docs`) |
+| `--tmp` | declares `[tmp] dir = ".tmp"` |
+| `--repo <alias>=<path>` | a sibling `[repos]` entry (repeatable) |
+
+At least one engine or host is required. The generated file is loaded and
+validated before anything is written. An unsupported value, a missing model,
+or a repository path that does not resolve fails with nothing written. It
+holds no credentials: hosts authenticate through `gh`, `glab` or
+`HOMONTO_BITBUCKET_TOKEN`. Every combination is tested from install to first
+task ([supported combinations](supported-combinations.md)).
+
 ## `homonto plan`
 
 | Flag | Effect |

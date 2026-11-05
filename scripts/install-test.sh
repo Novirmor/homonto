@@ -126,9 +126,26 @@ make_release() { # <version> <os> <arch> <outdir> <binaries...>
     d="$out/${bin}_${version}_${os}_${arch}"
     mkdir -p "$d"
     # shellcheck disable=SC2016 # the generated mock needs the literal ${1:-}
-    printf '#!/usr/bin/env bash\nif [ "${1:-}" = init ]; then\n  if [ "${MOCK_INIT_WRITES_CONFIG:-0}" = 1 ]; then : > homonto.toml; fi\n  echo "%s init fake %s"\nelse\n  echo "%s fake %s"\nfi\n' \
+    # With MOCK_REAL_HOMONTO, init runs the real binary: config generation
+    # lives in homonto init (ADR 0110), so the guided setup needs it.
+    printf '#!/usr/bin/env bash\nif [ "${1:-}" = init ] && [ -n "${MOCK_REAL_HOMONTO:-}" ]; then\n  exec "$MOCK_REAL_HOMONTO" "$@"\nelif [ "${1:-}" = init ]; then\n  echo "%s init fake %s"\nelse\n  echo "%s fake %s"\nfi\n' \
       "$bin" "$version" "$bin" "$version" >"$d/$bin"
     chmod +x "$d/$bin"
+    (cd "$out" && tar -czf "${bin}_${version}_${os}_${arch}.tar.gz" "${bin}_${version}_${os}_${arch}")
+    rm -rf "$d"
+  done
+  (cd "$out" && sha256sum ./*.tar.gz > SHA256SUMS)
+}
+
+# make_real_release <version> <os> <arch> <outdir> <binaries...>: archives the
+# real binaries built from this checkout, for the install-to-first-task path.
+make_real_release() {
+  local version="$1" os="$2" arch="$3" out="$4"; shift 4
+  local bin d
+  for bin in "$@"; do
+    d="$out/${bin}_${version}_${os}_${arch}"
+    mkdir -p "$d"
+    cp "$REAL_BIN/$bin" "$d/$bin"
     (cd "$out" && tar -czf "${bin}_${version}_${os}_${arch}.tar.gz" "${bin}_${version}_${os}_${arch}")
     rm -rf "$d"
   done
@@ -383,34 +400,35 @@ t20_guided_project_setup() {
   git -C "$s/repo-a" init -q
   mkdir -p "$s/home/.config/opencode"
   printf '{\n  "model": "test-provider/test-model"\n}\n' >"$s/home/.config/opencode/opencode.json"
-  run_install "$s" $'\nboth\n'"$s/bin"$'\ny\nboth\ny\nworkflow\nn\n\n'"$s/repo-a"$'\napi\n' \
-    HOME="$s/home" XDG_CONFIG_HOME="$s/home/.config" MOCK_INIT_WRITES_CONFIG=1
+  run_install "$s" $'\nboth\n'"$s/bin"$'\ny\nopencode\nboth\ngithub\nworkflow\nn\n'"$s/repo-a"$'\napi\n\n\n' \
+    HOME="$s/home" XDG_CONFIG_HOME="$s/home/.config" MOCK_REAL_HOMONTO="$REAL_BIN/homonto"
   config="$s/homonto.toml"
   expect_exit "t20: guided project setup" 0
   expect_stderr "t20: configures a new project" "Configured homonto.toml"
-  expect_stderr "t20: h is standalone" "standalone GitHub workflow"
+  expect_stderr "t20: hosts are offered" "Hosting workflow to configure"
+  expect_stderr "t20: harnesses are offered" "Harness to configure"
   expect_not_stderr "t20: h is not an engine" "h GitHub engine"
   expect_stderr "t20: lifecycle choices are named" "Lifecycle workflows to configure"
-  expect_stderr "t20: model scope is disclosed" "global OpenCode settings"
+  expect_stderr "t20: model scope is disclosed" "your own OpenCode session model is left alone"
+  expect_stderr "t20: generation is delegated to homonto init" "running homonto init --harness opencode"
   expect_next_steps present "t20: selected h commands are advertised" "/h-*"
   if grep -qF '[workflow]' "$config" \
     && grep -qF 'root = "workflow"' "$config" \
     && grep -qF '[repos]' "$config" \
     && grep -qF "api = \"$s/repo-a\"" "$config" \
+    && grep -qF 'harnesses = ["opencode"]' "$config" \
     && grep -qF '[engines.onto]' "$config" \
     && grep -qF '[engines.to]' "$config" \
     && grep -qF '[workflows.h-workflow-gh]' "$config" \
-    && grep -qF '[subagents.homonto.opencode]' "$config" \
-    && grep -qF '[subagents.h-spike.opencode]' "$config" \
+    && grep -qF '[routing.default.opencode]' "$config" \
     && grep -qF 'model = "test-provider/test-model"' "$config" \
-    && [ "$(grep -cF '[subagents.homonto.opencode]' "$config")" -eq 1 ]; then
+    && ! grep -qF '[settings.opencode]' "$config"; then
     ok "t20: writes selected repos, workflow root, engines, h workflow, and model"
   else
     bad "t20: writes selected repos, workflow root, engines, h workflow, and model"
     cat "$config" >&2
   fi
-  if (cd "$ROOT" && go build -o "$s/homonto-real" .) \
-    && (cd "$s" && "$s/homonto-real" plan >/dev/null 2>"$s/plan.stderr"); then
+  if (cd "$s" && HOME="$s/home" "$REAL_BIN/homonto" plan >/dev/null 2>"$s/plan.stderr"); then
     ok "t20: generated configuration passes homonto plan"
   else
     bad "t20: generated configuration passes homonto plan"
@@ -457,22 +475,20 @@ t23_forced_dialog_requires_binary() {
 t24_h_with_onto_stays_independent() {
   local s="$1" config
   make_release v9.9.9 linux amd64 "$s/assets" homonto onto
-  run_install "$s" $'\nonto\n'"$s/bin"$'\ny\nonto\ny\n\nn\n\n' MOCK_INIT_WRITES_CONFIG=1
+  run_install "$s" $'\nonto\n'"$s/bin"$'\ny\nopencode\nonto\ngithub\n\nn\n\nprovider/model\n' \
+    HOME="$s/home" MOCK_REAL_HOMONTO="$REAL_BIN/homonto"
   config="$s/homonto.toml"
   expect_exit "t24: onto + h guided setup" 0
   expect_next_steps absent "t24: h does not enable to" "/to"
   if grep -qF '[engines.onto]' "$config" \
     && grep -qF '[workflows.h-workflow-gh]' "$config" \
-    && ! grep -qF '[engines.to]' "$config" \
-    && ! grep -qF '[subagents.to-explorer.opencode]' "$config" \
-    && grep -qF '[subagents.h-spike.opencode]' "$config"; then
-    ok "t24: onto + h has only their own models"
+    && ! grep -qF '[engines.to]' "$config"; then
+    ok "t24: onto + h has only their own packages"
   else
-    bad "t24: onto + h has only their own models"
+    bad "t24: onto + h has only their own packages"
     cat "$config" >&2
   fi
-  if (cd "$ROOT" && go build -o "$s/homonto-real" .) \
-    && (cd "$s" && "$s/homonto-real" plan >/dev/null 2>"$s/plan.stderr"); then
+  if (cd "$s" && HOME="$s/home" "$REAL_BIN/homonto" plan >/dev/null 2>"$s/plan.stderr"); then
     ok "t24: onto + h generated configuration passes homonto plan"
   else
     bad "t24: onto + h generated configuration passes homonto plan"
@@ -483,22 +499,20 @@ t24_h_with_onto_stays_independent() {
 t25_h_with_to_stays_independent() {
   local s="$1" config
   make_release v9.9.9 linux amd64 "$s/assets" homonto to
-  run_install "$s" $'\nto\n'"$s/bin"$'\ny\nto\ny\n\nn\n\n' MOCK_INIT_WRITES_CONFIG=1
+  run_install "$s" $'\nto\n'"$s/bin"$'\ny\nopencode\nto\ngithub\n\nn\n\nprovider/model\n' \
+    HOME="$s/home" MOCK_REAL_HOMONTO="$REAL_BIN/homonto"
   config="$s/homonto.toml"
   expect_exit "t25: to + h guided setup" 0
   expect_next_steps absent "t25: h does not enable onto" "/onto"
   if grep -qF '[engines.to]' "$config" \
     && grep -qF '[workflows.h-workflow-gh]' "$config" \
-    && ! grep -qF '[engines.onto]' "$config" \
-    && ! grep -qF '[subagents.onto-explorer.opencode]' "$config" \
-    && grep -qF '[subagents.h-review.opencode]' "$config"; then
-    ok "t25: to + h has only their own models"
+    && ! grep -qF '[engines.onto]' "$config"; then
+    ok "t25: to + h has only their own packages"
   else
-    bad "t25: to + h has only their own models"
+    bad "t25: to + h has only their own packages"
     cat "$config" >&2
   fi
-  if (cd "$ROOT" && go build -o "$s/homonto-real" .) \
-    && (cd "$s" && "$s/homonto-real" plan >/dev/null 2>"$s/plan.stderr"); then
+  if (cd "$s" && HOME="$s/home" "$REAL_BIN/homonto" plan >/dev/null 2>"$s/plan.stderr"); then
     ok "t25: to + h generated configuration passes homonto plan"
   else
     bad "t25: to + h generated configuration passes homonto plan"
@@ -509,7 +523,8 @@ t25_h_with_to_stays_independent() {
 t26_guided_tmp_directory() {
   local s="$1" config
   make_release v9.9.9 linux amd64 "$s/assets" homonto onto to
-  run_install "$s" $'\nboth\n'"$s/bin"$'\ny\nboth\ny\n\ny\n\n\n' MOCK_INIT_WRITES_CONFIG=1
+  run_install "$s" $'\nboth\n'"$s/bin"$'\ny\nopencode\nboth\nnone\n\ny\n\nprovider/model\n' \
+    HOME="$s/home" MOCK_REAL_HOMONTO="$REAL_BIN/homonto"
   config="$s/homonto.toml"
   expect_exit "t26: guided setup with tmp" 0
   if grep -qF '[tmp]' "$config" \
@@ -520,8 +535,7 @@ t26_guided_tmp_directory() {
     bad "t26: writes the declared tmp directory"
     cat "$config" >&2
   fi
-  if (cd "$ROOT" && go build -o "$s/homonto-real" .) \
-    && (cd "$s" && "$s/homonto-real" plan >/dev/null 2>"$s/plan.stderr"); then
+  if (cd "$s" && HOME="$s/home" "$REAL_BIN/homonto" plan >/dev/null 2>"$s/plan.stderr"); then
     ok "t26: tmp configuration passes homonto plan"
   else
     bad "t26: tmp configuration passes homonto plan"
@@ -536,8 +550,8 @@ t27_model_answer_is_validated() {
   make_release v9.9.9 linux amd64 "$s/assets" homonto onto to
   mkdir -p "$s/home/.config/opencode"
   printf '{\n  "model": "test-provider/default-model"\n}\n' >"$s/home/.config/opencode/opencode.json"
-  run_install "$s" $'\nboth\n'"$s/bin"$'\ny\nboth\nn\n\ny\ny\nprovider/model#high\nprovider/real-model\n\n' \
-    HOME="$s/home" XDG_CONFIG_HOME="$s/home/.config" MOCK_INIT_WRITES_CONFIG=1
+  run_install "$s" $'\nboth\n'"$s/bin"$'\ny\nopencode\nboth\nnone\n\ny\n\ny\nprovider/model#high\nprovider/real-model\n' \
+    HOME="$s/home" XDG_CONFIG_HOME="$s/home/.config" MOCK_REAL_HOMONTO="$REAL_BIN/homonto"
   config="$s/homonto.toml"
   expect_exit "t27: guided setup with stray-y model answer" 0
   expect_stderr "t27: rejects the non-model answer" 'is not a model — use provider/model'
@@ -614,8 +628,8 @@ t30_selection_aware_next_steps() {
     for setup in both onto to none; do
       d="$s/$bins-$setup"
       make_release v9.9.9 linux amd64 "$d/assets" homonto onto to
-      run_install "$d" $'\n'"$bins"$'\n'"$d/bin"$'\ny\n'"$setup"$'\nn\ndocs\nn\n\n\n' \
-        MOCK_INIT_WRITES_CONFIG=1
+      run_install "$d" $'\n'"$bins"$'\n'"$d/bin"$'\ny\nopencode\n'"$setup"$'\nnone\ndocs\nn\n\nprovider/model\n' \
+        HOME="$d/home" MOCK_REAL_HOMONTO="$REAL_BIN/homonto"
       expect_exit "t30: $bins binaries + $setup configuration" 0
       # Inspect only the final advice, not prompts describing available choices.
       OUT_STDERR="${OUT_STDERR##*Next steps}"
@@ -650,11 +664,12 @@ t31_repository_validation() {
       duplicate) path="$d/repo"$'\napi\n'"$d/repo-alias"; message="repository path already selected" ;;
       numeric) path="$d/repo"$'\n123'; message="repository name must not be numeric-only" ;;
     esac
-    run_install "$d" $'\nnone\n'"$d/bin"$'\ny\nnone\nn\ndocs\nn\n'"$path"$'\n\n' MOCK_INIT_WRITES_CONFIG=1
+    run_install "$d" $'\nnone\n'"$d/bin"$'\ny\nopencode\nnone\ngithub\ndocs\nn\n'"$path"$'\n\nprovider/model\n' \
+      HOME="$d/home" MOCK_REAL_HOMONTO="$REAL_BIN/homonto"
     expect_exit "t31: $kind input recovers" 0
     expect_stderr "t31: rejects $kind repository" "$message"
     if [ "$kind" = duplicate ]; then
-      if [ "$(grep -c ' = ' "$d/homonto.toml")" -eq 2 ]; then
+      if [ "$(grep -c '^api = ' "$d/homonto.toml")" -eq 1 ] && [ "$(sed -n '/^\[repos\]/,/^$/p' "$d/homonto.toml" | grep -c ' = ')" -eq 1 ]; then
         ok "t31: duplicate path emitted only once"
       else
         bad "t31: duplicate path emitted only once"
@@ -678,11 +693,13 @@ t32_workflow_root_validation() {
     # EOF retries use docs; tmp is accepted only for roots that reach its prompt.
     case "$root" in
       *tmp*)
-        run_install "$d" $'\nnone\n'"$d/bin"$'\ny\nnone\nn\n'"$root"$'\ny\ndocs\n\n' MOCK_INIT_WRITES_CONFIG=1
+        run_install "$d" $'\nnone\n'"$d/bin"$'\ny\nopencode\nnone\ngithub\n'"$root"$'\ny\ndocs\n\nprovider/model\n' \
+          HOME="$d/home" MOCK_REAL_HOMONTO="$REAL_BIN/homonto"
         expect_stderr "t32: rejects records/tmp collision $root" "overlaps the workspace tmp directory"
         ;;
       *)
-        run_install "$d" $'\nnone\n'"$d/bin"$'\ny\nnone\nn\n'"$root"$'\ndocs\nn\n\n' MOCK_INIT_WRITES_CONFIG=1
+        run_install "$d" $'\nnone\n'"$d/bin"$'\ny\nopencode\nnone\ngithub\n'"$root"$'\ndocs\nn\n\nprovider/model\n' \
+          HOME="$d/home" MOCK_REAL_HOMONTO="$REAL_BIN/homonto"
         expect_stderr "t32: rejects root alias $root" "must be a relative path below this repository"
         ;;
     esac
@@ -699,8 +716,8 @@ t33_relative_repository_with_git_file() {
   local s="$1"
   make_release v9.9.9 linux amd64 "$s/assets" homonto
   git init -q --separate-git-dir "$s/git-metadata" "$s/service a"
-  run_install "$s" $'\nnone\n'"$s/bin"$'\ny\nnone\nn\n./records//nested/\ny\n./service a\napi-2\nservice a/.\n\n' \
-    MOCK_INIT_WRITES_CONFIG=1
+  run_install "$s" $'\nnone\n'"$s/bin"$'\ny\nopencode\nnone\ngithub\n./records//nested/\ny\n./service a\napi-2\nservice a/.\n\nprovider/model\n' \
+    HOME="$s/home" MOCK_REAL_HOMONTO="$REAL_BIN/homonto"
   expect_exit "t33: relative repo with spaces and .git file accepted" 0
   expect_stderr "t33: rejects lexical duplicate" "repository path already selected"
   if grep -qF 'api-2 = "./service a"' "$s/homonto.toml" \
@@ -717,7 +734,8 @@ t34_workflow_root_whitespace() {
   for root in ' ./ ' ' .tmp ' $'\tdocs' $'docs\t'; do
     i=$((i + 1)); d="$s/$i"
     make_release v9.9.9 linux amd64 "$d/assets" homonto
-    run_install "$d" $'\nnone\n'"$d/bin"$'\ny\nnone\nn\n'"$root"$'\ndocs\ny\n\n' MOCK_INIT_WRITES_CONFIG=1
+    run_install "$d" $'\nnone\n'"$d/bin"$'\ny\nopencode\nnone\ngithub\n'"$root"$'\ndocs\ny\n\nprovider/model\n' \
+      HOME="$d/home" MOCK_REAL_HOMONTO="$REAL_BIN/homonto"
     expect_exit "t34: whitespace input $i recovers" 0
     expect_stderr "t34: whitespace input $i rejected" "must not have surrounding whitespace"
     if grep -qF 'root = "docs"' "$d/homonto.toml" && grep -qF '[tmp]' "$d/homonto.toml"; then
@@ -733,7 +751,7 @@ t35_unrecoverable_directories() {
   for kind in tmp-self tmp-outside docs-file docs-overlap; do
     d="$s/$kind"
     make_release v9.9.9 linux amd64 "$d/assets" homonto
-    answers=$'\nnone\n'"$d/bin"$'\ny\nnone\nn'
+    answers=$'\nnone\n'"$d/bin"$'\ny\nopencode\nnone\ngithub'
     case "$kind" in
       tmp-self | tmp-outside)
         if [ "$kind" = tmp-self ]; then ln -s . "$d/.tmp"; else ln -s .. "$d/.tmp"; fi
@@ -751,7 +769,7 @@ t35_unrecoverable_directories() {
         message="end of input"
         ;;
     esac
-    run_install "$d" "$answers" MOCK_INIT_WRITES_CONFIG=1
+    run_install "$d" "$answers" HOME="$d/home" MOCK_REAL_HOMONTO="$REAL_BIN/homonto"
     # Avoid dumping the unbounded prompt output when testing a broken retry loop.
     if [ "$EXIT" -eq 1 ] && [[ "$OUT_STDERR" == *"$message"* ]]; then
       ok "t35: $kind terminates with a clear error"
@@ -759,9 +777,9 @@ t35_unrecoverable_directories() {
       bad "t35: $kind terminates with a clear error (exit $EXIT)"
     fi
     if [ ! -s "$d/homonto.toml" ]; then
-      ok "t35: $kind does not append invalid configuration"
+      ok "t35: $kind writes no configuration"
     else
-      bad "t35: $kind does not append invalid configuration"
+      bad "t35: $kind writes no configuration"
     fi
   done
 }
@@ -771,8 +789,8 @@ t36_cdpath_repository_resolution() {
   make_release v9.9.9 linux amd64 "$s/assets" homonto
   mkdir -p "$s/repo" "$s/elsewhere/repo"
   git -C "$s/repo" init -q
-  run_install "$s" $'\nnone\n'"$s/bin"$'\ny\nnone\nn\ndocs\nn\nrepo\napi\n\n' \
-    CDPATH="$s/elsewhere:." MOCK_INIT_WRITES_CONFIG=1
+  run_install "$s" $'\nnone\n'"$s/bin"$'\ny\nopencode\nnone\ngithub\ndocs\nn\nrepo\napi\n\nprovider/model\n' \
+    CDPATH="$s/elsewhere:." HOME="$s/home" MOCK_REAL_HOMONTO="$REAL_BIN/homonto"
   expect_exit "t36: inherited CDPATH does not affect setup" 0
   if grep -qF 'api = "repo"' "$s/homonto.toml"; then
     ok "t36: relative repository resolves against the config directory"
@@ -793,8 +811,8 @@ t37_invalid_detected_model_recovers() {
     [ "$answer" != replacement ] || expected=provider/replacement
     input=""
     [ "$answer" != replacement ] || input="$expected"
-    run_install "$d" $'\nonto\n'"$d/bin"$'\ny\nonto\nn\ndocs\nn\n'"$input"$'\n\n' \
-      HOME="$d/home" XDG_CONFIG_HOME="$d/home/.config" MOCK_INIT_WRITES_CONFIG=1
+    run_install "$d" $'\nonto\n'"$d/bin"$'\ny\nopencode\nonto\nnone\ndocs\nn\n\n'"$input"$'\n' \
+      HOME="$d/home" XDG_CONFIG_HOME="$d/home/.config" MOCK_REAL_HOMONTO="$REAL_BIN/homonto"
     expect_exit "t37: invalid detected model allows $answer" 0
     if grep -qF "model = \"$expected\"" "$d/homonto.toml" && ! grep -qF '#high' "$d/homonto.toml"; then
       ok "t37: $answer uses a valid model"
@@ -812,13 +830,13 @@ t38_eof_validation_retries() {
     case "$kind" in
       version) answers=banana ;;
       selection) answers=$'\nbanana' ;;
-      model) answers=$'\nonto\n'"$d/bin"$'\ny\nonto\nn\ndocs\nn\ny' ;;
-      valid-defaults) answers=$'\nnone\n'"$d/bin"$'\ny\nnone' ;;
+      model) answers=$'\nonto\n'"$d/bin"$'\ny\nopencode\nonto\nnone\ndocs\nn\n\ny' ;;
+      valid-defaults) answers=$'\nnone\n'"$d/bin"$'\ny' ;;
     esac
-    run_install "$d" "$answers" MOCK_INIT_WRITES_CONFIG=1
+    run_install "$d" "$answers" HOME="$d/home" MOCK_REAL_HOMONTO="$REAL_BIN/homonto"
     if [ "$kind" = valid-defaults ]; then
       expect_exit "t38: valid setup defaults still work at EOF" 0
-      expect_stderr "t38: EOF defaults produce configuration" "Configured homonto.toml"
+      expect_stderr "t38: EOF defaults select nothing and write the scaffold" "writing the commented scaffold"
     else
       expect_exit "t38: $kind retry stops at EOF" 1
       expect_stderr "t38: $kind retry explains EOF" "end of input while retrying"
@@ -829,16 +847,15 @@ t38_eof_validation_retries() {
 t39_standalone_h_without_lifecycle_binaries() {
   local s="$1" config
   make_release v9.9.9 linux amd64 "$s/assets" homonto
-  run_install "$s" $'\nnone\n'"$s/bin"$'\ny\nnone\ny\ndocs\nn\nprovider/model\n\n' MOCK_INIT_WRITES_CONFIG=1
+  run_install "$s" $'\nnone\n'"$s/bin"$'\ny\nopencode\nnone\ngithub\ndocs\nn\n\nprovider/model\n' \
+    HOME="$s/home" MOCK_REAL_HOMONTO="$REAL_BIN/homonto"
   config="$s/homonto.toml"
   expect_exit "t39: standalone h guided setup" 0
   expect_next_steps present "t39: standalone h commands advertised" '/h-*'
   expect_next_steps absent "t39: no onto advice" '/onto'
   expect_next_steps absent "t39: no to advice" '/to'
   if grep -qF '[workflows.h-workflow-gh]' "$config" \
-    && grep -qF '[subagents.homonto.opencode]' "$config" \
-    && grep -qF '[subagents.h-spike.opencode]' "$config" \
-    && grep -qF '[subagents.h-review.opencode]' "$config" \
+    && grep -qF '[routing.default.opencode]' "$config" \
     && ! grep -qF '[engines.' "$config" \
     && [ ! -e "$s/bin/onto" ] && [ ! -e "$s/bin/to" ]; then
     ok "t39: h configured without any engine or lifecycle binary"
@@ -846,8 +863,7 @@ t39_standalone_h_without_lifecycle_binaries() {
     bad "t39: h configured without any engine or lifecycle binary"
     cat "$config" >&2
   fi
-  if (cd "$ROOT" && go build -o "$s/homonto-real" .) \
-    && (cd "$s" && "$s/homonto-real" plan >/dev/null 2>"$s/plan.stderr"); then
+  if (cd "$s" && HOME="$s/home" "$REAL_BIN/homonto" plan >/dev/null 2>"$s/plan.stderr"); then
     ok "t39: standalone h configuration passes homonto plan"
   else
     bad "t39: standalone h configuration passes homonto plan"
@@ -855,10 +871,69 @@ t39_standalone_h_without_lifecycle_binaries() {
   fi
 }
 
+# Install to first task, with the real binaries, for every supported host ×
+# harness pairing (M5.1, internal/starter): guided setup → homonto init →
+# plan → apply → status → the first onto change and to task.
+t40_install_to_first_task() {
+  local s="$1" host harness d answers models wanted
+  for host in none github gitlab bitbucket; do
+    for harness in opencode claude; do
+      d="$s/$host-$harness"
+      mkdir -p "$d/home"
+      git -C "$d" init -q
+      git -C "$d" -c user.name=t -c user.email=t@t commit -q --allow-empty -m init
+      make_real_release v9.9.9 linux amd64 "$d/assets" homonto onto to
+      models="provider/model"
+      [ "$harness" = opencode ] || models="sonnet"
+      answers=$'\nboth\n'"$d/bin"$'\ny\n'"$harness"$'\nboth\n'"$host"$'\ndocs\ny\n\n'"$models"$'\n'
+      run_install "$d" "$answers" HOME="$d/home" XDG_CONFIG_HOME="$d/home/.config"
+      expect_exit "t40: $host/$harness guided install" 0
+      expect_stderr "t40: $host/$harness configured" "Configured homonto.toml"
+      wanted="[workflows.h-workflow-gh]"
+      case "$host" in gitlab) wanted="[workflows.h-workflow-gl]" ;; bitbucket) wanted="[workflows.h-workflow-bb]" ;; esac
+      if { [ "$host" = none ] && ! grep -qF '[workflows.' "$d/homonto.toml"; } \
+        || { [ "$host" != none ] && grep -qF "$wanted" "$d/homonto.toml"; }; then
+        ok "t40: $host/$harness writes its hosting workflow"
+      else
+        bad "t40: $host/$harness writes its hosting workflow"
+        cat "$d/homonto.toml" >&2
+      fi
+      if (cd "$d" && export HOME="$d/home" XDG_CONFIG_HOME="$d/home/.config" PATH="$d/bin:$PATH" \
+        && homonto plan >/dev/null 2>"$d/step.stderr" \
+        && homonto apply --yes >/dev/null 2>>"$d/step.stderr" \
+        && homonto status 2>&1 | tee -a "$d/step.stderr" | grep -qF "No drift." \
+        && onto init >/dev/null 2>>"$d/step.stderr" \
+        && onto new first-change >/dev/null 2>>"$d/step.stderr" \
+        && to new first-task >/dev/null 2>>"$d/step.stderr" \
+        && [ -f docs/changes/first-change/onto-state.yaml ] \
+        && [ -f docs/tasks/first-task/to-state.yaml ]); then
+        ok "t40: $host/$harness reaches the first change and task"
+      else
+        bad "t40: $host/$harness reaches the first change and task"
+        cat "$d/step.stderr" >&2
+      fi
+      if [ "$harness" = claude ]; then
+        if grep -qF '"homonto"' "$d/.mcp.json" 2>/dev/null && [ -f "$d/.claude/agents/homonto.md" ]; then
+          ok "t40: $host/claude projects the coordinator and runtime server"
+        else
+          bad "t40: $host/claude projects the coordinator and runtime server"
+        fi
+      fi
+    done
+  done
+}
+
 # --- run -------------------------------------------------------------------
 
 TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT
+
+# The guided setup hands generation to the real homonto init (ADR 0110), and
+# t40 installs the real binaries; build them once.
+REAL_BIN="$TMP/real-bin"
+mkdir -p "$REAL_BIN"
+(cd "$ROOT" && go build -o "$REAL_BIN/homonto" . && go build -o "$REAL_BIN/onto" ./cmd/onto && go build -o "$REAL_BIN/to" ./cmd/to) \
+  || { echo "install-test: cannot build the real binaries" >&2; exit 1; }
 
 t1_latest_onto_linux "$TMP/t1"
 t2_darwin_arm64 "$TMP/t2"
@@ -883,8 +958,8 @@ t20_guided_project_setup "$TMP/t20"
 t21_existing_config_is_unchanged "$TMP/t21"
 t22_dialog_ui "$TMP/t22"
 t23_forced_dialog_requires_binary "$TMP/t23"
- t24_h_with_onto_stays_independent "$TMP/t24"
- t25_h_with_to_stays_independent "$TMP/t25"
+t24_h_with_onto_stays_independent "$TMP/t24"
+t25_h_with_to_stays_independent "$TMP/t25"
 t26_guided_tmp_directory "$TMP/t26"
 t27_model_answer_is_validated "$TMP/t27"
 t28_checksum_requires_stdin_operand "$TMP/t28"
@@ -899,6 +974,7 @@ t36_cdpath_repository_resolution "$TMP/t36"
 t37_invalid_detected_model_recovers "$TMP/t37"
 t38_eof_validation_retries "$TMP/t38"
 t39_standalone_h_without_lifecycle_binaries "$TMP/t39"
+t40_install_to_first_task "$TMP/t40"
 
 printf '\n'
 for line in "${SUMMARY[@]}"; do printf '%s\n' "$line"; done

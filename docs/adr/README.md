@@ -63,7 +63,7 @@ numbering: [`../agents/adr.md`](../agents/adr.md).
 | [0041](0041-ship-an-interactive-release-installer.md) | Ship an interactive release installer | Accepted |
 | [0042](0042-onto-and-to-are-complementary.md) | Make onto and to complementary | Accepted |
 | [0043](0043-the-installer-offers-initialization.md) | The installer offers initialization | Accepted |
-| [0044](0044-the-installer-configures-new-projects.md) | The installer configures new projects | Accepted |
+| [0044](0044-the-installer-configures-new-projects.md) | The installer configures new projects | Partially superseded by 0110 |
 | [0045](0045-one-homonto-coordinator-for-both-workflows.md) | One homonto coordinator for both workflows | Accepted |
 | [0046](0046-integrate-onto-pr-continuations-into-the-pr-head.md) | Integrate onto PR continuations into the PR head | Accepted |
 | [0047](0047-deny-open-web-and-compound-shell-around-github-intake.md) | Deny open-web and compound-shell capability around GitHub intake | Partially superseded by 0049, 0051, 0054, 0055 |
@@ -129,3 +129,4 @@ numbering: [`../agents/adr.md`](../agents/adr.md).
 | [0107](0107-register-the-runtime-mcp-server-as-homontos-own.md) | Register the runtime MCP server as homonto's own | Accepted |
 | [0108](0108-version-the-package-contracts.md) | Version the package contracts | Accepted |
 | [0109](0109-keep-1x-compatible-within-the-major.md) | Keep 1.x compatible within the major | Accepted |
+| [0110](0110-generate-starting-configurations-in-the-binary.md) | Generate starting configurations in the binary | Accepted |

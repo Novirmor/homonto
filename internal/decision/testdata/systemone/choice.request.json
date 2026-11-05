@@ -1,0 +1,1 @@
+{"model":"typesafe/jev-1.14","state":{"ticket":"Checkout shows a blank screen after paying."},"questions":{"answer":{"type":"choice","instructions":"Which process handles this issue?","criteria":{"bug":"bug","feature":"feature","question":"question"}}}}

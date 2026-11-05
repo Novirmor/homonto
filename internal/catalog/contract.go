@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
+	"maps"
 	"regexp"
 	"slices"
 	"strings"
@@ -83,7 +84,15 @@ type EngineContract struct {
 	Operations  []string `toml:"operations"`
 	Stages      []string `toml:"stages"`
 	Coordinator string   `toml:"coordinator"`
+	// AgentStages binds the engine's own subagents to the stages they serve
+	// ([engine.agent_stages], ADR 0099). A stage routing policy reaches an
+	// agent only through this binding; an unbound agent is routed by the
+	// engine-level policy.
+	AgentStages map[string][]string `toml:"agent_stages"`
 }
+
+// StagesOf returns the stages agent is bound to, nil when it is unbound.
+func (e EngineContract) StagesOf(agent string) []string { return e.AgentStages[agent] }
 
 // Supports reports whether the engine declares operation op.
 func (e EngineContract) Supports(op string) bool { return slices.Contains(e.Operations, op) }
@@ -284,6 +293,25 @@ func validateEngine(label string, ft frameworkTOML) error {
 			return fmt.Errorf("%s [engine]: stage %q is listed twice", label, stage)
 		}
 		seen[stage] = true
+	}
+	for _, agent := range slices.Sorted(maps.Keys(e.AgentStages)) {
+		if ft.Subagents[agent] == "" {
+			return fmt.Errorf("%s [engine.agent_stages]: %q is not a subagent declared in [subagents]", label, agent)
+		}
+		bound := e.AgentStages[agent]
+		if len(bound) == 0 {
+			return fmt.Errorf("%s [engine.agent_stages]: %s must name at least one stage", label, agent)
+		}
+		dup := map[string]bool{}
+		for _, stage := range bound {
+			if !seen[stage] {
+				return fmt.Errorf("%s [engine.agent_stages]: %s names stage %q, which is not in [engine].stages (%s)", label, agent, stage, strings.Join(e.Stages, ", "))
+			}
+			if dup[stage] {
+				return fmt.Errorf("%s [engine.agent_stages]: %s lists stage %q twice", label, agent, stage)
+			}
+			dup[stage] = true
+		}
 	}
 	return validateCoordinator(label+" [engine]", e.Coordinator)
 }

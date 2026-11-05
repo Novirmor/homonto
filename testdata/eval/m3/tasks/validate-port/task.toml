@@ -1,0 +1,3 @@
+prompt = "Use the no engine: ParsePort accepts values that are not valid TCP ports. Make it reject them with an error, keeping valid ports working. Run go test ./... before finishing."
+agent = "homonto"
+verify = "go test ./..."

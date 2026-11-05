@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 
+	"github.com/Novirmor/homonto/internal/decision"
 	"github.com/Novirmor/homonto/internal/engine"
 	"github.com/spf13/cobra"
 )
@@ -36,12 +37,27 @@ func statusCmd() *cobra.Command {
 			if exitFlag {
 				setExitCode(statusExitCode(len(drift) > 0, pending))
 			}
+			routes, routed, err := e.AppliedRoutes()
+			if err != nil {
+				return err
+			}
+			// Recorded decision signals (ADR 0102): the latest calls, so a
+			// workflow's judgments are visible next to its routes.
+			decisions, torn, err := decision.Recent(e.StateDir, 20)
+			if err != nil {
+				return err
+			}
 			if output == "json" {
 				payload := struct {
-					Drift    []string `json:"drift"`
-					Pending  int      `json:"pending"`
-					Warnings []string `json:"warnings"`
-				}{Drift: drift, Pending: pending, Warnings: append(e.OpenCodeV2Warnings(), e.Warnings...)}
+					Drift     []string              `json:"drift"`
+					Pending   int                   `json:"pending"`
+					Warnings  []string              `json:"warnings"`
+					Routing   *engine.RoutingRecord `json:"routing,omitempty"`
+					Decisions []decision.Outcome    `json:"decisions,omitempty"`
+				}{Drift: drift, Pending: pending, Warnings: append(e.OpenCodeV2Warnings(), e.Warnings...), Decisions: decisions}
+				if routed {
+					payload.Routing = &routes
+				}
 				if payload.Drift == nil {
 					payload.Drift = []string{}
 				}
@@ -60,6 +76,31 @@ func statusCmd() *cobra.Command {
 			}
 			for _, l := range drift {
 				cmd.Println(l)
+			}
+			// The routes the last apply stamped into agents (ADR 0102): only
+			// policy-routed agents, since a pin is visible in the config.
+			if routed {
+				var policyRouted []engine.ResolvedRoute
+				for _, r := range routes.Routes {
+					if r.Selection != nil {
+						policyRouted = append(policyRouted, r)
+					}
+				}
+				for _, l := range routingLines(policyRouted) {
+					cmd.Println(l)
+				}
+				if routes.Discovery == "failed" {
+					cmd.Printf("route discovery failed at last apply (%s): auto policies used their fallbacks\n", routes.DiscoveryError)
+				}
+			}
+			if len(decisions) > 5 {
+				decisions = decisions[len(decisions)-5:]
+			}
+			for _, l := range decisionLines(decisions) {
+				cmd.Println(l)
+			}
+			if torn > 0 {
+				cmd.Printf("warn: %d unreadable line(s) in .homonto/%s\n", torn, decision.RecordFile)
 			}
 			if pending > 0 {
 				cmd.Println(fmt.Sprintf("%d config change(s) awaiting apply (run `homonto apply`)", pending))

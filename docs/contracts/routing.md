@@ -1,17 +1,16 @@
-# Model routing and decision calls (reserved)
+# Model routing and decision calls
 
-M2 reserves the surfaces M3 fills (#32). Nothing here is implemented yet:
-`[routing]` and `[decisions]` fail at load with a pointer to this page, and
-every decision call returns "no decision provider is configured"
-([ADR 0098](../adr/0098-reserve-routing-and-decision-surfaces.md)). The
-shapes below are fixed, so M3 adds behavior without changing the M2
-contracts.
+A routing policy chooses the execution model an agent runs on. It is
+addressed by where the work runs, never by harness, and its fields are
+harness-native ([ADR 0098](../adr/0098-reserve-routing-and-decision-surfaces.md),
+[ADR 0099](../adr/0099-route-models-by-policy.md)). OpenCode is the only
+harness with fields today.
 
 ## Addressable stages
 
-Every engine names its stages in `[engine].stages` ([engine.md](engine.md)).
-Stage identifiers are part of the engine's contract: renaming one is a
-breaking change for any routing policy that targets it.
+Every engine names its stages in `[engine].stages` and binds its agents to
+them in `[engine.agent_stages]` ([engine.md](engine.md)). Renaming a stage or
+rebinding an agent is a breaking change for any policy that targets it.
 
 | Engine | Stages |
 |---|---|
@@ -19,58 +18,94 @@ breaking change for any routing policy that targets it.
 | `to` | plan, do, done |
 | `no` | implement, review |
 
-## Routing policies
+| Engine | Agent | Bound stages |
+|---|---|---|
+| `onto` | `onto-explorer` | open, design, build, verify |
+| `onto` | `onto-implementer` | build, verify |
+| `onto` | `onto-reviewer` | build |
+| `onto` | `onto-skeptic` | verify |
+| `to` | `to-explorer` | plan, do |
+| `to` | `to-implementer` | do, done |
+| `to` | `to-reviewer` | do |
+| `to` | `to-skeptic` | done |
+| `no` | `no-implementer` | implement |
+| `no` | `no-reviewer` | review |
 
-A routing policy chooses the execution model for work. It is selected by
-where the work runs, never by harness. The policy's own fields (static
-model lists, automatic selection, provider settings) are defined in M3 and
-stay harness-native, as ADR 0082 requires.
-
-Reserved selectors, from least to most specific:
+## Selectors and precedence
 
 | Table | Applies to |
 |---|---|
-| `[routing.default]` | everything |
-| `[routing.workflows.<workflow>]` | work a workflow starts |
-| `[routing.engines.<engine>]` | every stage of an engine |
-| `[routing.engines.<engine>.stages.<stage>]` | one declared stage |
+| `[routing.default.opencode]` | every agent, including the shared `homonto` coordinator |
+| `[routing.workflows.<workflow>.opencode]` | agents the workflow ships |
+| `[routing.engines.<engine>.opencode]` | agents the engine ships |
+| `[routing.engines.<engine>.stages.<stage>.opencode]` | agents bound to that stage |
 
-Precedence: the most specific selector wins. An explicit
-`[subagents.<name>.<tool>]` block (ADR 0016) always wins over every policy,
-because it is the user's own statement about one agent. A policy only fills
-models nobody pinned. Until M3, every rendered agent still needs its explicit
-block.
+1. An explicit `[subagents.<name>.opencode]` `model` wins over every policy
+   (ADR 0016). A pin without a `model` still contributes `steps` and
+   `bash_allow_add`.
+2. Otherwise the most specific selector wins, **if every place the agent
+   serves agrees**. `onto-implementer` serves build and verify. A build
+   policy alone does not reach it, because verify would still use the
+   engine policy. Set the same policy on both stages, or pin the agent.
+   When places disagree, the next coarser level that agrees applies, and
+   `plan` warns.
+3. The shared coordinator takes only `[routing.default]`.
+
+An agent covered by a policy needs no pin. An agent with neither fails at
+load: `subagents.<name>.opencode model is required`.
+
+## Static policies
+
+```toml
+[routing.default.opencode]
+model = "anthropic/claude-sonnet-5"
+
+[routing.engines.onto.stages.verify.opencode]
+model = "openai/gpt-6"
+variant = "high"
+```
+
+## Auto policies
+
+`mode = "auto"` selects at plan from the models `opencode models` reports
+([ADR 0100](../adr/0100-select-models-automatically-at-plan.md)):
+
+```toml
+[routing.engines.no.opencode]
+mode = "auto"
+providers = ["anthropic", "openai"]   # optional: allowed provider prefixes
+candidates = ["openai/gpt-6-mini", "anthropic/claude-haiku-5"]  # optional ordered shortlist
+needs = ["tools"]                      # optional: tags each model must carry
+max_cost = 5.0                         # optional: needs a described cost
+max_latency = 2.0                      # optional: needs a described latency
+prefer = "cost"                        # listed (default) | cost | latency
+fallback = "anthropic/claude-sonnet-5" # required
+
+[routing.models.opencode."openai/gpt-6-mini"]
+cost = 0.6          # your own unit, compared only
+latency = 0.8
+tags = ["tools"]
+```
+
+- Filters: available (and in `candidates` when set), then `providers`,
+  `needs`, `max_cost` and `max_latency`. A constraint on a property the config
+  does not describe excludes the model.
+- Order: `prefer`, then candidate order, then id.
+- Fallback: used when discovery fails or reports nothing, or when nothing
+  qualifies. If discovery succeeded and the fallback is not reported, plan
+  fails.
+- Discovery runs once per command, and only when an auto policy applies.
+
+## Seeing routes
+
+- `homonto explain routing [agent] [--json]` shows each agent's model, the
+  selector that chose it, the reason, and any disagreement.
+- `plan` warns about disagreements and fallbacks.
+- `apply` records the routes it stamped into `.homonto/routing.json`.
+  `homonto status` prints the policy-routed agents from that record.
 
 ## Decision calls
 
 A package asks a decision model a typed question and gets a validated answer
-(`internal/decision`). This is the shape a skill or binary will use through
-homonto. The transport (CLI or MCP tool) is defined with the first provider.
-
-Request:
-
-```json
-{
-  "point": "onto.next-step",
-  "kind": "choice",
-  "question": "Repair or re-verify?",
-  "options": ["repair", "verify"],
-  "context": {"findings": "2 major"}
-}
-```
-
-| `kind` | Request carries | Result carries |
-|---|---|---|
-| `choice` | `options` (two or more, distinct) | `choice`, one of the options |
-| `yes-no` | nothing extra | `probability` of yes, in [0, 1] |
-| `score` | `scale` `{min, max}`, min < max | `score` within the scale |
-
-Every result names its `provider` and may carry a `confidence` in [0, 1]. A
-result with the wrong kind, an extra field, or an out-of-range value is
-rejected before it reaches the caller.
-
-`point` is `<package>.<point>`: the package that asks, and a name for the
-decision point, so routing and audit can address it. Model routing is one
-consumer of decisions. Classification, next-step selection and scoring are
-others. Provider protocols (Jev/System One-compatible endpoints, native
-OpenAI Decisions) and `[decisions]` configuration are #55–#58.
+(`internal/decision`). Decision providers and the `homonto decide` command
+are described in [decisions.md](decisions.md).

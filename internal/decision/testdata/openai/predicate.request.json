@@ -1,0 +1,1 @@
+{"model":"gpt-6-luna","input":"ticket:\nCheckout shows a blank screen after paying.\n\n","questions":[{"type":"predicate","name":"answer","instructions":"Is this a bug report?"}]}

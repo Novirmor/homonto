@@ -111,6 +111,10 @@ func TestContractRejectsInvalidManifests(t *testing.T) {
 		{"service with subagent", "manifest_schema = 2\nname = \"pkg\"\nkind = \"service\"\nversion = \"0.1.0\"\n[service]\nid = \"t\"\noperations = [\"read\"]\ntransport = \"t\"\n[subagents]\nworker = \"subagents/worker.md\"\n", "ships no subagents"},
 		{"service bad env", "manifest_schema = 2\nname = \"pkg\"\nkind = \"service\"\nversion = \"0.1.0\"\n[service]\nid = \"t\"\noperations = [\"read\"]\ntransport = \"t\"\ncredentials = [{ kind = \"env\", name = \"lower\" }]\n", "is not an environment variable name"},
 		{"service multiline rule", "manifest_schema = 2\nname = \"pkg\"\nkind = \"service\"\nversion = \"0.1.0\"\n[service]\nid = \"t\"\noperations = [\"read\"]\ntransport = \"t\"\n[permissions.coordinator]\nbash_ask = [\"a\\nb\"]\n", "single-line pattern"},
+		{"agent_stages unknown agent", statelessEngine + "[engine.agent_stages]\nghost = [\"work\"]\n", `"ghost" is not a subagent declared`},
+		{"agent_stages unknown stage", statelessEngine + "[engine.agent_stages]\nworker = [\"ship\"]\n[subagents]\nworker = \"subagents/worker.md\"\n", `names stage "ship", which is not in [engine].stages`},
+		{"agent_stages empty", statelessEngine + "[engine.agent_stages]\nworker = []\n[subagents]\nworker = \"subagents/worker.md\"\n", "worker must name at least one stage"},
+		{"agent_stages duplicate", statelessEngine + "[engine.agent_stages]\nworker = [\"work\", \"work\"]\n[subagents]\nworker = \"subagents/worker.md\"\n", `lists stage "work" twice`},
 		{"unknown default service", statelessEngine + "[requires.services]\ntracker = \"nope\"\n", `default package "nope", which is not a known package`},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -250,5 +254,39 @@ func TestSettingsSchemaValidation(t *testing.T) {
 	_, err := LoadWithLocal(baseFS(), map[string]fs.FS{"pkg": contractRoot("name = \"pkg\"\nversion = \"0.1.0\"\n[settings.x]\ntype = \"string\"\n")})
 	if err == nil || !strings.Contains(err.Error(), "set manifest_schema = 2") {
 		t.Fatalf("legacy settings: %v", err)
+	}
+}
+
+func TestContractBindsAgentsToStages(t *testing.T) {
+	c, err := loadContract(t, statelessEngine+"[engine.agent_stages]\nworker = [\"work\"]\n[subagents]\nworker = \"subagents/worker.md\"\n")
+	if err != nil {
+		t.Fatal(err)
+	}
+	fw, _ := c.Framework("pkg")
+	if got := fw.Engine.StagesOf("worker"); !slices.Equal(got, []string{"work"}) {
+		t.Fatalf("StagesOf(worker) = %v", got)
+	}
+	if got := fw.Engine.StagesOf("other"); got != nil {
+		t.Fatalf("unbound agent has stages %v", got)
+	}
+}
+
+// TestBuiltinEnginesBindEveryWorker keeps the builtin bindings complete: a
+// worker left unbound silently ignores every stage routing policy.
+func TestBuiltinEnginesBindEveryWorker(t *testing.T) {
+	c, err := Load(embedded.FS)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range []string{"onto", "to", "no"} {
+		fw, _ := c.Framework(name)
+		for agent := range fw.Subagents {
+			if agent == SharedCoordinatorAgent {
+				continue
+			}
+			if len(fw.Engine.StagesOf(agent)) == 0 {
+				t.Errorf("%s: subagent %s is bound to no stage", name, agent)
+			}
+		}
 	}
 }

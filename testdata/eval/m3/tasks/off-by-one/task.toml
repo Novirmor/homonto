@@ -1,0 +1,3 @@
+prompt = "Use the no engine to fix the failing test in this repository. Keep the change minimal and run go test ./... before finishing."
+agent = "homonto"
+verify = "go test ./..."

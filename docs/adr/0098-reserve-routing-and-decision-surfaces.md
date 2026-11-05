@@ -1,6 +1,6 @@
 # Reserve routing and decision surfaces
 
-- **Status:** Accepted
+- **Status:** Partially superseded by 0099 and 0101 (the reserved tables are now defined)
 - **Date:** 2026-11-03
 
 ## Context

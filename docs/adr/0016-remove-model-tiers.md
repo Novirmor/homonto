@@ -1,6 +1,6 @@
 # Declare subagent models explicitly; drop model tiers
 
-- **Status:** Accepted
+- **Status:** Partially superseded by 0099 (routing policies are a second model source)
 - **Date:** 2026-07-21
 - **Change:** remove-model-tiers
 

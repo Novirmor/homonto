@@ -1,0 +1,13 @@
+# Providers for `m3eval decisions` (docs/evals/m3-routing-and-decisions.md).
+# Credentials come from the environment variables named here.
+
+[decisions.providers.openai]
+protocol = "openai-decisions"
+model = "gpt-6-luna"
+api_key_env = "OPENAI_API_KEY"
+
+[decisions.providers.jev]
+protocol = "systemone"
+endpoint = "https://openrouter.ai/api/v1/systemone"
+model = "typesafe/jev-1.14"
+api_key_env = "OPENROUTER_API_KEY"

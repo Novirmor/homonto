@@ -91,13 +91,11 @@ type Subagent struct {
 	// Digest is the sha256 content pin ("sha256:<hex>") required when Source is a
 	// remote: source and unused otherwise.
 	Digest string `toml:"digest"`
-	// Claude is the post-removal detector for [subagents.<name>.claude] blocks:
-	// Claude Code support was removed in v0.13.0, so any non-empty value is
-	// rejected at load naming the subagent. OpenCode is the live per-tool
-	// model override for THIS subagent, declared as
-	// [subagents.<name>.opencode]; a declared subagent must set a non-empty
-	// model for every tool it is enabled for, and effort and variant are
-	// optional and merge field-by-field at render.
+	// Claude and OpenCode are the per-harness model overrides for THIS
+	// subagent, declared as [subagents.<name>.claude] and
+	// [subagents.<name>.opencode]; a declared subagent must have a model for
+	// every harness it is enabled for, and effort and variant are optional
+	// and merge field-by-field at render.
 	Claude   ModelRoute `toml:"claude"`
 	OpenCode ModelRoute `toml:"opencode"`
 }
@@ -107,6 +105,8 @@ func (s Subagent) ModelOverrideFor(tool string) ModelRoute {
 	switch tool {
 	case "opencode":
 		return s.OpenCode
+	case "claude":
+		return s.Claude
 	}
 	return ModelRoute{}
 }
@@ -254,8 +254,9 @@ type Plugins struct {
 
 // Settings groups per-tool arbitrary managed settings keys. Values are
 // projected through the structured-document contract into the tool's native
-// settings file. Claude is the post-removal detector for [settings.claude]:
-// Claude Code support was removed in v0.13.0, so any non-empty map is
+// settings file: [settings.opencode] into opencode.jsonc and [settings.claude]
+// into ~/.claude/settings.json (M4.4). Earlier releases rejected the Claude map
+// because Claude Code support had been removed in v0.13.0; it is live again and
 // rejected at load. OpenCode is the live [settings.opencode] surface.
 type Settings struct {
 	Claude   map[string]any `toml:"claude"`
@@ -310,9 +311,12 @@ type Config struct {
 	// (pre-versioning) config and retains implicit-repository semantics; a value
 	// greater than CurrentConfigSchemaVersion is rejected fail-closed at load so
 	// an older binary never silently mis-applies a newer config.
-	SchemaVersion int       `toml:"schema_version,omitempty"`
-	Workflow      Workflow  `toml:"workflow"`
-	Worktrees     Worktrees `toml:"worktrees"`
+	SchemaVersion int `toml:"schema_version,omitempty"`
+	// Harnesses names the harnesses a declaration without its own targets is
+	// projected to (M4.4); absent means ["opencode"].
+	Harnesses []string  `toml:"harnesses"`
+	Workflow  Workflow  `toml:"workflow"`
+	Worktrees Worktrees `toml:"worktrees"`
 	// Routing holds the model-routing policies (ADR 0099, ADR 0100).
 	Routing Routing `toml:"routing"`
 	// Decisions holds the decision-model providers (ADR 0101).
@@ -497,4 +501,32 @@ func (c *Config) SubagentEntriesForTool(tool string) []NamedResource {
 type modelsTable struct {
 	Claude   map[string]ModelRoute `toml:"claude"`
 	OpenCode map[string]ModelRoute `toml:"opencode"`
+}
+
+// TargetsHarness reports whether anything in the config projects to the
+// harness: the default harness set, a resource's targets, or its settings.
+// OpenCode is targeted whenever no harness set is declared.
+func (c *Config) TargetsHarness(h string) bool {
+	if len(c.Harnesses) == 0 && h == "opencode" {
+		return true
+	}
+	if slices.Contains(c.Harnesses, h) {
+		return true
+	}
+	if h == "claude" && len(c.Settings.Claude) > 0 {
+		return true
+	}
+	for _, m := range []map[string]Resource{c.Workflows, c.Engines, c.Services, c.Skills, c.Commands} {
+		for _, r := range m {
+			if slices.Contains(r.Targets, h) {
+				return true
+			}
+		}
+	}
+	for _, s := range c.Subagents {
+		if slices.Contains(s.Targets, h) {
+			return true
+		}
+	}
+	return false
 }

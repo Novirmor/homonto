@@ -19,6 +19,12 @@ func TestDir(t *testing.T) {
 		{"opencode subagent user", Subagent, "opencode", "user", "/h", "/p", "/h/.config/opencode/agent"},
 		{"opencode subagent project", Subagent, "opencode", "project", "/h", "/p", "/p/.opencode/agent"},
 
+		{"claude skill user", Skill, "claude", "user", "/h", "/p", "/h/.claude/skills"},
+		{"claude skill project", Skill, "claude", "project", "/h", "/p", "/p/.claude/skills"},
+		{"claude command project", Command, "claude", "project", "/h", "/p", "/p/.claude/commands"},
+		{"claude subagent user", Subagent, "claude", "user", "/h", "/p", "/h/.claude/agents"},
+		{"claude subagent project", Subagent, "claude", "project", "/h", "/p", "/p/.claude/agents"},
+
 		// unknown kind / tool
 		{"unknown kind", Kind("nope"), "opencode", "user", "/h", "/p", ""},
 		{"unknown tool", Skill, "vscode", "user", "/h", "/p", ""},

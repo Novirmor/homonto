@@ -41,8 +41,7 @@ rewriting each to `- [x] N.N (deferred, done at close YYYY-MM-DD): <desc> [trace
 Runtime changes require active repair and verification before returning here.
 
 Resolve guides for full changes: update affected guides/README and record
-`onto set guides <name> updated`, or obtain an explicit waiver through the built-in
-`question` tool before recording `waived: <reason>`. Presets have no new guides
+`onto set guides <name> updated`, or obtain an explicit waiver through the native question dialog ([harness map](../homonto/references/harness.md)) before recording `waived: <reason>`. Presets have no new guides
 obligation but must resolve a carried pending value.
 
 Honor recorded integration or intake intent. Otherwise use `pr` when repository

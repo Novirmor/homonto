@@ -62,9 +62,18 @@ func validWorktreeAlias(alias string) bool {
 		!strings.ContainsAny(alias, `/\`) && strings.IndexFunc(alias, unicode.IsControl) < 0
 }
 
+// externalEngineName is a native engine other than onto or to: its
+// lifecycle records live under <workflow root>/engines/<name> (#67).
+var externalEngineName = regexp.MustCompile(`^[a-z][a-z0-9-]{0,62}$`)
+
+// External reports whether a workflow name is an external native engine.
+func External(workflow string) bool {
+	return workflow != "onto" && workflow != "to" && externalEngineName.MatchString(workflow)
+}
+
 func checkWorktreeNames(workflow, change string) error {
-	if workflow != "onto" && workflow != "to" {
-		return fmt.Errorf("worktree: workflow must be onto or to")
+	if workflow != "onto" && workflow != "to" && !External(workflow) {
+		return fmt.Errorf("worktree: workflow must be onto, to or an installed native engine's name")
 	}
 	if !worktreeName.MatchString(change) || change == "archive" {
 		return fmt.Errorf("worktree: unsafe path: invalid change name %q", change)
@@ -405,11 +414,20 @@ func (s worktreeState) checkBase(repo, commit, target string) error {
 }
 
 func (s worktreeState) terminal(workflow string) bool {
-	if workflow == "to" {
+	switch {
+	case workflow == "to":
 		return s.Phase == "done" || s.Phase == "abandoned"
+	case External(workflow):
+		return s.Archived || s.Abandoned || s.Phase == "completed" || s.Phase == "abandoned"
 	}
 	return s.Archived || s.Abandoned
 }
+
+// ExternalStateVersion is the lifecycle record schema an external native
+// engine writes (docs/contracts/engine.md).
+const ExternalStateVersion = 1
+
+var externalPhase = regexp.MustCompile(`^[a-z][a-z0-9_-]{0,62}$`)
 
 func readWorktreeState(dir, workflow string) (worktreeState, error) {
 	var s worktreeState
@@ -434,10 +452,18 @@ func readWorktreeState(dir, workflow string) (worktreeState, error) {
 			return s, err
 		}
 	}
-	switch workflow + "/" + s.Phase {
-	case "onto/open", "onto/design", "onto/build", "onto/verify", "onto/close", "to/plan", "to/do", "to/done", "to/abandoned":
-	default:
-		return s, fmt.Errorf("worktree: invalid state phase %q in %s", s.Phase, path)
+	if External(workflow) {
+		// An external engine's record must name itself and carry a stable id;
+		// its phases are its own, so only their spelling is judged.
+		if s.SchemaVersion == nil || *s.SchemaVersion != ExternalStateVersion || s.Workflow != workflow || s.ID == "" || !externalPhase.MatchString(s.Phase) {
+			return s, fmt.Errorf("worktree: invalid %s lifecycle record %s: need schema_version %d, workflow %q, an id and a phase", workflow, path, ExternalStateVersion, workflow)
+		}
+	} else {
+		switch workflow + "/" + s.Phase {
+		case "onto/open", "onto/design", "onto/build", "onto/verify", "onto/close", "to/plan", "to/do", "to/done", "to/abandoned":
+		default:
+			return s, fmt.Errorf("worktree: invalid state phase %q in %s", s.Phase, path)
+		}
 	}
 	s.dir = dir
 	if s.ID != "" {
@@ -471,7 +497,16 @@ func worktreeStatesDir(l Layout, workflow string) string {
 	if workflow == "to" {
 		return filepath.Join(root, "tasks")
 	}
+	if External(workflow) {
+		return filepath.Join(root, "engines", workflow)
+	}
 	return filepath.Join(root, "changes")
+}
+
+// ExternalStateDir is where an external native engine keeps one change's
+// lifecycle record (<engine>-state.yaml).
+func ExternalStateDir(l Layout, engine, change string) string {
+	return filepath.Join(worktreeStatesDir(l, engine), change)
 }
 
 func bindingState(l Layout, workflow, change, identity string, activeOnly bool) (worktreeState, error) {

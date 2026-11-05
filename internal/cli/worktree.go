@@ -26,7 +26,7 @@ func worktreeCmd() *cobra.Command {
 			return printWorktree(cmd, w, createJSON)
 		},
 	}
-	create.Flags().StringVar(&workflow, "workflow", "", "workflow: onto or to")
+	create.Flags().StringVar(&workflow, "workflow", "", "workflow: onto, to or an installed native engine")
 	create.Flags().StringVar(&repo, "repo", "", "selected declared repository alias")
 	create.Flags().StringVar(&base, "base", "", "explicit base ref (resolved to an immutable commit)")
 	create.Flags().StringVar(&branch, "branch", "", "new branch name (never overwritten)")
@@ -50,7 +50,7 @@ func worktreeCmd() *cobra.Command {
 			return printWorktree(cmd, w, receiverJSON)
 		},
 	}
-	receiver.Flags().StringVar(&receiverWorkflow, "workflow", "", "workflow: onto or to")
+	receiver.Flags().StringVar(&receiverWorkflow, "workflow", "", "workflow: onto, to or an installed native engine")
 	receiver.Flags().StringVar(&receiverRepo, "repo", "", "selected declared repository alias")
 	receiver.Flags().StringVar(&receiverStateID, "state-id", "", "select an ambiguous archived generation by native ID or registered stateID; never rebinds an existing worktree")
 	receiver.Flags().BoolVar(&receiverJSON, "json", false, "print the registered receiver binding as JSON")
@@ -98,7 +98,7 @@ func worktreeCmd() *cobra.Command {
 			return printWorktree(cmd, w, removeJSON)
 		},
 	}
-	remove.Flags().StringVar(&removeWorkflow, "workflow", "", "workflow: onto or to")
+	remove.Flags().StringVar(&removeWorkflow, "workflow", "", "workflow: onto, to or an installed native engine")
 	remove.Flags().StringVar(&removeRepo, "repo", "", "registered repository alias")
 	remove.Flags().StringVar(&removeRole, "role", "execution", "binding role: execution or receiver")
 	remove.Flags().BoolVar(&yes, "yes", false, "confirm removal without bypassing safety checks")

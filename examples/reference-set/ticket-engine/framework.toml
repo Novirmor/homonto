@@ -1,0 +1,39 @@
+manifest_schema = 2
+name = "ticket-engine"
+kind = "engine"
+version = "0.1.0"
+description = "Reference native-lifecycle engine: plan, implement and review one change, recorded by its own binary"
+
+# A native engine owns a lifecycle record per change. Its binary writes it at
+# <workflow root>/engines/ticket-engine/<change>/ticket-engine-state.yaml
+# (docs/contracts/engine.md, ADR 0106); homonto binds checkouts and resumes
+# workspace tasks against that record.
+[engine]
+lifecycle = "native"
+binary = "ticket-engine"
+entry = ["ticket-engine"]
+operations = ["start", "resume", "integration-check", "release"]
+stages = ["plan", "implement", "review"]
+
+[engine.agent_stages]
+ticket-implementer = ["implement"]
+ticket-reviewer = ["review"]
+
+[requires]
+harness = ["skills", "commands", "subagents", "agent-tool-limits", "shell-rules", "question-dialog", "context-hooks"]
+
+[settings.review]
+type = "string"
+enum = ["always", "on-request"]
+default = "always"
+description = "Whether ticket-reviewer reviews every candidate"
+
+[skills]
+ticket-engine = "skills/ticket-engine"
+
+[commands]
+ticket-engine = "commands/ticket-engine.md"
+
+[subagents]
+ticket-implementer = "subagents/ticket-implementer.md"
+ticket-reviewer = "subagents/ticket-reviewer.md"

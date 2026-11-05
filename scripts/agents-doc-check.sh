@@ -36,6 +36,8 @@ for doc in "${DOCS[@]}"; do
     esac
     target="${target%%#*}"
     [ -n "$target" ] || continue
+    # The generated harness map exists only after apply (M4.2).
+    case "$target" in *homonto/references/harness.md|harness.md) continue ;; esac
     if [ ! -e "$dir/$target" ]; then
       echo "$doc: link target does not exist: $target"
       fails=$((fails + 1))
@@ -77,10 +79,11 @@ done
 # --- the shipped catalog ------------------------------------------------
 # Skills and subagents are agent-facing docs too, and cross-skill references
 # are the same failure mode as the /graphify one: a skill telling an agent to
-# read a file that ships nowhere. `references/tooling.md` and
-# `references/tmp.md` and `references/workspace.md` are generated names —
-# `homonto apply` renders them from tooling, tmp, and schema-2 workspace config.
-GENERATED='references/tooling.md references/tmp.md references/workspace.md'
+# read a file that ships nowhere. `references/tooling.md`,
+# `references/tmp.md`, `references/workspace.md` and `references/harness.md`
+# are generated names — `homonto apply` renders them from tooling, tmp,
+# schema-2 workspace config and the targeted harnesses' capabilities.
+GENERATED='references/tooling.md references/tmp.md references/workspace.md references/harness.md'
 
 CATALOG_DOCS=()
 while IFS= read -r f; do CATALOG_DOCS+=("$f"); done < <(find catalog -name '*.md' | sort)
@@ -95,6 +98,8 @@ for doc in "${CATALOG_DOCS[@]}"; do
     esac
     target="${target%%#*}"
     [ -n "$target" ] || continue
+    # The generated harness map exists only after apply (M4.2).
+    case "$target" in *homonto/references/harness.md|harness.md) continue ;; esac
     if [ ! -e "$dir/$target" ]; then
       echo "$doc: link target does not exist: $target"
       fails=$((fails + 1))

@@ -82,7 +82,7 @@ func TestEntryPathPolicyConsistency(t *testing.T) {
 			files: map[string][]string{
 				"skills/homonto/references/autonomy.md": {"Every question to the user", "native dialog box", "clarifications, free-form questions", "even a single yes/no question", "unavailable, denied, or dismissed", "never infer consent or switch channels"},
 				"subagents/homonto.md":                  {"every question to the user", "clarifications and free-form input", "native dialog box"},
-				"skills/no/references/execution.md":     {"every question to the user", "OpenCode's built-in `question` tool", "native dialog box", "do not fall back to chat or shell prompts"},
+				"skills/no/references/execution.md":     {"every question to the user", "the harness's native question dialog", "native dialog box", "do not fall back to chat or shell prompts"},
 				"skills/grilling/SKILL.md":              {"every question to the user", "clarifications and free-form input", "native dialog box", "standalone mode"},
 				"skills/handoff/SKILL.md":               {"every question to the user", "clarifications and free-form input", "native dialog box", "standalone mode"},
 			},
@@ -90,7 +90,7 @@ func TestEntryPathPolicyConsistency(t *testing.T) {
 		{
 			name: "proportionate skeptic repairs",
 			files: map[string][]string{
-				"skills/homonto/references/review-triage.md":   {"## Proportionality before repair", "current user request", "conflict-resolution-only", "tightening otherwise unchanged PR tests", "cumulative repair scope", "before appending or dispatching repair tasks", "OpenCode's built-in `question` tool", "A blocking finding does not authorize its repair"},
+				"skills/homonto/references/review-triage.md":   {"## Proportionality before repair", "current user request", "conflict-resolution-only", "tightening otherwise unchanged PR tests", "cumulative repair scope", "before appending or dispatching repair tasks", "the harness's native question dialog", "A blocking finding does not authorize its repair"},
 				"skills/homonto/references/autonomy.md":        {"materially disproportionate", "review-triage.md#proportionality-before-repair", "Do not infer approval from a failing check"},
 				"skills/onto-verify/SKILL.md":                  {"proportionality and scope approval", "before creating repair tasks", "For an authorized in-scope repair, ask"},
 				"skills/to-done/SKILL.md":                      {"proportionality and scope approval", "before creating repair tasks", "current user request and assignment boundary"},

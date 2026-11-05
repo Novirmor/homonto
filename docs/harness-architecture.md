@@ -1,7 +1,12 @@
 # Harness architecture — design document
 
-Status: **architecture only, not implemented.** The decision is
-[ADR 0082](adr/0082-support-harnesses-natively-in-tiers.md). This document
+Status: **implemented for OpenCode and Claude Code** (M4). The decision is
+[ADR 0082](adr/0082-support-harnesses-natively-in-tiers.md); the runtime core
+split is [ADR 0103](adr/0103-serve-the-runtime-core-to-every-harness.md), the
+Claude Code adapter [ADR 0104](adr/0104-project-claude-code-natively.md), and
+the accepted Claude Code limitations
+[ADR 0105](adr/0105-accept-limited-claude-code-capabilities-per-guarantee.md).
+Codex and Antigravity remain design only. This document
 describes how homonto supports more than one agent harness: OpenCode today,
 then Claude Code, Codex, and Google Antigravity (`agy`). Where it says
 "verify", the capability has not been checked against a pinned harness
@@ -194,6 +199,10 @@ reaches that tier.
    capabilities are verified.
 
 ## Open questions
+
+Resolved for Claude Code by ADR 0104: targeting (`harnesses`), scope per
+harness, and version pinning. The questions remain open for Codex and
+Antigravity, and the shared instruction file question remains open.
 
 - **Targeting shared declarations.** Do `[mcps]`, `[skills]`, and `[commands]`
   apply to every enabled harness, or does each name its harnesses? And how is a

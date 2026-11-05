@@ -107,6 +107,17 @@ func (c *Catalog) Materialize(dstRoot string, skillNames []string, shellProxy, c
 				return werr
 			}
 		}
+		if len(c.harnessRef) > 0 && HasHarnessReference(name) {
+			target := filepath.Join(staging, filepath.FromSlash(HarnessReferencePath))
+			if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
+				_ = os.RemoveAll(staging)
+				return err
+			}
+			if err := fsutil.WriteControlPlane(target, c.harnessRef, 0o644); err != nil {
+				_ = os.RemoveAll(staging)
+				return err
+			}
+		}
 		if len(workspaceRef) > 0 && HasWorkspaceReference(name) {
 			target := filepath.Join(staging, filepath.FromSlash(WorkspaceReferencePath))
 			if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
@@ -319,6 +330,9 @@ func sortedCopy(names []string) []string {
 	return out
 }
 
+// renderTools are the harnesses a homonto: intent agent renders for.
+var renderTools = []string{"opencode", "claude"}
+
 // SubagentFiles returns the file names MaterializeSubagents writes for name
 // under dstRoot, given renderCtx: the shared <name>.md anchor, plus the
 // <name>.opencode.md variant when the source carries a homonto: block and the
@@ -340,7 +354,7 @@ func (c *Catalog) SubagentFiles(name string, renderCtx map[string]agentfm.Render
 	if err != nil {
 		return nil, fmt.Errorf("catalog: parse subagent %q: %w", name, err)
 	}
-	for _, tool := range []string{"opencode"} {
+	for _, tool := range renderTools {
 		ctx, targeted := renderContextForTool(renderCtx, tool, name)
 		if !targeted {
 			continue
@@ -400,7 +414,7 @@ func (c *Catalog) MaterializeSubagents(dstRoot string, names []string, renderCtx
 			// previous version would silently win over the new content forever —
 			// invisible to the gate (SubagentFiles no longer claims the variant)
 			// and to doctor (which mirrors the same preference).
-			for _, tool := range []string{"opencode"} {
+			for _, tool := range renderTools {
 				stale := filepath.Join(dstRoot, name+"."+tool+".md")
 				if err := os.Remove(stale); err != nil && !os.IsNotExist(err) {
 					return err
@@ -408,7 +422,7 @@ func (c *Catalog) MaterializeSubagents(dstRoot string, names []string, renderCtx
 			}
 			continue
 		}
-		for _, tool := range []string{"opencode"} {
+		for _, tool := range renderTools {
 			ctx, targeted := renderContextForTool(renderCtx, tool, name)
 			if !targeted {
 				variant := filepath.Join(dstRoot, name+"."+tool+".md")
@@ -438,8 +452,8 @@ func renderContextForTool(renderCtx map[string]agentfm.RenderContext, tool, name
 	if renderCtx == nil {
 		return nil, true
 	}
-	ctx := renderCtx[tool]
-	if ctx.Targets != nil && !ctx.Targets[name] {
+	ctx, ok := renderCtx[tool]
+	if !ok || (ctx.Targets != nil && !ctx.Targets[name]) {
 		return nil, false
 	}
 	return &ctx, true

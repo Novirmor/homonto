@@ -167,3 +167,31 @@ func TestLegacyIdentitySurvivesArchiveMove(t *testing.T) {
 		t.Fatalf("same-day generation collided: %+v", after)
 	}
 }
+
+func TestReadReportsExternalEngineRecords(t *testing.T) {
+	root := t.TempDir()
+	config := filepath.Join(root, "homonto.toml")
+	if err := os.WriteFile(config, []byte("schema_version = 2\n[workflow]\nroot = \"records\"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	write := func(rel, data string) {
+		p := filepath.Join(root, "records", rel)
+		if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(p, []byte(data), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	write("engines/ext/live/ext-state.yaml", "schema_version: 1\nworkflow: ext\nchange: live\nid: g1\nphase: work\n")
+	write("engines/ext/gone/ext-state.yaml", "schema_version: 1\nworkflow: ext\nchange: gone\nid: g2\nphase: work\nabandoned: true\n")
+	write("engines/ext/bad/ext-state.yaml", "workflow: ext\nchange: bad\n")
+	s := ReadConfig(config)
+	got := map[string]string{}
+	for _, c := range s.Changes {
+		got[c.Workflow+"/"+c.Name] = c.Status + ":" + c.Identity
+	}
+	if got["ext/live"] != "active:g1" || got["ext/gone"] != "abandoned:g2" || len(s.Findings) != 1 || s.Findings[0].Change != "bad" {
+		t.Fatalf("changes %v findings %+v", got, s.Findings)
+	}
+}

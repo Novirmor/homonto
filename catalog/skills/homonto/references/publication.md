@@ -21,7 +21,7 @@ operation. A tool prompt cannot override role ownership or publication approval.
 Raw API queries and mutations share this trusted coordinator capability; command
 globs do not inspect payload semantics. Check authority and gates before sending
 either, and never move a protected operation into an API call or wrapper to evade
-a prompt or denial. OpenCode saved approvals may satisfy an `ask`; they cannot
+a prompt or denial. Harness-saved approvals may satisfy an `ask`; they cannot
 override a configured `deny`. They are host execution grants, not fresh task or
 draft approval. Do not import saved patterns into generated policy or delete user
 approvals automatically.
@@ -39,7 +39,7 @@ it does not authorize comments, reviews, thread resolutions, merging the PR or
 history rewriting. Follow `h-resolve-conflicts` for its pinned-base merge and
 conflict-only scope, including the no-conflicts no-op.
 
-## OpenCode comment and review drafts
+## Comment and review drafts
 
 When available, use the target host's draft tools — `homonto_github_*` on
 GitHub, `homonto_gitlab_*` on GitLab.com, `homonto_bitbucket_*` on Bitbucket
@@ -59,14 +59,14 @@ include the reviewed OIDs before preview. Read the returned full preview, not
 the original body alone. Each body is limited to 8 KiB, each batch to ten items
 and 32 KiB of bodies; do not silently truncate a larger draft.
 
-Show the exact returned preview, then pass its `question` arguments unchanged
-to OpenCode's native question tool. Each item offers Decline, Revise, or a unique
+Show the exact returned preview, then pass its returned question arguments unchanged
+to the native question dialog ([harness map](harness.md)). Each item offers Decline, Revise, or a unique
 Publish choice in one dialog. Only the matching question reply approves that
 item. A model-provided approval flag, tool permission, or earlier conversation
 summary cannot approve it. If the user chooses Revise, stage a new batch and
 show it again; staging invalidates unpublished approvals from the previous batch.
 Publish unaffected approved items before staging revisions when appropriate.
-No question tool or no reply means no publication.
+No question dialog or no reply means no publication.
 
 Call the host's `_publish` tool with the returned `draftID` after the decision.
 It sends only approved items, rechecks remote context after tool permission,

@@ -48,7 +48,7 @@ On Bitbucket Cloud there is no issue tracker: the input is a brief, as
 ## Required order
 
 When publication is requested, prefer the shared
-[OpenCode draft flow](../homonto/references/publication.md#opencode-comment-and-review-drafts)
+[draft flow](../homonto/references/publication.md#comment-and-review-drafts)
 if its tools are available. Its exact preview and native question replace the
 manual offer/post steps below, not the research or citation checks. Do not add
 a second publication dialog.

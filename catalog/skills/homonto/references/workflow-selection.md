@@ -16,8 +16,7 @@ never silently replace an explicit choice with a different workflow. Explain
 an incompatible choice and ask for a compliant path or a scope decision.
 
 If the user has not chosen a path for new work, ask **once before task creation**
-(including no work and `to new` or `onto new`) using OpenCode's built-in `question`
-tool. Offer the viable choices with a short task-specific recommendation
+(including no work and `to new` or `onto new`) using the harness's native question dialog ([harness map](harness.md)). Offer the viable choices with a short task-specific recommendation
 and plain-language reasons:
 
 - **`no`** — model-directed implementation and review, without a dedicated binary

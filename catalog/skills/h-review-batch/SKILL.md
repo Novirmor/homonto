@@ -38,7 +38,7 @@ workflow to install and stop.
 ## Required order
 
 For comment publication, prefer the shared
-[OpenCode draft flow](../homonto/references/publication.md#opencode-comment-and-review-drafts)
+[draft flow](../homonto/references/publication.md#comment-and-review-drafts)
 when available. Stage the selected drafts together and use its single native
 question dialog for the per-item decisions; do not ask twice. Larger batches
 retain the explicit shown-draft approval path below rather than truncating them.

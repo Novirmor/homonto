@@ -17,7 +17,7 @@ set -uo pipefail
 source /opt/e2e-suites/lib.sh
 
 HOST="${E2E_HOST:?E2E_HOST required (github|gitlab|bitbucket)}"
-MODEL="${E2E_OPENCODE_MODEL:-opencode/north-mini-code-free}"
+MODEL="${E2E_OPENCODE_MODEL:-opencode/deepseek-v4.1-flash-free}"
 : "${HOSTING_REPO_URL:?clone URL of the sandbox repository}"
 : "${HOSTING_PR_URL:?URL of the fixture pull/merge request}"
 case "$HOST" in

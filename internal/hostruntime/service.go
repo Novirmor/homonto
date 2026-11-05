@@ -68,6 +68,8 @@ type Service struct {
 	order      []string
 	requests   map[string]bool
 	disposed   bool
+	// dialect is the harness's native question shape (OpenCode by default).
+	dialect Dialect
 	// cancelSession aborts a session's in-flight commands (session deletion).
 	cancelSession func(sessionID string)
 }
@@ -233,6 +235,9 @@ func (s *Service) inputItems(args any) ([]InputItem, error) {
 	list, ok := m["items"].([]any)
 	if !ok || len(list) == 0 || len(list) > 10 {
 		return nil, errors.New("draft requires 1–10 items")
+	}
+	if s.dialect == DialectClaude && len(list) > claudeMaxQuestions {
+		return nil, errors.New("draft requires 1–4 items on Claude Code (one native question per item)")
 	}
 	total := 0
 	items := make([]InputItem, 0, len(list))
@@ -436,8 +441,8 @@ func (s *Service) view(d *draft) string {
 		DraftID   string     `json:"draftID"`
 		ExpiresAt int64      `json:"expiresAt"`
 		Items     []itemView `json:"items"`
-		Question  questions  `json:"question"`
-	}{d.id, d.expiresAt, items, d.question}, false)
+		Question  any        `json:"question"`
+	}{d.id, d.expiresAt, items, s.nativeQuestion(d)}, false)
 }
 
 func (s *Service) get(c Call, args any) (*draft, error) {
@@ -1014,4 +1019,21 @@ func (s *Service) States() []SessionState {
 	}
 	slices.SortFunc(out, func(a, b SessionState) int { return strings.Compare(a.SessionID, b.SessionID) })
 	return out
+}
+
+// Tool returns the handler for one of this provider's tool names.
+func (s *Service) Tool(name string) func(Call, any) (string, error) {
+	prefix := "homonto_" + s.provider.ID() + "_"
+	if !strings.HasPrefix(name, prefix) {
+		return nil
+	}
+	switch strings.TrimPrefix(name, prefix) {
+	case "draft":
+		return s.Stage
+	case "status":
+		return s.Status
+	case "publish":
+		return s.Publish
+	}
+	return nil
 }

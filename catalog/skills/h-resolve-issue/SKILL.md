@@ -182,7 +182,7 @@ On Bitbucket Cloud there is no issue tracker: the input is a brief, as
 
 - Do not skip the spike, the selected engine's verification or authorized delivery.
   No is a valid record-free route; do not add onto/to lifecycle obligations to it.
-- Use the built-in `question` tool once for unselected new work; never repeat
+- Use the native question dialog ([harness map](../homonto/references/harness.md)) once for unselected new work; never repeat
   workflow selection on resume or add routine phase-approval dialogs.
 - Do not push or open the PR before the workflow's verification passes; a
   red branch needs in-scope repair and fresh evidence, not premature publication.

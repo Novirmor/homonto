@@ -53,3 +53,24 @@ func (e *Engine) checkHarnessCapabilities() error {
 	}
 	return nil
 }
+
+// harnessDeclarations lists the capability declaration of every harness this
+// config targets, once per harness (repo-mode adapters share their harness's
+// declaration), in adapter order.
+func (e *Engine) harnessDeclarations() []capability.Declaration {
+	var out []capability.Declaration
+	seen := map[string]bool{}
+	for _, a := range e.Adapters {
+		declarer, ok := a.(capability.Declarer)
+		if !ok {
+			continue
+		}
+		d := declarer.Capabilities()
+		if seen[d.Harness] {
+			continue
+		}
+		seen[d.Harness] = true
+		out = append(out, d)
+	}
+	return out
+}

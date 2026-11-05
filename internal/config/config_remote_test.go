@@ -95,8 +95,13 @@ func TestRemovedToolTargetsRejected(t *testing.T) {
 		_, err := Load(p)
 		return err
 	}
+	// Claude Code is a live target again (M4.4): a Claude-targeted agent
+	// needs its own Claude model, not a removal message.
+	if err := load("[subagents.foo]\nsource=\"builtin:architect\"\nscope=\"project\"\ntargets=[\"claude\"]\n"); err == nil ||
+		!strings.Contains(err.Error(), "subagents.foo.claude model is required") {
+		t.Fatalf("claude-targeted agent without a Claude model: %v", err)
+	}
 	for _, tc := range []struct{ label, doc, want string }{
-		{"subagent targets claude", "[subagents.foo]\nsource=\"builtin:architect\"\nscope=\"project\"\ntargets=[\"claude\"]\n", `targets "claude"`},
 		{"skill targets codex", "[skills.foo]\nsource=\"builtin:handoff\"\nscope=\"project\"\ntargets=[\"codex\"]\n", `targets "codex"`},
 	} {
 		err := load(tc.doc)

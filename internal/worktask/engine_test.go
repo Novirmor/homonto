@@ -3,12 +3,15 @@ package worktask
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 
 	"github.com/Novirmor/homonto/internal/catalog"
+	"github.com/Novirmor/homonto/internal/workflowroot"
+	"github.com/Novirmor/homonto/internal/workspace"
 )
 
 // TestBuiltinEnginesAreDescriptorCases documents today's builtin task
@@ -141,10 +144,48 @@ func TestExternalEngineSelection(t *testing.T) {
 			t.Fatalf("cleanup: %v", err)
 		}
 	})
-	t.Run("a native lifecycle engine waits for #67", func(t *testing.T) {
-		s := withLocalEngine(t, fixture(t), "[engine]\nlifecycle = \"native\"\nbinary = \"ext\"\nentry = [\"ext\"]\noperations = [\"start\", \"resume\"]\nstages = [\"work\"]\n")
-		if _, err := s.Create(context.Background(), "feature", "ext", "c", "existing", []string{"api"}, nil); err == nil || !strings.Contains(err.Error(), "only builtin lifecycle engines") {
-			t.Fatalf("err = %v", err)
+	t.Run("a native lifecycle engine reports through its record", func(t *testing.T) {
+		s := withLocalEngine(t, fixture(t), "[engine]\nlifecycle = \"native\"\nbinary = \"ext\"\nentry = [\"ext\"]\noperations = [\"start\", \"resume\", \"integration-check\", \"release\"]\nstages = [\"work\"]\n")
+		if _, err := s.Create(context.Background(), "feature", "ext", "c", "existing", []string{"api"}, nil); err == nil || !strings.Contains(err.Error(), "matching active state required for ext/c") {
+			t.Fatalf("without a record: %v", err)
+		}
+		api := s.Layout.Repos["api"]
+		base := runGit(t, api, "rev-parse", "HEAD")
+		if err := workflowroot.WriteLayoutMarker(workflowroot.LayoutMarker{SchemaVersion: 2, ConfigPath: s.Layout.ConfigPath, WorkflowRoot: s.Layout.WorkflowRoot, GitMode: s.Layout.GitMode}); err != nil {
+			t.Fatal(err)
+		}
+		record := filepath.Join(workspace.ExternalStateDir(s.Layout, "ext", "c"), "ext-state.yaml")
+		state := fmt.Sprintf("schema_version: 1\nworkflow: ext\nchange: c\nid: gen-1\nphase: work\nrepo_mode: explicit\nrepos: [api]\nrepo_bases:\n  api:\n    base_ref: %s\n    base_branch: main\n", base)
+		put(t, record, strings.Replace(state, "id: gen-1\n", "", 1))
+		if _, err := s.Create(context.Background(), "feature", "ext", "c", "existing", []string{"api"}, nil); err == nil || !strings.Contains(err.Error(), "invalid ext lifecycle record") {
+			t.Fatalf("record without an id: %v", err)
+		}
+		put(t, record, state)
+		task, err := s.Create(context.Background(), "feature", "ext", "c", "worktree", []string{"api"}, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		c := task.Checkouts["api"]
+		if task.NativeID != "id:gen-1" || c.Base != base || c.Path == api {
+			t.Fatalf("external native binding: native=%q %+v", task.NativeID, c)
+		}
+		// Resume validates the recorded generation and bindings.
+		if _, err := s.Load(context.Background(), task.Name); err != nil {
+			t.Fatalf("resume: %v", err)
+		}
+		if _, err := s.RunCheck(context.Background(), task, "pair", nil); err != nil {
+			t.Fatalf("integration check: %v", err)
+		}
+		put(t, record, strings.Replace(state, "gen-1", "gen-2", 1))
+		if _, err := s.Load(context.Background(), task.Name); err == nil {
+			t.Fatal("resumed another lifecycle generation")
+		}
+		put(t, record, state+"abandoned: true\n")
+		if _, err := workspace.RemoveWorktree(s.Layout, "ext", "c", "api", true); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := s.Cleanup(context.Background(), task.Name, true); err != nil {
+			t.Fatal(err)
 		}
 	})
 	t.Run("a legacy manifest carries no engine contract", func(t *testing.T) {

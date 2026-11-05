@@ -156,16 +156,14 @@ func TestLoadPluginEnabledSemantics(t *testing.T) {
 	}
 }
 
-// TestLoadRejectsRemovedClaudePlugins: Claude Code support was removed in
-// v0.13.0, so any [plugins.claude.<name>] declaration — whatever its fields —
-// is rejected at load naming the plugin, not decoded into a surface that no
-// longer projects.
-func TestLoadRejectsRemovedClaudePlugins(t *testing.T) {
+// TestLoadRejectsClaudePlugins: homonto does not manage Claude Code plugins;
+// a [plugins.claude.<name>] declaration is rejected at load naming it.
+func TestLoadRejectsClaudePlugins(t *testing.T) {
 	err := loadDoc(t, "[plugins.claude.hud]\nsource = \"hud@official\"\nenabled = true\n")
 	if err == nil {
 		t.Fatal("a [plugins.claude] declaration must be rejected at load")
 	}
-	for _, want := range []string{"plugins.claude.hud", "removed in v0.13.0"} {
+	for _, want := range []string{"plugins.claude.hud", "does not manage Claude Code plugins"} {
 		if !strings.Contains(err.Error(), want) {
 			t.Fatalf("error %v does not mention %q", err, want)
 		}
@@ -474,21 +472,13 @@ func TestLoadRejectsReservedSettingKeys(t *testing.T) {
 	}
 }
 
-// TestLoadRejectsRemovedClaudeSettings: Claude Code support was removed in
-// v0.13.0, so any [settings.claude] key — including the enabledPlugins /
-// mcpServers / pluginConfigs / extraKnownMarketplaces keys homonto itself once
-// managed there — is rejected at load naming the key, pointing at
-// [settings.opencode] or deletion.
-func TestLoadRejectsRemovedClaudeSettings(t *testing.T) {
-	for _, key := range []string{"enabledPlugins", "mcpServers", "pluginConfigs", "extraKnownMarketplaces", "model"} {
-		err := loadDoc(t, "[settings.claude]\n"+key+" = \"x\"\n")
-		if err == nil {
-			t.Fatalf("settings.claude.%s accepted; want the removal error", key)
-		}
-		for _, want := range []string{"settings.claude." + key, "removed in v0.13.0"} {
-			if !strings.Contains(err.Error(), want) {
-				t.Fatalf("error %v does not mention %q", err, want)
-			}
+// TestLoadAcceptsClaudeSettings: [settings.claude] projects into Claude Code's
+// user settings (M4.4).
+func TestLoadAcceptsClaudeSettings(t *testing.T) {
+	// [settings.claude] is live again (M4.4): keys load as written.
+	for _, key := range []string{"model", "theme"} {
+		if err := loadDoc(t, "[settings.claude]\n"+key+" = \"x\"\n"); err != nil {
+			t.Fatalf("settings.claude.%s rejected: %v", key, err)
 		}
 	}
 }
@@ -560,11 +550,9 @@ func TestLoadRejectsUnknownResourceTargets(t *testing.T) {
 	}
 }
 
-// TestLoadRejectsRemovedClaudeSubagentBlock: a [subagents.<name>.claude] model
-// block names a tool whose support was removed in v0.13.0. Load must reject it
-// naming the block and pointing the migration at [subagents.<name>.opencode] —
-// not silently drop a model declaration the user wrote.
-func TestLoadRejectsRemovedClaudeSubagentBlock(t *testing.T) {
+// TestLoadValidatesClaudeSubagentBlock: a [subagents.<name>.claude] model
+// block loads, and a Claude-only field mistake (a variant) is rejected.
+func TestLoadValidatesClaudeSubagentBlock(t *testing.T) {
 	err := loadDoc(t, `
 [subagents.onto-reviewer]
 source = "builtin:onto-reviewer"
@@ -576,11 +564,12 @@ model = "opus"
 [subagents.onto-reviewer.opencode]
 model = "anthropic/claude-opus-4-8"
 `)
-	if err == nil {
-		t.Fatal("a [subagents.<name>.claude] block must be rejected at load")
+	if err != nil {
+		t.Fatalf("a [subagents.<name>.claude] block is live again (M4.4): %v", err)
 	}
-	for _, want := range []string{"subagents.onto-reviewer.claude", "removed in v0.13.0"} {
-		if !strings.Contains(err.Error(), want) {
+	err = loadDoc(t, "[subagents.onto-reviewer]\nsource = \"builtin:onto-reviewer\"\n[subagents.onto-reviewer.opencode]\nmodel = \"a/b\"\n[subagents.onto-reviewer.claude]\nmodel = \"opus\"\nvariant = \"high\"\n")
+	for _, want := range []string{"subagents.onto-reviewer.claude", "takes only a model"} {
+		if err == nil || !strings.Contains(err.Error(), want) {
 			t.Fatalf("error %v does not mention %q", err, want)
 		}
 	}
@@ -1409,12 +1398,9 @@ targets = ["opencode"]
 	}
 }
 
-// TestLoadRejectsRemovedMarketplaces: marketplaces were a Claude-only feature,
-// removed with the adapter in v0.13.0. Any [marketplaces.claude.<name>]
-// declaration must fail at load naming the marketplace — including one whose
-// locator fields would have been valid before. (The per-source locator
-// validation died with the feature; the whole table is rejected wholesale.)
-func TestLoadRejectsRemovedMarketplaces(t *testing.T) {
+// TestLoadRejectsClaudeMarketplaces: homonto does not manage Claude Code
+// marketplaces; any [marketplaces.claude.<name>] declaration fails at load.
+func TestLoadRejectsClaudeMarketplaces(t *testing.T) {
 	for _, tc := range []struct{ label, doc, name string }{
 		{"github declaration", "[marketplaces.claude.official]\nsource = \"github\"\nrepo = \"anthropics/claude-plugins\"\nauto_update = true\n", "official"},
 		{"unknown source kind", "[marketplaces.claude.weird]\nsource = \"svn\"\nrepo = \"x/y\"\n", "weird"},
@@ -1424,7 +1410,7 @@ func TestLoadRejectsRemovedMarketplaces(t *testing.T) {
 		if err == nil {
 			t.Fatalf("%s: accepted; want the removal error", tc.label)
 		}
-		for _, want := range []string{"marketplaces.claude." + tc.name, "v0.13.0"} {
+		for _, want := range []string{"marketplaces.claude." + tc.name, "does not manage Claude Code marketplaces"} {
 			if !strings.Contains(err.Error(), want) {
 				t.Fatalf("%s: error %v does not mention %q", tc.label, err, want)
 			}

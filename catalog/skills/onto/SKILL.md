@@ -12,8 +12,7 @@ Light owns its preset lifecycle. The dispatcher performs no phase work.
 Use it for an explicit onto choice or a matching existing onto change. Answer
 informational questions without creating workflow state.
 
-Follow [autonomy](../homonto/references/autonomy.md), including OpenCode's built-in
-`question` tool for required decisions. Continue through the full success endpoint:
+Follow [autonomy](../homonto/references/autonomy.md), including the harness's native question dialog ([harness map](../homonto/references/harness.md)) for required decisions. Continue through the full success endpoint:
 verification, archival, integration and authorized publication. An explicit earlier
 endpoint, pause, blocking decision or hard blocker can stop the invocation.
 Load the [delivery loop](references/delivery.md) to carry the requested endpoint
@@ -47,7 +46,7 @@ transient evidence. Check actual dispatch using
 Inspect the selected onto inventory before new work. Read
 [discovery](references/discovery.md) for active/archive matching, dependencies,
 dirty-work attribution and first-use bootstrap. Resume a unique matching change;
-ask through `question` only for unresolved identity or scope conflicts.
+ask through the native question dialog only for unresolved identity or scope conflicts.
 
 For genuinely new work, apply [workflow selection](../homonto/references/workflow-selection.md).
 `/onto` selects the onto family, not light or full: recommend the viable path and

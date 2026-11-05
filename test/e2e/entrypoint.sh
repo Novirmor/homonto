@@ -4,13 +4,13 @@
 # parametrizes the tool-specific suites (projection, live).
 set -uo pipefail
 export HOME=/root
-export PATH="/root/.opencode/bin:/usr/local/bin:/usr/bin:/bin"
+export PATH="/root/.opencode/bin:/root/.local/bin:/usr/local/bin:/usr/bin:/bin"
 
 SUITE="${E2E_SUITE:-${1:-}}"
 export E2E_TOOL="${E2E_TOOL:-}"
 
 if [ -z "$SUITE" ]; then
-  echo "e2e: E2E_SUITE (or first arg) required — one of: projection live onto analyze" >&2
+  echo "e2e: E2E_SUITE (or first arg) required — one of: projection live onto reference recovery policy analyze" >&2
   exit 2
 fi
 S="/opt/e2e-suites/${SUITE}.sh"

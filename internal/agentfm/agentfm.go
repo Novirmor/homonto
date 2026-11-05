@@ -343,21 +343,8 @@ func Render(name string, content []byte, tool string, ctx *RenderContext) ([]byt
 		if h.Steps > 0 {
 			extra = append(extra, fmt.Sprintf("steps: %d", h.Steps))
 		}
-		if h.Bash != nil && !*h.Bash && (len(spec.BashAllowAdd) > 0 || len(h.BashDeny) > 0) {
-			return nil, fmt.Errorf("agentfm: agent %q declares bash: deny but carries bash_allow_add/bash_deny entries; a denied agent cannot gain exact allows or denies", name)
-		}
-		if ctx != nil && ctx.ShellProxy == "rtk" && (h.Bash == nil || *h.Bash) {
-			h.BashAllow = rtkPatterns(h.BashAllow, false)
-			spec.BashAllowAdd = rtkPatterns(spec.BashAllowAdd, false)
-			if name == "homonto" {
-				h.BashAllow = append(h.BashAllow, "rtk *")
-			}
-		}
-		// Known wrappers must not evade protected prompts or a trusted-shell
-		// deny just because RTK is not configured as the shell proxy.
-		h.BashAsk = rtkPatterns(h.BashAsk, true)
-		if h.BashDefault == "allow" || (ctx != nil && ctx.ShellProxy == "rtk") {
-			h.BashDeny = rtkPatterns(h.BashDeny, true)
+		if err := prepareBash(name, &h, &spec, ctx); err != nil {
+			return nil, err
 		}
 		roles, err := BuiltinRoles()
 		if err != nil {
@@ -379,6 +366,12 @@ func Render(name string, content []byte, tool string, ctx *RenderContext) ([]byt
 			}
 			extra = append(extra, "permission:", perm)
 		}
+	case "claude":
+		lines, err := renderClaude(name, h, spec, ctx, externalDirectoryDenies, editDirectoryDenies)
+		if err != nil {
+			return nil, err
+		}
+		extra = append(extra, lines...)
 	default:
 		return nil, fmt.Errorf("agentfm: unknown tool %q", tool)
 	}
@@ -401,6 +394,28 @@ func Render(name string, content []byte, tool string, ctx *RenderContext) ([]byt
 		}
 	}
 	return b.Bytes(), nil
+}
+
+// prepareBash applies the shell-proxy and wrapper rules every harness's
+// render shares before the agent's shell rules are serialized.
+func prepareBash(name string, h *Homonto, spec *ModelSpec, ctx *RenderContext) error {
+	if h.Bash != nil && !*h.Bash && (len(spec.BashAllowAdd) > 0 || len(h.BashDeny) > 0) {
+		return fmt.Errorf("agentfm: agent %q declares bash: deny but carries bash_allow_add/bash_deny entries; a denied agent cannot gain exact allows or denies", name)
+	}
+	if ctx != nil && ctx.ShellProxy == "rtk" && (h.Bash == nil || *h.Bash) {
+		h.BashAllow = rtkPatterns(h.BashAllow, false)
+		spec.BashAllowAdd = rtkPatterns(spec.BashAllowAdd, false)
+		if name == "homonto" {
+			h.BashAllow = append(h.BashAllow, "rtk *")
+		}
+	}
+	// Known wrappers must not evade protected prompts or a trusted-shell
+	// deny just because RTK is not configured as the shell proxy.
+	h.BashAsk = rtkPatterns(h.BashAsk, true)
+	if h.BashDefault == "allow" || (ctx != nil && ctx.ShellProxy == "rtk") {
+		h.BashDeny = rtkPatterns(h.BashDeny, true)
+	}
+	return nil
 }
 
 // rtkPatterns preserves originals. Allows use only known equivalent native
@@ -440,6 +455,60 @@ var bashCompositionGuards = []string{
 	"*;*", "*&&*", "*||*", "*|*", "*$(*", "*`*", "*>*", "*<*", "*\n*",
 }
 
+// PolicyRule is one shell rule: a wildcard pattern over the whole command
+// and its action (allow, ask or deny). The last matching rule wins.
+type PolicyRule struct {
+	Pattern string `json:"pattern"`
+	Action  string `json:"action"`
+}
+
+// bashRules is the agent's ordered shell rules, each pattern at its last
+// position, or nil when the agent declares none. Every harness that enforces
+// shell rules evaluates exactly this sequence.
+func bashRules(h Homonto, additions []string) []PolicyRule {
+	if h.BashDefault == "" && len(h.BashAllow) == 0 && len(additions) == 0 && len(h.BashAsk) == 0 && len(h.BashDeny) == 0 {
+		return nil
+	}
+	// Construct the last-match-wins sequence before serializing unique keys.
+	baseline := "ask"
+	if h.BashDefault == "allow" {
+		baseline = "allow"
+	}
+	rules := []PolicyRule{{"*", baseline}}
+	addRules := func(action string, patterns []string) {
+		for _, pattern := range patterns {
+			if strings.TrimSpace(pattern) != "" {
+				rules = append(rules, PolicyRule{pattern, action})
+			}
+		}
+	}
+	addRules("allow", h.BashAllow)
+	addRules("allow", additions)
+	addRules("ask", h.BashAsk)
+	// Guards follow allows so a request containing "git status; curl ..."
+	// re-asks despite matching "git status*". If the host requests each
+	// parsed command separately, each receives its own matching rule.
+	if h.BashDefault != "allow" {
+		addRules("ask", bashCompositionGuards)
+	}
+	// Explicit denies render LAST, including after user additions: bypass
+	// requests are single commands, not shell composition guards can catch.
+	addRules("deny", h.BashDeny)
+	// Keep each key at its LAST position, not just its last action at the
+	// first position: a later overlapping glob could otherwise override it.
+	last := map[string]int{}
+	for i, r := range rules {
+		last[r.Pattern] = i
+	}
+	out := make([]PolicyRule, 0, len(last))
+	for i, r := range rules {
+		if last[r.Pattern] == i {
+			out = append(out, r)
+		}
+	}
+	return out
+}
+
 // opencodePermission renders the OpenCode `permission:` block body (indented
 // lines) for the neutral intent, including the delegation topology as task globs.
 func opencodePermission(h Homonto, additions, externalDirectories, externalDirectoryDenies, editDirectoryDenies []string, managesExternalDirectories bool) string {
@@ -462,44 +531,10 @@ func opencodePermission(h Homonto, additions, externalDirectories, externalDirec
 	}
 	if h.Bash != nil && !*h.Bash {
 		lines = append(lines, "  bash: deny")
-	} else if h.BashDefault != "" || len(h.BashAllow) > 0 || len(additions) > 0 || len(h.BashAsk) > 0 || len(h.BashDeny) > 0 {
-		// Construct the last-match-wins sequence before serializing unique keys.
-		type rule struct{ pattern, action string }
-		baseline := "ask"
-		if h.BashDefault == "allow" {
-			baseline = "allow"
-		}
-		rules := []rule{{"*", baseline}}
-		addRules := func(action string, patterns []string) {
-			for _, pattern := range patterns {
-				if strings.TrimSpace(pattern) != "" {
-					rules = append(rules, rule{pattern, action})
-				}
-			}
-		}
-		addRules("allow", h.BashAllow)
-		addRules("allow", additions)
-		addRules("ask", h.BashAsk)
-		// Guards follow allows so a request containing "git status; curl ..."
-		// re-asks despite matching "git status*". If the host requests each
-		// parsed command separately, each receives its own matching rule.
-		if h.BashDefault != "allow" {
-			addRules("ask", bashCompositionGuards)
-		}
-		// Explicit denies render LAST, including after user additions: bypass
-		// requests are single commands, not shell composition guards can catch.
-		addRules("deny", h.BashDeny)
-		// Keep each key at its LAST position, not just its last action at the
-		// first position: a later overlapping glob could otherwise override it.
-		last := map[string]int{}
-		for i, r := range rules {
-			last[r.pattern] = i
-		}
+	} else if rules := bashRules(h, additions); rules != nil {
 		lines = append(lines, "  bash:")
-		for i, r := range rules {
-			if last[r.pattern] == i {
-				lines = append(lines, fmt.Sprintf("    %q: %s", r.pattern, r.action))
-			}
+		for _, r := range rules {
+			lines = append(lines, fmt.Sprintf("    %q: %s", r.Pattern, r.Action))
 		}
 	}
 	if h.Network != nil {

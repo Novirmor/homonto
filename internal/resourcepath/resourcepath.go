@@ -53,6 +53,13 @@ func Dir(kind Kind, tool, scope, home, projectRoot string) string {
 			return filepath.Join(projectRoot, ".opencode", leaf)
 		}
 		return filepath.Join(home, ".config", "opencode", leaf)
+	case "claude":
+		// Claude Code reads <repo>/.claude/<leaf> and ~/.claude/<leaf>.
+		// https://code.claude.com/docs/en/settings
+		if project {
+			return filepath.Join(projectRoot, ".claude", leaf)
+		}
+		return filepath.Join(home, ".claude", leaf)
 	}
 	return ""
 }
@@ -64,12 +71,18 @@ func leafName(kind Kind, tool string) (string, bool) {
 	case Skill:
 		return "skills", true
 	case Command:
-		if tool == "opencode" {
+		switch tool {
+		case "opencode":
 			return "command", true
+		case "claude":
+			return "commands", true
 		}
 	case Subagent:
-		if tool == "opencode" {
+		switch tool {
+		case "opencode":
 			return "agent", true
+		case "claude":
+			return "agents", true
 		}
 	}
 	return "", false

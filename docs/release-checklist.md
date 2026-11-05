@@ -72,7 +72,24 @@ commit, and keep the evidence:
    output links [hosting provider differences](guides/hosting-differences.md);
    confirm every **(unverified)** claim the run exercised and update the
    page.
-4. **Migration both ways** in throwaway projects. OpenCode 2 reads supported
+4. **Real-harness matrix** (`scripts/e2e-matrix.sh`, [test/e2e](../test/e2e/README.md)):
+   real OpenCode 2 and Claude Code in a container, reusing the operator's
+   mounted accounts read-only. Every cell must pass for a release that
+   changes an adapter, the runtime core, the doctrine or the package
+   contract:
+
+   | Cell | Proves |
+   |---|---|
+   | `projection/opencode` | apply next to a bring-your-own server and skill; OpenCode reads the config back |
+   | `projection/claude` | the builtins project natively for both harnesses; an untrusted folder does not start the MCP server; once trusted, Claude Code connects to `homonto runtime mcp`; doctor reports the tier and ADR 0105 limitations |
+   | `onto` | the full onto lifecycle through the real binaries |
+   | `reference` | the reference set from digest-pinned `remote:` archives on both harnesses, through its engine's native lifecycle: start, bind, task create, resume, integration check, snapshot, finish, release |
+   | `live/opencode` | OpenCode answers on the mounted account |
+   | `recovery/opencode` | an active change reaches a new and a continued OpenCode session through the workflow plugin |
+   | `recovery/claude` | an active change reaches a Claude Code session at startup, after `--resume` and after `/compact`; the session calls `homonto_status` over MCP |
+   | `policy/claude` | Claude Code reports the coordinator and its worker to homonto's hooks; a worker's denied push is stopped and an allowed command runs on the hook's decision; a refused worker permission prompt is handed back to the coordinator |
+
+5. **Migration both ways** in throwaway projects. OpenCode 2 reads supported
    V1 server config, but its terminal settings live in the global `cli.json`;
    V1 files stay untouched, and snapshot undo does not restore their terminal
    values.

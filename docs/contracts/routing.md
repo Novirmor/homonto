@@ -3,8 +3,12 @@
 A routing policy chooses the execution model an agent runs on. It is
 addressed by where the work runs, never by harness, and its fields are
 harness-native ([ADR 0098](../adr/0098-reserve-routing-and-decision-surfaces.md),
-[ADR 0099](../adr/0099-route-models-by-policy.md)). OpenCode is the only
-harness with fields today.
+[ADR 0099](../adr/0099-route-models-by-policy.md)). Each selector takes one
+policy per harness: `.opencode` with OpenCode's `provider/model` ids, `.claude`
+with Claude Code aliases (`sonnet`, `opus`, `haiku`) or model ids. Selector
+matching and stage agreement are the same on both, so one selector layout
+routes both harnesses; each harness's policies are resolved separately
+(`homonto explain routing --harness claude`).
 
 ## Addressable stages
 
@@ -66,6 +70,10 @@ variant = "high"
 ```
 
 ## Auto policies
+
+On Claude Code, which cannot list its models, an auto policy chooses among
+the ids `[routing.models.claude."<id>"]` describes, and falls back when none
+are described. `providers` does not apply to Claude Code.
 
 `mode = "auto"` selects at plan from the models `opencode models` reports
 ([ADR 0100](../adr/0100-select-models-automatically-at-plan.md)):

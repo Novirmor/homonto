@@ -102,6 +102,27 @@ func migrate(c *Config) {
 
 // normalize applies defaulting so downstream projection sees concrete values.
 func normalize(c *Config) {
+	// A declaration without targets goes to every configured harness.
+	if len(c.Harnesses) > 0 {
+		fill := func(t []string) []string {
+			if len(t) == 0 {
+				return append([]string(nil), c.Harnesses...)
+			}
+			return t
+		}
+		for _, m := range []map[string]Resource{c.Workflows, c.Engines, c.Services, c.Skills, c.Commands} {
+			for name, r := range m {
+				r.Targets = fill(r.Targets)
+				m[name] = r
+			}
+		}
+		for name, s := range c.Subagents {
+			if !s.IsTuneOnly() {
+				s.Targets = fill(s.Targets)
+				c.Subagents[name] = s
+			}
+		}
+	}
 	// The old [frameworks.*] table is deliberately not decoded. Keep a single
 	// effective package set for projection internals while public configuration
 	// distinguishes workflows from engines.

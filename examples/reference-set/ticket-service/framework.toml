@@ -1,0 +1,24 @@
+manifest_schema = 2
+name = "ticket-service"
+kind = "service"
+version = "0.1.0"
+description = "Reference ticket service: read a company ticket, comment on it and move it through its states with ticket-cli"
+
+# The service a workflow names under [requires.services]. Jira, Linear or an
+# in-house tracker plug in the same way: only ticket-cli changes.
+[service]
+id = "tickets"
+operations = ["read", "publish"]
+transport = "ticket-cli"
+credentials = [
+  { kind = "env", name = "TICKET_TOKEN" },
+  { kind = "cli", check = "ticket-cli auth status" },
+]
+
+# Tighten-only shell rules (ADR 0094): the coordinator is asked before it
+# writes to the tracker; workers never touch it.
+[permissions.coordinator]
+bash_ask = ["ticket-cli comment*", "ticket-cli transition*"]
+
+[permissions.workers]
+bash_deny = ["ticket-cli *"]

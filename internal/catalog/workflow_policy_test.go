@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	embedded "github.com/Novirmor/homonto/catalog"
+	"github.com/Novirmor/homonto/internal/capability"
 )
 
 // These scenarios check conflicting shipped instructions, not model compliance.
@@ -36,7 +37,7 @@ func TestWorkflowPolicyScenarios(t *testing.T) {
 			[]string{"Tool permission denied", "no direct execution or alternate tool as a workaround", "an unsuccessful attempt is not absence", "explicitly requires independent review", "record the dependency and next executable task"}, nil},
 		{"permission block returns to the coordinator", "skills/homonto/references/execution.md",
 			[]string{"## Permission blocks", "hands the assignment back to you", "Homonto worker permission blocks",
-				"run it yourself and re-dispatch", "never re-run that action on your own", "native `question` dialog",
+				"run it yourself and re-dispatch", "never re-run that action on your own", "native question dialog",
 				"sends you the output or the missing information", "Inspect any partial edits", "**Permission block:**"},
 			[]string{"| Honor the denial;"}},
 		{"permission block is triaged before it stops the task", "skills/homonto/references/autonomy.md",
@@ -64,7 +65,7 @@ func TestWorkflowPolicyScenarios(t *testing.T) {
 		{"intermittent and multi-component failures", "skills/homonto/references/debugging.md",
 			[]string{"If reproduction is unreliable", "gather evidence", "inputs, outputs", "without exposing secrets", "working path", "one variable at a time", "3 failed hypotheses", "outside the assigned scope"}, nil},
 		{"native decision channel", "skills/homonto/references/autonomy.md",
-			[]string{"OpenCode's built-in `question` tool", "Do not substitute a question in ordinary chat", "unavailable, denied, or dismissed", "never infer consent"}, nil},
+			[]string{"the harness's native question dialog", "Do not substitute a question in ordinary chat", "unavailable, denied, or dismissed", "never infer consent"}, nil},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			text := hPromptText(t, tc.file)
@@ -113,7 +114,7 @@ func TestPresetPoliciesShareEligibilityAndKeepRepairContracts(t *testing.T) {
 func TestWorkflowTriggersAndTechnicalProse(t *testing.T) {
 	for _, standalone := range []string{"grilling", "handoff"} {
 		text := hPromptText(t, "skills/"+standalone+"/SKILL.md")
-		if !strings.Contains(text, "OpenCode's built-in `question` tool") || !strings.Contains(text, "standalone mode") {
+		if !strings.Contains(text, "the harness's native question dialog") || !strings.Contains(text, "standalone mode") {
 			t.Errorf("%s must preserve native question behavior without shared skills", standalone)
 		}
 	}
@@ -155,6 +156,7 @@ func TestExtractedWorkflowPoliciesMaterialize(t *testing.T) {
 				names = append(names, entry.Name)
 			}
 			dir := t.TempDir()
+			c.SetHarnessReference(RenderHarness(capability.Declarations()))
 			if err := c.Materialize(dir, names, "none", "none", "", nil); err != nil {
 				t.Fatal(err)
 			}

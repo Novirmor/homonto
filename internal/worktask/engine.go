@@ -5,8 +5,10 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/Novirmor/homonto/internal/capability"
 	"github.com/Novirmor/homonto/internal/catalog"
 	"github.com/Novirmor/homonto/internal/config"
+	"github.com/Novirmor/homonto/internal/workspace"
 )
 
 // Engine is the declared contract of one installed engine, as a workspace
@@ -20,8 +22,7 @@ type Engine struct {
 
 // engine resolves the installed engine selected by name: the [engines.*]
 // declaration whose package name is engine, with a schema 2 [engine]
-// contract. A lifecycle-owning engine must be builtin until external engines
-// can report lifecycle state (#67).
+// contract.
 func (s *Store) engine(name string) (Engine, error) {
 	cl, err := s.Config.FrameworkCatalog()
 	if err != nil {
@@ -47,9 +48,21 @@ func (s *Store) engine(name string) (Engine, error) {
 		if !ok || fw.Engine == nil {
 			return Engine{}, fmt.Errorf("engine %q has no schema 2 [engine] contract; it cannot run workspace tasks (docs/contracts/engine.md)", name)
 		}
+		// Selection refuses an engine a target harness cannot run, naming the
+		// gap, before any task state exists (ADR 0082, ADR 0097).
+		for _, tool := range res.TargetsOrAll() {
+			if d, ok := capability.ForHarness(tool); ok {
+				if err := d.Check(catName, fw.HarnessRequirements); err != nil {
+					return Engine{}, fmt.Errorf("engine %q cannot run workspace tasks on %s: %w", name, tool, err)
+				}
+			}
+		}
 		e := Engine{Name: name, Builtin: strings.HasPrefix(res.Source, "builtin:"), EngineContract: *fw.Engine}
-		if e.OwnsLifecycle() && !e.Builtin {
-			return Engine{}, fmt.Errorf("engine %q owns a native lifecycle; only builtin lifecycle engines can run workspace tasks until external lifecycle reporting lands (#67)", name)
+		// An external native engine reports its lifecycle through the record it
+		// keeps under <workflow root>/engines/<name>/ and the worktree registry,
+		// exactly as onto and to do under changes/ and tasks/ (#67).
+		if e.OwnsLifecycle() && !e.Builtin && !workspace.External(name) {
+			return Engine{}, fmt.Errorf("engine %q owns a native lifecycle but its name cannot address a lifecycle record; use a lowercase name of letters, digits and '-'", name)
 		}
 		return e, nil
 	}

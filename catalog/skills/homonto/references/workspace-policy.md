@@ -47,7 +47,7 @@ Never bootstrap a managed root first and then try to adopt the populated result.
 
 ## Dirty work: inspect, present, choose
 
-Use OpenCode's built-in `question` tool under
+Use the harness's native question dialog ([harness map](harness.md)) under
 [the shared decision policy](autonomy.md#decide-before-asking) for every required
 dirty-work or initialization decision; ordinary chat and shell prompts are not substitutes.
 
@@ -261,7 +261,7 @@ and removal remain coordinator-owned and use the protocols above.
 
 Every new onto or to change starts from a base branch the user chose, pulled
 immediately before creation. Use the branch the request or a recorded decision
-names; otherwise ask once through the `question` tool, one question covering
+names; otherwise ask once through the native question dialog, one question covering
 every selected alias (combine it with the isolation question when both are
 pending). Recommend each repo's remote default branch
 (`git symbolic-ref --short refs/remotes/origin/HEAD`), else its current branch.

@@ -3,6 +3,7 @@ package engine
 import (
 	"bytes"
 	"fmt"
+	"github.com/Novirmor/homonto/internal/capability"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -78,17 +79,29 @@ func (e *Engine) Status() (drift []string, pending int, err error) {
 			e.Warnings = append(e.Warnings, fmt.Sprintf("%s drift skipped: %v", t.Adapter.Name(), oerr))
 			continue
 		}
-		for _, key := range t.State.Keys("opencode") {
-			h, ok := observed[key]
-			if !ok {
-				drift = append(drift, fmt.Sprintf("%s %s missing (deleted out of band)", t.Adapter.Name(), key))
-				mark(t.Adapter.Name(), key)
-				continue
+		// Repository adapters do not all use the same state namespace: the
+		// established OpenCode adapter uses its harness id, while Claude's
+		// structured projections use its repo-qualified adapter name. Check both
+		// namespaces so a partition can report every projection it contains.
+		tools := []string{t.Adapter.Name()}
+		if h, ok := t.Adapter.(interface{ HarnessID() string }); ok {
+			if harness := h.HarnessID(); harness != t.Adapter.Name() {
+				tools = append(tools, harness)
 			}
-			entry, _ := t.State.Get("opencode", key)
-			if h != entry.Applied {
-				drift = append(drift, fmt.Sprintf("%s %s drifted (will reset on apply)", t.Adapter.Name(), key))
-				mark(t.Adapter.Name(), key)
+		}
+		for _, tool := range tools {
+			for _, key := range t.State.Keys(tool) {
+				h, ok := observed[key]
+				if !ok {
+					drift = append(drift, fmt.Sprintf("%s %s missing (deleted out of band)", t.Adapter.Name(), key))
+					mark(t.Adapter.Name(), key)
+					continue
+				}
+				entry, _ := t.State.Get(tool, key)
+				if h != entry.Applied {
+					drift = append(drift, fmt.Sprintf("%s %s drifted (will reset on apply)", t.Adapter.Name(), key))
+					mark(t.Adapter.Name(), key)
+				}
 			}
 		}
 	}
@@ -163,6 +176,9 @@ func (e *Engine) Doctor() []string {
 		out = append(out, fmt.Sprintf("warn: cannot expand opencode subagents: %v", osaerr))
 	} else {
 		out = append(out, e.doctorSubagents("opencode", opencodeSubagents)...)
+	}
+	for _, d := range e.harnessDeclarations() {
+		out = append(out, d.Report().Findings()...)
 	}
 	out = append(out, e.doctorTooling()...)
 	for _, warning := range e.OpenCodeV2Warnings() {
@@ -371,7 +387,7 @@ func (e *Engine) doctorSubagents(tool string, entries []config.NamedResource) []
 					}
 				}
 				return shared, false
-			case e.renderedExternal[entry.Name] != nil:
+			case e.renderedExternal[tool][entry.Name] != nil:
 				return filepath.Join(e.renderedSubagentDir(), entry.Name+"."+tool+".md"), false
 			case strings.HasPrefix(entry.Resource.Source, "remote:"):
 				return filepath.Join(e.remoteSubagentDir(), entry.Name+".md"), false
@@ -383,4 +399,14 @@ func (e *Engine) doctorSubagents(tool string, entries []config.NamedResource) []
 			return filepath.Join(resourcepath.Dir(resourcepath.Subagent, tool, entry.Resource.Scope, e.Home, e.ProjectRoot), entry.Name+".md")
 		},
 	})
+}
+
+// HarnessReports summarizes every targeted harness's capability declaration
+// for doctor's JSON output (ADR 0082 tiers).
+func (e *Engine) HarnessReports() []capability.Report {
+	out := []capability.Report{}
+	for _, d := range e.harnessDeclarations() {
+		out = append(out, d.Report())
+	}
+	return out
 }

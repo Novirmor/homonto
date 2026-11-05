@@ -4,7 +4,7 @@ This reference owns the parent coordination contract for both `/no` and callers
 such as h resolve. The no skill remains an informational inventory of its two
 workers; no lifecycle plan, phase or binary is required.
 
-Use OpenCode's built-in `question` tool for every question to the user, including
+Use the harness's native question dialog ([harness map](../../homonto/references/harness.md)) for every question to the user, including
 clarifications, free-form input and confirmations. Always display the native dialog
 box, including on standalone entry. If unavailable, denied or dismissed, preserve
 state and report the pending input; do not fall back to chat or shell prompts or

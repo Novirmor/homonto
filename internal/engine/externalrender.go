@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/Novirmor/homonto/internal/adapter"
 	"github.com/Novirmor/homonto/internal/agentfm"
 	"github.com/Novirmor/homonto/internal/config"
 	"github.com/Novirmor/homonto/internal/fsutil"
@@ -47,8 +48,22 @@ func (e *Engine) externalSubagentSource(entry config.NamedResource) (string, boo
 // the intent, shell rules from installed services. Content without intent
 // stays verbatim, and a model override on it is an error, because nothing
 // would ever apply it.
-func (e *Engine) renderExternalSubagents() (map[string][]byte, error) {
-	entries, err := e.Cfg.ExpandedSubagentEntriesForTool("opencode")
+func (e *Engine) renderExternalSubagents() (map[string]map[string][]byte, error) {
+	out := map[string]map[string][]byte{}
+	for _, tool := range config.HarnessIDs() {
+		rendered, err := e.renderExternalSubagentsFor(tool)
+		if err != nil {
+			return nil, err
+		}
+		if len(rendered) > 0 {
+			out[tool] = rendered
+		}
+	}
+	return out, nil
+}
+
+func (e *Engine) renderExternalSubagentsFor(tool string) (map[string][]byte, error) {
+	entries, err := e.Cfg.ExpandedSubagentEntriesForTool(tool)
 	if err != nil {
 		return nil, nil // expansion errors surface through plan and doctor
 	}
@@ -66,25 +81,25 @@ func (e *Engine) renderExternalSubagents() (map[string][]byte, error) {
 		if err != nil {
 			return nil, fmt.Errorf("subagents.%s: %w", entry.Name, err)
 		}
-		route := e.Cfg.Subagents[entry.Name].OpenCode
+		route := e.Cfg.Subagents[entry.Name].ModelOverrideFor(tool)
 		intent, err := agentfm.NeedsTransform(data)
 		if err != nil {
 			return nil, fmt.Errorf("subagents.%s: %w", entry.Name, err)
 		}
 		if !intent {
 			if route.IsSet() {
-				return nil, fmt.Errorf("subagents.%s declares a model override, but %s has no homonto: intent block, so it is projected verbatim and the override could never apply; add a homonto: block to render it, or remove [subagents.%s.opencode]", entry.Name, entry.Resource.Source, entry.Name)
+				return nil, fmt.Errorf("subagents.%s declares a model override, but %s has no homonto: intent block, so it is projected verbatim and the override could never apply; add a homonto: block to render it, or remove [subagents.%s.%s]", entry.Name, entry.Resource.Source, entry.Name, tool)
 			}
 			continue
 		}
 		if route.Model == "" {
-			routes, err := e.Routes()
+			routes, err := e.RoutesFor(tool)
 			if err != nil {
 				return nil, err
 			}
 			sel, ok := routes.policyModel(entry.Name)
 			if !ok {
-				return nil, fmt.Errorf("subagents.%s renders from its homonto: intent block; set [subagents.%s.opencode] model or cover it with a [routing] policy", entry.Name, entry.Name)
+				return nil, fmt.Errorf("subagents.%s renders from its homonto: intent block; set [subagents.%s.%s] model or cover it with a [routing] policy", entry.Name, entry.Name, tool)
 			}
 			route.Model, route.Variant = sel.Model, sel.Variant
 		}
@@ -93,7 +108,7 @@ func (e *Engine) renderExternalSubagents() (map[string][]byte, error) {
 			if err != nil {
 				return nil, err
 			}
-			base = ctxs["opencode"]
+			base = ctxs[tool]
 		}
 		key := externalRenderKey(entry.Name)
 		ctx := base
@@ -106,7 +121,7 @@ func (e *Engine) renderExternalSubagents() (map[string][]byte, error) {
 		ctx.ExternalDirectoriesByAgent = nil
 		ctx.ExternalDirectoryDeniesByAgent = nil
 		ctx.EditDirectoryDeniesByAgent = nil
-		out, err := agentfm.Render(key, data, "opencode", &ctx)
+		out, err := agentfm.Render(key, data, tool, &ctx)
 		if err != nil {
 			return nil, fmt.Errorf("subagents.%s: %w", entry.Name, err)
 		}
@@ -119,11 +134,20 @@ func (e *Engine) renderExternalSubagents() (map[string][]byte, error) {
 // and already-materialized remote agents without resolving routing policies.
 // In particular, an auto policy must not run `opencode models` until Plan.
 func (e *Engine) validateExternalSubagents() error {
-	entries, err := e.Cfg.ExpandedSubagentEntriesForTool("opencode")
+	for _, tool := range config.HarnessIDs() {
+		if err := e.validateExternalSubagentsFor(tool); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (e *Engine) validateExternalSubagentsFor(tool string) error {
+	entries, err := e.Cfg.ExpandedSubagentEntriesForTool(tool)
 	if err != nil {
 		return nil // expansion errors surface through plan and doctor
 	}
-	routes, err := e.Cfg.AgentRoutes("opencode")
+	routes, err := e.Cfg.AgentRoutes(tool)
 	if err != nil {
 		return err
 	}
@@ -139,19 +163,19 @@ func (e *Engine) validateExternalSubagents() error {
 		if err != nil {
 			return fmt.Errorf("subagents.%s: %w", entry.Name, err)
 		}
-		route := e.Cfg.Subagents[entry.Name].OpenCode
+		route := e.Cfg.Subagents[entry.Name].ModelOverrideFor(tool)
 		intent, err := agentfm.NeedsTransform(data)
 		if err != nil {
 			return fmt.Errorf("subagents.%s: %w", entry.Name, err)
 		}
 		if !intent {
 			if route.IsSet() {
-				return fmt.Errorf("subagents.%s declares a model override, but %s has no homonto: intent block, so it is projected verbatim and the override could never apply; add a homonto: block to render it, or remove [subagents.%s.opencode]", entry.Name, entry.Resource.Source, entry.Name)
+				return fmt.Errorf("subagents.%s declares a model override, but %s has no homonto: intent block, so it is projected verbatim and the override could never apply; add a homonto: block to render it, or remove [subagents.%s.%s]", entry.Name, entry.Resource.Source, entry.Name, tool)
 			}
 			continue
 		}
 		if route.Model == "" && routes[entry.Name].From != config.RouteFromPolicy {
-			return fmt.Errorf("subagents.%s renders from its homonto: intent block; set [subagents.%s.opencode] model or cover it with a [routing] policy", entry.Name, entry.Name)
+			return fmt.Errorf("subagents.%s renders from its homonto: intent block; set [subagents.%s.%s] model or cover it with a [routing] policy", entry.Name, entry.Name, tool)
 		}
 		// Render with a placeholder model to exercise all intent validation
 		// (including frontmatter keys that rendering owns) without selecting an
@@ -160,6 +184,9 @@ func (e *Engine) validateExternalSubagents() error {
 		model := route.Model
 		if model == "" {
 			model = "validation/model"
+			if tool == "claude" {
+				model = "validation-model"
+			}
 		}
 		ctx := &agentfm.RenderContext{
 			Names: map[string]string{key: entry.Name},
@@ -167,7 +194,7 @@ func (e *Engine) validateExternalSubagents() error {
 				Model: model, Variant: route.Variant, Effort: route.Effort, Steps: route.Steps, BashAllowAdd: route.BashAllowAdd,
 			}},
 		}
-		if _, err := agentfm.Render(key, data, "opencode", ctx); err != nil {
+		if _, err := agentfm.Render(key, data, tool, ctx); err != nil {
 			return fmt.Errorf("subagents.%s: %w", entry.Name, err)
 		}
 	}
@@ -184,15 +211,15 @@ func (e *Engine) refreshExternalRenders() error {
 	e.renderedExternal = rendered
 	type renderedSetter interface {
 		SetRenderedSubagents(string, map[string][]byte)
+		HarnessID() string
 	}
-	for _, a := range e.Adapters {
-		if s, ok := a.(renderedSetter); ok {
-			s.SetRenderedSubagents(e.renderedSubagentDir(), rendered)
-		}
-	}
+	adapters := append([]adapter.Adapter(nil), e.Adapters...)
 	for _, t := range e.RepoTargets {
-		if s, ok := t.Adapter.(renderedSetter); ok {
-			s.SetRenderedSubagents(e.renderedSubagentDir(), rendered)
+		adapters = append(adapters, t.Adapter)
+	}
+	for _, a := range adapters {
+		if s, ok := a.(renderedSetter); ok {
+			s.SetRenderedSubagents(e.renderedSubagentDir(), rendered[s.HarnessID()])
 		}
 	}
 	return nil
@@ -212,8 +239,14 @@ func (e *Engine) writeRenderedSubagents() error {
 		return err
 	}
 	want := map[string]bool{}
-	for name, data := range e.renderedExternal {
-		file := name + ".opencode.md"
+	files := map[string][]byte{}
+	for tool, rendered := range e.renderedExternal {
+		for name, data := range rendered {
+			files[name+"."+tool+".md"] = data
+		}
+	}
+	for file, data := range files {
+		name := file
 		want[file] = true
 		path := filepath.Join(dir, file)
 		if current, err := os.ReadFile(path); err == nil && bytes.Equal(current, data) {

@@ -52,13 +52,19 @@ subject to reserved keys and the V2 terminal schema.
 **Names** must be non-empty and not index-like (`"0"`, `"-1"`), so they can
 safely become JSON keys and file names.
 
-**Targets.** Resources accept an optional `targets` list. The only valid
-value is `"opencode"`; omitting it means every tool. `"claude"` and `"codex"`
-fail at load (support removed in v0.13.0).
+**Harnesses and targets.** A top-level `harnesses` list names the harnesses
+a declaration goes to when it sets no `targets` of its own; absent means
+`["opencode"]`. Valid values are `"opencode"` and `"claude"`
+([Claude Code](claude-code.md), ADR 0104). A resource's own `targets` list
+wins. `"codex"` fails at load (removed in v0.13.0).
+
+```toml
+harnesses = ["opencode", "claude"]
+```
 
 **Scope.** `"project"` writes into the config root (`.opencode/`,
-`opencode.jsonc`). `"user"` writes into your global OpenCode config
-(`~/.config/opencode/`) and affects every project.
+`opencode.jsonc`, `.claude/`). `"user"` writes into each harness's global
+config (`~/.config/opencode/`, `~/.claude/`) and affects every project.
 
 | Resource | `scope` |
 |---|---|
@@ -658,6 +664,22 @@ command = ["make", "e2e"]
 Scripts must read those paths, not guess sibling locations. Run checks with
 `homonto workspace task check`; see [workspaces](workspaces.md#workspace-tasks).
 
+## Claude Code — `[settings.claude]`, `[subagents.<name>.claude]`
+
+`[settings.claude]` keys merge into `~/.claude/settings.json`. Each
+Claude-targeted agent needs a model, from `[subagents.<name>.claude]` or a
+`[routing.<selector>.claude]` policy, in Claude Code's spelling: an alias
+(`sonnet`, `opus`, `haiku`, `inherit`) or a model id. Claude Code agents take
+no `variant` or `effort`. See [Claude Code](claude-code.md).
+
+```toml
+[settings.claude]
+theme = "dark"
+
+[subagents.onto-skeptic.claude]
+model = "opus"
+```
+
 ## Removed and legacy tables
 
 | Table | Status |
@@ -667,7 +689,7 @@ Scripts must read those paths, not guess sibling locations. Run checks with
 | `local:` on `[skills.*]` / `[commands.*]` | Rejected. Your own skills and commands are bring-your-own. |
 | `[models.<tool>.<tier>]` | Rejected. Model tiers were removed; use per-agent `[subagents.<name>.opencode]`. |
 | `[agents.<name>]` | Parses; folds into a copy-mode `[subagents.<name>]`. |
-| `[settings.claude]`, `[plugins.claude.*]`, `[marketplaces.claude.*]`, `[subagents.<name>.claude]` | Rejected since v0.13.0. |
+| `[plugins.claude.*]`, `[marketplaces.claude.*]` | Rejected. Claude Code plugins and marketplaces are bring-your-own in its `settings.json`. |
 
 ## A complete annotated example
 

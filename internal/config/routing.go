@@ -13,7 +13,8 @@ import (
 
 // Routing is the [routing] table: model-routing policies addressed by
 // harness-independent selectors, with harness-native policy fields
-// (ADR 0098, ADR 0099). OpenCode is the only harness with fields today.
+// (ADR 0098, ADR 0099): one field per harness, in that harness's own model
+// spelling.
 type Routing struct {
 	Default   RouteSelector            `toml:"default"`
 	Workflows map[string]RouteSelector `toml:"workflows"`
@@ -24,18 +25,45 @@ type Routing struct {
 	// config describes here (ADR 0100).
 	Models struct {
 		OpenCode map[string]ModelInfo `toml:"opencode"`
+		Claude   map[string]ModelInfo `toml:"claude"`
 	} `toml:"models"`
+}
+
+// ModelsFor returns the model descriptions for one harness.
+func (r Routing) ModelsFor(tool string) map[string]ModelInfo {
+	if tool == "claude" {
+		return r.Models.Claude
+	}
+	return r.Models.OpenCode
 }
 
 // RouteSelector holds one selector's policy per harness.
 type RouteSelector struct {
 	OpenCode *RoutePolicy `toml:"opencode"`
+	Claude   *RoutePolicy `toml:"claude"`
+}
+
+// For returns the selector's policy for one harness.
+func (s RouteSelector) For(tool string) *RoutePolicy {
+	if tool == "claude" {
+		return s.Claude
+	}
+	return s.OpenCode
 }
 
 // EngineRouting is an engine selector: its own policy plus one per stage.
 type EngineRouting struct {
 	OpenCode *RoutePolicy             `toml:"opencode"`
+	Claude   *RoutePolicy             `toml:"claude"`
 	Stages   map[string]RouteSelector `toml:"stages"`
+}
+
+// For returns the engine's own policy for one harness.
+func (e EngineRouting) For(tool string) *RoutePolicy {
+	if tool == "claude" {
+		return e.Claude
+	}
+	return e.OpenCode
 }
 
 // Routing modes.
@@ -97,7 +125,8 @@ var routeTag = regexp.MustCompile(`^[a-z][a-z0-9_-]*$`)
 
 // Empty reports whether no policy or model description is configured.
 func (r Routing) Empty() bool {
-	return r.Default.OpenCode == nil && len(r.Workflows) == 0 && len(r.Engines) == 0 && len(r.Models.OpenCode) == 0
+	return r.Default.OpenCode == nil && r.Default.Claude == nil && len(r.Workflows) == 0 && len(r.Engines) == 0 &&
+		len(r.Models.OpenCode) == 0 && len(r.Models.Claude) == 0
 }
 
 // validateRouting checks the policies' own shape and that every selector
@@ -105,50 +134,57 @@ func (r Routing) Empty() bool {
 // checked by validateRoutingStages once the catalog resolves.
 func validateRouting(c *Config) error {
 	r := c.Routing
-	if err := validateRoutePolicy("routing.default.opencode", r.Default.OpenCode); err != nil {
-		return err
-	}
 	for _, name := range slices.Sorted(maps.Keys(r.Workflows)) {
 		if _, ok := c.Workflows[name]; !ok {
 			return fmt.Errorf("parse config: routing.workflows.%s names no declared workflow; declare [workflows.%s] or remove the policy", name, name)
-		}
-		if err := validateRoutePolicy("routing.workflows."+name+".opencode", r.Workflows[name].OpenCode); err != nil {
-			return err
 		}
 	}
 	for _, name := range slices.Sorted(maps.Keys(r.Engines)) {
 		if _, ok := c.Engines[name]; !ok {
 			return fmt.Errorf("parse config: routing.engines.%s names no declared engine; declare [engines.%s] or remove the policy", name, name)
 		}
-		er := r.Engines[name]
-		if err := validateRoutePolicy("routing.engines."+name+".opencode", er.OpenCode); err != nil {
+	}
+	for _, tool := range HarnessIDs() {
+		if err := validateRoutePolicy(tool, "routing.default."+tool, r.Default.For(tool)); err != nil {
 			return err
 		}
-		for _, stage := range slices.Sorted(maps.Keys(er.Stages)) {
-			if err := validateRoutePolicy("routing.engines."+name+".stages."+stage+".opencode", er.Stages[stage].OpenCode); err != nil {
+		for _, name := range slices.Sorted(maps.Keys(r.Workflows)) {
+			if err := validateRoutePolicy(tool, "routing.workflows."+name+"."+tool, r.Workflows[name].For(tool)); err != nil {
 				return err
 			}
 		}
-	}
-	for _, id := range slices.Sorted(maps.Keys(r.Models.OpenCode)) {
-		label := fmt.Sprintf("routing.models.opencode.%q", id)
-		if err := routeModelID(label, id); err != nil {
-			return err
-		}
-		m := r.Models.OpenCode[id]
-		for _, v := range []*float64{m.Cost, m.Latency} {
-			if v != nil && !(*v >= 0) {
-				return fmt.Errorf("parse config: %s cost and latency must be non-negative numbers", label)
+		for _, name := range slices.Sorted(maps.Keys(r.Engines)) {
+			er := r.Engines[name]
+			if err := validateRoutePolicy(tool, "routing.engines."+name+"."+tool, er.For(tool)); err != nil {
+				return err
+			}
+			for _, stage := range slices.Sorted(maps.Keys(er.Stages)) {
+				if err := validateRoutePolicy(tool, "routing.engines."+name+".stages."+stage+"."+tool, er.Stages[stage].For(tool)); err != nil {
+					return err
+				}
 			}
 		}
-		if err := routeTags(label+" tags", m.Tags); err != nil {
-			return err
+		models := r.ModelsFor(tool)
+		for _, id := range slices.Sorted(maps.Keys(models)) {
+			label := fmt.Sprintf("routing.models.%s.%q", tool, id)
+			if err := routeModelID(tool, label, id); err != nil {
+				return err
+			}
+			m := models[id]
+			for _, v := range []*float64{m.Cost, m.Latency} {
+				if v != nil && !(*v >= 0) {
+					return fmt.Errorf("parse config: %s cost and latency must be non-negative numbers", label)
+				}
+			}
+			if err := routeTags(label+" tags", m.Tags); err != nil {
+				return err
+			}
 		}
 	}
 	return nil
 }
 
-func validateRoutePolicy(label string, p *RoutePolicy) error {
+func validateRoutePolicy(tool, label string, p *RoutePolicy) error {
 	if p == nil {
 		return nil
 	}
@@ -161,10 +197,10 @@ func validateRoutePolicy(label string, p *RoutePolicy) error {
 		if auto {
 			return fmt.Errorf("parse config: %s is a static policy; candidates, providers, needs, max_cost, max_latency, prefer and fallback belong to mode = \"auto\"", label)
 		}
-		if err := routeModelID(label+" model", p.Model); err != nil {
+		if err := routeModelID(tool, label+" model", p.Model); err != nil {
 			return err
 		}
-		return validateModelSpec("opencode", label, ModelRoute{Model: p.Model, Variant: p.Variant}, true)
+		return validateModelSpec(tool, label, ModelRoute{Model: p.Model, Variant: p.Variant}, true)
 	case RouteAuto:
 		if p.Model != "" || p.Variant != "" {
 			return fmt.Errorf("parse config: %s is an auto policy; it selects the model itself, so model and variant are not allowed (name a fallback instead)", label)
@@ -172,13 +208,16 @@ func validateRoutePolicy(label string, p *RoutePolicy) error {
 		if p.Fallback == "" {
 			return fmt.Errorf("parse config: %s is an auto policy and needs a fallback model for when discovery fails or nothing qualifies", label)
 		}
-		if err := routeModelID(label+" fallback", p.Fallback); err != nil {
+		if err := routeModelID(tool, label+" fallback", p.Fallback); err != nil {
 			return err
 		}
 		for _, id := range p.Candidates {
-			if err := routeModelID(label+" candidates", id); err != nil {
+			if err := routeModelID(tool, label+" candidates", id); err != nil {
 				return err
 			}
+		}
+		if tool == "claude" && len(p.Providers) > 0 {
+			return fmt.Errorf("parse config: %s providers do not apply to Claude Code, whose model ids carry no provider", label)
 		}
 		if len(slices.Compact(slices.Sorted(slices.Values(p.Candidates)))) != len(p.Candidates) {
 			return fmt.Errorf("parse config: %s candidates must be distinct", label)
@@ -207,9 +246,16 @@ func validateRoutePolicy(label string, p *RoutePolicy) error {
 	}
 }
 
-// routeModelID requires OpenCode's provider/model form, so a provider
-// constraint can always be judged.
-func routeModelID(label, id string) error {
+// routeModelID requires the harness's model spelling: OpenCode's
+// provider/model form, so a provider constraint can always be judged, or a
+// Claude Code alias or model id.
+func routeModelID(tool, label, id string) error {
+	if tool == "claude" {
+		if id == "" || strings.ContainsAny(id, "/ \t\n#") {
+			return fmt.Errorf("parse config: %s %q must be a Claude Code alias (sonnet, opus, haiku) or a model id such as claude-sonnet-5-5", label, id)
+		}
+		return nil
+	}
 	provider, model, ok := strings.Cut(id, "/")
 	if !ok || provider == "" || model == "" || strings.ContainsAny(id, " \t\n#") {
 		return fmt.Errorf("parse config: %s %q must be a provider/model id such as \"anthropic/claude-sonnet-5\"", label, id)
@@ -353,7 +399,7 @@ func (c *Config) AgentRoutes(tool string) (map[string]AgentRoute, error) {
 		if len(scopes) == 0 {
 			scopes = []routeScope{{}}
 		}
-		route.Selector, route.Policy, route.Note = c.agreeOnPolicy(scopes)
+		route.Selector, route.Policy, route.Note = c.agreeOnPolicy(scopes, tool)
 		if route.Policy != nil {
 			route.From = RouteFromPolicy
 		}
@@ -392,11 +438,13 @@ func (c *Config) modelPin(identity, entryName string, catalogKeyed bool, tool st
 
 // agreeOnPolicy walks from the most specific level to the least and returns
 // the first level where every scope resolves to the same policy.
-func (c *Config) agreeOnPolicy(scopes []routeScope) (string, *RoutePolicy, string) {
+func (c *Config) agreeOnPolicy(scopes []routeScope, tool string) (string, *RoutePolicy, string) {
 	levels := []func(routeScope) routeCandidate{
-		c.stageCandidate,
-		func(s routeScope) routeCandidate { return c.packageCandidate(routeScope{kind: s.kind, pkg: s.pkg}) },
-		func(routeScope) routeCandidate { return c.defaultCandidate() },
+		func(s routeScope) routeCandidate { return c.stageCandidate(s, tool) },
+		func(s routeScope) routeCandidate {
+			return c.packageCandidate(routeScope{kind: s.kind, pkg: s.pkg}, tool)
+		},
+		func(routeScope) routeCandidate { return c.defaultCandidate(tool) },
 	}
 	var notes []string
 	for _, level := range levels {
@@ -418,32 +466,32 @@ func (c *Config) agreeOnPolicy(scopes []routeScope) (string, *RoutePolicy, strin
 }
 
 // stageCandidate is the most specific policy for one scope.
-func (c *Config) stageCandidate(s routeScope) routeCandidate {
+func (c *Config) stageCandidate(s routeScope, tool string) routeCandidate {
 	if s.kind == "engine" && s.stage != "" {
-		if p := c.Routing.Engines[s.pkg].Stages[s.stage].OpenCode; p != nil {
-			return routeCandidate{"routing.engines." + s.pkg + ".stages." + s.stage + ".opencode", p}
+		if p := c.Routing.Engines[s.pkg].Stages[s.stage].For(tool); p != nil {
+			return routeCandidate{"routing.engines." + s.pkg + ".stages." + s.stage + "." + tool, p}
 		}
 	}
-	return c.packageCandidate(routeScope{kind: s.kind, pkg: s.pkg})
+	return c.packageCandidate(routeScope{kind: s.kind, pkg: s.pkg}, tool)
 }
 
-func (c *Config) packageCandidate(s routeScope) routeCandidate {
+func (c *Config) packageCandidate(s routeScope, tool string) routeCandidate {
 	switch s.kind {
 	case "engine":
-		if p := c.Routing.Engines[s.pkg].OpenCode; p != nil {
-			return routeCandidate{"routing.engines." + s.pkg + ".opencode", p}
+		if p := c.Routing.Engines[s.pkg].For(tool); p != nil {
+			return routeCandidate{"routing.engines." + s.pkg + "." + tool, p}
 		}
 	case "workflow":
-		if p := c.Routing.Workflows[s.pkg].OpenCode; p != nil {
-			return routeCandidate{"routing.workflows." + s.pkg + ".opencode", p}
+		if p := c.Routing.Workflows[s.pkg].For(tool); p != nil {
+			return routeCandidate{"routing.workflows." + s.pkg + "." + tool, p}
 		}
 	}
-	return c.defaultCandidate()
+	return c.defaultCandidate(tool)
 }
 
-func (c *Config) defaultCandidate() routeCandidate {
-	if p := c.Routing.Default.OpenCode; p != nil {
-		return routeCandidate{"routing.default.opencode", p}
+func (c *Config) defaultCandidate(tool string) routeCandidate {
+	if p := c.Routing.Default.For(tool); p != nil {
+		return routeCandidate{"routing.default." + tool, p}
 	}
 	return routeCandidate{}
 }

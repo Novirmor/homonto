@@ -63,7 +63,7 @@ dispatchers; apply them throughout intake and execution.
 
 ## Decisions and questions
 
-- Use OpenCode's built-in `question` tool for every question to the user,
+- Use the harness's native question dialog (homonto skill, `references/harness.md`) for every question to the user,
   including clarifications and free-form input, following shared autonomy. Always
   display the native dialog box; never replace it with a chat question or shell
   prompt. If unavailable, denied or dismissed, report the pending input without

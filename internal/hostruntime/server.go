@@ -68,6 +68,7 @@ type Server struct {
 	out     io.Writer
 	version string
 	svc     *Service
+	wf      *WorkflowService
 	now     int64
 	yield   chan struct{}
 	calls   map[string]*call
@@ -154,6 +155,9 @@ func (s *Server) Serve() error {
 			if s.svc != nil {
 				s.svc.Dispose()
 			}
+			if s.wf != nil {
+				s.wf.Handback.Clear()
+			}
 			return nil
 		}
 		if err != nil {
@@ -197,6 +201,17 @@ func (s *Server) request(m message) {
 			return
 		}
 		binding := p.Capabilities.Experimental["homonto/runtime"]
+		if binding.Provider == WorkflowProvider {
+			wf, err := NewWorkflowService(binding.ConfigPath)
+			if err != nil {
+				s.fail(m.ID, -32602, err.Error())
+				return
+			}
+			s.wf = wf
+			s.respond(m.ID, map[string]any{"protocolVersion": ProtocolVersion, "capabilities": map[string]any{"tools": map[string]any{}},
+				"serverInfo": map[string]any{"name": "homonto", "version": s.version}})
+			return
+		}
 		provider, ok := Providers[binding.Provider]
 		if !ok {
 			s.fail(m.ID, -32602, fmt.Sprintf("unknown provider %q", binding.Provider))
@@ -212,6 +227,10 @@ func (s *Server) request(m message) {
 		s.respond(m.ID, map[string]any{"protocolVersion": ProtocolVersion, "capabilities": map[string]any{"tools": map[string]any{}},
 			"serverInfo": map[string]any{"name": "homonto", "version": s.version}})
 	case "tools/list":
+		if s.wf != nil {
+			s.respond(m.ID, map[string]any{"tools": WorkflowToolDefinitions()})
+			return
+		}
 		if s.svc == nil {
 			s.fail(m.ID, -32002, "not initialized")
 			return
@@ -219,13 +238,30 @@ func (s *Server) request(m message) {
 		s.respond(m.ID, map[string]any{"tools": ToolDefinitions(s.svc.provider)})
 	case "tools/call":
 		s.toolCall(m)
+	case "homonto/handback/known", "homonto/handback/take":
+		if s.wf == nil {
+			s.fail(m.ID, -32002, "not initialized")
+			return
+		}
+		var p struct {
+			SessionID string `json:"sessionID"`
+		}
+		if json.Unmarshal(m.Params, &p) != nil || p.SessionID == "" {
+			s.fail(m.ID, -32602, "invalid handback request")
+			return
+		}
+		if m.Method == "homonto/handback/known" {
+			s.respond(m.ID, map[string]any{"known": s.wf.Handback.HasSession(p.SessionID)})
+		} else {
+			s.respond(m.ID, map[string]any{"notice": s.wf.Handback.Take(p.SessionID)})
+		}
 	default:
 		s.fail(m.ID, -32601, "method not found")
 	}
 }
 
 func (s *Server) toolCall(m message) {
-	if s.svc == nil {
+	if s.svc == nil && s.wf == nil {
 		s.fail(m.ID, -32002, "not initialized")
 		return
 	}
@@ -249,17 +285,13 @@ func (s *Server) toolCall(m message) {
 		}
 		args = v
 	}
-	prefix := "homonto_" + s.svc.provider.ID() + "_"
 	var run func(Call, any) (string, error)
-	switch strings.TrimPrefix(p.Name, prefix) {
-	case "draft":
-		run = s.svc.Stage
-	case "status":
-		run = s.svc.Status
-	case "publish":
-		run = s.svc.Publish
+	if s.wf != nil {
+		run = s.wf.Tool(p.Name)
+	} else {
+		run = s.svc.Tool(p.Name)
 	}
-	if !strings.HasPrefix(p.Name, prefix) || run == nil {
+	if run == nil {
 		s.fail(m.ID, -32602, "unknown tool")
 		return
 	}
@@ -331,9 +363,16 @@ func (s *Server) notification(m message) {
 			props, _ = decode(string(raw))
 		}
 		s.svc.Event(p.Event.Type, props)
+	case "homonto/handback/session", "homonto/handback/asked", "homonto/handback/replied", "homonto/handback/deleted":
+		if s.wf != nil {
+			s.wf.HandbackEvent(strings.TrimPrefix(m.Method, "homonto/handback/"), m.Params)
+		}
 	case "homonto/dispose":
 		if s.svc != nil {
 			s.svc.Dispose()
+		}
+		if s.wf != nil {
+			s.wf.Handback.Clear()
 		}
 	}
 }

@@ -69,16 +69,42 @@ func (e *Engine) Routes() (RouteReport, error) {
 	return report, nil
 }
 
-func (e *Engine) resolveRoutes(ctx context.Context) (RouteReport, error) {
-	agentRoutes, err := e.Cfg.AgentRoutes("opencode")
+// RoutesFor resolves every agent's model for one harness. OpenCode is
+// Routes; Claude Code has no model listing command, so its auto policies
+// choose among the models [routing.models.claude] describes (ADR 0100).
+func (e *Engine) RoutesFor(tool string) (RouteReport, error) {
+	if tool == "opencode" {
+		return e.Routes()
+	}
+	if r, ok := e.otherRoutes[tool]; ok {
+		return r, nil
+	}
+	discover := routing.Static(slices.Sorted(maps.Keys(e.Cfg.Routing.ModelsFor(tool))))
+	report, err := e.resolveRoutesFor(context.Background(), tool, discover)
 	if err != nil {
 		return RouteReport{}, err
 	}
+	if e.otherRoutes == nil {
+		e.otherRoutes = map[string]RouteReport{}
+	}
+	e.otherRoutes[tool] = report
+	return report, nil
+}
+
+func (e *Engine) resolveRoutes(ctx context.Context) (RouteReport, error) {
 	discover := e.RouteDiscoverer
 	if discover == nil {
 		discover = newRouteDiscoverer(e.ProjectRoot)
 	}
-	resolver := &routing.Resolver{Discover: discover, Models: e.Cfg.Routing.Models.OpenCode}
+	return e.resolveRoutesFor(ctx, "opencode", discover)
+}
+
+func (e *Engine) resolveRoutesFor(ctx context.Context, tool string, discover routing.Discoverer) (RouteReport, error) {
+	agentRoutes, err := e.Cfg.AgentRoutes(tool)
+	if err != nil {
+		return RouteReport{}, err
+	}
+	resolver := &routing.Resolver{Discover: discover, Models: e.Cfg.Routing.ModelsFor(tool)}
 	var report RouteReport
 	for _, name := range slices.Sorted(maps.Keys(agentRoutes)) {
 		r := ResolvedRoute{AgentRoute: agentRoutes[name]}

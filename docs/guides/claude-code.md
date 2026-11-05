@@ -40,6 +40,14 @@ models `[routing.models.claude."<id>"]` describes. `homonto explain routing
 homonto owns those project-settings keys. Put your own project rules in
 `.claude/settings.local.json` or your user settings; Claude Code merges them.
 
+In `.mcp.json` homonto owns only `mcpServers.homonto`. Your own servers in the
+same file are yours: apply never reads, rewrites or removes them, and doctor
+never lists them. The name `homonto` is reserved; a server of yours with that
+name is replaced, and plan shows it as an update
+([ADR 0107](../adr/0107-register-the-runtime-mcp-server-as-homontos-own.md)).
+`homonto doctor` reports whether the entry is registered and current, and
+whether `homonto` is on `PATH` for Claude Code to start it.
+
 ## Trust the config root
 
 Claude Code loads a project's hooks and starts its `.mcp.json` servers only in

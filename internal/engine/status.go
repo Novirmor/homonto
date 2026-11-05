@@ -10,6 +10,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/Novirmor/homonto/internal/adapter/claude"
 	"github.com/Novirmor/homonto/internal/agentfm"
 	"github.com/Novirmor/homonto/internal/catalog"
 	"github.com/Novirmor/homonto/internal/config"
@@ -179,6 +180,11 @@ func (e *Engine) Doctor() []string {
 	}
 	for _, d := range e.harnessDeclarations() {
 		out = append(out, d.Report().Findings()...)
+	}
+	for _, a := range e.Adapters {
+		if c, ok := a.(*claude.Adapter); ok {
+			out = append(out, c.RuntimeFindings(exec.LookPath)...)
+		}
 	}
 	out = append(out, e.doctorTooling()...)
 	for _, warning := range e.OpenCodeV2Warnings() {

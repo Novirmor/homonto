@@ -87,6 +87,7 @@ commit, and keep the evidence:
    | `live/opencode` | OpenCode answers on the mounted account |
    | `recovery/opencode` | an active change reaches a new and a continued OpenCode session through the workflow plugin |
    | `recovery/claude` | an active change reaches a Claude Code session at startup, after `--resume` and after `/compact`; the session calls `homonto_status` over MCP |
+   | `policy/claude` | Claude Code reports the coordinator and its worker to homonto's hooks; a worker's denied push is stopped and an allowed command runs on the hook's decision; a refused worker permission prompt is handed back to the coordinator |
 
 5. **Migration both ways** in throwaway projects. OpenCode 2 reads supported
    V1 server config, but its terminal settings live in the global `cli.json`;

@@ -8,6 +8,7 @@
 #   projection     ✓          ✓        (homonto apply → real tool reads config)
 #   live           ✓                   (real account prompt → PONG)
 #   recovery       ✓          ✓        (start/resume/compaction context, runtime tool)
+#   policy                    ✓        (worker policy denials and handback from real hooks)
 #   onto           shared, tool-independent (full open→…→close workflow)
 #   reference      shared (remote reference set, both harnesses, native lifecycle)
 #
@@ -110,6 +111,17 @@ else
   else
     echo "   (no claude credentials at $CLAUDE_AUTH — skipping recovery/claude)"; skip_cell recovery/claude
   fi
+fi
+
+# Real-harness worker policy (M4.5, ADR 0105): the coordinator dispatches the
+# onto implementer, and homonto's hooks deny its record write and push and
+# hand its refused permission prompt back.
+if [ "$SKIP_LIVE" -eq 1 ]; then
+  skip_cell policy/claude
+elif [ -f "$CLAUDE_AUTH" ]; then
+  run_cell policy claude -v "$CLAUDE_AUTH:/root/.claude/.credentials.json:ro"
+else
+  skip_cell policy/claude
 fi
 
 # --- container internals analysis ------------------------------------------

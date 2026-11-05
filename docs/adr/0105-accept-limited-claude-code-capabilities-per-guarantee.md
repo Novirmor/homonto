@@ -33,6 +33,22 @@ map name the gap. Per guarantee, on Claude Code 2.1:
 | Worker permission handback | `permission-events` | **Limited, accepted.** Claude Code reports a worker's prompt but not the answer; a prompt whose tool never ran before the worker stopped is handed back as refused. Auto-mode denials are exact (`PermissionDenied`). |
 | Status panel and idle notifications | `status-ui` | Absent, accepted: optional everywhere (ADR 0082). |
 
+## Evidence
+
+Observed on Claude Code 2.1.318 (2026-11-05) by the `policy/claude` matrix
+cell, which logs every hook call:
+
+- The main thread reports the session agent as `agent_type` (`homonto`), so the
+  coordinator check and the coordinator's policy apply. A worker's calls carry
+  its `agent_id` and `agent_type`.
+- A `deny` from the PreToolUse hook stops a worker's tool call, and an `allow`
+  lets it run without a prompt in `claude -p`.
+- A worker's permission prompt arrives as `PermissionRequest` and its stop as
+  `SubagentStop`. With no answer reported, the refused prompt is handed back
+  with the dispatch result. When Claude Code launches the worker in the
+  background (`status: "async_launched"`), the refusal is handed back on the
+  coordinator's next turn, when the worker's completion arrives.
+
 ## Consequences
 
 Every builtin engine and hosting workflow runs on Claude Code at the workflow

@@ -4,6 +4,9 @@ kind = "workflow"
 version = "0.1.0"
 description = "Standalone GitLab.com workflow skill bundle — spike, resolve, review, continue, conflict resolution, batch review of issues and merge requests"
 
+[compat]
+contract = "1.0"
+
 [workflow]
 coordinator = "shared"
 entry = ["h-spike-issue", "h-resolve-issue", "h-review-pr", "h-continue-pr", "h-resolve-conflicts", "h-review-batch"]

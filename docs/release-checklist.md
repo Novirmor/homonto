@@ -3,6 +3,31 @@
 How to cut a release of the three binaries, `homonto`, `onto`, and `to`.
 The gate below decides *whether* to release; the rest of this page is *how*.
 
+## 0. Evidence manifest
+
+Every check this page names is recorded in one evidence manifest, keyed to
+the exact candidate commit. A tag is allowed only when the manifest says so.
+It is not inferred from green unit tests, and a skipped or unavailable live
+check stays visibly incomplete:
+
+```sh
+go run ./scripts/releaseevidence init --version vX.Y.Z --out ../evidence-vX.Y.Z.json
+# after each check, at the same commit with a clean tree:
+go run ./scripts/releaseevidence record ../evidence-vX.Y.Z.json gate/full pass --log <where the log is kept>
+go run ./scripts/releaseevidence check ../evidence-vX.Y.Z.json   # exits 1 until every key passed
+```
+
+The required keys are the gate's own (`gate/full`, `compat/*`, `live/*`,
+`extension/published`, `docs/limitations`) and, for every host × harness cell
+in [supported combinations](guides/supported-combinations.md), the evidence
+that cell declares (`unit/starter`, `install/first-task`, `e2e/*`,
+`sandbox/<host>`). `record` refuses another commit or a dirty tree. Only
+`compat/upgrade` may be `n/a`, with a note, when there is no earlier 1.x
+release to upgrade from. Keep the manifest outside the repository, because
+the tagged commit cannot contain evidence about itself, and attach it to the
+GitHub release. `check` also lists the cells the manifest can claim, and the
+release notes claim those cells and no others.
+
 Releases run through the `release` GitHub workflow
 (`.github/workflows/release.yml`), triggered by any pushed `v*` tag. Push a tag
 only after the local gate passes. The workflow then re-runs the gate,
@@ -41,6 +66,25 @@ never touched:
 | `release-packaging` | The real release build: 18 archives, `SHA256SUMS`, extraction, stamped versions, a smoke of an *extracted* binary |
 | `v015-surface` | explain and provenance, links surviving a repo move, evidence and trace, promote, permission suggestions, snapshot undo |
 
+### Compatibility (1.x)
+
+From 1.0 on, every release keeps the 1.x promise
+([ADR 0109](adr/0109-keep-1x-compatible-within-the-major.md)). Check each row
+for the candidate:
+
+| Surface | Check | Evidence |
+|---|---|---|
+| Config, state, contracts | `go test ./internal/compat/` passes (part of the gate's `go test`) | gate log |
+| Frozen fixtures | `task compat-fixtures` (needs tags; `scripts/compat-fixtures-check.sh <previous tag>`): `testdata/compat/` only gained files | command output |
+| New format versions | each format version the release introduces has a new `testdata/compat/<version>/` directory and an `internal/compat` test | diff |
+| Deprecations | every deprecated key, flag, value or JSON field warns in `plan`/`doctor`, names its replacement, and is listed in the release notes. Nothing deprecated is removed before 2.0 | release notes |
+| Upgrade in place | with the previous 1.x release, `homonto init` + `apply` a disposable project, start an onto change and a to task, then switch to the candidate binaries. `homonto plan` shows only expected changes, `homonto status` reports no drift after apply, and `onto status`/`to status` list the in-flight work | transcript |
+| Contract versions | `homonto package contracts` matches [contracts › versions](contracts/README.md#versions). No contract major bump within 1.x | command output |
+| Harness and host matrix | the release notes list every host × harness version × engine cell this release was verified on (section 2), and nothing else is claimed | release notes |
+
+A release that cannot meet a row is not a 1.x release. It waits, or it
+becomes 2.0.
+
 ## 2. Live host checks
 
 The gate never boots a real OpenCode 2 host or publishes to GitHub. When a
@@ -60,7 +104,7 @@ commit, and keep the evidence:
    standalone, unregistered server must not be able to authorize publication.
    A local model with a fake `gh` proves no external send happened, not that
    GitHub accepted a receipt.
-3. **Hosting sandboxes** (`scripts/hosting-sandbox.sh`, fixtures in
+3. **Hosting sandboxes** (evidence keys `sandbox/<host>`; `scripts/hosting-sandbox.sh`, fixtures in
    `test/e2e/hosting/sandbox.env`): for each of GitHub, GitLab.com and
    Bitbucket Cloud whose release content changed, the runtime layer (draft,
    unapproved publish is a no-op, native approval, publish, reconcile,
@@ -72,7 +116,8 @@ commit, and keep the evidence:
    output links [hosting provider differences](guides/hosting-differences.md);
    confirm every **(unverified)** claim the run exercised and update the
    page.
-4. **Real-harness matrix** (`scripts/e2e-matrix.sh`, [test/e2e](../test/e2e/README.md)):
+4. **Real-harness matrix** (`scripts/e2e-matrix.sh`, [test/e2e](../test/e2e/README.md);
+   evidence keys `e2e/<cell>`):
    real OpenCode 2 and Claude Code in a container, reusing the operator's
    mounted accounts read-only. Every cell must pass for a release that
    changes an adapter, the runtime core, the doctrine or the package
@@ -96,7 +141,10 @@ commit, and keep the evidence:
 
 A check that was not run is not a pass. If the owner approves releasing
 without one, name every skipped check in the release notes and do not claim
-it. That approval covers one tag, never later ones.
+it. That approval covers one tag, never later ones. For a 1.x release the
+evidence manifest must still pass `check` for every cell the notes claim.
+A cell whose evidence is incomplete is dropped from the supported table in
+that release's notes, not claimed with a caveat.
 
 > **No dogfooding step.** This repository is developed directly on branches
 > ([ADR 0023](adr/0023-develop-directly-without-comet.md);
@@ -118,7 +166,10 @@ it. That approval covers one tag, never later ones.
    `vX.Y.Z — <theme>` and state the stamped binary and catalog versions.
 4. In [`release-notes.md`](release-notes.md), replace the release section
    with that entry. The workflow publishes this file as the release body, so
-   it must describe only this tag. Review the known limitations too.
+   it must describe only this tag. Review the known limitations too. It names
+   the host × harness × engine cells the evidence manifest can claim, and the
+   accepted Claude Code limitations
+   ([ADR 0105](adr/0105-accept-limited-claude-code-capabilities-per-guarantee.md)).
 5. Re-run `./scripts/gate.sh` after the last change. Only a fully green gate,
    including `release-packaging`, makes a tag candidate.
 
@@ -180,6 +231,19 @@ printf '%s\nnone\n%s\nn\n' "$TAG" "$TMPBIN" | bash /tmp/homonto-install.sh
 version pinned to the new tag without its `v`, run `mise install`, and run
 each binary's `version` through `mise exec --`. Confirm mise picked the
 matching `homonto_`, `onto_`, and `to_` archives and all three print the tag.
+
+**A ready-made setup** for each harness, from install to the first task
+(`scripts/install-test.sh` t40 does the same offline, before tagging):
+
+```sh
+HOME=$(mktemp -d); export HOME
+cd "$(mktemp -d)" && git init -q . && git commit -q --allow-empty -m init
+homonto init --harness opencode --harness claude --host github --engine onto --engine to \
+  --model opencode=anthropic/claude-sonnet-5-5 --model claude=sonnet
+homonto plan && homonto apply --yes && homonto status   # No drift.
+onto init && onto new first-change && to new first-task
+homonto doctor              # names the runtime MCP registration and Claude Code limitations
+```
 
 **A disposable home:**
 

@@ -48,7 +48,7 @@ engine ──▶ registry ──▶ harness adapter ─────────�
               │          └─ runtime shim
               ▼
        homonto runtime core (status, handoff, GitHub drafts,
-       permission handback) ── exposed to every harness over MCP
+       permission handback) ── served by the binary to every harness
 ```
 
 ### Configuration
@@ -62,9 +62,14 @@ that harness's schema and never maps them across harnesses.
 
 Content that is the same file on every harness is not configuration and is not
 translated: a skill is a `SKILL.md` directory on all four harnesses, so the
-adapter links or copies it to the harness's skill location as-is. How shared
-declarations such as `[mcps]`, `[skills]`, and `[commands]` select their
-target harnesses is an open question below.
+adapter links or copies it to the harness's skill location as-is. Shared
+declarations (`[skills]`, `[commands]`, `[subagents]`, packages) go to the
+top-level `harnesses` list unless they set their own `targets` (ADR 0104).
+
+User MCP servers are not configuration either. They are bring-your-own
+([ADR 0085](adr/0085-bring-your-own-mcp-servers-and-skills.md)): `[mcps.*]`
+fails at load, and no adapter reads, lists or rewrites a user's servers. The
+one MCP server homonto registers is its own runtime core (next sections).
 
 ### Harness adapter
 
@@ -110,7 +115,7 @@ highest tier whose requirements it meets.
 |---|---|---|
 | **Workflow** | onto (full and light), to, no, h | `skills`, `commands`, `subagents`, `agent-tool-limits`, `shell-rules`, `question-dialog`, `context-hooks`, `mcp` |
 | **Lite** | to, no, and h review-only skills | `skills`, `subagents`, `question-dialog`, `mcp`; worker limits may be instruction-only and are reported as such |
-| **Projection** | No workflows; config, MCP, skills, and agents projected | The resources it renders |
+| **Projection** | No workflows; config, skills, and agents projected | The resources it renders |
 
 Full onto's guarantees (read-only skeptics and reviewers, coordinator-only
 publication and state) depend on `agent-tool-limits` and `shell-rules`, which
@@ -140,27 +145,36 @@ versions before any tier is assigned.
 
 ## Runtime
 
-Today the workflow runtime is the OpenCode TypeScript plugin
-(`catalog/plugins/homonto-workflow`): coordinator-only `homonto_status` and
-`homonto_handoff` tools, context injection at request and compaction, the
-status panel, and the worker permission handback (ADR 0077). The hosting
-draft/approve/publish lifecycle and its host providers already run in Go
-(`internal/hostruntime`, `homonto runtime serve`, ADR 0090); the plugin is
-their shim and still executes their commands.
+The workflow runtime core is Go (`internal/hostruntime`, ADR 0103): the
+coordinator-only `homonto_status` and `homonto_handoff` tools, the hosting
+draft/approve/publish lifecycle and its providers (ADR 0090), and the worker
+permission handback state (ADR 0077). The binary serves it two ways:
 
-Target shape:
+- **OpenCode:** the bundled `homonto-workflow` plugin starts
+  `homonto runtime serve` as its child and talks to it over stdio. The plugin
+  is the shim: session scope, the coordinator check, native permission
+  prompts, context injection at request and compaction, and the status panel.
+  Nothing is registered under the `mcp` key of `opencode.jsonc`.
+- **Claude Code:** Claude Code launches `homonto runtime mcp` as an MCP stdio
+  server. Hook commands (`homonto runtime hook`) are the shim: context
+  injection, the coordinator-only tool guard, agent policies, and relaying
+  permission and subagent events to the session's core.
 
-- **Runtime core in Go**, served by the `homonto` binary as an MCP server. It
-  owns the read-only status and handoff tools, the GitHub draft lifecycle, and
-  handback state. Every harness runs MCP, so this part is written once.
-- **Per-harness shim** for what MCP cannot do: injecting the continuation
-  policy and recovery snapshot at session start and compaction, turning the
-  harness's permission events into handback notices, enforcing coordinator-only
-  tool access where the harness can, and any status UI. On OpenCode the shim is
-  a slimmer version of today's plugin. On Claude Code and Codex it is hooks
-  configuration plus small hook commands that call the binary.
-- **Approval stays native.** Publication approval uses the harness's
-  `question-dialog`; the core never invents its own approval channel.
+**Runtime MCP registration**
+([ADR 0107](adr/0107-register-the-runtime-mcp-server-as-homontos-own.md)).
+On a harness that launches MCP servers, homonto registers exactly one server,
+named `homonto`, with a fixed command (`homonto runtime mcp --harness <h>
+--config <selected config> [--host <id>...]`), no `env` and no secrets. It
+owns only that one key in the harness's MCP file (`mcpServers.homonto` in
+`.mcp.json` for Claude Code). The user's servers in the same file are never
+read, listed, rewritten or pruned. Apply creates the entry while the harness
+is targeted and the workflow runtime is enabled, and removes it when either
+stops. Status reports its drift, and `homonto doctor` reports whether it is
+registered and whether `homonto` is on `PATH`. Enabling it on Claude Code is
+the user's folder-trust step: homonto never trusts a folder.
+
+**Approval stays native.** Publication approval uses the harness's
+`question-dialog`. The core never invents its own approval channel.
 
 ## Doctrine
 
@@ -200,13 +214,13 @@ reaches that tier.
 
 ## Open questions
 
-Resolved for Claude Code by ADR 0104: targeting (`harnesses`), scope per
-harness, and version pinning. The questions remain open for Codex and
-Antigravity, and the shared instruction file question remains open.
+Resolved by ADR 0104: targeting shared declarations (`harnesses`, with a
+resource's own `targets` winning) and how a harness is enabled. Resolved for
+Claude Code by ADR 0104: scope per harness and version pinning; these remain
+open for Codex and Antigravity. MCP is settled by ADR 0085 and ADR 0107: user
+servers are bring-your-own, and the runtime server is homonto's own. The
+shared instruction file question remains open.
 
-- **Targeting shared declarations.** Do `[mcps]`, `[skills]`, and `[commands]`
-  apply to every enabled harness, or does each name its harnesses? And how is a
-  harness enabled: an explicit table, or the presence of its native tables?
 - **Scope per harness.** Project versus user scope differs (`.claude/` versus
   `~/.claude/`, `.agents/` versus `~/.gemini/`). Does each adapter map homonto's
   `scope` values to its own locations, or are scopes declared natively?

@@ -128,7 +128,9 @@ func (s Subagent) IsTuneOnly() bool {
 	if strings.TrimSpace(s.Source) != "" {
 		return false
 	}
-	return s.OpenCode.IsSet()
+	// Either harness's block tunes: a Claude Code-only tune is as valid as
+	// an OpenCode one.
+	return s.OpenCode.IsSet() || s.Claude.IsSet()
 }
 
 // IsSet reports whether any override field is present — the "this block

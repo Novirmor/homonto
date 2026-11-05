@@ -30,6 +30,16 @@ writes:
 
 `homonto init ~/dotfiles/ai` scaffolds another directory.
 
+To start from a working setup instead of a menu, name what you use:
+
+```console
+$ homonto init --harness opencode --engine onto --host github \
+    --model opencode=anthropic/claude-sonnet-5-5
+```
+
+That writes the packages, one model for every agent, and the records root,
+validated before it is written ([`homonto init`](cli-reference.md#homonto-init)).
+
 ## 2. Bring your own MCP servers and skills
 
 homonto doesn't manage MCP servers or skills you write yourself. Put them where

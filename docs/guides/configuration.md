@@ -14,6 +14,7 @@ shell's working directory.
 | Table | Declares |
 |---|---|
 | [`schema_version`](#schema_version) | Config format version (top-level key) |
+| [`harnesses`](#general-rules) | The harnesses a declaration without `targets` goes to (top-level key) |
 | [`[skills.<name>]`](#skills--skillsname) | Skills |
 | [`[commands.<name>]`](#commands--commandsname) | Slash commands |
 | [`[subagents.<name>]`](#subagents--subagentsname) | Agent definitions |
@@ -31,6 +32,13 @@ shell's working directory.
 | [`[repos]`](#repositories--repos) | Source repositories |
 | [`[worktrees]`](#worktrees--worktrees) | Parent directory for registered worktrees |
 | [`[integration.<name>]`](#integration-checks--integrationname) | Cross-repository checks |
+| [`[routing]`](#model-routing--routing) | Execution-model policies per selector and harness |
+| [`[decisions]`](#decision-models--decisions) | Decision-model providers for typed judgments |
+| [Package settings and processes](#package-settings-and-processes) | `[<table>.<name>.settings]`, `[<table>.<name>.processes.*]` |
+| [`[settings.claude]`, `[subagents.<name>.claude]`](#claude-code--settingsclaude-subagentsnameclaude) | Claude Code settings and agent models |
+| [Removed and legacy tables](#removed-and-legacy-tables) | `[mcps]`, `[models]`, `[marketplaces]`, `[agents]`, `[frameworks]`, `[plugins.claude]` |
+| [Diagnostics](#diagnostics) | What every load error names |
+| [Key index](#key-index) | Every key, generated from the schema |
 
 ## General rules
 
@@ -102,10 +110,15 @@ guarded, not migrated. See [workspaces](workspaces.md) before switching.
 ## Bring your own MCP servers, skills and commands
 
 homonto does not manage MCP servers or your own skills and commands. Put them
-where OpenCode looks: MCP servers in `opencode.jsonc` (global or per project),
-skills in `.opencode/skills/` or `~/.config/opencode/skills/`, commands in
-`.opencode/command/` or `~/.config/opencode/command/`. `apply` never touches
-them ([ADR 0085](../adr/0085-bring-your-own-mcp-servers-and-skills.md)).
+where the harness looks: on OpenCode, MCP servers in `opencode.jsonc` (global
+or per project), skills in `.opencode/skills/` or `~/.config/opencode/skills/`,
+commands in `.opencode/command/` or `~/.config/opencode/command/`; on Claude
+Code, servers in `.mcp.json` or `~/.claude.json`, skills and commands under
+`.claude/` or `~/.claude/`. `apply` never touches them
+([ADR 0085](../adr/0085-bring-your-own-mcp-servers-and-skills.md)). The one
+server homonto writes is its own runtime, `mcpServers.homonto` in the config
+root's `.mcp.json`
+([ADR 0107](../adr/0107-register-the-runtime-mcp-server-as-homontos-own.md)).
 
 These fail at load, naming the fix: any `[mcps.*]` table, an `mcp` key under
 `[settings.opencode]`, and a `local:` source on `[skills.*]` or `[commands.*]`.
@@ -130,7 +143,7 @@ scope  = "user"                # available in every project
 | `source` | yes | `builtin:<name>`. Your own skills are [bring-your-own](#bring-your-own-mcp-servers-skills-and-commands). |
 | `scope` | yes | `user` → `~/.config/opencode/skills/`; `project` → `.opencode/skills/`. |
 | `repo` | no | A `[repos]` alias; requires `scope = "project"`. |
-| `targets` | no | `["opencode"]`. |
+| `targets` | no | `"opencode"`, `"claude"`. Default: [`harnesses`](#general-rules). |
 
 Skills are **symlinked** from the materialized catalog. Changing `scope`
 relocates the link.
@@ -176,7 +189,7 @@ model = "anthropic/claude-opus-5-5"
 | `repo` | no | A `[repos]` alias; project scope only. |
 | `digest` | remote only | `sha256:<64 hex>`. |
 | `version` | no | Informational. |
-| `targets` | no | `["opencode"]`. |
+| `targets` | no | `"opencode"`, `"claude"`. Default: [`harnesses`](#general-rules). |
 
 Agent file format, permission rendering, and link vs. copy:
 [subagents](subagents.md). Legacy `[agents.<name>]` still parses and becomes a
@@ -664,6 +677,106 @@ command = ["make", "e2e"]
 Scripts must read those paths, not guess sibling locations. Run checks with
 `homonto workspace task check`; see [workspaces](workspaces.md#workspace-tasks).
 
+## Model routing — `[routing]`
+
+A routing policy picks the execution model for agents by where they run,
+not by name. Each selector takes one policy per harness, in that harness's
+own model spelling. The full contract, including stage agreement and auto
+selection, is [model routing](../contracts/routing.md).
+
+```toml
+[routing.default.opencode]                  # every agent, coordinator included
+model = "anthropic/claude-sonnet-5-5"
+
+[routing.default.claude]
+model = "sonnet"
+
+[routing.engines.onto.stages.verify.claude] # agents bound to onto's verify stage
+model = "opus"
+
+[routing.engines.no.opencode]               # chosen at plan from what OpenCode reports
+mode = "auto"
+candidates = ["openai/gpt-6-mini", "anthropic/claude-haiku-5-5"]
+needs = ["tools"]
+prefer = "cost"
+fallback = "anthropic/claude-sonnet-5-5"
+
+[routing.models.opencode."openai/gpt-6-mini"]
+cost = 0.6          # your own unit, compared only
+latency = 0.8
+tags = ["tools"]
+```
+
+| Selector | Applies to |
+|---|---|
+| `routing.default.<harness>` | every agent |
+| `routing.workflows.<workflow>.<harness>` | the workflow's agents |
+| `routing.engines.<engine>.<harness>` | the engine's agents |
+| `routing.engines.<engine>.stages.<stage>.<harness>` | agents bound to that stage |
+
+An explicit `[subagents.<name>.<harness>]` `model` wins over every policy.
+Otherwise the most specific selector that every stage an agent serves agrees
+on applies. A static policy needs `model`; an auto policy needs `fallback`
+and takes `candidates`, `providers` (OpenCode only), `needs`, `max_cost`,
+`max_latency` and `prefer` (`listed`, `cost`, `latency`). `homonto explain
+routing` shows which selector chose each agent's model.
+
+## Decision models — `[decisions]`
+
+Decision providers answer typed judgments that packages ask for
+(`homonto decide`). They are configured apart from execution models;
+routing never reads this table. Contract:
+[decision calls](../contracts/decisions.md).
+
+```toml
+[decisions]
+default = "openai"          # provider for points without their own entry
+min_confidence = 0.6        # below this an answer is reported uncertain
+timeout = "30s"
+
+[decisions.providers.openai]
+protocol = "openai-decisions"
+model = "gpt-6-luna"
+api_key_env = "OPENAI_API_KEY"   # the variable's name; the key never goes in the file
+
+[decisions.providers.jev]
+protocol = "systemone"           # Jev / System One-compatible
+endpoint = "https://openrouter.ai/api/v1/systemone"   # required: services differ
+model = "typesafe/jev-1.14"
+api_key_env = "OPENROUTER_API_KEY"
+
+[decisions.points."h-workflow-gh.triage"]
+provider = "jev"
+min_confidence = 0.8
+```
+
+Provider names are lowercase letters, digits and `-`. A point is
+`<package>.<point>`.
+
+## Package settings and processes
+
+A package declares the settings and process definitions it accepts in its
+manifest. You set them on the package's own table, and homonto checks them
+against that schema at load ([settings contract](../contracts/settings.md)):
+
+```toml
+[engines.no]
+source = "builtin:no"
+scope  = "project"
+
+[engines.no.settings]
+isolation = "worktree"
+
+[workflows.flow.processes.triage]   # a named definition the package interprets
+steps = ["read", "label"]
+```
+
+Settings and processes go on `[engines.*]`, `[workflows.*]` and `[services.*]`
+only. An unknown key, a wrong type, a value outside the enum, or a missing
+required setting fails at load with the exact key. The settings each builtin
+package accepts are listed under the [key index](#builtin-package-settings).
+`homonto explain settings [package] [--json]` shows the resolved values.
+
 ## Claude Code — `[settings.claude]`, `[subagents.<name>.claude]`
 
 `[settings.claude]` keys merge into `~/.claude/settings.json`. Each
@@ -684,12 +797,161 @@ model = "opus"
 
 | Table | Status |
 |---|---|
-| `[frameworks.*]` | Rejected. Use `[engines.*]` / `[workflows.*]`. |
-| `[mcps.*]` | Rejected. MCP servers are bring-your-own; configure them in `opencode.jsonc`. |
+| `[frameworks.*]` | Rejected, naming the rename. Use `[engines.*]` / `[workflows.*]`. |
+| `[mcps.*]` | Rejected. MCP servers are bring-your-own; configure them in `opencode.jsonc` or `.mcp.json`. |
 | `local:` on `[skills.*]` / `[commands.*]` | Rejected. Your own skills and commands are bring-your-own. |
 | `[models.<tool>.<tier>]` | Rejected. Model tiers were removed; use per-agent `[subagents.<name>.opencode]`. |
 | `[agents.<name>]` | Parses; folds into a copy-mode `[subagents.<name>]`. |
 | `[plugins.claude.*]`, `[marketplaces.claude.*]` | Rejected. Claude Code plugins and marketplaces are bring-your-own in its `settings.json`. |
+
+## Diagnostics
+
+Every load error is the same three facts: the full key path, the value
+that was refused (when there is one), and what to write instead. Load stops
+at the first error, before anything is planned or written.
+
+```text
+parse config: engines.no.settings.isolation: "always" is not one of ask, existing, worktree
+parse config: routing.default.opencode is an auto policy and needs a fallback model for when discovery fails or nothing qualifies
+parse config: frameworks entry "onto" — [frameworks.*] was split by role; declare it as [engines.onto] or [workflows.onto] (docs/guides/configuration.md)
+```
+
+Each rejection class below is checked by a test
+(`TestDiagnosticsNameKeyValueAndFix` in `internal/config`). A new class adds
+a case there.
+
+| Class | Examples |
+|---|---|
+| Decoding | unknown key or table, newer or negative `schema_version` |
+| Removed surfaces | `[mcps]`, `[models]`, `[frameworks]`, `[plugins.claude]`, `[marketplaces.claude]`, `workflow_bridge`, `local:` skills and commands |
+| Resources | missing or invalid `scope`, invalid `source`, `remote:` without `digest`, `digest` without `remote:`, unknown `targets` or `harnesses`, a package under the wrong kind table, invalid subagent `mode` |
+| Agent models | missing model, `#variant` suffix, OpenCode `effort`, non-positive `steps`, invalid `variant`, non-exact `bash_allow_add`, tuning an agent nothing installs, tune-only entries with declaration fields, Claude Code `variant` |
+| Native settings | reserved `settings.opencode` keys, OpenCode plugin `config`, empty plugin `source` |
+| Workspace layout | `[tmp]` keys and paths, `workflow.git` and `workflow.root`, missing `[repos]` paths, schema 2-only tables on a legacy config, unknown `[tooling]` values |
+| Routing | static without `model`, auto without `fallback`, auto with `model`, unknown `mode` or `prefer`, model ids in the wrong spelling, selectors naming undeclared packages, `providers` on Claude Code |
+| Decisions | unknown `protocol`, missing `endpoint`, invalid provider names |
+| Package settings | unknown setting, value outside type or enum, settings on a skill or command |
+
+## Key index
+
+<!-- BEGIN GENERATED KEY INDEX (task docs-config) -->
+
+Every key the decoder accepts, generated from the config schema. `<name>`
+and similar segments are yours to choose. A key marked *rejected* or
+*removed* is decoded only so that load can refuse it and name the fix.
+
+| Key | Type | Notes |
+|---|---|---|
+| `integration.<name>.repos` | list of strings | schema 2 only; declared aliases, or ["*"] |
+| `integration.<name>.repo` | string | schema 2 only; one of repos |
+| `integration.<name>.cwd` | string | schema 2 only; relative to that checkout |
+| `integration.<name>.command` | list of strings | schema 2 only; argv array |
+| `schema_version` | integer | 0, 1 or 2; newer fails at load |
+| `harnesses` | list of strings | "opencode", "claude"; default ["opencode"] |
+| `workflow.root` | string | default "docs" |
+| `workflow.git` | string | existing \| managed; schema 2 only |
+| `worktrees.dir` | string | schema 2 only |
+| `routing.default.<harness>.mode` | string | static (default) \| auto |
+| `routing.default.<harness>.model` | string | static only |
+| `routing.default.<harness>.variant` | string | static only; OpenCode only |
+| `routing.default.<harness>.candidates` | list of strings | auto only |
+| `routing.default.<harness>.providers` | list of strings | auto only; OpenCode only |
+| `routing.default.<harness>.needs` | list of strings | auto only; tags from routing.models |
+| `routing.default.<harness>.max_cost` | number | auto only |
+| `routing.default.<harness>.max_latency` | number | auto only |
+| `routing.default.<harness>.prefer` | string | auto only: listed (default) \| cost \| latency |
+| `routing.default.<harness>.fallback` | string | auto only; required |
+| `routing.workflows.<workflow>.<harness>.*` | policy | the routing.default.<harness> fields; a declared workflow |
+| `routing.engines.<engine>.<harness>.*` | policy | the routing.default.<harness> fields; a declared engine |
+| `routing.engines.<engine>.stages.<stage>.<harness>.*` | policy | the routing.default.<harness> fields; a stage the engine manifest declares |
+| `routing.models.<harness>.<model>.cost` | number | your own unit; compared only |
+| `routing.models.<harness>.<model>.latency` | number | your own unit; compared only |
+| `routing.models.<harness>.<model>.tags` | list of strings | matched by an auto policy's needs |
+| `decisions.default` | string | provider for points without their own entry |
+| `decisions.min_confidence` | number | 0 to 1 |
+| `decisions.timeout` | string | Go duration; default "30s" |
+| `decisions.providers.<provider>.protocol` | string | systemone \| openai-decisions |
+| `decisions.providers.<provider>.endpoint` | string | required for systemone |
+| `decisions.providers.<provider>.model` | string | the provider's model id |
+| `decisions.providers.<provider>.api_key_env` | string | the environment variable holding the credential |
+| `decisions.points.<package.point>.provider` | string |  |
+| `decisions.points.<package.point>.min_confidence` | number |  |
+| `mcps.*` | free-form | removed: MCP servers are bring-your-own (ADR 0085) |
+| `workflows.<name>.source` | string |  |
+| `workflows.<name>.scope` | string | required: user \| project |
+| `workflows.<name>.targets` | list of strings |  |
+| `workflows.<name>.repo` | string | rejected: packages project into the config root only |
+| `workflows.<name>.digest` | string | required with a remote: source |
+| `workflows.<name>.settings.*` | free-form | package-defined: the manifest's [settings] schema |
+| `workflows.<name>.processes.<process>.*` | free-form | package-defined: the manifest's [processes] schema |
+| `engines.<name>.source` | string |  |
+| `engines.<name>.scope` | string | required: user \| project |
+| `engines.<name>.targets` | list of strings |  |
+| `engines.<name>.repo` | string | rejected: packages project into the config root only |
+| `engines.<name>.digest` | string | required with a remote: source |
+| `engines.<name>.settings.*` | free-form | package-defined: the manifest's [settings] schema |
+| `engines.<name>.processes.<process>.*` | free-form | package-defined: the manifest's [processes] schema |
+| `services.<name>.source` | string |  |
+| `services.<name>.scope` | string | required: user \| project |
+| `services.<name>.targets` | list of strings |  |
+| `services.<name>.repo` | string | rejected: packages project into the config root only |
+| `services.<name>.digest` | string | required with a remote: source |
+| `services.<name>.settings.*` | free-form | package-defined: the manifest's [settings] schema |
+| `services.<name>.processes.<process>.*` | free-form | package-defined: the manifest's [processes] schema |
+| `skills.<name>.source` | string |  |
+| `skills.<name>.scope` | string | required: user \| project |
+| `skills.<name>.targets` | list of strings |  |
+| `skills.<name>.repo` | string |  |
+| `skills.<name>.digest` | string | rejected: skills are builtin: only |
+| `skills.<name>.settings.*` | free-form | rejected: only packages take settings |
+| `skills.<name>.processes.<process>.*` | free-form | rejected: only packages take processes |
+| `commands.<name>.source` | string |  |
+| `commands.<name>.scope` | string | required: user \| project |
+| `commands.<name>.targets` | list of strings |  |
+| `commands.<name>.repo` | string |  |
+| `commands.<name>.digest` | string | rejected: commands are builtin: only |
+| `commands.<name>.settings.*` | free-form | rejected: only packages take settings |
+| `commands.<name>.processes.<process>.*` | free-form | rejected: only packages take processes |
+| `subagents.<name>.source` | string |  |
+| `subagents.<name>.scope` | string | user \| project; default project |
+| `subagents.<name>.targets` | list of strings |  |
+| `subagents.<name>.repo` | string |  |
+| `subagents.<name>.mode` | string | link (default) \| copy |
+| `subagents.<name>.version` | string | informational |
+| `subagents.<name>.digest` | string | required with a remote: source |
+| `subagents.<name>.<harness>.model` | string | OpenCode provider/model; Claude Code alias or model id |
+| `subagents.<name>.<harness>.effort` | string | rejected on both harnesses: OpenCode uses variant, Claude Code takes only a model |
+| `subagents.<name>.<harness>.variant` | string | OpenCode only; rejected for Claude Code |
+| `subagents.<name>.<harness>.steps` | integer | positive; OpenCode steps, Claude Code maxTurns |
+| `subagents.<name>.<harness>.bash_allow_add` | list of strings | exact commands only; builtin agents |
+| `repos.<alias>` | string | path to a Git worktree's top level |
+| `models.*` | removed | removed: model tiers; declare models per agent in [subagents.<name>.<harness>] |
+| `tooling.shell_proxy` | string | rtk \| none; default none |
+| `tooling.code_intel` | string | graphify \| okf \| none; default none |
+| `tmp.dir` | string | default ".tmp" when [tmp] is present |
+| `plugins.claude.*` | removed | removed: Claude Code plugins are bring-your-own in its settings.json |
+| `plugins.opencode.<name>.source` | string | an npm package, a plugin path, or permission-observer |
+| `plugins.opencode.<name>.enabled` | boolean | default true |
+| `plugins.opencode.<name>.config.*` | free-form | rejected: OpenCode has no per-plugin config |
+| `settings.<harness>.*` | free-form | free-form, merged into opencode.jsonc or ~/.claude/settings.json; OpenCode reserves mcp, plugin, plugins, model_variant |
+| `tui.opencode.*` | free-form | OpenCode V2 cli.json schema; unknown fields fail |
+| `integrations.opencode.workflow_bridge` | boolean | removed: true fails at load (ADR 0079); delete a leftover false |
+| `integrations.opencode.workflow_context` | boolean | default true with onto, to or a hosting workflow |
+| `marketplaces.*` | removed | removed: Claude Code marketplaces are bring-your-own in its settings.json |
+| `agents.*` | legacy | legacy: [agents.<name>] (source, version, targets, mode) folds into a copy-mode [subagents.<name>] |
+
+### Builtin package settings
+
+Generated from the shipped manifests. Set them under
+`[engines.<name>.settings]`, `[workflows.<name>.settings]` or
+`[services.<name>.settings]`. `homonto explain settings <package>` shows
+the resolved values.
+
+| Package | Kind | Setting | Type | Default | Values |
+|---|---|---|---|---|---|
+| `no` | engine | `isolation` | string | `ask` | `ask`, `existing`, `worktree` |
+
+<!-- END GENERATED KEY INDEX -->
 
 ## A complete annotated example
 

@@ -8,6 +8,9 @@ description = "Reference native-lifecycle engine: plan, implement and review one
 # <workflow root>/engines/ticket-engine/<change>/ticket-engine-state.yaml
 # (docs/contracts/engine.md, ADR 0106); homonto binds checkouts and resumes
 # workspace tasks against that record.
+[compat]
+contract = "1.0"
+
 [engine]
 lifecycle = "native"
 binary = "ticket-engine"

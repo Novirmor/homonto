@@ -63,7 +63,7 @@ numbering: [`../agents/adr.md`](../agents/adr.md).
 | [0041](0041-ship-an-interactive-release-installer.md) | Ship an interactive release installer | Accepted |
 | [0042](0042-onto-and-to-are-complementary.md) | Make onto and to complementary | Accepted |
 | [0043](0043-the-installer-offers-initialization.md) | The installer offers initialization | Accepted |
-| [0044](0044-the-installer-configures-new-projects.md) | The installer configures new projects | Accepted |
+| [0044](0044-the-installer-configures-new-projects.md) | The installer configures new projects | Partially superseded by 0110 |
 | [0045](0045-one-homonto-coordinator-for-both-workflows.md) | One homonto coordinator for both workflows | Accepted |
 | [0046](0046-integrate-onto-pr-continuations-into-the-pr-head.md) | Integrate onto PR continuations into the PR head | Accepted |
 | [0047](0047-deny-open-web-and-compound-shell-around-github-intake.md) | Deny open-web and compound-shell capability around GitHub intake | Partially superseded by 0049, 0051, 0054, 0055 |
@@ -100,7 +100,7 @@ numbering: [`../agents/adr.md`](../agents/adr.md).
 | [0078](0078-merge-onto-presets-into-light.md) | Merge onto fix and tweak into onto light | Accepted |
 | [0079](0079-drop-the-opencode-1-workflow-plugin.md) | Drop the OpenCode 1 workflow plugin | Accepted |
 | [0080](0080-freeze-workspace-migration.md) | Freeze workspace migration | Superseded by 0081 |
-| [0081](0081-support-only-the-live-version.md) | Support only the live version | Accepted |
+| [0081](0081-support-only-the-live-version.md) | Support only the live version | Partially superseded by 0109 |
 | [0082](0082-support-harnesses-natively-in-tiers.md) | Support harnesses natively, in tiers | Accepted |
 | [0083](0083-pull-the-chosen-base-before-every-change.md) | Pull the chosen base before every change | Accepted |
 | [0084](0084-allow-draft-prs-at-any-phase.md) | Allow draft PRs at any phase | Accepted |
@@ -126,3 +126,7 @@ numbering: [`../agents/adr.md`](../agents/adr.md).
 | [0104](0104-project-claude-code-natively.md) | Project Claude Code natively | Accepted |
 | [0105](0105-accept-limited-claude-code-capabilities-per-guarantee.md) | Accept limited Claude Code capabilities per guarantee | Accepted |
 | [0106](0106-let-external-engines-own-lifecycle-records.md) | Let external engines own lifecycle records | Accepted |
+| [0107](0107-register-the-runtime-mcp-server-as-homontos-own.md) | Register the runtime MCP server as homonto's own | Accepted |
+| [0108](0108-version-the-package-contracts.md) | Version the package contracts | Accepted |
+| [0109](0109-keep-1x-compatible-within-the-major.md) | Keep 1.x compatible within the major | Accepted |
+| [0110](0110-generate-starting-configurations-in-the-binary.md) | Generate starting configurations in the binary | Accepted |

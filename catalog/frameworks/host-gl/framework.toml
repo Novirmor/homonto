@@ -7,6 +7,9 @@ description = "GitLab.com service: issue and merge request reads, homonto drafts
 # The draft/publication core runs in the homonto binary (ADR 0090); this
 # service enables its GitLab provider. Publication approval goes through the
 # harness's native question dialog.
+[compat]
+contract = "1.0"
+
 [service]
 id = "gitlab"
 runtime = "gitlab"

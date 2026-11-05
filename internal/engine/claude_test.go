@@ -274,3 +274,39 @@ cost = 5.0
 		}
 	}
 }
+
+// Doctor reports homonto's own runtime MCP registration and nothing about the
+// user's servers that share .mcp.json (ADR 0107).
+func TestDoctorReportsOnlyTheRuntimeMCPRegistration(t *testing.T) {
+	e, _, repo := claudeEngine(t, claudeConfig)
+	mcpPath := filepath.Join(repo, ".mcp.json")
+	if err := os.WriteFile(mcpPath, []byte(`{"mcpServers":{"mine-secret-server":{"command":"mine"}}}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	findings := strings.Join(e.Doctor(), "\n")
+	if !strings.Contains(findings, `runtime MCP server "homonto" is not registered`) {
+		t.Errorf("unregistered runtime not reported:\n%s", findings)
+	}
+	if err := e.Apply(context.Background(), mustPlan(t, e)); err != nil {
+		t.Fatal(err)
+	}
+	servers := readJSON(t, mcpPath)["mcpServers"].(map[string]any)
+	if _, ok := servers["mine-secret-server"]; !ok {
+		t.Fatalf("apply touched the user's own server: %v", servers)
+	}
+	findings = strings.Join(e.Doctor(), "\n")
+	if !strings.Contains(findings, `ok: claude: runtime MCP server "homonto" registered`) {
+		t.Errorf("registered runtime not reported ok:\n%s", findings)
+	}
+	if strings.Contains(findings, "mine-secret-server") {
+		t.Errorf("doctor enumerated a user server:\n%s", findings)
+	}
+	servers["homonto"].(map[string]any)["args"] = []string{"runtime", "mcp"}
+	data, _ := json.Marshal(map[string]any{"mcpServers": servers})
+	if err := os.WriteFile(mcpPath, data, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if findings = strings.Join(e.Doctor(), "\n"); !strings.Contains(findings, "differs from the selected config") {
+		t.Errorf("drifted registration not reported:\n%s", findings)
+	}
+}

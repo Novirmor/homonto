@@ -1,6 +1,6 @@
 # The installer configures new projects
 
-- **Status:** Accepted
+- **Status:** Partially superseded by [0110](0110-generate-starting-configurations-in-the-binary.md)
 - **Date:** 2026-09-05
 
 ## Context

@@ -81,7 +81,7 @@ tasks:
       - go tool cover -func=cover.out | tail -1
 
   check:
-    desc: "Fast pre-push check: gofmt, vet, lint, doc references, tool pins, package contracts, tests"
+    desc: "Fast pre-push check: gofmt, vet, lint, doc references, tool pins, package contracts, frozen compat fixtures, tests"
     cmds:
       - cmd: |
           unformatted="$(gofmt -l .)"
@@ -92,11 +92,20 @@ tasks:
       - task: docs-check
       - task: pins-check
       - task: contracts
+      - task: compat-fixtures
       - task: test
 
   contracts:
     desc: Every shipped package and the example packages conform to the package contract
     cmd: go run . package check --builtin testdata/examples/example-engine testdata/examples/example-workflow testdata/examples/example-service examples/reference-set/ticket-engine examples/reference-set/ticket-workflow examples/reference-set/ticket-service
+
+  compat-fixtures:
+    desc: Frozen 1.x compatibility fixtures only gained files since the last release tag (ADR 0109)
+    cmd: ./scripts/compat-fixtures-check.sh {{.CLI_ARGS}}
+
+  docs-config:
+    desc: Regenerate the generated reference sections (config key index, supported combinations)
+    cmd: HOMONTO_UPDATE_REFERENCE=1 go test ./internal/config ./internal/starter -run "TestConfigReferenceMatchesTheSchema|TestSupportedCombinationsDocMatchesTheMatrix" -count=1
 
   docs-check:
     desc: Agent docs and catalog reference only things that exist

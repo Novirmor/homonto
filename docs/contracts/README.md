@@ -22,6 +22,27 @@ Harness requirements: [capabilities.md](capabilities.md). Package settings and
 process definitions: [settings.md](settings.md). Model routing:
 [routing.md](routing.md). Typed decision calls: [decisions.md](decisions.md).
 
+## Versions
+
+Four version numbers apply to a package, and each answers a different
+question ([ADR 0108](../adr/0108-version-the-package-contracts.md)):
+
+| Version | Where | Says | Current |
+|---|---|---|---|
+| Config schema | `schema_version` in `homonto.toml` | the layout of the user's config | 2 |
+| Manifest schema | `manifest_schema` in `framework.toml` | the manifest file format | 2 |
+| Package contract | `[compat].contract` in `framework.toml` | which version of its kind's contract the package was written against | engine 1.0, workflow 1.0, service 1.0 |
+| homonto range | `[compat].homonto` in `framework.toml` | which homonto releases the author supports (optional) | — |
+
+`homonto package contracts` prints what the running binary implements. A
+contract version is `MAJOR.MINOR`. A minor adds to the contract without
+changing what an existing package means, so a 1.0 package still loads under
+a 1.3 binary. A package that declares a newer minor, or any major the binary
+does not implement, fails to load and names the upgrade. homonto never
+guesses how to read a contract it does not implement. `homonto package check`
+certifies a package only against the versions its conformance suite verifies,
+and the suite is pinned to the published versions.
+
 Every kind shares these manifest fields:
 
 ```toml
@@ -32,6 +53,7 @@ version = "0.1.0"            # required
 description = "..."
 
 [compat]
+contract = "1.0"             # required: the kind's contract version (below)
 homonto = ">=0.37.0"         # optional homonto version range
 
 [requires]

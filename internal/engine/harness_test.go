@@ -17,7 +17,7 @@ func localEngineRequiring(t *testing.T, repo, harness string) {
 	if err := os.MkdirAll(filepath.Join(fw, "skills", "myskill"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	man := "manifest_schema = 2\nname = \"myfw\"\nkind = \"engine\"\nversion = \"0.1.0\"\n" +
+	man := "manifest_schema = 2\nname = \"myfw\"\nkind = \"engine\"\nversion = \"0.1.0\"\n[compat]\ncontract = \"1.0\"\n" +
 		"[engine]\nlifecycle = \"stateless\"\nentry = [\"myskill\"]\noperations = [\"start\", \"resume\"]\nstages = [\"work\"]\n" +
 		"[requires]\nharness = [" + harness + "]\n[skills]\nmyskill = \"skills/myskill\"\n"
 	for path, data := range map[string]string{

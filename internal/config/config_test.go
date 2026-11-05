@@ -180,7 +180,7 @@ func TestLoadRejectsOpenCodePluginConfig(t *testing.T) {
 	if err == nil {
 		t.Fatal("opencode plugin config accepted; want load error")
 	}
-	if !strings.Contains(err.Error(), strconv.Quote("q")) {
+	if !strings.Contains(err.Error(), "plugins.opencode.q") {
 		t.Fatalf("error does not name the plugin %q: %v", "q", err)
 	}
 }
@@ -197,7 +197,7 @@ func TestLoadRejectsEmptyPluginSource(t *testing.T) {
 		if err == nil {
 			t.Fatalf("%s: empty source accepted; want load error", tc.label)
 		}
-		if !strings.Contains(err.Error(), strconv.Quote(tc.name)) {
+		if !strings.Contains(err.Error(), "plugins.opencode."+tc.name) {
 			t.Fatalf("%s: error does not name the plugin %q: %v", tc.label, tc.name, err)
 		}
 	}

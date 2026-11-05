@@ -4,8 +4,10 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
+	"maps"
 	"os"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strings"
 
@@ -34,10 +36,19 @@ func decode(data []byte) (*Config, error) {
 	if c.SchemaVersion < 0 {
 		return nil, fmt.Errorf("parse config: schema_version must be non-negative")
 	}
+	// The split [frameworks.*] table gets its rename, not a bare unknown-table
+	// error.
+	var legacy struct {
+		Frameworks map[string]any `toml:"frameworks"`
+	}
+	if toml.Unmarshal(data, &legacy) == nil && len(legacy.Frameworks) > 0 {
+		name := slices.Sorted(maps.Keys(legacy.Frameworks))[0]
+		return nil, fmt.Errorf("parse config: frameworks entry %q — [frameworks.*] was split by role; declare it as [engines.%s] or [workflows.%s] (docs/guides/configuration.md)", name, name, name)
+	}
 	if err := toml.NewDecoder(bytes.NewReader(data)).DisallowUnknownFields().Decode(&c); err != nil {
 		var missing *toml.StrictMissingError
 		if errors.As(err, &missing) {
-			return nil, fmt.Errorf("parse config: unknown configuration fields:\n%s: %w", missing.String(), err)
+			return nil, fmt.Errorf("parse config: unknown configuration fields:\n%s\ncheck each key against the key index in docs/guides/configuration.md: %w", missing.String(), err)
 		}
 		return nil, fmt.Errorf("parse config: %w", err)
 	}

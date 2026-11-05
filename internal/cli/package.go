@@ -1,20 +1,64 @@
 package cli
 
 import (
+	"encoding/json"
 	"fmt"
 	"io/fs"
+	"maps"
 	"os"
 	"path/filepath"
 	"slices"
 
 	"github.com/Novirmor/homonto/internal/catalog"
+	"github.com/Novirmor/homonto/internal/config"
 	toml "github.com/pelletier/go-toml/v2"
 	"github.com/spf13/cobra"
 )
 
 func packageCmd() *cobra.Command {
 	cmd := &cobra.Command{Use: "package", Short: "Work with homonto packages (engines, workflows, services)"}
-	cmd.AddCommand(packageCheckCmd())
+	cmd.AddCommand(packageCheckCmd(), packageContractsCmd())
+	return cmd
+}
+
+// packageContractsCmd publishes the contract versions this binary implements
+// (ADR 0108), so a package author can declare [compat].contract against them.
+func packageContractsCmd() *cobra.Command {
+	var output string
+	cmd := &cobra.Command{
+		Use:   "contracts",
+		Short: "Print the package contract versions this homonto implements",
+		Args:  cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			kinds := slices.Sorted(maps.Keys(catalog.Contracts))
+			switch output {
+			case "json":
+				out := struct {
+					ManifestSchema int               `json:"manifest_schema"`
+					ConfigSchema   int               `json:"config_schema"`
+					Contracts      map[string]string `json:"contracts"`
+				}{catalog.ContractManifestSchema, config.CurrentConfigSchemaVersion, map[string]string{}}
+				for _, k := range kinds {
+					out.Contracts[k] = catalog.Contracts[k].String()
+				}
+				b, err := json.MarshalIndent(out, "", "  ")
+				if err != nil {
+					return err
+				}
+				cmd.Println(string(b))
+			case "text":
+				cmd.Printf("manifest_schema %d\n", catalog.ContractManifestSchema)
+				cmd.Printf("config schema_version %d\n", config.CurrentConfigSchemaVersion)
+				for _, k := range kinds {
+					cmd.Printf("%s contract %s\n", k, catalog.Contracts[k])
+				}
+			default:
+				return fmt.Errorf("package contracts: --output %q is not one of text|json", output)
+			}
+			return nil
+		},
+	}
+	cmd.Flags().StringVar(&output, "output", "text", "output format: text or json")
 	return cmd
 }
 
@@ -67,7 +111,11 @@ func packageCheckCmd() *cobra.Command {
 					status = "FAIL"
 					failed++
 				}
-				cmd.Printf("%s %s (%s %s)\n", status, r.Package, nonEmptyDefault(r.Kind, "no kind"), r.Version)
+				contract := ""
+				if r.Contract != "" {
+					contract = ", contract " + r.Contract
+				}
+				cmd.Printf("%s %s (%s %s%s)\n", status, r.Package, nonEmptyDefault(r.Kind, "no kind"), r.Version, contract)
 				for _, c := range r.Checks {
 					if c.Err != nil {
 						cmd.Printf("  %s: %v\n", c.Name, c.Err)

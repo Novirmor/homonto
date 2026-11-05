@@ -8,6 +8,9 @@ description = "Bitbucket Cloud service: pull request reads, homonto drafts and p
 # service enables its Bitbucket provider. The transport is homonto's
 # `homonto host bitbucket api` (ADR 0091), authenticated by
 # HOMONTO_BITBUCKET_TOKEN (optionally HOMONTO_BITBUCKET_EMAIL for Basic).
+[compat]
+contract = "1.0"
+
 [service]
 id = "bitbucket"
 runtime = "bitbucket"

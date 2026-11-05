@@ -6,6 +6,9 @@ description = "Reference ticket service: read a company ticket, comment on it an
 
 # The service a workflow names under [requires.services]. Jira, Linear or an
 # in-house tracker plug in the same way: only ticket-cli changes.
+[compat]
+contract = "1.0"
+
 [service]
 id = "tickets"
 operations = ["read", "publish"]

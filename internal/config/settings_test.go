@@ -9,6 +9,8 @@ const settingsWorkflow = `manifest_schema = 2
 name = "flow"
 kind = "workflow"
 version = "0.1.0"
+[compat]
+contract = "1.0"
 [workflow]
 entry = ["go"]
 [commands]

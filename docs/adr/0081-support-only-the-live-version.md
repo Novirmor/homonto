@@ -1,6 +1,6 @@
 # Support only the live version
 
-- **Status:** Accepted
+- **Status:** Partially superseded by [0109](0109-keep-1x-compatible-within-the-major.md) (within 1.x)
 - **Date:** 2026-10-28
 - **Supersedes:** [0080](0080-freeze-workspace-migration.md); the in-flight
   `fix`/`tweak` mapping in [0078](0078-merge-onto-presets-into-light.md)

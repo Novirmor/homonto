@@ -1,0 +1,6 @@
+schema_version: 1
+id: 80dadc17
+change: compat-task
+phase: plan
+created: "2026-11-05"
+repo_mode: legacy

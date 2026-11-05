@@ -7,6 +7,9 @@ description = "GitHub service: issue and pull request reads, homonto drafts and 
 # The draft/publication core runs in the homonto binary (ADR 0090); this
 # service enables its GitHub provider. Publication approval goes through the
 # harness's native question dialog.
+[compat]
+contract = "1.0"
+
 [service]
 id = "github"
 runtime = "github"

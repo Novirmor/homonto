@@ -4,6 +4,9 @@ kind = "workflow"
 version = "0.1.0"
 description = "Example workflow: triage a tracker issue, then hand it to an installed engine"
 
+[compat]
+contract = "1.0"
+
 [workflow]
 coordinator = "shared"
 entry = ["example-triage"]

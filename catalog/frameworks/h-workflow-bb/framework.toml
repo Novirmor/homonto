@@ -4,6 +4,9 @@ kind = "workflow"
 version = "0.1.0"
 description = "Standalone Bitbucket Cloud workflow skill bundle — spike and resolve from a brief, review, continue, conflict resolution, batch review of pull requests"
 
+[compat]
+contract = "1.0"
+
 [workflow]
 coordinator = "shared"
 entry = ["h-spike-issue", "h-resolve-issue", "h-review-pr", "h-continue-pr", "h-resolve-conflicts", "h-review-batch"]

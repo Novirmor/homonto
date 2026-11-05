@@ -4,6 +4,9 @@ kind = "engine"
 version = "0.1.0"
 description = "Example stateless engine: one entry skill, one read-only worker"
 
+[compat]
+contract = "1.0"
+
 [engine]
 lifecycle = "stateless"
 entry = ["example-engine"]

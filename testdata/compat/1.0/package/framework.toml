@@ -1,0 +1,31 @@
+# A 1.0 engine package. Frozen: see ../README.md.
+manifest_schema = 2
+name = "compat-engine"
+kind = "engine"
+version = "1.0.0"
+description = "Frozen 1.0 engine manifest"
+
+[compat]
+contract = "1.0"
+homonto = ">=1.0.0"
+
+[engine]
+lifecycle = "stateless"
+entry = ["compat-engine"]
+operations = ["start", "resume", "integration-check", "release"]
+stages = ["implement", "review"]
+
+[requires]
+harness = ["skills", "commands"]
+
+[settings.review]
+type = "string"
+enum = ["always", "on-request"]
+default = "always"
+description = "When the engine asks for review"
+
+[skills]
+compat-engine = "skills/compat-engine"
+
+[commands]
+compat-engine = "commands/compat-engine.md"

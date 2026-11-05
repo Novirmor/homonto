@@ -1,0 +1,28 @@
+{
+  "schemaVersion": 3,
+  "managed": {
+    "claude": {
+      "projmcp.homonto": {
+        "desired": "{\"args\":[\"runtime\",\"mcp\",\"--harness\",\"claude\",\"--config\",\"/work/app/homonto.toml\"],\"command\":\"homonto\",\"type\":\"stdio\"}",
+        "applied": "0d4c6e7f9b2f0e0a1c3b5d7e9f1a2b3c4d5e6f708192a3b4c5d6e7f8091a2b3c",
+        "origin": {"kind": "direct"},
+        "lastEvent": {"op": "cfc91292", "action": "create", "cause": "declare", "at": "2026-11-05T18:11:41Z"}
+      }
+    },
+    "opencode": {
+      "skill.onto": {
+        "desired": "/work/app/.opencode/skills/onto -> ../../.homonto/catalog/skills/onto",
+        "applied": "92d10897ff3089cd86d481601e643622db49908b6064e486c68296a09a34a91f",
+        "origin": {"kind": "framework", "framework": "onto"},
+        "lastEvent": {"op": "cfc91292", "action": "create", "cause": "declare", "at": "2026-11-05T18:11:41Z"}
+      }
+    }
+  },
+  "catalogVersion": "1.0.0",
+  "homontoVersion": "v1.0.0",
+  "frameworkVersions": {"onto": "0.28.0", "to": "0.25.0"},
+  "renderFingerprint": "a7283a7291784f61911997611878c614f534ca8e0fff210e0296c9979dfb5938",
+  "tombstones": [
+    {"tool": "opencode", "key": "skill.grilling", "desired": "/work/app/.opencode/skills/grilling -> ../../.homonto/catalog/skills/grilling", "op": "0a1b2c3d", "at": "2026-11-04T10:00:00Z", "cause": "remove"}
+  ]
+}

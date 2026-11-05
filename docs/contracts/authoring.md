@@ -21,7 +21,16 @@ different content.
 
 ## 2. Write the manifest
 
-Start from the example for your kind and keep `manifest_schema = 2`:
+Start from the example for your kind, keep `manifest_schema = 2`, and declare
+the contract version you wrote against (`homonto package contracts` prints
+the versions the binary implements):
+
+```toml
+[compat]
+contract = "1.0"
+```
+
+Then follow the rules for your kind:
 
 - engine: [`example-engine`](../../testdata/examples/example-engine/framework.toml), rules in [engine.md](engine.md);
 - workflow: [`example-workflow`](../../testdata/examples/example-workflow/framework.toml), rules in [workflow.md](workflow.md);

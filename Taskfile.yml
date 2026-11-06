@@ -99,6 +99,10 @@ tasks:
     desc: Every shipped package and the example packages conform to the package contract
     cmd: go run . package check --builtin testdata/examples/example-engine testdata/examples/example-workflow testdata/examples/example-service examples/reference-set/ticket-engine examples/reference-set/ticket-workflow examples/reference-set/ticket-service
 
+  reference-published:
+    desc: The published reference-set release matches examples/reference-set/published.toml (needs network)
+    cmd: HOMONTO_REFERENCE_ONLINE=1 go test ./internal/engine -run 'TestReferenceSetMatchesItsPublishedPins|TestPublishedReferenceSetAssets' -count=1 -v
+
   compat-fixtures:
     desc: Frozen 1.x compatibility fixtures only gained files since the last release tag (ADR 0109)
     cmd: ./scripts/compat-fixtures-check.sh {{.CLI_ARGS}}

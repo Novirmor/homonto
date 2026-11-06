@@ -27,7 +27,7 @@ Per-cell logs and the internals analysis land in `test/e2e/.out/` (gitignored).
 | **live** | ✓ | | OpenCode authenticates with the mounted account and answers a trivial prompt (`PONG`) using a free model. |
 | **recovery** | ✓ | ✓ | An active onto change reaches the coordinator through homonto's runtime integration: on Claude Code at startup, after `--resume` and after `/compact`, plus a `homonto_status` call over MCP; on OpenCode in a new and a continued session. |
 | **onto** | shared | | `onto` drives a change through the full `open → design → build → verify → close` lifecycle and archives it. |
-| **reference** | shared | | The [reference extension set](../../examples/reference-set/) installed from digest-pinned `remote:` archives onto both harnesses, run through its engine's native lifecycle with the real CLI. |
+| **reference** | shared | | The published [reference extension set](../../examples/reference-set/) release named in [`published.toml`](../../examples/reference-set/published.toml), fetched from GitHub over https as digest-pinned `remote:` sources onto both harnesses and run through its engine's native lifecycle with the real CLI, using the engine binary homonto materialized. Ends with an `EVIDENCE reference:` line naming the extension tag, commit and digests, the homonto, OpenCode and Claude Code versions, and the resumed state. Needs network access to GitHub. |
 | **analyze** | — | — | Not pass/fail: dumps the container's internal state for inspection. |
 
 Claude Code loads a project's hooks and approves its `.mcp.json` servers only

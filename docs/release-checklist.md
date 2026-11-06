@@ -85,6 +85,35 @@ for the candidate:
 A release that cannot meet a row is not a 1.x release. It waits, or it
 becomes 2.0.
 
+### Published extension (`extension/published`)
+
+The reference set is published separately at
+[Novirmor/homonto-reference-set](https://github.com/Novirmor/homonto-reference-set).
+[`examples/reference-set/published.toml`](../examples/reference-set/published.toml)
+pins the release the `reference` E2E cell installs: today `v0.1.0`, commit
+`37931ba`, content digests `ticket-engine`
+`sha256:7ea9996c1f35e01d0e60174daa4bf548c8e42f0609be79ea6518079ad7126143`,
+`ticket-workflow`
+`sha256:1a20b9c7506926203500f1fe5c326c3a14439e5f5eaab07dfd6aeaaee2525b80`,
+`ticket-service`
+`sha256:3738da490229a98a29e72dde2fb6bf896026e1bb0a39648b32cf08a4dac3fc8f`.
+`TestReferenceSetMatchesItsPublishedPins` (part of the gate's `go test`) fails
+when the in-repo copy drifts from those pins. Record `extension/published` as
+passing only when all of these hold:
+
+1. `HOMONTO_REF` in the published repository's `.github/workflows/ci.yml` and
+   `release.yml` is the release candidate commit, and its `ci` run is green.
+   Its `release` workflow re-runs that check for every tag it publishes.
+2. `task reference-published` passes. It downloads the pinned assets and
+   checks their archive hashes, their content digests and the release's own
+   `pins.toml` against `published.toml`.
+3. The `reference` cell passes, and its `EVIDENCE reference:` line names the
+   pinned tag and digests.
+
+If the release changed the package contract, update the published repository
+first, cut a new tag there, and move `published.toml` and the in-repo copy to
+it in one commit.
+
 ## 2. Live host checks
 
 The gate never boots a real OpenCode 2 host or publishes to GitHub. When a
@@ -128,7 +157,7 @@ commit, and keep the evidence:
    | `projection/opencode` | apply next to a bring-your-own server and skill; OpenCode reads the config back |
    | `projection/claude` | the builtins project natively for both harnesses; an untrusted folder does not start the MCP server; once trusted, Claude Code connects to `homonto runtime mcp`; doctor reports the tier and ADR 0105 limitations |
    | `onto` | the full onto lifecycle through the real binaries |
-   | `reference` | the reference set from digest-pinned `remote:` archives on both harnesses, through its engine's native lifecycle: start, bind, task create, resume, integration check, snapshot, finish, release |
+   | `reference` | the published reference set release pinned in `examples/reference-set/published.toml` (`homonto-reference-set` `v0.1.0`), fetched over https as digest-pinned `remote:` sources on both harnesses, through its engine's native lifecycle: start, bind, task create, resume, integration check, snapshot, finish, release; record its `EVIDENCE reference:` line |
    | `live/opencode` | OpenCode answers on the mounted account |
    | `recovery/opencode` | an active change reaches a new and a continued OpenCode session through the workflow plugin |
    | `recovery/claude` | an active change reaches a Claude Code session at startup, after `--resume` and after `/compact`; the session calls `homonto_status` over MCP |

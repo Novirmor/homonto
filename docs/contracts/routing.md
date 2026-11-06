@@ -109,8 +109,17 @@ tags = ["tools"]
 - `homonto explain routing [agent] [--json]` shows each agent's model, the
   selector that chose it, the reason, and any disagreement.
 - `plan` warns about disagreements and fallbacks.
-- `apply` records the routes it stamped into `.homonto/routing.json`.
-  `homonto status` prints the policy-routed agents from that record.
+- `apply` records the routes it stamped into `.homonto/routing.json`, for
+  every targeted harness that has routes. `harnesses.<harness>` holds each
+  harness's routes and discovery state, and every route names its `tool`.
+  The top-level `routes`, `discovery` and `models` are the OpenCode routing,
+  the only harness a record held before `harnesses` existed; they stay for
+  readers of that shape and are empty when OpenCode is not targeted. A
+  record without `harnesses` reads as OpenCode routes. The file is removed
+  when no policy routes any harness.
+- `homonto status` prints the policy-routed agents from that record, one
+  line per agent and harness: `route:` for OpenCode, `claude route:` for
+  Claude Code. `status --output json` carries the record as `routing`.
 
 ## Decision calls
 

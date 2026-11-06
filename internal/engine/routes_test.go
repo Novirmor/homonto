@@ -175,6 +175,32 @@ func TestRoutingRecordRemovedWithoutPolicies(t *testing.T) {
 	}
 }
 
+// A record written before routing.json held every harness carries the
+// opencode routing only, at the top level, and still reads as opencode.
+func TestRoutingRecordReadsTheOpenCodeOnlyShape(t *testing.T) {
+	dir := t.TempDir()
+	old := `{
+  "appliedAt": "2026-11-01T00:00:00Z",
+  "routes": [
+    {"agent": "no-reviewer", "tool": "opencode", "from": "policy", "selector": "routing.engines.no.opencode",
+     "policy": {"Mode": "", "Model": "p/review"}, "selection": {"model": "p/review", "mode": "static", "reason": "static"}}
+  ],
+  "discovery": "not-run"
+}
+`
+	if err := os.WriteFile(filepath.Join(dir, RoutingRecordFile), []byte(old), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	rec, ok, err := ReadRoutingRecord(dir)
+	if err != nil || !ok {
+		t.Fatalf("old record: %v %v", ok, err)
+	}
+	by := rec.ByHarness()
+	if len(by) != 1 || len(by["opencode"].Routes) != 1 || by["opencode"].Routes[0].Selection.Model != "p/review" || by["opencode"].Discovery != "not-run" {
+		t.Fatalf("old record reads as %+v", by)
+	}
+}
+
 func TestExternalAutoRoutingDiscoversDuringPlanNotBuild(t *testing.T) {
 	home, repo := t.TempDir(), t.TempDir()
 	config := `[subagents.external]

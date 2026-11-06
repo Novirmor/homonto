@@ -719,7 +719,9 @@ Otherwise the most specific selector that every stage an agent serves agrees
 on applies. A static policy needs `model`; an auto policy needs `fallback`
 and takes `candidates`, `providers` (OpenCode only), `needs`, `max_cost`,
 `max_latency` and `prefer` (`listed`, `cost`, `latency`). `homonto explain
-routing` shows which selector chose each agent's model.
+routing [--harness claude]` shows which selector chose each agent's model.
+`apply` records the routes it stamped for every targeted harness in
+`.homonto/routing.json`, and `homonto status` prints them.
 
 ## Decision models — `[decisions]`
 

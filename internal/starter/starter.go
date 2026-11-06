@@ -289,6 +289,8 @@ var HarnessEvidence = map[string][]Evidence{
 		{"e2e/projection/opencode", "scripts/e2e-matrix.sh projection/opencode"},
 		{"e2e/live/opencode", "scripts/e2e-matrix.sh live/opencode"},
 		{"e2e/recovery/opencode", "scripts/e2e-matrix.sh recovery/opencode"},
+		{"e2e/process/opencode", "scripts/e2e-matrix.sh process/opencode"},
+		{"e2e/interrupt/opencode", "scripts/e2e-matrix.sh interrupt/opencode"},
 		{"e2e/onto", "scripts/e2e-matrix.sh onto"},
 		{"e2e/reference", "scripts/e2e-matrix.sh reference"},
 	},
@@ -296,6 +298,8 @@ var HarnessEvidence = map[string][]Evidence{
 		{"e2e/projection/claude", "scripts/e2e-matrix.sh projection/claude"},
 		{"e2e/recovery/claude", "scripts/e2e-matrix.sh recovery/claude"},
 		{"e2e/policy/claude", "scripts/e2e-matrix.sh policy/claude"},
+		{"e2e/process/claude", "scripts/e2e-matrix.sh process/claude"},
+		{"e2e/interrupt/claude", "scripts/e2e-matrix.sh interrupt/claude"},
 		{"e2e/reference", "scripts/e2e-matrix.sh reference"},
 	},
 }

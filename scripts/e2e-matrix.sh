@@ -10,7 +10,7 @@
 #   recovery       ✓          ✓        (start/resume/compaction context, runtime tool)
 #   policy                    ✓        (worker policy denials and handback from real hooks)
 #   onto           shared, tool-independent (full open→…→close workflow)
-#   reference      shared (remote reference set, both harnesses, native lifecycle)
+#   reference      shared (published reference set over https, both harnesses, native lifecycle)
 #
 # The `live` cells reuse the invoking user's own accounts by mounting their
 # credentials READ-ONLY at run time (never baked into the image). OpenCode uses a
@@ -76,7 +76,10 @@ skip_cell() { RESULTS+=("$1	SKIP"); printf '\n▶ %s  (SKIPPED)\n' "$1"; }
 
 if [ "$DO_BUILD" -eq 1 ]; then
   echo "▶ building $IMAGE (homonto + onto + real opencode) ..."
-  docker build -f "$ROOT/test/e2e/Dockerfile" -t "$IMAGE" "$ROOT" \
+  # The build context excludes .git, so stamp homonto with this checkout's
+  # revision for the suites' evidence lines.
+  version="$(git -C "$ROOT" describe --tags --always --dirty 2>/dev/null || true)"
+  docker build -f "$ROOT/test/e2e/Dockerfile" --build-arg HOMONTO_VERSION="$version" -t "$IMAGE" "$ROOT" \
     || { echo "image build failed" >&2; exit 1; }
 fi
 

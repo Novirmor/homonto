@@ -1,20 +1,37 @@
 #!/usr/bin/env bash
-# Suite: reference — the reference extension set (examples/reference-set),
-# installed as digest-pinned remote: archives, projected onto OpenCode and
-# Claude Code, and run through its engine's native lifecycle with the real
-# CLI: start, bind, task create, resume (inspect), integration check,
-# snapshot, finish, release. No homonto source names these packages (M4.8).
-# No account needed.
+# Suite: reference — the PUBLISHED reference extension set
+# (Novirmor/homonto-reference-set, pinned in examples/reference-set/published.toml
+# and copied to /opt/reference/published.toml), installed over https as
+# digest-pinned remote: sources, projected onto OpenCode and Claude Code, and run
+# through its engine's native lifecycle with the real CLI: start, bind, task
+# create, resume (inspect), integration check, snapshot, finish, release. The
+# engine and tracker binaries run from the verified, content-addressed copy
+# homonto materialized. No homonto source names these packages (M4.8). No
+# account needed; the container fetches the release assets from GitHub.
 set -uo pipefail
 source /opt/e2e-suites/lib.sh
 
-WORK="$(mktemp -d)"; cd "$WORK"
+WORK="$(mktemp -d)"; cd "$WORK" || exit 1
 mkdir -p api tickets
 git -C api init -q -b main
 git -C api -c user.email=e2e@x -c user.name=e2e commit -q --allow-empty -m base
 BASE="$(git -C api rev-parse HEAD)"
 
-write_config() { # <engine-digest> <workflow-digest> <service-digest>
+# The published release's pins: one url and content digest per package.
+PUB=/opt/reference/published.toml
+[ -f "$PUB" ] || fail "$PUB missing from the image"
+toml_str() { sed -n "s/^$1 = \"\(.*\)\"$/\1/p" "$PUB" | head -1; }
+declare -A url pin
+pkg_field() { # <package> <field>
+  sed -n "/^\[packages\.$1\]$/,/^\[/s/^$2 = \"\(.*\)\"$/\1/p" "$PUB" | head -1
+}
+for p in ticket-engine ticket-workflow ticket-service; do
+  url[$p]="$(pkg_field "$p" url)"; pin[$p]="$(pkg_field "$p" digest)"
+  { [ -n "${url[$p]}" ] && [ -n "${pin[$p]}" ]; } || fail "no url/digest for $p in $PUB"
+done
+ext_repo="$(toml_str repository)"; ext_tag="$(toml_str tag)"; ext_commit="$(toml_str commit)"
+
+write_config() {
   cat > homonto.toml <<TOML
 schema_version = 2
 harnesses = ["opencode", "claude"]
@@ -35,18 +52,18 @@ cwd = "."
 command = ["git", "status", "--short"]
 
 [engines.ticket-engine]
-source = "remote:file:///opt/reference/ticket-engine.tar.gz"
-digest = "$1"
+source = "remote:${url[ticket-engine]}"
+digest = "${pin[ticket-engine]}"
 scope = "project"
 
 [workflows.ticket-workflow]
-source = "remote:file:///opt/reference/ticket-workflow.tar.gz"
-digest = "$2"
+source = "remote:${url[ticket-workflow]}"
+digest = "${pin[ticket-workflow]}"
 scope = "project"
 
 [services.ticket-service]
-source = "remote:file:///opt/reference/ticket-service.tar.gz"
-digest = "$3"
+source = "remote:${url[ticket-service]}"
+digest = "${pin[ticket-service]}"
 scope = "project"
 
 [workflows.ticket-workflow.processes.bug]
@@ -60,22 +77,21 @@ model = "haiku"
 TOML
 }
 
-# Trust on first use, as remote-sources.md describes: a wrong pin names the
-# content's digest, which is then pinned.
-zero="sha256:$(printf '0%.0s' $(seq 64))"
-declare -A pin=([ticket-engine]="$zero" [ticket-workflow]="$zero" [ticket-service]="$zero")
-for _ in 1 2 3; do
-  write_config "${pin[ticket-engine]}" "${pin[ticket-workflow]}" "${pin[ticket-service]}"
-  out="$(homonto plan 2>&1 || true)"
-  line="$(printf '%s' "$out" | grep -o 'reference/[a-z-]*\.tar\.gz": declared sha256:[0-9a-f]* but content is sha256:[0-9a-f]\{64\}' | head -1)"
-  [ -n "$line" ] || break
-  name="$(printf '%s' "$line" | sed 's|reference/\([a-z-]*\)\.tar\.gz.*|\1|')"
-  pin[$name]="$(printf '%s' "$line" | sed 's/.*content is //')"
+write_config
+log "homonto apply ($ext_tag over https, digest-pinned) → opencode + claude"
+homonto apply --yes || fail "apply of the pinned published reference set failed"
+pass "the three published packages fetched, verified against their pins and applied"
+# The binaries come from the verified, content-addressed copies homonto just
+# materialized (.homonto/cache/remote/<algo>/<hex>), not from any other tree.
+cache_dir() { printf '%s/.homonto/cache/remote/%s' "$(pwd)" "$(printf '%s' "$1" | tr : /)"; }
+for p in ticket-engine ticket-service; do
+  d="$(cache_dir "${pin[$p]}")/bin"
+  [ -d "$d" ] || fail "$p not materialized at $d"
+  PATH="$d:$PATH"
 done
-write_config "${pin[ticket-engine]}" "${pin[ticket-workflow]}" "${pin[ticket-service]}"
-log "homonto apply (remote, digest-pinned) → opencode + claude"
-homonto apply --yes || fail "apply of the pinned reference set failed"
-pass "the three remote packages verified and applied"
+export PATH
+[ "$(command -v ticket-engine)" = "$(cache_dir "${pin[ticket-engine]}")/bin/ticket-engine" ] || fail "ticket-engine does not resolve to the pinned copy"
+pass "engine and tracker binaries run from the pinned copies"
 for f in .opencode/skills/ticket-to-delivery/SKILL.md .claude/skills/ticket-to-delivery/SKILL.md \
          .opencode/command/ticket.md .claude/commands/ticket.md \
          .opencode/agent/ticket-reviewer.md .claude/agents/ticket-reviewer.md .claude/agents/ticket-implementer.md; do
@@ -101,7 +117,7 @@ homonto workspace task inspect abc-12 >/tmp/inspect.json || fail "task inspect"
 jq -e --arg id "id:$id" '.native_id == $id' /tmp/inspect.json >/dev/null || fail "resume lost the generation"
 homonto workspace task check abc-12 --writers-paused >/tmp/check.json || { cat /tmp/check.json; fail "integration check"; }
 pass "resume and integration check"
-homonto workflow snapshot --json | jq -e '.changes[] | select(.workflow == "ticket-engine" and .name == "abc-12" and .phase == "implement")' >/dev/null \
+resumed_phase="$(homonto workflow snapshot --json | jq -er '.changes[] | select(.workflow == "ticket-engine" and .name == "abc-12" and .phase == "implement") | .phase')" \
   || fail "the workflow snapshot lacks the engine's change"
 pass "the snapshot every harness injects names the engine's change"
 log "finish and release"
@@ -109,5 +125,11 @@ ticket-engine finish abc-12 --root "$ROOT" || fail "ticket-engine finish"
 homonto worktree remove abc-12 --workflow ticket-engine --repo api --yes || fail "worktree remove"
 homonto workspace task cleanup abc-12 --yes || fail "task cleanup"
 pass "released the binding and the task"
+
+# One line of matrix evidence naming exactly what this run exercised.
+printf 'EVIDENCE reference: extension=%s@%s commit=%s ticket-engine=%s ticket-workflow=%s ticket-service=%s homonto=%s opencode=%s claude=%s resumed=%s phase=%s\n' \
+  "$ext_repo" "$ext_tag" "$ext_commit" "${pin[ticket-engine]}" "${pin[ticket-workflow]}" "${pin[ticket-service]}" \
+  "$(homonto version 2>&1 | head -1 | tr ' ' '_')" "$(opencode --version 2>&1 | head -1 | tr ' ' '_')" "$(claude --version 2>&1 | head -1 | tr ' ' '_')" \
+  "$(jq -r .native_id /tmp/inspect.json)" "$resumed_phase"
 
 printf '\nSUITE PASS: reference\n'

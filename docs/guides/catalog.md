@@ -29,8 +29,8 @@ Each hosting workflow installs its `host-*` service unless the config declares
 another service for that host ([services](configuration.md#services--servicesname)).
 Writing your own package: [package contracts](../contracts/README.md).
 
-Standalone items: skills `handoff` and `grilling`; commands `/handoff` and
-`/grill`; plugin `permission-observer`.
+Standalone items: skills `handoff`, `grilling` and `swarm`; commands
+`/handoff`, `/grill` and `/swarm`; plugin `permission-observer`.
 
 ## Skills
 
@@ -92,11 +92,12 @@ lists what each host does differently.
 |---|---|
 | `handoff` | Compress the current conversation into a handoff document (goal, state, done, next, key files, decisions, gotchas) so a fresh agent can continue. Writes to the `[tmp]` directory when declared. Adapted from mattpocock/skills (MIT). |
 | `grilling` | Interview you, one question at a time, to stress-test a plan or design before building — upstream decisions first, a recommended answer for each, a numbered summary at the end. Adapted from mattpocock/skills (MIT). |
+| `swarm` | Build two or three competing candidates of one brief in parallel worktrees under a stateless engine, verify and preview them side by side, deliver the one you choose and clean up the rest ([swarms](swarms.md)). |
 
 ## Commands
 
 Every workflow command runs in the `homonto` coordinator (`agent: homonto`)
-except `/no`, `/grill`, and `/handoff`, which run in your current agent.
+except `/no`, `/grill`, `/handoff`, and `/swarm`, which run in your current agent.
 Arguments after the command describe the work.
 
 | Command | What it does |
@@ -120,6 +121,7 @@ Arguments after the command describe the work.
 | `/h-review-batch <repo-url \| prs…> [limit N] [author USER]` | Draft reviews for many PRs. |
 | `/handoff [focus]` | Write a handoff document. |
 | `/grill [plan]` | Stress-test a plan by interview. |
+| `/swarm [task]` | Compare two or three candidate implementations and deliver the chosen one. |
 
 Issue references: a GitHub issue URL or `OWNER/REPO#NUMBER`. PR references: a
 URL, `OWNER/REPO#NUMBER`, a number, or a unique head branch.

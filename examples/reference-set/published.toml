@@ -1,0 +1,28 @@
+# The published release of this reference set: the one the E2E `reference`
+# cell (test/e2e/suites/reference.sh) installs over https.
+#
+# `digest` is homonto's content pin (internal/remote.CanonicalDigest): it
+# depends only on paths, bytes and exec bits, so it equals the pin of the
+# in-repo copy beside this file. TestReferenceSetMatchesItsPublishedPins fails
+# when the two drift; `task reference-published` re-checks the live release
+# assets. To change a package: change it here and in the published repository,
+# cut a new tag there, and move this file to that tag in the same commit.
+# `archive_sha256` is the release asset's byte hash, for reference only.
+repository = "https://github.com/Novirmor/homonto-reference-set"
+tag = "v0.1.0"
+commit = "37931ba800ad62eb3f9662d27ad3d56a564529e7"
+
+[packages.ticket-engine]
+url = "https://github.com/Novirmor/homonto-reference-set/releases/download/v0.1.0/ticket-engine-0.1.0.tar.gz"
+digest = "sha256:7ea9996c1f35e01d0e60174daa4bf548c8e42f0609be79ea6518079ad7126143"
+archive_sha256 = "08d3d4b07602eb645c41c365c6daebbda97d170f0fc5b225c414c89bc983e953"
+
+[packages.ticket-workflow]
+url = "https://github.com/Novirmor/homonto-reference-set/releases/download/v0.1.0/ticket-workflow-0.1.0.tar.gz"
+digest = "sha256:1a20b9c7506926203500f1fe5c326c3a14439e5f5eaab07dfd6aeaaee2525b80"
+archive_sha256 = "9d14474b310b042722b2db01d1fbb969a74a41858eebdba8516e598e1182598a"
+
+[packages.ticket-service]
+url = "https://github.com/Novirmor/homonto-reference-set/releases/download/v0.1.0/ticket-service-0.1.0.tar.gz"
+digest = "sha256:3738da490229a98a29e72dde2fb6bf896026e1bb0a39648b32cf08a4dac3fc8f"
+archive_sha256 = "24258860da6dc62019e384ce5a25bb5094db75f6634f04f8dad900edec855e99"

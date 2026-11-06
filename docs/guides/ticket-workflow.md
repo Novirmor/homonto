@@ -155,6 +155,23 @@ Pack each package as a `.tar.gz` with `framework.toml` at its root, publish
 it, and pin its digest ([remote sources](remote-sources.md)). A changed
 archive under the same URL fails closed until the pin moves.
 
+The reference set is published this way at
+[Novirmor/homonto-reference-set](https://github.com/Novirmor/homonto-reference-set).
+Release [`v0.1.0`](https://github.com/Novirmor/homonto-reference-set/releases/tag/v0.1.0)
+(commit `37931ba`) attaches one archive per package and a `pins.toml`. These
+are its pins, which
+[`examples/reference-set/published.toml`](../../examples/reference-set/published.toml)
+records for homonto's own tests:
+
+| Package | Content digest (`digest =`) |
+|---|---|
+| `ticket-engine` | `sha256:7ea9996c1f35e01d0e60174daa4bf548c8e42f0609be79ea6518079ad7126143` |
+| `ticket-workflow` | `sha256:1a20b9c7506926203500f1fe5c326c3a14439e5f5eaab07dfd6aeaaee2525b80` |
+| `ticket-service` | `sha256:3738da490229a98a29e72dde2fb6bf896026e1bb0a39648b32cf08a4dac3fc8f` |
+
+The digest covers paths, bytes and exec bits only, so the pin of a package
+directory equals the pin of its archive.
+
 ## 7. Install on both harnesses
 
 ```toml
@@ -165,18 +182,18 @@ harnesses = ["opencode", "claude"]
 api = "../api"
 
 [engines.ticket-engine]
-source = "remote:https://example.com/ticket-engine-0.1.0.tar.gz"
-digest = "sha256:<64 hex>"
+source = "remote:https://github.com/Novirmor/homonto-reference-set/releases/download/v0.1.0/ticket-engine-0.1.0.tar.gz"
+digest = "sha256:7ea9996c1f35e01d0e60174daa4bf548c8e42f0609be79ea6518079ad7126143"
 scope  = "project"
 
 [workflows.ticket-workflow]
-source = "remote:https://example.com/ticket-workflow-0.1.0.tar.gz"
-digest = "sha256:<64 hex>"
+source = "remote:https://github.com/Novirmor/homonto-reference-set/releases/download/v0.1.0/ticket-workflow-0.1.0.tar.gz"
+digest = "sha256:1a20b9c7506926203500f1fe5c326c3a14439e5f5eaab07dfd6aeaaee2525b80"
 scope  = "project"
 
 [services.ticket-service]
-source = "remote:https://example.com/ticket-service-0.1.0.tar.gz"
-digest = "sha256:<64 hex>"
+source = "remote:https://github.com/Novirmor/homonto-reference-set/releases/download/v0.1.0/ticket-service-0.1.0.tar.gz"
+digest = "sha256:3738da490229a98a29e72dde2fb6bf896026e1bb0a39648b32cf08a4dac3fc8f"
 scope  = "project"
 
 [workflows.ticket-workflow.processes.bug]

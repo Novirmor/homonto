@@ -44,9 +44,6 @@ func renderCombinations() string {
 	for _, h := range Harnesses {
 		add(HarnessEvidence[h.ID])
 	}
-	for _, h := range Hosts {
-		add(HostEvidence[h.ID])
-	}
 	b.WriteString("\n" + combosEnd)
 	return b.String()
 }
@@ -108,12 +105,7 @@ func TestEveryE2EEvidenceKeyIsAMatrixCell(t *testing.T) {
 	}
 }
 
-func TestEveryHostAndHarnessHasEvidence(t *testing.T) {
-	for _, h := range Hosts {
-		if len(HostEvidence[h.ID]) == 0 {
-			t.Errorf("host %s has no release evidence", h.ID)
-		}
-	}
+func TestEveryHarnessHasEvidence(t *testing.T) {
 	for _, h := range Harnesses {
 		if len(HarnessEvidence[h.ID]) == 0 {
 			t.Errorf("harness %s has no release evidence", h.ID)

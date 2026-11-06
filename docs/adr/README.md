@@ -131,3 +131,4 @@ numbering: [`../agents/adr.md`](../agents/adr.md).
 | [0109](0109-keep-1x-compatible-within-the-major.md) | Keep 1.x compatible within the major | Accepted |
 | [0110](0110-generate-starting-configurations-in-the-binary.md) | Generate starting configurations in the binary | Accepted |
 | [0111](0111-test-the-published-reference-set-by-pin.md) | Test the published reference set by pin | Accepted |
+| [0112](0112-back-hosting-support-with-prose-not-sandbox-runs.md) | Back hosting support with prose, not sandbox runs | Accepted |

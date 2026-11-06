@@ -18,10 +18,12 @@ go run ./scripts/releaseevidence check ../evidence-vX.Y.Z.json   # exits 1 until
 ```
 
 The required keys are the gate's own (`gate/full`, `compat/*`, `live/*`,
-`extension/published`, `docs/limitations`) and, for every host × harness cell
+`extension/published`, `docs/hosting`, `docs/limitations`) and, for every host × harness cell
 in [supported combinations](guides/supported-combinations.md), the evidence
-that cell declares (`unit/starter`, `install/first-task`, `e2e/*`,
-`sandbox/<host>`). `record` refuses another commit or a dirty tree. Only
+that cell declares (`unit/starter`, `install/first-task`, `e2e/*`). A host
+adds no key: hosting support is backed by the offline provider tests in the
+gate and the prose [differences map](guides/hosting-differences.md), never a
+live sandbox run ([ADR 0112](adr/0112-back-hosting-support-with-prose-not-sandbox-runs.md)). `record` refuses another commit or a dirty tree. Only
 `compat/upgrade` may be `n/a`, with a note, when there is no earlier 1.x
 release to upgrade from. Keep the manifest outside the repository, because
 the tagged commit cannot contain evidence about itself, and attach it to the
@@ -133,18 +135,15 @@ commit, and keep the evidence:
    standalone, unregistered server must not be able to authorize publication.
    A local model with a fake `gh` proves no external send happened, not that
    GitHub accepted a receipt.
-3. **Hosting sandboxes** (evidence keys `sandbox/<host>`; `scripts/hosting-sandbox.sh`, fixtures in
-   `test/e2e/hosting/sandbox.env`): for each of GitHub, GitLab.com and
-   Bitbucket Cloud whose release content changed, the runtime layer (draft,
-   unapproved publish is a no-op, native approval, publish, reconcile,
-   cleanup against the real host) and the process layer (every read-only
-   `/h-*` process ends at a shown draft with nothing published). With
-   `--write`, the write processes push to and then reset their fixtures.
-   Throwaway repositories and accounts only, never a production issue or
-   PR. A host without a sandbox reports SKIP, and a SKIP is not a pass. The
-   output links [hosting provider differences](guides/hosting-differences.md);
-   confirm every **(unverified)** claim the run exercised and update the
-   page.
+3. **Hosting is prose only**
+   ([ADR 0112](adr/0112-back-hosting-support-with-prose-not-sandbox-runs.md)):
+   no release runs against real GitHub, GitLab.com or Bitbucket Cloud
+   sandboxes, and no evidence key asks for one. For `docs/hosting`, the
+   release notes link [hosting provider differences](guides/hosting-differences.md)
+   and repeat each **(unverified)** claim as unverified. The offline provider
+   tests (`internal/hostruntime`, `internal/bitbucket`) run in `gate/full`.
+   `scripts/hosting-sandbox.sh` remains an optional manual tool; a run of it
+   may correct the differences page but is never release evidence.
 4. **Real-harness matrix** (`scripts/e2e-matrix.sh`, [test/e2e](../test/e2e/README.md);
    evidence keys `e2e/<cell>`):
    real OpenCode 2 and Claude Code in a container, reusing the operator's

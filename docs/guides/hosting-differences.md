@@ -18,8 +18,11 @@ documentation: GitHub REST v2022-11-28; GitLab REST v4, GraphQL and the `glab`
 CLI reference; the Bitbucket Cloud REST 2.0 OpenAPI document
 (`dac-static.atlassian.com/cloud/bitbucket/swagger.v3.json`) and Atlassian
 support pages. **(unverified)** marks a claim that has not yet been confirmed
-from documentation or a live call. The sandbox run (M1.8) must confirm each one
-before it is relied on.
+from documentation or a live call. Hosting support is documented here in prose
+only: no release runs against real host sandboxes
+([ADR 0112](../adr/0112-back-hosting-support-with-prose-not-sandbox-runs.md)),
+so an **(unverified)** claim stays marked until someone confirms it by hand,
+and release notes carry it as unverified.
 
 ## Vocabulary and identity
 

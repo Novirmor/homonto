@@ -17,12 +17,12 @@ pass. The release notes name the cells a release verified, and the
 |---|---|---|---|
 | none | OpenCode 2 | any of onto, to, no | `unit/starter`, `install/first-task`, `e2e/projection/opencode`, `e2e/live/opencode`, `e2e/recovery/opencode`, `e2e/process/opencode`, `e2e/interrupt/opencode`, `e2e/onto`, `e2e/reference` |
 | none | Claude Code | any of onto, to, no | `unit/starter`, `install/first-task`, `e2e/projection/claude`, `e2e/recovery/claude`, `e2e/policy/claude`, `e2e/process/claude`, `e2e/interrupt/claude`, `e2e/reference` |
-| GitHub (`h-workflow-gh`) | OpenCode 2 | any of onto, to, no | `unit/starter`, `install/first-task`, `e2e/projection/opencode`, `e2e/live/opencode`, `e2e/recovery/opencode`, `e2e/process/opencode`, `e2e/interrupt/opencode`, `e2e/onto`, `e2e/reference`, `sandbox/github` |
-| GitHub (`h-workflow-gh`) | Claude Code | any of onto, to, no | `unit/starter`, `install/first-task`, `e2e/projection/claude`, `e2e/recovery/claude`, `e2e/policy/claude`, `e2e/process/claude`, `e2e/interrupt/claude`, `e2e/reference`, `sandbox/github` |
-| GitLab.com (`h-workflow-gl`) | OpenCode 2 | any of onto, to, no | `unit/starter`, `install/first-task`, `e2e/projection/opencode`, `e2e/live/opencode`, `e2e/recovery/opencode`, `e2e/process/opencode`, `e2e/interrupt/opencode`, `e2e/onto`, `e2e/reference`, `sandbox/gitlab` |
-| GitLab.com (`h-workflow-gl`) | Claude Code | any of onto, to, no | `unit/starter`, `install/first-task`, `e2e/projection/claude`, `e2e/recovery/claude`, `e2e/policy/claude`, `e2e/process/claude`, `e2e/interrupt/claude`, `e2e/reference`, `sandbox/gitlab` |
-| Bitbucket Cloud (`h-workflow-bb`) | OpenCode 2 | any of onto, to, no | `unit/starter`, `install/first-task`, `e2e/projection/opencode`, `e2e/live/opencode`, `e2e/recovery/opencode`, `e2e/process/opencode`, `e2e/interrupt/opencode`, `e2e/onto`, `e2e/reference`, `sandbox/bitbucket` |
-| Bitbucket Cloud (`h-workflow-bb`) | Claude Code | any of onto, to, no | `unit/starter`, `install/first-task`, `e2e/projection/claude`, `e2e/recovery/claude`, `e2e/policy/claude`, `e2e/process/claude`, `e2e/interrupt/claude`, `e2e/reference`, `sandbox/bitbucket` |
+| GitHub (`h-workflow-gh`) | OpenCode 2 | any of onto, to, no | `unit/starter`, `install/first-task`, `e2e/projection/opencode`, `e2e/live/opencode`, `e2e/recovery/opencode`, `e2e/process/opencode`, `e2e/interrupt/opencode`, `e2e/onto`, `e2e/reference` |
+| GitHub (`h-workflow-gh`) | Claude Code | any of onto, to, no | `unit/starter`, `install/first-task`, `e2e/projection/claude`, `e2e/recovery/claude`, `e2e/policy/claude`, `e2e/process/claude`, `e2e/interrupt/claude`, `e2e/reference` |
+| GitLab.com (`h-workflow-gl`) | OpenCode 2 | any of onto, to, no | `unit/starter`, `install/first-task`, `e2e/projection/opencode`, `e2e/live/opencode`, `e2e/recovery/opencode`, `e2e/process/opencode`, `e2e/interrupt/opencode`, `e2e/onto`, `e2e/reference` |
+| GitLab.com (`h-workflow-gl`) | Claude Code | any of onto, to, no | `unit/starter`, `install/first-task`, `e2e/projection/claude`, `e2e/recovery/claude`, `e2e/policy/claude`, `e2e/process/claude`, `e2e/interrupt/claude`, `e2e/reference` |
+| Bitbucket Cloud (`h-workflow-bb`) | OpenCode 2 | any of onto, to, no | `unit/starter`, `install/first-task`, `e2e/projection/opencode`, `e2e/live/opencode`, `e2e/recovery/opencode`, `e2e/process/opencode`, `e2e/interrupt/opencode`, `e2e/onto`, `e2e/reference` |
+| Bitbucket Cloud (`h-workflow-bb`) | Claude Code | any of onto, to, no | `unit/starter`, `install/first-task`, `e2e/projection/claude`, `e2e/recovery/claude`, `e2e/policy/claude`, `e2e/process/claude`, `e2e/interrupt/claude`, `e2e/reference` |
 
 | Evidence | Produced by |
 |---|---|
@@ -40,9 +40,6 @@ pass. The release notes name the cells a release verified, and the
 | `e2e/policy/claude` | scripts/e2e-matrix.sh policy/claude |
 | `e2e/process/claude` | scripts/e2e-matrix.sh process/claude |
 | `e2e/interrupt/claude` | scripts/e2e-matrix.sh interrupt/claude |
-| `sandbox/github` | scripts/hosting-sandbox.sh github (runtime and process layers) |
-| `sandbox/gitlab` | scripts/hosting-sandbox.sh gitlab (runtime and process layers) |
-| `sandbox/bitbucket` | scripts/hosting-sandbox.sh bitbucket (runtime and process layers) |
 
 <!-- END GENERATED COMBINATIONS -->
 

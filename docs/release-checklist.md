@@ -159,11 +159,43 @@ commit, and keep the evidence:
    | `onto` | the full onto lifecycle through the real binaries |
    | `reference` | the published reference set release pinned in `examples/reference-set/published.toml` (`homonto-reference-set` `v0.1.0`), fetched over https as digest-pinned `remote:` sources on both harnesses, through its engine's native lifecycle: start, bind, task create, resume, integration check, snapshot, finish, release; record its `EVIDENCE reference:` line |
    | `live/opencode` | OpenCode answers on the mounted account |
-   | `recovery/opencode` | an active change reaches a new and a continued OpenCode session through the workflow plugin |
-   | `recovery/claude` | an active change reaches a Claude Code session at startup, after `--resume` and after `/compact`; the session calls `homonto_status` over MCP |
+   | `recovery/opencode` | an active change reaches a new and a continued OpenCode session through the workflow plugin; after a real compaction the context starts at the summary, the next request carries a fresh snapshot (it names a change created after the compaction) and `homonto_status` reports it |
+   | `recovery/claude` | an active change reaches a Claude Code session at startup, after `--resume` and after `/compact`, where the post-compaction `SessionStart` hook output carries the policy and the snapshot; the session calls `homonto_status` over MCP |
    | `policy/claude` | Claude Code reports the coordinator and its worker to homonto's hooks; a worker's denied push is stopped and an allowed command runs on the hook's decision; a refused worker permission prompt is handed back to the coordinator |
+   | `process/opencode` | the model runs the builtin `to` process through the projected `/to` command (expanded by OpenCode's `session.command`) as the coordinator: `to new` and `to phase` reach the binary from the session, and `to status` and the workflow snapshot show the change at do |
+   | `process/claude` | the same through `claude -p "/to …"` with homonto's hooks active: the coordinator starts with the continuation policy injected, the policy hook allows each `to` command as the coordinator and denies none, and the records show the change at do |
+   | `interrupt/opencode` | the process is held at a defined boundary (`to new` recorded, its tool call not returned), the background service is SIGKILLed, and a restarted service resumes the session: the context hook's snapshot shows the change at plan and the resumed run advances it to do |
+   | `interrupt/claude` | the same with the `claude` process group SIGKILLed and `--resume`: the resume `SessionStart` hook output carries the policy and the snapshot at plan, and the resumed run advances the change to do without re-creating it |
 
-5. **Migration both ways** in throwaway projects. OpenCode 2 reads supported
+   The `plumbing` cell runs offline without an account and checks the
+   machinery these cells assert with (observation shims, the boundary hold,
+   the hook-output filters, OpenCode's command expansion); it has no release
+   key, and a failure there means the credentialed cells cannot be trusted.
+   Each suite also names its scenarios (`<suite>/<tool>/<scenario>`, listed at
+   the top of each suite, for example `interrupt/claude/restore`). The run
+   writes every scenario and cell outcome, with the commit and whether the
+   tree was clean, to `test/e2e/.out/evidence.tsv`; keep that file with the
+   cell logs and pass its log path to `releaseevidence record`. A dirty tree
+   is not release evidence.
+
+   Not covered by the matrix: a worker dispatched *inside* a builtin process
+   on a real harness (the worker policy and handback are proven by
+   `policy/claude` on a direct dispatch), the `onto`, `no` and `h-*`
+   processes inside a real session (`process/*` runs `to`), and any step that
+   needs the user's answer (below).
+5. **Claude Code native approval (interactive only).** `AskUserQuestion` is
+   absent in `claude -p` (ADR 0105), so no matrix cell can answer it. In an
+   interactive Claude Code session on a throwaway project, run one builtin
+   process to a step that needs a decision and check that the question
+   arrives as the native dialog (at most four questions), that answering it
+   lets the process continue, and that dismissing it leaves the decision
+   reported as pending. For a release with a hosting workflow, also stage a
+   draft and confirm that publication needs the dialog's correlated answer
+   and that a pre-answered question is denied. Keep a transcript; there is
+   no evidence key for this check, so name it in the release notes when it
+   was run.
+
+6. **Migration both ways** in throwaway projects. OpenCode 2 reads supported
    V1 server config, but its terminal settings live in the global `cli.json`;
    V1 files stay untouched, and snapshot undo does not restore their terminal
    values.

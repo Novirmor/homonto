@@ -15,14 +15,14 @@ pass. The release notes name the cells a release verified, and the
 
 | Host | Harness | Engines | Evidence a release needs |
 |---|---|---|---|
-| none | OpenCode 2 | any of onto, to, no | `unit/starter`, `install/first-task`, `e2e/projection/opencode`, `e2e/live/opencode`, `e2e/recovery/opencode`, `e2e/onto`, `e2e/reference` |
-| none | Claude Code | any of onto, to, no | `unit/starter`, `install/first-task`, `e2e/projection/claude`, `e2e/recovery/claude`, `e2e/policy/claude`, `e2e/reference` |
-| GitHub (`h-workflow-gh`) | OpenCode 2 | any of onto, to, no | `unit/starter`, `install/first-task`, `e2e/projection/opencode`, `e2e/live/opencode`, `e2e/recovery/opencode`, `e2e/onto`, `e2e/reference`, `sandbox/github` |
-| GitHub (`h-workflow-gh`) | Claude Code | any of onto, to, no | `unit/starter`, `install/first-task`, `e2e/projection/claude`, `e2e/recovery/claude`, `e2e/policy/claude`, `e2e/reference`, `sandbox/github` |
-| GitLab.com (`h-workflow-gl`) | OpenCode 2 | any of onto, to, no | `unit/starter`, `install/first-task`, `e2e/projection/opencode`, `e2e/live/opencode`, `e2e/recovery/opencode`, `e2e/onto`, `e2e/reference`, `sandbox/gitlab` |
-| GitLab.com (`h-workflow-gl`) | Claude Code | any of onto, to, no | `unit/starter`, `install/first-task`, `e2e/projection/claude`, `e2e/recovery/claude`, `e2e/policy/claude`, `e2e/reference`, `sandbox/gitlab` |
-| Bitbucket Cloud (`h-workflow-bb`) | OpenCode 2 | any of onto, to, no | `unit/starter`, `install/first-task`, `e2e/projection/opencode`, `e2e/live/opencode`, `e2e/recovery/opencode`, `e2e/onto`, `e2e/reference`, `sandbox/bitbucket` |
-| Bitbucket Cloud (`h-workflow-bb`) | Claude Code | any of onto, to, no | `unit/starter`, `install/first-task`, `e2e/projection/claude`, `e2e/recovery/claude`, `e2e/policy/claude`, `e2e/reference`, `sandbox/bitbucket` |
+| none | OpenCode 2 | any of onto, to, no | `unit/starter`, `install/first-task`, `e2e/projection/opencode`, `e2e/live/opencode`, `e2e/recovery/opencode`, `e2e/process/opencode`, `e2e/interrupt/opencode`, `e2e/onto`, `e2e/reference` |
+| none | Claude Code | any of onto, to, no | `unit/starter`, `install/first-task`, `e2e/projection/claude`, `e2e/recovery/claude`, `e2e/policy/claude`, `e2e/process/claude`, `e2e/interrupt/claude`, `e2e/reference` |
+| GitHub (`h-workflow-gh`) | OpenCode 2 | any of onto, to, no | `unit/starter`, `install/first-task`, `e2e/projection/opencode`, `e2e/live/opencode`, `e2e/recovery/opencode`, `e2e/process/opencode`, `e2e/interrupt/opencode`, `e2e/onto`, `e2e/reference`, `sandbox/github` |
+| GitHub (`h-workflow-gh`) | Claude Code | any of onto, to, no | `unit/starter`, `install/first-task`, `e2e/projection/claude`, `e2e/recovery/claude`, `e2e/policy/claude`, `e2e/process/claude`, `e2e/interrupt/claude`, `e2e/reference`, `sandbox/github` |
+| GitLab.com (`h-workflow-gl`) | OpenCode 2 | any of onto, to, no | `unit/starter`, `install/first-task`, `e2e/projection/opencode`, `e2e/live/opencode`, `e2e/recovery/opencode`, `e2e/process/opencode`, `e2e/interrupt/opencode`, `e2e/onto`, `e2e/reference`, `sandbox/gitlab` |
+| GitLab.com (`h-workflow-gl`) | Claude Code | any of onto, to, no | `unit/starter`, `install/first-task`, `e2e/projection/claude`, `e2e/recovery/claude`, `e2e/policy/claude`, `e2e/process/claude`, `e2e/interrupt/claude`, `e2e/reference`, `sandbox/gitlab` |
+| Bitbucket Cloud (`h-workflow-bb`) | OpenCode 2 | any of onto, to, no | `unit/starter`, `install/first-task`, `e2e/projection/opencode`, `e2e/live/opencode`, `e2e/recovery/opencode`, `e2e/process/opencode`, `e2e/interrupt/opencode`, `e2e/onto`, `e2e/reference`, `sandbox/bitbucket` |
+| Bitbucket Cloud (`h-workflow-bb`) | Claude Code | any of onto, to, no | `unit/starter`, `install/first-task`, `e2e/projection/claude`, `e2e/recovery/claude`, `e2e/policy/claude`, `e2e/process/claude`, `e2e/interrupt/claude`, `e2e/reference`, `sandbox/bitbucket` |
 
 | Evidence | Produced by |
 |---|---|
@@ -31,11 +31,15 @@ pass. The release notes name the cells a release verified, and the
 | `e2e/projection/opencode` | scripts/e2e-matrix.sh projection/opencode |
 | `e2e/live/opencode` | scripts/e2e-matrix.sh live/opencode |
 | `e2e/recovery/opencode` | scripts/e2e-matrix.sh recovery/opencode |
+| `e2e/process/opencode` | scripts/e2e-matrix.sh process/opencode |
+| `e2e/interrupt/opencode` | scripts/e2e-matrix.sh interrupt/opencode |
 | `e2e/onto` | scripts/e2e-matrix.sh onto |
 | `e2e/reference` | scripts/e2e-matrix.sh reference |
 | `e2e/projection/claude` | scripts/e2e-matrix.sh projection/claude |
 | `e2e/recovery/claude` | scripts/e2e-matrix.sh recovery/claude |
 | `e2e/policy/claude` | scripts/e2e-matrix.sh policy/claude |
+| `e2e/process/claude` | scripts/e2e-matrix.sh process/claude |
+| `e2e/interrupt/claude` | scripts/e2e-matrix.sh interrupt/claude |
 | `sandbox/github` | scripts/hosting-sandbox.sh github (runtime and process layers) |
 | `sandbox/gitlab` | scripts/hosting-sandbox.sh gitlab (runtime and process layers) |
 | `sandbox/bitbucket` | scripts/hosting-sandbox.sh bitbucket (runtime and process layers) |

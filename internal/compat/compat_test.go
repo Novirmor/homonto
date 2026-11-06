@@ -8,6 +8,7 @@ import (
 
 	"github.com/Novirmor/homonto/internal/catalog"
 	"github.com/Novirmor/homonto/internal/config"
+	"github.com/Novirmor/homonto/internal/engine"
 	"github.com/Novirmor/homonto/internal/ontostate"
 	"github.com/Novirmor/homonto/internal/state"
 	"github.com/Novirmor/homonto/internal/tostate"
@@ -107,6 +108,28 @@ func TestV1StateLoads(t *testing.T) {
 	}
 	if st.HomontoVersionRecorded() != "v1.0.0" || st.CatalogVersionRecorded() != "1.0.0" {
 		t.Errorf("recorded versions = %q %q", st.HomontoVersionRecorded(), st.CatalogVersionRecorded())
+	}
+}
+
+func TestV1RoutingRecordLoads(t *testing.T) {
+	rec, ok, err := engine.ReadRoutingRecord(filepath.Join(fixture(t, "1.0", "state"), ".homonto"))
+	if err != nil || !ok {
+		t.Fatalf("a 1.0 routing.json no longer loads: %v %v", ok, err)
+	}
+	if rec.AppliedAt != "2026-11-06T00:00:00Z" || rec.Discovery != "not-run" || len(rec.Routes) != 2 || rec.Routes[0].Tool != "opencode" {
+		t.Errorf("top-level opencode routing = %+v", rec.RouteReport)
+	}
+	by := rec.ByHarness()
+	for harness, want := range map[string]string{"opencode": "p/review", "claude": "opus"} {
+		var got string
+		for _, r := range by[harness].Routes {
+			if r.Agent == "no-reviewer" && r.Selection != nil {
+				got = r.Selection.Model
+			}
+		}
+		if got != want {
+			t.Errorf("%s no-reviewer = %q, want %q", harness, got, want)
+		}
 	}
 }
 

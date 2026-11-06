@@ -24,7 +24,7 @@ type ResolvedRoute struct {
 	Selection *routing.Selection `json:"selection,omitempty"`
 }
 
-// RouteReport is the resolved routing for the opencode harness.
+// RouteReport is the resolved routing for one harness.
 type RouteReport struct {
 	Routes []ResolvedRoute `json:"routes"`
 	// Discovery is not-run, ok or failed (ADR 0100).
@@ -40,7 +40,26 @@ const RoutingRecordFile = "routing.json"
 // RoutingRecord is the applied routing, as written at apply.
 type RoutingRecord struct {
 	AppliedAt string `json:"appliedAt"`
+	// The top-level report is the opencode harness's routing: the only
+	// harness a record held before Harnesses existed. It stays so a reader
+	// of that shape keeps working; it is empty when opencode is not targeted.
 	RouteReport
+	// Harnesses is the routing of every targeted harness that has routes,
+	// keyed by harness id, opencode included. ByHarness reads a record
+	// written before it existed.
+	Harnesses map[string]RouteReport `json:"harnesses,omitempty"`
+}
+
+// ByHarness returns the recorded routing per harness. A record written
+// before Harnesses existed holds the opencode routing only, at the top level.
+func (r RoutingRecord) ByHarness() map[string]RouteReport {
+	if len(r.Harnesses) > 0 {
+		return r.Harnesses
+	}
+	if len(r.Routes) == 0 {
+		return nil
+	}
+	return map[string]RouteReport{"opencode": r.RouteReport}
 }
 
 // newRouteDiscoverer builds the harness model discovery for a project.
@@ -157,22 +176,35 @@ func routeSourceLabel(r ResolvedRoute) string {
 	return r.Selector
 }
 
-// recordRoutes writes the applied routing record, or removes a stale one
-// when no policy applies any more.
+// recordRoutes writes the applied routing record for every targeted
+// harness, or removes a stale one when no policy applies any more.
 func (e *Engine) recordRoutes() error {
 	path := filepath.Join(e.StateDir, RoutingRecordFile)
-	report, err := e.Routes()
-	if err != nil {
-		return err
+	rec := RoutingRecord{Harnesses: map[string]RouteReport{}}
+	policyRouted := false
+	for _, tool := range config.HarnessIDs() {
+		if !e.Cfg.TargetsHarness(tool) {
+			continue
+		}
+		report, err := e.RoutesFor(tool)
+		if err != nil {
+			return err
+		}
+		if len(report.Routes) == 0 {
+			continue
+		}
+		rec.Harnesses[tool] = report
+		policyRouted = policyRouted || slices.ContainsFunc(report.Routes, func(r ResolvedRoute) bool { return r.From == config.RouteFromPolicy })
 	}
-	policyRouted := slices.ContainsFunc(report.Routes, func(r ResolvedRoute) bool { return r.From == config.RouteFromPolicy })
 	if !policyRouted {
 		if err := os.Remove(path); err != nil && !errors.Is(err, fs.ErrNotExist) {
 			return err
 		}
 		return nil
 	}
-	data, err := json.MarshalIndent(RoutingRecord{AppliedAt: time.Now().UTC().Format(time.RFC3339), RouteReport: report}, "", "  ")
+	rec.AppliedAt = time.Now().UTC().Format(time.RFC3339)
+	rec.RouteReport = rec.Harnesses["opencode"]
+	data, err := json.MarshalIndent(rec, "", "  ")
 	if err != nil {
 		return err
 	}
@@ -182,7 +214,13 @@ func (e *Engine) recordRoutes() error {
 // AppliedRoutes reads the routing record the last apply wrote. ok is false
 // when no policy routed anything at that apply.
 func (e *Engine) AppliedRoutes() (RoutingRecord, bool, error) {
-	data, err := os.ReadFile(filepath.Join(e.StateDir, RoutingRecordFile))
+	return ReadRoutingRecord(e.StateDir)
+}
+
+// ReadRoutingRecord reads the routing record in a state directory, in its
+// current shape or the opencode-only shape written before Harnesses.
+func ReadRoutingRecord(stateDir string) (RoutingRecord, bool, error) {
+	data, err := os.ReadFile(filepath.Join(stateDir, RoutingRecordFile))
 	if errors.Is(err, fs.ErrNotExist) {
 		return RoutingRecord{}, false, nil
 	}

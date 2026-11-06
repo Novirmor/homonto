@@ -26,7 +26,9 @@ Every Claude-targeted agent needs a model in Claude Code's spelling, by pin
 (`[subagents.<name>.claude]`) or policy (`[routing.<selector>.claude]`).
 Claude Code cannot list its models, so an auto policy chooses among the
 models `[routing.models.claude."<id>"]` describes. `homonto explain routing
---harness claude` shows each agent's model and why.
+--harness claude` shows each agent's model and why. `apply` records the
+Claude Code routes it stamped in `.homonto/routing.json`, and `homonto status`
+prints them as `claude route:` lines.
 
 ## What apply writes
 

@@ -1,0 +1,156 @@
+{
+  "appliedAt": "2026-11-06T00:00:00Z",
+  "routes": [
+    {
+      "agent": "no-implementer",
+      "tool": "opencode",
+      "from": "policy",
+      "selector": "routing.default.opencode",
+      "policy": {
+        "Mode": "",
+        "Model": "p/default",
+        "Variant": "",
+        "Candidates": null,
+        "Providers": null,
+        "Needs": null,
+        "MaxCost": null,
+        "MaxLatency": null,
+        "Prefer": "",
+        "Fallback": ""
+      },
+      "selection": {
+        "model": "p/default",
+        "mode": "static",
+        "reason": "static"
+      }
+    },
+    {
+      "agent": "no-reviewer",
+      "tool": "opencode",
+      "from": "policy",
+      "selector": "routing.engines.no.stages.review.opencode",
+      "policy": {
+        "Mode": "",
+        "Model": "p/review",
+        "Variant": "",
+        "Candidates": null,
+        "Providers": null,
+        "Needs": null,
+        "MaxCost": null,
+        "MaxLatency": null,
+        "Prefer": "",
+        "Fallback": ""
+      },
+      "selection": {
+        "model": "p/review",
+        "mode": "static",
+        "reason": "static"
+      }
+    }
+  ],
+  "discovery": "not-run",
+  "harnesses": {
+    "claude": {
+      "routes": [
+        {
+          "agent": "no-implementer",
+          "tool": "claude",
+          "from": "policy",
+          "selector": "routing.default.claude",
+          "policy": {
+            "Mode": "",
+            "Model": "sonnet",
+            "Variant": "",
+            "Candidates": null,
+            "Providers": null,
+            "Needs": null,
+            "MaxCost": null,
+            "MaxLatency": null,
+            "Prefer": "",
+            "Fallback": ""
+          },
+          "selection": {
+            "model": "sonnet",
+            "mode": "static",
+            "reason": "static"
+          }
+        },
+        {
+          "agent": "no-reviewer",
+          "tool": "claude",
+          "from": "policy",
+          "selector": "routing.engines.no.stages.review.claude",
+          "policy": {
+            "Mode": "",
+            "Model": "opus",
+            "Variant": "",
+            "Candidates": null,
+            "Providers": null,
+            "Needs": null,
+            "MaxCost": null,
+            "MaxLatency": null,
+            "Prefer": "",
+            "Fallback": ""
+          },
+          "selection": {
+            "model": "opus",
+            "mode": "static",
+            "reason": "static"
+          }
+        }
+      ],
+      "discovery": "not-run"
+    },
+    "opencode": {
+      "routes": [
+        {
+          "agent": "no-implementer",
+          "tool": "opencode",
+          "from": "policy",
+          "selector": "routing.default.opencode",
+          "policy": {
+            "Mode": "",
+            "Model": "p/default",
+            "Variant": "",
+            "Candidates": null,
+            "Providers": null,
+            "Needs": null,
+            "MaxCost": null,
+            "MaxLatency": null,
+            "Prefer": "",
+            "Fallback": ""
+          },
+          "selection": {
+            "model": "p/default",
+            "mode": "static",
+            "reason": "static"
+          }
+        },
+        {
+          "agent": "no-reviewer",
+          "tool": "opencode",
+          "from": "policy",
+          "selector": "routing.engines.no.stages.review.opencode",
+          "policy": {
+            "Mode": "",
+            "Model": "p/review",
+            "Variant": "",
+            "Candidates": null,
+            "Providers": null,
+            "Needs": null,
+            "MaxCost": null,
+            "MaxLatency": null,
+            "Prefer": "",
+            "Fallback": ""
+          },
+          "selection": {
+            "model": "p/review",
+            "mode": "static",
+            "reason": "static"
+          }
+        }
+      ],
+      "discovery": "not-run"
+    }
+  }
+}

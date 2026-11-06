@@ -10,7 +10,7 @@ SUITE="${E2E_SUITE:-${1:-}}"
 export E2E_TOOL="${E2E_TOOL:-}"
 
 if [ -z "$SUITE" ]; then
-  echo "e2e: E2E_SUITE (or first arg) required — one of: projection live onto reference recovery policy analyze" >&2
+  echo "e2e: E2E_SUITE (or first arg) required — one of: projection live onto reference recovery policy process interrupt plumbing analyze" >&2
   exit 2
 fi
 S="/opt/e2e-suites/${SUITE}.sh"

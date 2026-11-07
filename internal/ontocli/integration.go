@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"github.com/Novirmor/homonto/internal/integrationrecord"
+	"github.com/Novirmor/homonto/internal/ontostate"
 	"github.com/Novirmor/homonto/internal/workspace"
 	"github.com/spf13/cobra"
 )
@@ -86,55 +87,16 @@ func completeIntegrationCmd() *cobra.Command {
 			if entry.Receipt != "" && entry.Receipt != receipt {
 				return fmt.Errorf("onto complete-integration: repository %s already completed with a different receipt", entryDisplayName(repo))
 			}
-			repoDir := dir
-			if repo != "" {
-				layout, scopeErr := workspace.LoadRoot(dir)
-				if scopeErr != nil {
-					return fmt.Errorf("onto complete-integration: %w", scopeErr)
-				}
-				repoDir = layout.Repos[repo]
-				if repoDir == "" {
-					return fmt.Errorf("repository %q is no longer declared", repo)
-				}
-				if st.RepoMode == "explicit" {
-					identity, err := sourceIdentity(repoDir)
-					if err != nil || identity != st.RepoBases[repo].GitCommonDir {
-						return fmt.Errorf("repository %s: Git identity does not match state", repo)
-					}
-				}
+			repoDir, err := integrationRepoDir(dir, repo, st)
+			if err != nil {
+				return err
 			}
 			// Publication is never inferred from a moving branch or a URL alone.
 			if err := validateIntegrationSource(dir, repoDir, st, entry); err != nil {
 				return err
 			}
-			if strings.HasPrefix(receipt, "unchanged:") {
-				canonical, validateErr := validateUnchangedReceipt(repoDir, receipt, entry)
-				if validateErr != nil {
-					return fmt.Errorf("onto complete-integration: %w", validateErr)
-				}
-				receipt = canonical
-			} else if record.Mode == "merge" {
-				canonical, validateErr := validateMergeReceipt(dir, repoDir, receipt, entry)
-				if validateErr != nil {
-					return fmt.Errorf("onto complete-integration: %w", validateErr)
-				}
-				receipt = canonical
-			} else if strings.HasPrefix(receipt, "pr:") {
-				if head == "" {
-					head = entry.PublicationHead
-				}
-				if st.RepoMode == "explicit" && head == "" && entry.Receipt == "" {
-					return fmt.Errorf("onto complete-integration: PR receipt requires --head <canonical-commit> reported by the publication tool; inspect the pinned source with `onto state %s --json` before publishing", name)
-				}
-				if head != "" {
-					if !fullCommitID.MatchString(head) {
-						return fmt.Errorf("onto complete-integration: --head must be a canonical commit id")
-					}
-					if err := integrationCandidateIntact(dir, repoDir, entry, head); err != nil {
-						return fmt.Errorf("onto complete-integration: PR head: %w", err)
-					}
-				}
-				fmt.Fprintln(cmd.ErrOrStderr(), "PR URL/head recorded as an external claim; remote publication is not verified by onto")
+			if receipt, head, err = canonicalReceipt(cmd, dir, repoDir, name, receipt, head, record, entry, st); err != nil {
+				return err
 			}
 			if head != "" && !strings.HasPrefix(receipt, "pr:") {
 				return fmt.Errorf("onto complete-integration: --head is only valid for a PR receipt")
@@ -165,6 +127,66 @@ func completeIntegrationCmd() *cobra.Command {
 	cmd.Flags().StringVar(&head, "head", "", "canonical PR head reported by the publication tool (required for explicit sources; no network verification)")
 	_ = cmd.MarkFlagRequired("receipt")
 	return cmd
+}
+
+// integrationRepoDir is the checkout the receipt belongs to: the config root,
+// or a declared repository whose Git identity still matches the state.
+func integrationRepoDir(dir, repo string, st ontostate.State) (string, error) {
+	if repo == "" {
+		return dir, nil
+	}
+	layout, err := workspace.LoadRoot(dir)
+	if err != nil {
+		return "", fmt.Errorf("onto complete-integration: %w", err)
+	}
+	repoDir := layout.Repos[repo]
+	if repoDir == "" {
+		return "", fmt.Errorf("repository %q is no longer declared", repo)
+	}
+	if st.RepoMode == "explicit" {
+		identity, err := sourceIdentity(repoDir)
+		if err != nil || identity != st.RepoBases[repo].GitCommonDir {
+			return "", fmt.Errorf("repository %s: Git identity does not match state", repo)
+		}
+	}
+	return repoDir, nil
+}
+
+// canonicalReceipt validates the receipt against the source and returns its
+// canonical form and the PR head to record. A PR is an external claim: its
+// head is checked locally, its remote publication is not.
+func canonicalReceipt(cmd *cobra.Command, dir, repoDir, name, receipt, head string, record integrationrecord.Record, entry integrationrecord.Entry, st ontostate.State) (string, string, error) {
+	switch {
+	case strings.HasPrefix(receipt, "unchanged:"):
+		canonical, err := validateUnchangedReceipt(repoDir, receipt, entry)
+		if err != nil {
+			return "", "", fmt.Errorf("onto complete-integration: %w", err)
+		}
+		return canonical, head, nil
+	case record.Mode == "merge":
+		canonical, err := validateMergeReceipt(dir, repoDir, receipt, entry)
+		if err != nil {
+			return "", "", fmt.Errorf("onto complete-integration: %w", err)
+		}
+		return canonical, head, nil
+	case strings.HasPrefix(receipt, "pr:"):
+		if head == "" {
+			head = entry.PublicationHead
+		}
+		if st.RepoMode == "explicit" && head == "" && entry.Receipt == "" {
+			return "", "", fmt.Errorf("onto complete-integration: PR receipt requires --head <canonical-commit> reported by the publication tool; inspect the pinned source with `onto state %s --json` before publishing", name)
+		}
+		if head != "" {
+			if !fullCommitID.MatchString(head) {
+				return "", "", fmt.Errorf("onto complete-integration: --head must be a canonical commit id")
+			}
+			if err := integrationCandidateIntact(dir, repoDir, entry, head); err != nil {
+				return "", "", fmt.Errorf("onto complete-integration: PR head: %w", err)
+			}
+		}
+		fmt.Fprintln(cmd.ErrOrStderr(), "PR URL/head recorded as an external claim; remote publication is not verified by onto")
+	}
+	return receipt, head, nil
 }
 
 func findEntry(record integrationrecord.Record, alias string) (integrationrecord.Entry, error) {

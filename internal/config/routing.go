@@ -417,7 +417,7 @@ func (c *Config) modelPin(identity, entryName string, catalogKeyed bool, tool st
 	}
 	var found ModelRoute
 	label := ""
-	for _, name := range sortedSubagentNames(c) {
+	for _, name := range slices.Sorted(maps.Keys(c.Subagents)) {
 		sa := c.Subagents[name]
 		cat := name
 		if !sa.IsTuneOnly() {

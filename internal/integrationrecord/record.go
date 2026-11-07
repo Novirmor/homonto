@@ -6,6 +6,7 @@ package integrationrecord
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/url"
@@ -199,7 +200,7 @@ func Load(changeDir, change string) (Record, bool, error) {
 		return Record{}, false, fmt.Errorf("decoding integration record: %w", err)
 	}
 	var extra any
-	if err := dec.Decode(&extra); err != io.EOF {
+	if err := dec.Decode(&extra); !errors.Is(err, io.EOF) {
 		if err == nil {
 			err = fmt.Errorf("unexpected data after JSON document")
 		}

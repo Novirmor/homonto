@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"maps"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -655,7 +656,7 @@ func (s *Store) Cleanup(ctx context.Context, name string, yes bool) (*Task, erro
 }
 
 func (s *Store) cleanup(ctx context.Context, t *Task) error {
-	for _, alias := range sortedCheckouts(t) {
+	for _, alias := range slices.Sorted(maps.Keys(t.Checkouts)) {
 		c := t.Checkouts[alias]
 		if !c.Owned || c.Removed {
 			continue
@@ -760,13 +761,4 @@ func (s *Store) releaseBranch(ctx context.Context, c Checkout) error {
 	}
 	_, err = git(ctx, c.Source, "update-ref", "-d", ref, tip)
 	return err
-}
-
-func sortedCheckouts(t *Task) []string {
-	names := make([]string, 0, len(t.Checkouts))
-	for name := range t.Checkouts {
-		names = append(names, name)
-	}
-	slices.Sort(names)
-	return names
 }

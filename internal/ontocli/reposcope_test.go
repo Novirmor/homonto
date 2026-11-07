@@ -51,7 +51,7 @@ func TestScopedWorktreeDirt(t *testing.T) {
 func TestScopeDirsRejectsRemovedAlias(t *testing.T) {
 	root := t.TempDir()
 	writeFile(t, filepath.Join(root, "homonto.toml"), "[repos]\n")
-	_, _, err := scopeDirs(root, []string{"gone"})
+	_, err := scopeDirs(root, []string{"gone"})
 	if err == nil || !strings.Contains(err.Error(), "no longer declared") {
 		t.Fatalf("scopeDirs removed alias = %v, want a declaration error", err)
 	}

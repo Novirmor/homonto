@@ -21,32 +21,31 @@ type scopedDirt struct {
 	Entries []dirtEntry `json:"entries"`
 }
 
-// scopeDirs resolves the stored [repos] aliases at the moment they are used.
+// scopeDirs checks the stored [repos] aliases at the moment they are used.
 // A missing or renamed alias is a close-gate failure, never silently omitted.
-func scopeDirs(root string, repos []string) ([]string, map[string]string, error) {
+func scopeDirs(root string, repos []string) ([]string, error) {
 	names := append([]string(nil), repos...)
 	sort.Strings(names)
 	seen := map[string]bool{}
 	for _, name := range names {
 		if name == "" || seen[name] {
-			return nil, nil, fmt.Errorf("invalid cross-repo scope")
+			return nil, fmt.Errorf("invalid cross-repo scope")
 		}
 		seen[name] = true
 	}
 	if len(names) == 0 {
-		return names, nil, nil
+		return names, nil
 	}
 	cfg, err := workspace.LoadRoot(root)
 	if err != nil {
-		return nil, nil, fmt.Errorf("load declared repos: %w", err)
+		return nil, fmt.Errorf("load declared repos: %w", err)
 	}
-	dirs := cfg.Repos
 	for _, name := range names {
-		if _, ok := dirs[name]; !ok {
-			return nil, nil, fmt.Errorf("repo %q is no longer declared under [repos]", name)
+		if _, ok := cfg.Repos[name]; !ok {
+			return nil, fmt.Errorf("repo %q is no longer declared under [repos]", name)
 		}
 	}
-	return names, dirs, nil
+	return names, nil
 }
 
 // State, not today's config schema, determines whether config Git is a source.

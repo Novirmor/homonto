@@ -151,7 +151,7 @@ func readLine(r *bufio.Reader) ([]byte, error) {
 func (s *Server) Serve() error {
 	for {
 		line, err := readLine(s.in)
-		if err == io.EOF {
+		if errors.Is(err, io.EOF) {
 			if s.svc != nil {
 				s.svc.Dispose()
 			}

@@ -143,7 +143,7 @@ func rejectRetiredPackages(c *Config) error {
 		table     string
 		resources map[string]Resource
 	}{{"workflows", c.Workflows}, {"engines", c.Engines}} {
-		for _, name := range sortedResourceNames(group.resources) {
+		for _, name := range slices.Sorted(maps.Keys(group.resources)) {
 			if group.resources[name].Source == "builtin:h" || (name == "h" && strings.HasPrefix(group.resources[name].Source, "builtin:")) {
 				return fmt.Errorf("parse config: %s.%s: the h workflow was renamed; replace [%s.%s] source = %q with [workflows.%s] source = \"builtin:%s\" (ADR 0089)",
 					group.table, name, group.table, name, group.resources[name].Source, GitHubWorkflow, GitHubWorkflow)
@@ -170,7 +170,7 @@ func validatePackageKinds(c *Config, cl *catalog.Catalog, builtinOnly bool) erro
 		kind      string
 		resources map[string]Resource
 	}{{"workflow", c.Workflows}, {"engine", c.Engines}, {"service", c.Services}} {
-		for _, name := range sortedResourceNames(group.resources) {
+		for _, name := range slices.Sorted(maps.Keys(group.resources)) {
 			r := group.resources[name]
 			if builtinOnly && !strings.HasPrefix(r.Source, "builtin:") {
 				continue
@@ -201,7 +201,7 @@ func article(noun string) string {
 // git-worktree checks need the filesystem and run in Load, where the config
 // file's directory (the base for relative paths) is known.
 func validateRepos(c *Config) error {
-	names := sortedStringKeys(c.Repos)
+	names := slices.Sorted(maps.Keys(c.Repos))
 	for _, name := range names {
 		if name == "" || name == "." || name == ".." || strings.ContainsAny(name, `/\`) || name != filepath.Base(name) {
 			return fmt.Errorf("parse config: repos entry %q is not a plain name", name)
@@ -247,25 +247,25 @@ func validateRepoTargets(c *Config) error {
 	}
 	// Deterministic walks so a config failing several rules names the same
 	// offender every run.
-	for _, name := range sortedResourceNames(c.Skills) {
+	for _, name := range slices.Sorted(maps.Keys(c.Skills)) {
 		r := c.Skills[name]
 		if err := check("skills."+name, r.Repo, r.Scope, r.Scope == "project"); err != nil {
 			return err
 		}
 	}
-	for _, name := range sortedResourceNames(c.Commands) {
+	for _, name := range slices.Sorted(maps.Keys(c.Commands)) {
 		r := c.Commands[name]
 		if err := check("commands."+name, r.Repo, r.Scope, r.Scope == "project"); err != nil {
 			return err
 		}
 	}
-	for _, name := range sortedSubagentNames(c) {
+	for _, name := range slices.Sorted(maps.Keys(c.Subagents)) {
 		s := c.Subagents[name]
 		if err := check("subagents."+name, s.Repo, s.Scope, s.ScopeOrDefault() == "project"); err != nil {
 			return err
 		}
 	}
-	for _, name := range sortedResourceNames(c.Frameworks) {
+	for _, name := range slices.Sorted(maps.Keys(c.Frameworks)) {
 		if r := c.Frameworks[name]; r.Repo != "" {
 			table := "workflows"
 			if _, ok := c.Engines[name]; ok {
@@ -278,15 +278,6 @@ func validateRepoTargets(c *Config) error {
 }
 
 // sortedResourceNames returns the map's keys in deterministic order.
-func sortedResourceNames(m map[string]Resource) []string {
-	out := make([]string, 0, len(m))
-	for k := range m {
-		out = append(out, k)
-	}
-	sort.Strings(out)
-	return out
-}
-
 // validateRemovedTools fails closed on every declaration naming a tool whose
 // adapter was removed in v0.13.0 (Claude Code and the codex MCP pilot), with
 // an error that names the offending key and says what to do — the same
@@ -296,11 +287,11 @@ func sortedResourceNames(m map[string]Resource) []string {
 // migration message.
 func validateRemovedTools(c *Config) error {
 	if len(c.Plugins.Claude) > 0 {
-		names := sortedPluginNames(c.Plugins.Claude)
+		names := slices.Sorted(maps.Keys(c.Plugins.Claude))
 		return fmt.Errorf("parse config: plugins.claude.%s — homonto does not manage Claude Code plugins; enable your own in Claude Code's settings.json (enabledPlugins) and delete the block", names[0])
 	}
 	if len(c.Marketplaces.Claude) > 0 {
-		names := sortedMarketplaceNames(c.Marketplaces.Claude)
+		names := slices.Sorted(maps.Keys(c.Marketplaces.Claude))
 		return fmt.Errorf("parse config: marketplaces.claude.%s — homonto does not manage Claude Code marketplaces; declare your own in Claude Code's settings.json (extraKnownMarketplaces) and delete the block", names[0])
 	}
 	seen := map[string]bool{}
@@ -318,33 +309,6 @@ func validateRemovedTools(c *Config) error {
 
 // sortedStringKeys returns the map's keys in deterministic order, so a config
 // that fails validation names the same offender every run.
-func sortedStringKeys(m map[string]string) []string {
-	out := make([]string, 0, len(m))
-	for k := range m {
-		out = append(out, k)
-	}
-	sort.Strings(out)
-	return out
-}
-
-func sortedPluginNames(m map[string]Plugin) []string {
-	out := make([]string, 0, len(m))
-	for k := range m {
-		out = append(out, k)
-	}
-	sort.Strings(out)
-	return out
-}
-
-func sortedMarketplaceNames(m map[string]Marketplace) []string {
-	out := make([]string, 0, len(m))
-	for k := range m {
-		out = append(out, k)
-	}
-	sort.Strings(out)
-	return out
-}
-
 // validateMCPs rejects any [mcps.*] table: MCP servers are bring-your-own
 // (ADR 0085), so a declaration would silently project nothing.
 func validateMCPs(c *Config) error {
@@ -371,7 +335,7 @@ func validatePlugins(c *Config) error {
 	if bridge := c.Integrations.OpenCode.WorkflowBridge; bridge != nil && *bridge {
 		return fmt.Errorf("parse config: integrations.opencode.workflow_bridge — the OpenCode 1 workflow bridge was removed; delete the key and use workflow_context (on by default with onto, to, or h)")
 	}
-	for _, name := range sortedPluginNames(c.Plugins.OpenCode) {
+	for _, name := range slices.Sorted(maps.Keys(c.Plugins.OpenCode)) {
 		plugin := c.Plugins.OpenCode[name]
 		if plugin.IsEnabled() && plugin.Source == "homonto-workflow" {
 			return fmt.Errorf("parse config: plugins.opencode.%s source homonto-workflow — the OpenCode 1 workflow plugin was removed; delete the declaration and use integrations.opencode.workflow_context", name)
@@ -387,7 +351,7 @@ func validatePlugins(c *Config) error {
 		// source would collide on one projected key with last-writer-wins over
 		// random map iteration order — a non-deterministic plan. Reject it.
 		seenSource := map[string]string{} // source -> first decl name
-		for _, declName := range sortedPluginNames(tool.m) {
+		for _, declName := range slices.Sorted(maps.Keys(tool.m)) {
 			pl := tool.m[declName]
 			if err := validateKey(tool.name, declName); err != nil {
 				return err
@@ -843,7 +807,7 @@ func validateModels(c *Config) error {
 		// in the framework walk below.
 		routes, _ := c.AgentRoutes(tool)
 		required := func(identity string) bool { return routes[identity].From != RouteFromPolicy }
-		for _, name := range sortedSubagentNames(c) {
+		for _, name := range slices.Sorted(maps.Keys(c.Subagents)) {
 			sa := c.Subagents[name]
 			// A tune-only entry declares no agent; its overrides (if any) are
 			// checked below by validateSubagentOverrides. The must-declare
@@ -903,7 +867,7 @@ func validateModels(c *Config) error {
 		}
 		routeByCat := map[string]ModelRoute{}
 		declaredByCat := map[string]bool{}
-		for _, name := range sortedSubagentNames(c) {
+		for _, name := range slices.Sorted(maps.Keys(c.Subagents)) {
 			sa := c.Subagents[name]
 			var cat string
 			if sa.IsTuneOnly() {
@@ -956,15 +920,6 @@ func isBuiltinSubagent(s Subagent) bool {
 
 // sortedSubagentNames returns the config's subagent names in deterministic
 // order, so a config that fails validation names the same offender every run.
-func sortedSubagentNames(c *Config) []string {
-	names := make([]string, 0, len(c.Subagents))
-	for name := range c.Subagents {
-		names = append(names, name)
-	}
-	sort.Strings(names)
-	return names
-}
-
 // rejectLegacyModels fails naming the first [models.<tool>.<level>] block the
 // TOML decoder picked up. pelletier/go-toml/v2 populates the Config's Models
 // detector field, so any non-empty value triggers this rejection; without it,

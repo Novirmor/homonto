@@ -3,9 +3,9 @@ package config
 import (
 	"encoding/json"
 	"fmt"
+	"maps"
 	"math"
 	"slices"
-	"sort"
 	"strings"
 
 	"github.com/Novirmor/homonto/internal/jsonutil"
@@ -73,7 +73,7 @@ func OpenCodeCLISettings(raw map[string]any) (map[string]any, error) {
 		if !ok {
 			return fmt.Errorf("tui.opencode.%s: V2 %s requires a table", origin, path)
 		}
-		for _, key := range sortedCLIKeys(obj) {
+		for _, key := range slices.Sorted(maps.Keys(obj)) {
 			v := obj[key]
 			if err := validateKey("tui.opencode."+origin, key); err != nil {
 				return err
@@ -108,7 +108,7 @@ func OpenCodeCLISettings(raw map[string]any) (map[string]any, error) {
 		}
 		return nil
 	}
-	for _, key := range sortedCLIKeys(raw) {
+	for _, key := range slices.Sorted(maps.Keys(raw)) {
 		if err := validateKey("tui.opencode", key); err != nil {
 			return nil, err
 		}
@@ -129,15 +129,6 @@ func OpenCodeCLISettings(raw map[string]any) (map[string]any, error) {
 		}
 	}
 	return out, nil
-}
-
-func sortedCLIKeys(m map[string]any) []string {
-	keys := make([]string, 0, len(m))
-	for key := range m {
-		keys = append(keys, key)
-	}
-	sort.Strings(keys)
-	return keys
 }
 
 func validCLIValue(rule string, value any) bool {

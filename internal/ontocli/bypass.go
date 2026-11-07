@@ -13,7 +13,7 @@ import (
 	"github.com/spf13/cobra"
 )
 
-var ontoBypassNow = func() time.Time { return time.Now() }
+var ontoBypassNow = time.Now
 
 func bypassCmd() *cobra.Command {
 	var (

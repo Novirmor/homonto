@@ -32,15 +32,6 @@ import (
 
 // sortedRepoNames returns the declared repo names in deterministic order, so
 // adapter fan-out order — and plan output — is stable.
-func sortedRepoNames(repos map[string]string) []string {
-	names := make([]string, 0, len(repos))
-	for name := range repos {
-		names = append(names, name)
-	}
-	sort.Strings(names)
-	return names
-}
-
 // Engine wires config, adapters, secret resolver, and state for plan/apply.
 type Engine struct {
 	Cfg                 *config.Config
@@ -201,7 +192,7 @@ func Build(ctx context.Context, configPath, home, contentDir string) (*Engine, e
 	// point here, absolute) but projects into its own root with its own state
 	// partition. Sorted names keep adapter order — and plan output —
 	// deterministic.
-	for _, name := range sortedRepoNames(cfg.Repos) {
+	for _, name := range slices.Sorted(maps.Keys(cfg.Repos)) {
 		st, err := state.LoadNamed(stateDir, name)
 		if err != nil {
 			return nil, fmt.Errorf("repo %s: %w", name, err)
@@ -248,7 +239,7 @@ func (e *Engine) configureHarnesses() {
 	for _, target := range e.RepoTargets {
 		repoStates[target.Name] = target.State
 	}
-	for _, name := range sortedRepoNames(e.Cfg.Repos) {
+	for _, name := range slices.Sorted(maps.Keys(e.Cfg.Repos)) {
 		st := repoStates[name]
 		if st == nil {
 			var err error

@@ -67,7 +67,7 @@ func runNewWithBases(cmd *cobra.Command, root, name, workflow string, repos, bas
 	if !ontostate.ValidWorkflow(workflow) {
 		return fmt.Errorf("onto new: workflow %q is not one of full|light", workflow)
 	}
-	names, _, err := scopeDirs(root, repos)
+	names, err := scopeDirs(root, repos)
 	if err != nil {
 		return fmt.Errorf("onto new: %w", err)
 	}

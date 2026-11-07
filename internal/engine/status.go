@@ -3,12 +3,15 @@ package engine
 import (
 	"bytes"
 	"fmt"
-	"github.com/Novirmor/homonto/internal/capability"
+	"maps"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strings"
+
+	"github.com/Novirmor/homonto/internal/capability"
 
 	"github.com/Novirmor/homonto/internal/adapter/claude"
 	"github.com/Novirmor/homonto/internal/agentfm"
@@ -148,7 +151,7 @@ func (e *Engine) Doctor() []string {
 	// Declared [repos] are load-validated; doctor re-reports the current
 	// filesystem facts (a repo deleted or de-git'd after load is a finding,
 	// not a silent pass) — ADR 0024 stage 1.
-	for _, name := range sortedRepoNames(e.Cfg.RepoDirs()) {
+	for _, name := range slices.Sorted(maps.Keys(e.Cfg.RepoDirs())) {
 		dir := e.Cfg.RepoDirs()[name]
 		if info, err := os.Stat(dir); err != nil || !info.IsDir() {
 			out = append(out, fmt.Sprintf("warn: declared repo %s: %s is missing (was present at load)", name, dir))

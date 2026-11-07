@@ -140,7 +140,7 @@ func (s *DirectServer) Serve(listener net.Listener) error {
 	defer wg.Wait()
 	for {
 		line, err := readLine(s.in)
-		if err == io.EOF {
+		if errors.Is(err, io.EOF) {
 			s.dispose()
 			return nil
 		}

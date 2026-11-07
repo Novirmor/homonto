@@ -7,10 +7,11 @@ import (
 	"bufio"
 	"errors"
 	"fmt"
+	"maps"
 	"os"
 	"path/filepath"
 	"regexp"
-	"sort"
+	"slices"
 	"strings"
 
 	"github.com/Novirmor/homonto/internal/bypasslog"
@@ -482,12 +483,12 @@ func CheckTaskPlan(tasksPath, planPath string) (TaskPlanDrift, error) {
 	}
 	drift.PlanCheckboxes = planCheckboxes
 
-	for _, n := range sortedKeys(taskNums) {
+	for _, n := range slices.Sorted(maps.Keys(taskNums)) {
 		if !planNums[n] {
 			drift.MissingFromPlan = append(drift.MissingFromPlan, n)
 		}
 	}
-	for _, n := range sortedKeys(planNums) {
+	for _, n := range slices.Sorted(maps.Keys(planNums)) {
 		if !taskNums[n] {
 			drift.MissingFromTasks = append(drift.MissingFromTasks, n)
 		}
@@ -521,15 +522,6 @@ func scanNumbers(path string, re *regexp.Regexp, checkboxes *int) (map[string]bo
 		return nil, fmt.Errorf("onto-state: failed to read %s: %w", path, err)
 	}
 	return found, nil
-}
-
-func sortedKeys(m map[string]bool) []string {
-	out := make([]string, 0, len(m))
-	for k := range m {
-		out = append(out, k)
-	}
-	sort.Strings(out)
-	return out
 }
 
 // TasksAllChecked reads the file at tasksPath and reports whether every

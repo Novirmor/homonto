@@ -5,6 +5,7 @@ package tostate
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -164,7 +165,7 @@ func Load(path string) (State, error) {
 			return State{}, fmt.Errorf("to-state: %s: %w", path, err)
 		}
 		var extra any
-		if err := dec.Decode(&extra); err != io.EOF {
+		if err := dec.Decode(&extra); !errors.Is(err, io.EOF) {
 			return State{}, fmt.Errorf("to-state: %s: unexpected trailing YAML document", path)
 		}
 	}

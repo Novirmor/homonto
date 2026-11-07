@@ -28,6 +28,9 @@ process-group kill once the parent is gone.
   reap --until`), every swarm command reconciling the record first, and
   cleanup. Reconciliation removes expired previews, previews whose start was
   interrupted, and any labelled container the record does not own.
+- Each preview's watchdog is armed before Docker starts; if it cannot start,
+  the preview fails closed. Startup is bounded by its own deadline and by any
+  earlier running preview's deadline, so the startup lock cannot delay reaping.
 - Cleanup refuses to remove worktrees while a recorded preview cannot be torn
   down (Docker unreachable). A swarm with no recorded preview never needs
   Docker.

@@ -244,6 +244,9 @@ func (s *Store) Select(ctx context.Context, name, candidate string, fallbackVeri
 	if sw.Cleaned {
 		return nil, fmt.Errorf("swarm %s was cleaned up", name)
 	}
+	if err := s.reconcileLocked(ctx, sw); err != nil {
+		return nil, fmt.Errorf("reconcile previews: %w", err)
+	}
 	if _, ok := sw.Candidate(candidate); !ok {
 		return nil, fmt.Errorf("swarm %s has no candidate %q", name, candidate)
 	}
@@ -330,7 +333,12 @@ func (s *Store) Cleanup(ctx context.Context, name string, yes, abandon, keepReje
 		if !s.taskExists(c.Task) {
 			continue // allocation never reached this candidate
 		}
-		t, err := s.Tasks.Cleanup(ctx, c.Task, true)
+		var t *worktask.Task
+		if c.Name == winner {
+			t, err = s.Tasks.Cleanup(ctx, c.Task, true)
+		} else {
+			t, err = s.Tasks.CleanupKeepBranches(ctx, c.Task, true)
+		}
 		if err != nil {
 			return report, fmt.Errorf("candidate %s: %w", c.Name, err)
 		}

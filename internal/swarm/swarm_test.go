@@ -147,6 +147,11 @@ func TestCreateAllocatesOneWorktreePerCandidateFromOneBase(t *testing.T) {
 	if _, err := s.Create(context.Background(), "demo", "no", []string{"web"}, specs("a", "b", "c"), brief(t, "Another brief.\n")); err == nil {
 		t.Fatal("a different brief resumed the swarm")
 	}
+	changedModels := specs("a", "b", "c")
+	changedModels[0].Models["opencode"] = "test/changed"
+	if _, err := s.Create(context.Background(), "demo", "no", []string{"web"}, changedModels, brief(t, "Build the page.\n")); err == nil {
+		t.Fatal("a changed route resumed the swarm")
+	}
 }
 
 func TestCreateRefusesUnboundedOrLifecycleSwarms(t *testing.T) {
@@ -171,6 +176,18 @@ func TestCreateRefusesUnboundedOrLifecycleSwarms(t *testing.T) {
 	}
 	if _, err := s.Create(ctx, "demo", "no", []string{"web"}, []CandidateSpec{{Name: "a", Agent: "x"}, {Name: "b", Agent: "y", Models: map[string]string{"opencode": "m"}}}, b); err == nil || !strings.Contains(err.Error(), "no routed model") {
 		t.Errorf("unrouted agent: %v", err)
+	}
+}
+
+func TestCompareRefusesMismatchedPinnedBases(t *testing.T) {
+	s, _ := fixture(t, check)
+	sw := create(t, s, "a", "b")
+	sw.Bases["web"] = "different"
+	if err := s.save(sw); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.Compare(context.Background(), "demo"); err == nil || !strings.Contains(err.Error(), "pinned swarm bases") {
+		t.Fatalf("comparison accepted mismatched bases: %v", err)
 	}
 }
 
@@ -313,10 +330,21 @@ func TestAbandonKeepsEveryBranch(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	// b never committed, so its branch is integrated and task cleanup released
-	// it; a's unmerged work is kept.
-	if len(report.Deleted) != 0 || !slices.Equal(report.Retained, []string{"web:work-demo--a/web"}) {
+	if len(report.Deleted) != 0 || !slices.Equal(report.Retained, []string{"web:work-demo--a/web", "web:work-demo--b/web"}) {
 		t.Fatalf("report = %+v", report)
+	}
+}
+
+func TestCleanupKeepRejectedPreservesIntegratedBranch(t *testing.T) {
+	s, _ := fixture(t, "")
+	create(t, s, "a", "b")
+	commit(t, s, "a", "good")
+	if _, err := s.Select(context.Background(), "demo", "a", true); err != nil {
+		t.Fatal(err)
+	}
+	report, err := s.Cleanup(context.Background(), "demo", true, false, true)
+	if err != nil || !slices.Contains(report.Retained, "web:work-demo--b/web") {
+		t.Fatalf("cleanup = %+v, %v", report, err)
 	}
 }
 
@@ -450,6 +478,66 @@ func TestPreviewsRunUnderBudgetsAndExpire(t *testing.T) {
 		if c.Previews[0].State != PreviewExpired || c.Previews[0].URL != "" {
 			t.Fatalf("preview after deadline = %+v", c.Previews[0])
 		}
+	}
+}
+
+func TestPreviewWatchdogArmedForEachDeadlineBeforeRun(t *testing.T) {
+	s, d := fixture(t, check+preview)
+	create(t, s, "a", "b")
+	var deadlines []time.Time
+	s.Spawn = func(args []string) error {
+		at, err := time.Parse(time.RFC3339Nano, args[len(args)-1])
+		if err != nil {
+			return err
+		}
+		if d.count() != len(deadlines) {
+			t.Fatal("container created before its watchdog")
+		}
+		deadlines = append(deadlines, at)
+		return nil
+	}
+	started, err := s.StartPreviews(context.Background(), "demo", nil, nil)
+	if err != nil || len(deadlines) != 2 {
+		t.Fatalf("start = %+v, deadlines %v, error %v", started, deadlines, err)
+	}
+	for i := range started {
+		if !deadlines[i].Equal(started[i].Deadline) {
+			t.Fatalf("watchdog deadline %v != preview deadline %v", deadlines[i], started[i].Deadline)
+		}
+	}
+}
+
+func TestPreviewDoesNotStartWithoutWatchdog(t *testing.T) {
+	s, d := fixture(t, check+preview)
+	create(t, s, "a", "b")
+	s.Spawn = func([]string) error { return errors.New("cannot spawn") }
+	started, err := s.StartPreviews(context.Background(), "demo", []string{"a"}, nil)
+	if err == nil || len(started) != 1 || started[0].State != PreviewFailed || d.count() != 0 || len(d.runs) != 0 {
+		t.Fatalf("start = %+v, error %v, runs %d", started, err, len(d.runs))
+	}
+}
+
+func TestSlowLaterPreviewDoesNotHoldEarlierDeadline(t *testing.T) {
+	s, d := fixture(t, check+"[preview.site]\nrepo='web'\nimage='nginx:1'\nport=80\nttl='250ms'\nstartup='10s'\n")
+	create(t, s, "a", "b")
+	count := 0
+	s.Spawn = func([]string) error {
+		count++
+		if count == 2 {
+			d.block = make(chan struct{})
+		}
+		return nil
+	}
+	start := time.Now()
+	started, err := s.StartPreviews(context.Background(), "demo", nil, nil)
+	if err == nil || len(started) != 2 || started[0].State != PreviewRunning || started[1].State != PreviewFailed {
+		t.Fatalf("start = %+v, error %v", started, err)
+	}
+	if time.Since(start) > 3*time.Second {
+		t.Fatal("later startup blocked the earlier preview deadline")
+	}
+	if err := s.Reap(context.Background(), "demo", time.Time{}); err != nil || d.count() != 0 {
+		t.Fatalf("reap error %v, containers %d", err, d.count())
 	}
 }
 

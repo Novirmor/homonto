@@ -149,7 +149,12 @@ func (s *Store) StartPreviews(ctx context.Context, name string, only []string, o
 	if err != nil {
 		return nil, err
 	}
-	defer unlock()
+	locked := true
+	defer func() {
+		if locked {
+			unlock()
+		}
+	}()
 	sw, err := s.read(name)
 	if err != nil {
 		return nil, err
@@ -172,33 +177,41 @@ func (s *Store) StartPreviews(ctx context.Context, name string, only []string, o
 	if err != nil {
 		return nil, err
 	}
-	tasks, err := s.loadTasks(ctx, sw)
-	if err != nil {
-		return nil, err
-	}
 	var started []PreviewState
 	var failures []error
-	latest := time.Time{}
 	for _, c := range candidates {
 		for _, pname := range previews {
+			// Let watchdogs and other commands reconcile between starts; a slow
+			// later build must not hold an earlier preview past its deadline.
+			unlock()
+			locked = false
+			unlock, err = s.lock(name, previewLockWait)
+			if err != nil {
+				return started, errors.Join(append(failures, err)...)
+			}
+			locked = true
+			sw, err = s.read(name)
+			if err != nil {
+				return started, errors.Join(append(failures, err)...)
+			}
+			if sw.Cleaned {
+				return started, errors.Join(append(failures, fmt.Errorf("swarm %s was cleaned up", name))...)
+			}
+			if err = s.reconcileLocked(ctx, sw); err != nil {
+				return started, errors.Join(append(failures, err)...)
+			}
+			tasks, err := s.loadTasks(ctx, sw)
+			if err != nil {
+				return started, errors.Join(append(failures, err)...)
+			}
 			p, err := s.startOne(ctx, sw, c, pname, s.Tasks.Config.Preview[pname], tasks[c.Name].Checkouts[s.Tasks.Config.Preview[pname].Repo].Path, output)
 			started = append(started, p)
 			if err != nil {
 				failures = append(failures, fmt.Errorf("%s %s: %w", c.Name, pname, err))
-			} else if p.Deadline.After(latest) {
-				latest = p.Deadline
 			}
 			if ctx.Err() != nil {
 				return started, errors.Join(append(failures, ctx.Err())...)
 			}
-		}
-	}
-	if !latest.IsZero() {
-		// The watchdog enforces the time budget when no other swarm command
-		// runs before the deadline. If it dies, the next command or cleanup
-		// still removes expired previews by their deadline label.
-		if err := s.spawn(name, []string{"workspace", "swarm", "preview", "reap", name, "--config", s.Tasks.Layout.ConfigPath, "--until", latest.Format(time.RFC3339)}); err != nil && output != nil {
-			fmt.Fprintf(output, "warning: preview expiry watchdog did not start (%v); expired previews are removed by the next swarm command\n", err)
 		}
 	}
 	return started, errors.Join(failures...)
@@ -260,8 +273,22 @@ func (s *Store) startOne(ctx context.Context, sw *Swarm, c Candidate, pname stri
 		sw.Previews[key] = p
 		return p, errors.Join(cause, s.save(sw))
 	}
-	startCtx, cancel := context.WithTimeout(ctx, budget.Startup)
+	// Arm each deadline before Docker can create anything. If the watchdog
+	// cannot start, do not create an unbounded container.
+	if err := s.spawn(sw.Name, []string{"workspace", "swarm", "preview", "reap", sw.Name, "--config", s.Tasks.Layout.ConfigPath, "--until", p.Deadline.Format(time.RFC3339Nano)}); err != nil {
+		return fail(PreviewFailed, fmt.Errorf("start preview expiry watchdog: %w", err))
+	}
+	startCtx, cancel := context.WithTimeout(ctx, min(budget.Startup, budget.TTL))
 	defer cancel()
+	// The lock prevents a watchdog from reaping during this start. Stop a
+	// slow startup in time for the earliest already-running preview instead.
+	for otherKey, other := range sw.Previews {
+		if otherKey != key && other.live() {
+			var stop context.CancelFunc
+			startCtx, stop = context.WithDeadline(startCtx, other.Deadline)
+			defer stop()
+		}
+	}
 	interrupted := func(err error) (PreviewState, error) {
 		if ctx.Err() != nil {
 			return fail(PreviewInterrupted, err)
@@ -495,7 +522,7 @@ func (s *Store) Reap(ctx context.Context, name string, until time.Time) error {
 		select {
 		case <-ctx.Done():
 			return ctx.Err()
-		case <-time.After(wait + time.Second):
+		case <-time.After(wait):
 		}
 	}
 	unlock, err := s.lock(name, previewLockWait)

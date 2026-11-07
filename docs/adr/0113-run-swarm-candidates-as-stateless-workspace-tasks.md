@@ -29,7 +29,7 @@ files (ADR 0099): OpenCode's task tool takes no per-call model, so a
   models come from different agents (a pin or a BYO subagent), not from a
   runtime override.
 - The brief is copied into the record with its digest. Resuming with another
-  brief, engine, repository set or candidate list is refused.
+  brief, engine, repository set, candidate list or routed model is refused.
 - The parent session dispatches the candidates; the binary launches no harness.
 
 We rejected having the binary start headless sessions (`claude -p`,

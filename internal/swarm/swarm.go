@@ -287,7 +287,7 @@ func (s *Store) Create(ctx context.Context, name, engine string, changed []strin
 	switch {
 	case err == nil:
 		if sw.Engine != engine || !slices.Equal(sw.Changed, changed) || sw.Brief.SHA256 != digest || !sameCandidates(sw.Candidates, specs) {
-			return nil, fmt.Errorf("swarm %s already exists with another engine, repositories, brief or candidates; resume its recorded choice", name)
+			return nil, fmt.Errorf("swarm %s already exists with another engine, repositories, brief, candidates or routed models; resume its recorded choice", name)
 		}
 		if sw.Selection != nil || sw.Cleaned {
 			return nil, fmt.Errorf("swarm %s has already selected a candidate; it cannot allocate again", name)
@@ -346,7 +346,7 @@ func sameCandidates(recorded []Candidate, specs []CandidateSpec) bool {
 		return false
 	}
 	for i, c := range recorded {
-		if c.Name != specs[i].Name || c.Agent != specs[i].Agent {
+		if c.Name != specs[i].Name || c.Agent != specs[i].Agent || !mapsEqual(c.Models, specs[i].Models) {
 			return false
 		}
 	}
@@ -394,6 +394,13 @@ func (s *Store) loadTasks(ctx context.Context, sw *Swarm) (map[string]*worktask.
 		}
 		if t.Engine != sw.Engine || !slices.Equal(t.Changed, sw.Changed) {
 			return nil, fmt.Errorf("candidate %s task no longer matches the swarm", c.Name)
+		}
+		bases := make(map[string]string, len(t.Checkouts))
+		for alias, checkout := range t.Checkouts {
+			bases[alias] = checkout.Base
+		}
+		if sw.Bases == nil || !mapsEqual(sw.Bases, bases) {
+			return nil, fmt.Errorf("candidate %s task does not match the pinned swarm bases; abandon the swarm and create it again", c.Name)
 		}
 		s.Tasks.RefreshResults(ctx, t)
 		tasks[c.Name] = t

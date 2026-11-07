@@ -223,95 +223,137 @@ func splitLiving(capability, living string) (preamble []string, reqs []requireme
 func parseDelta(delta string) (renamed [][2]string, modified, removed []requirement, added []requirement, err error) {
 	// note: removed carries names in requirement.name (block unused).
 	lines := strings.Split(strings.ReplaceAll(delta, "\r\n", "\n"), "\n")
-	fence := fencedLines(lines)
-	section := ""
-	var pendingFrom string
-	seenSections := map[string]bool{}
-	sectionOps := map[string]int{}
-	i := 0
-	for i < len(lines) {
-		ln := lines[i]
-		if fence[i] {
-			if section == "RENAMED" {
-				return nil, nil, nil, nil, fmt.Errorf("deltamerge: invalid RENAMED line %q", strings.TrimSpace(ln))
-			}
-			i++
-			continue
+	p := deltaParser{lines: lines, fence: fencedLines(lines), seen: map[string]bool{}, ops: map[string]int{}}
+	for p.i < len(p.lines) {
+		if err := p.step(); err != nil {
+			return nil, nil, nil, nil, err
 		}
-		if m := sectionHeading.FindStringSubmatch(ln); m != nil {
-			if section != "" && sectionOps[section] == 0 {
-				return nil, nil, nil, nil, fmt.Errorf("deltamerge: %s section has no operations", section)
-			}
-			if pendingFrom != "" {
-				return nil, nil, nil, nil, fmt.Errorf("deltamerge: RENAMED FROM %q has no TO", pendingFrom)
-			}
-			if seenSections[m[1]] {
-				return nil, nil, nil, nil, fmt.Errorf("deltamerge: duplicate %s section", m[1])
-			}
-			section = m[1]
-			seenSections[section] = true
-			pendingFrom = ""
-			i++
-			continue
-		}
-		if topHeading.MatchString(ln) {
-			return nil, nil, nil, nil, fmt.Errorf("deltamerge: unsupported section %q", strings.TrimSpace(ln))
-		}
-		if reqHeading.MatchString(ln) && section == "" {
-			return nil, nil, nil, nil, fmt.Errorf("deltamerge: requirement appears outside a delta section")
-		}
-		switch section {
-		case "ADDED", "MODIFIED":
-			if m := reqHeading.FindStringSubmatch(ln); m != nil {
-				block := []string{ln}
-				i++
-				for i < len(lines) && (fence[i] || (!reqHeading.MatchString(lines[i]) && !topHeading.MatchString(lines[i]))) {
-					block = append(block, lines[i])
-					i++
-				}
-				r := requirement{name: m[1], block: trimBlock(block)}
-				if section == "ADDED" {
-					added = append(added, r)
-				} else {
-					modified = append(modified, r)
-				}
-				sectionOps[section]++
-				continue
-			}
-		case "REMOVED":
-			if m := reqHeading.FindStringSubmatch(ln); m != nil {
-				removed = append(removed, requirement{name: m[1]})
-				sectionOps[section]++
-			}
-		case "RENAMED":
-			if m := fromLine.FindStringSubmatch(ln); m != nil {
-				if pendingFrom != "" {
-					return nil, nil, nil, nil, fmt.Errorf("deltamerge: RENAMED FROM %q has no TO", pendingFrom)
-				}
-				pendingFrom = m[1]
-			} else if m := toLine.FindStringSubmatch(ln); m != nil {
-				if pendingFrom == "" {
-					return nil, nil, nil, nil, fmt.Errorf("deltamerge: RENAMED TO %q has no preceding FROM", m[1])
-				}
-				renamed = append(renamed, [2]string{pendingFrom, m[1]})
-				sectionOps[section]++
-				pendingFrom = ""
-			} else if strings.TrimSpace(ln) != "" {
-				return nil, nil, nil, nil, fmt.Errorf("deltamerge: invalid RENAMED line %q", strings.TrimSpace(ln))
-			}
-		}
-		i++
 	}
-	if pendingFrom != "" {
-		return nil, nil, nil, nil, fmt.Errorf("deltamerge: RENAMED FROM %q has no TO", pendingFrom)
+	if p.pendingFrom != "" {
+		return nil, nil, nil, nil, fmt.Errorf("deltamerge: RENAMED FROM %q has no TO", p.pendingFrom)
 	}
-	if section != "" && sectionOps[section] == 0 {
-		return nil, nil, nil, nil, fmt.Errorf("deltamerge: %s section has no operations", section)
+	if p.section != "" && p.ops[p.section] == 0 {
+		return nil, nil, nil, nil, fmt.Errorf("deltamerge: %s section has no operations", p.section)
 	}
-	if len(renamed)+len(modified)+len(removed)+len(added) == 0 {
+	if len(p.renamed)+len(p.modified)+len(p.removed)+len(p.added) == 0 {
 		return nil, nil, nil, nil, fmt.Errorf("deltamerge: delta has no operations")
 	}
-	return renamed, modified, removed, added, nil
+	return p.renamed, p.modified, p.removed, p.added, nil
+}
+
+// deltaParser walks a delta line by line, tracking the open section and a
+// RENAMED FROM awaiting its TO.
+type deltaParser struct {
+	lines       []string
+	fence       []bool
+	i           int
+	section     string
+	pendingFrom string
+	seen        map[string]bool
+	ops         map[string]int
+
+	renamed                  [][2]string
+	modified, removed, added []requirement
+}
+
+// step consumes the line at p.i, and for a requirement block every line in it.
+func (p *deltaParser) step() error {
+	ln := p.lines[p.i]
+	if p.fence[p.i] {
+		if p.section == "RENAMED" {
+			return fmt.Errorf("deltamerge: invalid RENAMED line %q", strings.TrimSpace(ln))
+		}
+		p.i++
+		return nil
+	}
+	if m := sectionHeading.FindStringSubmatch(ln); m != nil {
+		p.i++
+		return p.openSection(m[1])
+	}
+	if topHeading.MatchString(ln) {
+		return fmt.Errorf("deltamerge: unsupported section %q", strings.TrimSpace(ln))
+	}
+	if reqHeading.MatchString(ln) && p.section == "" {
+		return fmt.Errorf("deltamerge: requirement appears outside a delta section")
+	}
+	switch p.section {
+	case "ADDED", "MODIFIED":
+		if m := reqHeading.FindStringSubmatch(ln); m != nil {
+			p.requirementBlock(m[1])
+			return nil
+		}
+	case "REMOVED":
+		if m := reqHeading.FindStringSubmatch(ln); m != nil {
+			p.removed = append(p.removed, requirement{name: m[1]})
+			p.ops[p.section]++
+		}
+	case "RENAMED":
+		if err := p.renameLine(ln); err != nil {
+			return err
+		}
+	}
+	p.i++
+	return nil
+}
+
+// openSection closes the current section, which must hold an operation and no
+// dangling FROM, and opens name, which must be new.
+func (p *deltaParser) openSection(name string) error {
+	if p.section != "" && p.ops[p.section] == 0 {
+		return fmt.Errorf("deltamerge: %s section has no operations", p.section)
+	}
+	if p.pendingFrom != "" {
+		return fmt.Errorf("deltamerge: RENAMED FROM %q has no TO", p.pendingFrom)
+	}
+	if p.seen[name] {
+		return fmt.Errorf("deltamerge: duplicate %s section", name)
+	}
+	p.section = name
+	p.seen[name] = true
+	p.pendingFrom = ""
+	return nil
+}
+
+// requirementBlock consumes an ADDED or MODIFIED requirement: its heading and
+// every line up to the next requirement or section heading outside a fence.
+func (p *deltaParser) requirementBlock(name string) {
+	block := []string{p.lines[p.i]}
+	p.i++
+	for p.i < len(p.lines) && (p.fence[p.i] || (!reqHeading.MatchString(p.lines[p.i]) && !topHeading.MatchString(p.lines[p.i]))) {
+		block = append(block, p.lines[p.i])
+		p.i++
+	}
+	r := requirement{name: name, block: trimBlock(block)}
+	if p.section == "ADDED" {
+		p.added = append(p.added, r)
+	} else {
+		p.modified = append(p.modified, r)
+	}
+	p.ops[p.section]++
+}
+
+// renameLine reads one RENAMED line: a FROM, the TO completing it, or blank.
+func (p *deltaParser) renameLine(ln string) error {
+	if m := fromLine.FindStringSubmatch(ln); m != nil {
+		if p.pendingFrom != "" {
+			return fmt.Errorf("deltamerge: RENAMED FROM %q has no TO", p.pendingFrom)
+		}
+		p.pendingFrom = m[1]
+		return nil
+	}
+	if m := toLine.FindStringSubmatch(ln); m != nil {
+		if p.pendingFrom == "" {
+			return fmt.Errorf("deltamerge: RENAMED TO %q has no preceding FROM", m[1])
+		}
+		p.renamed = append(p.renamed, [2]string{p.pendingFrom, m[1]})
+		p.ops[p.section]++
+		p.pendingFrom = ""
+		return nil
+	}
+	if strings.TrimSpace(ln) != "" {
+		return fmt.Errorf("deltamerge: invalid RENAMED line %q", strings.TrimSpace(ln))
+	}
+	return nil
 }
 
 // fencedLines marks each line that opens, sits inside, or closes a fenced code

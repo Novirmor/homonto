@@ -70,8 +70,7 @@ func InspectWorkflowRemovals(l Layout, workflow, change, record string) ([]Workt
 func checkWorktreeRemoval(l Layout, w Worktree) (head, target string, removed bool, err error) {
 	if w.Status == "removing" {
 		if _, statErr := os.Lstat(w.Path); os.IsNotExist(statErr) {
-			err = checkRemovedWorktree(l, w)
-			return "", "", true, err
+			return "", "", true, checkRemovedWorktree(l, w)
 		} else if statErr != nil {
 			return "", "", false, statErr
 		}
@@ -79,43 +78,39 @@ func checkWorktreeRemoval(l Layout, w Worktree) (head, target string, removed bo
 		// ownership, cleanliness and integration checks still apply on retry.
 		w.Status = "ready"
 	}
-	if err = validateWorktree(l, w); err != nil {
-		return
+	if err := validateWorktree(l, w); err != nil {
+		return "", "", false, err
 	}
-	s, stateErr := bindingState(l, w.Workflow, w.Change, w.StateID, false)
-	if stateErr != nil {
-		err = stateErr
-		return
+	s, err := bindingState(l, w.Workflow, w.Change, w.StateID, false)
+	if err != nil {
+		return "", "", false, err
 	}
 	if !s.terminal(w.Workflow) {
-		err = fmt.Errorf("worktree: active binding cannot be removed; complete or explicitly abandon %s/%s first", w.Workflow, w.Change)
-		return
+		return "", "", false, fmt.Errorf("worktree: active binding cannot be removed; complete or explicitly abandon %s/%s first", w.Workflow, w.Change)
 	}
-	if err = cleanWorktree(w.Path); err != nil {
-		return
+	if err := cleanWorktree(w.Path); err != nil {
+		return "", "", false, err
 	}
 	head, err = worktreeGit(w.Path, "rev-parse", "--verify", "HEAD^{commit}")
 	if err != nil {
-		return
+		return "", "", false, err
 	}
 	target, err = worktreeGit(w.Path, "rev-parse", "--verify", "--end-of-options", w.BaseTarget+"^{commit}")
 	if err != nil {
-		return
+		return head, "", false, err
 	}
-	if _, err = worktreeGit(w.Path, "merge-base", "--is-ancestor", head, target); err == nil {
-		return
+	if _, err := worktreeGit(w.Path, "merge-base", "--is-ancestor", head, target); err == nil {
+		return head, target, false, nil
 	}
 	// A closed change delivered through a PR is not in the base yet. Its commits
 	// stay safe on the retained execution branch, which removal never deletes
 	// (ADR 0086), so a HEAD that branch contains may go.
 	if w.Branch != "" {
-		if _, branchErr := worktreeGit(w.Path, "merge-base", "--is-ancestor", head, "refs/heads/"+w.Branch); branchErr == nil {
-			err = nil
-			return
+		if _, err := worktreeGit(w.Path, "merge-base", "--is-ancestor", head, "refs/heads/"+w.Branch); err == nil {
+			return head, target, false, nil
 		}
 	}
-	err = fmt.Errorf("worktree: source commit %s is neither integrated into %q nor on the retained branch %q; refusing removal", head, w.BaseRef, w.Branch)
-	return
+	return head, target, false, fmt.Errorf("worktree: source commit %s is neither integrated into %q nor on the retained branch %q; refusing removal", head, w.BaseRef, w.Branch)
 }
 
 // Only a recorded removal intent can release an already-missing checkout. Never

@@ -4,13 +4,16 @@ package workspace
 
 import (
 	"fmt"
+	"maps"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strings"
 	"unicode"
 
+	"github.com/Novirmor/homonto/internal/gitenv"
 	"github.com/Novirmor/homonto/internal/schema"
 	"github.com/Novirmor/homonto/internal/tomlutil"
 	"github.com/Novirmor/homonto/internal/workflowroot"
@@ -41,6 +44,23 @@ func Load(configPath string) (Layout, error) {
 	return l, nil
 }
 
+// layoutTOML is the part of homonto.toml the layout reads.
+type layoutTOML struct {
+	SchemaVersion int `toml:"schema_version"`
+	Workflow      struct {
+		Root string  `toml:"root"`
+		Git  *string `toml:"git"`
+	} `toml:"workflow"`
+	Worktrees *struct {
+		Dir string `toml:"dir"`
+	} `toml:"worktrees"`
+	Repos map[string]string `toml:"repos"`
+}
+
+// controlPlaneNames are the tool and Git metadata a records or worktrees
+// directory must never overlap.
+var controlPlaneNames = []string{".homonto", ".opencode", ".claude", ".git", "homonto.toml", "opencode.json", "opencode.jsonc"}
+
 // loadPaths shares schema, path, and repository identity validation between
 // normal loading and the migration planner. Ownership validation intentionally
 // remains at the two explicit callers above.
@@ -58,17 +78,7 @@ func loadPaths(configPath string) (l Layout, err error) {
 	if err != nil {
 		return l, err
 	}
-	var c struct {
-		SchemaVersion int `toml:"schema_version"`
-		Workflow      struct {
-			Root string  `toml:"root"`
-			Git  *string `toml:"git"`
-		} `toml:"workflow"`
-		Worktrees *struct {
-			Dir string `toml:"dir"`
-		} `toml:"worktrees"`
-		Repos map[string]string `toml:"repos"`
-	}
+	var c layoutTOML
 	if err := toml.Unmarshal(tomlutil.StripBOM(data), &c); err != nil {
 		return l, fmt.Errorf("parse config: %w", err)
 	}
@@ -90,103 +100,12 @@ func loadPaths(configPath string) (l Layout, err error) {
 			return l, fmt.Errorf("workflow.git %q must be 'existing' or 'managed'", l.GitMode)
 		}
 	}
-	if l.ExplicitRepos() && strings.IndexFunc(c.Workflow.Root, unicode.IsControl) >= 0 {
-		return l, fmt.Errorf("workflow.root: invalid path %q", c.Workflow.Root)
+	if err := l.resolveWorkflowRoot(c.Workflow.Root); err != nil {
+		return l, err
 	}
-	root := strings.TrimSpace(c.Workflow.Root)
-	if root == "" {
-		root = "docs"
-	}
-	if !l.ExplicitRepos() {
-		if filepath.IsAbs(root) || root == "." || strings.Contains(root, `\`) {
-			return l, fmt.Errorf("workflow.root %q must be a relative path below the configuration repository", root)
-		}
-		root = filepath.Clean(root)
-		if root == ".." || strings.HasPrefix(root, ".."+string(filepath.Separator)) {
-			return l, fmt.Errorf("workflow.root %q must remain below the configuration repository", root)
-		}
-		l.WorkflowRoot = filepath.Join(l.ConfigRoot, root)
-		resolved, err := canonical(l.WorkflowRoot)
-		if err != nil {
-			return l, err
-		}
-		base, err := canonical(l.ConfigRoot)
-		if err != nil {
-			return l, err
-		}
-		if !within(base, resolved) {
-			return l, fmt.Errorf("workflow.root resolves outside the configuration repository through symlink")
-		}
-	} else {
-		l.WorkflowRoot, err = layoutPath(l.ConfigRoot, root)
-		if err != nil {
-			return l, fmt.Errorf("workflow.root: %w", err)
-		}
-	}
-	l.Repos = make(map[string]string, len(c.Repos))
-	names := make([]string, 0, len(c.Repos))
-	for name := range c.Repos {
-		names = append(names, name)
-	}
-	sort.Strings(names)
-	seen := map[string]string{}
-	gitMetadata := map[string]string{}
-	for _, name := range names {
-		if name == "" || name == "." || name == ".." || strings.ContainsAny(name, `/\`) || strings.IndexFunc(name, unicode.IsControl) >= 0 {
-			return l, fmt.Errorf("repos entry %q is not a plain name", name)
-		}
-		if digits := strings.TrimPrefix(name, "-"); digits != "" && strings.Trim(digits, "0123456789") == "" {
-			return l, fmt.Errorf("repos entry %q would be treated as a JSON array index", name)
-		}
-		p := strings.TrimSpace(c.Repos[name])
-		if p == "" {
-			return l, fmt.Errorf("repos.%s has an empty path", name)
-		}
-		if !filepath.IsAbs(p) {
-			p = filepath.Join(l.ConfigRoot, p)
-		}
-		p = filepath.Clean(p)
-		if strings.ContainsAny(p, "*?") {
-			return l, fmt.Errorf("repos.%s: %q contains OpenCode permission wildcard characters", name, p)
-		}
-		info, err := os.Stat(p)
-		if err != nil {
-			return l, fmt.Errorf("repos.%s: %q does not exist (paths resolve relative to the config file): %w", name, p, err)
-		}
-		if !info.IsDir() {
-			return l, fmt.Errorf("repos.%s: %q is not a directory", name, p)
-		}
-		identity := p
-		if l.ExplicitRepos() {
-			p, err = canonical(p)
-			if err != nil {
-				return l, err
-			}
-			if strings.ContainsAny(p, "*?") || strings.IndexFunc(p, unicode.IsControl) >= 0 {
-				return l, fmt.Errorf("repos.%s: invalid resolved path %q", name, p)
-			}
-			top, common, err := gitRoots(p)
-			if err != nil {
-				return l, fmt.Errorf("repos.%s: %w", name, err)
-			}
-			if top != p {
-				return l, fmt.Errorf("repos.%s: %q must be the exact Git top-level %q", name, p, top)
-			}
-			identity = common
-			gitMetadata[name] = common
-		} else {
-			if _, err := os.Stat(filepath.Join(p, ".git")); err != nil {
-				return l, fmt.Errorf("repos.%s: %q is not a git worktree (no .git)", name, p)
-			}
-			if p == l.ConfigRoot {
-				return l, fmt.Errorf("repos.%s resolves to the config repository itself; the config repo is implicit", name)
-			}
-		}
-		if prev, ok := seen[identity]; ok {
-			return l, fmt.Errorf("repos.%s and repos.%s resolve to the same repository (%q)", name, prev, p)
-		}
-		seen[identity] = name
-		l.Repos[name] = p
+	gitMetadata, err := l.resolveRepos(c.Repos)
+	if err != nil {
+		return l, err
 	}
 	if !l.ExplicitRepos() {
 		return l, nil
@@ -197,90 +116,235 @@ func loadPaths(configPath string) (l Layout, err error) {
 			return l, fmt.Errorf("worktrees.dir: %w", err)
 		}
 	}
-	base, err := canonical(l.ConfigRoot)
-	if err != nil {
+	if err := l.checkOverlaps(gitMetadata); err != nil {
 		return l, err
 	}
+	if l.GitMode == "managed" {
+		if err := l.checkManagedRoot(); err != nil {
+			return l, err
+		}
+	}
+	return l, nil
+}
+
+// resolveWorkflowRoot sets WorkflowRoot. Schema 1 keeps it below the config
+// repository, symlinks included; schema 2 may place it anywhere.
+func (l *Layout) resolveWorkflowRoot(raw string) error {
+	if l.ExplicitRepos() && strings.IndexFunc(raw, unicode.IsControl) >= 0 {
+		return fmt.Errorf("workflow.root: invalid path %q", raw)
+	}
+	root := strings.TrimSpace(raw)
+	if root == "" {
+		root = "docs"
+	}
+	if l.ExplicitRepos() {
+		var err error
+		if l.WorkflowRoot, err = layoutPath(l.ConfigRoot, root); err != nil {
+			return fmt.Errorf("workflow.root: %w", err)
+		}
+		return nil
+	}
+	if filepath.IsAbs(root) || root == "." || strings.Contains(root, `\`) {
+		return fmt.Errorf("workflow.root %q must be a relative path below the configuration repository", root)
+	}
+	root = filepath.Clean(root)
+	if root == ".." || strings.HasPrefix(root, ".."+string(filepath.Separator)) {
+		return fmt.Errorf("workflow.root %q must remain below the configuration repository", root)
+	}
+	l.WorkflowRoot = filepath.Join(l.ConfigRoot, root)
+	resolved, err := canonical(l.WorkflowRoot)
+	if err != nil {
+		return err
+	}
+	base, err := canonical(l.ConfigRoot)
+	if err != nil {
+		return err
+	}
+	if !within(base, resolved) {
+		return fmt.Errorf("workflow.root resolves outside the configuration repository through symlink")
+	}
+	return nil
+}
+
+// resolveRepos validates every [repos] entry in name order, fills Repos, and
+// returns each schema-2 repository's Git common directory.
+func (l *Layout) resolveRepos(repos map[string]string) (map[string]string, error) {
+	l.Repos = make(map[string]string, len(repos))
+	seen := map[string]string{}
+	gitMetadata := map[string]string{}
+	for _, name := range slices.Sorted(maps.Keys(repos)) {
+		p, identity, err := l.resolveRepo(name, repos[name])
+		if err != nil {
+			return nil, err
+		}
+		if l.ExplicitRepos() {
+			gitMetadata[name] = identity
+		}
+		if prev, ok := seen[identity]; ok {
+			return nil, fmt.Errorf("repos.%s and repos.%s resolve to the same repository (%q)", name, prev, p)
+		}
+		seen[identity] = name
+		l.Repos[name] = p
+	}
+	return gitMetadata, nil
+}
+
+// resolveRepo validates one repository entry and returns its directory and
+// identity: the path itself in schema 1, its Git common directory in schema 2.
+func (l *Layout) resolveRepo(name, raw string) (path, identity string, err error) {
+	if name == "" || name == "." || name == ".." || strings.ContainsAny(name, `/\`) || strings.IndexFunc(name, unicode.IsControl) >= 0 {
+		return "", "", fmt.Errorf("repos entry %q is not a plain name", name)
+	}
+	if digits := strings.TrimPrefix(name, "-"); digits != "" && strings.Trim(digits, "0123456789") == "" {
+		return "", "", fmt.Errorf("repos entry %q would be treated as a JSON array index", name)
+	}
+	p := strings.TrimSpace(raw)
+	if p == "" {
+		return "", "", fmt.Errorf("repos.%s has an empty path", name)
+	}
+	if !filepath.IsAbs(p) {
+		p = filepath.Join(l.ConfigRoot, p)
+	}
+	p = filepath.Clean(p)
+	if strings.ContainsAny(p, "*?") {
+		return "", "", fmt.Errorf("repos.%s: %q contains OpenCode permission wildcard characters", name, p)
+	}
+	info, err := os.Stat(p)
+	if err != nil {
+		return "", "", fmt.Errorf("repos.%s: %q does not exist (paths resolve relative to the config file): %w", name, p, err)
+	}
+	if !info.IsDir() {
+		return "", "", fmt.Errorf("repos.%s: %q is not a directory", name, p)
+	}
+	if !l.ExplicitRepos() {
+		if _, err := os.Stat(filepath.Join(p, ".git")); err != nil {
+			return "", "", fmt.Errorf("repos.%s: %q is not a git worktree (no .git)", name, p)
+		}
+		if p == l.ConfigRoot {
+			return "", "", fmt.Errorf("repos.%s resolves to the config repository itself; the config repo is implicit", name)
+		}
+		return p, p, nil
+	}
+	if p, err = canonical(p); err != nil {
+		return "", "", err
+	}
+	if strings.ContainsAny(p, "*?") || strings.IndexFunc(p, unicode.IsControl) >= 0 {
+		return "", "", fmt.Errorf("repos.%s: invalid resolved path %q", name, p)
+	}
+	top, common, err := gitRoots(p)
+	if err != nil {
+		return "", "", fmt.Errorf("repos.%s: %w", name, err)
+	}
+	if top != p {
+		return "", "", fmt.Errorf("repos.%s: %q must be the exact Git top-level %q", name, p, top)
+	}
+	return p, common, nil
+}
+
+// checkOverlaps keeps the schema-2 records and worktrees directories clear of
+// the configuration root, every control plane, every source repository, and
+// each other. Records may live inside a source tree in existing Git mode, but
+// never inside its Git or tool metadata.
+func (l Layout) checkOverlaps(gitMetadata map[string]string) error {
+	base, err := canonical(l.ConfigRoot)
+	if err != nil {
+		return err
+	}
+	names := slices.Sorted(maps.Keys(l.Repos))
 	for _, target := range []struct{ key, path string }{{"workflow.root", l.WorkflowRoot}, {"worktrees.dir", l.WorktreesDir}} {
 		if target.path == "" {
 			continue
 		}
 		if within(target.path, base) {
-			return l, fmt.Errorf("%s %q overlaps the configuration root %q", target.key, target.path, base)
+			return fmt.Errorf("%s %q overlaps the configuration root %q", target.key, target.path, base)
 		}
-		for _, reserved := range []string{".homonto", ".opencode", ".claude", ".git", "homonto.toml", "opencode.json", "opencode.jsonc"} {
-			control, err := canonical(filepath.Join(l.ConfigRoot, reserved))
+		if control, err := overlappedControl(target.path, l.ConfigRoot); err != nil || control != "" {
 			if err != nil {
-				return l, err
+				return err
 			}
-			if overlaps(target.path, control) {
-				return l, fmt.Errorf("%s %q overlaps control plane %q", target.key, target.path, control)
-			}
+			return fmt.Errorf("%s %q overlaps control plane %q", target.key, target.path, control)
 		}
 		for _, name := range names {
 			repo := l.Repos[name]
 			if overlaps(target.path, gitMetadata[name]) {
-				return l, fmt.Errorf("%s %q overlaps repos.%s Git control plane %q", target.key, target.path, name, gitMetadata[name])
+				return fmt.Errorf("%s %q overlaps repos.%s Git control plane %q", target.key, target.path, name, gitMetadata[name])
 			}
 			if target.key == "workflow.root" && l.GitMode == "existing" && target.path != repo && within(repo, target.path) {
-				// Existing records may live in a source tree, but never its Git/tool metadata.
-				for _, reserved := range []string{".git", ".homonto", ".opencode", ".claude", "homonto.toml", "opencode.json", "opencode.jsonc"} {
-					control, err := canonical(filepath.Join(repo, reserved))
+				if control, err := overlappedControl(target.path, repo); err != nil || control != "" {
 					if err != nil {
-						return l, err
+						return err
 					}
-					if overlaps(target.path, control) {
-						return l, fmt.Errorf("workflow.root %q overlaps repos.%s control plane %q", target.path, name, control)
-					}
+					return fmt.Errorf("workflow.root %q overlaps repos.%s control plane %q", target.path, name, control)
 				}
 				continue
 			}
 			if overlaps(target.path, repo) {
-				return l, fmt.Errorf("%s %q overlaps source repos.%s %q", target.key, target.path, name, repo)
+				return fmt.Errorf("%s %q overlaps source repos.%s %q", target.key, target.path, name, repo)
 			}
 		}
 	}
 	if l.WorktreesDir != "" && overlaps(l.WorkflowRoot, l.WorktreesDir) {
-		return l, fmt.Errorf("worktrees.dir %q overlaps workflow.root %q", l.WorktreesDir, l.WorkflowRoot)
+		return fmt.Errorf("worktrees.dir %q overlaps workflow.root %q", l.WorktreesDir, l.WorkflowRoot)
 	}
-	if l.GitMode == "managed" {
-		parent := filepath.Dir(l.WorkflowRoot)
-		for {
-			if _, err := os.Stat(parent); err == nil {
-				break
-			}
-			next := filepath.Dir(parent)
-			if next == parent {
-				break
-			}
-			parent = next
+	return nil
+}
+
+// overlappedControl returns the first control-plane path under dir that path
+// overlaps, or "".
+func overlappedControl(path, dir string) (string, error) {
+	for _, reserved := range controlPlaneNames {
+		control, err := canonical(filepath.Join(dir, reserved))
+		if err != nil {
+			return "", err
 		}
-		if top, _, err := gitRoots(parent); err == nil {
-			return l, fmt.Errorf("managed workflow.root %q is inside Git repository %q; use a standalone root", l.WorkflowRoot, top)
-		}
-		// A missing .git is not permission to initialize. The initializer owns
-		// adoption of empty/populated directories; loading only checks structure.
-		if _, err := os.Lstat(filepath.Join(l.WorkflowRoot, ".git")); err == nil {
-			top, common, err := gitRoots(l.WorkflowRoot)
-			if err != nil {
-				return l, fmt.Errorf("managed workflow.root: %w", err)
-			}
-			gitDir, err := canonical(filepath.Join(l.WorkflowRoot, ".git"))
-			if err != nil {
-				return l, err
-			}
-			info, err := os.Lstat(filepath.Join(l.WorkflowRoot, ".git"))
-			if err != nil {
-				return l, err
-			}
-			if top != l.WorkflowRoot || common != gitDir || !info.IsDir() {
-				return l, fmt.Errorf("managed workflow.root %q must be an exact standalone Git root", l.WorkflowRoot)
-			}
-		} else if !os.IsNotExist(err) {
-			return l, err
+		if overlaps(path, control) {
+			return control, nil
 		}
 	}
-	return l, nil
+	return "", nil
+}
+
+// checkManagedRoot requires a managed records root to sit outside every Git
+// repository and, once initialized, to be exactly its own standalone Git root.
+func (l Layout) checkManagedRoot() error {
+	parent := filepath.Dir(l.WorkflowRoot)
+	for {
+		if _, err := os.Stat(parent); err == nil {
+			break
+		}
+		next := filepath.Dir(parent)
+		if next == parent {
+			break
+		}
+		parent = next
+	}
+	if top, _, err := gitRoots(parent); err == nil {
+		return fmt.Errorf("managed workflow.root %q is inside Git repository %q; use a standalone root", l.WorkflowRoot, top)
+	}
+	// A missing .git is not permission to initialize. The initializer owns
+	// adoption of empty/populated directories; loading only checks structure.
+	dotGit := filepath.Join(l.WorkflowRoot, ".git")
+	if _, err := os.Lstat(dotGit); os.IsNotExist(err) {
+		return nil
+	} else if err != nil {
+		return err
+	}
+	top, common, err := gitRoots(l.WorkflowRoot)
+	if err != nil {
+		return fmt.Errorf("managed workflow.root: %w", err)
+	}
+	gitDir, err := canonical(dotGit)
+	if err != nil {
+		return err
+	}
+	info, err := os.Lstat(dotGit)
+	if err != nil {
+		return err
+	}
+	if top != l.WorkflowRoot || common != gitDir || !info.IsDir() {
+		return fmt.Errorf("managed workflow.root %q must be an exact standalone Git root", l.WorkflowRoot)
+	}
+	return nil
 }
 
 // RequireScratchDisjoint refuses a scratch directory that cleanup may empty
@@ -378,12 +442,7 @@ func gitRoots(dir string) (string, string, error) {
 	probe := func(arg string) (string, error) {
 		cmd := exec.Command("git", "-c", "core.fsmonitor=false", "-C", dir, "rev-parse", "--path-format=absolute", arg)
 		// Git environment overrides must not make a bogus source pass validation.
-		for _, entry := range os.Environ() {
-			if !strings.HasPrefix(entry, "GIT_") {
-				cmd.Env = append(cmd.Env, entry)
-			}
-		}
-		cmd.Env = append(cmd.Env, "GIT_OPTIONAL_LOCKS=0", "GIT_TERMINAL_PROMPT=0")
+		cmd.Env = gitenv.Env()
 		out, err := cmd.Output()
 		if err != nil {
 			return "", fmt.Errorf("%q is not a git worktree (%s): %w", dir, arg, err)
@@ -411,12 +470,7 @@ func ReadGit(dir string, args ...string) ([]byte, error) {
 		return nil, err
 	}
 	cmd := exec.Command("git", append([]string{"-c", "core.fsmonitor=false", "-c", "core.ignorestat=false", "-C", dir}, args...)...)
-	for _, entry := range os.Environ() {
-		if !strings.HasPrefix(entry, "GIT_") {
-			cmd.Env = append(cmd.Env, entry)
-		}
-	}
-	cmd.Env = append(cmd.Env, "GIT_OPTIONAL_LOCKS=0", "GIT_TERMINAL_PROMPT=0")
+	cmd.Env = gitenv.Env()
 	out, err := cmd.CombinedOutput()
 	if err != nil {
 		return nil, fmt.Errorf("git %s in %q: %w", strings.Join(args, " "), dir, err)

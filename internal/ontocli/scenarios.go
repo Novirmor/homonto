@@ -46,48 +46,55 @@ func loadScenarioIndex(changeDir string) (scenarioIndex, error) {
 		if err != nil {
 			return index, err
 		}
-		var requirement, scenario, fence string
-		for i, raw := range strings.Split(string(data), "\n") {
-			line := strings.TrimSpace(raw)
-			if strings.HasPrefix(line, "```") || strings.HasPrefix(line, "~~~") {
-				n := len(line) - len(strings.TrimLeft(line, line[:1]))
-				if fence == "" {
-					fence = line[:n]
-				} else if strings.HasPrefix(line, fence) && strings.TrimSpace(line[n:]) == "" {
-					fence = ""
-				}
-				continue
-			}
-			if fence != "" {
-				continue
-			}
-			if !noDeltas {
-				switch {
-				case strings.HasPrefix(line, "### Requirement:"):
-					requirement = strings.TrimSpace(strings.TrimPrefix(line, "### Requirement:"))
-					scenario = ""
-				case strings.HasPrefix(line, "#### Scenario:"):
-					scenario = strings.TrimSpace(strings.TrimPrefix(line, "#### Scenario:"))
-				case strings.HasPrefix(line, "# "), strings.HasPrefix(line, "## "), strings.HasPrefix(line, "### "):
-					requirement, scenario = "", ""
-				case strings.HasPrefix(line, "#### "):
-					scenario = ""
-				}
-				if match := requirementIDLine.FindStringSubmatch(line); match != nil && requirement != "" && scenario == "" {
-					requirement = match[1]
-				}
-				if requirement == "" || scenario == "" {
-					continue
-				}
-			}
-			if match := scenarioIDLine.FindStringSubmatch(line); match != nil {
-				index[match[1]] = append(index[match[1]], scenarioDeclaration{
-					Path: filepath.ToSlash(rel), Line: i + 1, Name: scenario, Requirement: requirement,
-				})
-			}
-		}
+		index.scan(filepath.ToSlash(rel), data, !noDeltas)
 	}
 	return index, nil
+}
+
+// scan records the Scenario-ID declarations in one file, outside code fences.
+// In a delta spec a declaration counts only under a requirement's scenario
+// heading, and a Requirement-ID line renames the requirement it belongs to.
+func (index scenarioIndex) scan(rel string, data []byte, spec bool) {
+	var requirement, scenario, fence string
+	for i, raw := range strings.Split(string(data), "\n") {
+		line := strings.TrimSpace(raw)
+		if strings.HasPrefix(line, "```") || strings.HasPrefix(line, "~~~") {
+			n := len(line) - len(strings.TrimLeft(line, line[:1]))
+			if fence == "" {
+				fence = line[:n]
+			} else if strings.HasPrefix(line, fence) && strings.TrimSpace(line[n:]) == "" {
+				fence = ""
+			}
+			continue
+		}
+		if fence != "" {
+			continue
+		}
+		if spec {
+			switch {
+			case strings.HasPrefix(line, "### Requirement:"):
+				requirement = strings.TrimSpace(strings.TrimPrefix(line, "### Requirement:"))
+				scenario = ""
+			case strings.HasPrefix(line, "#### Scenario:"):
+				scenario = strings.TrimSpace(strings.TrimPrefix(line, "#### Scenario:"))
+			case strings.HasPrefix(line, "# "), strings.HasPrefix(line, "## "), strings.HasPrefix(line, "### "):
+				requirement, scenario = "", ""
+			case strings.HasPrefix(line, "#### "):
+				scenario = ""
+			}
+			if match := requirementIDLine.FindStringSubmatch(line); match != nil && requirement != "" && scenario == "" {
+				requirement = match[1]
+			}
+			if requirement == "" || scenario == "" {
+				continue
+			}
+		}
+		if match := scenarioIDLine.FindStringSubmatch(line); match != nil {
+			index[match[1]] = append(index[match[1]], scenarioDeclaration{
+				Path: rel, Line: i + 1, Name: scenario, Requirement: requirement,
+			})
+		}
+	}
 }
 
 func scenarioAmbiguity(id string, declarations []scenarioDeclaration) string {

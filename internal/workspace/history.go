@@ -637,52 +637,64 @@ func readHistoryJournal(l Layout) (historyJournal, error) {
 	if err := json.Unmarshal(data, &j); err != nil {
 		return j, fmt.Errorf("workspace history: invalid pending journal: %w", err)
 	}
-	if j.Version == 3 {
-		if j.Scope == nil || j.Base == "" || strings.TrimSpace(j.Message) == "" || len(j.Paths) != 0 || len(j.GitPaths) != 0 {
-			return j, fmt.Errorf("workspace history: invalid mutation intent")
-		}
-		if err := j.Scope.validate(); err != nil {
-			return j, err
-		}
-		for p, hash := range j.Before {
-			parts := strings.Split(hash, ":")
-			if !ownedHistoryPath(p) || !j.Scope.contains(p) || len(parts) != 2 || (parts[0] != "100644" && parts[0] != "100755") || len(parts[1]) != 64 {
-				return j, fmt.Errorf("workspace history: invalid mutation intent fingerprint %q", p)
-			}
-			if _, err := hex.DecodeString(parts[1]); err != nil {
-				return j, err
-			}
-		}
-		return j, nil
+	switch j.Version {
+	case 3:
+		return j, j.validateIntent()
+	case 2:
+		return j, j.validatePending()
 	}
-	if j.Version != 2 {
-		return j, fmt.Errorf("workspace history: unsupported pending journal version %d (expected 2)", j.Version)
+	return j, fmt.Errorf("workspace history: unsupported pending journal version %d (expected 2)", j.Version)
+}
+
+// validateIntent checks a version-3 mutation intent: its scope, base and
+// message, and a mode:sha256 fingerprint for every owned path it covers.
+func (j historyJournal) validateIntent() error {
+	if j.Scope == nil || j.Base == "" || strings.TrimSpace(j.Message) == "" || len(j.Paths) != 0 || len(j.GitPaths) != 0 {
+		return fmt.Errorf("workspace history: invalid mutation intent")
 	}
+	if err := j.Scope.validate(); err != nil {
+		return err
+	}
+	for p, hash := range j.Before {
+		parts := strings.Split(hash, ":")
+		if !ownedHistoryPath(p) || !j.Scope.contains(p) || len(parts) != 2 || (parts[0] != "100644" && parts[0] != "100755") || len(parts[1]) != 64 {
+			return fmt.Errorf("workspace history: invalid mutation intent fingerprint %q", p)
+		}
+		if _, err := hex.DecodeString(parts[1]); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// validatePending checks a version-2 pending commit: every path safe and
+// owned, with consistent worktree and Git mode:hash entries.
+func (j historyJournal) validatePending() error {
 	if len(j.Paths) == 0 || len(j.Paths) != len(j.GitPaths) || strings.TrimSpace(j.Message) == "" {
-		return j, fmt.Errorf("workspace history: invalid pending journal")
+		return fmt.Errorf("workspace history: invalid pending journal")
 	}
 	for p, hash := range j.Paths {
 		initial := j.Base == "" && (p == ownershipFile || p == ".gitignore")
 		if !safeHistoryPath(p) || (!initial && !ownedHistoryPath(p)) {
-			return j, fmt.Errorf("workspace history: unsafe pending path %q", p)
+			return fmt.Errorf("workspace history: unsafe pending path %q", p)
 		}
 		gitHash, ok := j.GitPaths[p]
 		if !ok || (hash == "") != (gitHash == "") {
-			return j, fmt.Errorf("workspace history: inconsistent pending Git entry for %q", p)
+			return fmt.Errorf("workspace history: inconsistent pending Git entry for %q", p)
 		}
 		for i, value := range []string{hash, gitHash} {
 			if value != "" {
 				parts := strings.Split(value, ":")
 				if len(parts) != 2 || (parts[0] != "100644" && parts[0] != "100755") || (len(parts[1]) != 64 && (i == 0 || len(parts[1]) != 40)) {
-					return j, fmt.Errorf("workspace history: invalid pending hash for %q", p)
+					return fmt.Errorf("workspace history: invalid pending hash for %q", p)
 				}
 				if _, err := hex.DecodeString(parts[1]); err != nil {
-					return j, err
+					return err
 				}
 			}
 		}
 	}
-	return j, nil
+	return nil
 }
 
 func safeHistoryPath(p string) bool {

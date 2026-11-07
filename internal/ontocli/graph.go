@@ -207,49 +207,12 @@ func normalizeCycle(cyc []string) []string {
 // (never silently dropped, mirroring status's F14 rule). Output is deterministic
 // (nodes sorted by change name; edges by from,to).
 func buildGraph(root string) ([]graphNode, []graphEdge, error) {
-	var nodes []graphNode
-	var edges []graphEdge
-
-	capSeen := map[string]bool{}
-	add := func(dir, fallbackName string, archived bool) error {
-		st, class, _ := ontostate.Classify(dir)
-		name := st.Change
-		if class != "valid" || name == "" {
-			name = fallbackName
-		}
-		nodes = append(nodes, graphNode{ID: st.ID, Change: name, Phase: st.Phase, Archived: archived || st.Archived, Abandoned: st.Abandoned, Kind: "change"})
-		for _, dep := range st.Deps {
-			edges = append(edges, graphEdge{From: name, To: dep, Type: "depends-on"})
-		}
-		for _, sup := range st.Supersedes {
-			edges = append(edges, graphEdge{From: name, To: sup, Type: "supersedes"})
-		}
-		for _, dev := range st.DeviatesFrom {
-			edges = append(edges, graphEdge{From: name, To: dev, Type: "deviates-from"})
-		}
-		// implements: a change's delta specs live at specs/<capability>.md (onto's
-		// flat delta-spec layout). Each names a capability the change implements.
-		if specs, sErr := os.ReadDir(filepath.Join(dir, "specs")); sErr == nil {
-			for _, sf := range specs {
-				if sf.IsDir() || filepath.Ext(sf.Name()) != ".md" {
-					continue
-				}
-				capName := sf.Name()[:len(sf.Name())-len(".md")]
-				edges = append(edges, graphEdge{From: name, To: capName, Type: "implements"})
-				if !capSeen[capName] {
-					capSeen[capName] = true
-					nodes = append(nodes, graphNode{Change: capName, Kind: "capability"})
-				}
-			}
-		}
-		return nil
-	}
-
+	g := changeGraph{capSeen: map[string]bool{}}
 	changesDir := changesDir(root)
 	entries, err := os.ReadDir(changesDir)
 	if err != nil {
 		if os.IsNotExist(err) {
-			return nodes, edges, nil // no changes: an empty graph, still read-only
+			return nil, nil, nil // no changes: an empty graph, still read-only
 		}
 		return nil, nil, err
 	}
@@ -257,21 +220,18 @@ func buildGraph(root string) ([]graphNode, []graphEdge, error) {
 		if !e.IsDir() || e.Name() == "archive" {
 			continue
 		}
-		if err := add(filepath.Join(changesDir, e.Name()), e.Name(), false); err != nil {
-			return nil, nil, fmt.Errorf("onto graph: retired migration record: %w", err)
-		}
+		g.addChange(filepath.Join(changesDir, e.Name()), e.Name(), false)
 	}
 	if archived, aErr := os.ReadDir(filepath.Join(changesDir, "archive")); aErr == nil {
 		for _, e := range archived {
 			if !e.IsDir() {
 				continue
 			}
-			if err := add(filepath.Join(changesDir, "archive", e.Name()), e.Name(), true); err != nil {
-				return nil, nil, fmt.Errorf("onto graph: retired migration record: %w", err)
-			}
+			g.addChange(filepath.Join(changesDir, "archive", e.Name()), e.Name(), true)
 		}
 	}
 
+	nodes, edges := g.nodes, g.edges
 	sort.Slice(nodes, func(i, j int) bool {
 		if nodes[i].Kind != nodes[j].Kind {
 			return nodes[i].Kind < nodes[j].Kind
@@ -288,4 +248,46 @@ func buildGraph(root string) ([]graphNode, []graphEdge, error) {
 		return edges[i].To < edges[j].To
 	})
 	return nodes, edges, nil
+}
+
+// changeGraph accumulates change and capability nodes with their edges.
+type changeGraph struct {
+	nodes   []graphNode
+	edges   []graphEdge
+	capSeen map[string]bool
+}
+
+// addChange adds one change directory's node, its dependency, supersession
+// and deviation edges, and an implements edge per delta-spec capability.
+func (g *changeGraph) addChange(dir, fallbackName string, archived bool) {
+	st, class, _ := ontostate.Classify(dir)
+	name := st.Change
+	if class != "valid" || name == "" {
+		name = fallbackName
+	}
+	g.nodes = append(g.nodes, graphNode{ID: st.ID, Change: name, Phase: st.Phase, Archived: archived || st.Archived, Abandoned: st.Abandoned, Kind: "change"})
+	for _, dep := range st.Deps {
+		g.edges = append(g.edges, graphEdge{From: name, To: dep, Type: "depends-on"})
+	}
+	for _, sup := range st.Supersedes {
+		g.edges = append(g.edges, graphEdge{From: name, To: sup, Type: "supersedes"})
+	}
+	for _, dev := range st.DeviatesFrom {
+		g.edges = append(g.edges, graphEdge{From: name, To: dev, Type: "deviates-from"})
+	}
+	// implements: a change's delta specs live at specs/<capability>.md (onto's
+	// flat delta-spec layout). Each names a capability the change implements.
+	if specs, sErr := os.ReadDir(filepath.Join(dir, "specs")); sErr == nil {
+		for _, sf := range specs {
+			if sf.IsDir() || filepath.Ext(sf.Name()) != ".md" {
+				continue
+			}
+			capName := sf.Name()[:len(sf.Name())-len(".md")]
+			g.edges = append(g.edges, graphEdge{From: name, To: capName, Type: "implements"})
+			if !g.capSeen[capName] {
+				g.capSeen[capName] = true
+				g.nodes = append(g.nodes, graphNode{Change: capName, Kind: "capability"})
+			}
+		}
+	}
 }

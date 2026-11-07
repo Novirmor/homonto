@@ -75,29 +75,9 @@ func packageCheckCmd() *cobra.Command {
 			if len(dirs) == 0 && !builtin {
 				return fmt.Errorf("package check: name at least one package directory, or pass --builtin")
 			}
-			locals := map[string]fs.FS{}
-			var names []string
-			for _, dir := range dirs {
-				name, err := manifestName(dir)
-				if err != nil {
-					return err
-				}
-				if _, dup := locals[name]; dup {
-					return fmt.Errorf("package check: two directories declare package %q", name)
-				}
-				locals[name] = os.DirFS(dir)
-				names = append(names, name)
-			}
-			cl, err := catalog.NewWithLocal(locals)
+			cl, names, err := packagesToCheck(dirs, builtin)
 			if err != nil {
-				return fmt.Errorf("package check: %w", err)
-			}
-			if builtin {
-				for _, name := range cl.PackageNames() {
-					if _, local := locals[name]; !local {
-						names = append(names, name)
-					}
-				}
+				return err
 			}
 			slices.Sort(names)
 			failed := 0
@@ -106,21 +86,10 @@ func packageCheckCmd() *cobra.Command {
 				if err != nil {
 					return err
 				}
-				status := "ok"
 				if !r.Passed() {
-					status = "FAIL"
 					failed++
 				}
-				contract := ""
-				if r.Contract != "" {
-					contract = ", contract " + r.Contract
-				}
-				cmd.Printf("%s %s (%s %s%s)\n", status, r.Package, nonEmptyDefault(r.Kind, "no kind"), r.Version, contract)
-				for _, c := range r.Checks {
-					if c.Err != nil {
-						cmd.Printf("  %s: %v\n", c.Name, c.Err)
-					}
-				}
+				printConformance(cmd, r)
 			}
 			if failed > 0 {
 				return fmt.Errorf("package check: %d of %d packages do not conform", failed, len(names))
@@ -130,6 +99,55 @@ func packageCheckCmd() *cobra.Command {
 	}
 	cmd.Flags().BoolVar(&builtin, "builtin", false, "also check every package shipped in the catalog")
 	return cmd
+}
+
+// packagesToCheck loads each named package root over the catalog and lists
+// what to check: those roots, plus with builtin every shipped package they do
+// not replace.
+func packagesToCheck(dirs []string, builtin bool) (*catalog.Catalog, []string, error) {
+	locals := map[string]fs.FS{}
+	var names []string
+	for _, dir := range dirs {
+		name, err := manifestName(dir)
+		if err != nil {
+			return nil, nil, err
+		}
+		if _, dup := locals[name]; dup {
+			return nil, nil, fmt.Errorf("package check: two directories declare package %q", name)
+		}
+		locals[name] = os.DirFS(dir)
+		names = append(names, name)
+	}
+	cl, err := catalog.NewWithLocal(locals)
+	if err != nil {
+		return nil, nil, fmt.Errorf("package check: %w", err)
+	}
+	if builtin {
+		for _, name := range cl.PackageNames() {
+			if _, local := locals[name]; !local {
+				names = append(names, name)
+			}
+		}
+	}
+	return cl, names, nil
+}
+
+// printConformance prints one package's verdict and each failed check.
+func printConformance(cmd *cobra.Command, r catalog.Conformance) {
+	status := "ok"
+	if !r.Passed() {
+		status = "FAIL"
+	}
+	contract := ""
+	if r.Contract != "" {
+		contract = ", contract " + r.Contract
+	}
+	cmd.Printf("%s %s (%s %s%s)\n", status, r.Package, nonEmptyDefault(r.Kind, "no kind"), r.Version, contract)
+	for _, c := range r.Checks {
+		if c.Err != nil {
+			cmd.Printf("  %s: %v\n", c.Name, c.Err)
+		}
+	}
 }
 
 // manifestName reads the package name a directory's framework.toml declares.

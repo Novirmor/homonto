@@ -16,7 +16,6 @@ import (
 
 	"github.com/Novirmor/homonto/internal/adapter"
 	"github.com/Novirmor/homonto/internal/adapter/baseadapter"
-	"github.com/Novirmor/homonto/internal/adapter/copyproj"
 	"github.com/Novirmor/homonto/internal/adapter/fileproj"
 	"github.com/Novirmor/homonto/internal/adapter/jsoncodec"
 	"github.com/Novirmor/homonto/internal/adapter/structproj"
@@ -291,41 +290,11 @@ func (a *Adapter) Plan(c *config.Config, st *state.State) (adapter.ChangeSet, er
 		}
 		cs.Changes = append(cs.Changes, changes...)
 	}
-	roots := a.ManagedRoots()
-	for _, links := range [][]fileproj.Link{a.SkillFileLinks(), a.CommandFileLinks(), a.SubagentFileLinks()} {
-		changes, err := fileproj.Project(a.Name(), links, st, roots)
-		if err != nil {
-			return adapter.ChangeSet{}, err
-		}
-		cs.Changes = append(cs.Changes, changes...)
-	}
-	declared := map[string]bool{}
-	for _, e := range a.Skills {
-		declared["skill."+e.Name] = true
-	}
-	for _, e := range a.Commands {
-		declared["command."+e.Name] = true
-	}
-	for _, e := range a.Subagents {
-		declared["subagent."+e.Name] = true
-	}
-	copyOps, err := a.PlanCopyOps(st)
+	files, declared, err := a.PlanFiles(a.Name(), st)
 	if err != nil {
 		return adapter.ChangeSet{}, err
 	}
-	for _, op := range copyOps {
-		name := copyproj.Name(op.Dst)
-		switch op.Action {
-		case copyfile.Conflict:
-			return adapter.ChangeSet{}, fmt.Errorf("claude: %s exists and is not a homonto-managed copy-mode subagent; not overwriting", op.Dst)
-		case copyfile.Create:
-			cs.Changes = append(cs.Changes, adapter.Change{Action: "create", Key: "subagentcopy." + name, New: op.Dst, Cause: adapter.CauseDeclare})
-		case copyfile.Update, copyfile.LocalEdit:
-			cs.Changes = append(cs.Changes, adapter.Change{Action: "update", Key: "subagentcopy." + name, New: op.Dst, Cause: adapter.CauseUpdate})
-		case copyfile.Prune:
-			cs.Changes = append(cs.Changes, adapter.Change{Action: "delete", Key: "subagentcopy." + name, Old: op.Dst, Cause: adapter.CauseRemove})
-		}
-	}
+	cs.Changes = append(cs.Changes, files...)
 	for _, k := range st.Keys(a.Name()) {
 		if declared[k] || !managedPrefix(k) {
 			continue
@@ -392,21 +361,9 @@ func (a *Adapter) Apply(cfg *config.Config, cs adapter.ChangeSet, res *secret.Re
 	if err != nil {
 		return err
 	}
-	roots := a.ManagedRoots()
 	// Fail on any link or copy conflict before writing a single file.
-	for _, links := range [][]fileproj.Link{a.SkillFileLinks(), a.CommandFileLinks(), a.SubagentFileLinks()} {
-		if err := fileproj.Conflicts(a.Name(), links, st, roots); err != nil {
-			return err
-		}
-	}
-	copyOps, err := a.PlanCopyOps(st)
-	if err != nil {
+	if err := a.CheckFileConflicts(a.Name(), st); err != nil {
 		return err
-	}
-	for _, op := range copyOps {
-		if op.Action == copyfile.Conflict {
-			return fmt.Errorf("claude: %s exists and is not a homonto-managed copy-mode subagent; not overwriting", op.Dst)
-		}
 	}
 	codec := jsoncodec.Codec{}
 	for _, ns := range spaces {
@@ -423,30 +380,10 @@ func (a *Adapter) Apply(cfg *config.Config, cs adapter.ChangeSet, res *secret.Re
 			}
 		}
 	}
-	dsts := func(dir func(string) string, suffix string) func(string) []string {
-		return func(k string) []string {
-			_, name, _ := strings.Cut(k, ".")
-			return []string{filepath.Join(dir("user"), name+suffix), filepath.Join(dir("project"), name+suffix)}
-		}
+	if err := a.ApplyFileState(a.Name(), cs.Changes, st); err != nil {
+		return err
 	}
-	for _, ns := range []struct {
-		prefix string
-		dsts   func(string) []string
-	}{
-		{"skill.", dsts(a.SkillsDir, "")},
-		{"command.", dsts(a.CommandsDir, ".md")},
-		{"subagent.", dsts(a.SubagentsDir, ".md")},
-	} {
-		if err := fileproj.ApplyState(a.Name(), baseadapter.FilterChanges(cs.Changes, ns.prefix), st, roots, ns.dsts); err != nil {
-			return err
-		}
-	}
-	for _, links := range [][]fileproj.Link{a.SkillFileLinks(), a.CommandFileLinks(), a.SubagentFileLinks()} {
-		if err := fileproj.ApplyLinks(a.Name(), links, st, roots); err != nil {
-			return err
-		}
-	}
-	return a.ApplyCopySubagents(st)
+	return a.ApplyFiles(a.Name(), st)
 }
 
 // Describe enumerates the keys this adapter projects, for explain.

@@ -2,6 +2,7 @@ package config
 
 import (
 	"fmt"
+	"maps"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -16,7 +17,7 @@ type IntegrationCheck struct {
 }
 
 func validateIntegration(c *Config) error {
-	for _, name := range sortedKeysOfIntegration(c.Integration) {
+	for _, name := range slices.Sorted(maps.Keys(c.Integration)) {
 		check := c.Integration[name]
 		label := "integration." + name
 		if err := validateResourceName("integration", name); err != nil {
@@ -64,19 +65,10 @@ func validateIntegration(c *Config) error {
 	return nil
 }
 
-func sortedKeysOfIntegration(checks map[string]IntegrationCheck) []string {
-	names := make([]string, 0, len(checks))
-	for name := range checks {
-		names = append(names, name)
-	}
-	slices.Sort(names)
-	return names
-}
-
 // IntegrationChecksFor selects checks by ANY changed participant, in stable order.
 func (c *Config) IntegrationChecksFor(changed []string) []string {
 	var names []string
-	for _, name := range sortedKeysOfIntegration(c.Integration) {
+	for _, name := range slices.Sorted(maps.Keys(c.Integration)) {
 		for _, repo := range c.Integration[name].Repos {
 			if slices.Contains(changed, repo) {
 				names = append(names, name)

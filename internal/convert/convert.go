@@ -494,61 +494,69 @@ func resumeConversion(spec directionSpec, wfRoot, srcDir, tgtDir, source, target
 		if m.Kind != "convert" || m.Direction != spec.name || m.Source != source || m.Target != target {
 			continue
 		}
-		if _, err := os.Lstat(filepath.Join(stg, "work")); os.IsNotExist(err) {
-			// The manifest is durable before buildWork starts. With no work/
-			// directory, no source bytes can have moved, so an otherwise empty
-			// staging directory can safely restart from the live source.
-			if !onlyManifest(stg) {
-				return false, "", fmt.Errorf("%s: staging %s has no work/ and holds unexpected entries; inspect manually", spec.name, stg)
-			}
-			if err := os.RemoveAll(stg); err != nil {
-				return false, "", err
-			}
-			return false, "", nil
-		} else if err != nil {
-			return false, "", err
-		}
-		snap := filepath.Join(stg, "work", controlDir, snapshotsDir, m.OperationID, spec.from.workflow)
-		if _, err := os.Lstat(snap); os.IsNotExist(err) {
-			if _, srcErr := os.Lstat(srcDir); srcErr == nil && onlyPreMoveStaging(stg) {
-				if err := os.RemoveAll(stg); err != nil {
-					return false, "", err
-				}
-				return false, "", nil
-			}
-			return false, "", fmt.Errorf("%s: staging %s has no source snapshot; inspect manually", spec.name, stg)
-		} else if err != nil {
-			return false, "", err
-		}
-		if _, err := os.Lstat(srcDir); err == nil {
-			return false, "", fmt.Errorf("%s: source name %q was reused while its prior operation remains staged; refusing to consume a different generation", spec.name, source)
-		} else if !os.IsNotExist(err) {
-			return false, "", err
-		}
-		if err := authenticate(spec, stg, m); err != nil {
-			return false, "", err
-		}
-		for _, f := range generatedFiles(spec) {
-			_ = os.Remove(filepath.Join(stg, "work", f))
-		}
-		work := filepath.Join(stg, "work")
-		if err := generate(spec, work, m); err != nil {
-			return false, "", err
-		}
-		if _, err := os.Lstat(tgtDir); err == nil {
-			return false, "", fmt.Errorf("%s: target %q already exists at %s; refusing to overwrite", spec.name, target, tgtDir)
-		} else if !os.IsNotExist(err) {
-			return false, "", err
-		}
-		if err := os.Rename(work, tgtDir); err != nil {
-			return false, "", fmt.Errorf("%s: installing %s: %w", spec.name, tgtDir, err)
+		return resumeStaged(spec, stg, m, srcDir, tgtDir, source, target)
+	}
+	return false, "", nil
+}
+
+// resumeStaged finishes or discards the staged operation stg. Staging that
+// never moved source bytes is removed so the caller restarts from the live
+// source; staging holding the snapshot is authenticated, regenerated and
+// installed, provided the source name was not reused meanwhile.
+func resumeStaged(spec directionSpec, stg string, m manifest, srcDir, tgtDir, source, target string) (bool, string, error) {
+	if _, err := os.Lstat(filepath.Join(stg, "work")); os.IsNotExist(err) {
+		// The manifest is durable before buildWork starts. With no work/
+		// directory, no source bytes can have moved, so an otherwise empty
+		// staging directory can safely restart from the live source.
+		if !onlyManifest(stg) {
+			return false, "", fmt.Errorf("%s: staging %s has no work/ and holds unexpected entries; inspect manually", spec.name, stg)
 		}
 		if err := os.RemoveAll(stg); err != nil {
 			return false, "", err
 		}
-		return true, tgtDir, nil
+		return false, "", nil
+	} else if err != nil {
+		return false, "", err
 	}
-	return false, "", nil
+	snap := filepath.Join(stg, "work", controlDir, snapshotsDir, m.OperationID, spec.from.workflow)
+	if _, err := os.Lstat(snap); os.IsNotExist(err) {
+		if _, srcErr := os.Lstat(srcDir); srcErr == nil && onlyPreMoveStaging(stg) {
+			if err := os.RemoveAll(stg); err != nil {
+				return false, "", err
+			}
+			return false, "", nil
+		}
+		return false, "", fmt.Errorf("%s: staging %s has no source snapshot; inspect manually", spec.name, stg)
+	} else if err != nil {
+		return false, "", err
+	}
+	if _, err := os.Lstat(srcDir); err == nil {
+		return false, "", fmt.Errorf("%s: source name %q was reused while its prior operation remains staged; refusing to consume a different generation", spec.name, source)
+	} else if !os.IsNotExist(err) {
+		return false, "", err
+	}
+	if err := authenticate(spec, stg, m); err != nil {
+		return false, "", err
+	}
+	for _, f := range generatedFiles(spec) {
+		_ = os.Remove(filepath.Join(stg, "work", f))
+	}
+	work := filepath.Join(stg, "work")
+	if err := generate(spec, work, m); err != nil {
+		return false, "", err
+	}
+	if _, err := os.Lstat(tgtDir); err == nil {
+		return false, "", fmt.Errorf("%s: target %q already exists at %s; refusing to overwrite", spec.name, target, tgtDir)
+	} else if !os.IsNotExist(err) {
+		return false, "", err
+	}
+	if err := os.Rename(work, tgtDir); err != nil {
+		return false, "", fmt.Errorf("%s: installing %s: %w", spec.name, tgtDir, err)
+	}
+	if err := os.RemoveAll(stg); err != nil {
+		return false, "", err
+	}
+	return true, tgtDir, nil
 }
 
 func onlyManifest(stg string) bool {
@@ -850,86 +858,103 @@ func generate(spec directionSpec, work string, m manifest) error {
 	// interrupted generate is regenerated wholesale anyway.
 	switch spec.name {
 	case Promote:
-		st, err := tostate.Load(filepath.Join(snap, "to-state.yaml"))
-		if err != nil {
-			return fmt.Errorf("promote: regenerating onto state: %w", err)
-		}
-		plan := ""
-		if b, err := os.ReadFile(filepath.Join(snap, "plan.md")); err == nil {
-			plan = string(b)
-		}
-		ost := ontostate.State{
-			SchemaVersion: ontostate.CurrentSchemaVersion,
-			Change:        m.Target,
-			ID:            m.TargetIdent.OntoID,
-			Workflow:      "full",
-			Phase:         m.TargetIdent.Phase,
-			Created:       m.TargetIdent.Created,
-			Repos:         st.Repos,
-		}
-		if st.RepoMode == tostate.SourceExplicit || len(st.RepoBases) != 0 {
-			ost.RepoMode = st.RepoMode
-			ost.RepoBases = m.TargetIdent.RepoBases
-			if ost.RepoMode == tostate.SourceLegacy {
-				ost.BaseRef = ost.RepoBases[""].BaseRef
-				ost.BaseBranch = ost.RepoBases[""].BaseBranch
-			}
-		}
-		if err := ost.Validate(); err != nil {
-			return fmt.Errorf("promote: invalid target state: %w", err)
-		}
-		if err := ontostate.Save(filepath.Join(work, "onto-state.yaml"), ost); err != nil {
-			return err
-		}
-		proposal := buildProposal(m, st.Phase, plan)
-		if err := writeFileExclusive(filepath.Join(work, "proposal.md"), []byte(proposal)); err != nil {
+		if err := generateOnto(snap, work, m); err != nil {
 			return err
 		}
 	case Demote:
-		st, err := ontostate.LoadChange(snap)
-		if err != nil {
-			return fmt.Errorf("demote: regenerating to state: %w", err)
-		}
 		// A shipped interrupted manifest may have chosen do from task titles
-		// alone. Never install that phase without executable contracts.
+		// alone. Never install that phase without executable contracts; the
+		// receipt below records the phase actually installed.
 		if m.TargetIdent.Phase == tostate.PhaseDo && !planTranslatable(snap) {
 			m.TargetIdent.Phase = tostate.PhasePlan
 		}
-		tst := tostate.State{
-			ID:      st.ID,
-			Change:  m.Target,
-			Phase:   m.TargetIdent.Phase,
-			Created: m.TargetIdent.Created,
-			Repos:   st.Repos,
-		}
-		if st.RepoMode != "" {
-			tst.SchemaVersion = tostate.CurrentSchemaVersion
-			tst.RepoMode = st.RepoMode
-			tst.RepoBases = make(map[string]tostate.RepoBase, len(st.RepoBases))
-			for alias, base := range st.RepoBases {
-				if st.RepoMode == tostate.SourceLegacy && alias == "" {
-					if st.BaseRef != "" {
-						base.BaseRef = st.BaseRef
-					}
-					if st.BaseBranch != "" {
-						base.BaseBranch = st.BaseBranch
-					}
-				}
-				tst.RepoBases[alias] = tostate.RepoBase(base)
-			}
-		}
-		if err := tst.Validate(); err != nil {
-			return fmt.Errorf("demote: invalid target state: %w", err)
-		}
-		if err := tostate.Save(filepath.Join(work, "to-state.yaml"), tst); err != nil {
-			return err
-		}
-		plan := buildToPlan(m, st.Phase, snap)
-		if err := writeFileExclusive(filepath.Join(work, "plan.md"), []byte(plan)); err != nil {
+		if err := generateTo(snap, work, m); err != nil {
 			return err
 		}
 	}
 	return writeReceipt(spec, work, m)
+}
+
+// generateOnto writes the promoted onto state and proposal from a to snapshot.
+func generateOnto(snap, work string, m manifest) error {
+	st, err := tostate.Load(filepath.Join(snap, "to-state.yaml"))
+	if err != nil {
+		return fmt.Errorf("promote: regenerating onto state: %w", err)
+	}
+	plan := ""
+	if b, err := os.ReadFile(filepath.Join(snap, "plan.md")); err == nil {
+		plan = string(b)
+	}
+	ost := ontostate.State{
+		SchemaVersion: ontostate.CurrentSchemaVersion,
+		Change:        m.Target,
+		ID:            m.TargetIdent.OntoID,
+		Workflow:      "full",
+		Phase:         m.TargetIdent.Phase,
+		Created:       m.TargetIdent.Created,
+		Repos:         st.Repos,
+	}
+	if st.RepoMode == tostate.SourceExplicit || len(st.RepoBases) != 0 {
+		ost.RepoMode = st.RepoMode
+		ost.RepoBases = m.TargetIdent.RepoBases
+		if ost.RepoMode == tostate.SourceLegacy {
+			ost.BaseRef = ost.RepoBases[""].BaseRef
+			ost.BaseBranch = ost.RepoBases[""].BaseBranch
+		}
+	}
+	if err := ost.Validate(); err != nil {
+		return fmt.Errorf("promote: invalid target state: %w", err)
+	}
+	if err := ontostate.Save(filepath.Join(work, "onto-state.yaml"), ost); err != nil {
+		return err
+	}
+	proposal := buildProposal(m, st.Phase, plan)
+	if err := writeFileExclusive(filepath.Join(work, "proposal.md"), []byte(proposal)); err != nil {
+		return err
+	}
+	return nil
+}
+
+// generateTo writes the demoted to state and plan from an onto snapshot.
+func generateTo(snap, work string, m manifest) error {
+	st, err := ontostate.LoadChange(snap)
+	if err != nil {
+		return fmt.Errorf("demote: regenerating to state: %w", err)
+	}
+	tst := tostate.State{
+		ID:      st.ID,
+		Change:  m.Target,
+		Phase:   m.TargetIdent.Phase,
+		Created: m.TargetIdent.Created,
+		Repos:   st.Repos,
+	}
+	if st.RepoMode != "" {
+		tst.SchemaVersion = tostate.CurrentSchemaVersion
+		tst.RepoMode = st.RepoMode
+		tst.RepoBases = make(map[string]tostate.RepoBase, len(st.RepoBases))
+		for alias, base := range st.RepoBases {
+			if st.RepoMode == tostate.SourceLegacy && alias == "" {
+				if st.BaseRef != "" {
+					base.BaseRef = st.BaseRef
+				}
+				if st.BaseBranch != "" {
+					base.BaseBranch = st.BaseBranch
+				}
+			}
+			tst.RepoBases[alias] = tostate.RepoBase(base)
+		}
+	}
+	if err := tst.Validate(); err != nil {
+		return fmt.Errorf("demote: invalid target state: %w", err)
+	}
+	if err := tostate.Save(filepath.Join(work, "to-state.yaml"), tst); err != nil {
+		return err
+	}
+	plan := buildToPlan(m, st.Phase, snap)
+	if err := writeFileExclusive(filepath.Join(work, "plan.md"), []byte(plan)); err != nil {
+		return err
+	}
+	return nil
 }
 
 // writeReceipt finalizes the control plane: lineage, the event receipt, and

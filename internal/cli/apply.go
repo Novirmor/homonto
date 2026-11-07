@@ -87,85 +87,97 @@ func runApply(cmd *cobra.Command, cfgPath string, yes, snapshotMode bool, banner
 	// (any adoptions ride along inside the same Apply).
 	if !plan.HasChanges(sets) {
 		if !plan.HasAdoptions(sets) {
-			// A digest-only repin is invisible to the symlink plan but
-			// mutates remote content: render it and require confirmation
-			// before applying (F6), never under a "no changes" conclusion.
-			if len(repins) > 0 {
-				cmd.Print(renderRepins(repins))
-				if !yes {
-					cmd.Print("\nApply these changes? [y/N] ")
-					r := bufio.NewReader(os.Stdin)
-					line, _ := r.ReadString('\n')
-					if strings.ToLower(strings.TrimSpace(line)) != "y" {
-						cmd.Println("Aborted.")
-						return nil
-					}
-				}
-				if err := e.Apply(cmd.Context(), sets); err != nil {
-					return err
-				}
-				cmd.Println("Applied.")
-				return skipped()
-			}
-			// A remote resource's symlink target is name-based, so an
-			// unchanged remote leaves the projection plan empty. Still run
-			// apply so remotes are re-fetched, pin-verified, and
-			// re-materialized (fail-closed) rather than silently serving stale
-			// pinned content.
-			if e.HasRemoteResources() {
-				if err := e.Apply(cmd.Context(), sets); err != nil {
-					return err
-				}
-				cmd.Println("No projection changes; remote sources verified.")
-				return skipped()
-			}
-			// A catalog file's symlink target is name-based too, so catalog
-			// content that is stale (a model route moved, so a rendered subagent
-			// must be re-stamped) or missing (a rendered variant deleted) also
-			// leaves the projection plan empty. Run apply so it re-materializes,
-			// rather than stranding content nothing else would ever repair.
-			if e.CatalogNeedsMaterialize() {
-				if err := e.Apply(cmd.Context(), sets); err != nil {
-					return err
-				}
-				cmd.Println("No projection changes; catalog re-materialized.")
-				return skipped()
-			}
-			cmd.Println("No changes. Everything up to date.")
-			return skipped()
-		}
-		n := 0
-		for _, s := range sets {
-			for _, c := range s.Changes {
-				if c.Action == "adopt" {
-					n++
-				}
-			}
+			return applyQuiet(cmd, e, sets, repins, yes, skipped)
 		}
 		if err := applySets(cmd, e, sets, snapshotMode); err != nil {
 			return err
 		}
-		cmd.Printf("Reconciled %d pre-existing resource(s) into state.\n", n)
+		cmd.Printf("Reconciled %d pre-existing resource(s) into state.\n", countAdoptions(sets))
 		return skipped()
 	}
 	cmd.Print(plan.Render(sets))
 	if len(repins) > 0 {
 		cmd.Print(renderRepins(repins))
 	}
-	if !yes {
-		cmd.Print("\nApply these changes? [y/N] ")
-		r := bufio.NewReader(os.Stdin)
-		line, _ := r.ReadString('\n')
-		if strings.ToLower(strings.TrimSpace(line)) != "y" {
-			cmd.Println("Aborted.")
-			return nil
-		}
+	if !confirmApply(cmd, yes) {
+		return nil
 	}
 	if err := applySets(cmd, e, sets, snapshotMode); err != nil {
 		return err
 	}
 	cmd.Println("Applied.")
 	return skipped()
+}
+
+// applyQuiet handles a plan with no visible change and no adoption: work the
+// name-based symlink plan cannot show must still apply.
+func applyQuiet(cmd *cobra.Command, e *engine.Engine, sets []adapter.ChangeSet, repins []engine.RemoteRepin, yes bool, skipped func() error) error {
+	// A digest-only repin is invisible to the symlink plan but
+	// mutates remote content: render it and require confirmation
+	// before applying (F6), never under a "no changes" conclusion.
+	if len(repins) > 0 {
+		cmd.Print(renderRepins(repins))
+		if !confirmApply(cmd, yes) {
+			return nil
+		}
+		if err := e.Apply(cmd.Context(), sets); err != nil {
+			return err
+		}
+		cmd.Println("Applied.")
+		return skipped()
+	}
+	// A remote resource's symlink target is name-based, so an
+	// unchanged remote leaves the projection plan empty. Still run
+	// apply so remotes are re-fetched, pin-verified, and
+	// re-materialized (fail-closed) rather than silently serving stale
+	// pinned content.
+	if e.HasRemoteResources() {
+		if err := e.Apply(cmd.Context(), sets); err != nil {
+			return err
+		}
+		cmd.Println("No projection changes; remote sources verified.")
+		return skipped()
+	}
+	// A catalog file's symlink target is name-based too, so catalog
+	// content that is stale (a model route moved, so a rendered subagent
+	// must be re-stamped) or missing (a rendered variant deleted) also
+	// leaves the projection plan empty. Run apply so it re-materializes,
+	// rather than stranding content nothing else would ever repair.
+	if e.CatalogNeedsMaterialize() {
+		if err := e.Apply(cmd.Context(), sets); err != nil {
+			return err
+		}
+		cmd.Println("No projection changes; catalog re-materialized.")
+		return skipped()
+	}
+	cmd.Println("No changes. Everything up to date.")
+	return skipped()
+}
+
+// confirmApply asks on stdin unless --yes was given.
+func confirmApply(cmd *cobra.Command, yes bool) bool {
+	if yes {
+		return true
+	}
+	cmd.Print("\nApply these changes? [y/N] ")
+	line, _ := bufio.NewReader(os.Stdin).ReadString('\n')
+	if strings.ToLower(strings.TrimSpace(line)) != "y" {
+		cmd.Println("Aborted.")
+		return false
+	}
+	return true
+}
+
+func countAdoptions(sets []adapter.ChangeSet) int {
+	n := 0
+	for _, s := range sets {
+		for _, c := range s.Changes {
+			if c.Action == "adopt" {
+				n++
+			}
+		}
+	}
+	return n
 }
 
 // applySets runs the engine apply, in snapshot mode when --snapshot is set

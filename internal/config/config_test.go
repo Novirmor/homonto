@@ -879,6 +879,35 @@ variant = "fast"
 	}
 }
 
+// An override on a local: agent ends that entry's checks, never the whole
+// walk: a later conflict on a builtin must still be caught.
+func TestOverrideOnLocalAgentDoesNotEndTheWalk(t *testing.T) {
+	doc := `
+[subagents.aaa-local]
+source = "local:mine"
+scope = "project"
+targets = ["opencode"]
+[subagents.aaa-local.opencode]
+model = "anthropic/claude-opus-4-8"
+
+[subagents.b]
+source = "builtin:onto-skeptic"
+scope = "project"
+targets = ["opencode"]
+[subagents.b.opencode]
+model = "anthropic/claude-opus-4-8"
+variant = "thinking"
+
+[subagents.onto-skeptic.opencode]
+model = "anthropic/claude-opus-4-8"
+variant = "fast"
+`
+	err := loadDoc(t, doc)
+	if err == nil || !strings.Contains(err.Error(), "must agree") {
+		t.Fatalf("a conflict after a local: override must still fail, got: %v", err)
+	}
+}
+
 // Legacy [agents.X] wins the declaration over a same-named [subagents.X], but
 // used to overwrite the whole struct — silently deleting the subagents entry's
 // per-tool tune blocks, which [agents.X] has no syntax to express.

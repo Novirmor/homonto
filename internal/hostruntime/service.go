@@ -825,84 +825,106 @@ func (s *Service) Event(eventType string, props any) {
 	}
 	switch eventType {
 	case "session.deleted":
-		raw := p["sessionID"]
-		if info, ok := record(p["info"]); ok {
-			raw = info["id"]
-		}
-		sessionID, ok := raw.(string)
-		if !ok {
-			return
-		}
-		if sess := s.sessions[sessionID]; sess != nil {
-			sess.deleted = true
-			s.cancelSession(sessionID)
-			for _, id := range s.order {
-				if d := s.drafts[id]; d.sessionID == sessionID {
-					s.invalidate(d)
-				}
-			}
-		} else if len(s.sessions) < maxSessions {
-			s.sessions[sessionID] = &session{deleted: true}
-		}
-		return
+		s.sessionDeleted(p)
 	case "form.created":
-		form, ok := record(p["form"])
-		if !ok {
-			return
-		}
-		sessionID, ok := text(form["sessionID"])
-		if !ok {
-			return
-		}
-		sess, d := s.currentDraft(sessionID)
-		formID, idOK := text(form["id"])
-		meta, metaOK := record(form["metadata"])
-		var tool map[string]any
-		toolOK := false
-		if metaOK {
-			tool, toolOK = record(meta["tool"])
-		}
-		fields, fieldsOK := form["fields"].([]any)
-		if sess == nil || sess.deleted || d == nil || d.answered || d.callID == "" || d.requestID != "" || !allPending(d) ||
-			!idOK || s.requests[formID] || len(s.requests) >= maxRequests || !metaOK || meta["kind"] != "question" ||
-			!toolOK || tool["id"] != d.callID || !nonEmptyText(tool["messageID"]) || !fieldsOK || !exactJSON(fields, s.formFields(d)) {
-			return
-		}
-		d.requestID = formID
-		s.requests[formID] = true
-		return
+		s.formCreated(p)
 	case "form.replied", "form.cancelled":
-		sessionID, ok := text(p["sessionID"])
-		if !ok {
-			return
-		}
-		sess, d := s.currentDraft(sessionID)
-		if sess == nil || sess.deleted || d == nil || d.answered || d.requestID == "" || p["id"] != d.requestID {
-			return
-		}
-		d.answered = true
-		answer, ok := record(p["answer"])
-		if eventType == "form.cancelled" || !ok || len(answer) != len(d.items) {
-			for _, i := range d.items {
-				i.Status = "declined"
+		s.formAnswered(eventType, p)
+	default:
+		s.questionEvent(eventType, p)
+	}
+}
+
+// sessionDeleted invalidates a deleted session's drafts, or remembers the
+// deletion of a session not yet seen.
+func (s *Service) sessionDeleted(p map[string]any) {
+	raw := p["sessionID"]
+	if info, ok := record(p["info"]); ok {
+		raw = info["id"]
+	}
+	sessionID, ok := raw.(string)
+	if !ok {
+		return
+	}
+	if sess := s.sessions[sessionID]; sess != nil {
+		sess.deleted = true
+		s.cancelSession(sessionID)
+		for _, id := range s.order {
+			if d := s.drafts[id]; d.sessionID == sessionID {
+				s.invalidate(d)
 			}
-			return
 		}
-		for n, i := range d.items {
-			a := answer[fmt.Sprintf("q%d", n)]
-			switch a {
-			case "Decline":
-				i.Status = "declined"
-			case "Revise":
-				i.Status = "revision-requested"
-			case d.question.Questions[n].Options[2].Label:
-				i.Status = "approved"
-			default:
-				i.Status = "declined"
-			}
+	} else if len(s.sessions) < maxSessions {
+		s.sessions[sessionID] = &session{deleted: true}
+	}
+}
+
+// formCreated binds the review form a draft's tool call opened to that draft.
+// Any mismatch with the draft's pending question leaves it unbound.
+func (s *Service) formCreated(p map[string]any) {
+	form, ok := record(p["form"])
+	if !ok {
+		return
+	}
+	sessionID, ok := text(form["sessionID"])
+	if !ok {
+		return
+	}
+	sess, d := s.currentDraft(sessionID)
+	formID, idOK := text(form["id"])
+	meta, metaOK := record(form["metadata"])
+	var tool map[string]any
+	toolOK := false
+	if metaOK {
+		tool, toolOK = record(meta["tool"])
+	}
+	fields, fieldsOK := form["fields"].([]any)
+	if sess == nil || sess.deleted || d == nil || d.answered || d.callID == "" || d.requestID != "" || !allPending(d) ||
+		!idOK || s.requests[formID] || len(s.requests) >= maxRequests || !metaOK || meta["kind"] != "question" ||
+		!toolOK || tool["id"] != d.callID || !nonEmptyText(tool["messageID"]) || !fieldsOK || !exactJSON(fields, s.formFields(d)) {
+		return
+	}
+	d.requestID = formID
+	s.requests[formID] = true
+}
+
+// formAnswered applies a bound form's reply; a cancellation or malformed
+// answer declines every item.
+func (s *Service) formAnswered(eventType string, p map[string]any) {
+	sessionID, ok := text(p["sessionID"])
+	if !ok {
+		return
+	}
+	sess, d := s.currentDraft(sessionID)
+	if sess == nil || sess.deleted || d == nil || d.answered || d.requestID == "" || p["id"] != d.requestID {
+		return
+	}
+	d.answered = true
+	answer, ok := record(p["answer"])
+	if eventType == "form.cancelled" || !ok || len(answer) != len(d.items) {
+		for _, i := range d.items {
+			i.Status = "declined"
 		}
 		return
 	}
+	for n, i := range d.items {
+		a := answer[fmt.Sprintf("q%d", n)]
+		switch a {
+		case "Decline":
+			i.Status = "declined"
+		case "Revise":
+			i.Status = "revision-requested"
+		case d.question.Questions[n].Options[2].Label:
+			i.Status = "approved"
+		default:
+			i.Status = "declined"
+		}
+	}
+}
+
+// questionEvent handles the question.* events: binding an asked question to
+// the pending draft, then its rejection or reply.
+func (s *Service) questionEvent(eventType string, p map[string]any) {
 	sessionID, ok := text(p["sessionID"])
 	if !ok {
 		return

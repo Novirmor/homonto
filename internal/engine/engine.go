@@ -1,45 +1,24 @@
 package engine
 
 import (
-	"bytes"
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
-	"encoding/json"
 	"fmt"
 	"maps"
-	"os"
 	"path/filepath"
 	"slices"
-	"sort"
 	"strings"
 
 	"github.com/Novirmor/homonto/internal/adapter"
 	"github.com/Novirmor/homonto/internal/adapter/claude"
 	"github.com/Novirmor/homonto/internal/adapter/opencode"
 	"github.com/Novirmor/homonto/internal/adapter/registry"
-	"github.com/Novirmor/homonto/internal/agentfm"
 	"github.com/Novirmor/homonto/internal/catalog"
 	"github.com/Novirmor/homonto/internal/config"
-	"github.com/Novirmor/homonto/internal/fsutil"
-	"github.com/Novirmor/homonto/internal/resourcepath"
 	"github.com/Novirmor/homonto/internal/routing"
-	"github.com/Novirmor/homonto/internal/scaffold"
 	"github.com/Novirmor/homonto/internal/secret"
 	"github.com/Novirmor/homonto/internal/state"
 	"github.com/Novirmor/homonto/internal/workspace"
 )
-
-// sortedRepoNames returns the declared repo names in deterministic order, so
-// adapter fan-out order — and plan output — is stable.
-func sortedRepoNames(repos map[string]string) []string {
-	names := make([]string, 0, len(repos))
-	for name := range repos {
-		names = append(names, name)
-	}
-	sort.Strings(names)
-	return names
-}
 
 // Engine wires config, adapters, secret resolver, and state for plan/apply.
 type Engine struct {
@@ -201,7 +180,7 @@ func Build(ctx context.Context, configPath, home, contentDir string) (*Engine, e
 	// point here, absolute) but projects into its own root with its own state
 	// partition. Sorted names keep adapter order — and plan output —
 	// deterministic.
-	for _, name := range sortedRepoNames(cfg.Repos) {
+	for _, name := range slices.Sorted(maps.Keys(cfg.Repos)) {
 		st, err := state.LoadNamed(stateDir, name)
 		if err != nil {
 			return nil, fmt.Errorf("repo %s: %w", name, err)
@@ -248,7 +227,7 @@ func (e *Engine) configureHarnesses() {
 	for _, target := range e.RepoTargets {
 		repoStates[target.Name] = target.State
 	}
-	for _, name := range sortedRepoNames(e.Cfg.Repos) {
+	for _, name := range slices.Sorted(maps.Keys(e.Cfg.Repos)) {
 		st := repoStates[name]
 		if st == nil {
 			var err error
@@ -347,10 +326,54 @@ func (e *Engine) Plan() ([]adapter.ChangeSet, error) {
 // The context bounds remote-source fetches during materializeRemotes so the
 // caller (typically a cobra command) can interrupt a hung network operation.
 func (e *Engine) Apply(ctx context.Context, sets []adapter.ChangeSet) error {
-	// Fail closed on a malformed plan before any side effect: an unknown tool
-	// (otherwise silently skipped below) or an operation with an undefined action
-	// (otherwise a silent no-op) must abort — never quietly drop a change to a
-	// user's config files.
+	if err := e.preflightApply(sets); err != nil {
+		return err
+	}
+	// Resolve, verify, and materialize remote sources before any adapter links
+	// them. This fetches → validates → pin-matches → caches, aborting the whole
+	// apply before any adapter write if any remote resource fails closed.
+	if err := e.materializeRemotes(ctx); err != nil {
+		return err
+	}
+	// Remote subagent content exists only now; render any that carry intent.
+	if err := e.refreshExternalRenders(); err != nil {
+		return err
+	}
+	// Materialize builtin skills before any adapter links them, so no symlink is
+	// created ahead of its target.
+	if err := e.materializeCatalog(); err != nil {
+		return err
+	}
+	if err := e.writeRenderedSubagents(); err != nil {
+		return err
+	}
+	// The declared [tmp] directory is workspace surface, not catalog content:
+	// create it and keep it gitignored even when nothing builtin is declared
+	// (ADR 0048). Unconditional on config, independent of the materialize gate.
+	if err := e.ensureTmpSurface(); err != nil {
+		return err
+	}
+	// The workflow bridge is project-local runtime content. It observes the
+	// workflow snapshot but never writes state, so it is installed after its
+	// catalog source exists and before OpenCode can load the project directory.
+	if err := e.ensureWorkflowBridge(); err != nil {
+		return err
+	}
+	if err := e.applyAdapters(sets); err != nil {
+		return err
+	}
+	e.recordVersions()
+	if err := e.recordRoutes(); err != nil {
+		return fmt.Errorf("record routing: %w", err)
+	}
+	return e.State.Save(e.StateDir)
+}
+
+// preflightApply fails closed before any side effect: on a malformed plan (an
+// unknown tool, otherwise silently skipped, or an undefined action, otherwise
+// a silent no-op), a redirected catalog or plugin destination, or a secret
+// that does not resolve.
+func (e *Engine) preflightApply(sets []adapter.ChangeSet) error {
 	knownTools := make(map[string]bool, len(e.Adapters)+len(e.RepoTargets))
 	for _, a := range e.Adapters {
 		knownTools[a.Name()] = true
@@ -387,36 +410,12 @@ func (e *Engine) Apply(ctx context.Context, sets []adapter.ChangeSet) error {
 			}
 		}
 	}
-	// Resolve, verify, and materialize remote sources before any adapter links
-	// them. This fetches → validates → pin-matches → caches, aborting the whole
-	// apply before any adapter write if any remote resource fails closed.
-	if err := e.materializeRemotes(ctx); err != nil {
-		return err
-	}
-	// Remote subagent content exists only now; render any that carry intent.
-	if err := e.refreshExternalRenders(); err != nil {
-		return err
-	}
-	// Materialize builtin skills before any adapter links them, so no symlink is
-	// created ahead of its target.
-	if err := e.materializeCatalog(); err != nil {
-		return err
-	}
-	if err := e.writeRenderedSubagents(); err != nil {
-		return err
-	}
-	// The declared [tmp] directory is workspace surface, not catalog content:
-	// create it and keep it gitignored even when nothing builtin is declared
-	// (ADR 0048). Unconditional on config, independent of the materialize gate.
-	if err := e.ensureTmpSurface(); err != nil {
-		return err
-	}
-	// The workflow bridge is project-local runtime content. It observes the
-	// workflow snapshot but never writes state, so it is installed after its
-	// catalog source exists and before OpenCode can load the project directory.
-	if err := e.ensureWorkflowBridge(); err != nil {
-		return err
-	}
+	return nil
+}
+
+// applyAdapters hands each planned set to its adapter and saves state after
+// every write, so a partial apply keeps the record of each adapter that wrote.
+func (e *Engine) applyAdapters(sets []adapter.ChangeSet) error {
 	// Match each planned set to its adapter by tool name (Plan may have skipped
 	// some adapters, so indexes need not line up). The config repo's adapters
 	// record into the main state; each repo target's changeset records into
@@ -440,38 +439,23 @@ func (e *Engine) Apply(ctx context.Context, sets []adapter.ChangeSet) error {
 		if !ok {
 			continue
 		}
+		st, save := e.State, func() error { return e.State.Save(e.StateDir) }
 		if t, isRepo := pair[cs.Tool]; isRepo {
-			// Name the tool in every per-adapter failure: with several adapters
-			// an unwrapped error leaves the user guessing which file broke.
-			post := enrich(cs, t.State)
-			if err := a.Apply(e.Cfg, cs, e.Resolver, t.State); err != nil {
-				return fmt.Errorf("%s: %w", cs.Tool, err)
-			}
-			post()
-			// Persist immediately into the repo's own partition.
-			if err := t.State.SaveNamed(e.StateDir, t.Name); err != nil {
-				return fmt.Errorf("%s: save state: %w", cs.Tool, err)
-			}
-			continue
+			st, save = t.State, func() error { return t.State.SaveNamed(e.StateDir, t.Name) }
 		}
+		post := enrich(cs, st)
 		// Name the tool in every per-adapter failure: with several adapters an
 		// unwrapped error leaves the user guessing which file broke.
-		post := enrich(cs, e.State)
-		if err := a.Apply(e.Cfg, cs, e.Resolver, e.State); err != nil {
+		if err := a.Apply(e.Cfg, cs, e.Resolver, st); err != nil {
 			return fmt.Errorf("%s: %w", cs.Tool, err)
 		}
 		post()
-		// Persist immediately: a partial apply must keep the record of every
-		// adapter that already wrote its files.
-		if err := e.State.Save(e.StateDir); err != nil {
+		// Persist immediately, a repo target into its own partition.
+		if err := save(); err != nil {
 			return fmt.Errorf("%s: save state: %w", cs.Tool, err)
 		}
 	}
-	e.recordVersions()
-	if err := e.recordRoutes(); err != nil {
-		return fmt.Errorf("record routing: %w", err)
-	}
-	return e.State.Save(e.StateDir)
+	return nil
 }
 
 // recordVersions writes down, in state, the binary and framework versions behind
@@ -493,1072 +477,4 @@ func (e *Engine) recordVersions() {
 			e.State.SetFrameworkVersion(name, v)
 		}
 	}
-}
-
-// subagentRenderContext builds the per-tool agentfm render context: each
-// subagent's override from [subagents.<name>.<tool>]. There are no role tiers
-// anymore — every installed builtin agent MUST declare a non-empty model in
-// its per-tool override block, enforced at config load. A tool with no
-// overrides yields an empty map (which would fail validation, since an
-// installed agent without a model is a load-time error).
-//
-// Overrides are keyed by the subagent's CATALOG name, not its config key,
-// because materialization writes one rendered file per catalog name. Config
-// validation rejects multiple installed aliases and conflicting model routes;
-// Names supplies that source's single effective host identity separately.
-func (e *Engine) subagentRenderContext() (map[string]agentfm.RenderContext, error) {
-	return e.subagentRenderContextFor(nil)
-}
-
-func (e *Engine) subagentRenderContextFor(targets map[string]map[string]bool) (map[string]agentfm.RenderContext, error) {
-	externalDirectories := make([]string, 0, len(e.Cfg.RepoDirs()))
-	for _, dir := range e.Cfg.RepoDirs() {
-		externalDirectories = append(externalDirectories, dir)
-	}
-	if e.WorkspaceLayout.ExplicitRepos() && e.WorkspaceLayout.WorktreesDir != "" {
-		for name := range e.WorkspaceLayout.Repos {
-			externalDirectories = append(externalDirectories, filepath.Join(e.WorkspaceLayout.WorktreesDir, name))
-		}
-	}
-	sort.Strings(externalDirectories)
-	externalDirectoriesByAgent := map[string][]string{}
-	externalDirectoryDeniesByAgent := map[string][]string{}
-	editDirectoryDeniesByAgent := map[string][]string{}
-	records := e.Cfg.Workflow.RootOrDefault()
-	if e.WorkspaceLayout.ExplicitRepos() {
-		records = e.WorkspaceLayout.WorkflowRoot
-	} else if !filepath.IsAbs(records) {
-		records = filepath.Join(e.ProjectRoot, records)
-	}
-	recordRoots := []string{records, permissionCanonicalPath(records)}
-	roles, err := agentfm.BuiltinRoles()
-	if err != nil {
-		return nil, err
-	}
-	// Native record protection follows the builtin role even when installed
-	// directly rather than through a framework. It grants no external access.
-	for agent, role := range roles {
-		if role.Writer {
-			externalDirectoryDeniesByAgent[agent] = recordRoots
-		}
-	}
-	// ADR 0068: builtin workers may inspect all declared repositories. Directory
-	// access does not grant shell or edit capability to read-only specialists.
-	workflowFrameworkInstalled := false
-	for _, resource := range e.Cfg.Frameworks {
-		switch resource.Source {
-		case "builtin:onto", "builtin:to", "builtin:no":
-			workflowFrameworkInstalled = true
-		}
-	}
-	workflowFrameworkInstalled = workflowFrameworkInstalled || len(e.Cfg.HostingProviders()) > 0
-	if workflowFrameworkInstalled {
-		// Grant only selected skill installations and their desired content roots,
-		// never all of HOME or even all user-installed skills.
-		if skills, err := e.Cfg.ExpandedSkillEntriesForTool("opencode"); err == nil {
-			for _, skill := range skills {
-				root := e.ProjectRoot
-				if skill.Repo != "" {
-					root = e.Cfg.RepoDirs()[skill.Repo]
-				}
-				installed := filepath.Join(resourcepath.Dir(resourcepath.Skill, "opencode", skill.Resource.Scope, e.Home, root), skill.Name)
-				externalDirectories = append(externalDirectories, installed)
-				// Resolve the parent, not a stale installed link to an old source.
-				externalDirectories = append(externalDirectories, filepath.Join(permissionCanonicalPath(filepath.Dir(installed)), skill.Name))
-				var source string
-				switch {
-				case strings.HasPrefix(skill.Resource.Source, "builtin:"):
-					source = filepath.Join(e.CatalogRoot, strings.TrimPrefix(skill.Resource.Source, "builtin:"))
-				case strings.HasPrefix(skill.Resource.Source, "local:"):
-					source = filepath.Join(e.ContentDir, "skills", strings.TrimPrefix(skill.Resource.Source, "local:"))
-				}
-				if source != "" {
-					externalDirectories = append(externalDirectories, source, permissionCanonicalPath(source))
-				}
-			}
-		}
-		// Every builtin role may read workflow records, even outside the
-		// project. A writer's record denies render last and remove that allow.
-		for agent := range roles {
-			externalDirectoriesByAgent[agent] = append(append([]string(nil), externalDirectories...), recordRoots...)
-		}
-	}
-	names := map[string]string{}
-	if entries, err := e.Cfg.ExpandedSubagentEntriesForTool("opencode"); err == nil {
-		for _, entry := range entries {
-			if source, ok := config.SubagentCatalogName(entry.Resource.Source); ok {
-				names[source] = entry.Name
-				if len(externalDirectoryDeniesByAgent[source]) == 0 {
-					continue
-				}
-				// User-scoped workflow agents use this configuration's launch root;
-				// a repo-targeted project install instead belongs to that repository.
-				directory := e.ProjectRoot
-				if entry.Resource.Scope == "project" && entry.Repo != "" {
-					directory = e.Cfg.RepoDirs()[entry.Repo]
-				}
-				for _, root := range recordRoots {
-					// V2 checks internal edits relative to the active Location,
-					// and external files by absolute canonical path (already
-					// included in recordRoots). Mixing in V1 worktree-relative
-					// paths would deny unrelated source files in nested layouts.
-					for _, base := range []string{directory, permissionCanonicalPath(directory)} {
-						rel, err := filepath.Rel(base, root)
-						if err != nil {
-							return nil, fmt.Errorf("permission host %q records %q: %w", base, root, err)
-						}
-						if rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
-							continue
-						}
-						editDirectoryDeniesByAgent[source] = append(editDirectoryDeniesByAgent[source], rel)
-					}
-				}
-			}
-		}
-	}
-	routes, err := e.Routes()
-	if err != nil {
-		return nil, err
-	}
-	overrides := func(pick func(config.Subagent) config.ModelRoute, routes RouteReport) map[string]agentfm.ModelSpec {
-		m := map[string]agentfm.ModelSpec{}
-		// Policy-routed agents first (ADR 0099): a pin without a model still
-		// contributes its steps and bash additions below, and a pin with one
-		// replaces the policy's choice entirely.
-		for _, r := range routes.Routes {
-			if r.Selection != nil && r.CatalogKeyed {
-				m[r.Agent] = agentfm.ModelSpec{Model: r.Selection.Model, Variant: r.Selection.Variant}
-			}
-		}
-		for key, sa := range e.Cfg.Subagents {
-			r := pick(sa)
-			if !r.IsSet() {
-				continue
-			}
-			// Resolve to the CATALOG name, which is what materialization renders
-			// per file. A declared entry carries it in its builtin: source; a
-			// tune-only entry names it directly (it retunes a framework's agent,
-			// whose config key IS its catalog name).
-			name := key
-			if !sa.IsTuneOnly() {
-				cat, ok := config.SubagentCatalogName(sa.Source)
-				if !ok {
-					continue // local:/remote: content is not catalog-keyed
-				}
-				name = cat
-			}
-			spec := agentfm.ModelSpec{Model: r.Model, Variant: r.Variant, Effort: r.Effort, Steps: r.Steps, BashAllowAdd: r.BashAllowAdd}
-			if spec.Model == "" {
-				if routed, ok := m[name]; ok {
-					spec.Model, spec.Variant = routed.Model, routed.Variant
-				}
-			}
-			m[name] = spec
-		}
-		return m
-	}
-	claudeRoutes, err := e.RoutesFor("claude")
-	if err != nil {
-		return nil, err
-	}
-	claudeOverrides := overrides(func(s config.Subagent) config.ModelRoute { return s.Claude }, claudeRoutes)
-	rules := e.Cfg.InstalledServiceRules()
-	providers := e.Cfg.HostingProviders()
-	runtimeProviders := make([]string, 0, len(providers))
-	for provider := range providers {
-		runtimeProviders = append(runtimeProviders, provider)
-	}
-	sort.Strings(runtimeProviders)
-	return map[string]agentfm.RenderContext{
-		"opencode": {
-			ServiceRules: agentfm.ServiceRules{
-				CoordinatorAsk:  rules.CoordinatorAsk,
-				CoordinatorDeny: rules.CoordinatorDeny,
-				WorkerDeny:      rules.WorkerDeny,
-			},
-			Names:                          names,
-			Overrides:                      overrides(func(s config.Subagent) config.ModelRoute { return s.OpenCode }, routes),
-			ShellProxy:                     e.Cfg.ResolvedTooling().ShellProxy,
-			ExternalDirectoriesByAgent:     externalDirectoriesByAgent,
-			ExternalDirectoryDeniesByAgent: externalDirectoryDeniesByAgent,
-			EditDirectoryDeniesByAgent:     editDirectoryDeniesByAgent,
-			Targets:                        targets["opencode"],
-			RuntimeProviders:               runtimeProviders,
-		},
-		// Claude Code renders the same intent; its agents take the record
-		// roots as absolute path denies (agentfm.ClaudePolicy).
-		"claude": {
-			ServiceRules: agentfm.ServiceRules{
-				CoordinatorAsk:  rules.CoordinatorAsk,
-				CoordinatorDeny: rules.CoordinatorDeny,
-				WorkerDeny:      rules.WorkerDeny,
-			},
-			Names:                          names,
-			Overrides:                      claudeOverrides,
-			ShellProxy:                     e.Cfg.ResolvedTooling().ShellProxy,
-			ExternalDirectoriesByAgent:     externalDirectoriesByAgent,
-			ExternalDirectoryDeniesByAgent: externalDirectoryDeniesByAgent,
-			EditDirectoryDeniesByAgent:     map[string][]string{},
-			Targets:                        targets["claude"],
-			RuntimeProviders:               runtimeProviders,
-		},
-	}, nil
-}
-
-// materializeCatalog extracts the builtin skills, commands, and subagents the
-// config declares into CatalogRoot, CommandCatalogRoot, and SubagentCatalogRoot.
-// It is a no-op only when planCatalog finds every input unchanged: the recorded
-// catalog version matches the embedded one, the subagent render fingerprint
-// matches the config's model routes, and every file a materialize would write
-// already exists. The version and fingerprint are recorded (and state saved)
-// only after skills, commands, AND subagents all materialize, so an interrupted
-// extraction re-materializes on the next apply.
-func (e *Engine) materializeCatalog() error {
-	p, err := e.planCatalog()
-	if err != nil {
-		return err
-	}
-	if p == nil || p.upToDate {
-		return nil
-	}
-	// Validate every rendered agent before publishing any catalog class. This
-	// keeps malformed capability intent from leaving skills or commands newer
-	// than the subagent catalog that failed to materialize.
-	for _, name := range p.subagents {
-		if _, err := p.cl.SubagentFiles(name, p.renderCtx); err != nil {
-			return err
-		}
-	}
-	p.cl.SetHarnessReference(p.harnessRef)
-	if err := p.cl.Materialize(e.CatalogRoot, p.skills, p.shellProxy, p.codeIntel, p.tmpDir, p.workspaceRef); err != nil {
-		return err
-	}
-	if err := p.cl.MaterializeCommands(e.CommandCatalogRoot, p.commands); err != nil {
-		return err
-	}
-	if err := p.cl.MaterializeSubagents(e.SubagentCatalogRoot, p.subagents, p.renderCtx); err != nil {
-		return err
-	}
-	// Bundled plugins are owned catalog content (ADR 0029): materialized with
-	// the same version gate, never auto-enabled — the user opts in through
-	// [plugins.opencode].
-	if err := p.cl.MaterializePlugins(e.PluginCatalogRoot, p.plugins); err != nil {
-		return err
-	}
-	// Plugin directories are replaced during materialization. Publish their
-	// config-specific binding before exposing entrypoints or recording success.
-	if len(p.workflowBinding) > 0 {
-		if err := fsutil.WriteControlPlaneWithin(e.StateDir, e.workflowBindingPath(), p.workflowBinding, 0o644); err != nil {
-			return fmt.Errorf("workflow bridge binding: %w", err)
-		}
-	}
-	// GC: the Materialize* calls only ever WRITE declared names, so a renamed or
-	// de-declared resource left its old files in the catalog roots forever. That
-	// litter was live ammunition, not just clutter — the adapters prefer a
-	// <name>.<tool>.md variant when one exists, so a years-old render could win
-	// over a future same-named verbatim agent.
-	if err := e.preflightCatalogRoots(); err != nil {
-		return err
-	}
-	if err := gcCatalogRoots(e.CatalogRoot, e.CommandCatalogRoot, e.SubagentCatalogRoot, e.PluginCatalogRoot, p); err != nil {
-		return err
-	}
-	e.State.SetCatalogVersion(p.cl.Version())
-	e.State.SetRenderFingerprint(p.fingerprint)
-	// Save immediately so a later adapter failure still records the completed
-	// materialization.
-	return e.State.Save(e.StateDir)
-}
-
-// ensureTmpSurface creates the declared [tmp] directory and keeps it
-// gitignored (ADR 0048). A directory under .homonto/ is already covered by
-// the scaffolded /.homonto/ ignore entry; any other location gets its own
-// anchored entry, appended to .gitignore (created when absent) via the same
-// augment-only rule homonto init uses. homonto never deletes tmp content —
-// the directory outliving its files is the feature, not a leak.
-func (e *Engine) ensureTmpSurface() error {
-	enabled, dir := e.Cfg.ResolvedTmp()
-	if !enabled || e.tmpSurfacePresent(dir) {
-		return nil
-	}
-	if err := os.MkdirAll(filepath.Join(e.ProjectRoot, filepath.FromSlash(dir)), 0o755); err != nil {
-		return fmt.Errorf("tmp dir: %w", err)
-	}
-	if dir == ".homonto" || strings.HasPrefix(dir, ".homonto/") {
-		return nil
-	}
-	gitignore := filepath.Join(e.ProjectRoot, ".gitignore")
-	want := "/" + dir + "/\n"
-	if _, err := os.Stat(gitignore); os.IsNotExist(err) {
-		return os.WriteFile(gitignore, []byte(want), 0o644)
-	}
-	if _, err := scaffold.AugmentGitignore(gitignore, want); err != nil {
-		return fmt.Errorf("tmp gitignore: %w", err)
-	}
-	return nil
-}
-
-// tmpSurfacePresent reports whether the declared scratch directory exists and
-// is ignored. It is the cheap existence half of the [tmp] contract; the
-// content-policy half lives in the generated reference.
-func (e *Engine) tmpSurfacePresent(dir string) bool {
-	if fi, err := os.Stat(filepath.Join(e.ProjectRoot, filepath.FromSlash(dir))); err != nil || !fi.IsDir() {
-		return false
-	}
-	if dir == ".homonto" || strings.HasPrefix(dir, ".homonto/") {
-		return true
-	}
-	gi, err := os.ReadFile(filepath.Join(e.ProjectRoot, ".gitignore"))
-	if err != nil {
-		return false
-	}
-	entry := "/" + dir + "/"
-	for _, l := range strings.Split(string(gi), "\n") {
-		if strings.TrimSpace(l) == entry {
-			return true
-		}
-	}
-	return false
-}
-
-// allPluginDirsExist reports whether every bundled plugin directory is
-// materialized — the plugin side of the materialize gate.
-func allPluginDirsExist(root string, names []string, workflowContext bool) bool {
-	for _, n := range names {
-		files := []string{"index.ts"}
-		if n == "permission-observer" {
-			files = append(files, "v2.ts")
-		}
-		if n == workflowBridgePlugin {
-			files = append(files, "continuation.ts")
-		}
-		if n == workflowBridgePlugin && workflowContext {
-			files = append(files, "tui.tsx", "rpc.ts", "v2.ts", "runner.ts", "github.ts", "authorization.ts", "compat.ts", "core.ts", "workflow.ts", "snapshot.ts")
-		}
-		for _, file := range files {
-			fi, err := os.Lstat(filepath.Join(root, n, file))
-			if err != nil || !fi.Mode().IsRegular() {
-				return false
-			}
-		}
-	}
-	return true
-}
-
-// All classes share one preflight: a later unsafe root must not be discovered
-// after skills staging, plugin replacement, or another class's GC has written.
-// Direct symlink entries (including staging leftovers) are foreign, not garbage
-// we may unlink. RemoveAll never follows links inside an owned real directory.
-func (e *Engine) preflightCatalogRoots() error {
-	for _, root := range []string{e.CatalogRoot, e.CommandCatalogRoot, e.SubagentCatalogRoot, e.PluginCatalogRoot} {
-		if err := fsutil.RequireRealParents(e.ProjectRoot, root); err != nil {
-			return fmt.Errorf("catalog: unsafe materialization root %q: %w", root, err)
-		}
-		entries, err := os.ReadDir(root)
-		if os.IsNotExist(err) {
-			continue
-		}
-		if err != nil {
-			return fmt.Errorf("catalog: inspecting materialization root %q: %w", root, err)
-		}
-		for _, entry := range entries {
-			if entry.Type()&os.ModeSymlink != 0 {
-				return fmt.Errorf("catalog: refusing symlinked materialization entry %q", filepath.Join(root, entry.Name()))
-			}
-		}
-	}
-	return nil
-}
-
-// gcCatalogRoots removes entries in the materialized catalog roots that no
-// declared resource owns: skill directories outside p.skills, command files
-// outside p.commands, and subagent files (anchor or per-tool variant) whose
-// base name is outside p.subagents. The roots are control-plane directories
-// under .homonto — generated content, never user-authored — so pruning the
-// undeclared is safe by construction.
-func gcCatalogRoots(skillRoot, cmdRoot, subRoot, pluginRoot string, p *catalogPlan) error {
-	inSet := func(names []string) map[string]bool {
-		m := make(map[string]bool, len(names))
-		for _, n := range names {
-			m[n] = true
-		}
-		return m
-	}
-	skills, cmds, subs := inSet(p.skills), inSet(p.commands), inSet(p.subagents)
-
-	if entries, err := os.ReadDir(skillRoot); err == nil {
-		for _, e := range entries {
-			if !skills[e.Name()] {
-				if err := os.RemoveAll(filepath.Join(skillRoot, e.Name())); err != nil {
-					return err
-				}
-			}
-		}
-	}
-	if entries, err := os.ReadDir(cmdRoot); err == nil {
-		for _, e := range entries {
-			name := strings.TrimSuffix(e.Name(), ".md")
-			if !cmds[name] {
-				if err := os.RemoveAll(filepath.Join(cmdRoot, e.Name())); err != nil {
-					return err
-				}
-			}
-		}
-	}
-	if entries, err := os.ReadDir(pluginRoot); err == nil {
-		owned := map[string]bool{}
-		for _, n := range p.plugins {
-			owned[n] = true
-		}
-		for _, e := range entries {
-			if !owned[e.Name()] {
-				if err := os.RemoveAll(filepath.Join(pluginRoot, e.Name())); err != nil {
-					return err
-				}
-			}
-		}
-	}
-	if entries, err := os.ReadDir(subRoot); err == nil {
-		for _, e := range entries {
-			// Owner name: strip .md, then an optional per-tool variant suffix.
-			name := strings.TrimSuffix(e.Name(), ".md")
-			for _, tool := range config.HarnessIDs() {
-				name = strings.TrimSuffix(name, "."+tool)
-			}
-			if !subs[name] {
-				if err := os.RemoveAll(filepath.Join(subRoot, e.Name())); err != nil {
-					return err
-				}
-			}
-		}
-	}
-	return nil
-}
-
-// catalogPlan is what a materialize would extract, and whether it need bother.
-type catalogPlan struct {
-	cl        *catalog.Catalog
-	skills    []string
-	commands  []string
-	subagents []string
-	plugins   []string
-	renderCtx map[string]agentfm.RenderContext
-	// shellProxy/codeIntel are the resolved [tooling] providers rendered into
-	// each dispatcher skill's generated tooling reference.
-	shellProxy string
-	codeIntel  string
-	// tmpDir is the resolved [tmp] scratch directory ("" when [tmp] is not
-	// declared) rendered into the dispatchers and the shared knowledge skill.
-	tmpDir          string
-	workspaceRef    []byte
-	harnessRef      []byte
-	workflowBinding []byte
-	fingerprint     string
-	upToDate        bool
-}
-
-// CatalogNeedsMaterialize reports whether a materialize would do real work. The
-// CLI needs this because a catalog file's symlink target is name-based, so
-// stale, missing, or mis-rendered catalog content leaves the projection plan
-// empty — and an empty plan otherwise skips apply entirely, stranding the
-// content forever. (Same shape as the HasRemoteResources carve-out.) An error
-// resolving the plan counts as "needs work" so apply runs and surfaces it,
-// rather than being silently swallowed here.
-func (e *Engine) CatalogNeedsMaterialize() bool {
-	if !e.workflowBridgePresent() {
-		return true
-	}
-	// An incomplete [tmp] surface forces the apply path on its own: the CLI
-	// short-circuits a no-change apply before Engine.Apply runs, and the
-	// surface ensure lives inside Apply (same carve-out class as the
-	// symlink-blind empty plan below).
-	if enabled, dir := e.Cfg.ResolvedTmp(); enabled && !e.tmpSurfacePresent(dir) {
-		return true
-	}
-	p, err := e.planCatalog()
-	if err != nil {
-		return true
-	}
-	return p != nil && !p.upToDate
-}
-
-const workflowBridgePlugin = "homonto-workflow"
-
-func (e *Engine) workflowBindingPath() string {
-	return filepath.Join(e.PluginCatalogRoot, workflowBridgePlugin, "binding.json")
-}
-
-func (e *Engine) workflowBinding() ([]byte, error) {
-	if !filepath.IsAbs(e.ConfigPath) || filepath.Clean(e.ConfigPath) != e.ConfigPath || filepath.Dir(e.ConfigPath) != e.ProjectRoot {
-		return nil, fmt.Errorf("workflow bridge: invalid selected config identity %q", e.ConfigPath)
-	}
-	coordinator := "homonto"
-	for name, agent := range e.Cfg.Subagents {
-		if catalogName, ok := config.SubagentCatalogName(agent.Source); ok && catalogName == "homonto" {
-			coordinator = name
-		}
-	}
-	hosts := e.Cfg.HostingProviders()
-	data, err := json.MarshalIndent(struct {
-		Version          int    `json:"version"`
-		ConfigPath       string `json:"configPath"`
-		ConfigRoot       string `json:"configRoot"`
-		Coordinator      string `json:"coordinator"`
-		GithubEnabled    bool   `json:"githubEnabled"`
-		GitlabEnabled    bool   `json:"gitlabEnabled"`
-		BitbucketEnabled bool   `json:"bitbucketEnabled"`
-	}{1, e.ConfigPath, e.ProjectRoot, coordinator, hosts["github"], hosts["gitlab"], hosts["bitbucket"]}, "", "  ")
-	if err != nil {
-		return nil, err
-	}
-	return append(data, '\n'), nil
-}
-
-func (e *Engine) workflowBindingPresent(want []byte) bool {
-	if len(want) == 0 {
-		return true
-	}
-	path := e.workflowBindingPath()
-	if err := fsutil.RequireRealParents(e.StateDir, filepath.Dir(path)); err != nil {
-		return false
-	}
-	info, err := os.Lstat(path)
-	if err != nil || !info.Mode().IsRegular() {
-		return false
-	}
-	data, err := os.ReadFile(path)
-	return err == nil && bytes.Equal(data, want)
-}
-
-// workflowBridgeSource is the removed V1 bridge entry (ADR 0079). Its link stays
-// in workflowPluginLinks, permanently disabled, so apply still removes a stale
-// owned symlink; removal compares only the link target, so the file need not exist.
-func (e *Engine) workflowBridgeSource() string {
-	return filepath.Join(e.PluginCatalogRoot, workflowBridgePlugin, "plugin.ts")
-}
-
-func (e *Engine) workflowBridgeDestination() string {
-	return filepath.Join(e.ProjectRoot, ".opencode", "plugins", workflowBridgePlugin+".ts")
-}
-
-func (e *Engine) workflowContextDestination() string {
-	return filepath.Join(e.ProjectRoot, ".opencode", "plugins", workflowBridgePlugin+"-context")
-}
-
-type workflowPluginLink struct {
-	source      string
-	destination string
-	enabled     bool
-	directory   bool
-}
-
-func (e *Engine) workflowPluginLinks() []workflowPluginLink {
-	return []workflowPluginLink{
-		{source: e.workflowBridgeSource(), destination: e.workflowBridgeDestination(), enabled: false},
-		{source: filepath.Join(e.PluginCatalogRoot, workflowBridgePlugin, "v2.ts"), destination: e.workflowContextDestination() + ".ts"},
-		{source: filepath.Join(e.PluginCatalogRoot, workflowBridgePlugin), destination: e.workflowContextDestination(), enabled: e.Cfg.WorkflowContextEnabled(), directory: true},
-	}
-}
-
-// Both endpoints move with the project (ADR 0026). Keep the exact relative
-// spelling as the owned target; matching a foreign path's suffix is not proof.
-func (link workflowPluginLink) target() (string, error) {
-	return filepath.Rel(filepath.Dir(link.destination), link.source)
-}
-
-// workflowBridgePresent reports whether the configured bridge state has
-// converged. A foreign file deliberately remains "not present" so apply can
-// name the conflict instead of treating an untrusted replacement as managed.
-func (e *Engine) workflowBridgePresent() bool {
-	for _, link := range e.workflowPluginLinks() {
-		if !e.workflowPluginLinkPresent(link) {
-			return false
-		}
-	}
-	return true
-}
-
-func (e *Engine) workflowPluginLinkPresent(link workflowPluginLink) bool {
-	dst := link.destination
-	if err := fsutil.RequireRealParents(e.ProjectRoot, filepath.Dir(dst)); err != nil {
-		return false
-	}
-	if !link.enabled {
-		_, err := os.Lstat(dst)
-		return os.IsNotExist(err)
-	}
-	want, err := link.target()
-	if err != nil {
-		return false
-	}
-	target, err := os.Readlink(dst)
-	return err == nil && target == want
-}
-
-// ensureWorkflowBridge creates or removes only the exact symlink homonto owns.
-// The source remains in the generated catalog even when disabled, so toggling
-// the setting is reversible without a fetch or a copied plugin file.
-func (e *Engine) ensureWorkflowBridge() error {
-	links := e.workflowPluginLinks()
-	for _, link := range links {
-		if err := e.ensureWorkflowPluginLink(link, true); err != nil {
-			return err
-		}
-	}
-	for _, enabled := range []bool{false, true} {
-		for _, link := range links {
-			if link.enabled == enabled {
-				if err := e.ensureWorkflowPluginLink(link, false); err != nil {
-					return err
-				}
-			}
-		}
-	}
-	return nil
-}
-
-func (e *Engine) preflightWorkflowPluginDestination(link workflowPluginLink) error {
-	if err := fsutil.RequireRealParents(e.ProjectRoot, filepath.Dir(link.destination)); err != nil {
-		return fmt.Errorf("workflow bridge: unsafe plugin directory: %w", err)
-	}
-	want, err := link.target()
-	if err != nil {
-		return fmt.Errorf("workflow bridge: relative plugin target: %w", err)
-	}
-	target, err := os.Readlink(link.destination)
-	if os.IsNotExist(err) {
-		return nil
-	}
-	if err != nil {
-		return fmt.Errorf("workflow bridge: %s exists and is not a homonto-managed symlink; not overwriting", link.destination)
-	}
-	if target != want && target != link.source {
-		return fmt.Errorf("workflow bridge: %s points outside homonto's catalog; not replacing", link.destination)
-	}
-	return nil
-}
-
-func (e *Engine) ensureWorkflowPluginLink(link workflowPluginLink, dryRun bool) error {
-	dst := link.destination
-	if err := fsutil.RequireRealParents(e.ProjectRoot, filepath.Dir(dst)); err != nil {
-		return fmt.Errorf("workflow bridge: unsafe plugin directory: %w", err)
-	}
-	want, err := link.target()
-	if err != nil {
-		return fmt.Errorf("workflow bridge: relative plugin target: %w", err)
-	}
-	if !link.enabled {
-		target, err := os.Readlink(dst)
-		if os.IsNotExist(err) {
-			return nil
-		}
-		if err != nil {
-			return fmt.Errorf("workflow bridge: %s exists and is not a homonto-managed symlink; not removing", dst)
-		}
-		if target != want && target != link.source {
-			return fmt.Errorf("workflow bridge: %s points outside homonto's catalog; not removing", dst)
-		}
-		if dryRun {
-			return nil
-		}
-		return os.Remove(dst)
-	}
-	if err := fsutil.RequireRealParents(e.ProjectRoot, filepath.Dir(link.source)); err != nil {
-		return fmt.Errorf("workflow bridge: unsafe catalog source: %w", err)
-	}
-	info, err := os.Lstat(link.source)
-	if err != nil {
-		return fmt.Errorf("workflow bridge: catalog source missing: %w", err)
-	}
-	if (link.directory && !info.IsDir()) || (!link.directory && !info.Mode().IsRegular()) {
-		return fmt.Errorf("workflow bridge: catalog source has wrong type: %s", link.source)
-	}
-	if link.directory && !allPluginDirsExist(e.PluginCatalogRoot, []string{workflowBridgePlugin}, true) {
-		return fmt.Errorf("workflow bridge: catalog source incomplete: %s", link.source)
-	}
-	if target, err := os.Readlink(dst); err == nil {
-		if target == want {
-			return nil
-		}
-		if target != link.source {
-			return fmt.Errorf("workflow bridge: %s points outside homonto's catalog; not replacing", dst)
-		}
-		if dryRun {
-			return nil
-		}
-		// Migrate only the exact absolute target of this current project. A stale
-		// pre-move absolute target has no recorded bridge provenance to authenticate.
-		if err := os.Remove(dst); err != nil {
-			return fmt.Errorf("workflow bridge: migrate absolute link: %w", err)
-		}
-	} else if !os.IsNotExist(err) {
-		return fmt.Errorf("workflow bridge: %s exists and is not a homonto-managed symlink; not overwriting", dst)
-	}
-	if dryRun {
-		return nil
-	}
-	if err := os.MkdirAll(filepath.Dir(dst), 0o755); err != nil {
-		return fmt.Errorf("workflow bridge: create plugin directory: %w", err)
-	}
-	if err := os.Symlink(want, dst); err != nil {
-		return fmt.Errorf("workflow bridge: link plugin: %w", err)
-	}
-	return nil
-}
-
-// planCatalog resolves the builtin content the config declares and evaluates the
-// materialize gate. It returns nil when nothing builtin is declared.
-func (e *Engine) planCatalog() (*catalogPlan, error) {
-	if err := e.preflightCatalogRoots(); err != nil {
-		return nil, err
-	}
-	skillSet := map[string]bool{}
-	cmdSet := map[string]bool{}
-	subSet := map[string]bool{}
-	pluginSet := map[string]bool{}
-	targetedSubagents := map[string]map[string]bool{}
-	for _, tool := range config.HarnessIDs() {
-		targetedSubagents[tool] = map[string]bool{}
-		sEntries, err := e.Cfg.ExpandedSkillEntriesForTool(tool)
-		if err != nil {
-			return nil, err
-		}
-		for _, entry := range sEntries {
-			if strings.HasPrefix(entry.Resource.Source, "builtin:") {
-				skillSet[strings.TrimPrefix(entry.Resource.Source, "builtin:")] = true
-			}
-		}
-		cEntries, err := e.Cfg.ExpandedCommandEntriesForTool(tool)
-		if err != nil {
-			return nil, err
-		}
-		for _, entry := range cEntries {
-			if strings.HasPrefix(entry.Resource.Source, "builtin:") {
-				cmdSet[strings.TrimPrefix(entry.Resource.Source, "builtin:")] = true
-			}
-		}
-		saEntries, err := e.Cfg.ExpandedSubagentEntriesForTool(tool)
-		if err != nil {
-			return nil, err
-		}
-		for _, entry := range saEntries {
-			if strings.HasPrefix(entry.Resource.Source, "builtin:") {
-				name := strings.TrimPrefix(entry.Resource.Source, "builtin:")
-				subSet[name] = true
-				targetedSubagents[tool][name] = true
-			}
-		}
-	}
-	// Build the catalog including the config's local frameworks so a
-	// local:<path> framework's resources materialize (from their own FS) into
-	// the catalog root exactly like a builtin's. With no local frameworks this
-	// is the embedded singleton, identical to catalog.New().
-	cl, err := e.Cfg.FrameworkCatalog()
-	if err != nil {
-		return nil, err
-	}
-	for _, name := range cl.PluginNames() {
-		// Framework/resource catalogs retain their bundled plugins. Explicit
-		// bundled-plugin-only configs also need content before adapter projection.
-		if len(skillSet)+len(cmdSet)+len(subSet) > 0 {
-			pluginSet[name] = true
-		}
-		for _, plugin := range e.Cfg.Plugins.OpenCode {
-			if plugin.IsEnabled() && plugin.Source == name {
-				pluginSet[name] = true
-			}
-		}
-	}
-	if e.Cfg.WorkflowContextEnabled() {
-		pluginSet[workflowBridgePlugin] = true
-	}
-	if len(skillSet)+len(cmdSet)+len(subSet)+len(pluginSet) == 0 {
-		return nil, nil
-	}
-	skillNames := make([]string, 0, len(skillSet))
-	for n := range skillSet {
-		skillNames = append(skillNames, n)
-	}
-	sort.Strings(skillNames)
-	cmdNames := make([]string, 0, len(cmdSet))
-	for n := range cmdSet {
-		cmdNames = append(cmdNames, n)
-	}
-	sort.Strings(cmdNames)
-	subNames := make([]string, 0, len(subSet))
-	for n := range subSet {
-		subNames = append(subNames, n)
-	}
-	sort.Strings(subNames)
-
-	// Gate on every input the materialized bytes are derived from:
-	//   - the base catalog version (an embedded-catalog upgrade),
-	//   - the render fingerprint (model routes + per-subagent overrides — a
-	//     route change would otherwise freeze rendered agents at their old
-	//     model while the catalog stayed identical),
-	//   - the CONTENT fingerprint (the source bytes of every declared resource
-	//     — a local: framework's edited skill or a remote: framework's repinned
-	//     digest changes overlay content while the version stays put; a
-	//     version-only gate served the stale bytes forever, and repinning is
-	//     how a patched resource ships),
-	//   - and the presence of every file a materialize would write.
-	renderCtx, err := e.subagentRenderContextFor(targetedSubagents)
-	if err != nil {
-		return nil, err
-	}
-	pluginNames := make([]string, 0, len(pluginSet))
-	for n := range pluginSet {
-		pluginNames = append(pluginNames, n)
-	}
-	sort.Strings(pluginNames)
-	contentFP, err := cl.ContentFingerprint(skillNames, cmdNames, subNames, pluginNames)
-	if err != nil {
-		return nil, err
-	}
-	//   - and the TOOLING fingerprint (the resolved [tooling] providers plus the
-	//     bytes of the two selected fragments — editing [tooling] leaves the
-	//     catalog version and every resource byte untouched, so without this the
-	//     gate would report up to date and serve a stale tooling reference
-	//     forever, the same defect class the content fingerprint closed).
-	tooling := e.Cfg.ResolvedTooling()
-	toolingFP, err := cl.ToolingFingerprint(tooling.ShellProxy, tooling.CodeIntel)
-	if err != nil {
-		return nil, err
-	}
-	//   - and the TMP fingerprint (whether [tmp] is declared plus the rendered
-	//     reference bytes — same staleness class the tooling fingerprint
-	//     closes: a config-only edit must re-render the generated reference).
-	tmpEnabled, tmpDir := e.Cfg.ResolvedTmp()
-	if !tmpEnabled {
-		tmpDir = ""
-	}
-	tmpFP := catalog.TmpFingerprint(tmpEnabled, tmpDir)
-	workspaceRef := catalog.RenderWorkspace(e.WorkspaceLayout)
-	harnessRef := catalog.RenderHarness(e.harnessDeclarations())
-	fingerprint := renderFingerprint(renderCtx) + ":" + contentFP + ":" + toolingFP + ":" + tmpFP
-	if len(harnessRef) > 0 {
-		harnessFP := sha256.Sum256(harnessRef)
-		fingerprint += ":h" + hex.EncodeToString(harnessFP[:])
-	}
-	if len(workspaceRef) > 0 {
-		workspaceFP := sha256.Sum256(workspaceRef)
-		fingerprint += ":" + hex.EncodeToString(workspaceFP[:])
-	}
-	var workflowBinding []byte
-	if pluginSet[workflowBridgePlugin] {
-		workflowBinding, err = e.workflowBinding()
-		if err != nil {
-			return nil, err
-		}
-		bindingFP := sha256.Sum256(workflowBinding)
-		fingerprint += ":" + hex.EncodeToString(bindingFP[:])
-	}
-	upToDate := e.State.CatalogVersionRecorded() == cl.Version() &&
-		e.State.RenderFingerprintRecorded() == fingerprint &&
-		allSkillDirsExist(e.CatalogRoot, skillNames, cl, tmpDir) &&
-		allWorkspaceReferencesExist(e.CatalogRoot, skillNames, workspaceRef) &&
-		allHarnessReferencesExist(e.CatalogRoot, skillNames, harnessRef) &&
-		allCommandFilesExist(e.CommandCatalogRoot, cmdNames) &&
-		allSubagentFilesExist(e.SubagentCatalogRoot, subNames, cl, renderCtx) &&
-		allPluginDirsExist(e.PluginCatalogRoot, pluginNames, e.Cfg.WorkflowContextEnabled()) &&
-		e.workflowBindingPresent(workflowBinding)
-	return &catalogPlan{
-		cl:              cl,
-		skills:          skillNames,
-		commands:        cmdNames,
-		subagents:       subNames,
-		plugins:         pluginNames,
-		renderCtx:       renderCtx,
-		shellProxy:      tooling.ShellProxy,
-		codeIntel:       tooling.CodeIntel,
-		tmpDir:          tmpDir,
-		workspaceRef:    workspaceRef,
-		harnessRef:      harnessRef,
-		workflowBinding: workflowBinding,
-		fingerprint:     fingerprint,
-		upToDate:        upToDate,
-	}, nil
-}
-
-// allSkillDirsExist reports whether every declared skill is materialized. For a
-// dispatcher skill it also requires the generated tooling reference: the
-// directory alone existing would otherwise mask a hand-deleted reference behind
-// an up-to-date fingerprint, leaving the skill pointing at a file that is not
-// there. The same holds for the generated tmp reference ([tmp] declared) on
-// dispatchers and the shared knowledge skill.
-func allSkillDirsExist(root string, names []string, cl *catalog.Catalog, tmpDir string) bool {
-	for _, n := range names {
-		fi, err := os.Stat(filepath.Join(root, n))
-		if err != nil || !fi.IsDir() {
-			return false
-		}
-		if cl.IsDispatcher(n) {
-			ref := filepath.Join(root, n, filepath.FromSlash(catalog.ToolingReferencePath))
-			if st, err := os.Stat(ref); err != nil || st.IsDir() {
-				return false
-			}
-		}
-		if tmpDir != "" && (cl.IsDispatcher(n) || n == catalog.SharedKnowledgeSkill) {
-			ref := filepath.Join(root, n, filepath.FromSlash(catalog.TmpReferencePath))
-			if st, err := os.Stat(ref); err != nil || st.IsDir() {
-				return false
-			}
-		}
-	}
-	return true
-}
-
-func allWorkspaceReferencesExist(root string, names []string, ref []byte) bool {
-	if len(ref) == 0 {
-		return true
-	}
-	for _, name := range names {
-		if catalog.HasWorkspaceReference(name) {
-			fi, err := os.Stat(filepath.Join(root, name, filepath.FromSlash(catalog.WorkspaceReferencePath)))
-			if err != nil || !fi.Mode().IsRegular() {
-				return false
-			}
-		}
-	}
-	return true
-}
-
-func allHarnessReferencesExist(root string, names []string, ref []byte) bool {
-	if len(ref) == 0 {
-		return true
-	}
-	for _, name := range names {
-		if catalog.HasHarnessReference(name) {
-			fi, err := os.Stat(filepath.Join(root, name, filepath.FromSlash(catalog.HarnessReferencePath)))
-			if err != nil || !fi.Mode().IsRegular() {
-				return false
-			}
-		}
-	}
-	return true
-}
-
-func allCommandFilesExist(root string, names []string) bool {
-	for _, n := range names {
-		fi, err := os.Stat(filepath.Join(root, n+".md"))
-		if err != nil || fi.IsDir() {
-			return false
-		}
-	}
-	return true
-}
-
-// renderFingerprint digests every render input — each tool's
-// per-subagent overrides, model + variant + effort — deterministically, so
-// the materialize gate re-renders exactly when something the agents are
-// stamped from actually changed. Every field the render reads must be digested
-// here: one omitted field is one config edit that silently never reaches the
-// agent.
-//
-// Sorted keys keep it stable across map iteration order; delimited fields keep
-// it unambiguous across values (an "a"+"bc" / "ab"+"c" collision would skip the
-// very re-render this gate exists to trigger).
-func renderFingerprint(ctx map[string]agentfm.RenderContext) string {
-	h := sha256.New()
-	digestSpecs := func(kind, tool string, specs map[string]agentfm.ModelSpec) {
-		keys := make([]string, 0, len(specs))
-		for k := range specs {
-			keys = append(keys, k)
-		}
-		sort.Strings(keys)
-		for _, k := range keys {
-			s := specs[k]
-			fmt.Fprintf(h, "%s\x00%s\x00%s\x00%s\x00%s\x00%s\x00", kind, tool, k, s.Model, s.Variant, s.Effort)
-			if s.Steps != nil {
-				fmt.Fprintf(h, "steps\x00%d\x00", *s.Steps)
-			}
-			for _, add := range s.BashAllowAdd {
-				fmt.Fprintf(h, "bashadd\x00%s\x00", add)
-			}
-		}
-	}
-	tools := make([]string, 0, len(ctx))
-	for tool := range ctx {
-		tools = append(tools, tool)
-	}
-	sort.Strings(tools)
-	for _, tool := range tools {
-		names := make([]string, 0, len(ctx[tool].Names))
-		for source := range ctx[tool].Names {
-			names = append(names, source)
-		}
-		sort.Strings(names)
-		for _, source := range names {
-			fmt.Fprintf(h, "alias\x00%s\x00%s\x00%s\x00", tool, source, ctx[tool].Names[source])
-		}
-		digestSpecs("override", tool, ctx[tool].Overrides)
-		fmt.Fprintf(h, "shell-proxy\x00%s\x00%s\x00", tool, ctx[tool].ShellProxy)
-		for _, group := range []struct {
-			kind     string
-			patterns []string
-		}{
-			{"service-coordinator-ask", ctx[tool].ServiceRules.CoordinatorAsk},
-			{"service-coordinator-deny", ctx[tool].ServiceRules.CoordinatorDeny},
-			{"service-worker-deny", ctx[tool].ServiceRules.WorkerDeny},
-		} {
-			for _, pattern := range group.patterns {
-				fmt.Fprintf(h, "%s\x00%s\x00%s\x00", group.kind, tool, pattern)
-			}
-		}
-		for _, group := range []struct {
-			kind string
-			dirs map[string][]string
-		}{
-			{"external-dir", ctx[tool].ExternalDirectoriesByAgent},
-			{"external-dir-deny", ctx[tool].ExternalDirectoryDeniesByAgent},
-			{"edit-dir-deny", ctx[tool].EditDirectoryDeniesByAgent},
-		} {
-			agents := make([]string, 0, len(group.dirs))
-			for agent := range group.dirs {
-				agents = append(agents, agent)
-			}
-			sort.Strings(agents)
-			for _, agent := range agents {
-				fmt.Fprintf(h, "%s-managed\x00%s\x00%s\x00", group.kind, tool, agent)
-				dirs := append([]string(nil), group.dirs[agent]...)
-				sort.Strings(dirs)
-				for i, dir := range dirs {
-					if i > 0 && dir == dirs[i-1] {
-						continue
-					}
-					fmt.Fprintf(h, "%s\x00%s\x00%s\x00%s\x00", group.kind, tool, agent, dir)
-				}
-			}
-		}
-		targets := make([]string, 0, len(ctx[tool].Targets))
-		for name := range ctx[tool].Targets {
-			targets = append(targets, name)
-		}
-		sort.Strings(targets)
-		for _, name := range targets {
-			fmt.Fprintf(h, "target\x00%s\x00%s\x00", tool, name)
-		}
-	}
-	return hex.EncodeToString(h.Sum(nil))
-}
-
-// allSubagentFilesExist reports whether every file a materialize would write is
-// present — the shared anchor AND each per-tool rendered variant. Checking only
-// the <name>.md anchor would leave a deleted variant unrepaired: the anchor
-// still exists, so the gate short-circuits and the tool keeps a symlink pointing
-// at a file that is never rewritten.
-func allSubagentFilesExist(root string, names []string, cl *catalog.Catalog, renderCtx map[string]agentfm.RenderContext) bool {
-	for _, n := range names {
-		files, err := cl.SubagentFiles(n, renderCtx)
-		if err != nil {
-			return false
-		}
-		for _, f := range files {
-			fi, err := os.Stat(filepath.Join(root, f))
-			if err != nil || fi.IsDir() {
-				return false
-			}
-		}
-	}
-	return true
 }

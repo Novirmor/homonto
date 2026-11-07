@@ -11,7 +11,7 @@ import (
 	"github.com/spf13/cobra"
 )
 
-var toBypassNow = func() time.Time { return time.Now() }
+var toBypassNow = time.Now
 
 func bypassCmd() *cobra.Command {
 	var (

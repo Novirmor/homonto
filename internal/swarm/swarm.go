@@ -246,18 +246,8 @@ func (s *Store) Create(ctx context.Context, name, engine string, changed []strin
 	if len(specs) < MinCandidates || len(specs) > MaxCandidates {
 		return nil, fmt.Errorf("a swarm compares %d or %d candidates, not %d", MinCandidates, MaxCandidates, len(specs))
 	}
-	seen := map[string]bool{}
-	for _, c := range specs {
-		if !candidateName.MatchString(c.Name) || seen[c.Name] {
-			return nil, fmt.Errorf("candidate name %q must be unique lowercase letters and digits (at most 12)", c.Name)
-		}
-		seen[c.Name] = true
-		if c.Agent == "" {
-			return nil, fmt.Errorf("candidate %s needs an agent", c.Name)
-		}
-		if len(c.Models) == 0 {
-			return nil, fmt.Errorf("candidate %s: agent %s has no routed model on any harness", c.Name, c.Agent)
-		}
+	if err := validateCandidates(specs); err != nil {
+		return nil, err
 	}
 	changed = slices.Clone(changed)
 	slices.Sort(changed)
@@ -310,10 +300,35 @@ func (s *Store) Create(ctx context.Context, name, engine string, changed []strin
 	default:
 		return nil, err
 	}
+	return sw, s.allocateCandidates(ctx, sw, engine, changed)
+}
+
+// validateCandidates requires uniquely named candidates, each with an agent
+// that has a routed model.
+func validateCandidates(specs []CandidateSpec) error {
+	seen := map[string]bool{}
+	for _, c := range specs {
+		if !candidateName.MatchString(c.Name) || seen[c.Name] {
+			return fmt.Errorf("candidate name %q must be unique lowercase letters and digits (at most 12)", c.Name)
+		}
+		seen[c.Name] = true
+		if c.Agent == "" {
+			return fmt.Errorf("candidate %s needs an agent", c.Name)
+		}
+		if len(c.Models) == 0 {
+			return fmt.Errorf("candidate %s: agent %s has no routed model on any harness", c.Name, c.Agent)
+		}
+	}
+	return nil
+}
+
+// allocateCandidates creates (or resumes) each candidate's workspace task and
+// requires every one to start from the base the first recorded.
+func (s *Store) allocateCandidates(ctx context.Context, sw *Swarm, engine string, changed []string) error {
 	for _, c := range sw.Candidates {
 		t, err := s.Tasks.Create(ctx, c.Task, engine, "", "worktree", changed, nil)
 		if err != nil {
-			return sw, fmt.Errorf("candidate %s: %w", c.Name, err)
+			return fmt.Errorf("candidate %s: %w", c.Name, err)
 		}
 		bases := map[string]string{}
 		for alias, checkout := range t.Checkouts {
@@ -322,13 +337,13 @@ func (s *Store) Create(ctx context.Context, name, engine string, changed []strin
 		if sw.Bases == nil {
 			sw.Bases = bases
 			if err := s.save(sw); err != nil {
-				return sw, err
+				return err
 			}
 		} else if !mapsEqual(sw.Bases, bases) {
-			return sw, fmt.Errorf("candidate %s started from another base (a source branch moved during creation); run swarm cleanup --abandon and create the swarm again", c.Name)
+			return fmt.Errorf("candidate %s started from another base (a source branch moved during creation); run swarm cleanup --abandon and create the swarm again", c.Name)
 		}
 	}
-	return sw, nil
+	return nil
 }
 
 // ErrNotFound reports a swarm with no record.

@@ -3,6 +3,7 @@ package remote
 import (
 	"archive/tar"
 	"compress/gzip"
+	"errors"
 	"fmt"
 	"io"
 	"path"
@@ -77,7 +78,7 @@ func ValidateTar(r io.Reader, lim Limits) (Tree, error) {
 	)
 	for {
 		hdr, err := tr.Next()
-		if err == io.EOF {
+		if errors.Is(err, io.EOF) {
 			break
 		}
 		if err != nil {

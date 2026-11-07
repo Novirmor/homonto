@@ -61,10 +61,7 @@ func handoffCmd() *cobra.Command {
 			if !ontostate.ValidPhase(st.Phase) {
 				return fmt.Errorf("onto handoff: %q has an unknown phase %q; refusing to build a handoff path from it", name, st.Phase)
 			}
-			pack, err := buildHandoff(dir, name, changeDir, st)
-			if err != nil {
-				return err
-			}
+			pack := buildHandoff(dir, name, changeDir, st)
 			if asJSON {
 				rec, err := buildRecovery(cmd, dir, name, changeDir, st)
 				if err != nil {
@@ -125,7 +122,7 @@ type textPack struct {
 	artifactsHash string
 }
 
-func buildHandoff(root, name, changeDir string, st ontostate.State) (*textPack, error) {
+func buildHandoff(root, name, changeDir string, st ontostate.State) *textPack {
 	var b strings.Builder
 	fmt.Fprintf(&b, "# onto handoff: %s\n\n", name)
 	fmt.Fprintf(&b, "- **id**: %s\n- **workflow**: %s\n- **phase**: %s\n", nonEmpty(st.ID, "(none)"), nonEmpty(st.Workflow, "full"), st.Phase)
@@ -175,7 +172,7 @@ func buildHandoff(root, name, changeDir string, st ontostate.State) (*textPack, 
 	}
 	fmt.Fprintf(&b, "\n**artifacts-hash**: sha256:%x\n", h.Sum(nil))
 	b.WriteString("\nRecover the phase from file state (the onto dispatcher's derivation); this pack is the *content* recovery. Re-read an artifact above if its excerpt is not enough.\n")
-	return &textPack{text: b.String(), gates: gates, artifactsHash: hex.EncodeToString(h.Sum(nil))}, nil
+	return &textPack{text: b.String(), gates: gates, artifactsHash: hex.EncodeToString(h.Sum(nil))}
 }
 
 // buildRecovery assembles the persisted-view envelope: identity, phases,

@@ -3,8 +3,9 @@ package cli
 import (
 	"encoding/json"
 	"fmt"
+	"maps"
 	"os"
-	"sort"
+	"slices"
 
 	"github.com/Novirmor/homonto/internal/adapter"
 	"github.com/Novirmor/homonto/internal/engine"
@@ -135,7 +136,7 @@ func planJSON(cmd *cobra.Command, sets []adapter.ChangeSet, repins []engine.Remo
 		Name string `json:"name"`
 		Path string `json:"path"`
 	}{}
-	for _, name := range sortedRepoNames(repos) {
+	for _, name := range slices.Sorted(maps.Keys(repos)) {
 		reposOut = append(reposOut, struct {
 			Name string `json:"name"`
 			Path string `json:"path"`
@@ -170,17 +171,8 @@ func renderRepos(repos map[string]string) []string {
 		return nil
 	}
 	out := []string{"repos (repo-tagged project resources project only into their named repo):"}
-	for _, name := range sortedRepoNames(repos) {
+	for _, name := range slices.Sorted(maps.Keys(repos)) {
 		out = append(out, fmt.Sprintf("  %s  %s", name, repos[name]))
 	}
 	return out
-}
-
-func sortedRepoNames(repos map[string]string) []string {
-	names := make([]string, 0, len(repos))
-	for name := range repos {
-		names = append(names, name)
-	}
-	sort.Strings(names)
-	return names
 }

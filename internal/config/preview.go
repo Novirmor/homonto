@@ -2,6 +2,7 @@ package config
 
 import (
 	"fmt"
+	"maps"
 	"path/filepath"
 	"regexp"
 	"slices"
@@ -125,81 +126,94 @@ func relativeInside(p string) bool {
 var previewName = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{0,31}$`)
 
 func validatePreviews(c *Config) error {
-	names := make([]string, 0, len(c.Preview))
-	for name := range c.Preview {
-		names = append(names, name)
+	for _, name := range slices.Sorted(maps.Keys(c.Preview)) {
+		if err := validatePreview(c, name, c.Preview[name]); err != nil {
+			return err
+		}
 	}
-	slices.Sort(names)
-	for _, name := range names {
-		p := c.Preview[name]
-		label := "preview." + name
-		// The name becomes part of Docker container and image names.
-		if !previewName.MatchString(name) {
-			return fmt.Errorf("%s: name must be lowercase letters, digits and '-', starting with a letter or digit (at most 32)", label)
+	return nil
+}
+
+// validatePreview checks one [preview.<name>]: its name, repository, source,
+// port and path, and its resource budgets.
+func validatePreview(c *Config, name string, p Preview) error {
+	label := "preview." + name
+	// The name becomes part of Docker container and image names.
+	if !previewName.MatchString(name) {
+		return fmt.Errorf("%s: name must be lowercase letters, digits and '-', starting with a letter or digit (at most 32)", label)
+	}
+	if c.SchemaVersion != 2 {
+		return fmt.Errorf("%s requires schema_version = 2 and explicit [repos]", label)
+	}
+	if _, ok := c.Repos[p.Repo]; !ok {
+		return fmt.Errorf("%s: repo %q is not a declared repository", label, p.Repo)
+	}
+	if err := validatePreviewSource(label, p); err != nil {
+		return err
+	}
+	if p.Port < 1 || p.Port > 65535 {
+		return fmt.Errorf("%s: port must be the container port the preview serves HTTP on (1-65535)", label)
+	}
+	if p.Path != "" && (!strings.HasPrefix(p.Path, "/") || strings.ContainsAny(p.Path, " \t\r\n\x00")) {
+		return fmt.Errorf("%s: path must start with /", label)
+	}
+	if p.CPUs < 0 || p.CPUs > maxPreviewCPUs {
+		return fmt.Errorf("%s: cpus must be between 0 and %g", label, maxPreviewCPUs)
+	}
+	if p.Memory != "" {
+		n, err := ParseMemory(p.Memory)
+		if err != nil {
+			return fmt.Errorf("%s: %w", label, err)
 		}
-		if c.SchemaVersion != 2 {
-			return fmt.Errorf("%s requires schema_version = 2 and explicit [repos]", label)
+		if n < minPreviewMemory || n > maxPreviewMemory {
+			return fmt.Errorf("%s: memory must be between 32m and 8g", label)
 		}
-		if _, ok := c.Repos[p.Repo]; !ok {
-			return fmt.Errorf("%s: repo %q is not a declared repository", label, p.Repo)
+	}
+	if p.Pids < 0 || p.Pids > maxPreviewPids {
+		return fmt.Errorf("%s: pids must be between 1 and %d", label, maxPreviewPids)
+	}
+	for _, d := range []struct {
+		key, value string
+		max        time.Duration
+	}{{"ttl", p.TTL, maxPreviewTTL}, {"startup", p.Startup, maxPreviewStartup}} {
+		if d.value == "" {
+			continue
 		}
-		if (p.Dockerfile == "") == (p.Image == "") {
-			return fmt.Errorf("%s: set exactly one of dockerfile (build from the checkout) or image (mount the checkout)", label)
+		v, err := time.ParseDuration(d.value)
+		if err != nil || v <= 0 || v > d.max {
+			return fmt.Errorf("%s: %s must be a positive duration up to %s", label, d.key, d.max)
 		}
-		if p.Dockerfile != "" {
-			if !relativeInside(p.Dockerfile) {
-				return fmt.Errorf("%s: dockerfile must be relative to the checkout", label)
-			}
-			if p.Context != "" && !relativeInside(p.Context) {
-				return fmt.Errorf("%s: context must be relative to the checkout (use . for its root)", label)
-			}
-			if len(p.Command) > 0 {
-				return fmt.Errorf("%s: command applies only with image; a built image runs its own CMD", label)
-			}
-		} else {
-			if p.Context != "" {
-				return fmt.Errorf("%s: context applies only with dockerfile", label)
-			}
-			if strings.ContainsAny(p.Image, " \t\r\n\x00") || strings.HasPrefix(p.Image, "-") {
-				return fmt.Errorf("%s: image %q is not an image reference", label, p.Image)
-			}
-			for _, arg := range p.Command {
-				if strings.ContainsRune(arg, 0) {
-					return fmt.Errorf("%s: command contains NUL", label)
-				}
-			}
+	}
+	return nil
+}
+
+// validatePreviewSource requires exactly one of a dockerfile built from the
+// checkout or a stock image the checkout is mounted into, each with only its
+// own options.
+func validatePreviewSource(label string, p Preview) error {
+	if (p.Dockerfile == "") == (p.Image == "") {
+		return fmt.Errorf("%s: set exactly one of dockerfile (build from the checkout) or image (mount the checkout)", label)
+	}
+	if p.Dockerfile != "" {
+		if !relativeInside(p.Dockerfile) {
+			return fmt.Errorf("%s: dockerfile must be relative to the checkout", label)
 		}
-		if p.Port < 1 || p.Port > 65535 {
-			return fmt.Errorf("%s: port must be the container port the preview serves HTTP on (1-65535)", label)
+		if p.Context != "" && !relativeInside(p.Context) {
+			return fmt.Errorf("%s: context must be relative to the checkout (use . for its root)", label)
 		}
-		if p.Path != "" && (!strings.HasPrefix(p.Path, "/") || strings.ContainsAny(p.Path, " \t\r\n\x00")) {
-			return fmt.Errorf("%s: path must start with /", label)
+		if len(p.Command) > 0 {
+			return fmt.Errorf("%s: command applies only with image; a built image runs its own CMD", label)
 		}
-		if p.CPUs < 0 || p.CPUs > maxPreviewCPUs {
-			return fmt.Errorf("%s: cpus must be between 0 and %g", label, maxPreviewCPUs)
+	} else {
+		if p.Context != "" {
+			return fmt.Errorf("%s: context applies only with dockerfile", label)
 		}
-		if p.Memory != "" {
-			n, err := ParseMemory(p.Memory)
-			if err != nil {
-				return fmt.Errorf("%s: %w", label, err)
-			}
-			if n < minPreviewMemory || n > maxPreviewMemory {
-				return fmt.Errorf("%s: memory must be between 32m and 8g", label)
-			}
+		if strings.ContainsAny(p.Image, " \t\r\n\x00") || strings.HasPrefix(p.Image, "-") {
+			return fmt.Errorf("%s: image %q is not an image reference", label, p.Image)
 		}
-		if p.Pids < 0 || p.Pids > maxPreviewPids {
-			return fmt.Errorf("%s: pids must be between 1 and %d", label, maxPreviewPids)
-		}
-		for _, d := range []struct {
-			key, value string
-			max        time.Duration
-		}{{"ttl", p.TTL, maxPreviewTTL}, {"startup", p.Startup, maxPreviewStartup}} {
-			if d.value == "" {
-				continue
-			}
-			v, err := time.ParseDuration(d.value)
-			if err != nil || v <= 0 || v > d.max {
-				return fmt.Errorf("%s: %s must be a positive duration up to %s", label, d.key, d.max)
+		for _, arg := range p.Command {
+			if strings.ContainsRune(arg, 0) {
+				return fmt.Errorf("%s: command contains NUL", label)
 			}
 		}
 	}

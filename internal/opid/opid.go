@@ -52,6 +52,6 @@ func Fixed(t time.Time) Supplier {
 			n++
 			return fmt.Sprintf("op-%06d", n)
 		},
-		Now: func() time.Time { return t.UTC() },
+		Now: t.UTC,
 	}
 }

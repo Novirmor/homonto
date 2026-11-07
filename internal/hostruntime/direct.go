@@ -140,7 +140,7 @@ func (s *DirectServer) Serve(listener net.Listener) error {
 	defer wg.Wait()
 	for {
 		line, err := readLine(s.in)
-		if err == io.EOF {
+		if errors.Is(err, io.EOF) {
 			s.dispose()
 			return nil
 		}
@@ -405,6 +405,45 @@ func (s *DirectServer) Hook(ev HookEvent) HookReply {
 	if len(ev.Response) > 0 {
 		response, _ = decode(string(ev.Response))
 	}
+	switch ev.Event {
+	case "PreToolUse", "PostToolUse", "PostToolUseFailure":
+		return s.toolUseHook(ev, input, response)
+	case "PermissionRequest":
+		// Claude Code reports a worker's prompt but not the user's answer.
+		// The request is settled when the tool runs; one still open when the
+		// worker stops was refused (or never answered).
+		if ev.AgentID != "" {
+			s.wf.Handback.Session(ev.AgentID, s.sessionID, ev.AgentType)
+			s.wf.Handback.Asked(ev.AgentID, requestDigest(ev.ToolName, input), ev.ToolName, resourcesOf(input))
+		}
+	case "SubagentStop":
+		if ev.AgentID != "" {
+			s.wf.Handback.Abandon(ev.AgentID)
+		}
+	case "PermissionDenied":
+		// A worker's refused tool call. Claude Code reports the refusal
+		// itself; the coordinator learns of it when the worker returns.
+		if ev.AgentID != "" {
+			s.wf.Handback.Refusal(s.sessionID, ev.AgentID, ev.AgentType, ev.ToolName, resourcesOf(input))
+		}
+	case "SessionStart", "UserPromptSubmit":
+		if ev.AgentID == "" {
+			return HookReply{Context: s.wf.Handback.Take(s.sessionID)}
+		}
+	case "SessionEnd":
+		for _, h := range s.hosts {
+			h.SessionDeleted(s.sessionID)
+		}
+		s.wf.Handback.Deleted(s.sessionID)
+	}
+	return HookReply{}
+}
+
+// toolUseHook handles the tool-use events: AskUserQuestion is correlated with
+// each host's pending draft, a worker's settled permission request is
+// recorded, and the coordinator's dispatch returns carry pending handbacks.
+// The caller holds s.mu.
+func (s *DirectServer) toolUseHook(ev HookEvent, input, response any) HookReply {
 	question := ev.ToolName == "AskUserQuestion"
 	switch ev.Event {
 	case "PreToolUse":
@@ -443,33 +482,6 @@ func (s *DirectServer) Hook(ev HookEvent) HookReply {
 		if ev.AgentID == "" && isDispatch(ev.ToolName) {
 			return HookReply{Context: s.wf.Handback.Take(s.sessionID)}
 		}
-	case "PermissionRequest":
-		// Claude Code reports a worker's prompt but not the user's answer.
-		// The request is settled when the tool runs; one still open when the
-		// worker stops was refused (or never answered).
-		if ev.AgentID != "" {
-			s.wf.Handback.Session(ev.AgentID, s.sessionID, ev.AgentType)
-			s.wf.Handback.Asked(ev.AgentID, requestDigest(ev.ToolName, input), ev.ToolName, resourcesOf(input))
-		}
-	case "SubagentStop":
-		if ev.AgentID != "" {
-			s.wf.Handback.Abandon(ev.AgentID)
-		}
-	case "PermissionDenied":
-		// A worker's refused tool call. Claude Code reports the refusal
-		// itself; the coordinator learns of it when the worker returns.
-		if ev.AgentID != "" {
-			s.wf.Handback.Refusal(s.sessionID, ev.AgentID, ev.AgentType, ev.ToolName, resourcesOf(input))
-		}
-	case "SessionStart", "UserPromptSubmit":
-		if ev.AgentID == "" {
-			return HookReply{Context: s.wf.Handback.Take(s.sessionID)}
-		}
-	case "SessionEnd":
-		for _, h := range s.hosts {
-			h.SessionDeleted(s.sessionID)
-		}
-		s.wf.Handback.Deleted(s.sessionID)
 	}
 	return HookReply{}
 }

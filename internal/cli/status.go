@@ -49,68 +49,91 @@ func statusCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
+			r := statusReport{drift: drift, pending: pending, warnings: append(e.OpenCodeV2Warnings(), e.Warnings...),
+				routes: routes, routed: routed, decisions: decisions, torn: torn}
 			if output == "json" {
-				payload := struct {
-					Drift     []string              `json:"drift"`
-					Pending   int                   `json:"pending"`
-					Warnings  []string              `json:"warnings"`
-					Routing   *engine.RoutingRecord `json:"routing,omitempty"`
-					Decisions []decision.Outcome    `json:"decisions,omitempty"`
-				}{Drift: drift, Pending: pending, Warnings: append(e.OpenCodeV2Warnings(), e.Warnings...), Decisions: decisions}
-				if routed {
-					payload.Routing = &routes
-				}
-				if payload.Drift == nil {
-					payload.Drift = []string{}
-				}
-				if payload.Warnings == nil {
-					payload.Warnings = []string{}
-				}
-				b, merr := json.MarshalIndent(payload, "", "  ")
-				if merr != nil {
-					return merr
-				}
-				cmd.Println(string(b))
-				return nil
+				return printStatusJSON(cmd, r)
 			}
-			for _, w := range append(e.OpenCodeV2Warnings(), e.Warnings...) {
-				cmd.Println("warn:", w)
-			}
-			for _, l := range drift {
-				cmd.Println(l)
-			}
-			// The routes the last apply stamped into agents (ADR 0102), per
-			// harness: only policy-routed agents, since a pin is visible in
-			// the config.
-			if routed {
-				for _, l := range appliedRouteLines(routes) {
-					cmd.Println(l)
-				}
-			}
-			if len(decisions) > 5 {
-				decisions = decisions[len(decisions)-5:]
-			}
-			for _, l := range decisionLines(decisions) {
-				cmd.Println(l)
-			}
-			if torn > 0 {
-				cmd.Printf("warn: %d unreadable line(s) in .homonto/%s\n", torn, decision.RecordFile)
-			}
-			if pending > 0 {
-				cmd.Println(fmt.Sprintf("%d config change(s) awaiting apply (run `homonto apply`)", pending))
-			}
-			if len(drift) == 0 && pending == 0 {
-				if err := coverageComplete(e.Warnings); err != nil {
-					return err
-				}
-				cmd.Println("No drift.")
-			}
-			return nil
+			return printStatusText(cmd, r, e.Warnings)
 		},
 	}
 	cmd.Flags().StringVar(&output, "output", "text", "output format: text or json")
 	cmd.Flags().BoolVar(&exitFlag, "exit-code", false, "exit 2 (pending) or 3 (drift) under the opt-in taxonomy")
 	return cmd
+}
+
+// statusReport is what status found, before formatting.
+type statusReport struct {
+	drift     []string
+	pending   int
+	warnings  []string
+	routes    engine.RoutingRecord
+	routed    bool
+	decisions []decision.Outcome
+	torn      int
+}
+
+func printStatusJSON(cmd *cobra.Command, r statusReport) error {
+	payload := struct {
+		Drift     []string              `json:"drift"`
+		Pending   int                   `json:"pending"`
+		Warnings  []string              `json:"warnings"`
+		Routing   *engine.RoutingRecord `json:"routing,omitempty"`
+		Decisions []decision.Outcome    `json:"decisions,omitempty"`
+	}{Drift: r.drift, Pending: r.pending, Warnings: r.warnings, Decisions: r.decisions}
+	if r.routed {
+		payload.Routing = &r.routes
+	}
+	if payload.Drift == nil {
+		payload.Drift = []string{}
+	}
+	if payload.Warnings == nil {
+		payload.Warnings = []string{}
+	}
+	b, err := json.MarshalIndent(payload, "", "  ")
+	if err != nil {
+		return err
+	}
+	cmd.Println(string(b))
+	return nil
+}
+
+// printStatusText prints warnings, drift, the routes the last apply stamped
+// into agents (ADR 0102; only policy-routed agents, since a pin is visible in
+// the config), the latest decisions, and the verdict. skipped are the
+// engine's own warnings, which make a clean verdict incomplete.
+func printStatusText(cmd *cobra.Command, r statusReport, skipped []string) error {
+	for _, w := range r.warnings {
+		cmd.Println("warn:", w)
+	}
+	for _, l := range r.drift {
+		cmd.Println(l)
+	}
+	if r.routed {
+		for _, l := range appliedRouteLines(r.routes) {
+			cmd.Println(l)
+		}
+	}
+	decisions := r.decisions
+	if len(decisions) > 5 {
+		decisions = decisions[len(decisions)-5:]
+	}
+	for _, l := range decisionLines(decisions) {
+		cmd.Println(l)
+	}
+	if r.torn > 0 {
+		cmd.Printf("warn: %d unreadable line(s) in .homonto/%s\n", r.torn, decision.RecordFile)
+	}
+	if r.pending > 0 {
+		cmd.Println(fmt.Sprintf("%d config change(s) awaiting apply (run `homonto apply`)", r.pending))
+	}
+	if len(r.drift) == 0 && r.pending == 0 {
+		if err := coverageComplete(skipped); err != nil {
+			return err
+		}
+		cmd.Println("No drift.")
+	}
+	return nil
 }
 
 // appliedRouteLines renders a routing record's policy-routed agents,

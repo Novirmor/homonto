@@ -449,37 +449,8 @@ func (s *Store) allocate(ctx context.Context, t *Task, inputs []string) error {
 				c.Path = w.Path
 			}
 		} else {
-			c.Path = filepath.Join(s.Layout.WorktreesDir, alias, "workspace-"+t.Name)
-			if err := fsutil.RequireRealParents(filepath.Dir(s.Layout.WorktreesDir), c.Path); err != nil {
-				return err
-			}
-			if !c.Owned {
-				if _, err := os.Lstat(c.Path); !os.IsNotExist(err) {
-					return fmt.Errorf("worktree destination already exists or cannot be inspected: %s", c.Path)
-				}
-				// Persist allocation intent before Git runs, so an interrupted command
-				// leaves the exact destination for resume or cleanup to inspect.
-				c.Owned = true
-				t.Checkouts[alias] = c
-				if err := s.save(t); err != nil {
-					return err
-				}
-			}
-			if _, err := os.Lstat(c.Path); os.IsNotExist(err) {
-				args := []string{"worktree", "add", "--detach", c.Path, c.Base}
-				if c.Changed {
-					args = []string{"worktree", "add", "-b", taskBranch(t.Name, alias), c.Path, c.Base}
-				}
-				if _, err := git(ctx, c.Source, args...); err != nil {
-					hint := ""
-					if c.Changed {
-						// An interrupted add can leave the branch behind; it may
-						// also be the user's, so it is never adopted or deleted.
-						hint = fmt.Sprintf(" (if %s is a leftover from an interrupted create, delete it)", taskBranch(t.Name, alias))
-					}
-					return fmt.Errorf("%w; resolve the cause%s and rerun create to resume, or run cleanup to abandon %s", err, hint, alias)
-				}
-			} else if err != nil {
+			var err error
+			if c, err = s.allocateWorktree(ctx, t, alias, c); err != nil {
 				return err
 			}
 		}
@@ -493,6 +464,46 @@ func (s *Store) allocate(ctx context.Context, t *Task, inputs []string) error {
 		}
 	}
 	return nil
+}
+
+// allocateWorktree places a task-owned worktree for one checkout. Allocation
+// intent is saved before Git runs, so an interrupted command leaves the exact
+// destination for resume or cleanup to inspect.
+func (s *Store) allocateWorktree(ctx context.Context, t *Task, alias string, c Checkout) (Checkout, error) {
+	c.Path = filepath.Join(s.Layout.WorktreesDir, alias, "workspace-"+t.Name)
+	if err := fsutil.RequireRealParents(filepath.Dir(s.Layout.WorktreesDir), c.Path); err != nil {
+		return c, err
+	}
+	if !c.Owned {
+		if _, err := os.Lstat(c.Path); !os.IsNotExist(err) {
+			return c, fmt.Errorf("worktree destination already exists or cannot be inspected: %s", c.Path)
+		}
+		// Persist allocation intent before Git runs, so an interrupted command
+		// leaves the exact destination for resume or cleanup to inspect.
+		c.Owned = true
+		t.Checkouts[alias] = c
+		if err := s.save(t); err != nil {
+			return c, err
+		}
+	}
+	if _, err := os.Lstat(c.Path); os.IsNotExist(err) {
+		args := []string{"worktree", "add", "--detach", c.Path, c.Base}
+		if c.Changed {
+			args = []string{"worktree", "add", "-b", taskBranch(t.Name, alias), c.Path, c.Base}
+		}
+		if _, err := git(ctx, c.Source, args...); err != nil {
+			hint := ""
+			if c.Changed {
+				// An interrupted add can leave the branch behind; it may
+				// also be the user's, so it is never adopted or deleted.
+				hint = fmt.Sprintf(" (if %s is a leftover from an interrupted create, delete it)", taskBranch(t.Name, alias))
+			}
+			return c, fmt.Errorf("%w; resolve the cause%s and rerun create to resume, or run cleanup to abandon %s", err, hint, alias)
+		}
+	} else if err != nil {
+		return c, err
+	}
+	return c, nil
 }
 
 // ownsLifecycle reports whether the task's engine binds its writable

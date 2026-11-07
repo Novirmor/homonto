@@ -80,35 +80,44 @@ func stateSourceDirs(root string, st ontostate.State) (map[string]string, error)
 		return dirs, nil
 	}
 	for alias, dir := range dirs {
-		base := st.RepoBases[alias]
-		paths := []string{dir}
-		if authorities != nil && authorities[alias] != dir {
-			paths = append(paths, authorities[alias])
-		}
-		for _, path := range paths {
-			identity, err := sourceIdentity(path)
-			if err != nil || identity != base.GitCommonDir {
-				return nil, fmt.Errorf("repository %s: Git identity does not match recorded base", entryDisplayName(alias))
-			}
-		}
-		if base.BaseRef != "" {
-			if _, err := resolveCommit(dir, base.BaseRef); err != nil {
-				return nil, err
-			}
-			if err := isAncestor(dir, base.BaseRef, "HEAD"); err != nil {
-				return nil, fmt.Errorf("repository %s: base_ref is not an ancestor of source HEAD: %w", alias, err)
-			}
-		}
-		if base.BaseBranch != "" {
-			if err := validateBranchName(dir, base.BaseBranch); err != nil {
-				return nil, err
-			}
-			if _, err := resolveCommit(dir, "refs/heads/"+base.BaseBranch); err != nil {
-				return nil, err
-			}
+		if err := checkSourceBase(alias, dir, authorities, st.RepoBases[alias]); err != nil {
+			return nil, err
 		}
 	}
 	return dirs, nil
+}
+
+// checkSourceBase requires a source, and its legacy authority when that
+// differs, to be the recorded Git repository, with the recorded base_ref an
+// ancestor of HEAD and the recorded base branch present.
+func checkSourceBase(alias, dir string, authorities map[string]string, base ontostate.RepoBase) error {
+	paths := []string{dir}
+	if authorities != nil && authorities[alias] != dir {
+		paths = append(paths, authorities[alias])
+	}
+	for _, path := range paths {
+		identity, err := sourceIdentity(path)
+		if err != nil || identity != base.GitCommonDir {
+			return fmt.Errorf("repository %s: Git identity does not match recorded base", entryDisplayName(alias))
+		}
+	}
+	if base.BaseRef != "" {
+		if _, err := resolveCommit(dir, base.BaseRef); err != nil {
+			return err
+		}
+		if err := isAncestor(dir, base.BaseRef, "HEAD"); err != nil {
+			return fmt.Errorf("repository %s: base_ref is not an ancestor of source HEAD: %w", alias, err)
+		}
+	}
+	if base.BaseBranch != "" {
+		if err := validateBranchName(dir, base.BaseBranch); err != nil {
+			return err
+		}
+		if _, err := resolveCommit(dir, "refs/heads/"+base.BaseBranch); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func sourceIdentity(dir string) (string, error) {

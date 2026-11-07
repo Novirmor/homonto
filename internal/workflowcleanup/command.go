@@ -12,20 +12,6 @@ import (
 // enables homonto's cross-engine inventory and requires --workflow for selection.
 func Command(workflow string) *cobra.Command {
 	root := &cobra.Command{Use: "cleanup", Short: "Inspect and safely clean completed or explicitly abandoned workflows"}
-	load := func(cmd *cobra.Command) (workspace.Layout, error) {
-		if workflow == "" {
-			path, err := cmd.Flags().GetString("config")
-			if err != nil {
-				return workspace.Layout{}, err
-			}
-			return workspace.Load(path)
-		}
-		dir, err := cmd.Flags().GetString("dir")
-		if err != nil {
-			return workspace.Layout{}, err
-		}
-		return workspace.LoadRoot(dir)
-	}
 	for _, action := range []string{"list", "preview", "apply"} {
 		var selected, identity string
 		var jsonMode, yes bool
@@ -43,28 +29,12 @@ func Command(workflow string) *cobra.Command {
 			cmd.Short = "Clean one exact terminal generation; --yes never bypasses safety checks"
 		}
 		cmd.RunE = func(cmd *cobra.Command, args []string) error {
-			l, err := load(cmd)
+			l, err := loadLayout(cmd, workflow)
 			if err != nil {
 				return err
 			}
 			if action == "list" {
-				inventory, err := List(l, selected)
-				if err != nil {
-					return err
-				}
-				if jsonMode {
-					return json.NewEncoder(cmd.OutOrStdout()).Encode(inventory)
-				}
-				for _, p := range inventory.Items {
-					printPlan(cmd, p)
-				}
-				for _, f := range inventory.Findings {
-					cmd.Printf("finding: %s/%s: %s\n", f.Workflow, f.Change, f.Message)
-				}
-				if len(inventory.Items) == 0 && len(inventory.Findings) == 0 {
-					cmd.Println("No workflow records.")
-				}
-				return nil
+				return runList(cmd, l, selected, jsonMode)
 			}
 			var p Plan
 			if action == "apply" {
@@ -73,12 +43,8 @@ func Command(workflow string) *cobra.Command {
 				p, err = Preview(l, selected, args[0], identity)
 			}
 			if p.Identity != "" {
-				if jsonMode {
-					if outputErr := json.NewEncoder(cmd.OutOrStdout()).Encode(p); outputErr != nil {
-						return outputErr
-					}
-				} else {
-					printPlan(cmd, p)
+				if outputErr := emitPlan(cmd, p, jsonMode); outputErr != nil {
+					return outputErr
 				}
 			}
 			return err
@@ -99,6 +65,51 @@ func Command(workflow string) *cobra.Command {
 		root.AddCommand(cmd)
 	}
 	return root
+}
+
+// loadLayout reads the layout from --config under homonto, or from the
+// workspace in --dir under a workflow binary.
+func loadLayout(cmd *cobra.Command, workflow string) (workspace.Layout, error) {
+	if workflow == "" {
+		path, err := cmd.Flags().GetString("config")
+		if err != nil {
+			return workspace.Layout{}, err
+		}
+		return workspace.Load(path)
+	}
+	dir, err := cmd.Flags().GetString("dir")
+	if err != nil {
+		return workspace.Layout{}, err
+	}
+	return workspace.LoadRoot(dir)
+}
+
+func runList(cmd *cobra.Command, l workspace.Layout, selected string, jsonMode bool) error {
+	inventory, err := List(l, selected)
+	if err != nil {
+		return err
+	}
+	if jsonMode {
+		return json.NewEncoder(cmd.OutOrStdout()).Encode(inventory)
+	}
+	for _, p := range inventory.Items {
+		printPlan(cmd, p)
+	}
+	for _, f := range inventory.Findings {
+		cmd.Printf("finding: %s/%s: %s\n", f.Workflow, f.Change, f.Message)
+	}
+	if len(inventory.Items) == 0 && len(inventory.Findings) == 0 {
+		cmd.Println("No workflow records.")
+	}
+	return nil
+}
+
+func emitPlan(cmd *cobra.Command, p Plan, jsonMode bool) error {
+	if jsonMode {
+		return json.NewEncoder(cmd.OutOrStdout()).Encode(p)
+	}
+	printPlan(cmd, p)
+	return nil
 }
 
 func printPlan(cmd *cobra.Command, p Plan) {

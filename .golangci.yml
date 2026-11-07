@@ -13,9 +13,9 @@ linters:
     # Ratchets, not targets: set at the worst function in the tree so nothing
     # new lands above it. Lower them when you split the function at the top.
     gocognit:
-      min-complexity: 70
+      min-complexity: 40
     funlen:
-      lines: 150
+      lines: 132
       statements: -1
     misspell:
       # GitLab's REST field names (noteable_iid, noteable_type).

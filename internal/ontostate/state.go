@@ -665,81 +665,91 @@ func ArchiveIntegrationComplete(changeDir string, st State) bool {
 // name matched anything. The returned slice contains the unresolved subset of
 // deps, in input order. A nil or empty deps returns an empty (len 0) slice.
 func DepsResolved(root string, deps []string) []string {
-	// Note: both os.ReadDir calls below intentionally collapse "missing" and
+	// Note: both directory reads intentionally collapse "missing" and
 	// "unreadable" into "no entries". For a workflow gate that is the safe
 	// direction: an unreadable archive/changes dir leaves every dep
 	// unresolved, so the gate refuses to advance rather than greenlighting an
 	// unverified dependency. Do not "fix" this by surfacing the error — it
 	// would change the gate-closed contract.
-	latest := map[string]string{}
 	workflowRoot := workcli.WorkflowRootOrDefault(root)
-	archiveRoot := filepath.Join(workflowRoot, "changes", "archive")
-	if entries, err := os.ReadDir(archiveRoot); err == nil {
-		for _, e := range entries {
-			if !e.IsDir() {
-				continue
-			}
-			if p := archiveDatePrefix.FindString(e.Name()); p != "" {
-				name := e.Name()[len(p):]
-				archiveDir := filepath.Join(archiveRoot, e.Name())
-				if previous := latest[name]; previous == "" || NewerArchiveName(e.Name(), filepath.Base(previous)) {
-					latest[name] = archiveDir
-				}
-				// Same-day archive suffixes are identified by their durable state,
-				// not by guessing whether "-2" belongs to the change name.
-				if archivedState, stateErr := Load(filepath.Join(archiveDir, "onto-state.yaml")); stateErr == nil && archivedState.Change != "" {
-					if previous := latest[archivedState.Change]; previous == "" || NewerArchiveName(e.Name(), filepath.Base(previous)) {
-						latest[archivedState.Change] = archiveDir
-					}
-				}
-			}
-		}
-	}
+	latest := latestArchives(filepath.Join(workflowRoot, "changes", "archive"))
 	// An active workspace with the dep's name overrides any archive hit: a
 	// reused name in flight is not archived. This matches the dispatcher's
 	// documented dependency contract (see onto/SKILL.md §2). Without it, a
 	// new change reusing an old name would falsely resolve a dep that is
 	// actually still being worked on (F10).
-	active := map[string]bool{}
-	if entries, err := os.ReadDir(filepath.Join(workflowRoot, "changes")); err == nil {
-		for _, e := range entries {
-			if !e.IsDir() || e.Name() == "archive" {
-				continue
-			}
-			active[e.Name()] = true
-		}
-	}
+	active := activeChanges(filepath.Join(workflowRoot, "changes"))
 	unresolved := make([]string, 0, len(deps))
 	for _, dep := range deps {
-		if active[dep] {
-			unresolved = append(unresolved, dep)
-			continue
-		}
-		archiveDir := latest[dep]
-		if archiveDir == "" {
-			unresolved = append(unresolved, dep)
-			continue
-		}
-		// A bypass archive is deliberately not a successful close, so it
-		// cannot satisfy a normal dependency gate.
-		if bypassed, err := bypasslog.ArchiveBypassed(archiveDir, dep, "onto"); err != nil || bypassed {
-			unresolved = append(unresolved, dep)
-			continue
-		}
-		statePath := filepath.Join(archiveDir, "onto-state.yaml")
-		if _, err := os.Stat(statePath); errors.Is(err, os.ErrNotExist) {
-			// Pre-state archives are legacy successful closes.
-			continue
-		} else if err != nil {
-			unresolved = append(unresolved, dep)
-			continue
-		}
-		archivedState, err := Load(statePath)
-		if err != nil || archivedState.Change != dep || !archivedState.Archived || !ArchiveIntegrationComplete(archiveDir, archivedState) {
+		if active[dep] || !archiveSatisfies(latest[dep], dep) {
 			unresolved = append(unresolved, dep)
 		}
 	}
 	return unresolved
+}
+
+// latestArchives maps each change name to its newest archive directory. A
+// same-day archive suffix is identified by its durable state, not by
+// guessing whether "-2" belongs to the change name.
+func latestArchives(archiveRoot string) map[string]string {
+	latest := map[string]string{}
+	entries, err := os.ReadDir(archiveRoot)
+	if err != nil {
+		return latest
+	}
+	note := func(name, archiveDir, entry string) {
+		if previous := latest[name]; previous == "" || NewerArchiveName(entry, filepath.Base(previous)) {
+			latest[name] = archiveDir
+		}
+	}
+	for _, e := range entries {
+		if !e.IsDir() {
+			continue
+		}
+		p := archiveDatePrefix.FindString(e.Name())
+		if p == "" {
+			continue
+		}
+		archiveDir := filepath.Join(archiveRoot, e.Name())
+		note(e.Name()[len(p):], archiveDir, e.Name())
+		if archivedState, err := Load(filepath.Join(archiveDir, "onto-state.yaml")); err == nil && archivedState.Change != "" {
+			note(archivedState.Change, archiveDir, e.Name())
+		}
+	}
+	return latest
+}
+
+// activeChanges names the change directories outside archive/.
+func activeChanges(changesDir string) map[string]bool {
+	active := map[string]bool{}
+	if entries, err := os.ReadDir(changesDir); err == nil {
+		for _, e := range entries {
+			if e.IsDir() && e.Name() != "archive" {
+				active[e.Name()] = true
+			}
+		}
+	}
+	return active
+}
+
+// archiveSatisfies reports whether archiveDir is a successful close of dep:
+// not a bypass (deliberately not a success), and either a legacy pre-state
+// archive or one whose state is archived with integration complete.
+func archiveSatisfies(archiveDir, dep string) bool {
+	if archiveDir == "" {
+		return false
+	}
+	if bypassed, err := bypasslog.ArchiveBypassed(archiveDir, dep, "onto"); err != nil || bypassed {
+		return false
+	}
+	statePath := filepath.Join(archiveDir, "onto-state.yaml")
+	if _, err := os.Stat(statePath); errors.Is(err, os.ErrNotExist) {
+		return true
+	} else if err != nil {
+		return false
+	}
+	archivedState, err := Load(statePath)
+	return err == nil && archivedState.Change == dep && archivedState.Archived && ArchiveIntegrationComplete(archiveDir, archivedState)
 }
 
 // ValidateSkeleton loads onto-state.yaml from changeDir, derives its phase,

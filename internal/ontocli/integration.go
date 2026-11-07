@@ -49,25 +49,18 @@ func completeIntegrationCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			if repo == "" && st.RepoMode == "explicit" {
-				if len(st.Repos) != 1 {
-					return fmt.Errorf("onto complete-integration: --repo is required for a multi-repository change")
-				}
-				repo = st.Repos[0]
+			if repo, err = defaultIntegrationRepo(repo, st); err != nil {
+				return err
 			}
 			entry, err := findEntry(record, repo)
 			if err != nil {
 				return fmt.Errorf("onto complete-integration: %w", err)
 			}
-			if entry.Receipt == receipt && head != "" && head != entry.PublicationHead {
-				return fmt.Errorf("onto complete-integration: publication head cannot replace an existing receipt")
-			}
-			if entry.Receipt == receipt && st.RepoMode != "explicit" {
-				fmt.Fprintf(cmd.OutOrStdout(), "%s: integration already complete for repository %s (%s)\n", name, entryDisplayName(repo), receipt)
-				return nil
-			}
-			if entry.Receipt != "" && entry.Receipt != receipt {
-				return fmt.Errorf("onto complete-integration: repository %s already completed with a different receipt", entryDisplayName(repo))
+			if done, err := receiptReplay(entry, repo, receipt, head, st); err != nil || done {
+				if done {
+					fmt.Fprintf(cmd.OutOrStdout(), "%s: integration already complete for repository %s (%s)\n", name, entryDisplayName(repo), receipt)
+				}
+				return err
 			}
 			repoDir, err := integrationRepoDir(dir, repo, st)
 			if err != nil {
@@ -83,17 +76,9 @@ func completeIntegrationCmd() *cobra.Command {
 			if head != "" && !strings.HasPrefix(receipt, "pr:") {
 				return fmt.Errorf("onto complete-integration: --head is only valid for a PR receipt")
 			}
-			completed, err := record.CompleteFor(repo, receipt)
+			completed, err := saveCompletion(archiveDir, record, repo, receipt, head)
 			if err != nil {
-				return fmt.Errorf("onto complete-integration: %w", err)
-			}
-			for i := range completed.Repositories {
-				if completed.Repositories[i].Alias == repo && head != "" {
-					completed.Repositories[i].PublicationHead = head
-				}
-			}
-			if err := integrationrecord.Save(archiveDir, completed); err != nil {
-				return fmt.Errorf("onto complete-integration: %w", err)
+				return err
 			}
 			status := "pending"
 			if completed.Status == integrationrecord.StatusComplete {
@@ -109,6 +94,51 @@ func completeIntegrationCmd() *cobra.Command {
 	cmd.Flags().StringVar(&head, "head", "", "canonical PR head reported by the publication tool (required for explicit sources; no network verification)")
 	_ = cmd.MarkFlagRequired("receipt")
 	return cmd
+}
+
+// defaultIntegrationRepo picks the only repository of an explicit
+// single-repository change when --repo is omitted.
+func defaultIntegrationRepo(repo string, st ontostate.State) (string, error) {
+	if repo != "" || st.RepoMode != "explicit" {
+		return repo, nil
+	}
+	if len(st.Repos) != 1 {
+		return "", fmt.Errorf("onto complete-integration: --repo is required for a multi-repository change")
+	}
+	return st.Repos[0], nil
+}
+
+// receiptReplay decides a repeated completion: done when a legacy entry
+// already holds this receipt, an error when it would replace a recorded head
+// or a different receipt. An explicit source revalidates a repeat instead.
+func receiptReplay(entry integrationrecord.Entry, repo, receipt, head string, st ontostate.State) (bool, error) {
+	if entry.Receipt == receipt && head != "" && head != entry.PublicationHead {
+		return false, fmt.Errorf("onto complete-integration: publication head cannot replace an existing receipt")
+	}
+	if entry.Receipt == receipt && st.RepoMode != "explicit" {
+		return true, nil
+	}
+	if entry.Receipt != "" && entry.Receipt != receipt {
+		return false, fmt.Errorf("onto complete-integration: repository %s already completed with a different receipt", entryDisplayName(repo))
+	}
+	return false, nil
+}
+
+// saveCompletion records repo's receipt, and a PR's head, in the archive.
+func saveCompletion(archiveDir string, record integrationrecord.Record, repo, receipt, head string) (integrationrecord.Record, error) {
+	completed, err := record.CompleteFor(repo, receipt)
+	if err != nil {
+		return completed, fmt.Errorf("onto complete-integration: %w", err)
+	}
+	for i := range completed.Repositories {
+		if completed.Repositories[i].Alias == repo && head != "" {
+			completed.Repositories[i].PublicationHead = head
+		}
+	}
+	if err := integrationrecord.Save(archiveDir, completed); err != nil {
+		return completed, fmt.Errorf("onto complete-integration: %w", err)
+	}
+	return completed, nil
 }
 
 // loadIntegrationTarget loads an archived change and its integration record,

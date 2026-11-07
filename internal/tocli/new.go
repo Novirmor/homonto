@@ -52,30 +52,9 @@ func runNewWithRepos(cmd *cobra.Command, root, name string, jsonMode bool, repos
 	if err := toFramework.ValidChangeName(name); err != nil {
 		return err
 	}
-	data, err := os.ReadFile(filepath.Join(root, "homonto.toml"))
+	l, err := newChangeLayout(root, repos, bases)
 	if err != nil {
-		return fmt.Errorf("to new: %w", err)
-	}
-	var cfg struct {
-		SchemaVersion int `toml:"schema_version"`
-	}
-	if err := toml.Unmarshal(tomlutil.StripBOM(data), &cfg); err != nil {
-		return fmt.Errorf("to new: %w", err)
-	}
-	l := workspace.Layout{SchemaVersion: cfg.SchemaVersion}
-	// The gate is sufficient for unscoped legacy changes. Do not resolve unused
-	// repo declarations: they may be offline and are not part of this change.
-	if len(repos) > 0 || (cfg.SchemaVersion != 0 && cfg.SchemaVersion != 1) {
-		l, err = workspace.LoadRoot(root)
-		if err != nil {
-			return fmt.Errorf("to new: %w", err)
-		}
-	}
-	if l.ExplicitRepos() && len(repos) == 0 {
-		return fmt.Errorf("to new: schema_version = 2 requires at least one selected --repo; the config directory is not an implicit source")
-	}
-	if !l.ExplicitRepos() && len(bases) > 0 {
-		return fmt.Errorf("to new: --base requires config schema_version = 2")
+		return err
 	}
 	names := append([]string(nil), repos...)
 	sort.Strings(names)
@@ -83,8 +62,7 @@ func runNewWithRepos(cmd *cobra.Command, root, name string, jsonMode bool, repos
 		SchemaVersion: tostate.CurrentSchemaVersion,
 		ID:            opid.New().NewID(),
 		Change:        name, Phase: tostate.PhasePlan, Created: todayFn(), Repos: names,
-		RepoMode:  tostate.SourceLegacy,
-		RepoBases: map[string]tostate.RepoBase{},
+		RepoMode: tostate.SourceLegacy,
 	}
 	if l.ExplicitRepos() {
 		st.RepoMode = tostate.SourceExplicit
@@ -98,27 +76,8 @@ func runNewWithRepos(cmd *cobra.Command, root, name string, jsonMode bool, repos
 	if err != nil {
 		return err
 	}
-	authorities := append([]string(nil), names...)
-	if !l.ExplicitRepos() && len(names) > 0 {
-		authorities = append(authorities, "")
-	}
-	for _, repo := range authorities {
-		dir := l.Repos[repo]
-		if repo == "" {
-			dir = l.ConfigRoot
-		}
-		// Validate identity without rejecting or changing dirty original work.
-		identity, err := sourceCommonDir(dir)
-		if err != nil {
-			return fmt.Errorf("to new: source repo %q: %w", repo, err)
-		}
-		base := tostate.RepoBase{GitCommonDir: identity}
-		if l.ExplicitRepos() {
-			if base.BaseRef, base.BaseBranch, err = resolveBaseBranch(dir, repo, baseBranches[repo]); err != nil {
-				return err
-			}
-		}
-		st.RepoBases[repo] = base
+	if st.RepoBases, err = pinRepoBases(l, names, baseBranches); err != nil {
+		return err
 	}
 	if err := st.Validate(); err != nil {
 		return err
@@ -182,6 +141,67 @@ func runNewWithRepos(cmd *cobra.Command, root, name string, jsonMode bool, repos
 	cmd.Printf("  %s\n", statePath(root, name))
 	cmd.Printf("  %s\n", planPath(root, name))
 	return nil
+}
+
+// newChangeLayout reads only what a new change needs: the schema version,
+// and the full layout once repositories are selected or schema 2 applies. An
+// unscoped legacy change resolves no repo declarations: they may be offline
+// and are not part of this change.
+func newChangeLayout(root string, repos, bases []string) (workspace.Layout, error) {
+	data, err := os.ReadFile(filepath.Join(root, "homonto.toml"))
+	if err != nil {
+		return workspace.Layout{}, fmt.Errorf("to new: %w", err)
+	}
+	var cfg struct {
+		SchemaVersion int `toml:"schema_version"`
+	}
+	if err := toml.Unmarshal(tomlutil.StripBOM(data), &cfg); err != nil {
+		return workspace.Layout{}, fmt.Errorf("to new: %w", err)
+	}
+	l := workspace.Layout{SchemaVersion: cfg.SchemaVersion}
+	if len(repos) > 0 || (cfg.SchemaVersion != 0 && cfg.SchemaVersion != 1) {
+		l, err = workspace.LoadRoot(root)
+		if err != nil {
+			return workspace.Layout{}, fmt.Errorf("to new: %w", err)
+		}
+	}
+	if l.ExplicitRepos() && len(repos) == 0 {
+		return workspace.Layout{}, fmt.Errorf("to new: schema_version = 2 requires at least one selected --repo; the config directory is not an implicit source")
+	}
+	if !l.ExplicitRepos() && len(bases) > 0 {
+		return workspace.Layout{}, fmt.Errorf("to new: --base requires config schema_version = 2")
+	}
+	return l, nil
+}
+
+// pinRepoBases records each source's Git identity and, under schema 2, its
+// base branch and commit. A legacy change with repositories also pins the
+// config repository.
+func pinRepoBases(l workspace.Layout, names []string, baseBranches map[string]string) (map[string]tostate.RepoBase, error) {
+	bases := map[string]tostate.RepoBase{}
+	authorities := append([]string(nil), names...)
+	if !l.ExplicitRepos() && len(names) > 0 {
+		authorities = append(authorities, "")
+	}
+	for _, repo := range authorities {
+		dir := l.Repos[repo]
+		if repo == "" {
+			dir = l.ConfigRoot
+		}
+		// Validate identity without rejecting or changing dirty original work.
+		identity, err := sourceCommonDir(dir)
+		if err != nil {
+			return nil, fmt.Errorf("to new: source repo %q: %w", repo, err)
+		}
+		base := tostate.RepoBase{GitCommonDir: identity}
+		if l.ExplicitRepos() {
+			if base.BaseRef, base.BaseBranch, err = resolveBaseBranch(dir, repo, baseBranches[repo]); err != nil {
+				return nil, err
+			}
+		}
+		bases[repo] = base
+	}
+	return bases, nil
 }
 
 // parseBaseBranches reads --base alias=branch selections; each alias must be

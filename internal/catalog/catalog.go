@@ -243,21 +243,62 @@ func newBaseCatalog(base fs.FS) (*Catalog, error) {
 // the shared index. fs operations use src, so resource paths are validated in
 // the source they belong to.
 func (c *Catalog) mergeSource(src fs.FS) error {
-	// readOptionalDir returns the entries of a directory that may legitimately
-	// be absent (subagents/, skills/, commands/ are all optional). A real I/O
-	// error (permission denied, corrupt FS) is surfaced rather than collapsed
-	// into "missing" — a corrupted overlay must not silently mask itself.
-	readOptionalDir := func(name string) ([]fs.DirEntry, error) {
-		entries, err := fs.ReadDir(src, name)
-		if err == nil {
-			return entries, nil
-		}
-		if errors.Is(err, fs.ErrNotExist) {
-			return nil, nil
-		}
-		return nil, fmt.Errorf("catalog: read %s: %w", name, err)
+	if err := c.indexLooseSubagents(src); err != nil {
+		return err
 	}
+	if err := c.indexFrameworks(src); err != nil {
+		return err
+	}
+	// Loose (framework-agnostic) skills and commands: a skills/<dir> holding a
+	// SKILL.md, or a commands/<n>.md file, not already claimed by a framework is
+	// indexed by name so it installs as builtin:<name> with no framework home
+	// (mirrors loose subagents). Framework declarations take precedence.
+	if err := indexLooseDirs(src, "skills", "SKILL.md", c.skills, c.skillFS); err != nil {
+		return err
+	}
+	// Bundled plugins: every plugins/<name>/ entry holding a plugin entry
+	// file (index.ts) is indexed like a skill directory — owned catalog
+	// content, materialized and version-gated, but never auto-enabled.
+	if err := indexLooseDirs(src, "plugins", "index.ts", c.plugins, c.pluginFS); err != nil {
+		return err
+	}
+	commandEntries, err := readOptionalDir(src, "commands")
+	if err != nil {
+		return err
+	}
+	for _, e := range commandEntries {
+		if e.IsDir() {
+			continue
+		}
+		name := strings.TrimSuffix(e.Name(), ".md")
+		if name == e.Name() {
+			continue // not a ".md" file
+		}
+		if _, ok := c.commands[name]; ok {
+			continue // a framework already declares this command
+		}
+		c.commands[name] = path.Join("commands", e.Name())
+		c.commandFS[name] = src
+	}
+	return nil
+}
 
+// readOptionalDir returns the entries of a directory that may legitimately
+// be absent (subagents/, skills/, commands/ are all optional). A real I/O
+// error (permission denied, corrupt FS) is surfaced rather than collapsed
+// into "missing" — a corrupted overlay must not silently mask itself.
+func readOptionalDir(src fs.FS, name string) ([]fs.DirEntry, error) {
+	entries, err := fs.ReadDir(src, name)
+	if err == nil {
+		return entries, nil
+	}
+	if errors.Is(err, fs.ErrNotExist) {
+		return nil, nil
+	}
+	return nil, fmt.Errorf("catalog: read %s: %w", name, err)
+}
+
+func (c *Catalog) indexLooseSubagents(src fs.FS) error {
 	// Loose (framework-agnostic) subagents: every "<n>.md" file directly under
 	// subagents/ is indexed by base name, independent of any framework
 	// declaring it. Unlike skills/commands, subagents are designed to include
@@ -265,7 +306,7 @@ func (c *Catalog) mergeSource(src fs.FS) error {
 	// directly by an explicit [subagents.X] config entry with no framework
 	// home. The subagents/ directory is optional — fixtures/tests that don't
 	// exercise subagents need not provide one.
-	subagentEntries, err := readOptionalDir("subagents")
+	subagentEntries, err := readOptionalDir(src, "subagents")
 	if err != nil {
 		return err
 	}
@@ -295,6 +336,11 @@ func (c *Catalog) mergeSource(src fs.FS) error {
 		c.subagentFS[name] = src
 	}
 
+	return nil
+}
+
+// indexFrameworks indexes every frameworks/<dir>/framework.toml.
+func (c *Catalog) indexFrameworks(src fs.FS) error {
 	dirs, err := fs.ReadDir(src, "frameworks")
 	if err != nil {
 		return fmt.Errorf("catalog: read frameworks: %w", err)
@@ -326,68 +372,30 @@ func (c *Catalog) mergeSource(src fs.FS) error {
 			return err
 		}
 	}
-	// Loose (framework-agnostic) skills and commands: a skills/<dir> holding a
-	// SKILL.md, or a commands/<n>.md file, not already claimed by a framework is
-	// indexed by name so it installs as builtin:<name> with no framework home
-	// (mirrors loose subagents). Framework declarations take precedence.
-	skillEntries, err := readOptionalDir("skills")
+	return nil
+}
+
+// indexLooseDirs indexes each dir/<name>/ holding marker that no framework or
+// earlier source already declares.
+func indexLooseDirs(src fs.FS, dir, marker string, paths map[string]string, fsys map[string]fs.FS) error {
+	entries, err := readOptionalDir(src, dir)
 	if err != nil {
 		return err
 	}
-	for _, e := range skillEntries {
+	for _, e := range entries {
 		if !e.IsDir() {
 			continue
 		}
 		name := e.Name()
-		if _, ok := c.skills[name]; ok {
-			continue // a framework already declares this skill
-		}
-		sp := path.Join("skills", name)
-		if _, err := fs.Stat(src, path.Join(sp, "SKILL.md")); err != nil {
-			continue // a skill directory must hold a SKILL.md
-		}
-		c.skills[name] = sp
-		c.skillFS[name] = src
-	}
-	// Bundled plugins: every plugins/<name>/ entry holding a plugin entry
-	// file (index.ts) is indexed like a skill directory — owned catalog
-	// content, materialized and version-gated, but never auto-enabled.
-	pluginEntries, err := readOptionalDir("plugins")
-	if err != nil {
-		return err
-	}
-	for _, e := range pluginEntries {
-		if !e.IsDir() {
+		if _, ok := paths[name]; ok {
 			continue
 		}
-		name := e.Name()
-		if _, ok := c.plugins[name]; ok {
-			continue // a framework or earlier source already declares it
-		}
-		sp := path.Join("plugins", name)
-		if _, err := fs.Stat(src, path.Join(sp, "index.ts")); err != nil {
-			continue // a plugin directory must hold an index.ts
-		}
-		c.plugins[name] = sp
-		c.pluginFS[name] = src
-	}
-	commandEntries, err := readOptionalDir("commands")
-	if err != nil {
-		return err
-	}
-	for _, e := range commandEntries {
-		if e.IsDir() {
+		p := path.Join(dir, name)
+		if _, err := fs.Stat(src, path.Join(p, marker)); err != nil {
 			continue
 		}
-		name := strings.TrimSuffix(e.Name(), ".md")
-		if name == e.Name() {
-			continue // not a ".md" file
-		}
-		if _, ok := c.commands[name]; ok {
-			continue // a framework already declares this command
-		}
-		c.commands[name] = path.Join("commands", e.Name())
-		c.commandFS[name] = src
+		paths[name] = p
+		fsys[name] = src
 	}
 	return nil
 }

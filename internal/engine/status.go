@@ -12,6 +12,7 @@ import (
 	"strings"
 
 	"github.com/Novirmor/homonto/internal/capability"
+	"github.com/Novirmor/homonto/internal/state"
 
 	"github.com/Novirmor/homonto/internal/adapter/claude"
 	"github.com/Novirmor/homonto/internal/agentfm"
@@ -59,19 +60,7 @@ func (e *Engine) Status() (drift []string, pending int, err error) {
 			e.Warnings = append(e.Warnings, fmt.Sprintf("%s drift skipped: %v", a.Name(), oerr))
 			continue
 		}
-		for _, key := range e.State.Keys(a.Name()) {
-			h, ok := observed[key]
-			if !ok {
-				drift = append(drift, fmt.Sprintf("%s %s missing (deleted out of band)", a.Name(), key))
-				mark(a.Name(), key)
-				continue
-			}
-			entry, _ := e.State.Get(a.Name(), key)
-			if h != entry.Applied {
-				drift = append(drift, fmt.Sprintf("%s %s drifted (will reset on apply)", a.Name(), key))
-				mark(a.Name(), key)
-			}
-		}
+		drift = append(drift, driftLines(a.Name(), a.Name(), e.State, observed, mark)...)
 	}
 	// Per-repo attribution (ADR 0024 stage 2): each declared repository's
 	// partition is observed and labeled with its adapter's name, so drift and
@@ -94,19 +83,7 @@ func (e *Engine) Status() (drift []string, pending int, err error) {
 			}
 		}
 		for _, tool := range tools {
-			for _, key := range t.State.Keys(tool) {
-				h, ok := observed[key]
-				if !ok {
-					drift = append(drift, fmt.Sprintf("%s %s missing (deleted out of band)", t.Adapter.Name(), key))
-					mark(t.Adapter.Name(), key)
-					continue
-				}
-				entry, _ := t.State.Get(tool, key)
-				if h != entry.Applied {
-					drift = append(drift, fmt.Sprintf("%s %s drifted (will reset on apply)", t.Adapter.Name(), key))
-					mark(t.Adapter.Name(), key)
-				}
-			}
+			drift = append(drift, driftLines(t.Adapter.Name(), tool, t.State, observed, mark)...)
 		}
 	}
 
@@ -124,6 +101,26 @@ func (e *Engine) Status() (drift []string, pending int, err error) {
 
 	sort.Strings(drift)
 	return drift, pending, nil
+}
+
+// driftLines compares the recorded keys of one state namespace with their
+// observed hashes. Each missing or changed key is marked under label, the
+// adapter it is reported for.
+func driftLines(label, tool string, st *state.State, observed map[string]string, mark func(tool, key string)) []string {
+	var lines []string
+	for _, key := range st.Keys(tool) {
+		h, ok := observed[key]
+		if !ok {
+			lines = append(lines, fmt.Sprintf("%s %s missing (deleted out of band)", label, key))
+			mark(label, key)
+			continue
+		}
+		if entry, _ := st.Get(tool, key); h != entry.Applied {
+			lines = append(lines, fmt.Sprintf("%s %s drifted (will reset on apply)", label, key))
+			mark(label, key)
+		}
+	}
+	return lines
 }
 
 // Doctor runs environment health checks.

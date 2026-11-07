@@ -131,73 +131,83 @@ func AttachHistory(root *cobra.Command, workflow string) {
 		if cmd.RunE == nil {
 			return
 		}
-		label := workflow + " " + path
-		var writeFlag string
-		switch label {
-		case "onto init", "onto new", "onto advance", "onto bypass", "onto close",
-			"onto complete-integration", "onto abandon", "onto demote", "onto merge-deltas",
-			"onto evidence record", "to init", "to new", "to phase", "to bypass",
-			"to done", "to abandon", "to promote":
-		case "onto scale":
-			writeFlag = "set"
-		case "onto handoff", "to handoff":
-			writeFlag = "write"
-		default:
-			if workflow != "onto" || !strings.HasPrefix(path, "set ") {
-				return
-			}
-		}
-		run := cmd.RunE
-		cmd.RunE = func(cmd *cobra.Command, args []string) error {
-			if writeFlag != "" {
-				write, err := cmd.Flags().GetBool(writeFlag)
-				if err != nil {
-					return err
-				}
-				// Onto's interactive JSON view takes precedence over --write;
-				// to's JSON flag only changes output, not persistence.
-				if label == "onto handoff" {
-					asJSON, err := cmd.Flags().GetBool("json")
-					if err != nil {
-						return err
-					}
-					write = write && !asJSON
-				}
-				if !write {
-					return run(cmd, args)
-				}
-			}
-			dir, err := cmd.Flags().GetString("dir")
-			if err != nil {
-				return err
-			}
-			configRoot, err := filepath.Abs(dir)
-			if err != nil {
-				return err
-			}
-			// Legacy handlers own their scope validation and diagnostics. The
-			// layout can identify existing-Git mode before repo validation fails.
-			if layout, _ := LoadScopeRoot(configRoot, nil); layout.SchemaVersion < 2 && layout.GitMode == "existing" {
-				return run(cmd, args)
-			}
-			var opErr error
-			called := false
-			previousContext := cmd.Context()
-			defer cmd.SetContext(previousContext)
-			err = runMutation(configRoot, label, func(l Layout) (MutationScope, error) {
-				return commandMutationScope(l, cmd, workflow, path, args)
-			}, func() error {
-				called = true
-				opErr = run(cmd, args)
-				return opErr
-			})
-			if err != nil && called && opErr == nil {
-				return fmt.Errorf("%s: operation completed, but workflow history failed; filesystem changes are not rolled back: %w", label, err)
-			}
-			return err
+		if writeFlag, tracked := historyTracked(workflow, path); tracked {
+			cmd.RunE = historyRunE(cmd.RunE, workflow, path, writeFlag)
 		}
 	}
 	attach(root, "")
+}
+
+// historyTracked reports whether a workflow command mutates records, and the
+// flag, if any, that must be set for it to write.
+func historyTracked(workflow, path string) (writeFlag string, tracked bool) {
+	switch workflow + " " + path {
+	case "onto init", "onto new", "onto advance", "onto bypass", "onto close",
+		"onto complete-integration", "onto abandon", "onto demote", "onto merge-deltas",
+		"onto evidence record", "to init", "to new", "to phase", "to bypass",
+		"to done", "to abandon", "to promote":
+		return "", true
+	case "onto scale":
+		return "set", true
+	case "onto handoff", "to handoff":
+		return "write", true
+	}
+	return "", workflow == "onto" && strings.HasPrefix(path, "set ")
+}
+
+// historyRunE records run's changes to the workflow records as one history
+// operation. A read-only invocation, or a legacy existing-Git layout whose
+// handler owns its own validation, runs unwrapped.
+func historyRunE(run func(*cobra.Command, []string) error, workflow, path, writeFlag string) func(*cobra.Command, []string) error {
+	label := workflow + " " + path
+	return func(cmd *cobra.Command, args []string) error {
+		if writeFlag != "" {
+			write, err := cmd.Flags().GetBool(writeFlag)
+			if err != nil {
+				return err
+			}
+			// Onto's interactive JSON view takes precedence over --write;
+			// to's JSON flag only changes output, not persistence.
+			if label == "onto handoff" {
+				asJSON, err := cmd.Flags().GetBool("json")
+				if err != nil {
+					return err
+				}
+				write = write && !asJSON
+			}
+			if !write {
+				return run(cmd, args)
+			}
+		}
+		dir, err := cmd.Flags().GetString("dir")
+		if err != nil {
+			return err
+		}
+		configRoot, err := filepath.Abs(dir)
+		if err != nil {
+			return err
+		}
+		// Legacy handlers own their scope validation and diagnostics. The
+		// layout can identify existing-Git mode before repo validation fails.
+		if layout, _ := LoadScopeRoot(configRoot, nil); layout.SchemaVersion < 2 && layout.GitMode == "existing" {
+			return run(cmd, args)
+		}
+		var opErr error
+		called := false
+		previousContext := cmd.Context()
+		defer cmd.SetContext(previousContext)
+		err = runMutation(configRoot, label, func(l Layout) (MutationScope, error) {
+			return commandMutationScope(l, cmd, workflow, path, args)
+		}, func() error {
+			called = true
+			opErr = run(cmd, args)
+			return opErr
+		})
+		if err != nil && called && opErr == nil {
+			return fmt.Errorf("%s: operation completed, but workflow history failed; filesystem changes are not rolled back: %w", label, err)
+		}
+		return err
+	}
 }
 
 // Resolve under the outer history lock, before the handler takes its own locks.

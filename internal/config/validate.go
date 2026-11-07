@@ -277,7 +277,6 @@ func validateRepoTargets(c *Config) error {
 	return nil
 }
 
-// sortedResourceNames returns the map's keys in deterministic order.
 // validateRemovedTools fails closed on every declaration naming a tool whose
 // adapter was removed in v0.13.0 (Claude Code and the codex MCP pilot), with
 // an error that names the offending key and says what to do — the same
@@ -307,8 +306,6 @@ func validateRemovedTools(c *Config) error {
 	return nil
 }
 
-// sortedStringKeys returns the map's keys in deterministic order, so a config
-// that fails validation names the same offender every run.
 // validateMCPs rejects any [mcps.*] table: MCP servers are bring-your-own
 // (ADR 0085), so a declaration would silently project nothing.
 func validateMCPs(c *Config) error {
@@ -918,8 +915,6 @@ func isBuiltinSubagent(s Subagent) bool {
 	return ok
 }
 
-// sortedSubagentNames returns the config's subagent names in deterministic
-// order, so a config that fails validation names the same offender every run.
 // rejectLegacyModels fails naming the first [models.<tool>.<level>] block the
 // TOML decoder picked up. pelletier/go-toml/v2 populates the Config's Models
 // detector field, so any non-empty value triggers this rejection; without it,

@@ -20,8 +20,6 @@ import (
 	"github.com/Novirmor/homonto/internal/workspace"
 )
 
-// sortedRepoNames returns the declared repo names in deterministic order, so
-// adapter fan-out order — and plan output — is stable.
 // Engine wires config, adapters, secret resolver, and state for plan/apply.
 type Engine struct {
 	Cfg                 *config.Config

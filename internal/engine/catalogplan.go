@@ -4,11 +4,11 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
+	"io"
 	"maps"
 	"os"
 	"path/filepath"
 	"slices"
-	"sort"
 	"strings"
 
 	"github.com/Novirmor/homonto/internal/agentfm"
@@ -533,86 +533,60 @@ func allCommandFilesExist(root string, names []string) bool {
 // very re-render this gate exists to trigger).
 func renderFingerprint(ctx map[string]agentfm.RenderContext) string {
 	h := sha256.New()
-	digestSpecs := func(kind, tool string, specs map[string]agentfm.ModelSpec) {
-		keys := make([]string, 0, len(specs))
-		for k := range specs {
-			keys = append(keys, k)
-		}
-		sort.Strings(keys)
-		for _, k := range keys {
-			s := specs[k]
-			fmt.Fprintf(h, "%s\x00%s\x00%s\x00%s\x00%s\x00%s\x00", kind, tool, k, s.Model, s.Variant, s.Effort)
-			if s.Steps != nil {
-				fmt.Fprintf(h, "steps\x00%d\x00", *s.Steps)
-			}
-			for _, add := range s.BashAllowAdd {
-				fmt.Fprintf(h, "bashadd\x00%s\x00", add)
-			}
-		}
-	}
-	tools := make([]string, 0, len(ctx))
-	for tool := range ctx {
-		tools = append(tools, tool)
-	}
-	sort.Strings(tools)
-	for _, tool := range tools {
-		names := make([]string, 0, len(ctx[tool].Names))
-		for source := range ctx[tool].Names {
-			names = append(names, source)
-		}
-		sort.Strings(names)
-		for _, source := range names {
-			fmt.Fprintf(h, "alias\x00%s\x00%s\x00%s\x00", tool, source, ctx[tool].Names[source])
-		}
-		digestSpecs("override", tool, ctx[tool].Overrides)
-		fmt.Fprintf(h, "shell-proxy\x00%s\x00%s\x00", tool, ctx[tool].ShellProxy)
-		for _, group := range []struct {
-			kind     string
-			patterns []string
-		}{
-			{"service-coordinator-ask", ctx[tool].ServiceRules.CoordinatorAsk},
-			{"service-coordinator-deny", ctx[tool].ServiceRules.CoordinatorDeny},
-			{"service-worker-deny", ctx[tool].ServiceRules.WorkerDeny},
-		} {
-			for _, pattern := range group.patterns {
-				fmt.Fprintf(h, "%s\x00%s\x00%s\x00", group.kind, tool, pattern)
-			}
-		}
-		for _, group := range []struct {
-			kind string
-			dirs map[string][]string
-		}{
-			{"external-dir", ctx[tool].ExternalDirectoriesByAgent},
-			{"external-dir-deny", ctx[tool].ExternalDirectoryDeniesByAgent},
-			{"edit-dir-deny", ctx[tool].EditDirectoryDeniesByAgent},
-		} {
-			agents := make([]string, 0, len(group.dirs))
-			for agent := range group.dirs {
-				agents = append(agents, agent)
-			}
-			sort.Strings(agents)
-			for _, agent := range agents {
-				fmt.Fprintf(h, "%s-managed\x00%s\x00%s\x00", group.kind, tool, agent)
-				dirs := append([]string(nil), group.dirs[agent]...)
-				sort.Strings(dirs)
-				for i, dir := range dirs {
-					if i > 0 && dir == dirs[i-1] {
-						continue
-					}
-					fmt.Fprintf(h, "%s\x00%s\x00%s\x00%s\x00", group.kind, tool, agent, dir)
-				}
-			}
-		}
-		targets := make([]string, 0, len(ctx[tool].Targets))
-		for name := range ctx[tool].Targets {
-			targets = append(targets, name)
-		}
-		sort.Strings(targets)
-		for _, name := range targets {
-			fmt.Fprintf(h, "target\x00%s\x00%s\x00", tool, name)
-		}
+	for _, tool := range slices.Sorted(maps.Keys(ctx)) {
+		digestRenderContext(h, tool, ctx[tool])
 	}
 	return hex.EncodeToString(h.Sum(nil))
+}
+
+// digestRenderContext writes every input of one harness's render to h, each
+// map in key order: aliases, model overrides, the shell proxy, service shell
+// rules, directory grants and denies, and targets.
+func digestRenderContext(h io.Writer, tool string, rc agentfm.RenderContext) {
+	for _, source := range slices.Sorted(maps.Keys(rc.Names)) {
+		fmt.Fprintf(h, "alias\x00%s\x00%s\x00%s\x00", tool, source, rc.Names[source])
+	}
+	for _, k := range slices.Sorted(maps.Keys(rc.Overrides)) {
+		s := rc.Overrides[k]
+		fmt.Fprintf(h, "%s\x00%s\x00%s\x00%s\x00%s\x00%s\x00", "override", tool, k, s.Model, s.Variant, s.Effort)
+		if s.Steps != nil {
+			fmt.Fprintf(h, "steps\x00%d\x00", *s.Steps)
+		}
+		for _, add := range s.BashAllowAdd {
+			fmt.Fprintf(h, "bashadd\x00%s\x00", add)
+		}
+	}
+	fmt.Fprintf(h, "shell-proxy\x00%s\x00%s\x00", tool, rc.ShellProxy)
+	for _, group := range []struct {
+		kind     string
+		patterns []string
+	}{
+		{"service-coordinator-ask", rc.ServiceRules.CoordinatorAsk},
+		{"service-coordinator-deny", rc.ServiceRules.CoordinatorDeny},
+		{"service-worker-deny", rc.ServiceRules.WorkerDeny},
+	} {
+		for _, pattern := range group.patterns {
+			fmt.Fprintf(h, "%s\x00%s\x00%s\x00", group.kind, tool, pattern)
+		}
+	}
+	for _, group := range []struct {
+		kind string
+		dirs map[string][]string
+	}{
+		{"external-dir", rc.ExternalDirectoriesByAgent},
+		{"external-dir-deny", rc.ExternalDirectoryDeniesByAgent},
+		{"edit-dir-deny", rc.EditDirectoryDeniesByAgent},
+	} {
+		for _, agent := range slices.Sorted(maps.Keys(group.dirs)) {
+			fmt.Fprintf(h, "%s-managed\x00%s\x00%s\x00", group.kind, tool, agent)
+			for _, dir := range slices.Compact(slices.Sorted(slices.Values(group.dirs[agent]))) {
+				fmt.Fprintf(h, "%s\x00%s\x00%s\x00%s\x00", group.kind, tool, agent, dir)
+			}
+		}
+	}
+	for _, name := range slices.Sorted(maps.Keys(rc.Targets)) {
+		fmt.Fprintf(h, "target\x00%s\x00%s\x00", tool, name)
+	}
 }
 
 // allSubagentFilesExist reports whether every file a materialize would write is

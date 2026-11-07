@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/Novirmor/homonto/internal/gitenv"
 	"github.com/Novirmor/homonto/internal/ontostate"
 	"github.com/Novirmor/homonto/internal/tostate"
 	"github.com/Novirmor/homonto/internal/workspace"
@@ -47,12 +48,7 @@ func conversionGit(dir string, args ...string) (string, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 	cmd := exec.CommandContext(ctx, "git", append([]string{"-C", dir}, args...)...)
-	for _, env := range os.Environ() {
-		if !strings.HasPrefix(env, "GIT_") {
-			cmd.Env = append(cmd.Env, env)
-		}
-	}
-	cmd.Env = append(cmd.Env, "GIT_OPTIONAL_LOCKS=0", "GIT_TERMINAL_PROMPT=0")
+	cmd.Env = gitenv.Env()
 	out, err := cmd.Output()
 	if err != nil {
 		return "", fmt.Errorf("promote: git %s in %s: %w", strings.Join(args, " "), dir, err)

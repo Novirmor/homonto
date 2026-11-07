@@ -3,12 +3,12 @@ package ontocli
 import (
 	"context"
 	"fmt"
-	"os"
 	"os/exec"
 	"path/filepath"
 	"sort"
 	"strings"
 
+	"github.com/Novirmor/homonto/internal/gitenv"
 	"github.com/Novirmor/homonto/internal/ontostate"
 	"github.com/Novirmor/homonto/internal/workspace"
 )
@@ -124,13 +124,7 @@ func sourceIdentity(dir string) (string, error) {
 // A caller's Git environment must not redirect source or records authority.
 func gitAt(ctx context.Context, dir string, args ...string) *exec.Cmd {
 	cmd := exec.CommandContext(ctx, "git", append([]string{"-C", dir}, args...)...)
-	cmd.Env = []string{}
-	for _, entry := range os.Environ() {
-		if !strings.HasPrefix(entry, "GIT_") {
-			cmd.Env = append(cmd.Env, entry)
-		}
-	}
-	cmd.Env = append(cmd.Env, "GIT_OPTIONAL_LOCKS=0", "GIT_TERMINAL_PROMPT=0")
+	cmd.Env = gitenv.Env()
 	return cmd
 }
 

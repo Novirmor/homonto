@@ -20,6 +20,7 @@ import (
 
 	"github.com/Novirmor/homonto/internal/applylock"
 	"github.com/Novirmor/homonto/internal/fsutil"
+	"github.com/Novirmor/homonto/internal/gitenv"
 	"github.com/Novirmor/homonto/internal/schema"
 	"github.com/Novirmor/homonto/internal/tomlutil"
 	"github.com/Novirmor/homonto/internal/workflowroot"
@@ -176,12 +177,7 @@ func worktreeGit(dir string, args ...string) (string, error) {
 // index override, refresh the checkout's index, or prompt for credentials.
 func Git(ctx context.Context, dir string, args ...string) (string, error) {
 	cmd := exec.CommandContext(ctx, "git", append([]string{"-C", dir}, args...)...)
-	for _, env := range os.Environ() {
-		if !strings.HasPrefix(env, "GIT_") {
-			cmd.Env = append(cmd.Env, env)
-		}
-	}
-	cmd.Env = append(cmd.Env, "GIT_OPTIONAL_LOCKS=0", "GIT_TERMINAL_PROMPT=0")
+	cmd.Env = gitenv.Env()
 	out, err := cmd.CombinedOutput()
 	if err != nil {
 		return "", fmt.Errorf("git %s in %s: %w: %s", strings.Join(args, " "), dir, err, strings.TrimSpace(string(out)))

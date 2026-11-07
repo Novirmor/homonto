@@ -13,6 +13,7 @@ import (
 	"strings"
 	"unicode"
 
+	"github.com/Novirmor/homonto/internal/gitenv"
 	"github.com/Novirmor/homonto/internal/schema"
 	"github.com/Novirmor/homonto/internal/tomlutil"
 	"github.com/Novirmor/homonto/internal/workflowroot"
@@ -441,12 +442,7 @@ func gitRoots(dir string) (string, string, error) {
 	probe := func(arg string) (string, error) {
 		cmd := exec.Command("git", "-c", "core.fsmonitor=false", "-C", dir, "rev-parse", "--path-format=absolute", arg)
 		// Git environment overrides must not make a bogus source pass validation.
-		for _, entry := range os.Environ() {
-			if !strings.HasPrefix(entry, "GIT_") {
-				cmd.Env = append(cmd.Env, entry)
-			}
-		}
-		cmd.Env = append(cmd.Env, "GIT_OPTIONAL_LOCKS=0", "GIT_TERMINAL_PROMPT=0")
+		cmd.Env = gitenv.Env()
 		out, err := cmd.Output()
 		if err != nil {
 			return "", fmt.Errorf("%q is not a git worktree (%s): %w", dir, arg, err)
@@ -474,12 +470,7 @@ func ReadGit(dir string, args ...string) ([]byte, error) {
 		return nil, err
 	}
 	cmd := exec.Command("git", append([]string{"-c", "core.fsmonitor=false", "-c", "core.ignorestat=false", "-C", dir}, args...)...)
-	for _, entry := range os.Environ() {
-		if !strings.HasPrefix(entry, "GIT_") {
-			cmd.Env = append(cmd.Env, entry)
-		}
-	}
-	cmd.Env = append(cmd.Env, "GIT_OPTIONAL_LOCKS=0", "GIT_TERMINAL_PROMPT=0")
+	cmd.Env = gitenv.Env()
 	out, err := cmd.CombinedOutput()
 	if err != nil {
 		return nil, fmt.Errorf("git %s in %q: %w", strings.Join(args, " "), dir, err)

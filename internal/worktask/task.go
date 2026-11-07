@@ -632,6 +632,16 @@ func removalComplete(ctx context.Context, c Checkout) (bool, error) {
 // Cleanup removes only this task's clean, integrated allocations, never source
 // checkouts. An allocation Git never created is released without inspection.
 func (s *Store) Cleanup(ctx context.Context, name string, yes bool) (*Task, error) {
+	return s.cleanupTask(ctx, name, yes, false)
+}
+
+// CleanupKeepBranches releases a task's worktrees without deleting branches.
+// Callers that manage branch retention themselves can then apply their policy.
+func (s *Store) CleanupKeepBranches(ctx context.Context, name string, yes bool) (*Task, error) {
+	return s.cleanupTask(ctx, name, yes, true)
+}
+
+func (s *Store) cleanupTask(ctx context.Context, name string, yes, keepBranches bool) (*Task, error) {
 	if !yes {
 		return nil, fmt.Errorf("workspace task cleanup requires --yes")
 	}
@@ -651,10 +661,10 @@ func (s *Store) Cleanup(ctx context.Context, name string, yes bool) (*Task, erro
 	if err := engine.requireOperation(catalog.OpRelease); err != nil {
 		return nil, err
 	}
-	return t, s.cleanup(ctx, t)
+	return t, s.cleanup(ctx, t, keepBranches)
 }
 
-func (s *Store) cleanup(ctx context.Context, t *Task) error {
+func (s *Store) cleanup(ctx context.Context, t *Task, keepBranches bool) error {
 	for _, alias := range sortedCheckouts(t) {
 		c := t.Checkouts[alias]
 		if !c.Owned || c.Removed {
@@ -666,8 +676,10 @@ func (s *Store) cleanup(ctx context.Context, t *Task) error {
 				return err
 			}
 			if complete {
-				if err := s.releaseBranch(ctx, c); err != nil {
-					return err
+				if !keepBranches {
+					if err := s.releaseBranch(ctx, c); err != nil {
+						return err
+					}
 				}
 				c.Removing, c.Removed = false, true
 				t.Checkouts[alias] = c
@@ -730,8 +742,10 @@ func (s *Store) cleanup(ctx context.Context, t *Task) error {
 		if _, err := git(ctx, c.Source, "worktree", "remove", c.Path); err != nil {
 			return err
 		}
-		if err := s.releaseBranch(ctx, c); err != nil {
-			return err
+		if !keepBranches {
+			if err := s.releaseBranch(ctx, c); err != nil {
+				return err
+			}
 		}
 		c.Removing, c.Removed = false, true
 		t.Checkouts[alias] = c

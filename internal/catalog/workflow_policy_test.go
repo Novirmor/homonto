@@ -112,7 +112,7 @@ func TestPresetPoliciesShareEligibilityAndKeepRepairContracts(t *testing.T) {
 }
 
 func TestWorkflowTriggersAndTechnicalProse(t *testing.T) {
-	for _, standalone := range []string{"grilling", "handoff"} {
+	for _, standalone := range []string{"grilling", "handoff", "swarm"} {
 		text := hPromptText(t, "skills/"+standalone+"/SKILL.md")
 		if !strings.Contains(text, "the harness's native question dialog") || !strings.Contains(text, "standalone mode") {
 			t.Errorf("%s must preserve native question behavior without shared skills", standalone)

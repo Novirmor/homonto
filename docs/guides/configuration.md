@@ -32,6 +32,7 @@ shell's working directory.
 | [`[repos]`](#repositories--repos) | Source repositories |
 | [`[worktrees]`](#worktrees--worktrees) | Parent directory for registered worktrees |
 | [`[integration.<name>]`](#integration-checks--integrationname) | Cross-repository checks |
+| [`[preview.<name>]`](#swarm-previews--previewname) | Docker previews of swarm candidates, with resource budgets |
 | [`[routing]`](#model-routing--routing) | Execution-model policies per selector and harness |
 | [`[decisions]`](#decision-models--decisions) | Decision-model providers for typed judgments |
 | [Package settings and processes](#package-settings-and-processes) | `[<table>.<name>.settings]`, `[<table>.<name>.processes.*]` |
@@ -677,6 +678,48 @@ command = ["make", "e2e"]
 Scripts must read those paths, not guess sibling locations. Run checks with
 `homonto workspace task check`; see [workspaces](workspaces.md#workspace-tasks).
 
+## Swarm previews — `[preview.<name>]`
+
+Schema 2 only. A preview runs each [swarm](swarms.md) candidate's checkout of
+`repo` in a local Docker container so you can compare the running
+prototypes side by side. A swarm previews every declared preview whose `repo`
+it changes.
+
+```toml
+[preview.site]
+repo       = "web"           # whose candidate checkout is previewed
+dockerfile = "Dockerfile"    # build an image from the checkout…
+context    = "."             # …with this build context (default ".")
+port       = 3000            # container port serving HTTP
+path       = "/"             # probed for readiness and linked (default "/")
+cpus       = 1.0             # budgets: defaults shown
+memory     = "512m"
+pids       = 256
+ttl        = "30m"           # torn down after this long
+startup    = "5m"            # build + start + first answer must fit
+
+[preview.static]
+repo    = "docs"
+image   = "python:3.13-alpine"           # …or run a stock image with the checkout
+command = ["python", "-m", "http.server", "8000"]  # mounted read-only at /workspace
+port    = 8000
+```
+
+| Field | Notes |
+|---|---|
+| `repo` | A declared alias. |
+| `dockerfile` / `image` | Exactly one. `dockerfile` and `context` are relative to the checkout and may not escape it; `command` applies only with `image` and is the whole argv, replacing the image's entrypoint and CMD. |
+| `port` | 1–65535. Docker publishes it on a free loopback port only (`127.0.0.1`). |
+| `cpus` | Up to 8. |
+| `memory` | 32m–8g; swap is capped at the same value. |
+| `pids` | Up to 4096. |
+| `ttl` | Up to 24h. A detached watchdog and every later swarm command remove an expired preview. |
+| `startup` | Up to 30m. A preview that is not answering by then is torn down. |
+
+The name becomes part of container names, so it is lowercase letters, digits
+and `-`. Commands: `homonto workspace swarm preview start|stop`; see
+[swarms](swarms.md#previews).
+
 ## Model routing — `[routing]`
 
 A routing policy picks the execution model for agents by where they run,
@@ -846,6 +889,18 @@ and similar segments are yours to choose. A key marked *rejected* or
 | `integration.<name>.repo` | string | schema 2 only; one of repos |
 | `integration.<name>.cwd` | string | schema 2 only; relative to that checkout |
 | `integration.<name>.command` | list of strings | schema 2 only; argv array |
+| `preview.<name>.repo` | string |  |
+| `preview.<name>.dockerfile` | string |  |
+| `preview.<name>.context` | string |  |
+| `preview.<name>.image` | string |  |
+| `preview.<name>.command` | list of strings |  |
+| `preview.<name>.port` | integer |  |
+| `preview.<name>.path` | string |  |
+| `preview.<name>.cpus` | number |  |
+| `preview.<name>.memory` | string |  |
+| `preview.<name>.pids` | integer |  |
+| `preview.<name>.ttl` | string |  |
+| `preview.<name>.startup` | string |  |
 | `schema_version` | integer | 0, 1 or 2; newer fails at load |
 | `harnesses` | list of strings | "opencode", "claude"; default ["opencode"] |
 | `workflow.root` | string | default "docs" |

@@ -212,10 +212,7 @@ func commandMutationScope(l Layout, cmd *cobra.Command, workflow, operation stri
 		return s, fmt.Errorf("workspace history: missing change name")
 	}
 	name := args[0]
-	validName := func(n string) bool {
-		return safeHistoryPath(n) && !strings.Contains(n, "/") && n != "archive" && !strings.HasPrefix(n, ".")
-	}
-	if !validName(name) {
+	if !validHistoryChangeName(name) {
 		return s, fmt.Errorf("workspace history: invalid change name %q", name)
 	}
 	tree := "changes"
@@ -225,39 +222,9 @@ func commandMutationScope(l Layout, cmd *cobra.Command, workflow, operation stri
 	active := tree + "/" + name
 	s.Paths = []string{active + "/" + workflow + "-state.yaml"}
 	flag := func(name string) string { v, _ := cmd.Flags().GetString(name); return strings.TrimSpace(v) }
-	switch operation {
-	case "new":
-		s = MutationScope{Trees: []string{active}}
-	case "promote", "demote":
-		target := flag("as")
-		if target == "" {
-			target = name
-		}
-		if !validName(target) {
-			return s, fmt.Errorf("workspace history: invalid target name %q", target)
-		}
-		other := "tasks"
-		if workflow == "to" {
-			other = "changes"
-		}
-		s = MutationScope{Trees: []string{active, other + "/" + target}}
-	case "handoff":
-		s = MutationScope{Trees: []string{active + "/." + workflow + "/handoff"}}
-	case "evidence record":
-		s.Paths = []string{active + "/.onto/evidence.json"}
-	case "merge-deltas":
-		s.Paths = append(s.Paths, active+"/.onto/merge-receipt.json")
-		entries, err := os.ReadDir(filepath.Join(l.WorkflowRoot, active, "specs"))
-		if err != nil && !os.IsNotExist(err) {
-			return s, err
-		}
-		for _, e := range entries {
-			if !e.IsDir() && strings.EqualFold(filepath.Ext(e.Name()), ".md") && !strings.EqualFold(e.Name(), "README.md") {
-				s.Paths = append(s.Paths, "specs/"+strings.TrimSuffix(e.Name(), filepath.Ext(e.Name()))+".md")
-			}
-		}
-	case "bypass":
-		s.Paths = append(s.Paths, active+"/."+workflow+"/bypass.json")
+	s, err := operationScope(l, s, workflow, operation, tree, name, flag("as"))
+	if err != nil {
+		return s, err
 	}
 	archive := operation == "close" || operation == "done" || (workflow == "to" && operation == "abandon") || (operation == "bypass" && (flag("to") == "archive" || (workflow == "to" && flag("to") == "done")))
 	if !archive && operation != "complete-integration" {
@@ -301,6 +268,52 @@ func commandMutationScope(l Layout, cmd *cobra.Command, workflow, operation stri
 		}
 	}
 	return s, s.validate()
+}
+
+// validHistoryChangeName accepts a plain change directory name.
+func validHistoryChangeName(n string) bool {
+	return safeHistoryPath(n) && !strings.Contains(n, "/") && n != "archive" && !strings.HasPrefix(n, ".")
+}
+
+// operationScope is what one workflow operation may change, beyond the
+// change's state file already in s. as is the --as target of a conversion.
+func operationScope(l Layout, s MutationScope, workflow, operation, tree, name, as string) (MutationScope, error) {
+	active := tree + "/" + name
+	switch operation {
+	case "new":
+		s = MutationScope{Trees: []string{active}}
+	case "promote", "demote":
+		target := as
+		if target == "" {
+			target = name
+		}
+		if !validHistoryChangeName(target) {
+			return s, fmt.Errorf("workspace history: invalid target name %q", target)
+		}
+		other := "tasks"
+		if workflow == "to" {
+			other = "changes"
+		}
+		s = MutationScope{Trees: []string{active, other + "/" + target}}
+	case "handoff":
+		s = MutationScope{Trees: []string{active + "/." + workflow + "/handoff"}}
+	case "evidence record":
+		s.Paths = []string{active + "/.onto/evidence.json"}
+	case "merge-deltas":
+		s.Paths = append(s.Paths, active+"/.onto/merge-receipt.json")
+		entries, err := os.ReadDir(filepath.Join(l.WorkflowRoot, active, "specs"))
+		if err != nil && !os.IsNotExist(err) {
+			return s, err
+		}
+		for _, e := range entries {
+			if !e.IsDir() && strings.EqualFold(filepath.Ext(e.Name()), ".md") && !strings.EqualFold(e.Name(), "README.md") {
+				s.Paths = append(s.Paths, "specs/"+strings.TrimSuffix(e.Name(), filepath.Ext(e.Name()))+".md")
+			}
+		}
+	case "bypass":
+		s.Paths = append(s.Paths, active+"/."+workflow+"/bypass.json")
+	}
+	return s, nil
 }
 
 // archiveIdentity holds only the state fields that select an archive

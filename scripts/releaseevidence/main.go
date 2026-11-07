@@ -187,109 +187,126 @@ func run(args []string, stdout io.Writer) error {
 	now := time.Now().UTC().Format(time.RFC3339)
 	switch args[0] {
 	case "init":
-		fs := flag.NewFlagSet("init", flag.ContinueOnError)
-		version := fs.String("version", "", "the release tag, for example v1.0.0")
-		out := fs.String("out", "", "manifest path")
-		if err := fs.Parse(args[1:]); err != nil {
-			return err
-		}
-		if *version == "" || *out == "" {
-			return errors.New("releaseevidence init: --version and --out are required")
-		}
-		if _, err := os.Stat(*out); err == nil {
-			return fmt.Errorf("releaseevidence init: %s exists; a manifest is never reset", *out)
-		}
-		commit, err := head()
-		if err != nil {
-			return err
-		}
-		m := Manifest{Version: *version, Commit: commit, Created: now}
-		for _, r := range Requirements() {
-			m.Entries = append(m.Entries, Entry{ID: r.ID, Check: r.Check, Status: StatusMissing})
-		}
-		if err := save(*out, m); err != nil {
-			return err
-		}
-		fmt.Fprintf(stdout, "created %s for %s at %s (%d keys)\n", *out, *version, commit, len(m.Entries))
-		return nil
+		return runInit(args, stdout, now)
 	case "record":
-		if len(args) < 4 {
-			return errors.New("usage: releaseevidence record <manifest> <id> pass|fail|skip|n/a [--note text] [--log path]")
-		}
-		path, id, status := args[1], args[2], args[3]
-		fs := flag.NewFlagSet("record", flag.ContinueOnError)
-		note := fs.String("note", "", "what was run and what it showed")
-		log := fs.String("log", "", "where the output is kept")
-		if err := fs.Parse(args[4:]); err != nil {
-			return err
-		}
-		if !slices.Contains([]string{StatusPass, StatusFail, StatusSkip, StatusNA}, status) {
-			return fmt.Errorf("releaseevidence record: status %q is not pass, fail, skip or n/a", status)
-		}
-		m, err := load(path)
-		if err != nil {
-			return err
-		}
-		commit, err := head()
-		if err != nil {
-			return err
-		}
-		if commit != m.Commit {
-			return fmt.Errorf("releaseevidence record: HEAD is %s but the manifest is for %s; evidence from another commit does not count", commit, m.Commit)
-		}
-		e := m.entry(id)
-		if e == nil {
-			return fmt.Errorf("releaseevidence record: %q is not a key of this manifest", id)
-		}
-		if status == StatusNA {
-			req := slices.IndexFunc(Requirements(), func(r Requirement) bool { return r.ID == id })
-			if req < 0 || !Requirements()[req].NotApplicable {
-				return fmt.Errorf("releaseevidence record: %s cannot be n/a; run it, or record skip", id)
-			}
-			if *note == "" {
-				return fmt.Errorf("releaseevidence record: n/a needs a --note saying why %s does not apply", id)
-			}
-		}
-		e.Status, e.Note, e.Log, e.At = status, *note, *log, now
-		if err := save(path, m); err != nil {
-			return err
-		}
-		fmt.Fprintf(stdout, "%s: %s\n", id, status)
-		return nil
+		return runRecord(args, stdout, now)
 	case "check":
-		if len(args) != 2 {
-			return errors.New("usage: releaseevidence check <manifest>")
-		}
-		m, err := load(args[1])
-		if err != nil {
-			return err
-		}
-		commit, err := head()
-		if err != nil {
-			return err
-		}
-		if commit != m.Commit {
-			return fmt.Errorf("releaseevidence check: HEAD is %s but the manifest is for %s; evidence from another commit does not allow this tag", commit, m.Commit)
-		}
-		fmt.Fprintf(stdout, "%s at %s\n", m.Version, m.Commit)
-		for _, c := range m.Claimable() {
-			host := c[0]
-			if host == "" {
-				host = "none"
-			}
-			fmt.Fprintf(stdout, "claimable: host %s, harness %s\n", host, c[1])
-		}
-		missing := m.Unsatisfied()
-		for _, e := range missing {
-			fmt.Fprintf(stdout, "%-8s %s — %s\n", e.Status, e.ID, e.Check)
-		}
-		if len(missing) > 0 {
-			return fmt.Errorf("releaseevidence: %d of %d keys are not satisfied; %s cannot be tagged", len(missing), len(Requirements()), m.Version)
-		}
-		fmt.Fprintf(stdout, "every key passed: %s may be tagged at %s\n", m.Version, m.Commit)
-		return nil
+		return runCheck(args, stdout)
 	}
 	return fmt.Errorf("releaseevidence: unknown command %q", args[0])
+}
+
+// runInit creates a manifest for the release at HEAD, every key missing.
+func runInit(args []string, stdout io.Writer, now string) error {
+	fs := flag.NewFlagSet("init", flag.ContinueOnError)
+	version := fs.String("version", "", "the release tag, for example v1.0.0")
+	out := fs.String("out", "", "manifest path")
+	if err := fs.Parse(args[1:]); err != nil {
+		return err
+	}
+	if *version == "" || *out == "" {
+		return errors.New("releaseevidence init: --version and --out are required")
+	}
+	if _, err := os.Stat(*out); err == nil {
+		return fmt.Errorf("releaseevidence init: %s exists; a manifest is never reset", *out)
+	}
+	commit, err := head()
+	if err != nil {
+		return err
+	}
+	m := Manifest{Version: *version, Commit: commit, Created: now}
+	for _, r := range Requirements() {
+		m.Entries = append(m.Entries, Entry{ID: r.ID, Check: r.Check, Status: StatusMissing})
+	}
+	if err := save(*out, m); err != nil {
+		return err
+	}
+	fmt.Fprintf(stdout, "created %s for %s at %s (%d keys)\n", *out, *version, commit, len(m.Entries))
+	return nil
+}
+
+// runRecord records one key's result at HEAD; n/a only where the key allows
+// it, and only with a reason.
+func runRecord(args []string, stdout io.Writer, now string) error {
+	if len(args) < 4 {
+		return errors.New("usage: releaseevidence record <manifest> <id> pass|fail|skip|n/a [--note text] [--log path]")
+	}
+	path, id, status := args[1], args[2], args[3]
+	fs := flag.NewFlagSet("record", flag.ContinueOnError)
+	note := fs.String("note", "", "what was run and what it showed")
+	log := fs.String("log", "", "where the output is kept")
+	if err := fs.Parse(args[4:]); err != nil {
+		return err
+	}
+	if !slices.Contains([]string{StatusPass, StatusFail, StatusSkip, StatusNA}, status) {
+		return fmt.Errorf("releaseevidence record: status %q is not pass, fail, skip or n/a", status)
+	}
+	m, err := load(path)
+	if err != nil {
+		return err
+	}
+	commit, err := head()
+	if err != nil {
+		return err
+	}
+	if commit != m.Commit {
+		return fmt.Errorf("releaseevidence record: HEAD is %s but the manifest is for %s; evidence from another commit does not count", commit, m.Commit)
+	}
+	e := m.entry(id)
+	if e == nil {
+		return fmt.Errorf("releaseevidence record: %q is not a key of this manifest", id)
+	}
+	if status == StatusNA {
+		req := slices.IndexFunc(Requirements(), func(r Requirement) bool { return r.ID == id })
+		if req < 0 || !Requirements()[req].NotApplicable {
+			return fmt.Errorf("releaseevidence record: %s cannot be n/a; run it, or record skip", id)
+		}
+		if *note == "" {
+			return fmt.Errorf("releaseevidence record: n/a needs a --note saying why %s does not apply", id)
+		}
+	}
+	e.Status, e.Note, e.Log, e.At = status, *note, *log, now
+	if err := save(path, m); err != nil {
+		return err
+	}
+	fmt.Fprintf(stdout, "%s: %s\n", id, status)
+	return nil
+}
+
+// runCheck reports what the manifest at HEAD can claim and fails while any
+// key is unsatisfied.
+func runCheck(args []string, stdout io.Writer) error {
+	if len(args) != 2 {
+		return errors.New("usage: releaseevidence check <manifest>")
+	}
+	m, err := load(args[1])
+	if err != nil {
+		return err
+	}
+	commit, err := head()
+	if err != nil {
+		return err
+	}
+	if commit != m.Commit {
+		return fmt.Errorf("releaseevidence check: HEAD is %s but the manifest is for %s; evidence from another commit does not allow this tag", commit, m.Commit)
+	}
+	fmt.Fprintf(stdout, "%s at %s\n", m.Version, m.Commit)
+	for _, c := range m.Claimable() {
+		host := c[0]
+		if host == "" {
+			host = "none"
+		}
+		fmt.Fprintf(stdout, "claimable: host %s, harness %s\n", host, c[1])
+	}
+	missing := m.Unsatisfied()
+	for _, e := range missing {
+		fmt.Fprintf(stdout, "%-8s %s — %s\n", e.Status, e.ID, e.Check)
+	}
+	if len(missing) > 0 {
+		return fmt.Errorf("releaseevidence: %d of %d keys are not satisfied; %s cannot be tagged", len(missing), len(Requirements()), m.Version)
+	}
+	fmt.Fprintf(stdout, "every key passed: %s may be tagged at %s\n", m.Version, m.Commit)
+	return nil
 }
 
 func main() {

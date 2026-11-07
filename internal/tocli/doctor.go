@@ -136,65 +136,77 @@ func collectFindings(root string) ([]string, error) {
 		return nil, err
 	}
 	findings := []string{}
-
-	// 1. Active changes: state validity, wedged terminal state, the plan.md
+	// Active changes: state validity, wedged terminal state, the plan.md
 	// artifact, and the lightweight task contract the skills depend on.
 	dirents, err := os.ReadDir(tasksDir(root))
 	if err != nil && !os.IsNotExist(err) {
 		return nil, fmt.Errorf("to doctor: reading %s: %w", tasksDir(root), err)
 	}
 	for _, d := range dirents {
-		if !d.IsDir() || d.Name() == "archive" {
-			continue
+		if d.IsDir() && d.Name() != "archive" {
+			findings = append(findings, activeTaskFindings(root, d.Name())...)
 		}
-		name := d.Name()
-		st, err := loadChange(root, name)
-		if err != nil {
-			findings = append(findings, fmt.Sprintf("%s: invalid or missing %s: %v", name, tostate.FileName, err))
-			continue
+	}
+	// Global-name uniqueness (ADR 0042): an active name colliding with the
+	// onto workflow's active tree is ambiguous for agent routing.
+	dupes, err := siblingDuplicates(root, "changes")
+	if err != nil {
+		return nil, fmt.Errorf("to doctor: reading sibling changes: %w", err)
+	}
+	for _, name := range dupes {
+		findings = append(findings, fmt.Sprintf("%s: also active in the onto workflow (<workflow-root>/changes/%s) — active names are globally unique; convert or rename one", name, name))
+	}
+	archived, err := archiveFindings(root)
+	if err != nil {
+		return nil, err
+	}
+	findings = append(findings, archived...)
+	return append(findings, versionSkewFindings(root)...), nil
+}
+
+// activeTaskFindings checks one active change.
+func activeTaskFindings(root, name string) []string {
+	var findings []string
+	st, err := loadChange(root, name)
+	if err != nil {
+		findings = append(findings, fmt.Sprintf("%s: invalid or missing %s: %v", name, tostate.FileName, err))
+		return findings
+	}
+	if st.Terminal() {
+		verb := "to abandon " + name
+		if st.Phase == tostate.PhaseDone {
+			verb = "to done " + name + " --verified"
 		}
-		if st.Terminal() {
-			verb := "to abandon " + name
-			if st.Phase == tostate.PhaseDone {
-				verb = "to done " + name + " --verified"
-			}
-			findings = append(findings, fmt.Sprintf("%s: terminal (%s) but still active — an interrupted archive; re-run `%s` to complete it", name, st.Phase, verb))
-			continue
-		}
-		if len(st.Repos) > 0 {
-			if _, dirs, err := resolvedSources(root, st); err != nil {
-				findings = append(findings, fmt.Sprintf("%s: cross-repo scope unavailable: %v", name, err))
-			} else {
-				for repo, dir := range dirs {
-					if _, err := sourceCommonDir(dir); err != nil {
-						findings = append(findings, fmt.Sprintf("%s: declared repo %s is not a usable git worktree", name, repo))
-					}
+		findings = append(findings, fmt.Sprintf("%s: terminal (%s) but still active — an interrupted archive; re-run `%s` to complete it", name, st.Phase, verb))
+		return findings
+	}
+	if len(st.Repos) > 0 {
+		if _, dirs, err := resolvedSources(root, st); err != nil {
+			findings = append(findings, fmt.Sprintf("%s: cross-repo scope unavailable: %v", name, err))
+		} else {
+			for repo, dir := range dirs {
+				if _, err := sourceCommonDir(dir); err != nil {
+					findings = append(findings, fmt.Sprintf("%s: declared repo %s is not a usable git worktree", name, repo))
 				}
 			}
 		}
-		plan, err := os.ReadFile(planPath(root, name))
-		if err != nil {
-			findings = append(findings, name+": plan.md is missing")
-			continue
-		}
-		if st.Phase == tostate.PhaseDo {
-			for _, finding := range planContractFindings(string(plan)) {
-				findings = append(findings, name+": "+finding)
-			}
+	}
+	plan, err := os.ReadFile(planPath(root, name))
+	if err != nil {
+		findings = append(findings, name+": plan.md is missing")
+		return findings
+	}
+	if st.Phase == tostate.PhaseDo {
+		for _, finding := range planContractFindings(string(plan)) {
+			findings = append(findings, name+": "+finding)
 		}
 	}
+	return findings
+}
 
-	// 2. Global-name uniqueness (ADR 0042): an active name colliding with
-	// the onto workflow's active tree is ambiguous for agent routing.
-	if dupes, err := siblingDuplicates(root, "changes"); err != nil {
-		return nil, fmt.Errorf("to doctor: reading sibling changes: %w", err)
-	} else {
-		for _, name := range dupes {
-			findings = append(findings, fmt.Sprintf("%s: also active in the onto workflow (<workflow-root>/changes/%s) — active names are globally unique; convert or rename one", name, name))
-		}
-	}
-
-	// 3. Archive entries: must hold a valid, terminal state.
+// archiveFindings requires every archive entry to hold a valid, terminal state.
+func archiveFindings(root string) ([]string, error) {
+	var findings []string
 	if err := validateWorkflowDir(root, archiveDir(root)); err != nil {
 		return nil, err
 	}
@@ -224,9 +236,14 @@ func collectFindings(root string) ([]string, error) {
 			findings = append(findings, fmt.Sprintf("archive/%s: archived but not terminal (phase %s)", name, st.Phase))
 		}
 	}
+	return findings, nil
+}
 
-	// 3. Version skew: to and the homonto that applied the to framework are
-	// released together and should match. Best-effort and boundary-preserving:
+// versionSkewFindings compares to with the homonto that applied the to
+// framework; they are released together and should match.
+func versionSkewFindings(root string) []string {
+	var findings []string
+	// Best-effort and boundary-preserving:
 	// read only homontoVersion from .homonto/state.json; missing file or field
 	// is silently skipped, and build metadata is ignored so a homogeneous dev
 	// build of both binaries does not report a false skew.
@@ -237,6 +254,5 @@ func collectFindings(root string) ([]string, error) {
 				me, applied))
 		}
 	}
-
-	return findings, nil
+	return findings
 }

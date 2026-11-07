@@ -3,6 +3,7 @@ package opencode
 import (
 	"bytes"
 	"fmt"
+	"maps"
 	"os"
 	"path/filepath"
 	"sort"
@@ -172,6 +173,44 @@ func projSettingDocPath(key string) string {
 }
 func cliDocPath(key string) string { return trim(key, cliStatePrefix) }
 
+// documents are the files OpenCode's structured namespaces live in. In repo
+// mode the global user config and CLI file belong to the config repo's
+// adapter: they are never read (an unparseable global file must not block a
+// repo apply) and stay empty.
+type documents struct {
+	cfg, cli, project []byte
+}
+
+func (a *Adapter) readDocuments() (documents, error) {
+	var d documents
+	var err error
+	if a.RepoName == "" {
+		if d.cfg, err = readStandardized(a.cfgFile()); err != nil {
+			return d, err
+		}
+		if d.cli, err = readStandardized(a.cliFile()); err != nil {
+			return d, err
+		}
+	}
+	d.project, err = a.readProjectCfg()
+	return d, err
+}
+
+// pluginEntry is the plugin[] element a declared source projects as: a
+// bundled plugin's materialized catalog path (owned content, ADR 0029), or
+// the user's own specifier (npm package or their own path) unchanged.
+// homonto-workflow keeps its removed V1 entry path (ADR 0079) only so a
+// recorded legacy entry still matches for pruning; config rejects declaring it.
+func (a *Adapter) pluginEntry(src string) string {
+	if a.PluginCatalogRoot == "" || !catalogPluginNames[src] {
+		return src
+	}
+	if src == "permission-observer" {
+		return filepath.Join(a.PluginCatalogRoot, src)
+	}
+	return filepath.Join(a.PluginCatalogRoot, src, "plugin.ts")
+}
+
 func (a *Adapter) Plan(c *config.Config, st *state.State) (adapter.ChangeSet, error) {
 	if err := a.Expand(c); err != nil {
 		return adapter.ChangeSet{}, err
@@ -185,20 +224,11 @@ func (a *Adapter) Plan(c *config.Config, st *state.State) (adapter.ChangeSet, er
 	if err != nil {
 		return adapter.ChangeSet{}, err
 	}
-	var doc, tuiDoc []byte
-	if global {
-		var err error
-		if doc, err = readStandardized(a.cfgFile()); err != nil {
-			return adapter.ChangeSet{}, err
-		}
-		if tuiDoc, err = readStandardized(a.cliFile()); err != nil {
-			return adapter.ChangeSet{}, err
-		}
-	}
-	projDoc, err := a.readProjectCfg()
+	docs, err := a.readDocuments()
 	if err != nil {
 		return adapter.ChangeSet{}, err
 	}
+	doc, tuiDoc, projDoc := docs.cfg, docs.cli, docs.project
 	cs := adapter.ChangeSet{Tool: a.Name()}
 
 	// MCP servers are bring-your-own (ADR 0085). Entries an earlier release
@@ -283,21 +313,7 @@ func (a *Adapter) planPlugins(c *config.Config, st *state.State, doc []byte) []a
 	var changes []adapter.Change
 	for _, pl := range c.Plugins.OpenCode {
 		src := pl.Source
-		// A bare bundled plugin name projects as its materialized catalog
-		// path (owned content, ADR 0029); anything else is the user's own
-		// specifier (npm package or their own path), passed through.
-		entry := src
-		if a.PluginCatalogRoot != "" {
-			if _, ok := catalogPluginNames[src]; ok {
-				// homonto-workflow keeps its removed V1 entry path (ADR 0079)
-				// only so a recorded legacy entry still matches for pruning;
-				// config rejects declaring it.
-				entry = filepath.Join(a.PluginCatalogRoot, src, "plugin.ts")
-				if src == "permission-observer" {
-					entry = filepath.Join(a.PluginCatalogRoot, src)
-				}
-			}
-		}
+		entry := a.pluginEntry(src)
 		previous, inState := st.Get("opencode", "plugin."+src)
 		if !pl.IsEnabled() {
 			// Disabled: ensure absent, but only ever remove a homonto-managed
@@ -339,91 +355,54 @@ func (a *Adapter) planPlugins(c *config.Config, st *state.State, doc []byte) []a
 // as far as opencode's data model allows). Only hashes escape — raw values
 // (possibly resolved secrets) never leave the adapter.
 func (a *Adapter) ObserveHashes(st *state.State) (map[string]string, error) {
-	// Repo mode: global files are not this adapter's; its partition holds only
-	// project/file keys, so global observes would match nothing anyway — and
-	// reading the global config could fail a repo apply for a file outside its
-	// scope.
-	var doc, tuiDoc []byte
-	if a.RepoName == "" {
-		var err error
-		if doc, err = readStandardized(a.cfgFile()); err != nil {
-			return nil, err
-		}
-		if tuiDoc, err = readStandardized(a.cliFile()); err != nil {
-			return nil, err
-		}
-	}
-	codec := jsoncodec.Codec{}
-	out := map[string]string{}
-	if obs, err := structproj.Observe("opencode", "setting.", doc, st, codec, settingDocPath); err != nil {
-		return nil, err
-	} else {
-		for k, v := range obs {
-			out[k] = v
-		}
-	}
-	projDoc, err := a.readProjectCfg()
+	// Repo mode: its partition holds only project/file keys, so the global
+	// documents stay empty and global observes match nothing.
+	docs, err := a.readDocuments()
 	if err != nil {
 		return nil, err
 	}
-	if obs, err := structproj.Observe("opencode", "projsetting.", projDoc, st, codec, projSettingDocPath); err != nil {
-		return nil, err
-	} else {
-		for k, v := range obs {
-			out[k] = v
+	out := map[string]string{}
+	for _, ns := range []struct {
+		prefix string
+		doc    []byte
+		codec  structproj.Codec
+		path   structproj.PathFor
+	}{
+		{"setting.", docs.cfg, jsoncodec.Codec{}, settingDocPath},
+		{"projsetting.", docs.project, jsoncodec.Codec{}, projSettingDocPath},
+		{cliStatePrefix, docs.cli, cliCodec{}, cliDocPath},
+	} {
+		obs, err := structproj.Observe("opencode", ns.prefix, ns.doc, st, ns.codec, ns.path)
+		if err != nil {
+			return nil, err
 		}
-	}
-	if obs, err := structproj.Observe("opencode", cliStatePrefix, tuiDoc, st, cliCodec{}, cliDocPath); err != nil {
-		return nil, err
-	} else {
-		for k, v := range obs {
-			out[k] = v
-		}
+		maps.Copy(out, obs)
 	}
 	// File-projection keys (skill./command./subagent.*) live on disk as symlinks;
 	// each re-hashes its recorded link through the shared contract, reading at the
 	// recorded dst so a pending scope switch is not misread as drift.
-	for k, v := range fileproj.Observe("opencode", "skill.", st) {
-		out[k] = v
-	}
-	for k, v := range fileproj.Observe("opencode", "command.", st) {
-		out[k] = v
-	}
-	for k, v := range fileproj.Observe("opencode", "subagent.", st) {
-		out[k] = v
+	for _, prefix := range []string{"skill.", "command.", "subagent."} {
+		maps.Copy(out, fileproj.Observe("opencode", prefix, st))
 	}
 	for _, key := range st.Keys("opencode") {
+		e, ok := st.Get("opencode", key)
+		if !ok {
+			continue
+		}
 		switch {
 		case hasPrefix(key, "plugin."):
 			// Plugins are array membership with no scalar to re-hash: presence
 			// means unchanged by definition, so return the key's own Applied.
-			// The doc holds the RESOLVED entry (a bundled plugin's materialized
-			// path), so check that, not the bare state key.
-			entry := trim(key, "plugin.")
-			if a.PluginCatalogRoot != "" && catalogPluginNames[entry] {
-				if entry == "permission-observer" {
-					entry = filepath.Join(a.PluginCatalogRoot, entry)
-				} else {
-					entry = filepath.Join(a.PluginCatalogRoot, entry, "plugin.ts")
-				}
-			}
-			if arrayHas(doc, "plugin", entry) {
-				if e, ok := st.Get("opencode", key); ok {
-					out[key] = e.Applied
-				}
+			// The doc holds the RESOLVED entry, so check that, not the bare key.
+			if arrayHas(docs.cfg, "plugin", a.pluginEntry(trim(key, "plugin."))) {
+				out[key] = e.Applied
 			}
 		case hasPrefix(key, "subagentcopy."):
 			// A copy-mode subagent lives on disk as a real file; its Applied is the
 			// content hash and Desired holds the dst path.
-			e, ok := st.Get("opencode", key)
-			if !ok {
-				continue
+			if content, err := os.ReadFile(e.Desired); err == nil {
+				out[key] = copyfile.Hash(content)
 			}
-			content, err := os.ReadFile(e.Desired)
-			if err != nil {
-				continue
-			}
-			out[key] = copyfile.Hash(content)
 		}
 		// absent from disk → omit
 	}
@@ -512,20 +491,11 @@ func (a *Adapter) Apply(cfg *config.Config, cs adapter.ChangeSet, res *secret.Re
 	// adapter's territory — never read here (an unparseable global file must
 	// not block a repo apply), never written (no global changes are planned).
 	global := a.RepoName == ""
-	var doc, tuiDoc []byte
-	if global {
-		var err error
-		if doc, err = readStandardized(a.cfgFile()); err != nil {
-			return err
-		}
-		if tuiDoc, err = readStandardized(a.cliFile()); err != nil {
-			return err
-		}
-	}
-	projDoc, err := a.readProjectCfg()
+	docs, err := a.readDocuments()
 	if err != nil {
 		return err
 	}
+	doc, tuiDoc, projDoc := docs.cfg, docs.cli, docs.project
 	codec := jsoncodec.Codec{}
 	// Structured-document prefixes go through the shared contract. Order matters
 	// for byte-identical output: mcp./plugin./setting.* all live in opencode.jsonc,
@@ -571,15 +541,7 @@ func (a *Adapter) Apply(cfg *config.Config, cs adapter.ChangeSet, res *secret.Re
 	// scope when state lacks a recorded dst, matching the prior inline behavior.
 	// Released skill and command links (your own content, now bring-your-own)
 	// leave state only; the symlink stays where it is.
-	var linkChanges []adapter.Change
-	for _, c := range cs.Changes {
-		if c.Cause == adapter.CauseRelease && (hasPrefix(c.Key, "skill.") || hasPrefix(c.Key, "command.")) {
-			st.Delete("opencode", c.Key)
-			continue
-		}
-		linkChanges = append(linkChanges, c)
-	}
-	if err := a.ApplyFileState("opencode", linkChanges, st); err != nil {
+	if err := a.ApplyFileState("opencode", releaseLinks(cs.Changes, st), st); err != nil {
 		return err
 	}
 	// Fail fast on link and copy-mode conflicts before writing any file. A
@@ -589,22 +551,37 @@ func (a *Adapter) Apply(cfg *config.Config, cs adapter.ChangeSet, res *secret.Re
 	if err := a.CheckFileConflicts("opencode", st); err != nil {
 		return err
 	}
-	if docChanged {
-		if err := fsutil.WriteAtomic(a.cfgFile(), doc); err != nil {
-			return err
-		}
-	}
-	if projChanged && a.ProjectRoot != "" {
-		if err := fsutil.WriteAtomic(a.projectCfgFile(), projDoc); err != nil {
-			return err
-		}
-	}
-	if tuiChanged {
-		if err := fsutil.WriteAtomic(a.cliFile(), tuiDoc); err != nil {
-			return err
+	for _, w := range []struct {
+		write bool
+		path  func() string
+		data  []byte
+	}{
+		{docChanged, a.cfgFile, doc},
+		{projChanged && a.ProjectRoot != "", a.projectCfgFile, projDoc},
+		{tuiChanged, a.cliFile, tuiDoc},
+	} {
+		if w.write {
+			if err := fsutil.WriteAtomic(w.path(), w.data); err != nil {
+				return err
+			}
 		}
 	}
 	// Prune inactive-scope orphans (left after a per-resource scope switch),
 	// then create the links. Runs after the JSON writes.
 	return a.ApplyFiles("opencode", st)
+}
+
+// releaseLinks drops released skill and command links (your own content, now
+// bring-your-own) from state, leaving the symlink where it is, and returns
+// the remaining changes.
+func releaseLinks(changes []adapter.Change, st *state.State) []adapter.Change {
+	var kept []adapter.Change
+	for _, c := range changes {
+		if c.Cause == adapter.CauseRelease && (hasPrefix(c.Key, "skill.") || hasPrefix(c.Key, "command.")) {
+			st.Delete("opencode", c.Key)
+			continue
+		}
+		kept = append(kept, c)
+	}
+	return kept
 }

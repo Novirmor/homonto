@@ -40,35 +40,10 @@ func evidenceFindings(cmd *cobra.Command, root, changeDir, name string) (finding
 	}
 
 	// Requirement IDs retain their independent uniqueness check.
-	seenReqIDs := map[string]string{}
-	dupes := []string{}
-	specs, _ := deltaSpecPaths(filepath.Join(changeDir, "specs"))
-	for _, spec := range specs {
-		data, err := os.ReadFile(spec)
-		if err != nil {
-			continue
-		}
-		for _, r := range evidence.ParseRequirements(string(data)) {
-			if r.ID != "" {
-				if prev, clash := seenReqIDs[r.ID]; clash {
-					dupes = append(dupes, fmt.Sprintf("%s used by %q and %q", r.ID, prev, r.Name))
-				} else {
-					seenReqIDs[r.ID] = r.Name
-				}
-			}
-		}
-	}
-	for _, d := range dupes {
+	for _, d := range duplicateRequirementIDs(changeDir) {
 		findings = append(findings, fmt.Sprintf("%s: duplicate Requirement-ID %s", name, d))
 	}
-
-	// Index tasks.md numbers.
-	taskNums := map[int]bool{}
-	if data, err := os.ReadFile(filepath.Join(changeDir, "tasks.md")); err == nil {
-		for _, t := range evidence.ParseTasks(string(data)) {
-			taskNums[t.Number] = true
-		}
-	}
+	taskNums := taskNumbers(changeDir)
 
 	// Current verification.md hash.
 	verHash := ""
@@ -123,3 +98,38 @@ func commitReachable(cmd *cobra.Command, root, commit string) bool {
 }
 
 var _ = strings.TrimSpace
+
+// duplicateRequirementIDs names each Requirement-ID the delta specs reuse.
+func duplicateRequirementIDs(changeDir string) []string {
+	seen := map[string]string{}
+	var dupes []string
+	specs, _ := deltaSpecPaths(filepath.Join(changeDir, "specs"))
+	for _, spec := range specs {
+		data, err := os.ReadFile(spec)
+		if err != nil {
+			continue
+		}
+		for _, r := range evidence.ParseRequirements(string(data)) {
+			if r.ID == "" {
+				continue
+			}
+			if prev, clash := seen[r.ID]; clash {
+				dupes = append(dupes, fmt.Sprintf("%s used by %q and %q", r.ID, prev, r.Name))
+			} else {
+				seen[r.ID] = r.Name
+			}
+		}
+	}
+	return dupes
+}
+
+// taskNumbers indexes the change's tasks.md item numbers.
+func taskNumbers(changeDir string) map[int]bool {
+	nums := map[int]bool{}
+	if data, err := os.ReadFile(filepath.Join(changeDir, "tasks.md")); err == nil {
+		for _, t := range evidence.ParseTasks(string(data)) {
+			nums[t.Number] = true
+		}
+	}
+	return nums
+}

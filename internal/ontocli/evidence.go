@@ -92,15 +92,8 @@ func evidenceRecordCmd() *cobra.Command {
 			if st.Archived || st.Abandoned {
 				return fmt.Errorf("evidence record: terminal change is immutable")
 			}
-			index, err := loadScenarioIndex(changeDir)
-			if err != nil {
-				return fmt.Errorf("evidence record: scenario contract: %w", err)
-			}
-			if finding := scenarioAmbiguity(scenario, index[scenario]); finding != "" {
-				return fmt.Errorf("evidence record: %s", finding)
-			}
-			if len(index[scenario]) == 0 {
-				return fmt.Errorf("evidence record: unknown Scenario-ID %q; declare it in a delta spec, or in tasks.md or verification.md when no delta files exist", scenario)
+			if err := checkScenarioDeclared(changeDir, scenario); err != nil {
+				return err
 			}
 			alias, source, err := selectedSource(dir, st, repo)
 			if err != nil {
@@ -120,23 +113,9 @@ func evidenceRecordCmd() *cobra.Command {
 			if sc == nil {
 				sc = evidence.New(name)
 			}
-			outHash := ""
-			if output != "" {
-				h, err := hashFile(output)
-				if err != nil {
-					return fmt.Errorf("evidence record: hashing --output: %w", err)
-				}
-				outHash = h
-			}
-			artHash := ""
-			if artifact != "" {
-				h, err := hashFile(artifact)
-				if err != nil {
-					return fmt.Errorf("evidence record: hashing --artifact: %w", err)
-				}
-				artHash = h
-			} else if h, err := hashFile(filepath.Join(changeDir, "verification.md")); err == nil {
-				artHash = h
+			outHash, artHash, err := claimHashes(changeDir, output, artifact)
+			if err != nil {
+				return err
 			}
 			ops := opid.New()
 			rec := evidence.Record{
@@ -206,6 +185,39 @@ func traceCmd() *cobra.Command {
 	cmd.Flags().StringVar(&dir, "dir", ".", "workspace root")
 	cmd.Flags().BoolVar(&asJSON, "json", false, "emit the trace graph as JSON")
 	return cmd
+}
+
+// checkScenarioDeclared requires id to be declared exactly once.
+func checkScenarioDeclared(changeDir, id string) error {
+	index, err := loadScenarioIndex(changeDir)
+	if err != nil {
+		return fmt.Errorf("evidence record: scenario contract: %w", err)
+	}
+	if finding := scenarioAmbiguity(id, index[id]); finding != "" {
+		return fmt.Errorf("evidence record: %s", finding)
+	}
+	if len(index[id]) == 0 {
+		return fmt.Errorf("evidence record: unknown Scenario-ID %q; declare it in a delta spec, or in tasks.md or verification.md when no delta files exist", id)
+	}
+	return nil
+}
+
+// claimHashes hashes the --output file and the verified artifact, which
+// defaults to verification.md when present.
+func claimHashes(changeDir, output, artifact string) (outHash, artHash string, err error) {
+	if output != "" {
+		if outHash, err = hashFile(output); err != nil {
+			return "", "", fmt.Errorf("evidence record: hashing --output: %w", err)
+		}
+	}
+	if artifact != "" {
+		if artHash, err = hashFile(artifact); err != nil {
+			return "", "", fmt.Errorf("evidence record: hashing --artifact: %w", err)
+		}
+	} else if h, err := hashFile(filepath.Join(changeDir, "verification.md")); err == nil {
+		artHash = h
+	}
+	return outHash, artHash, nil
 }
 
 // traceGraph is the typed output: nodes keyed by kind:id, edges as typed

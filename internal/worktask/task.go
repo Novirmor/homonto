@@ -290,33 +290,19 @@ func (s *Store) Create(ctx context.Context, name, engine, change, isolation stri
 			return nil, fmt.Errorf("invalid isolation override %q=%q", alias, mode)
 		}
 	}
+	modeOf := func(alias string) string {
+		if overrides[alias] != "" {
+			return overrides[alias]
+		}
+		return isolation
+	}
 	unlock, err := s.lock(name)
 	if err != nil {
 		return nil, err
 	}
 	defer unlock()
 	if _, err := os.Lstat(filepath.Join(dir, "task.json")); err == nil {
-		t, err := s.Load(ctx, name)
-		if err != nil {
-			return nil, err
-		}
-		if t.Engine != engine || t.Change != change || !slices.Equal(t.Changed, changed) || len(t.Checkouts) != len(inputs) {
-			return nil, fmt.Errorf("task already exists with another engine, change or repository selection; resume its recorded choice")
-		}
-		for _, alias := range inputs {
-			mode := isolation
-			if overrides[alias] != "" {
-				mode = overrides[alias]
-			}
-			if t.Checkouts[alias].Isolation != mode || t.Checkouts[alias].Removed || t.Checkouts[alias].Removing {
-				return nil, fmt.Errorf("task isolation differs or checkout was removed; resume its recorded choice")
-			}
-		}
-		if err := s.allocate(ctx, t, inputs); err != nil {
-			return t, err
-		}
-		s.RefreshResults(ctx, t)
-		return t, nil
+		return s.resumeCreate(ctx, name, engine, change, changed, inputs, modeOf)
 	} else if !os.IsNotExist(err) {
 		return nil, err
 	}
@@ -324,20 +310,7 @@ func (s *Store) Create(ctx context.Context, name, engine, change, isolation stri
 	var nativeID string
 	var anchors map[string]workspace.SourceAnchor
 	if desc.OwnsLifecycle() {
-		if change == "" {
-			return nil, fmt.Errorf("%s requires its existing active --change", engine)
-		}
-		native, err = workspace.SourceDirsForActiveState(s.Layout, engine, change)
-		if err != nil {
-			return nil, err
-		}
-		for _, alias := range changed {
-			if native[alias] == "" {
-				return nil, fmt.Errorf("%s is not selected in %s change %s", alias, engine, change)
-			}
-		}
-		nativeID, anchors, err = workspace.SourceAnchors(s.Layout, engine, change, "")
-		if err != nil {
+		if native, nativeID, anchors, err = s.nativeSources(engine, change, changed); err != nil {
 			return nil, err
 		}
 	} else if change != "" {
@@ -347,57 +320,113 @@ func (s *Store) Create(ctx context.Context, name, engine, change, isolation stri
 	// Preflight every input before allocation; dirty originals may be left untouched
 	// only when the user explicitly chose a separate worktree.
 	for _, alias := range inputs {
-		source := s.Layout.Repos[alias]
-		path := source
-		mode := isolation
-		if overrides[alias] != "" {
-			mode = overrides[alias]
-		}
 		write := slices.Contains(changed, alias)
+		path := s.Layout.Repos[alias]
 		if write && native != nil {
 			path = native[alias]
 		}
-		base, common, gitdir, branch, err := identity(ctx, path)
+		var anchor *workspace.SourceAnchor
+		if write && native != nil {
+			a := anchors[alias]
+			anchor = &a
+		}
+		c, err := s.preflightCheckout(ctx, name, alias, path, modeOf(alias), write, overrides[alias] == "worktree", desc.OwnsLifecycle(), anchor)
 		if err != nil {
 			return nil, err
 		}
-		input := !write && overrides[alias] != "worktree"
-		if input || mode == "existing" || path != source {
-			if err := clean(ctx, path); err != nil && input {
-				return nil, fmt.Errorf("%s: ask for dirty verification-input disposition; explicit %s=worktree override pins committed input: %w", alias, alias, err)
-			} else if err != nil {
-				return nil, fmt.Errorf("%s: dirty checkout needs user disposition: %w", alias, err)
-			}
-		}
-		if mode == "worktree" && path == source && s.Layout.WorktreesDir == "" {
-			return nil, fmt.Errorf("configure worktrees.dir before choosing worktree isolation")
-		}
-		if write && branch == "" {
-			return nil, fmt.Errorf("%s: writable source must have a local branch", alias)
-		}
-		baseBranch := branch
-		if write && native != nil {
-			anchor := anchors[alias]
-			if anchor.Commit == "" || anchor.Branch == "" {
-				return nil, fmt.Errorf("%s has no native source anchor", alias)
-			}
-			base, baseBranch = anchor.Commit, anchor.Branch
-		}
-		if mode == "worktree" && (!desc.OwnsLifecycle() || !write) {
-			destination := filepath.Join(s.Layout.WorktreesDir, alias, "workspace-"+name)
-			if err := fsutil.RequireRealParents(filepath.Dir(s.Layout.WorktreesDir), destination); err != nil {
-				return nil, err
-			}
-			if _, err := os.Lstat(destination); !os.IsNotExist(err) {
-				return nil, fmt.Errorf("worktree destination exists or cannot be inspected: %s", destination)
-			}
-		}
-		t.Checkouts[alias] = Checkout{Source: source, Path: path, Base: base, BaseBranch: baseBranch, Branch: branch, CommonDir: common, GitDir: gitdir, Isolation: mode, Changed: write, Ready: mode == "existing"}
+		t.Checkouts[alias] = c
 	}
 	if err := s.save(t); err != nil {
 		return nil, err
 	}
 	return t, s.allocate(ctx, t, inputs)
+}
+
+// resumeCreate re-runs Create on a recorded task. The request must repeat the
+// recorded engine, change, selection and isolation.
+func (s *Store) resumeCreate(ctx context.Context, name, engine, change string, changed, inputs []string, modeOf func(string) string) (*Task, error) {
+	t, err := s.Load(ctx, name)
+	if err != nil {
+		return nil, err
+	}
+	if t.Engine != engine || t.Change != change || !slices.Equal(t.Changed, changed) || len(t.Checkouts) != len(inputs) {
+		return nil, fmt.Errorf("task already exists with another engine, change or repository selection; resume its recorded choice")
+	}
+	for _, alias := range inputs {
+		c := t.Checkouts[alias]
+		if c.Isolation != modeOf(alias) || c.Removed || c.Removing {
+			return nil, fmt.Errorf("task isolation differs or checkout was removed; resume its recorded choice")
+		}
+	}
+	if err := s.allocate(ctx, t, inputs); err != nil {
+		return t, err
+	}
+	s.RefreshResults(ctx, t)
+	return t, nil
+}
+
+// nativeSources reads a lifecycle-owning engine's active change: its source
+// directories, which must cover every changed repository, and their anchors.
+func (s *Store) nativeSources(engine, change string, changed []string) (map[string]string, string, map[string]workspace.SourceAnchor, error) {
+	if change == "" {
+		return nil, "", nil, fmt.Errorf("%s requires its existing active --change", engine)
+	}
+	native, err := workspace.SourceDirsForActiveState(s.Layout, engine, change)
+	if err != nil {
+		return nil, "", nil, err
+	}
+	for _, alias := range changed {
+		if native[alias] == "" {
+			return nil, "", nil, fmt.Errorf("%s is not selected in %s change %s", alias, engine, change)
+		}
+	}
+	nativeID, anchors, err := workspace.SourceAnchors(s.Layout, engine, change, "")
+	if err != nil {
+		return nil, "", nil, err
+	}
+	return native, nativeID, anchors, nil
+}
+
+// preflightCheckout records one input's Git identity after checking it is
+// clean where it will be used in place, and that a worktree can be allocated
+// for it. A native write source takes its base from the engine's anchor.
+func (s *Store) preflightCheckout(ctx context.Context, task, alias, path, mode string, write, pinnedWorktree, ownsLifecycle bool, anchor *workspace.SourceAnchor) (Checkout, error) {
+	source := s.Layout.Repos[alias]
+	base, common, gitdir, branch, err := identity(ctx, path)
+	if err != nil {
+		return Checkout{}, err
+	}
+	input := !write && !pinnedWorktree
+	if input || mode == "existing" || path != source {
+		if err := clean(ctx, path); err != nil && input {
+			return Checkout{}, fmt.Errorf("%s: ask for dirty verification-input disposition; explicit %s=worktree override pins committed input: %w", alias, alias, err)
+		} else if err != nil {
+			return Checkout{}, fmt.Errorf("%s: dirty checkout needs user disposition: %w", alias, err)
+		}
+	}
+	if mode == "worktree" && path == source && s.Layout.WorktreesDir == "" {
+		return Checkout{}, fmt.Errorf("configure worktrees.dir before choosing worktree isolation")
+	}
+	if write && branch == "" {
+		return Checkout{}, fmt.Errorf("%s: writable source must have a local branch", alias)
+	}
+	baseBranch := branch
+	if anchor != nil {
+		if anchor.Commit == "" || anchor.Branch == "" {
+			return Checkout{}, fmt.Errorf("%s has no native source anchor", alias)
+		}
+		base, baseBranch = anchor.Commit, anchor.Branch
+	}
+	if mode == "worktree" && (!ownsLifecycle || !write) {
+		destination := filepath.Join(s.Layout.WorktreesDir, alias, "workspace-"+task)
+		if err := fsutil.RequireRealParents(filepath.Dir(s.Layout.WorktreesDir), destination); err != nil {
+			return Checkout{}, err
+		}
+		if _, err := os.Lstat(destination); !os.IsNotExist(err) {
+			return Checkout{}, fmt.Errorf("worktree destination exists or cannot be inspected: %s", destination)
+		}
+	}
+	return Checkout{Source: source, Path: path, Base: base, BaseBranch: baseBranch, Branch: branch, CommonDir: common, GitDir: gitdir, Isolation: mode, Changed: write, Ready: mode == "existing"}, nil
 }
 
 // allocate completes every pending checkout. It is safe to repeat after an

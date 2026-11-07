@@ -45,27 +45,9 @@ func completeIntegrationCmd() *cobra.Command {
 				return fmt.Errorf("onto complete-integration: %w", err)
 			}
 			defer lock.Release()
-			archiveDir, st, err := locateArchive(dir, name)
+			archiveDir, st, record, err := loadIntegrationTarget(dir, name)
 			if err != nil {
-				return fmt.Errorf("onto complete-integration: %w", err)
-			}
-			if !st.Archived {
-				return fmt.Errorf("onto complete-integration: archive for %q is not marked archived; run `onto close %s` to recover it first", name, name)
-			}
-			record, ok, err := integrationrecord.Load(archiveDir, name)
-			if err != nil {
-				return fmt.Errorf("onto complete-integration: %w", err)
-			}
-			if !ok {
-				return fmt.Errorf("onto complete-integration: archive has no integration record (legacy archives are already terminal)")
-			}
-			if err := validateIntegrationRecord(st, record); err != nil {
-				return fmt.Errorf("onto complete-integration: %w", err)
-			}
-			if st.RepoMode == "legacy" || (st.RepoMode == "" && len(st.Repos) > 0) {
-				if _, err := stateSourceDirs(dir, st); err != nil {
-					return fmt.Errorf("onto complete-integration: %w", err)
-				}
+				return err
 			}
 			if repo == "" && st.RepoMode == "explicit" {
 				if len(st.Repos) != 1 {
@@ -127,6 +109,34 @@ func completeIntegrationCmd() *cobra.Command {
 	cmd.Flags().StringVar(&head, "head", "", "canonical PR head reported by the publication tool (required for explicit sources; no network verification)")
 	_ = cmd.MarkFlagRequired("receipt")
 	return cmd
+}
+
+// loadIntegrationTarget loads an archived change and its integration record,
+// both validated, and checks that legacy sources still resolve.
+func loadIntegrationTarget(dir, name string) (string, ontostate.State, integrationrecord.Record, error) {
+	archiveDir, st, err := locateArchive(dir, name)
+	if err != nil {
+		return "", st, integrationrecord.Record{}, fmt.Errorf("onto complete-integration: %w", err)
+	}
+	if !st.Archived {
+		return "", st, integrationrecord.Record{}, fmt.Errorf("onto complete-integration: archive for %q is not marked archived; run `onto close %s` to recover it first", name, name)
+	}
+	record, ok, err := integrationrecord.Load(archiveDir, name)
+	if err != nil {
+		return "", st, integrationrecord.Record{}, fmt.Errorf("onto complete-integration: %w", err)
+	}
+	if !ok {
+		return "", st, integrationrecord.Record{}, fmt.Errorf("onto complete-integration: archive has no integration record (legacy archives are already terminal)")
+	}
+	if err := validateIntegrationRecord(st, record); err != nil {
+		return "", st, integrationrecord.Record{}, fmt.Errorf("onto complete-integration: %w", err)
+	}
+	if st.RepoMode == "legacy" || (st.RepoMode == "" && len(st.Repos) > 0) {
+		if _, err := stateSourceDirs(dir, st); err != nil {
+			return "", st, integrationrecord.Record{}, fmt.Errorf("onto complete-integration: %w", err)
+		}
+	}
+	return archiveDir, st, record, nil
 }
 
 // integrationRepoDir is the checkout the receipt belongs to: the config root,

@@ -228,17 +228,19 @@ type traceEdge struct {
 	Kind string `json:"kind"` // contains | requires | verified-by | recorded-at | executed-by | affects
 }
 
+func (g *traceGraph) node(kind, id, label string) {
+	g.Nodes = append(g.Nodes, traceNode{Kind: kind, ID: id, Label: label})
+}
+
+func (g *traceGraph) edge(from, to, kind string) {
+	g.Edges = append(g.Edges, traceEdge{From: from, To: to, Kind: kind})
+}
+
 func buildTrace(cmd *cobra.Command, root, changesDir string, names []string) traceGraph {
 	g := traceGraph{}
-	addNode := func(kind, id, label string) {
-		g.Nodes = append(g.Nodes, traceNode{Kind: kind, ID: id, Label: label})
-	}
-	addEdge := func(from, to, kind string) {
-		g.Edges = append(g.Edges, traceEdge{From: from, To: to, Kind: kind})
-	}
 	for _, name := range names {
 		changeDir := filepath.Join(changesDir, name)
-		addNode("change", name, name)
+		g.node("change", name, name)
 		_, stateErr := ontostate.LoadChange(changeDir)
 		index, indexErr := loadScenarioIndex(changeDir)
 		g.Findings = append(g.Findings, scenarioFindings(name, index)...)
@@ -248,76 +250,10 @@ func buildTrace(cmd *cobra.Command, root, changesDir string, names []string) tra
 		if stateErr != nil {
 			g.Findings = append(g.Findings, fmt.Sprintf("%s: scenario contract state: %v", name, stateErr))
 		}
-		// Delta specs carry requirements and scenarios.
-		specs, _ := deltaSpecPaths(filepath.Join(changeDir, "specs"))
-		for _, spec := range specs {
-			cap := strings.TrimSuffix(filepath.Base(spec), ".md")
-			addNode("capability", cap, cap)
-			addEdge("change:"+name, "capability:"+cap, "affects")
-			data, err := os.ReadFile(spec)
-			if err != nil {
-				continue
-			}
-			for _, r := range evidence.ParseRequirements(string(data)) {
-				rKey := r.Name
-				if r.ID != "" {
-					rKey = r.ID
-				}
-				addNode("requirement", rKey, r.Name)
-				addEdge("capability:"+cap, "requirement:"+rKey, "contains")
-				for _, s := range r.Scenarios {
-					if s.ID != "" {
-						continue // Stable IDs come from the declaration index, never a collapsed parser value.
-					}
-					addNode("scenario", s.Name, s.Name)
-					addEdge("requirement:"+rKey, "scenario:"+s.Name, "requires")
-				}
-			}
-		}
-		// Tasks.
-		if data, err := os.ReadFile(filepath.Join(changeDir, "tasks.md")); err == nil {
-			for _, t := range evidence.ParseTasks(string(data)) {
-				id := fmt.Sprintf("%s#%d", name, t.Number)
-				state := "open"
-				if t.Checked {
-					state = "done"
-				}
-				addNode("task", id, state)
-				addEdge("change:"+name, "task:"+id, "contains")
-			}
-		}
-		for id, declarations := range index {
-			for _, declaration := range declarations {
-				key, label := id, nonEmpty(declaration.Name, id)
-				if len(declarations) > 1 {
-					key = fmt.Sprintf("%s/%s@%s:%d", name, id, declaration.Path, declaration.Line)
-					label = id + " (ambiguous): " + label
-				}
-				addNode("scenario", key, label)
-				parent := "change:" + name
-				if declaration.Requirement != "" {
-					parent = "requirement:" + declaration.Requirement
-				}
-				addEdge(parent, "scenario:"+key, "requires")
-			}
-		}
-		// Evidence sidecar.
-		if sc, ok, err := evidence.Load(name, evidence.Path(changeDir)); err == nil && ok {
-			latest := latestEvidence(sc.Records)
-			for i, rec := range sc.Records {
-				id := fmt.Sprintf("%s/e%d", name, i+1)
-				addNode("evidence", id, fmt.Sprintf("%s exit=%d @%s", rec.Executable, rec.ExitStatus, short(rec.Commit)))
-				if current := latest[evidenceKey(rec)]; current != i && len(index[rec.Scenario]) < 2 {
-					addEdge("evidence:"+id, fmt.Sprintf("evidence:%s/e%d", name, current+1), "superseded-by")
-				}
-				if indexErr == nil && stateErr == nil && len(index[rec.Scenario]) == 1 {
-					addEdge("scenario:"+rec.Scenario, "evidence:"+id, "verified-by")
-					addEdge("task:"+fmt.Sprintf("%s#%d", name, rec.Task), "evidence:"+id, "verified-by")
-				}
-				addNode("commit", rec.Commit, short(rec.Commit))
-				addEdge("evidence:"+id, "commit:"+rec.Commit, "recorded-at")
-			}
-		}
+		g.addSpecs(name, changeDir)
+		g.addTasks(name, changeDir)
+		g.addScenarios(name, index)
+		g.addEvidence(name, changeDir, index, indexErr == nil && stateErr == nil)
 	}
 	sort.Slice(g.Nodes, func(i, j int) bool {
 		if g.Nodes[i].Kind != g.Nodes[j].Kind {
@@ -336,6 +272,97 @@ func buildTrace(cmd *cobra.Command, root, changesDir string, names []string) tra
 	})
 	sort.Strings(g.Findings)
 	return g
+}
+
+// addSpecs adds the capabilities a change's delta specs affect, with their
+// requirements and unindexed scenarios.
+func (g *traceGraph) addSpecs(name, changeDir string) {
+	specs, _ := deltaSpecPaths(filepath.Join(changeDir, "specs"))
+	for _, spec := range specs {
+		cap := strings.TrimSuffix(filepath.Base(spec), ".md")
+		g.node("capability", cap, cap)
+		g.edge("change:"+name, "capability:"+cap, "affects")
+		data, err := os.ReadFile(spec)
+		if err != nil {
+			continue
+		}
+		for _, r := range evidence.ParseRequirements(string(data)) {
+			rKey := r.Name
+			if r.ID != "" {
+				rKey = r.ID
+			}
+			g.node("requirement", rKey, r.Name)
+			g.edge("capability:"+cap, "requirement:"+rKey, "contains")
+			for _, s := range r.Scenarios {
+				if s.ID != "" {
+					continue // Stable IDs come from the declaration index, never a collapsed parser value.
+				}
+				g.node("scenario", s.Name, s.Name)
+				g.edge("requirement:"+rKey, "scenario:"+s.Name, "requires")
+			}
+		}
+	}
+}
+
+// addTasks adds each tasks.md item with its open/done state.
+func (g *traceGraph) addTasks(name, changeDir string) {
+	data, err := os.ReadFile(filepath.Join(changeDir, "tasks.md"))
+	if err != nil {
+		return
+	}
+	for _, t := range evidence.ParseTasks(string(data)) {
+		id := fmt.Sprintf("%s#%d", name, t.Number)
+		state := "open"
+		if t.Checked {
+			state = "done"
+		}
+		g.node("task", id, state)
+		g.edge("change:"+name, "task:"+id, "contains")
+	}
+}
+
+// addScenarios adds every declared scenario; an ID declared more than once
+// gets one node per declaration, marked ambiguous.
+func (g *traceGraph) addScenarios(name string, index scenarioIndex) {
+	for id, declarations := range index {
+		for _, declaration := range declarations {
+			key, label := id, nonEmpty(declaration.Name, id)
+			if len(declarations) > 1 {
+				key = fmt.Sprintf("%s/%s@%s:%d", name, id, declaration.Path, declaration.Line)
+				label = id + " (ambiguous): " + label
+			}
+			g.node("scenario", key, label)
+			parent := "change:" + name
+			if declaration.Requirement != "" {
+				parent = "requirement:" + declaration.Requirement
+			}
+			g.edge(parent, "scenario:"+key, "requires")
+		}
+	}
+}
+
+// addEvidence adds the evidence sidecar's records and their commits. Records
+// verify a scenario and task only when the scenario contract is sound and the
+// scenario is declared once.
+func (g *traceGraph) addEvidence(name, changeDir string, index scenarioIndex, contractSound bool) {
+	sc, ok, err := evidence.Load(name, evidence.Path(changeDir))
+	if err != nil || !ok {
+		return
+	}
+	latest := latestEvidence(sc.Records)
+	for i, rec := range sc.Records {
+		id := fmt.Sprintf("%s/e%d", name, i+1)
+		g.node("evidence", id, fmt.Sprintf("%s exit=%d @%s", rec.Executable, rec.ExitStatus, short(rec.Commit)))
+		if current := latest[evidenceKey(rec)]; current != i && len(index[rec.Scenario]) < 2 {
+			g.edge("evidence:"+id, fmt.Sprintf("evidence:%s/e%d", name, current+1), "superseded-by")
+		}
+		if contractSound && len(index[rec.Scenario]) == 1 {
+			g.edge("scenario:"+rec.Scenario, "evidence:"+id, "verified-by")
+			g.edge("task:"+fmt.Sprintf("%s#%d", name, rec.Task), "evidence:"+id, "verified-by")
+		}
+		g.node("commit", rec.Commit, short(rec.Commit))
+		g.edge("evidence:"+id, "commit:"+rec.Commit, "recorded-at")
+	}
 }
 
 // Append order is authoritative, not timestamps (multiple claims can share a second).

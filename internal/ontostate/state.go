@@ -279,52 +279,66 @@ func (s State) Validate() error {
 	if s.RepoMode == "" && len(s.RepoBases) != 0 {
 		return fmt.Errorf("onto-state: repo_bases requires explicit or legacy repo_mode")
 	}
-	if s.RepoMode == "legacy" {
-		expected := len(seenRepos)
-		if expected > 0 {
-			seenRepos[""] = true
-			expected++
+	switch s.RepoMode {
+	case "legacy":
+		return s.validateLegacyBases(seenRepos)
+	case "explicit":
+		return s.validateExplicitBases(seenRepos)
+	}
+	return nil
+}
+
+// validateLegacyBases requires legacy repo_bases to cover exactly the config
+// repository and the selected repos.
+func (s State) validateLegacyBases(seenRepos map[string]bool) error {
+	expected := len(seenRepos)
+	if expected > 0 {
+		seenRepos[""] = true
+		expected++
+	}
+	if len(s.RepoBases) != expected {
+		return fmt.Errorf("onto-state: legacy repo_bases must exactly cover config and selected repos")
+	}
+	for alias, base := range s.RepoBases {
+		if !seenRepos[alias] || !filepath.IsAbs(base.GitCommonDir) || filepath.Clean(base.GitCommonDir) != base.GitCommonDir {
+			return fmt.Errorf("onto-state: invalid legacy repo_bases entry %q (requires scoped alias and absolute canonical git_common_dir)", alias)
 		}
-		if len(s.RepoBases) != expected {
-			return fmt.Errorf("onto-state: legacy repo_bases must exactly cover config and selected repos")
+		if base.BaseRef != "" && !canonicalCommit.MatchString(base.BaseRef) {
+			return fmt.Errorf("onto-state: legacy repo_bases entry %q requires a canonical base_ref when present", alias)
 		}
-		for alias, base := range s.RepoBases {
-			if !seenRepos[alias] || !filepath.IsAbs(base.GitCommonDir) || filepath.Clean(base.GitCommonDir) != base.GitCommonDir {
-				return fmt.Errorf("onto-state: invalid legacy repo_bases entry %q (requires scoped alias and absolute canonical git_common_dir)", alias)
-			}
-			if base.BaseRef != "" && !canonicalCommit.MatchString(base.BaseRef) {
-				return fmt.Errorf("onto-state: legacy repo_bases entry %q requires a canonical base_ref when present", alias)
-			}
-			if base.BaseBranch != "" && strings.TrimSpace(base.BaseBranch) == "" {
-				return fmt.Errorf("onto-state: legacy repo_bases entry %q has an empty base_branch", alias)
-			}
-			if alias == "" && ((s.BaseRef != "" && base.BaseRef != "" && s.BaseRef != base.BaseRef) || (s.BaseBranch != "" && base.BaseBranch != "" && s.BaseBranch != base.BaseBranch)) {
-				return fmt.Errorf("onto-state: scalar bases disagree with legacy config repo_bases")
-			}
+		if base.BaseBranch != "" && strings.TrimSpace(base.BaseBranch) == "" {
+			return fmt.Errorf("onto-state: legacy repo_bases entry %q has an empty base_branch", alias)
+		}
+		if alias == "" && ((s.BaseRef != "" && base.BaseRef != "" && s.BaseRef != base.BaseRef) || (s.BaseBranch != "" && base.BaseBranch != "" && s.BaseBranch != base.BaseBranch)) {
+			return fmt.Errorf("onto-state: scalar bases disagree with legacy config repo_bases")
 		}
 	}
-	if s.RepoMode == "explicit" {
-		if s.BaseRef != "" || s.BaseBranch != "" {
-			return fmt.Errorf("onto-state: explicit repositories must not use scalar base_ref or base_branch")
+	return nil
+}
+
+// validateExplicitBases requires explicit repo_bases to pin every selected
+// repo, and verify heads to cover them once verification has passed.
+func (s State) validateExplicitBases(seenRepos map[string]bool) error {
+	if s.BaseRef != "" || s.BaseBranch != "" {
+		return fmt.Errorf("onto-state: explicit repositories must not use scalar base_ref or base_branch")
+	}
+	if len(s.Repos) == 0 || len(s.RepoBases) != len(s.Repos) {
+		return fmt.Errorf("onto-state: explicit repo_bases must exactly cover nonempty repos")
+	}
+	identities := map[string]bool{}
+	for alias, base := range s.RepoBases {
+		if !seenRepos[alias] || !canonicalCommit.MatchString(base.BaseRef) || strings.TrimSpace(base.BaseBranch) == "" || !filepath.IsAbs(base.GitCommonDir) || filepath.Clean(base.GitCommonDir) != base.GitCommonDir || identities[base.GitCommonDir] {
+			return fmt.Errorf("onto-state: invalid repo_bases entry %q (requires selected alias, canonical base_ref, base_branch, unique absolute git_common_dir)", alias)
 		}
-		if len(s.Repos) == 0 || len(s.RepoBases) != len(s.Repos) {
-			return fmt.Errorf("onto-state: explicit repo_bases must exactly cover nonempty repos")
+		identities[base.GitCommonDir] = true
+	}
+	if s.Verify.Result == "pass" || len(s.Verify.Heads) != 0 {
+		if len(s.Verify.Heads) != len(seenRepos) {
+			return fmt.Errorf("onto-state: verify.heads must exactly cover explicit repos")
 		}
-		identities := map[string]bool{}
-		for alias, base := range s.RepoBases {
-			if !seenRepos[alias] || !canonicalCommit.MatchString(base.BaseRef) || strings.TrimSpace(base.BaseBranch) == "" || !filepath.IsAbs(base.GitCommonDir) || filepath.Clean(base.GitCommonDir) != base.GitCommonDir || identities[base.GitCommonDir] {
-				return fmt.Errorf("onto-state: invalid repo_bases entry %q (requires selected alias, canonical base_ref, base_branch, unique absolute git_common_dir)", alias)
-			}
-			identities[base.GitCommonDir] = true
-		}
-		if s.Verify.Result == "pass" || len(s.Verify.Heads) != 0 {
-			if len(s.Verify.Heads) != len(seenRepos) {
-				return fmt.Errorf("onto-state: verify.heads must exactly cover explicit repos")
-			}
-			for alias, head := range s.Verify.Heads {
-				if !seenRepos[alias] || !canonicalCommit.MatchString(head) {
-					return fmt.Errorf("onto-state: invalid verify.heads entry %q", alias)
-				}
+		for alias, head := range s.Verify.Heads {
+			if !seenRepos[alias] || !canonicalCommit.MatchString(head) {
+				return fmt.Errorf("onto-state: invalid verify.heads entry %q", alias)
 			}
 		}
 	}

@@ -965,27 +965,9 @@ func createWorktree(l Layout, workflow, change, repo, base, branch, role, identi
 			return w, err
 		}
 	}
-	commit, err := worktreeGit(authority, "rev-parse", "--verify", "--end-of-options", base+"^{commit}")
+	commit, target, err := resolveIntegrationBase(authority, base, branch, s.RepoBases[repo].BaseBranch, anchored, receiver)
 	if err != nil {
 		return w, err
-	}
-	// Resolve HEAD in the authority, never later in the execution checkout.
-	// Revision expressions/immutable objects integrate only into that commit.
-	target, targetErr := worktreeGit(authority, "rev-parse", "--symbolic-full-name", "--verify", "--end-of-options", base)
-	if targetErr != nil || !strings.HasPrefix(target, "refs/") || strings.ContainsAny(target, "\r\n") {
-		target = commit
-	}
-	if anchored {
-		target = "refs/heads/" + s.RepoBases[repo].BaseBranch
-		if _, err := worktreeGit(authority, "merge-base", "--is-ancestor", commit, target); err != nil {
-			return w, fmt.Errorf("worktree: integration target %s no longer contains the recorded base %s: %w", target, commit, err)
-		}
-	}
-	if receiver {
-		target = "refs/heads/" + branch
-		if err := checkReceiverTarget(authority, commit, target); err != nil {
-			return w, err
-		}
 	}
 	if err := s.checkBase(repo, commit, target); err != nil {
 		return w, err
@@ -997,6 +979,36 @@ func createWorktree(l Layout, workflow, change, repo, base, branch, role, identi
 	return commitWorktree(l, Worktree{Role: role, Workflow: workflow, Change: change, Repo: repo, StateID: s.identity,
 		WorkflowRoot: filepath.Dir(worktreeStatesDir(l, workflow)), Parent: parent,
 		CommonDir: common, Branch: branch, BaseRef: base, BaseTarget: target, BaseCommit: commit}, authority)
+}
+
+// resolveIntegrationBase resolves base to the commit a new checkout starts
+// from and the target its work integrates into: the symbolic ref base names,
+// else that exact commit; an anchored execution's recorded branch; or a
+// receiver's own branch, which must still contain the commit.
+func resolveIntegrationBase(authority, base, branch, anchorBranch string, anchored, receiver bool) (commit, target string, err error) {
+	commit, err = worktreeGit(authority, "rev-parse", "--verify", "--end-of-options", base+"^{commit}")
+	if err != nil {
+		return "", "", err
+	}
+	// Resolve HEAD in the authority, never later in the execution checkout.
+	// Revision expressions/immutable objects integrate only into that commit.
+	target, targetErr := worktreeGit(authority, "rev-parse", "--symbolic-full-name", "--verify", "--end-of-options", base)
+	if targetErr != nil || !strings.HasPrefix(target, "refs/") || strings.ContainsAny(target, "\r\n") {
+		target = commit
+	}
+	if anchored {
+		target = "refs/heads/" + anchorBranch
+		if _, err := worktreeGit(authority, "merge-base", "--is-ancestor", commit, target); err != nil {
+			return "", "", fmt.Errorf("worktree: integration target %s no longer contains the recorded base %s: %w", target, commit, err)
+		}
+	}
+	if receiver {
+		target = "refs/heads/" + branch
+		if err := checkReceiverTarget(authority, commit, target); err != nil {
+			return "", "", err
+		}
+	}
+	return commit, target, nil
 }
 
 // commitWorktree claims a preflighted binding in the registry, journals it

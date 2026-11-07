@@ -326,10 +326,54 @@ func (e *Engine) Plan() ([]adapter.ChangeSet, error) {
 // The context bounds remote-source fetches during materializeRemotes so the
 // caller (typically a cobra command) can interrupt a hung network operation.
 func (e *Engine) Apply(ctx context.Context, sets []adapter.ChangeSet) error {
-	// Fail closed on a malformed plan before any side effect: an unknown tool
-	// (otherwise silently skipped below) or an operation with an undefined action
-	// (otherwise a silent no-op) must abort — never quietly drop a change to a
-	// user's config files.
+	if err := e.preflightApply(sets); err != nil {
+		return err
+	}
+	// Resolve, verify, and materialize remote sources before any adapter links
+	// them. This fetches → validates → pin-matches → caches, aborting the whole
+	// apply before any adapter write if any remote resource fails closed.
+	if err := e.materializeRemotes(ctx); err != nil {
+		return err
+	}
+	// Remote subagent content exists only now; render any that carry intent.
+	if err := e.refreshExternalRenders(); err != nil {
+		return err
+	}
+	// Materialize builtin skills before any adapter links them, so no symlink is
+	// created ahead of its target.
+	if err := e.materializeCatalog(); err != nil {
+		return err
+	}
+	if err := e.writeRenderedSubagents(); err != nil {
+		return err
+	}
+	// The declared [tmp] directory is workspace surface, not catalog content:
+	// create it and keep it gitignored even when nothing builtin is declared
+	// (ADR 0048). Unconditional on config, independent of the materialize gate.
+	if err := e.ensureTmpSurface(); err != nil {
+		return err
+	}
+	// The workflow bridge is project-local runtime content. It observes the
+	// workflow snapshot but never writes state, so it is installed after its
+	// catalog source exists and before OpenCode can load the project directory.
+	if err := e.ensureWorkflowBridge(); err != nil {
+		return err
+	}
+	if err := e.applyAdapters(sets); err != nil {
+		return err
+	}
+	e.recordVersions()
+	if err := e.recordRoutes(); err != nil {
+		return fmt.Errorf("record routing: %w", err)
+	}
+	return e.State.Save(e.StateDir)
+}
+
+// preflightApply fails closed before any side effect: on a malformed plan (an
+// unknown tool, otherwise silently skipped, or an undefined action, otherwise
+// a silent no-op), a redirected catalog or plugin destination, or a secret
+// that does not resolve.
+func (e *Engine) preflightApply(sets []adapter.ChangeSet) error {
 	knownTools := make(map[string]bool, len(e.Adapters)+len(e.RepoTargets))
 	for _, a := range e.Adapters {
 		knownTools[a.Name()] = true
@@ -366,36 +410,12 @@ func (e *Engine) Apply(ctx context.Context, sets []adapter.ChangeSet) error {
 			}
 		}
 	}
-	// Resolve, verify, and materialize remote sources before any adapter links
-	// them. This fetches → validates → pin-matches → caches, aborting the whole
-	// apply before any adapter write if any remote resource fails closed.
-	if err := e.materializeRemotes(ctx); err != nil {
-		return err
-	}
-	// Remote subagent content exists only now; render any that carry intent.
-	if err := e.refreshExternalRenders(); err != nil {
-		return err
-	}
-	// Materialize builtin skills before any adapter links them, so no symlink is
-	// created ahead of its target.
-	if err := e.materializeCatalog(); err != nil {
-		return err
-	}
-	if err := e.writeRenderedSubagents(); err != nil {
-		return err
-	}
-	// The declared [tmp] directory is workspace surface, not catalog content:
-	// create it and keep it gitignored even when nothing builtin is declared
-	// (ADR 0048). Unconditional on config, independent of the materialize gate.
-	if err := e.ensureTmpSurface(); err != nil {
-		return err
-	}
-	// The workflow bridge is project-local runtime content. It observes the
-	// workflow snapshot but never writes state, so it is installed after its
-	// catalog source exists and before OpenCode can load the project directory.
-	if err := e.ensureWorkflowBridge(); err != nil {
-		return err
-	}
+	return nil
+}
+
+// applyAdapters hands each planned set to its adapter and saves state after
+// every write, so a partial apply keeps the record of each adapter that wrote.
+func (e *Engine) applyAdapters(sets []adapter.ChangeSet) error {
 	// Match each planned set to its adapter by tool name (Plan may have skipped
 	// some adapters, so indexes need not line up). The config repo's adapters
 	// record into the main state; each repo target's changeset records into
@@ -419,38 +439,23 @@ func (e *Engine) Apply(ctx context.Context, sets []adapter.ChangeSet) error {
 		if !ok {
 			continue
 		}
+		st, save := e.State, func() error { return e.State.Save(e.StateDir) }
 		if t, isRepo := pair[cs.Tool]; isRepo {
-			// Name the tool in every per-adapter failure: with several adapters
-			// an unwrapped error leaves the user guessing which file broke.
-			post := enrich(cs, t.State)
-			if err := a.Apply(e.Cfg, cs, e.Resolver, t.State); err != nil {
-				return fmt.Errorf("%s: %w", cs.Tool, err)
-			}
-			post()
-			// Persist immediately into the repo's own partition.
-			if err := t.State.SaveNamed(e.StateDir, t.Name); err != nil {
-				return fmt.Errorf("%s: save state: %w", cs.Tool, err)
-			}
-			continue
+			st, save = t.State, func() error { return t.State.SaveNamed(e.StateDir, t.Name) }
 		}
+		post := enrich(cs, st)
 		// Name the tool in every per-adapter failure: with several adapters an
 		// unwrapped error leaves the user guessing which file broke.
-		post := enrich(cs, e.State)
-		if err := a.Apply(e.Cfg, cs, e.Resolver, e.State); err != nil {
+		if err := a.Apply(e.Cfg, cs, e.Resolver, st); err != nil {
 			return fmt.Errorf("%s: %w", cs.Tool, err)
 		}
 		post()
-		// Persist immediately: a partial apply must keep the record of every
-		// adapter that already wrote its files.
-		if err := e.State.Save(e.StateDir); err != nil {
+		// Persist immediately, a repo target into its own partition.
+		if err := save(); err != nil {
 			return fmt.Errorf("%s: save state: %w", cs.Tool, err)
 		}
 	}
-	e.recordVersions()
-	if err := e.recordRoutes(); err != nil {
-		return fmt.Errorf("record routing: %w", err)
-	}
-	return e.State.Save(e.StateDir)
+	return nil
 }
 
 // recordVersions writes down, in state, the binary and framework versions behind

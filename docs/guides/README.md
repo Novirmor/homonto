@@ -35,6 +35,7 @@
 | [Hosting workflows](h-workflow.md) | Issues and pull requests on GitHub, GitLab.com and Bitbucket Cloud |
 | [Hosting provider differences](hosting-differences.md) | GitHub, GitLab.com and Bitbucket Cloud, process by process |
 | [Workspaces](workspaces.md) | Several repositories, worktrees, managed records, workspace tasks |
+| [Swarms](swarms.md) | Two or three competing candidates, side-by-side previews, choosing and delivering one |
 | [Cleaning up terminal workflows](workflow-cleanup.md) | Archive abandoned records and remove finished worktrees safely |
 | [Principles](principles.md) | YAGNI and KISS as the skills apply them |
 

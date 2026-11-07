@@ -246,6 +246,15 @@ instead of `--dir`: [cleaning up terminal workflows](workflow-cleanup.md).
 | `workspace task inspect <name>` | — | Recorded choices and check results (JSON). |
 | `workspace task check <name>` | `--writers-paused`, `--check`, `--timeout` | Run matching integration checks. |
 | `workspace task cleanup <name>` | `--yes` | Remove clean integrated task-owned worktrees. |
+| `workspace swarm create <name>` | `--repo`…, `--candidate NAME=AGENT` (2–3), `--brief`, `--engine` (default `no`) | Record the brief and allocate one worktree per candidate from one base (JSON). |
+| `workspace swarm inspect <name>` | — | The swarm record and each candidate's task (JSON). |
+| `workspace swarm check <name>` | `--writers-paused`, `--check`, `--timeout` | Run the same matching checks on every candidate, one at a time. |
+| `workspace swarm compare <name>` | `--json`, `--html` | Candidates side by side: models, change size, checks, previews, verified. `--html` also writes a page embedding the previews. |
+| `workspace swarm select <name>` | `--candidate`, `--fallback-verified` | Record the chosen candidate; refuses an unverified one. |
+| `workspace swarm preview start <name>` | `--candidate`… | Start each candidate's `[preview.*]` container under its budgets (JSON). |
+| `workspace swarm preview stop <name>` | `--candidate`… | Tear previews down. |
+| `workspace swarm preview reap <name>` | `--until` | Remove expired or orphaned previews (the expiry watchdog runs this). |
+| `workspace swarm cleanup <name>` | `--yes`, `--abandon`, `--keep-rejected` | Stop previews, remove candidate worktrees, delete rejected branches still at the revision shown. |
 
 ```console
 $ homonto workspace inspect

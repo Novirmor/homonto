@@ -79,3 +79,7 @@ func (e Engine) requireOperation(op string) error {
 	}
 	return nil
 }
+
+// Engine resolves an installed engine's declared contract, for callers that
+// build on workspace tasks (a swarm requires a stateless engine, ADR 0113).
+func (s *Store) Engine(name string) (Engine, error) { return s.engine(name) }

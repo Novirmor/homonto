@@ -17,7 +17,7 @@ func TestStandaloneSkillsMaterializeWithoutSharedPolicy(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, name := range []string{"handoff", "grilling"} {
+	for _, name := range []string{"handoff", "grilling", "swarm"} {
 		t.Run(name, func(t *testing.T) {
 			dst := t.TempDir()
 			if err := cl.Materialize(dst, []string{name}, "none", "none", "", nil); err != nil {

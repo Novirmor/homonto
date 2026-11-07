@@ -686,88 +686,104 @@ func (s *Store) Cleanup(ctx context.Context, name string, yes bool) (*Task, erro
 
 func (s *Store) cleanup(ctx context.Context, t *Task) error {
 	for _, alias := range slices.Sorted(maps.Keys(t.Checkouts)) {
-		c := t.Checkouts[alias]
-		if !c.Owned || c.Removed {
-			continue
+		if err := s.cleanupCheckout(ctx, t, alias, t.Checkouts[alias]); err != nil {
+			return err
 		}
-		if c.Removing {
-			complete, err := removalComplete(ctx, c)
-			if err != nil {
-				return err
-			}
-			if complete {
-				if err := s.releaseBranch(ctx, c); err != nil {
-					return err
-				}
-				c.Removing, c.Removed = false, true
-				t.Checkouts[alias] = c
-				if err := s.save(t); err != nil {
-					return err
-				}
-				continue
-			}
-		}
-		if !c.Ready {
-			if _, err := os.Lstat(c.Path); os.IsNotExist(err) {
-				c.Removed = true
-				t.Checkouts[alias] = c
-				if err := s.save(t); err != nil {
-					return err
-				}
-				continue
-			} else if err != nil {
-				return err
-			}
-			adopted, err := s.adopt(ctx, t, alias, c)
-			if err != nil {
-				return err
-			}
-			c = adopted
-		}
-		head, err := s.validateCheckout(ctx, t, alias, c)
+	}
+	return nil
+}
+
+// cleanupCheckout removes one owned allocation once it is clean and its work
+// is safe: a changed checkout integrated (or retained on its branch), a
+// verification input still at its pinned revision. Intent is saved before Git
+// removes anything, so a retry reconciles a completed removal.
+func (s *Store) cleanupCheckout(ctx context.Context, t *Task, alias string, c Checkout) error {
+	if !c.Owned || c.Removed {
+		return nil
+	}
+	if c.Removing {
+		complete, err := removalComplete(ctx, c)
 		if err != nil {
 			return err
 		}
-		// The same cleanliness rules as worktree remove, including ignored files,
-		// hidden index flags, and in-progress Git operations.
-		if err := workspace.CheckoutClean(ctx, c.Path, true); err != nil {
-			return fmt.Errorf("%s: %w", alias, err)
+		if complete {
+			if err := s.releaseBranch(ctx, c); err != nil {
+				return err
+			}
+			c.Removing, c.Removed = false, true
+			t.Checkouts[alias] = c
+			return s.save(t)
 		}
-		if c.Changed {
-			if c.BaseBranch == "" {
-				return fmt.Errorf("%s has no recorded integration target", alias)
-			}
-			if _, err := git(ctx, c.Path, "merge-base", "--is-ancestor", "HEAD", "refs/heads/"+c.BaseBranch); err != nil {
-				// A PR delivery not yet merged: the task-owned branch keeps the
-				// commits, and releaseBranch retains it (ADR 0086).
-				if !c.Owned || c.Branch == "" {
-					return fmt.Errorf("%s is not integrated into %s: %w", alias, c.BaseBranch, err)
-				}
-				if _, branchErr := git(ctx, c.Path, "merge-base", "--is-ancestor", "HEAD", "refs/heads/"+c.Branch); branchErr != nil {
-					return fmt.Errorf("%s is neither integrated into %s nor on its branch %s: %w", alias, c.BaseBranch, c.Branch, err)
-				}
-			}
-		} else if head != c.Base {
+	}
+	if !c.Ready {
+		if _, err := os.Lstat(c.Path); os.IsNotExist(err) {
+			c.Removed = true
+			t.Checkouts[alias] = c
+			return s.save(t)
+		} else if err != nil {
+			return err
+		}
+		adopted, err := s.adopt(ctx, t, alias, c)
+		if err != nil {
+			return err
+		}
+		c = adopted
+	}
+	head, err := s.validateCheckout(ctx, t, alias, c)
+	if err != nil {
+		return err
+	}
+	// The same cleanliness rules as worktree remove, including ignored files,
+	// hidden index flags, and in-progress Git operations.
+	if err := workspace.CheckoutClean(ctx, c.Path, true); err != nil {
+		return fmt.Errorf("%s: %w", alias, err)
+	}
+	if err := checkIntegrated(ctx, alias, c, head); err != nil {
+		return err
+	}
+	// Persist intent before Git removes either the directory or registration.
+	// A retry revalidates a surviving checkout or reconciles a completed removal.
+	c.Removing = true
+	t.Checkouts[alias] = c
+	if err := s.save(t); err != nil {
+		return err
+	}
+	if _, err := git(ctx, c.Source, "worktree", "remove", c.Path); err != nil {
+		return err
+	}
+	if err := s.releaseBranch(ctx, c); err != nil {
+		return err
+	}
+	c.Removing, c.Removed = false, true
+	t.Checkouts[alias] = c
+	if err := s.save(t); err != nil {
+		return err
+	}
+	return nil
+}
+
+// checkIntegrated requires a changed checkout's HEAD in its integration target
+// or, for a PR delivery not yet merged, on the task-owned branch that
+// releaseBranch retains (ADR 0086); an input must not have moved.
+func checkIntegrated(ctx context.Context, alias string, c Checkout, head string) error {
+	if !c.Changed {
+		if head != c.Base {
 			return fmt.Errorf("verification input %s moved from pinned revision %s; preserve its commits before cleanup", alias, c.Base)
 		}
-		// Persist intent before Git removes either the directory or registration.
-		// A retry revalidates a surviving checkout or reconciles a completed removal.
-		c.Removing = true
-		t.Checkouts[alias] = c
-		if err := s.save(t); err != nil {
-			return err
-		}
-		if _, err := git(ctx, c.Source, "worktree", "remove", c.Path); err != nil {
-			return err
-		}
-		if err := s.releaseBranch(ctx, c); err != nil {
-			return err
-		}
-		c.Removing, c.Removed = false, true
-		t.Checkouts[alias] = c
-		if err := s.save(t); err != nil {
-			return err
-		}
+		return nil
+	}
+	if c.BaseBranch == "" {
+		return fmt.Errorf("%s has no recorded integration target", alias)
+	}
+	_, err := git(ctx, c.Path, "merge-base", "--is-ancestor", "HEAD", "refs/heads/"+c.BaseBranch)
+	if err == nil {
+		return nil
+	}
+	if !c.Owned || c.Branch == "" {
+		return fmt.Errorf("%s is not integrated into %s: %w", alias, c.BaseBranch, err)
+	}
+	if _, branchErr := git(ctx, c.Path, "merge-base", "--is-ancestor", "HEAD", "refs/heads/"+c.Branch); branchErr != nil {
+		return fmt.Errorf("%s is neither integrated into %s nor on its branch %s: %w", alias, c.BaseBranch, c.Branch, err)
 	}
 	return nil
 }

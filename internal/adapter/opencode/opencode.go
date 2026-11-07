@@ -9,7 +9,6 @@ import (
 
 	"github.com/Novirmor/homonto/internal/adapter"
 	"github.com/Novirmor/homonto/internal/adapter/baseadapter"
-	"github.com/Novirmor/homonto/internal/adapter/copyproj"
 	"github.com/Novirmor/homonto/internal/adapter/fileproj"
 	"github.com/Novirmor/homonto/internal/adapter/jsoncodec"
 	"github.com/Novirmor/homonto/internal/adapter/structproj"
@@ -202,7 +201,6 @@ func (a *Adapter) Plan(c *config.Config, st *state.State) (adapter.ChangeSet, er
 	}
 	cs := adapter.ChangeSet{Tool: a.Name()}
 
-	codec := jsoncodec.Codec{}
 	// MCP servers are bring-your-own (ADR 0085). Entries an earlier release
 	// projected stay in opencode.jsonc; their state is only released.
 	for _, key := range st.Keys("opencode") {
@@ -211,19 +209,21 @@ func (a *Adapter) Plan(c *config.Config, st *state.State) (adapter.ChangeSet, er
 		}
 	}
 	if global {
-		if changes, err := structproj.Project("opencode", "setting.", a.desiredSettings(c), doc, st, codec, settingDocPath); err != nil {
-			return adapter.ChangeSet{}, err
-		} else {
-			cs.Changes = append(cs.Changes, changes...)
-		}
-		if changes, err := structproj.Project("opencode", "projsetting.", a.desiredProjectSettings(c), projDoc, st, codec, projSettingDocPath); err != nil {
-			return adapter.ChangeSet{}, err
-		} else {
-			cs.Changes = append(cs.Changes, changes...)
-		}
-		if changes, err := structproj.Project("opencode", cliStatePrefix, desiredCLI, tuiDoc, st, cliCodec{}, cliDocPath); err != nil {
-			return adapter.ChangeSet{}, err
-		} else {
+		for _, ns := range []struct {
+			prefix  string
+			desired map[string]string
+			doc     []byte
+			codec   structproj.Codec
+			path    structproj.PathFor
+		}{
+			{"setting.", a.desiredSettings(c), doc, jsoncodec.Codec{}, settingDocPath},
+			{"projsetting.", a.desiredProjectSettings(c), projDoc, jsoncodec.Codec{}, projSettingDocPath},
+			{cliStatePrefix, desiredCLI, tuiDoc, cliCodec{}, cliDocPath},
+		} {
+			changes, err := structproj.Project("opencode", ns.prefix, ns.desired, ns.doc, st, ns.codec, ns.path)
+			if err != nil {
+				return adapter.ChangeSet{}, err
+			}
 			cs.Changes = append(cs.Changes, changes...)
 		}
 		// State recorded for OpenCode 1's tui.json is dropped from state only;
@@ -235,119 +235,27 @@ func (a *Adapter) Plan(c *config.Config, st *state.State) (adapter.ChangeSet, er
 		}
 	}
 	if global {
-		for _, pl := range c.Plugins.OpenCode {
-			src := pl.Source
-			// A bare bundled plugin name projects as its materialized catalog
-			// path (owned content, ADR 0029); anything else is the user's own
-			// specifier (npm package or their own path), passed through.
-			entry := src
-			if a.PluginCatalogRoot != "" {
-				if _, ok := catalogPluginNames[src]; ok {
-					// homonto-workflow keeps its removed V1 entry path (ADR 0079)
-					// only so a recorded legacy entry still matches for pruning;
-					// config rejects declaring it.
-					entry = filepath.Join(a.PluginCatalogRoot, src, "plugin.ts")
-					if src == "permission-observer" {
-						entry = filepath.Join(a.PluginCatalogRoot, src)
-					}
-				}
-			}
-			previous, inState := st.Get("opencode", "plugin."+src)
-			if !pl.IsEnabled() {
-				// Disabled: ensure absent, but only ever remove a homonto-managed
-				// entry (recorded in state). A present-but-unmanaged source is left
-				// untouched. The delete is emitted for ANY recorded entry, present on
-				// disk or not: an entry removed out of band used to emit nothing,
-				// leaving the state record orphaned — the declared loop then shielded
-				// it from the generic prune, so `status` reported "missing (deleted
-				// out of band)" forever and no apply could clear it. (Apply's delete
-				// is idempotent on an absent array element and only rewrites the doc
-				// when its bytes actually change.)
-				if inState {
-					cs.Changes = append(cs.Changes, adapter.Change{Action: "delete", Key: "plugin." + src, Old: adapter.SecretRedaction, Cause: adapter.CauseDisable})
-				}
-				continue
-			}
-			if inState && catalogPluginNames[src] && a.PluginCatalogRoot != "" && previous.Desired != structproj.MustJSON(entry) {
-				cs.Changes = append(cs.Changes, adapter.Change{Action: "update", Key: "plugin." + src, New: structproj.MustJSON(entry), Cause: adapter.CauseDeclare})
-				continue
-			}
-			if arrayHas(doc, "plugin", entry) {
-				// Present on disk. If recorded, steady-state noop; otherwise adopt it
-				// into state so pruning and drift can see it (plugin names are plain,
-				// never secret-bearing).
-				if inState {
-					cs.Changes = append(cs.Changes, adapter.Change{Action: "noop", Key: "plugin." + src})
-				} else {
-					cs.Changes = append(cs.Changes, adapter.Change{Action: "adopt", Key: "plugin." + src, New: structproj.MustJSON(entry), Cause: adapter.CauseAdopt})
-				}
-			} else {
-				cs.Changes = append(cs.Changes, adapter.Change{Action: "create", Key: "plugin." + src, New: structproj.MustJSON(entry), Cause: adapter.CauseDeclare})
-			}
-		}
+		cs.Changes = append(cs.Changes, a.planPlugins(c, st, doc)...)
 	}
-	// File-projection namespaces go through the shared symlink contract: each
-	// Project call emits create/relocate/relink + adopt for its links and plans
-	// NO deletes — the generic delete loop below stays the single source of
-	// file-prefix deletes.
-	roots := a.ManagedRoots()
-	skillChanges, err := fileproj.Project("opencode", a.SkillFileLinks(), st, roots)
+	// File-projection namespaces go through the shared symlink contract and
+	// plan NO link deletes — the generic prune below stays the single source of
+	// file-prefix deletes. Orphans: a state key no longer declared in config is
+	// de-declared — plan a delete. (A declared key missing from disk is drift,
+	// handled above.) Old is always redacted: a removed key's provenance is
+	// stale by definition. Global namespaces only contribute declared keys in
+	// the config-repo adapter; a repo adapter's partition carries only
+	// project/file keys.
+	files, declared, err := a.PlanFiles("opencode", st)
 	if err != nil {
 		return adapter.ChangeSet{}, err
 	}
-	cs.Changes = append(cs.Changes, skillChanges...)
-	commandChanges, err := fileproj.Project("opencode", a.CommandFileLinks(), st, roots)
-	if err != nil {
-		return adapter.ChangeSet{}, err
-	}
-	cs.Changes = append(cs.Changes, commandChanges...)
-	subagentChanges, err := fileproj.Project("opencode", a.SubagentFileLinks(), st, roots)
-	if err != nil {
-		return adapter.ChangeSet{}, err
-	}
-	cs.Changes = append(cs.Changes, subagentChanges...)
-	// Orphans: a state key no longer declared in config is de-declared — plan a
-	// delete. (A declared key missing from disk is drift, handled above.) Old is
-	// always redacted: a removed key's provenance is stale by definition.
-	// Global namespaces only contribute declared keys in the config-repo
-	// adapter; a repo adapter's partition carries only project/file keys.
-	declared := map[string]bool{}
+	cs.Changes = append(cs.Changes, files...)
 	if global {
 		for k := range c.Settings.OpenCode {
 			declared["setting."+k] = true
 		}
 		for _, pl := range c.Plugins.OpenCode {
 			declared["plugin."+pl.Source] = true
-		}
-	}
-	for _, entry := range a.Skills {
-		declared["skill."+entry.Name] = true
-	}
-	for _, entry := range a.Commands {
-		declared["command."+entry.Name] = true
-	}
-	for _, entry := range a.Subagents {
-		declared["subagent."+entry.Name] = true
-	}
-	// Copy-mode subagents are managed content files: surface create/update/prune
-	// and abort on a foreign-file conflict; Apply reconciles them in a dedicated
-	// pass. subagentcopy.* is outside managedPrefix so the generic delete loop
-	// never touches it.
-	copyOps, err := a.PlanCopyOps(st)
-	if err != nil {
-		return adapter.ChangeSet{}, err
-	}
-	for _, op := range copyOps {
-		name := copyproj.Name(op.Dst)
-		switch op.Action {
-		case copyfile.Conflict:
-			return adapter.ChangeSet{}, fmt.Errorf("opencode: %s exists and is not a homonto-managed copy-mode subagent; not overwriting", op.Dst)
-		case copyfile.Create:
-			cs.Changes = append(cs.Changes, adapter.Change{Action: "create", Key: "subagentcopy." + name, New: op.Dst, Cause: adapter.CauseDeclare})
-		case copyfile.Update, copyfile.LocalEdit:
-			cs.Changes = append(cs.Changes, adapter.Change{Action: "update", Key: "subagentcopy." + name, New: op.Dst, Cause: adapter.CauseUpdate})
-		case copyfile.Prune:
-			cs.Changes = append(cs.Changes, adapter.Change{Action: "delete", Key: "subagentcopy." + name, Old: op.Dst, Cause: adapter.CauseRemove})
 		}
 	}
 	// The generic prune covers plugin.* (array membership) and the file-projection
@@ -367,6 +275,63 @@ func (a *Adapter) Plan(c *config.Config, st *state.State) (adapter.ChangeSet, er
 	// same way every run. Keys are unique within a changeset.
 	sort.SliceStable(cs.Changes, func(i, j int) bool { return cs.Changes[i].Key < cs.Changes[j].Key })
 	return cs, nil
+}
+
+// planPlugins plans the user config's plugin[] entries, one key per declared
+// plugin, against the document on disk.
+func (a *Adapter) planPlugins(c *config.Config, st *state.State, doc []byte) []adapter.Change {
+	var changes []adapter.Change
+	for _, pl := range c.Plugins.OpenCode {
+		src := pl.Source
+		// A bare bundled plugin name projects as its materialized catalog
+		// path (owned content, ADR 0029); anything else is the user's own
+		// specifier (npm package or their own path), passed through.
+		entry := src
+		if a.PluginCatalogRoot != "" {
+			if _, ok := catalogPluginNames[src]; ok {
+				// homonto-workflow keeps its removed V1 entry path (ADR 0079)
+				// only so a recorded legacy entry still matches for pruning;
+				// config rejects declaring it.
+				entry = filepath.Join(a.PluginCatalogRoot, src, "plugin.ts")
+				if src == "permission-observer" {
+					entry = filepath.Join(a.PluginCatalogRoot, src)
+				}
+			}
+		}
+		previous, inState := st.Get("opencode", "plugin."+src)
+		if !pl.IsEnabled() {
+			// Disabled: ensure absent, but only ever remove a homonto-managed
+			// entry (recorded in state). A present-but-unmanaged source is left
+			// untouched. The delete is emitted for ANY recorded entry, present on
+			// disk or not: an entry removed out of band used to emit nothing,
+			// leaving the state record orphaned — the declared loop then shielded
+			// it from the generic prune, so `status` reported "missing (deleted
+			// out of band)" forever and no apply could clear it. (Apply's delete
+			// is idempotent on an absent array element and only rewrites the doc
+			// when its bytes actually change.)
+			if inState {
+				changes = append(changes, adapter.Change{Action: "delete", Key: "plugin." + src, Old: adapter.SecretRedaction, Cause: adapter.CauseDisable})
+			}
+			continue
+		}
+		if inState && catalogPluginNames[src] && a.PluginCatalogRoot != "" && previous.Desired != structproj.MustJSON(entry) {
+			changes = append(changes, adapter.Change{Action: "update", Key: "plugin." + src, New: structproj.MustJSON(entry), Cause: adapter.CauseDeclare})
+			continue
+		}
+		if arrayHas(doc, "plugin", entry) {
+			// Present on disk. If recorded, steady-state noop; otherwise adopt it
+			// into state so pruning and drift can see it (plugin names are plain,
+			// never secret-bearing).
+			if inState {
+				changes = append(changes, adapter.Change{Action: "noop", Key: "plugin." + src})
+			} else {
+				changes = append(changes, adapter.Change{Action: "adopt", Key: "plugin." + src, New: structproj.MustJSON(entry), Cause: adapter.CauseAdopt})
+			}
+		} else {
+			changes = append(changes, adapter.Change{Action: "create", Key: "plugin." + src, New: structproj.MustJSON(entry), Cause: adapter.CauseDeclare})
+		}
+	}
+	return changes
 }
 
 // ObserveHashes hashes the current on-disk value of every recorded key still
@@ -613,47 +578,15 @@ func (a *Adapter) Apply(cfg *config.Config, cs adapter.ChangeSet, res *secret.Re
 		}
 		linkChanges = append(linkChanges, c)
 	}
-	roots := a.ManagedRoots()
-	if err := fileproj.ApplyState("opencode", filterChanges(linkChanges, "skill."), st, roots, func(k string) []string {
-		name := trim(k, "skill.")
-		return []string{filepath.Join(a.SkillsDir("user"), name), filepath.Join(a.SkillsDir("project"), name)}
-	}); err != nil {
+	if err := a.ApplyFileState("opencode", linkChanges, st); err != nil {
 		return err
 	}
-	if err := fileproj.ApplyState("opencode", filterChanges(linkChanges, "command."), st, roots, func(k string) []string {
-		name := trim(k, "command.") + ".md"
-		return []string{filepath.Join(a.CommandsDir("user"), name), filepath.Join(a.CommandsDir("project"), name)}
-	}); err != nil {
+	// Fail fast on link and copy-mode conflicts before writing any file. A
+	// conflict in any namespace must be detected here, before any JSON write or
+	// state mutation below — otherwise a command conflict could let Apply
+	// partially write opencode.jsonc and commit skill-link state before erroring.
+	if err := a.CheckFileConflicts("opencode", st); err != nil {
 		return err
-	}
-	if err := fileproj.ApplyState("opencode", filterChanges(cs.Changes, "subagent."), st, roots, func(k string) []string {
-		name := trim(k, "subagent.") + ".md"
-		return []string{filepath.Join(a.SubagentsDir("user"), name), filepath.Join(a.SubagentsDir("project"), name)}
-	}); err != nil {
-		return err
-	}
-	// Fail fast on link conflicts before writing any file. A conflict in any of
-	// the three namespaces must be detected here, before any JSON write or state
-	// mutation below — otherwise a command conflict could let Apply partially
-	// write opencode.jsonc and commit skill-link state before erroring.
-	if err := fileproj.Conflicts("opencode", a.SkillFileLinks(), st, roots); err != nil {
-		return err
-	}
-	if err := fileproj.Conflicts("opencode", a.CommandFileLinks(), st, roots); err != nil {
-		return err
-	}
-	if err := fileproj.Conflicts("opencode", a.SubagentFileLinks(), st, roots); err != nil {
-		return err
-	}
-	// Fail fast on a copy-mode subagent conflict too, before any file is written.
-	copyOps, err := a.PlanCopyOps(st)
-	if err != nil {
-		return err
-	}
-	for _, op := range copyOps {
-		if op.Action == copyfile.Conflict {
-			return fmt.Errorf("opencode: %s exists and is not a homonto-managed copy-mode subagent; not overwriting", op.Dst)
-		}
 	}
 	if docChanged {
 		if err := fsutil.WriteAtomic(a.cfgFile(), doc); err != nil {
@@ -670,22 +603,7 @@ func (a *Adapter) Apply(cfg *config.Config, cs adapter.ChangeSet, res *secret.Re
 			return err
 		}
 	}
-	// Prune each namespace's inactive-scope orphan (left after a per-resource
-	// scope switch), then create the link and record state. Runs after the JSON
-	// writes. Only our own managed symlink is ever removed (IsManaged guards it);
-	// a foreign file or an absent path is left untouched.
-	if err := fileproj.ApplyLinks("opencode", a.SkillFileLinks(), st, roots); err != nil {
-		return err
-	}
-	if err := fileproj.ApplyLinks("opencode", a.CommandFileLinks(), st, roots); err != nil {
-		return err
-	}
-	if err := fileproj.ApplyLinks("opencode", a.SubagentFileLinks(), st, roots); err != nil {
-		return err
-	}
-	// Reconcile copy-mode subagent content files (write/update/prune + state).
-	if err := a.ApplyCopySubagents(st); err != nil {
-		return err
-	}
-	return nil
+	// Prune inactive-scope orphans (left after a per-resource scope switch),
+	// then create the links. Runs after the JSON writes.
+	return a.ApplyFiles("opencode", st)
 }

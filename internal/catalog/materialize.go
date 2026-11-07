@@ -38,109 +38,111 @@ func (c *Catalog) Materialize(dstRoot string, skillNames []string, shellProxy, c
 		if err != nil {
 			return fmt.Errorf("catalog: sub %q: %w", sp, err)
 		}
-		dstDir := filepath.Join(dstRoot, name)
-		// Stage-then-swap so a read error, full disk, or crash mid-walk never
-		// leaves a partially-written skill dir (which allSkillDirsExist would
-		// mistake for complete and never repair). Write into a sibling staging
-		// dir, then atomically swap it into place only after the whole walk
-		// succeeds. Discard any leftover staging from a prior crashed run first.
-		staging := dstDir + ".staging"
-		if err := os.RemoveAll(staging); err != nil {
-			return err
-		}
-		err = fs.WalkDir(sub, ".", func(p string, d fs.DirEntry, walkErr error) error {
-			if walkErr != nil {
-				return walkErr
-			}
-			target := filepath.Join(staging, filepath.FromSlash(p))
-			if d.IsDir() {
-				return os.MkdirAll(target, 0o755)
-			}
-			data, err := fs.ReadFile(sub, p)
-			if err != nil {
-				return err
-			}
-			if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
-				return err
-			}
-			// Catalog files live under .homonto (control plane); write no-follow
-			// so a planted symlink cannot redirect materialization.
-			return fsutil.WriteControlPlane(target, data, 0o644)
-		})
+		refs, err := c.generatedReferences(name, shellProxy, codeIntel, tmpDir, workspaceRef)
 		if err != nil {
-			// dstDir is untouched (still the prior complete version); drop the
-			// partial staging so the next run starts clean.
-			_ = os.RemoveAll(staging)
 			return err
 		}
-		// A dispatcher skill carries the generated tooling reference. Writing it
-		// into staging (not dstDir) keeps the same all-or-nothing guarantee the
-		// verbatim walk above has.
-		if c.IsDispatcher(name) {
-			ref, rerr := c.RenderTooling(shellProxy, codeIntel)
-			if rerr != nil {
-				_ = os.RemoveAll(staging)
-				return rerr
-			}
-			target := filepath.Join(staging, filepath.FromSlash(ToolingReferencePath))
-			if mkerr := os.MkdirAll(filepath.Dir(target), 0o755); mkerr != nil {
-				_ = os.RemoveAll(staging)
-				return mkerr
-			}
-			if werr := fsutil.WriteControlPlane(target, ref, 0o644); werr != nil {
-				_ = os.RemoveAll(staging)
-				return werr
-			}
-		}
-		// A declared [tmp] directory adds the generated tmp reference to the
-		// same skills that carry workflow entry-point doctrine: the
-		// dispatchers and the shared knowledge skill (ADR 0048). Same
-		// stage-then-swap guarantee as the tooling reference.
-		if tmpDir != "" && (c.IsDispatcher(name) || name == SharedKnowledgeSkill) {
-			target := filepath.Join(staging, filepath.FromSlash(TmpReferencePath))
-			if mkerr := os.MkdirAll(filepath.Dir(target), 0o755); mkerr != nil {
-				_ = os.RemoveAll(staging)
-				return mkerr
-			}
-			if werr := fsutil.WriteControlPlane(target, RenderTmp(tmpDir), 0o644); werr != nil {
-				_ = os.RemoveAll(staging)
-				return werr
-			}
-		}
-		if len(c.harnessRef) > 0 && HasHarnessReference(name) {
-			target := filepath.Join(staging, filepath.FromSlash(HarnessReferencePath))
-			if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
-				_ = os.RemoveAll(staging)
-				return err
-			}
-			if err := fsutil.WriteControlPlane(target, c.harnessRef, 0o644); err != nil {
-				_ = os.RemoveAll(staging)
-				return err
-			}
-		}
-		if len(workspaceRef) > 0 && HasWorkspaceReference(name) {
-			target := filepath.Join(staging, filepath.FromSlash(WorkspaceReferencePath))
-			if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
-				_ = os.RemoveAll(staging)
-				return err
-			}
-			if err := fsutil.WriteControlPlane(target, workspaceRef, 0o644); err != nil {
-				_ = os.RemoveAll(staging)
-				return err
-			}
-		}
-		// Swap: remove the old dir, then rename staging into place. A crash in
-		// this window leaves dstDir absent (not partial), so the next run
-		// re-materializes rather than trusting a half-written directory.
-		if err := os.RemoveAll(dstDir); err != nil {
-			_ = os.RemoveAll(staging)
-			return err
-		}
-		if err := os.Rename(staging, dstDir); err != nil {
+		if err := materializeSkill(filepath.Join(dstRoot, name), sub, refs); err != nil {
 			return err
 		}
 	}
 	return nil
+}
+
+// generatedReference is a file homonto renders into a skill beside its
+// verbatim content.
+type generatedReference struct {
+	path string // slash-separated, relative to the skill
+	data []byte
+}
+
+// generatedReferences lists the references skill name carries: the tooling
+// reference for a dispatcher; the tmp reference for the skills that carry
+// workflow entry-point doctrine, the dispatchers and the shared knowledge
+// skill (ADR 0048), when a [tmp] directory is declared; and the harness and
+// workspace references where they apply.
+func (c *Catalog) generatedReferences(name, shellProxy, codeIntel, tmpDir string, workspaceRef []byte) ([]generatedReference, error) {
+	var refs []generatedReference
+	if c.IsDispatcher(name) {
+		ref, err := c.RenderTooling(shellProxy, codeIntel)
+		if err != nil {
+			return nil, err
+		}
+		refs = append(refs, generatedReference{ToolingReferencePath, ref})
+	}
+	if tmpDir != "" && (c.IsDispatcher(name) || name == SharedKnowledgeSkill) {
+		refs = append(refs, generatedReference{TmpReferencePath, RenderTmp(tmpDir)})
+	}
+	if len(c.harnessRef) > 0 && HasHarnessReference(name) {
+		refs = append(refs, generatedReference{HarnessReferencePath, c.harnessRef})
+	}
+	if len(workspaceRef) > 0 && HasWorkspaceReference(name) {
+		refs = append(refs, generatedReference{WorkspaceReferencePath, workspaceRef})
+	}
+	return refs, nil
+}
+
+// materializeSkill writes one skill's content and generated references to
+// dstDir all-or-nothing. A read error, full disk, or crash mid-walk must never
+// leave a partially-written skill dir (which allSkillDirsExist would mistake
+// for complete and never repair), so everything goes into a sibling staging
+// dir that is swapped into place only once complete. A leftover staging dir
+// from a crashed run is discarded first.
+func materializeSkill(dstDir string, src fs.FS, refs []generatedReference) error {
+	staging := dstDir + ".staging"
+	if err := os.RemoveAll(staging); err != nil {
+		return err
+	}
+	if err := stageSkill(staging, src, refs); err != nil {
+		// dstDir is untouched (still the prior complete version); drop the
+		// partial staging so the next run starts clean.
+		_ = os.RemoveAll(staging)
+		return err
+	}
+	// Swap: remove the old dir, then rename staging into place. A crash in
+	// this window leaves dstDir absent (not partial), so the next run
+	// re-materializes rather than trusting a half-written directory.
+	if err := os.RemoveAll(dstDir); err != nil {
+		_ = os.RemoveAll(staging)
+		return err
+	}
+	return os.Rename(staging, dstDir)
+}
+
+// stageSkill copies src into staging, then adds the generated references.
+// Catalog files live under .homonto (control plane), so every write is
+// no-follow: a planted symlink cannot redirect materialization.
+func stageSkill(staging string, src fs.FS, refs []generatedReference) error {
+	err := fs.WalkDir(src, ".", func(p string, d fs.DirEntry, walkErr error) error {
+		if walkErr != nil {
+			return walkErr
+		}
+		target := filepath.Join(staging, filepath.FromSlash(p))
+		if d.IsDir() {
+			return os.MkdirAll(target, 0o755)
+		}
+		data, err := fs.ReadFile(src, p)
+		if err != nil {
+			return err
+		}
+		return writeStaged(target, data)
+	})
+	if err != nil {
+		return err
+	}
+	for _, ref := range refs {
+		if err := writeStaged(filepath.Join(staging, filepath.FromSlash(ref.path)), ref.data); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func writeStaged(target string, data []byte) error {
+	if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
+		return err
+	}
+	return fsutil.WriteControlPlane(target, data, 0o644)
 }
 
 // MaterializeCommands writes each named builtin command from the embedded FS to

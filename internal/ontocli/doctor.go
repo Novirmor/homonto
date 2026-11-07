@@ -133,9 +133,34 @@ func activeOntoDirNames(root string) (map[string]bool, error) {
 // returns nil; otherwise it prints every finding and returns a summary error so
 // main exits non-zero.
 func runDoctor(cmd *cobra.Command, root string) error {
-	var findings []string
+	findings := layoutFindings(root)
+	findings = append(findings, activeChangeFindings(cmd, root)...)
+	// Global-name uniqueness (ADR 0042): an active name colliding with the
+	// `to` workflow's active tree is ambiguous for agent routing.
+	if dupes, err := siblingActiveDuplicates(root); err == nil {
+		for _, name := range dupes {
+			findings = append(findings, fmt.Sprintf("%s: also active in the `to` workflow (<workflow-root>/tasks/%s) — active names are globally unique; convert or rename one", name, name))
+		}
+	}
 
-	// 1. docs layout: every directory in the resolved workflow root must exist.
+	findings = append(findings, archiveFindings(root)...)
+	findings = append(findings, versionSkewFindings(root)...)
+
+	// verdict
+	if len(findings) == 0 {
+		cmd.Println("healthy")
+		return nil
+	}
+	for _, f := range findings {
+		cmd.Println(f)
+	}
+	return fmt.Errorf("onto doctor: %d problem(s) found", len(findings))
+}
+
+// layoutFindings requires every directory of the resolved workflow root.
+func layoutFindings(root string) []string {
+	var findings []string
+	// Every directory in the resolved workflow root must exist.
 	for i, d := range workflowLayout {
 		info, err := os.Stat(filepath.Join(workflowRoot(root), d))
 		if err != nil || !info.IsDir() {
@@ -148,8 +173,13 @@ func runDoctor(cmd *cobra.Command, root string) error {
 			findings = append(findings, "docs layout: missing directory "+label+" (run onto init)")
 		}
 	}
+	return findings
+}
 
-	// 2. active changes: enumerate change directories first (excluding
+// activeChangeFindings checks every change directory outside archive/.
+func activeChangeFindings(cmd *cobra.Command, root string) []string {
+	var findings []string
+	// Enumerate change directories first (excluding
 	// archive/), then classify. A missing-state or malformed directory is a
 	// finding — a deleted state file is reported, never silently skipped (F14).
 	changesDir := changesDir(root)
@@ -158,97 +188,101 @@ func runDoctor(cmd *cobra.Command, root string) error {
 			if !e.IsDir() || e.Name() == "archive" {
 				continue
 			}
-			name := e.Name()
-			changeDir := filepath.Join(changesDir, name)
-			st, class, classErr := ontostate.Classify(changeDir)
-			switch class {
-			case "missing-state":
-				findings = append(findings, name+": missing-state (change directory has no state file)")
-				continue
-			case "malformed":
-				findings = append(findings, fmt.Sprintf("%s: malformed state: %v", name, classErr))
-				continue
-			}
-			// An abandoned change is a parked terminal state, not a health
-			// problem: its missing artifacts, unresolved deps, and verify-round
-			// count are exactly why it was abandoned. Counting them made a
-			// `doctor --quiet` Stop hook fail forever with no clearing action.
-			if st.Abandoned {
-				continue
-			}
-			if st.RepoMode != "" {
-				if _, err := stateSourceDirs(root, st); err != nil {
-					findings = append(findings, fmt.Sprintf("%s: source scope: %v", name, err))
-				} else if st.Verify.Result == "pass" {
-					if err := verifyHeadsIntact(root, st); err != nil {
-						findings = append(findings, fmt.Sprintf("%s: %v", name, err))
-					}
-				}
-			}
-			phase := st.Phase
-			if skErr := ontostate.ValidateSkeleton(changeDir); skErr != nil {
-				findings = append(findings, fmt.Sprintf("%s: phase %s missing artifact: %v", name, phase, skErr))
-			}
-			if unresolved := ontostate.DepsResolved(root, st.Deps); len(unresolved) > 0 {
-				findings = append(findings, fmt.Sprintf("%s: unresolved dependencies: %v", name, unresolved))
-			}
-			if st.Archived {
-				findings = append(findings, name+": active change marked archived: true (belongs under <workflow-root>/changes/archive/)")
-			}
-			// tasks.md <-> plan.md correspondence (ADR 0018). This is the
-			// pairing that makes a change resumable by someone who was not
-			// there: resume at the first unchecked tasks.md item, read its
-			// detail under the matching plan.md heading. Drift used to be
-			// caught only by a prose checklist at close — which is to say,
-			// after every chance to act on it had passed.
-			drift, driftErr := ontostate.CheckTaskPlan(
-				filepath.Join(changeDir, "tasks.md"),
-				filepath.Join(changeDir, "plan.md"),
-			)
-			switch {
-			case driftErr != nil:
-				// A missing tasks.md is already reported by ValidateSkeleton
-				// for the phases that require it; staying silent here avoids
-				// two findings for one cause.
-			case !drift.Empty():
-				if len(drift.MissingFromPlan) > 0 {
-					findings = append(findings, fmt.Sprintf(
-						"%s: tasks.md items with no `## Task N.M` in plan.md: %v", name, drift.MissingFromPlan))
-				}
-				if len(drift.MissingFromTasks) > 0 {
-					findings = append(findings, fmt.Sprintf(
-						"%s: plan.md tasks with no item in tasks.md: %v", name, drift.MissingFromTasks))
-				}
-				if drift.PlanCheckboxes > 0 {
-					findings = append(findings, fmt.Sprintf(
-						"%s: plan.md holds %d checkbox(es); tasks.md is the single checkoff", name, drift.PlanCheckboxes))
-				}
-			}
-			// A change that has failed verification 3+ times needs a decision, not
-			// another silent retry (accept the deviation or keep fixing).
-			if st.Observed.VerifyRounds >= 3 && st.Verify.Result == "fail" {
-				findings = append(findings, fmt.Sprintf("%s: %d failed verify rounds — use fresh investigation before retrying", name, st.Observed.VerifyRounds))
-			}
-			// Structured evidence (ADR 0027). A missing sidecar is a note, not
-			// a finding — every change created before v0.15.0 is exactly that,
-			// and doctor must not fail a healthy legacy workspace.
-			evFindings, evNotes := evidenceFindings(cmd, root, changeDir, name)
-			findings = append(findings, evFindings...)
-			for _, n := range evNotes {
-				cmd.Println(n)
+			findings = append(findings, changeFindings(cmd, root, filepath.Join(changesDir, e.Name()), e.Name())...)
+		}
+	}
+	return findings
+}
+
+// changeFindings checks one active change. A missing-state or malformed
+// directory is a finding — a deleted state file is reported, never silently
+// skipped (F14).
+func changeFindings(cmd *cobra.Command, root, changeDir, name string) []string {
+	var findings []string
+	st, class, classErr := ontostate.Classify(changeDir)
+	switch class {
+	case "missing-state":
+		findings = append(findings, name+": missing-state (change directory has no state file)")
+		return findings
+	case "malformed":
+		findings = append(findings, fmt.Sprintf("%s: malformed state: %v", name, classErr))
+		return findings
+	}
+	// An abandoned change is a parked terminal state, not a health
+	// problem: its missing artifacts, unresolved deps, and verify-round
+	// count are exactly why it was abandoned. Counting them made a
+	// `doctor --quiet` Stop hook fail forever with no clearing action.
+	if st.Abandoned {
+		return findings
+	}
+	if st.RepoMode != "" {
+		if _, err := stateSourceDirs(root, st); err != nil {
+			findings = append(findings, fmt.Sprintf("%s: source scope: %v", name, err))
+		} else if st.Verify.Result == "pass" {
+			if err := verifyHeadsIntact(root, st); err != nil {
+				findings = append(findings, fmt.Sprintf("%s: %v", name, err))
 			}
 		}
 	}
-
-	// 2b. Global-name uniqueness (ADR 0042): an active name colliding with
-	// the `to` workflow's active tree is ambiguous for agent routing.
-	if dupes, err := siblingActiveDuplicates(root); err == nil {
-		for _, name := range dupes {
-			findings = append(findings, fmt.Sprintf("%s: also active in the `to` workflow (<workflow-root>/tasks/%s) — active names are globally unique; convert or rename one", name, name))
+	phase := st.Phase
+	if skErr := ontostate.ValidateSkeleton(changeDir); skErr != nil {
+		findings = append(findings, fmt.Sprintf("%s: phase %s missing artifact: %v", name, phase, skErr))
+	}
+	if unresolved := ontostate.DepsResolved(root, st.Deps); len(unresolved) > 0 {
+		findings = append(findings, fmt.Sprintf("%s: unresolved dependencies: %v", name, unresolved))
+	}
+	if st.Archived {
+		findings = append(findings, name+": active change marked archived: true (belongs under <workflow-root>/changes/archive/)")
+	}
+	// tasks.md <-> plan.md correspondence (ADR 0018). This is the
+	// pairing that makes a change resumable by someone who was not
+	// there: resume at the first unchecked tasks.md item, read its
+	// detail under the matching plan.md heading. Drift used to be
+	// caught only by a prose checklist at close — which is to say,
+	// after every chance to act on it had passed.
+	drift, driftErr := ontostate.CheckTaskPlan(
+		filepath.Join(changeDir, "tasks.md"),
+		filepath.Join(changeDir, "plan.md"),
+	)
+	switch {
+	case driftErr != nil:
+		// A missing tasks.md is already reported by ValidateSkeleton
+		// for the phases that require it; staying silent here avoids
+		// two findings for one cause.
+	case !drift.Empty():
+		if len(drift.MissingFromPlan) > 0 {
+			findings = append(findings, fmt.Sprintf(
+				"%s: tasks.md items with no `## Task N.M` in plan.md: %v", name, drift.MissingFromPlan))
+		}
+		if len(drift.MissingFromTasks) > 0 {
+			findings = append(findings, fmt.Sprintf(
+				"%s: plan.md tasks with no item in tasks.md: %v", name, drift.MissingFromTasks))
+		}
+		if drift.PlanCheckboxes > 0 {
+			findings = append(findings, fmt.Sprintf(
+				"%s: plan.md holds %d checkbox(es); tasks.md is the single checkoff", name, drift.PlanCheckboxes))
 		}
 	}
+	// A change that has failed verification 3+ times needs a decision, not
+	// another silent retry (accept the deviation or keep fixing).
+	if st.Observed.VerifyRounds >= 3 && st.Verify.Result == "fail" {
+		findings = append(findings, fmt.Sprintf("%s: %d failed verify rounds — use fresh investigation before retrying", name, st.Observed.VerifyRounds))
+	}
+	// Structured evidence (ADR 0027). A missing sidecar is a note, not
+	// a finding — every change created before v0.15.0 is exactly that,
+	// and doctor must not fail a healthy legacy workspace.
+	evFindings, evNotes := evidenceFindings(cmd, root, changeDir, name)
+	findings = append(findings, evFindings...)
+	for _, n := range evNotes {
+		cmd.Println(n)
+	}
+	return findings
+}
 
-	// 3. archive layout: each archive/<name> directory must hold a valid
+// archiveFindings checks each archived change and its integration record.
+func archiveFindings(root string) []string {
+	var findings []string
+	// Each archive/<name> directory must hold a valid
 	// onto-state.yaml marked archived:true. Stray non-directory entries are
 	// ignored.
 	entries, _ := filepath.Glob(filepath.Join(ontoArchiveDir(root), "*"))
@@ -279,8 +313,14 @@ func runDoctor(cmd *cobra.Command, root string) error {
 			}
 		}
 	}
+	return findings
+}
 
-	// 4. version skew: the onto binary and the homonto that projected the onto
+// versionSkewFindings compares this binary with the homonto that projected
+// the onto framework.
+func versionSkewFindings(root string) []string {
+	var findings []string
+	// The onto binary and the homonto that projected the onto
 	// framework are released together and should match. When they diverge, the
 	// installed skills/commands may not match this binary's behavior — tell the
 	// user to re-sync. Best-effort and boundary-preserving: read only the
@@ -296,14 +336,5 @@ func runDoctor(cmd *cobra.Command, root string) error {
 				onto, applied))
 		}
 	}
-
-	// verdict
-	if len(findings) == 0 {
-		cmd.Println("healthy")
-		return nil
-	}
-	for _, f := range findings {
-		cmd.Println(f)
-	}
-	return fmt.Errorf("onto doctor: %d problem(s) found", len(findings))
+	return findings
 }

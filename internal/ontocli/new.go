@@ -67,7 +67,7 @@ func runNewWithBases(cmd *cobra.Command, root, name, workflow string, repos, bas
 	if !ontostate.ValidWorkflow(workflow) {
 		return fmt.Errorf("onto new: workflow %q is not one of full|light", workflow)
 	}
-	names, _, err := scopeDirs(root, repos)
+	names, err := scopeDirs(root, repos)
 	if err != nil {
 		return fmt.Errorf("onto new: %w", err)
 	}
@@ -86,48 +86,9 @@ func runNewWithBases(cmd *cobra.Command, root, name, workflow string, repos, bas
 		if len(names) == 0 {
 			return fmt.Errorf("onto new: config schema 2 requires nonempty selected --repo")
 		}
-		selected := map[string]bool{}
-		for _, alias := range names {
-			selected[alias] = true
-		}
-		overrides := map[string]string{}
-		for _, value := range bases {
-			alias, branch, ok := strings.Cut(value, "=")
-			if !ok || !selected[alias] || overrides[alias] != "" || branch == "" {
-				return fmt.Errorf("onto new: --base %q requires a unique selected alias=branch", value)
-			}
-			if strings.HasPrefix(branch, "refs/") && !strings.HasPrefix(branch, "refs/heads/") {
-				return fmt.Errorf("onto new: --base %q must name a literal local branch", value)
-			}
-			branch = strings.TrimPrefix(branch, "refs/heads/")
-			if err := validateBranchName(layout.Repos[alias], branch); err != nil {
-				return fmt.Errorf("onto new: --base %q: %w", value, err)
-			}
-			overrides[alias] = branch
-		}
 		st.RepoMode = "explicit"
-		st.RepoBases = make(map[string]ontostate.RepoBase, len(names))
-		for _, alias := range names {
-			source := layout.Repos[alias]
-			branch := overrides[alias]
-			ref := "HEAD"
-			if branch == "" {
-				branch, err = currentBranch(source)
-				if err != nil {
-					return fmt.Errorf("repository %s: %w", alias, err)
-				}
-			} else {
-				ref = "refs/heads/" + branch
-			}
-			head, err := resolveCommit(source, ref)
-			if err != nil {
-				return fmt.Errorf("repository %s: %w", alias, err)
-			}
-			identity, err := sourceIdentity(source)
-			if err != nil {
-				return err
-			}
-			st.RepoBases[alias] = ontostate.RepoBase{BaseRef: head, BaseBranch: branch, GitCommonDir: identity}
+		if st.RepoBases, err = explicitRepoBases(layout, names, bases); err != nil {
+			return err
 		}
 		if err := st.Validate(); err != nil {
 			return err
@@ -188,6 +149,71 @@ func runNewWithBases(cmd *cobra.Command, root, name, workflow string, repos, bas
 		return fmt.Errorf("onto new: %w", err)
 	}
 
+	files, err := scaffoldChange(changeDir, workflow)
+	if err != nil {
+		return err
+	}
+	cmd.Printf("created change %q at %s\n", name, changeDir)
+	cmd.Printf("  %s\n", statePath)
+	for _, f := range files {
+		cmd.Printf("  %s\n", filepath.Join(changeDir, f))
+	}
+
+	return nil
+}
+
+// explicitRepoBases pins each selected schema-2 repository: its --base branch
+// or current branch, that branch's commit, and its Git identity.
+func explicitRepoBases(layout workspace.Layout, names, bases []string) (map[string]ontostate.RepoBase, error) {
+	selected := map[string]bool{}
+	for _, alias := range names {
+		selected[alias] = true
+	}
+	overrides := map[string]string{}
+	for _, value := range bases {
+		alias, branch, ok := strings.Cut(value, "=")
+		if !ok || !selected[alias] || overrides[alias] != "" || branch == "" {
+			return nil, fmt.Errorf("onto new: --base %q requires a unique selected alias=branch", value)
+		}
+		if strings.HasPrefix(branch, "refs/") && !strings.HasPrefix(branch, "refs/heads/") {
+			return nil, fmt.Errorf("onto new: --base %q must name a literal local branch", value)
+		}
+		branch = strings.TrimPrefix(branch, "refs/heads/")
+		if err := validateBranchName(layout.Repos[alias], branch); err != nil {
+			return nil, fmt.Errorf("onto new: --base %q: %w", value, err)
+		}
+		overrides[alias] = branch
+	}
+	repoBases := make(map[string]ontostate.RepoBase, len(names))
+	for _, alias := range names {
+		source := layout.Repos[alias]
+		branch := overrides[alias]
+		ref := "HEAD"
+		if branch == "" {
+			current, err := currentBranch(source)
+			if err != nil {
+				return nil, fmt.Errorf("repository %s: %w", alias, err)
+			}
+			branch = current
+		} else {
+			ref = "refs/heads/" + branch
+		}
+		head, err := resolveCommit(source, ref)
+		if err != nil {
+			return nil, fmt.Errorf("repository %s: %w", alias, err)
+		}
+		identity, err := sourceIdentity(source)
+		if err != nil {
+			return nil, err
+		}
+		repoBases[alias] = ontostate.RepoBase{BaseRef: head, BaseBranch: branch, GitCommonDir: identity}
+	}
+	return repoBases, nil
+}
+
+// scaffoldChange lays down the open-phase skeleton without overwriting
+// anything, and returns the files it covers.
+func scaffoldChange(changeDir, workflow string) ([]string, error) {
 	// Scaffold the open-phase skeleton. A full change writes its task list from
 	// the confirmed design (onto-design creates tasks.md), so `new` only lays down
 	// proposal.md; the light preset skips design and decomposes at open-lite,
@@ -202,14 +228,8 @@ func runNewWithBases(cmd *cobra.Command, root, name, workflow string, repos, bas
 			continue
 		}
 		if err := os.WriteFile(path, []byte{}, 0o644); err != nil {
-			return fmt.Errorf("onto new: creating %s: %w", path, err)
+			return nil, fmt.Errorf("onto new: creating %s: %w", path, err)
 		}
 	}
-	cmd.Printf("created change %q at %s\n", name, changeDir)
-	cmd.Printf("  %s\n", statePath)
-	for _, f := range files {
-		cmd.Printf("  %s\n", filepath.Join(changeDir, f))
-	}
-
-	return nil
+	return files, nil
 }

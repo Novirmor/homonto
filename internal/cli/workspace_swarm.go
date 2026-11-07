@@ -85,7 +85,12 @@ func encode(w io.Writer, v any) error {
 
 func workspaceSwarmCmd() *cobra.Command {
 	cmd := &cobra.Command{Use: "swarm", Short: "Compare two or three candidate implementations of one brief, then deliver the chosen one"}
+	cmd.AddCommand(swarmCreateCmd(), swarmInspectCmd(), swarmCheckCmd(), swarmCompareCmd(), swarmSelectCmd(), swarmPreviewCmd(), swarmCleanupCmd())
+	return cmd
+}
 
+// swarmCreateCmd records the brief and allocates the candidates.
+func swarmCreateCmd() *cobra.Command {
 	var engine, briefFile string
 	var repos, candidates []string
 	create := &cobra.Command{Use: "create <name>", Short: "Record the brief and allocate one worktree per candidate from the same base (JSON)", Args: cobra.ExactArgs(1), RunE: func(cmd *cobra.Command, args []string) error {
@@ -118,7 +123,11 @@ func workspaceSwarmCmd() *cobra.Command {
 	for _, flag := range []string{"repo", "candidate", "brief"} {
 		_ = create.MarkFlagRequired(flag)
 	}
+	return create
+}
 
+// swarmInspectCmd shows the swarm record and its tasks.
+func swarmInspectCmd() *cobra.Command {
 	inspect := &cobra.Command{Use: "inspect <name>", Short: "Show the swarm record and each candidate's task (JSON)", Args: cobra.ExactArgs(1), RunE: func(cmd *cobra.Command, args []string) error {
 		s, _, err := openSwarm(cmd)
 		if err != nil {
@@ -136,7 +145,11 @@ func workspaceSwarmCmd() *cobra.Command {
 			Tasks map[string]*worktask.Task `json:"tasks"`
 		}{sw, tasks})
 	}}
+	return inspect
+}
 
+// swarmCheckCmd runs the integration checks on every candidate.
+func swarmCheckCmd() *cobra.Command {
 	var checkName string
 	var paused bool
 	var timeout time.Duration
@@ -165,7 +178,11 @@ func workspaceSwarmCmd() *cobra.Command {
 	check.Flags().StringVar(&checkName, "check", "", "run one matching check (default: all matching checks)")
 	check.Flags().BoolVar(&paused, "writers-paused", false, "confirm every candidate's writers have been paused")
 	check.Flags().DurationVar(&timeout, "timeout", 10*time.Minute, "time limit per check and candidate")
+	return check
+}
 
+// swarmCompareCmd shows the candidates side by side.
+func swarmCompareCmd() *cobra.Command {
 	var jsonOut, htmlOut bool
 	compare := &cobra.Command{Use: "compare <name>", Short: "Show the candidates side by side: model, change size, checks, previews", Args: cobra.ExactArgs(1), RunE: func(cmd *cobra.Command, args []string) error {
 		s, _, err := openSwarm(cmd)
@@ -190,7 +207,11 @@ func workspaceSwarmCmd() *cobra.Command {
 	}}
 	compare.Flags().BoolVar(&jsonOut, "json", false, "print the comparison as JSON")
 	compare.Flags().BoolVar(&htmlOut, "html", false, "also write a side-by-side page that embeds running previews")
+	return compare
+}
 
+// swarmSelectCmd records the chosen candidate.
+func swarmSelectCmd() *cobra.Command {
 	var winner string
 	var fallback bool
 	selectCmd := &cobra.Command{Use: "select <name>", Short: "Record the user's chosen candidate; only a verified candidate can be chosen (JSON)", Args: cobra.ExactArgs(1), RunE: func(cmd *cobra.Command, args []string) error {
@@ -207,7 +228,11 @@ func workspaceSwarmCmd() *cobra.Command {
 	selectCmd.Flags().StringVar(&winner, "candidate", "", "the candidate the user chose")
 	selectCmd.Flags().BoolVar(&fallback, "fallback-verified", false, "no configured check matches and the candidate passed the verification you ran")
 	_ = selectCmd.MarkFlagRequired("candidate")
+	return selectCmd
+}
 
+// swarmCleanupCmd tears the swarm down.
+func swarmCleanupCmd() *cobra.Command {
 	var yes, abandon, keepRejected bool
 	cleanup := &cobra.Command{Use: "cleanup <name>", Short: "Tear down previews, remove every candidate worktree and delete the rejected branches (JSON)", Args: cobra.ExactArgs(1), RunE: func(cmd *cobra.Command, args []string) error {
 		s, _, err := openSwarm(cmd)
@@ -225,9 +250,7 @@ func workspaceSwarmCmd() *cobra.Command {
 	cleanup.Flags().BoolVar(&yes, "yes", false, "confirm removal of the swarm's worktrees and previews")
 	cleanup.Flags().BoolVar(&abandon, "abandon", false, "release every candidate without a winner, keeping all branches")
 	cleanup.Flags().BoolVar(&keepRejected, "keep-rejected", false, "keep the rejected candidates' branches")
-
-	cmd.AddCommand(create, inspect, check, compare, selectCmd, swarmPreviewCmd(), cleanup)
-	return cmd
+	return cleanup
 }
 
 func swarmPreviewCmd() *cobra.Command {

@@ -95,6 +95,27 @@ func translateTasks(m manifest, snapDir string) (string, bool) {
 	if b, err := os.ReadFile(filepath.Join(snapDir, "plan.md")); err == nil {
 		plan = string(b)
 	}
+	finalVerify, ok := planFinalVerifyOf(plan)
+	if !ok {
+		return "", false
+	}
+	tasks, ok := parseTranslatedTasks(string(data), plan)
+	if !ok || len(tasks) == 0 {
+		return "", false
+	}
+	if finalVerify == "" {
+		// Carry the final task's recorded check when no aggregate is explicit.
+		finalVerify = tasks[len(tasks)-1].verify
+	}
+	if !concreteContract(finalVerify) {
+		return "", false
+	}
+	return renderToPlan(m, tasks, finalVerify), true
+}
+
+// planFinalVerifyOf returns plan.md's single Final Verify, "" when absent; a
+// second one, or one that is not concrete, fails the translation.
+func planFinalVerifyOf(plan string) (string, bool) {
 	finalVerify := ""
 	lines := strings.Split(plan, "\n")
 	for i, line := range lines {
@@ -108,38 +129,32 @@ func translateTasks(m manifest, snapDir string) (string, bool) {
 			}
 		}
 	}
+	return finalVerify, true
+}
 
+// parseTranslatedTasks reads every tasks.md item with its plan.md contract. A
+// stray checkbox, a repeated task ID, or an incomplete contract fails the
+// translation; numbers missing or repeated are reassigned.
+func parseTranslatedTasks(tasksMD, plan string) ([]translatedTask, bool) {
 	seen := map[int]bool{}
 	seenIDs := map[string]bool{}
 	tasks := []translatedTask{}
-	for _, line := range strings.Split(string(data), "\n") {
+	for _, line := range strings.Split(tasksMD, "\n") {
 		mm := ontoTask.FindStringSubmatch(line)
 		if mm == nil {
 			if strings.HasPrefix(strings.TrimSpace(line), "- [") || strings.HasPrefix(strings.TrimSpace(line), "* [") {
-				return "", false
+				return nil, false
 			}
 			continue
 		}
 		id := mm[2] + "." + mm[3]
 		if seenIDs[id] {
-			return "", false
+			return nil, false
 		}
 		seenIDs[id] = true
-		fields := planContractFor(plan, id)
-		for _, key := range []string{"Owner", "Repo", "Cwd", "Files", "Do", "Verify"} {
-			if !concreteContract(fields[key]) {
-				return "", false
-			}
-		}
-		// Execution scope comes from the source contract, never a guessed repo
-		// or a title-derived owner. Paths need not exist in the staging tree.
-		for _, key := range []string{"Owner", "Repo", "Cwd"} {
-			if strings.ContainsAny(fields[key], "\r\n") {
-				return "", false
-			}
-		}
-		if !filepath.IsAbs(strings.Trim(fields["Cwd"], "`")) {
-			return "", false
+		fields, ok := taskContract(plan, id)
+		if !ok {
+			return nil, false
 		}
 		num := 0
 		if mm[5] != "" {
@@ -152,7 +167,7 @@ func translateTasks(m manifest, snapDir string) (string, bool) {
 			}
 		}
 		seen[num] = true
-		t := translatedTask{
+		tasks = append(tasks, translatedTask{
 			num:    num,
 			title:  strings.TrimSpace(mm[4]),
 			done:   mm[1] == "x" && !strings.HasPrefix(strings.ToUpper(strings.TrimSpace(mm[4])), "DEFERRED TO CLOSE:"),
@@ -162,20 +177,34 @@ func translateTasks(m manifest, snapDir string) (string, bool) {
 			files:  fields["Files"],
 			change: fields["Do"],
 			verify: fields["Verify"],
-		}
-		tasks = append(tasks, t)
+		})
 	}
-	if len(tasks) == 0 {
-		return "", false
-	}
-	if finalVerify == "" {
-		// Carry the final task's recorded check when no aggregate is explicit.
-		finalVerify = tasks[len(tasks)-1].verify
-	}
-	if !concreteContract(finalVerify) {
-		return "", false
-	}
+	return tasks, true
+}
 
+// taskContract returns task id's plan.md fields when every one is concrete.
+// Execution scope comes from the source contract, never a guessed repo or a
+// title-derived owner. Paths need not exist in the staging tree.
+func taskContract(plan, id string) (map[string]string, bool) {
+	fields := planContractFor(plan, id)
+	for _, key := range []string{"Owner", "Repo", "Cwd", "Files", "Do", "Verify"} {
+		if !concreteContract(fields[key]) {
+			return nil, false
+		}
+	}
+	for _, key := range []string{"Owner", "Repo", "Cwd"} {
+		if strings.ContainsAny(fields[key], "\r\n") {
+			return nil, false
+		}
+	}
+	if !filepath.IsAbs(strings.Trim(fields["Cwd"], "`")) {
+		return nil, false
+	}
+	return fields, true
+}
+
+// renderToPlan writes the to plan.md for the translated tasks.
+func renderToPlan(m manifest, tasks []translatedTask, finalVerify string) string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "# Plan: %s (demoted from onto)\n\n", m.Target)
 	fmt.Fprintf(&b, "Demoted from the onto change snapshotted under\n")
@@ -199,7 +228,7 @@ func translateTasks(m manifest, snapDir string) (string, bool) {
 		}
 	}
 	fmt.Fprintf(&b, "\nFinal Verify: %s\n", finalVerify)
-	return b.String(), true
+	return b.String()
 }
 
 // planContractFor reads one exact dotted task heading, never an ID prefix.

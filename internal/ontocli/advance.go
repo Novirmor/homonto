@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 
 	"github.com/Novirmor/homonto/internal/ontostate"
@@ -147,22 +148,6 @@ func runAdvance(cmd *cobra.Command, root, name string) error {
 		return fmt.Errorf("onto advance: %q is at terminal/unknown phase %q; nothing to advance", name, st.Phase)
 	}
 
-	for _, f := range ontostate.RequiredArtifacts(st.Phase, st.Workflow) {
-		if _, statErr := os.Stat(filepath.Join(changeDir, f)); statErr != nil {
-			return fmt.Errorf("onto advance: cannot leave %q: missing %s", st.Phase, f)
-		}
-	}
-
-	if st.Phase == "build" {
-		done, tasksErr := ontostate.TasksAllChecked(filepath.Join(changeDir, "tasks.md"))
-		if tasksErr != nil {
-			return tasksErr
-		}
-		if !done {
-			return fmt.Errorf("onto advance: cannot leave build: tasks.md has unchecked items")
-		}
-	}
-
 	// Phase-evidence gates: beyond artifact existence and checked tasks,
 	// certain transitions require a recorded evidence token. Leaving verify
 	// requires a passing verification; entering build requires a chosen
@@ -173,55 +158,12 @@ func runAdvance(cmd *cobra.Command, root, name string) error {
 	// Presets are exempt: their scope gate lives in the preset skill, and
 	// blocking a preset on design-phase tokens would contradict its reason to
 	// exist.
-	full := st.Workflow == "" || st.Workflow == "full"
-	if st.Phase == "open" && full && st.ProposalApproved == "" {
-		return fmt.Errorf("onto advance: cannot leave open: proposal review not recorded (review the proposal, then run `onto set proposal-approved %s \"<evidence>\"`)", name)
-	}
-	if next == "build" && full && st.ApproachConfirmed == "" {
-		return fmt.Errorf("onto advance: cannot enter build: approach selection not recorded (select the approach, then run `onto set approach-confirmed %s \"<evidence>\"`)", name)
-	}
-	if st.Phase == "verify" && st.Verify.Result != "pass" {
-		result := st.Verify.Result
-		if result == "" {
-			result = "unset"
-		}
-		return fmt.Errorf("onto advance: cannot leave verify: missing passing verification (verify.result=%s)", result)
-	}
-	// The state's pass is self-asserted; the report is the evidence. Both must
-	// agree before verify closes — a `Result: fail` (or absent Result line) in
-	// verification.md beside verify.result=pass is a contradiction to fix, not
-	// a technicality to advance past. Prefix match tolerates the accepted-
-	// deviations suffix (`Result: pass (N accepted deviations)`).
-	if st.Phase == "verify" {
-		line, ok := ontostate.VerificationResultLine(filepath.Join(changeDir, "verification.md"))
-		if !ok {
-			return fmt.Errorf("onto advance: cannot leave verify: verification.md must contain exactly one canonical \"Result:\" line — write the report before leaving verify")
-		}
-		if !ontostate.ResultLineIsPass(line) {
-			return fmt.Errorf("onto advance: cannot leave verify: verification.md says %q but verify.result=pass — the report and the state must agree", line)
-		}
+	if err := leavePhaseGate(changeDir, name, st); err != nil {
+		return err
 	}
 	if next == "build" {
-		if st.Isolation == "" {
-			return fmt.Errorf("onto advance: cannot enter build: missing isolation (set branch or worktree)")
-		}
-		// A change cannot enter build if it participates in a depends-on cycle —
-		// no valid build order exists (F10). A cycle is a structural fact about the
-		// recorded deps (B1: shape, not judgment). Reuses onto graph's detector.
-		if _, edges, gErr := buildGraph(root); gErr != nil {
-			return fmt.Errorf("onto advance: cannot enter build: reading change graph: %w", gErr)
-		} else {
-			for _, cyc := range detectDepCycles(edges) {
-				for _, member := range cyc {
-					if member == name {
-						return fmt.Errorf("onto advance: cannot enter build: %q is in a dependency cycle: %s → %s",
-							name, strings.Join(cyc, " → "), cyc[0])
-					}
-				}
-			}
-		}
-		if unresolved := ontostate.DepsResolved(root, st.Deps); len(unresolved) > 0 {
-			return fmt.Errorf("onto advance: cannot enter build: unresolved dependencies: %v", unresolved)
+		if err := enterBuildGate(root, name, st); err != nil {
+			return err
 		}
 	}
 
@@ -244,5 +186,80 @@ func runAdvance(cmd *cobra.Command, root, name string) error {
 	}
 
 	fmt.Fprintf(cmd.OutOrStdout(), "%s: %s → %s\n", name, old, next)
+	return nil
+}
+
+// leavePhaseGate requires what the current phase must produce: its
+// artifacts, checked tasks at build, a recorded proposal review for a full
+// change at open, and an agreeing passing verification at verify.
+func leavePhaseGate(changeDir, name string, st ontostate.State) error {
+	for _, f := range ontostate.RequiredArtifacts(st.Phase, st.Workflow) {
+		if _, statErr := os.Stat(filepath.Join(changeDir, f)); statErr != nil {
+			return fmt.Errorf("onto advance: cannot leave %q: missing %s", st.Phase, f)
+		}
+	}
+	if st.Phase == "build" {
+		done, tasksErr := ontostate.TasksAllChecked(filepath.Join(changeDir, "tasks.md"))
+		if tasksErr != nil {
+			return tasksErr
+		}
+		if !done {
+			return fmt.Errorf("onto advance: cannot leave build: tasks.md has unchecked items")
+		}
+	}
+
+	full := st.Workflow == "" || st.Workflow == "full"
+	if st.Phase == "open" && full && st.ProposalApproved == "" {
+		return fmt.Errorf("onto advance: cannot leave open: proposal review not recorded (review the proposal, then run `onto set proposal-approved %s \"<evidence>\"`)", name)
+	}
+	if st.Phase == "verify" && st.Verify.Result != "pass" {
+		result := st.Verify.Result
+		if result == "" {
+			result = "unset"
+		}
+		return fmt.Errorf("onto advance: cannot leave verify: missing passing verification (verify.result=%s)", result)
+	}
+	// The state's pass is self-asserted; the report is the evidence. Both must
+	// agree before verify closes — a `Result: fail` (or absent Result line) in
+	// verification.md beside verify.result=pass is a contradiction to fix, not
+	// a technicality to advance past. Prefix match tolerates the accepted-
+	// deviations suffix (`Result: pass (N accepted deviations)`).
+	if st.Phase == "verify" {
+		line, ok := ontostate.VerificationResultLine(filepath.Join(changeDir, "verification.md"))
+		if !ok {
+			return fmt.Errorf("onto advance: cannot leave verify: verification.md must contain exactly one canonical \"Result:\" line — write the report before leaving verify")
+		}
+		if !ontostate.ResultLineIsPass(line) {
+			return fmt.Errorf("onto advance: cannot leave verify: verification.md says %q but verify.result=pass — the report and the state must agree", line)
+		}
+	}
+	return nil
+}
+
+// enterBuildGate requires a recorded approach for a full change, a chosen
+// isolation, no dependency cycle through the change, and resolved deps.
+func enterBuildGate(root, name string, st ontostate.State) error {
+	if (st.Workflow == "" || st.Workflow == "full") && st.ApproachConfirmed == "" {
+		return fmt.Errorf("onto advance: cannot enter build: approach selection not recorded (select the approach, then run `onto set approach-confirmed %s \"<evidence>\"`)", name)
+	}
+	if st.Isolation == "" {
+		return fmt.Errorf("onto advance: cannot enter build: missing isolation (set branch or worktree)")
+	}
+	// A change cannot enter build if it participates in a depends-on cycle —
+	// no valid build order exists (F10). A cycle is a structural fact about the
+	// recorded deps (B1: shape, not judgment). Reuses onto graph's detector.
+	_, edges, err := buildGraph(root)
+	if err != nil {
+		return fmt.Errorf("onto advance: cannot enter build: reading change graph: %w", err)
+	}
+	for _, cyc := range detectDepCycles(edges) {
+		if slices.Contains(cyc, name) {
+			return fmt.Errorf("onto advance: cannot enter build: %q is in a dependency cycle: %s → %s",
+				name, strings.Join(cyc, " → "), cyc[0])
+		}
+	}
+	if unresolved := ontostate.DepsResolved(root, st.Deps); len(unresolved) > 0 {
+		return fmt.Errorf("onto advance: cannot enter build: unresolved dependencies: %v", unresolved)
+	}
 	return nil
 }

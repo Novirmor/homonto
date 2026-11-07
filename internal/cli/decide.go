@@ -2,6 +2,7 @@ package cli
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -70,24 +71,8 @@ func decideCmd() *cobra.Command {
 				if req.Context, err = decisionContext(contexts, ctxFiles); err != nil {
 					return err
 				}
-			} else {
-				in := cmd.InOrStdin()
-				if requestPath != "-" {
-					f, err := os.Open(requestPath)
-					if err != nil {
-						return err
-					}
-					defer f.Close()
-					in = f
-				}
-				dec := json.NewDecoder(io.LimitReader(in, 1<<20))
-				dec.DisallowUnknownFields()
-				if err := dec.Decode(&req); err != nil {
-					return fmt.Errorf("decide: read request: %w", err)
-				}
-				if err := dec.Decode(&struct{}{}); err != io.EOF {
-					return fmt.Errorf("decide: request must contain exactly one JSON value")
-				}
+			} else if req, err = readDecisionRequest(cmd, requestPath); err != nil {
+				return err
 			}
 			svc := decision.Service{RouteFor: func(point string) (decision.Route, error) {
 				return decisionRoute(cfg, point)
@@ -104,24 +89,7 @@ func decideCmd() *cobra.Command {
 				}
 			}
 			setExitCode(decideExitCode(out))
-			if format == "value" {
-				// The bare answer on stdout, the failure on stderr: the exit
-				// code says which.
-				if out.Result != nil {
-					fmt.Fprintln(cmd.OutOrStdout(), resultValue(*out.Result))
-				} else {
-					cmd.PrintErrln("decide:", out.Error)
-				}
-				return nil
-			}
-			b, err := json.MarshalIndent(out, "", "  ")
-			if err != nil {
-				return err
-			}
-			// Explicitly stdout: cobra's Println defaults to stderr, and a
-			// script captures stdout.
-			fmt.Fprintln(cmd.OutOrStdout(), string(b))
-			return nil
+			return printOutcome(cmd, out, format)
 		},
 	}
 	cmd.Flags().StringVar(&requestPath, "request", "-", "request JSON file, or - for stdin")
@@ -138,6 +106,51 @@ func decideCmd() *cobra.Command {
 	cmd.Flags().StringArrayVar(&contexts, "context", nil, "with --point: evidence KEY=VALUE (repeat)")
 	cmd.Flags().StringArrayVar(&ctxFiles, "context-file", nil, "with --point: evidence KEY=PATH, read from the file (repeat)")
 	return cmd
+}
+
+// readDecisionRequest reads exactly one JSON request, of at most 1 MiB with
+// no unknown fields, from stdin or the --request file.
+func readDecisionRequest(cmd *cobra.Command, requestPath string) (decision.Request, error) {
+	var req decision.Request
+	in := cmd.InOrStdin()
+	if requestPath != "-" {
+		f, err := os.Open(requestPath)
+		if err != nil {
+			return req, err
+		}
+		defer f.Close()
+		in = f
+	}
+	dec := json.NewDecoder(io.LimitReader(in, 1<<20))
+	dec.DisallowUnknownFields()
+	if err := dec.Decode(&req); err != nil {
+		return req, fmt.Errorf("decide: read request: %w", err)
+	}
+	if err := dec.Decode(&struct{}{}); !errors.Is(err, io.EOF) {
+		return req, fmt.Errorf("decide: request must contain exactly one JSON value")
+	}
+	return req, nil
+}
+
+// printOutcome prints the outcome as JSON, or under --format value the bare
+// answer on stdout and the failure on stderr: the exit code says which.
+// Output goes explicitly to stdout, which a script captures; cobra's Println
+// defaults to stderr.
+func printOutcome(cmd *cobra.Command, out decision.Outcome, format string) error {
+	if format == "value" {
+		if out.Result != nil {
+			fmt.Fprintln(cmd.OutOrStdout(), resultValue(*out.Result))
+		} else {
+			cmd.PrintErrln("decide:", out.Error)
+		}
+		return nil
+	}
+	b, err := json.MarshalIndent(out, "", "  ")
+	if err != nil {
+		return err
+	}
+	fmt.Fprintln(cmd.OutOrStdout(), string(b))
+	return nil
 }
 
 func decideExitCode(out decision.Outcome) int {

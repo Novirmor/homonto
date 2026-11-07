@@ -9,6 +9,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"reflect"
+	"slices"
 	"testing"
 	"time"
 
@@ -130,7 +131,7 @@ func TestRenderContextRuntimeProvidersFollowInstalledServices(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if got := contexts["opencode"].RuntimeProviders; !reflect.DeepEqual(got, tc.want) {
+			if got := contexts["opencode"].RuntimeProviders; !slices.Equal(got, tc.want) {
 				t.Errorf("runtime providers = %v, want %v", got, tc.want)
 			}
 		})

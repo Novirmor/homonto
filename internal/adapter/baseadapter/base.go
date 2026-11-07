@@ -17,6 +17,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/Novirmor/homonto/internal/adapter"
 	"github.com/Novirmor/homonto/internal/adapter/copyproj"
 	"github.com/Novirmor/homonto/internal/adapter/fileproj"
 	"github.com/Novirmor/homonto/internal/agentfm"
@@ -483,4 +484,113 @@ func LocalSourceName(source, fallback string) string {
 		return strings.TrimPrefix(source, "local:")
 	}
 	return fallback
+}
+
+// PlanFiles plans the file-projection namespaces every adapter shares: the
+// skill, command and subagent links (create/relocate/relink/adopt, never a
+// delete) and the copy-mode subagent files. It also returns the declared
+// file keys, so the caller's prune never deletes a declared link. partition
+// is the state partition the links are recorded under.
+func (b *Base) PlanFiles(partition string, st *state.State) ([]adapter.Change, map[string]bool, error) {
+	var changes []adapter.Change
+	roots := b.ManagedRoots()
+	for _, links := range [][]fileproj.Link{b.SkillFileLinks(), b.CommandFileLinks(), b.SubagentFileLinks()} {
+		planned, err := fileproj.Project(partition, links, st, roots)
+		if err != nil {
+			return nil, nil, err
+		}
+		changes = append(changes, planned...)
+	}
+	declared := map[string]bool{}
+	for _, e := range b.Skills {
+		declared["skill."+e.Name] = true
+	}
+	for _, e := range b.Commands {
+		declared["command."+e.Name] = true
+	}
+	for _, e := range b.Subagents {
+		declared["subagent."+e.Name] = true
+	}
+	// Copy-mode subagents are managed content files: surface create/update/prune
+	// and abort on a foreign-file conflict; Apply reconciles them in a dedicated
+	// pass. subagentcopy.* is outside the link prefixes, so the caller's prune
+	// never touches it.
+	ops, err := b.PlanCopyOps(st)
+	if err != nil {
+		return nil, nil, err
+	}
+	for _, op := range ops {
+		key := "subagentcopy." + copyproj.Name(op.Dst)
+		switch op.Action {
+		case copyfile.Conflict:
+			return nil, nil, fmt.Errorf("%s: %s exists and is not a homonto-managed copy-mode subagent; not overwriting", b.Tool, op.Dst)
+		case copyfile.Create:
+			changes = append(changes, adapter.Change{Action: "create", Key: key, New: op.Dst, Cause: adapter.CauseDeclare})
+		case copyfile.Update, copyfile.LocalEdit:
+			changes = append(changes, adapter.Change{Action: "update", Key: key, New: op.Dst, Cause: adapter.CauseUpdate})
+		case copyfile.Prune:
+			changes = append(changes, adapter.Change{Action: "delete", Key: key, Old: op.Dst, Cause: adapter.CauseRemove})
+		}
+	}
+	return changes, declared, nil
+}
+
+// CheckFileConflicts fails on any link or copy-mode subagent conflict. Apply
+// calls it before writing a single file.
+func (b *Base) CheckFileConflicts(partition string, st *state.State) error {
+	roots := b.ManagedRoots()
+	for _, links := range [][]fileproj.Link{b.SkillFileLinks(), b.CommandFileLinks(), b.SubagentFileLinks()} {
+		if err := fileproj.Conflicts(partition, links, st, roots); err != nil {
+			return err
+		}
+	}
+	ops, err := b.PlanCopyOps(st)
+	if err != nil {
+		return err
+	}
+	for _, op := range ops {
+		if op.Action == copyfile.Conflict {
+			return fmt.Errorf("%s: %s exists and is not a homonto-managed copy-mode subagent; not overwriting", b.Tool, op.Dst)
+		}
+	}
+	return nil
+}
+
+// ApplyFileState applies the link changes' state effects: adopt records state,
+// delete removes the managed symlink. A de-declared key with no recorded
+// destination is looked up at both scopes.
+func (b *Base) ApplyFileState(partition string, changes []adapter.Change, st *state.State) error {
+	dsts := func(dir func(string) string, suffix string) func(string) []string {
+		return func(k string) []string {
+			_, name, _ := strings.Cut(k, ".")
+			return []string{filepath.Join(dir("user"), name+suffix), filepath.Join(dir("project"), name+suffix)}
+		}
+	}
+	roots := b.ManagedRoots()
+	for _, ns := range []struct {
+		prefix string
+		dsts   func(string) []string
+	}{
+		{"skill.", dsts(b.SkillsDir, "")},
+		{"command.", dsts(b.CommandsDir, ".md")},
+		{"subagent.", dsts(b.SubagentsDir, ".md")},
+	} {
+		if err := fileproj.ApplyState(partition, FilterChanges(changes, ns.prefix), st, roots, ns.dsts); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// ApplyFiles prunes each namespace's inactive-scope orphan, creates the links
+// and records their state, then reconciles the copy-mode subagent files. Only
+// a managed symlink is ever removed; a foreign file or absent path is left.
+func (b *Base) ApplyFiles(partition string, st *state.State) error {
+	roots := b.ManagedRoots()
+	for _, links := range [][]fileproj.Link{b.SkillFileLinks(), b.CommandFileLinks(), b.SubagentFileLinks()} {
+		if err := fileproj.ApplyLinks(partition, links, st, roots); err != nil {
+			return err
+		}
+	}
+	return b.ApplyCopySubagents(st)
 }

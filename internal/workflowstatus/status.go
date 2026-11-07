@@ -172,27 +172,7 @@ func readOnto(dir string, archived bool, out *Snapshot, bounded bool) {
 		if state.Abandoned {
 			status, pending = "abandoned", []string{}
 		} else if archived {
-			pending = []string{}
-			bypassed, err := bypasslog.ArchiveBypassed(changeDir, state.Change, "onto")
-			switch {
-			case err != nil:
-				status = "unknown"
-				out.Findings = append(out.Findings, Finding{Workflow: "onto", Change: state.Change, Message: err.Error()})
-			case bypassed:
-				status = "bypassed"
-			case !state.Archived || state.Phase != "close":
-				status = "interrupted"
-				pending = append(pending, "recover interrupted archive")
-			case ontostate.ArchiveIntegrationComplete(changeDir, state):
-				status = "completed"
-			default:
-				status = "integration-pending"
-				pending = append(pending, "complete integration")
-				r, exists, err := integrationrecord.Load(changeDir, state.Change)
-				if err != nil || !exists || r.Status == integrationrecord.StatusComplete {
-					out.Findings = append(out.Findings, Finding{Workflow: "onto", Change: state.Change, Message: "missing, invalid, or mismatched integration record"})
-				}
-			}
+			status, pending = archivedOntoStatus(changeDir, state, out)
 		} else if state.Archived {
 			status = "interrupted"
 			pending = append(pending, "recover interrupted archive")
@@ -209,6 +189,30 @@ func readOnto(dir string, archived bool, out *Snapshot, bounded bool) {
 			Integration: state.Integration, Pending: pending,
 		})
 	}
+}
+
+// archivedOntoStatus classifies an archived onto change and what it still
+// needs: bypassed, interrupted mid-archive, completed, or awaiting
+// integration, whose record must exist and still be pending.
+func archivedOntoStatus(changeDir string, state ontostate.State, out *Snapshot) (string, []string) {
+	pending := []string{}
+	bypassed, err := bypasslog.ArchiveBypassed(changeDir, state.Change, "onto")
+	switch {
+	case err != nil:
+		out.Findings = append(out.Findings, Finding{Workflow: "onto", Change: state.Change, Message: err.Error()})
+		return "unknown", pending
+	case bypassed:
+		return "bypassed", pending
+	case !state.Archived || state.Phase != "close":
+		return "interrupted", append(pending, "recover interrupted archive")
+	case ontostate.ArchiveIntegrationComplete(changeDir, state):
+		return "completed", pending
+	}
+	r, exists, err := integrationrecord.Load(changeDir, state.Change)
+	if err != nil || !exists || r.Status == integrationrecord.StatusComplete {
+		out.Findings = append(out.Findings, Finding{Workflow: "onto", Change: state.Change, Message: "missing, invalid, or mismatched integration record"})
+	}
+	return "integration-pending", append(pending, "complete integration")
 }
 
 func readTo(dir string, archived bool, out *Snapshot, bounded bool) {

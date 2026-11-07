@@ -7,7 +7,16 @@ linters:
   enable:
     - misspell
     - unconvert
+    - gocognit
+    - funlen
   settings:
+    # Ratchets, not targets: set at the worst function in the tree so nothing
+    # new lands above it. Lower them when you split the function at the top.
+    gocognit:
+      min-complexity: 40
+    funlen:
+      lines: 132
+      statements: -1
     misspell:
       # GitLab's REST field names (noteable_iid, noteable_type).
       ignore-rules:
@@ -40,6 +49,8 @@ linters:
       - path: _test\.go
         linters:
           - errcheck
+          - funlen # table-driven tests are long by design
+          - gocognit
       # Deliberate misspellings: these tests prove a typo'd key is rejected.
       - path: internal/config/model_validation_test\.go
         linters:

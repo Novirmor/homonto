@@ -61,37 +61,8 @@ func runMergeDeltas(cmd *cobra.Command, root, name string) error {
 	if err != nil {
 		return fmt.Errorf("onto merge-deltas: %w", err)
 	}
-	// Validate before consulting Abandoned/Close.Merged: a malformed state must
-	// not reach the merge logic. Load migrates but does not validate (F9).
-	if err := st.Validate(); err != nil {
-		return fmt.Errorf("onto merge-deltas: %w", err)
-	}
-	if st.Change != name {
-		return fmt.Errorf("onto merge-deltas: state change %q does not match directory %q", st.Change, name)
-	}
-	// An abandoned change is the unsuccessful terminal state: its deltas were
-	// never accepted, so they must never mutate the living specs.
-	if st.Abandoned {
-		return fmt.Errorf("onto merge-deltas: change %q is abandoned; an abandoned change's deltas are never merged into the living specs", name)
-	}
-	// Spec deltas are accepted only at close — an open/design/build/verify change
-	// has not yet been verified, so its deltas must not mutate the living specs
-	// (F7). Idempotent re-runs at close are covered by the Close.Merged check
-	// below.
-	if st.Phase != "close" {
-		return fmt.Errorf("onto merge-deltas: change %q is at phase %q; merge-deltas runs only at close", name, st.Phase)
-	}
-	if err := passingVerificationEvidence(changeDir, st); err != nil {
-		return fmt.Errorf("onto merge-deltas: %w", err)
-	}
-	if st.RepoMode == "explicit" {
-		if err := verifyHeadsIntact(root, st); err != nil {
-			return err
-		}
-	} else if len(st.Repos) > 0 {
-		if _, err := stateSourceDirs(root, st); err != nil {
-			return fmt.Errorf("onto merge-deltas: %w", err)
-		}
+	if err := checkMergeable(root, changeDir, name, st); err != nil {
+		return err
 	}
 	inputs, err := deltaInputs(root, changeDir)
 	if err != nil {
@@ -131,62 +102,13 @@ func runMergeDeltas(cmd *cobra.Command, root, name string) error {
 	}
 
 	// Compute every merge first; write nothing until all succeed and lint clean.
-	type result struct {
-		capability, target, merged string
-	}
-	var results []result
 	specsDir := filepath.Join(workflowRoot(root), "specs")
 	if err := workcli.ValidateWorkflowPath(root, filepath.Join(specsDir, "placeholder")); err != nil {
 		return fmt.Errorf("onto merge-deltas: unsafe living-spec directory: %w", err)
 	}
-	for i, input := range inputs {
-		exists, currentDigest, livingBytes, err := fileImage(input.target)
-		if err != nil {
-			return fmt.Errorf("onto merge-deltas: reading %s: %w", input.target, err)
-		}
-		if recovering {
-			entry := receipt.Entries[i]
-			if exists && currentDigest == entry.AfterSHA256 {
-				continue
-			}
-			matchesBefore := exists == entry.BeforeExists && ((!exists && entry.BeforeSHA256 == "") || currentDigest == entry.BeforeSHA256)
-			if !matchesBefore {
-				return fmt.Errorf("onto merge-deltas: %s matches neither the recorded pre-image nor post-image; refusing to overwrite newer content", input.targetRel)
-			}
-		}
-		merged, err := deltamerge.Merge(input.capability, string(livingBytes), string(input.data))
-		if err != nil {
-			// A prior round (verification invalidated) or receipt-less
-			// partial write may already have applied this delta. Recognize
-			// exactly that — the ADDED conflict with the post-state present —
-			// and bind the fresh receipt to the current image. Every other
-			// failure (typo'd REMOVED, missing MODIFIED target, conflicting
-			// content) stays loud.
-			if !recovering && exists && errors.Is(err, deltamerge.ErrAlreadyExists) &&
-				deltamerge.Applied(input.capability, string(livingBytes), string(input.data)) {
-				receipt.Entries = append(receipt.Entries, mergeReceiptEntry{
-					Delta: input.delta, DeltaSHA256: input.digest, Target: input.targetRel,
-					BeforeExists: true, BeforeSHA256: currentDigest, AfterSHA256: currentDigest,
-				})
-				continue
-			}
-			return fmt.Errorf("onto merge-deltas: %w", err)
-		}
-		if findings := deltamerge.Lint(merged); len(findings) > 0 {
-			return fmt.Errorf("onto merge-deltas: %s would produce an invalid living spec: %s", input.capability, strings.Join(findings, "; "))
-		}
-		afterDigest := digestBytes([]byte(merged))
-		if recovering {
-			if afterDigest != receipt.Entries[i].AfterSHA256 {
-				return fmt.Errorf("onto merge-deltas: recomputed post-image for %s does not match its receipt", input.targetRel)
-			}
-		} else {
-			receipt.Entries = append(receipt.Entries, mergeReceiptEntry{
-				Delta: input.delta, DeltaSHA256: input.digest, Target: input.targetRel,
-				BeforeExists: exists, BeforeSHA256: currentDigest, AfterSHA256: afterDigest,
-			})
-		}
-		results = append(results, result{input.capability, input.target, merged})
+	results, err := computeMerges(inputs, &receipt, recovering)
+	if err != nil {
+		return err
 	}
 	if !recovering {
 		if err := saveMergeReceipt(changeDir, receipt); err != nil {
@@ -216,6 +138,108 @@ func runMergeDeltas(cmd *cobra.Command, root, name string) error {
 		fmt.Fprintf(cmd.OutOrStdout(), "  merged %s → %s\n", r.capability, filepath.Join(workflowRoot(root), "specs", r.capability+".md"))
 	}
 	fmt.Fprintf(cmd.OutOrStdout(), "%s: %d delta spec(s) merged; marked close.merged\n", name, len(inputs))
+	return nil
+}
+
+// mergeResult is one living spec's merged content, computed before any write.
+type mergeResult struct {
+	capability, target, merged string
+}
+
+// computeMerges merges every delta into its living spec in memory and lints
+// the result. A fresh run records each pre- and post-image in receipt; a
+// recovering run skips targets already at their recorded post-image and
+// refuses any that match neither image.
+func computeMerges(inputs []deltaInput, receipt *mergeReceipt, recovering bool) ([]mergeResult, error) {
+	var results []mergeResult
+	for i, input := range inputs {
+		exists, currentDigest, livingBytes, err := fileImage(input.target)
+		if err != nil {
+			return nil, fmt.Errorf("onto merge-deltas: reading %s: %w", input.target, err)
+		}
+		if recovering {
+			entry := receipt.Entries[i]
+			if exists && currentDigest == entry.AfterSHA256 {
+				continue
+			}
+			matchesBefore := exists == entry.BeforeExists && ((!exists && entry.BeforeSHA256 == "") || currentDigest == entry.BeforeSHA256)
+			if !matchesBefore {
+				return nil, fmt.Errorf("onto merge-deltas: %s matches neither the recorded pre-image nor post-image; refusing to overwrite newer content", input.targetRel)
+			}
+		}
+		merged, err := deltamerge.Merge(input.capability, string(livingBytes), string(input.data))
+		if err != nil {
+			// A prior round (verification invalidated) or receipt-less
+			// partial write may already have applied this delta. Recognize
+			// exactly that — the ADDED conflict with the post-state present —
+			// and bind the fresh receipt to the current image. Every other
+			// failure (typo'd REMOVED, missing MODIFIED target, conflicting
+			// content) stays loud.
+			if !recovering && exists && errors.Is(err, deltamerge.ErrAlreadyExists) &&
+				deltamerge.Applied(input.capability, string(livingBytes), string(input.data)) {
+				receipt.Entries = append(receipt.Entries, mergeReceiptEntry{
+					Delta: input.delta, DeltaSHA256: input.digest, Target: input.targetRel,
+					BeforeExists: true, BeforeSHA256: currentDigest, AfterSHA256: currentDigest,
+				})
+				continue
+			}
+			return nil, fmt.Errorf("onto merge-deltas: %w", err)
+		}
+		if findings := deltamerge.Lint(merged); len(findings) > 0 {
+			return nil, fmt.Errorf("onto merge-deltas: %s would produce an invalid living spec: %s", input.capability, strings.Join(findings, "; "))
+		}
+		afterDigest := digestBytes([]byte(merged))
+		if recovering {
+			if afterDigest != receipt.Entries[i].AfterSHA256 {
+				return nil, fmt.Errorf("onto merge-deltas: recomputed post-image for %s does not match its receipt", input.targetRel)
+			}
+		} else {
+			receipt.Entries = append(receipt.Entries, mergeReceiptEntry{
+				Delta: input.delta, DeltaSHA256: input.digest, Target: input.targetRel,
+				BeforeExists: exists, BeforeSHA256: currentDigest, AfterSHA256: afterDigest,
+			})
+		}
+		results = append(results, mergeResult{input.capability, input.target, merged})
+	}
+	return results, nil
+}
+
+// checkMergeable admits only a valid, unabandoned change at close with
+// passing verification evidence and intact sources: deltas mutate the living
+// specs, so nothing less verified may reach them.
+func checkMergeable(root, changeDir, name string, st ontostate.State) error {
+	// Validate before consulting Abandoned/Close.Merged: a malformed state must
+	// not reach the merge logic. Load migrates but does not validate (F9).
+	if err := st.Validate(); err != nil {
+		return fmt.Errorf("onto merge-deltas: %w", err)
+	}
+	if st.Change != name {
+		return fmt.Errorf("onto merge-deltas: state change %q does not match directory %q", st.Change, name)
+	}
+	// An abandoned change is the unsuccessful terminal state: its deltas were
+	// never accepted, so they must never mutate the living specs.
+	if st.Abandoned {
+		return fmt.Errorf("onto merge-deltas: change %q is abandoned; an abandoned change's deltas are never merged into the living specs", name)
+	}
+	// Spec deltas are accepted only at close — an open/design/build/verify change
+	// has not yet been verified, so its deltas must not mutate the living specs
+	// (F7). Idempotent re-runs at close are covered by the Close.Merged check
+	// below.
+	if st.Phase != "close" {
+		return fmt.Errorf("onto merge-deltas: change %q is at phase %q; merge-deltas runs only at close", name, st.Phase)
+	}
+	if err := passingVerificationEvidence(changeDir, st); err != nil {
+		return fmt.Errorf("onto merge-deltas: %w", err)
+	}
+	if st.RepoMode == "explicit" {
+		if err := verifyHeadsIntact(root, st); err != nil {
+			return err
+		}
+	} else if len(st.Repos) > 0 {
+		if _, err := stateSourceDirs(root, st); err != nil {
+			return fmt.Errorf("onto merge-deltas: %w", err)
+		}
+	}
 	return nil
 }
 

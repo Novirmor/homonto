@@ -53,7 +53,7 @@ func decode(data []byte) (*Config, error) {
 		return nil, fmt.Errorf("parse config: %w", err)
 	}
 	// Validate before normalization can trim a model's control characters away.
-	for _, name := range sortedSubagentNames(&c) {
+	for _, name := range slices.Sorted(maps.Keys(c.Subagents)) {
 		if err := validateModelSpec("opencode", "subagents."+name+".opencode", c.Subagents[name].OpenCode, false); err != nil {
 			return nil, err
 		}

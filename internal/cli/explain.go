@@ -3,6 +3,7 @@ package cli
 import (
 	"encoding/json"
 	"fmt"
+	"maps"
 	"os"
 	"slices"
 	"sort"
@@ -186,12 +187,7 @@ func describeOrigin(o *state.Origin) string {
 func kindPrefixesOf(kind string) ([]string, error) {
 	prefixes, ok := explainKinds[kind]
 	if !ok {
-		kinds := make([]string, 0, len(explainKinds))
-		for k := range explainKinds {
-			kinds = append(kinds, k)
-		}
-		sort.Strings(kinds)
-		return nil, fmt.Errorf("explain: unknown kind %q (valid: %s)", kind, strings.Join(kinds, ", "))
+		return nil, fmt.Errorf("explain: unknown kind %q (valid: %s)", kind, strings.Join(slices.Sorted(maps.Keys(explainKinds)), ", "))
 	}
 	return prefixes, nil
 }
@@ -233,70 +229,10 @@ func explainCmd() *cobra.Command {
 			if kind == "routing" {
 				return explainRouting(cmd, e, name, harness, asJSON)
 			}
-			rows := buildRows(e)
-
-			if kind != "" {
-				prefixes, err := kindPrefixesOf(kind)
-				if err != nil {
-					return err
-				}
-				var filtered []explainRow
-				for _, r := range rows {
-					if r.Kind != kind && !hasAnyPrefix(r.Key, prefixes) {
-						continue
-					}
-					filtered = append(filtered, r)
-				}
-				rows = filtered
+			rows, err := filterRows(buildRows(e), kind, name, repoFlag)
+			if err != nil {
+				return err
 			}
-			if name != "" {
-				var filtered []explainRow
-				for _, r := range rows {
-					if r.Name == name {
-						filtered = append(filtered, r)
-					}
-				}
-				if len(filtered) == 0 {
-					return fmt.Errorf("explain: no managed %s named %q", nonEmptyDefault(kind, "resource"), name)
-				}
-				// Same name in several partitions is ambiguous without --repo.
-				if repoFlag == "" {
-					partitions := map[string]bool{}
-					for _, r := range filtered {
-						partitions[r.Tool] = true
-					}
-					if len(partitions) > 1 {
-						var names []string
-						for p := range partitions {
-							names = append(names, p)
-						}
-						sort.Strings(names)
-						return fmt.Errorf("explain: %q %s exists in several partitions (%s); pass --repo to disambiguate", name, nonEmptyDefault(kind, "resource"), strings.Join(names, ", "))
-					}
-				}
-				if repoFlag != "" {
-					var scoped []explainRow
-					for _, r := range filtered {
-						if r.Repo == repoFlag {
-							scoped = append(scoped, r)
-						}
-					}
-					if len(scoped) == 0 {
-						return fmt.Errorf("explain: no %s %q in repo %q", nonEmptyDefault(kind, "resource"), name, repoFlag)
-					}
-					filtered = scoped
-				}
-				rows = filtered
-			} else if repoFlag != "" {
-				var filtered []explainRow
-				for _, r := range rows {
-					if r.Repo == repoFlag {
-						filtered = append(filtered, r)
-					}
-				}
-				rows = filtered
-			}
-
 			if len(rows) == 0 {
 				cmd.Println("nothing managed matches")
 				return nil
@@ -310,29 +246,7 @@ func explainCmd() *cobra.Command {
 				return nil
 			}
 			for _, r := range rows {
-				line := fmt.Sprintf("%-13s %-20s %s", r.Kind, r.Name, r.Origin)
-				if r.Repo != "" {
-					line += fmt.Sprintf("  [repo %s]", r.Repo)
-				}
-				if r.Destination != "" {
-					line += "\n    dst: " + r.Destination
-				}
-				if r.LastEvent != nil {
-					ev := fmt.Sprintf("%s (%s", r.LastEvent.Action, r.LastEvent.Op)
-					if r.LastEvent.Cause != "" {
-						ev += ", " + r.LastEvent.Cause
-					}
-					if r.LastEvent.At != "" {
-						ev += " at " + r.LastEvent.At
-					}
-					ev += ")"
-					tag := "last"
-					if r.Removed {
-						tag = "removed"
-					}
-					line += "\n    " + tag + ": " + ev
-				}
-				cmd.Println(line)
+				cmd.Println(explainLine(r))
 			}
 			return nil
 		},
@@ -341,6 +255,70 @@ func explainCmd() *cobra.Command {
 	cmd.Flags().BoolVar(&asJSON, "json", false, "emit the explanation as JSON")
 	cmd.Flags().StringVar(&harness, "harness", "opencode", "harness whose routing to explain (explain routing only)")
 	return cmd
+}
+
+// filterRows narrows rows to a kind, then a name, then a repo partition. A
+// name present in several partitions is ambiguous unless repo picks one.
+func filterRows(rows []explainRow, kind, name, repo string) ([]explainRow, error) {
+	if kind != "" {
+		prefixes, err := kindPrefixesOf(kind)
+		if err != nil {
+			return nil, err
+		}
+		rows = slices.DeleteFunc(rows, func(r explainRow) bool {
+			return r.Kind != kind && !hasAnyPrefix(r.Key, prefixes)
+		})
+	}
+	noun := nonEmptyDefault(kind, "resource")
+	if name != "" {
+		rows = slices.DeleteFunc(rows, func(r explainRow) bool { return r.Name != name })
+		if len(rows) == 0 {
+			return nil, fmt.Errorf("explain: no managed %s named %q", noun, name)
+		}
+		if repo == "" {
+			partitions := map[string]bool{}
+			for _, r := range rows {
+				partitions[r.Tool] = true
+			}
+			if len(partitions) > 1 {
+				return nil, fmt.Errorf("explain: %q %s exists in several partitions (%s); pass --repo to disambiguate", name, noun, strings.Join(slices.Sorted(maps.Keys(partitions)), ", "))
+			}
+		}
+	}
+	if repo != "" {
+		rows = slices.DeleteFunc(rows, func(r explainRow) bool { return r.Repo != repo })
+		if name != "" && len(rows) == 0 {
+			return nil, fmt.Errorf("explain: no %s %q in repo %q", noun, name, repo)
+		}
+	}
+	return rows, nil
+}
+
+// explainLine renders one row as its text block.
+func explainLine(r explainRow) string {
+	line := fmt.Sprintf("%-13s %-20s %s", r.Kind, r.Name, r.Origin)
+	if r.Repo != "" {
+		line += fmt.Sprintf("  [repo %s]", r.Repo)
+	}
+	if r.Destination != "" {
+		line += "\n    dst: " + r.Destination
+	}
+	if r.LastEvent != nil {
+		ev := fmt.Sprintf("%s (%s", r.LastEvent.Action, r.LastEvent.Op)
+		if r.LastEvent.Cause != "" {
+			ev += ", " + r.LastEvent.Cause
+		}
+		if r.LastEvent.At != "" {
+			ev += " at " + r.LastEvent.At
+		}
+		ev += ")"
+		tag := "last"
+		if r.Removed {
+			tag = "removed"
+		}
+		line += "\n    " + tag + ": " + ev
+	}
+	return line
 }
 
 func hasAnyPrefix(key string, prefixes []string) bool {
@@ -411,12 +389,7 @@ func settingsLines(packages []config.PackageSettings) []string {
 			}
 			out = append(out, line)
 		}
-		processes := make([]string, 0, len(ps.Processes))
-		for process := range ps.Processes {
-			processes = append(processes, process)
-		}
-		sort.Strings(processes)
-		for _, process := range processes {
+		for _, process := range slices.Sorted(maps.Keys(ps.Processes)) {
 			out = append(out, fmt.Sprintf("process: %s.%s.%s", ps.Table, ps.Package, process))
 		}
 	}

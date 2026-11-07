@@ -4,7 +4,9 @@ import (
 	"bytes"
 	"fmt"
 	"io/fs"
+	"maps"
 	"path"
+	"slices"
 	"sort"
 
 	"github.com/Novirmor/homonto/internal/agentfm"
@@ -88,7 +90,7 @@ func checkSuiteContract(kind string, v ContractVersion) error {
 // checkSkills requires every declared skill to hold a SKILL.md whose
 // frontmatter names it, so the harness loads it under the declared name.
 func (c *Catalog) checkSkills(fw Framework) error {
-	for _, skill := range sortedKeys(fw.Skills) {
+	for _, skill := range slices.Sorted(maps.Keys(fw.Skills)) {
 		fsys := c.skillFS[skill]
 		data, err := fs.ReadFile(fsys, path.Join(c.skills[skill], "SKILL.md"))
 		if err != nil {
@@ -115,7 +117,7 @@ func (c *Catalog) checkSkills(fw Framework) error {
 // checkSubagents renders every intent agent with a placeholder model (the
 // config supplies the real one) and validates every verbatim agent's name.
 func (c *Catalog) checkSubagents(fw Framework) error {
-	for _, agent := range sortedKeys(fw.Subagents) {
+	for _, agent := range slices.Sorted(maps.Keys(fw.Subagents)) {
 		data, ok, err := c.SubagentContent(agent)
 		if err != nil || !ok {
 			return fmt.Errorf("subagent %q: unreadable: %v", agent, err)
@@ -148,15 +150,6 @@ func frontmatter(data []byte) ([]byte, bool) {
 		return nil, false
 	}
 	return data[4 : 4+end], true
-}
-
-func sortedKeys(m map[string]string) []string {
-	out := make([]string, 0, len(m))
-	for k := range m {
-		out = append(out, k)
-	}
-	sort.Strings(out)
-	return out
 }
 
 // PackageNames lists every indexed package, sorted.

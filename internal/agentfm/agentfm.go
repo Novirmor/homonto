@@ -230,16 +230,7 @@ func Render(name string, content []byte, tool string, ctx *RenderContext) ([]byt
 		return nil, fmt.Errorf("agentfm: malformed homonto block: %w", err)
 	}
 	if !has {
-		installedName := name
-		if ctx != nil && ctx.Names[name] != "" {
-			installedName = ctx.Names[name]
-		}
-		if installedName != "" {
-			if err := ValidateInstalledName(installedName, content); err != nil {
-				return nil, fmt.Errorf("agentfm: builtin %q native projection: %w", name, err)
-			}
-		}
-		return content, nil
+		return renderNative(name, content, ctx)
 	}
 	// The render owns these keys: an intent agent declaring one itself would
 	// emit it twice, and a hand-written permission map would silently compete
@@ -249,136 +240,27 @@ func Render(name string, content []byte, tool string, ctx *RenderContext) ([]byt
 	} else if len(owned) > 0 {
 		return nil, fmt.Errorf("agentfm: agent %q declares %s in its frontmatter, which the homonto: block renders; remove them (models come from [subagents.<name>.<tool>], permissions from the homonto: block)", name, strings.Join(owned, ", "))
 	}
-	// A non-nil context marks a production render after framework expansion.
-	// Unlike the nil catalog-test context, it must resolve a non-empty model.
-	var (
-		spec                       ModelSpec
-		externalDirectories        []string
-		externalDirectoryDenies    []string
-		editDirectoryDenies        []string
-		managesExternalDirectories bool
-	)
-	if ctx != nil {
-		var ok bool
-		spec, ok = ctx.Overrides[name]
-		if !ok || spec.Model == "" {
-			return nil, fmt.Errorf("agentfm: agent %q has no model for tool %s; [subagents.%s.%s] model is required", name, tool, name, tool)
-		}
-		externalDirectories, managesExternalDirectories = ctx.ExternalDirectoriesByAgent[name]
-		externalDirectoryDenies = ctx.ExternalDirectoryDeniesByAgent[name]
-		editDirectoryDenies = append(append([]string(nil), externalDirectoryDenies...), ctx.EditDirectoryDeniesByAgent[name]...)
-		for _, dir := range editDirectoryDenies {
-			if dir == "" || strings.ContainsAny(dir, "*?") || strings.ContainsFunc(dir, unicode.IsControl) {
-				return nil, fmt.Errorf("agentfm: agent %q edit directory %q must not be empty or contain controls or wildcard characters", name, dir)
-			}
-		}
-		for _, dirs := range [][]string{externalDirectories, externalDirectoryDenies} {
-			for _, dir := range dirs {
-				if !filepath.IsAbs(dir) || strings.ContainsAny(dir, "*?") || strings.ContainsFunc(dir, unicode.IsControl) {
-					return nil, fmt.Errorf("agentfm: agent %q permission directory %q must be an absolute path without controls or wildcard characters", name, dir)
-				}
-			}
-		}
-		for _, value := range []string{spec.Model, spec.Variant} {
-			if strings.ContainsFunc(value, func(r rune) bool { return unicode.IsControl(r) || r == '\u2028' || r == '\u2029' }) {
-				return nil, fmt.Errorf("agentfm: agent %q model/variant must not contain controls or line breaks", name)
-			}
-		}
-		if spec.Steps != nil {
-			if *spec.Steps <= 0 {
-				return nil, fmt.Errorf("agentfm: agent %q steps must be positive", name)
-			}
-			h.Steps = *spec.Steps
-		}
-		if h.Spawn != nil {
-			spawn := append([]string(nil), (*h.Spawn)...)
-			for i, source := range spawn {
-				if alias := ctx.Names[source]; alias != "" {
-					spawn[i] = alias
-				}
-			}
-			h.Spawn = &spawn
-		}
-		if h.Bash == nil || *h.Bash {
-			if h.Primary {
-				h.BashAsk = appendNew(h.BashAsk, ctx.ServiceRules.CoordinatorAsk...)
-				h.BashDeny = appendNew(h.BashDeny, ctx.ServiceRules.CoordinatorDeny...)
-			} else {
-				h.BashDeny = appendNew(h.BashDeny, ctx.ServiceRules.WorkerDeny...)
-			}
-		}
-	}
-
-	// Preserve every frontmatter line except the homonto block and the mode line
-	// (re-emitted per tool below).
-	var kept []string
-	for _, ln := range stripHomontoBlock(fm) {
-		if ctx != nil && ctx.Names[name] != "" && strings.HasPrefix(ln, "name:") {
-			ln = fmt.Sprintf("name: %q", ctx.Names[name])
-		}
-		if strings.HasPrefix(strings.TrimSpace(ln), "mode:") {
-			continue
-		}
-		kept = append(kept, ln)
+	spec, dirs, err := applyContext(name, tool, &h, ctx)
+	if err != nil {
+		return nil, err
 	}
 
 	var extra []string
 	switch tool {
 	case "opencode":
-		mode := "subagent"
-		if h.Primary {
-			mode = "primary"
-		}
-		extra = append(extra, "mode: "+mode)
-		// OpenCode keeps the base model ID and selected variant separate. The
-		// provider defines the available variants (medium, high, xhigh, …).
-		// There is no separate effort concept: an `effort:` value is rejected
-		// at load, not silently dropped here.
-		if spec.Model != "" {
-			extra = append(extra, fmt.Sprintf("model: %q", spec.Model))
-			if spec.Variant != "" {
-				extra = append(extra, fmt.Sprintf("variant: %q", spec.Variant))
-			}
-		}
-		if h.Steps > 0 {
-			extra = append(extra, fmt.Sprintf("steps: %d", h.Steps))
-		}
-		if err := prepareBash(name, &h, &spec, ctx); err != nil {
-			return nil, err
-		}
-		roles, err := BuiltinRoles()
-		if err != nil {
-			return nil, err
-		}
-		if perm := opencodePermission(h, spec.BashAllowAdd, externalDirectories, externalDirectoryDenies, editDirectoryDenies, managesExternalDirectories); perm != "" {
-			if role, builtin := roles[name]; builtin {
-				action := "deny"
-				if role.Coordinator && !h.ReadOnly && (h.Bash == nil || *h.Bash) {
-					action = "allow"
-				}
-				var providers []string
-				if ctx != nil {
-					providers = ctx.RuntimeProviders
-				}
-				for _, tool := range runtimeTools(providers) {
-					perm += "\n  " + tool + ": " + action
-				}
-			}
-			extra = append(extra, "permission:", perm)
-		}
+		extra, err = renderOpenCode(name, h, spec, ctx, dirs)
 	case "claude":
-		lines, err := renderClaude(name, h, spec, ctx, externalDirectoryDenies, editDirectoryDenies)
-		if err != nil {
-			return nil, err
-		}
-		extra = append(extra, lines...)
+		extra, err = renderClaude(name, h, spec, ctx, dirs.externalDenies, dirs.editDenies)
 	default:
-		return nil, fmt.Errorf("agentfm: unknown tool %q", tool)
+		err = fmt.Errorf("agentfm: unknown tool %q", tool)
+	}
+	if err != nil {
+		return nil, err
 	}
 
 	var b bytes.Buffer
 	b.WriteString("---\n")
-	for _, ln := range kept {
+	for _, ln := range keptFrontmatter(fm, name, ctx) {
 		b.WriteString(ln)
 		b.WriteByte('\n')
 	}
@@ -394,6 +276,161 @@ func Render(name string, content []byte, tool string, ctx *RenderContext) ([]byt
 		}
 	}
 	return b.Bytes(), nil
+}
+
+// renderNative projects an agent without a homonto: block verbatim, after
+// checking that its own name cannot override the installed alias.
+func renderNative(name string, content []byte, ctx *RenderContext) ([]byte, error) {
+	installedName := name
+	if ctx != nil && ctx.Names[name] != "" {
+		installedName = ctx.Names[name]
+	}
+	if installedName != "" {
+		if err := ValidateInstalledName(installedName, content); err != nil {
+			return nil, fmt.Errorf("agentfm: builtin %q native projection: %w", name, err)
+		}
+	}
+	return content, nil
+}
+
+// agentDirs are the directory permissions a production render grants or
+// denies one agent.
+type agentDirs struct {
+	external       []string
+	externalDenies []string
+	editDenies     []string
+	// managesExternal is set when the context owns the agent's external
+	// directory rules, even when it grants none.
+	managesExternal bool
+}
+
+// applyContext resolves the model and directory permissions for a production
+// render and folds the context's step, spawn-alias and service shell rules
+// into h. A nil context is the catalog-test render: no model is required and
+// nothing is applied.
+func applyContext(name, tool string, h *Homonto, ctx *RenderContext) (ModelSpec, agentDirs, error) {
+	var dirs agentDirs
+	if ctx == nil {
+		return ModelSpec{}, dirs, nil
+	}
+	spec, ok := ctx.Overrides[name]
+	if !ok || spec.Model == "" {
+		return spec, dirs, fmt.Errorf("agentfm: agent %q has no model for tool %s; [subagents.%s.%s] model is required", name, tool, name, tool)
+	}
+	dirs.external, dirs.managesExternal = ctx.ExternalDirectoriesByAgent[name]
+	dirs.externalDenies = ctx.ExternalDirectoryDeniesByAgent[name]
+	dirs.editDenies = append(append([]string(nil), dirs.externalDenies...), ctx.EditDirectoryDeniesByAgent[name]...)
+	if err := validateAgentDirs(name, dirs); err != nil {
+		return spec, dirs, err
+	}
+	for _, value := range []string{spec.Model, spec.Variant} {
+		if strings.ContainsFunc(value, func(r rune) bool { return unicode.IsControl(r) || r == ' ' || r == ' ' }) {
+			return spec, dirs, fmt.Errorf("agentfm: agent %q model/variant must not contain controls or line breaks", name)
+		}
+	}
+	if spec.Steps != nil {
+		if *spec.Steps <= 0 {
+			return spec, dirs, fmt.Errorf("agentfm: agent %q steps must be positive", name)
+		}
+		h.Steps = *spec.Steps
+	}
+	if h.Spawn != nil {
+		spawn := append([]string(nil), (*h.Spawn)...)
+		for i, source := range spawn {
+			if alias := ctx.Names[source]; alias != "" {
+				spawn[i] = alias
+			}
+		}
+		h.Spawn = &spawn
+	}
+	if h.Bash == nil || *h.Bash {
+		if h.Primary {
+			h.BashAsk = appendNew(h.BashAsk, ctx.ServiceRules.CoordinatorAsk...)
+			h.BashDeny = appendNew(h.BashDeny, ctx.ServiceRules.CoordinatorDeny...)
+		} else {
+			h.BashDeny = appendNew(h.BashDeny, ctx.ServiceRules.WorkerDeny...)
+		}
+	}
+	return spec, dirs, nil
+}
+
+func validateAgentDirs(name string, dirs agentDirs) error {
+	for _, dir := range dirs.editDenies {
+		if dir == "" || strings.ContainsAny(dir, "*?") || strings.ContainsFunc(dir, unicode.IsControl) {
+			return fmt.Errorf("agentfm: agent %q edit directory %q must not be empty or contain controls or wildcard characters", name, dir)
+		}
+	}
+	for _, list := range [][]string{dirs.external, dirs.externalDenies} {
+		for _, dir := range list {
+			if !filepath.IsAbs(dir) || strings.ContainsAny(dir, "*?") || strings.ContainsFunc(dir, unicode.IsControl) {
+				return fmt.Errorf("agentfm: agent %q permission directory %q must be an absolute path without controls or wildcard characters", name, dir)
+			}
+		}
+	}
+	return nil
+}
+
+// keptFrontmatter preserves every frontmatter line except the homonto block
+// and the mode line (re-emitted per tool), renaming the agent to its alias.
+func keptFrontmatter(fm []byte, name string, ctx *RenderContext) []string {
+	var kept []string
+	for _, ln := range stripHomontoBlock(fm) {
+		if ctx != nil && ctx.Names[name] != "" && strings.HasPrefix(ln, "name:") {
+			ln = fmt.Sprintf("name: %q", ctx.Names[name])
+		}
+		if strings.HasPrefix(strings.TrimSpace(ln), "mode:") {
+			continue
+		}
+		kept = append(kept, ln)
+	}
+	return kept
+}
+
+// renderOpenCode emits OpenCode's mode, model, steps and permission lines.
+func renderOpenCode(name string, h Homonto, spec ModelSpec, ctx *RenderContext, dirs agentDirs) ([]string, error) {
+	mode := "subagent"
+	if h.Primary {
+		mode = "primary"
+	}
+	extra := []string{"mode: " + mode}
+	// OpenCode keeps the base model ID and selected variant separate. The
+	// provider defines the available variants (medium, high, xhigh, …).
+	// There is no separate effort concept: an `effort:` value is rejected
+	// at load, not silently dropped here.
+	if spec.Model != "" {
+		extra = append(extra, fmt.Sprintf("model: %q", spec.Model))
+		if spec.Variant != "" {
+			extra = append(extra, fmt.Sprintf("variant: %q", spec.Variant))
+		}
+	}
+	if h.Steps > 0 {
+		extra = append(extra, fmt.Sprintf("steps: %d", h.Steps))
+	}
+	if err := prepareBash(name, &h, &spec, ctx); err != nil {
+		return nil, err
+	}
+	roles, err := BuiltinRoles()
+	if err != nil {
+		return nil, err
+	}
+	perm := opencodePermission(h, spec.BashAllowAdd, dirs.external, dirs.externalDenies, dirs.editDenies, dirs.managesExternal)
+	if perm == "" {
+		return extra, nil
+	}
+	if role, builtin := roles[name]; builtin {
+		action := "deny"
+		if role.Coordinator && !h.ReadOnly && (h.Bash == nil || *h.Bash) {
+			action = "allow"
+		}
+		var providers []string
+		if ctx != nil {
+			providers = ctx.RuntimeProviders
+		}
+		for _, tool := range runtimeTools(providers) {
+			perm += "\n  " + tool + ": " + action
+		}
+	}
+	return append(extra, "permission:", perm), nil
 }
 
 // prepareBash applies the shell-proxy and wrapper rules every harness's

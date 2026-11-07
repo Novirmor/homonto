@@ -131,73 +131,83 @@ func AttachHistory(root *cobra.Command, workflow string) {
 		if cmd.RunE == nil {
 			return
 		}
-		label := workflow + " " + path
-		var writeFlag string
-		switch label {
-		case "onto init", "onto new", "onto advance", "onto bypass", "onto close",
-			"onto complete-integration", "onto abandon", "onto demote", "onto merge-deltas",
-			"onto evidence record", "to init", "to new", "to phase", "to bypass",
-			"to done", "to abandon", "to promote":
-		case "onto scale":
-			writeFlag = "set"
-		case "onto handoff", "to handoff":
-			writeFlag = "write"
-		default:
-			if workflow != "onto" || !strings.HasPrefix(path, "set ") {
-				return
-			}
-		}
-		run := cmd.RunE
-		cmd.RunE = func(cmd *cobra.Command, args []string) error {
-			if writeFlag != "" {
-				write, err := cmd.Flags().GetBool(writeFlag)
-				if err != nil {
-					return err
-				}
-				// Onto's interactive JSON view takes precedence over --write;
-				// to's JSON flag only changes output, not persistence.
-				if label == "onto handoff" {
-					asJSON, err := cmd.Flags().GetBool("json")
-					if err != nil {
-						return err
-					}
-					write = write && !asJSON
-				}
-				if !write {
-					return run(cmd, args)
-				}
-			}
-			dir, err := cmd.Flags().GetString("dir")
-			if err != nil {
-				return err
-			}
-			configRoot, err := filepath.Abs(dir)
-			if err != nil {
-				return err
-			}
-			// Legacy handlers own their scope validation and diagnostics. The
-			// layout can identify existing-Git mode before repo validation fails.
-			if layout, _ := LoadScopeRoot(configRoot, nil); layout.SchemaVersion < 2 && layout.GitMode == "existing" {
-				return run(cmd, args)
-			}
-			var opErr error
-			called := false
-			previousContext := cmd.Context()
-			defer cmd.SetContext(previousContext)
-			err = runMutation(configRoot, label, func(l Layout) (MutationScope, error) {
-				return commandMutationScope(l, cmd, workflow, path, args)
-			}, func() error {
-				called = true
-				opErr = run(cmd, args)
-				return opErr
-			})
-			if err != nil && called && opErr == nil {
-				return fmt.Errorf("%s: operation completed, but workflow history failed; filesystem changes are not rolled back: %w", label, err)
-			}
-			return err
+		if writeFlag, tracked := historyTracked(workflow, path); tracked {
+			cmd.RunE = historyRunE(cmd.RunE, workflow, path, writeFlag)
 		}
 	}
 	attach(root, "")
+}
+
+// historyTracked reports whether a workflow command mutates records, and the
+// flag, if any, that must be set for it to write.
+func historyTracked(workflow, path string) (writeFlag string, tracked bool) {
+	switch workflow + " " + path {
+	case "onto init", "onto new", "onto advance", "onto bypass", "onto close",
+		"onto complete-integration", "onto abandon", "onto demote", "onto merge-deltas",
+		"onto evidence record", "to init", "to new", "to phase", "to bypass",
+		"to done", "to abandon", "to promote":
+		return "", true
+	case "onto scale":
+		return "set", true
+	case "onto handoff", "to handoff":
+		return "write", true
+	}
+	return "", workflow == "onto" && strings.HasPrefix(path, "set ")
+}
+
+// historyRunE records run's changes to the workflow records as one history
+// operation. A read-only invocation, or a legacy existing-Git layout whose
+// handler owns its own validation, runs unwrapped.
+func historyRunE(run func(*cobra.Command, []string) error, workflow, path, writeFlag string) func(*cobra.Command, []string) error {
+	label := workflow + " " + path
+	return func(cmd *cobra.Command, args []string) error {
+		if writeFlag != "" {
+			write, err := cmd.Flags().GetBool(writeFlag)
+			if err != nil {
+				return err
+			}
+			// Onto's interactive JSON view takes precedence over --write;
+			// to's JSON flag only changes output, not persistence.
+			if label == "onto handoff" {
+				asJSON, err := cmd.Flags().GetBool("json")
+				if err != nil {
+					return err
+				}
+				write = write && !asJSON
+			}
+			if !write {
+				return run(cmd, args)
+			}
+		}
+		dir, err := cmd.Flags().GetString("dir")
+		if err != nil {
+			return err
+		}
+		configRoot, err := filepath.Abs(dir)
+		if err != nil {
+			return err
+		}
+		// Legacy handlers own their scope validation and diagnostics. The
+		// layout can identify existing-Git mode before repo validation fails.
+		if layout, _ := LoadScopeRoot(configRoot, nil); layout.SchemaVersion < 2 && layout.GitMode == "existing" {
+			return run(cmd, args)
+		}
+		var opErr error
+		called := false
+		previousContext := cmd.Context()
+		defer cmd.SetContext(previousContext)
+		err = runMutation(configRoot, label, func(l Layout) (MutationScope, error) {
+			return commandMutationScope(l, cmd, workflow, path, args)
+		}, func() error {
+			called = true
+			opErr = run(cmd, args)
+			return opErr
+		})
+		if err != nil && called && opErr == nil {
+			return fmt.Errorf("%s: operation completed, but workflow history failed; filesystem changes are not rolled back: %w", label, err)
+		}
+		return err
+	}
 }
 
 // Resolve under the outer history lock, before the handler takes its own locks.
@@ -212,10 +222,7 @@ func commandMutationScope(l Layout, cmd *cobra.Command, workflow, operation stri
 		return s, fmt.Errorf("workspace history: missing change name")
 	}
 	name := args[0]
-	validName := func(n string) bool {
-		return safeHistoryPath(n) && !strings.Contains(n, "/") && n != "archive" && !strings.HasPrefix(n, ".")
-	}
-	if !validName(name) {
+	if !validHistoryChangeName(name) {
 		return s, fmt.Errorf("workspace history: invalid change name %q", name)
 	}
 	tree := "changes"
@@ -225,15 +232,72 @@ func commandMutationScope(l Layout, cmd *cobra.Command, workflow, operation stri
 	active := tree + "/" + name
 	s.Paths = []string{active + "/" + workflow + "-state.yaml"}
 	flag := func(name string) string { v, _ := cmd.Flags().GetString(name); return strings.TrimSpace(v) }
+	s, err := operationScope(l, s, workflow, operation, tree, name, flag("as"))
+	if err != nil {
+		return s, err
+	}
+	archive := operation == "close" || operation == "done" || (workflow == "to" && operation == "abandon") || (operation == "bypass" && (flag("to") == "archive" || (workflow == "to" && flag("to") == "done")))
+	if !archive && operation != "complete-integration" {
+		return s, s.validate()
+	}
+	if archive {
+		date, err := archiveDate(l, workflow, operation, active)
+		if err != nil {
+			return s, err
+		}
+		dest, err := archiveDestination(l, tree+"/archive/"+date+"-"+name, workflow == "onto" && operation == "bypass")
+		if err != nil {
+			return s, err
+		}
+		s = MutationScope{Trees: []string{active, dest}}
+		p, err := prepareArchive(l, active, dest, workflow, date)
+		if err != nil {
+			return s, err
+		}
+		if p != nil {
+			s.Archive = &p.ArchivePlan
+			ctx := cmd.Context()
+			if ctx == nil {
+				ctx = context.Background()
+			}
+			cmd.SetContext(context.WithValue(ctx, archiveContextKey{}, p))
+		}
+	}
+	_, activeErr := os.Lstat(filepath.Join(l.WorkflowRoot, active))
+	if workflow == "onto" && ((operation == "close" && os.IsNotExist(activeErr)) || operation == "complete-integration") {
+		latest, err := latestArchived(l, tree, name)
+		if err != nil {
+			return s, err
+		}
+		if operation == "complete-integration" {
+			s = MutationScope{}
+		}
+		if latest != "" {
+			p := tree + "/archive/" + latest
+			s.Paths = append(s.Paths, p+"/onto-state.yaml", p+"/.onto/integration.json")
+		}
+	}
+	return s, s.validate()
+}
+
+// validHistoryChangeName accepts a plain change directory name.
+func validHistoryChangeName(n string) bool {
+	return safeHistoryPath(n) && !strings.Contains(n, "/") && n != "archive" && !strings.HasPrefix(n, ".")
+}
+
+// operationScope is what one workflow operation may change, beyond the
+// change's state file already in s. as is the --as target of a conversion.
+func operationScope(l Layout, s MutationScope, workflow, operation, tree, name, as string) (MutationScope, error) {
+	active := tree + "/" + name
 	switch operation {
 	case "new":
 		s = MutationScope{Trees: []string{active}}
 	case "promote", "demote":
-		target := flag("as")
+		target := as
 		if target == "" {
 			target = name
 		}
-		if !validName(target) {
+		if !validHistoryChangeName(target) {
 			return s, fmt.Errorf("workspace history: invalid target name %q", target)
 		}
 		other := "tasks"
@@ -259,121 +323,132 @@ func commandMutationScope(l Layout, cmd *cobra.Command, workflow, operation stri
 	case "bypass":
 		s.Paths = append(s.Paths, active+"/."+workflow+"/bypass.json")
 	}
-	archive := operation == "close" || operation == "done" || (workflow == "to" && operation == "abandon") || (operation == "bypass" && (flag("to") == "archive" || (workflow == "to" && flag("to") == "done")))
-	if archive || operation == "complete-integration" {
-		// Only fields that select a destination are decoded here; workflow
-		// validation belongs to the handler (importing it would create a cycle).
-		type identity struct {
-			Change   string `yaml:"change"`
-			Phase    string `yaml:"phase"`
-			Finished string `yaml:"finished"`
+	return s, nil
+}
+
+// archiveIdentity holds only the state fields that select an archive
+// destination; workflow validation belongs to the handler (importing it
+// would create a cycle).
+type archiveIdentity struct {
+	Change   string `yaml:"change"`
+	Phase    string `yaml:"phase"`
+	Finished string `yaml:"finished"`
+}
+
+// archiveDate is today, except that a to change already finished by the same
+// operation keeps its recorded finish date.
+func archiveDate(l Layout, workflow, operation, active string) (string, error) {
+	date := archiveNow().Format("2006-01-02")
+	if workflow != "to" {
+		return date, nil
+	}
+	var st archiveIdentity
+	data, err := os.ReadFile(filepath.Join(l.WorkflowRoot, active, "to-state.yaml"))
+	if err != nil || yaml.Unmarshal(data, &st) != nil {
+		return date, nil
+	}
+	reuse := (st.Phase == "done" && (operation == "done" || operation == "bypass")) || (st.Phase == "abandoned" && operation == "abandon")
+	if !reuse || st.Finished == "" {
+		return date, nil
+	}
+	if _, err := time.Parse("2006-01-02", st.Finished); err != nil {
+		return "", err
+	}
+	return st.Finished, nil
+}
+
+// archiveDestination is base, or the first free base-N. An onto bypass keeps
+// base even when it exists.
+func archiveDestination(l Layout, base string, keepExisting bool) (string, error) {
+	dest := base
+	for n := 2; ; n++ {
+		_, err := os.Lstat(filepath.Join(l.WorkflowRoot, dest))
+		if os.IsNotExist(err) {
+			return dest, nil
 		}
-		date := archiveNow().Format("2006-01-02")
-		if workflow == "to" {
-			var st identity
-			data, err := os.ReadFile(filepath.Join(l.WorkflowRoot, active, "to-state.yaml"))
-			reuse := func(phase string) bool {
-				return (phase == "done" && (operation == "done" || operation == "bypass")) || (phase == "abandoned" && operation == "abandon")
-			}
-			if err == nil && yaml.Unmarshal(data, &st) == nil && reuse(st.Phase) && st.Finished != "" {
-				if _, err := time.Parse("2006-01-02", st.Finished); err != nil {
-					return s, err
-				}
-				date = st.Finished
-			}
+		if err != nil {
+			return "", err
 		}
-		if archive {
-			base := tree + "/archive/" + date + "-" + name
-			dest := base
-			for n := 2; ; n++ {
-				_, err := os.Lstat(filepath.Join(l.WorkflowRoot, dest))
-				if os.IsNotExist(err) {
-					break
-				}
-				if err != nil {
-					return s, err
-				}
-				if workflow == "onto" && operation == "bypass" {
-					break
-				}
-				dest = fmt.Sprintf("%s-%d", base, n)
-			}
-			s = MutationScope{Trees: []string{active, dest}}
-			if info, err := os.Lstat(filepath.Join(l.WorkflowRoot, active)); err == nil {
-				if !info.IsDir() {
-					return s, fmt.Errorf("workspace archive: source must be a real directory")
-				}
-				hash, err := historyFileHash(l, active+"/"+workflow+"-state.yaml")
-				if err != nil {
-					return s, err
-				}
-				parent := filepath.Dir(filepath.Join(l.WorkflowRoot, dest))
-				if err := fsutil.RequireRealParents(l.WorkflowRoot, parent); err != nil {
-					return s, err
-				}
-				parentInfo, err := os.Lstat(parent)
-				if os.IsNotExist(err) {
-					parent = filepath.Dir(parent)
-					parentInfo, err = os.Lstat(parent)
-				}
-				if err != nil {
-					return s, err
-				}
-				p := &preparedArchive{ArchivePlan: ArchivePlan{Source: active, Destination: dest, Date: date, StateHash: hash}, layout: l, sourceInfo: info, parent: parent, parentInfo: parentInfo}
-				if err := p.check(filepath.Join(l.WorkflowRoot, active), filepath.Join(l.WorkflowRoot, dest)); err != nil {
-					return s, err
-				}
-				s.Archive = &p.ArchivePlan
-				ctx := cmd.Context()
-				if ctx == nil {
-					ctx = context.Background()
-				}
-				cmd.SetContext(context.WithValue(ctx, archiveContextKey{}, p))
-			} else if !os.IsNotExist(err) {
-				return s, err
-			}
+		if keepExisting {
+			return dest, nil
 		}
-		_, activeErr := os.Lstat(filepath.Join(l.WorkflowRoot, active))
-		if workflow == "onto" && ((operation == "close" && os.IsNotExist(activeErr)) || operation == "complete-integration") {
-			entries, err := os.ReadDir(filepath.Join(l.WorkflowRoot, tree, "archive"))
-			if err != nil && !os.IsNotExist(err) {
-				return s, err
-			}
-			var matches []string
-			for _, e := range entries {
-				if !e.IsDir() {
-					continue
-				}
-				var st identity
-				data, err := os.ReadFile(filepath.Join(l.WorkflowRoot, tree, "archive", e.Name(), "onto-state.yaml"))
-				if (len(e.Name()) > 11 && e.Name()[11:] == name) || (err == nil && yaml.Unmarshal(data, &st) == nil && st.Change == name) {
-					matches = append(matches, e.Name())
-				}
-			}
-			sort.Slice(matches, func(i, j int) bool {
-				generation := func(v string) (string, int) {
-					if len(v) <= 11 {
-						return v, 0
-					}
-					suffix := strings.TrimPrefix(v[11:], name)
-					n, _ := strconv.Atoi(strings.TrimPrefix(suffix, "-"))
-					return v[:10], n
-				}
-				di, ni := generation(matches[i])
-				dj, nj := generation(matches[j])
-				if di != dj {
-					return di > dj
-				}
-				return ni > nj
-			})
-			if operation == "complete-integration" {
-				s = MutationScope{}
-			}
-			if len(matches) > 0 {
-				p := tree + "/archive/" + matches[0]
-				s.Paths = append(s.Paths, p+"/onto-state.yaml", p+"/.onto/integration.json")
-			}
+		dest = fmt.Sprintf("%s-%d", base, n)
+	}
+}
+
+// prepareArchive checks that the active change can move to dest and returns
+// the plan, or nil when the change is already gone.
+func prepareArchive(l Layout, active, dest, workflow, date string) (*preparedArchive, error) {
+	info, err := os.Lstat(filepath.Join(l.WorkflowRoot, active))
+	if os.IsNotExist(err) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	if !info.IsDir() {
+		return nil, fmt.Errorf("workspace archive: source must be a real directory")
+	}
+	hash, err := historyFileHash(l, active+"/"+workflow+"-state.yaml")
+	if err != nil {
+		return nil, err
+	}
+	parent := filepath.Dir(filepath.Join(l.WorkflowRoot, dest))
+	if err := fsutil.RequireRealParents(l.WorkflowRoot, parent); err != nil {
+		return nil, err
+	}
+	parentInfo, err := os.Lstat(parent)
+	if os.IsNotExist(err) {
+		parent = filepath.Dir(parent)
+		parentInfo, err = os.Lstat(parent)
+	}
+	if err != nil {
+		return nil, err
+	}
+	p := &preparedArchive{ArchivePlan: ArchivePlan{Source: active, Destination: dest, Date: date, StateHash: hash}, layout: l, sourceInfo: info, parent: parent, parentInfo: parentInfo}
+	if err := p.check(filepath.Join(l.WorkflowRoot, active), filepath.Join(l.WorkflowRoot, dest)); err != nil {
+		return nil, err
+	}
+	return p, nil
+}
+
+// latestArchived names the newest archive directory holding change name,
+// matched by directory suffix or recorded change, ordered by date then
+// generation. It is "" when none matches.
+func latestArchived(l Layout, tree, name string) (string, error) {
+	entries, err := os.ReadDir(filepath.Join(l.WorkflowRoot, tree, "archive"))
+	if err != nil && !os.IsNotExist(err) {
+		return "", err
+	}
+	var matches []string
+	for _, e := range entries {
+		if !e.IsDir() {
+			continue
+		}
+		var st archiveIdentity
+		data, err := os.ReadFile(filepath.Join(l.WorkflowRoot, tree, "archive", e.Name(), "onto-state.yaml"))
+		if (len(e.Name()) > 11 && e.Name()[11:] == name) || (err == nil && yaml.Unmarshal(data, &st) == nil && st.Change == name) {
+			matches = append(matches, e.Name())
 		}
 	}
-	return s, s.validate()
+	if len(matches) == 0 {
+		return "", nil
+	}
+	generation := func(v string) (string, int) {
+		if len(v) <= 11 {
+			return v, 0
+		}
+		suffix := strings.TrimPrefix(v[11:], name)
+		n, _ := strconv.Atoi(strings.TrimPrefix(suffix, "-"))
+		return v[:10], n
+	}
+	sort.Slice(matches, func(i, j int) bool {
+		di, ni := generation(matches[i])
+		dj, nj := generation(matches[j])
+		if di != dj {
+			return di > dj
+		}
+		return ni > nj
+	})
+	return matches[0], nil
 }

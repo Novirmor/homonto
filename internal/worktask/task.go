@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"maps"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -289,33 +290,19 @@ func (s *Store) Create(ctx context.Context, name, engine, change, isolation stri
 			return nil, fmt.Errorf("invalid isolation override %q=%q", alias, mode)
 		}
 	}
+	modeOf := func(alias string) string {
+		if overrides[alias] != "" {
+			return overrides[alias]
+		}
+		return isolation
+	}
 	unlock, err := s.lock(name)
 	if err != nil {
 		return nil, err
 	}
 	defer unlock()
 	if _, err := os.Lstat(filepath.Join(dir, "task.json")); err == nil {
-		t, err := s.Load(ctx, name)
-		if err != nil {
-			return nil, err
-		}
-		if t.Engine != engine || t.Change != change || !slices.Equal(t.Changed, changed) || len(t.Checkouts) != len(inputs) {
-			return nil, fmt.Errorf("task already exists with another engine, change or repository selection; resume its recorded choice")
-		}
-		for _, alias := range inputs {
-			mode := isolation
-			if overrides[alias] != "" {
-				mode = overrides[alias]
-			}
-			if t.Checkouts[alias].Isolation != mode || t.Checkouts[alias].Removed || t.Checkouts[alias].Removing {
-				return nil, fmt.Errorf("task isolation differs or checkout was removed; resume its recorded choice")
-			}
-		}
-		if err := s.allocate(ctx, t, inputs); err != nil {
-			return t, err
-		}
-		s.RefreshResults(ctx, t)
-		return t, nil
+		return s.resumeCreate(ctx, name, engine, change, changed, inputs, modeOf)
 	} else if !os.IsNotExist(err) {
 		return nil, err
 	}
@@ -323,20 +310,7 @@ func (s *Store) Create(ctx context.Context, name, engine, change, isolation stri
 	var nativeID string
 	var anchors map[string]workspace.SourceAnchor
 	if desc.OwnsLifecycle() {
-		if change == "" {
-			return nil, fmt.Errorf("%s requires its existing active --change", engine)
-		}
-		native, err = workspace.SourceDirsForActiveState(s.Layout, engine, change)
-		if err != nil {
-			return nil, err
-		}
-		for _, alias := range changed {
-			if native[alias] == "" {
-				return nil, fmt.Errorf("%s is not selected in %s change %s", alias, engine, change)
-			}
-		}
-		nativeID, anchors, err = workspace.SourceAnchors(s.Layout, engine, change, "")
-		if err != nil {
+		if native, nativeID, anchors, err = s.nativeSources(engine, change, changed); err != nil {
 			return nil, err
 		}
 	} else if change != "" {
@@ -346,57 +320,113 @@ func (s *Store) Create(ctx context.Context, name, engine, change, isolation stri
 	// Preflight every input before allocation; dirty originals may be left untouched
 	// only when the user explicitly chose a separate worktree.
 	for _, alias := range inputs {
-		source := s.Layout.Repos[alias]
-		path := source
-		mode := isolation
-		if overrides[alias] != "" {
-			mode = overrides[alias]
-		}
 		write := slices.Contains(changed, alias)
+		path := s.Layout.Repos[alias]
 		if write && native != nil {
 			path = native[alias]
 		}
-		base, common, gitdir, branch, err := identity(ctx, path)
+		var anchor *workspace.SourceAnchor
+		if write && native != nil {
+			a := anchors[alias]
+			anchor = &a
+		}
+		c, err := s.preflightCheckout(ctx, name, alias, path, modeOf(alias), write, overrides[alias] == "worktree", desc.OwnsLifecycle(), anchor)
 		if err != nil {
 			return nil, err
 		}
-		input := !write && overrides[alias] != "worktree"
-		if input || mode == "existing" || path != source {
-			if err := clean(ctx, path); err != nil && input {
-				return nil, fmt.Errorf("%s: ask for dirty verification-input disposition; explicit %s=worktree override pins committed input: %w", alias, alias, err)
-			} else if err != nil {
-				return nil, fmt.Errorf("%s: dirty checkout needs user disposition: %w", alias, err)
-			}
-		}
-		if mode == "worktree" && path == source && s.Layout.WorktreesDir == "" {
-			return nil, fmt.Errorf("configure worktrees.dir before choosing worktree isolation")
-		}
-		if write && branch == "" {
-			return nil, fmt.Errorf("%s: writable source must have a local branch", alias)
-		}
-		baseBranch := branch
-		if write && native != nil {
-			anchor := anchors[alias]
-			if anchor.Commit == "" || anchor.Branch == "" {
-				return nil, fmt.Errorf("%s has no native source anchor", alias)
-			}
-			base, baseBranch = anchor.Commit, anchor.Branch
-		}
-		if mode == "worktree" && (!desc.OwnsLifecycle() || !write) {
-			destination := filepath.Join(s.Layout.WorktreesDir, alias, "workspace-"+name)
-			if err := fsutil.RequireRealParents(filepath.Dir(s.Layout.WorktreesDir), destination); err != nil {
-				return nil, err
-			}
-			if _, err := os.Lstat(destination); !os.IsNotExist(err) {
-				return nil, fmt.Errorf("worktree destination exists or cannot be inspected: %s", destination)
-			}
-		}
-		t.Checkouts[alias] = Checkout{Source: source, Path: path, Base: base, BaseBranch: baseBranch, Branch: branch, CommonDir: common, GitDir: gitdir, Isolation: mode, Changed: write, Ready: mode == "existing"}
+		t.Checkouts[alias] = c
 	}
 	if err := s.save(t); err != nil {
 		return nil, err
 	}
 	return t, s.allocate(ctx, t, inputs)
+}
+
+// resumeCreate re-runs Create on a recorded task. The request must repeat the
+// recorded engine, change, selection and isolation.
+func (s *Store) resumeCreate(ctx context.Context, name, engine, change string, changed, inputs []string, modeOf func(string) string) (*Task, error) {
+	t, err := s.Load(ctx, name)
+	if err != nil {
+		return nil, err
+	}
+	if t.Engine != engine || t.Change != change || !slices.Equal(t.Changed, changed) || len(t.Checkouts) != len(inputs) {
+		return nil, fmt.Errorf("task already exists with another engine, change or repository selection; resume its recorded choice")
+	}
+	for _, alias := range inputs {
+		c := t.Checkouts[alias]
+		if c.Isolation != modeOf(alias) || c.Removed || c.Removing {
+			return nil, fmt.Errorf("task isolation differs or checkout was removed; resume its recorded choice")
+		}
+	}
+	if err := s.allocate(ctx, t, inputs); err != nil {
+		return t, err
+	}
+	s.RefreshResults(ctx, t)
+	return t, nil
+}
+
+// nativeSources reads a lifecycle-owning engine's active change: its source
+// directories, which must cover every changed repository, and their anchors.
+func (s *Store) nativeSources(engine, change string, changed []string) (map[string]string, string, map[string]workspace.SourceAnchor, error) {
+	if change == "" {
+		return nil, "", nil, fmt.Errorf("%s requires its existing active --change", engine)
+	}
+	native, err := workspace.SourceDirsForActiveState(s.Layout, engine, change)
+	if err != nil {
+		return nil, "", nil, err
+	}
+	for _, alias := range changed {
+		if native[alias] == "" {
+			return nil, "", nil, fmt.Errorf("%s is not selected in %s change %s", alias, engine, change)
+		}
+	}
+	nativeID, anchors, err := workspace.SourceAnchors(s.Layout, engine, change, "")
+	if err != nil {
+		return nil, "", nil, err
+	}
+	return native, nativeID, anchors, nil
+}
+
+// preflightCheckout records one input's Git identity after checking it is
+// clean where it will be used in place, and that a worktree can be allocated
+// for it. A native write source takes its base from the engine's anchor.
+func (s *Store) preflightCheckout(ctx context.Context, task, alias, path, mode string, write, pinnedWorktree, ownsLifecycle bool, anchor *workspace.SourceAnchor) (Checkout, error) {
+	source := s.Layout.Repos[alias]
+	base, common, gitdir, branch, err := identity(ctx, path)
+	if err != nil {
+		return Checkout{}, err
+	}
+	input := !write && !pinnedWorktree
+	if input || mode == "existing" || path != source {
+		if err := clean(ctx, path); err != nil && input {
+			return Checkout{}, fmt.Errorf("%s: ask for dirty verification-input disposition; explicit %s=worktree override pins committed input: %w", alias, alias, err)
+		} else if err != nil {
+			return Checkout{}, fmt.Errorf("%s: dirty checkout needs user disposition: %w", alias, err)
+		}
+	}
+	if mode == "worktree" && path == source && s.Layout.WorktreesDir == "" {
+		return Checkout{}, fmt.Errorf("configure worktrees.dir before choosing worktree isolation")
+	}
+	if write && branch == "" {
+		return Checkout{}, fmt.Errorf("%s: writable source must have a local branch", alias)
+	}
+	baseBranch := branch
+	if anchor != nil {
+		if anchor.Commit == "" || anchor.Branch == "" {
+			return Checkout{}, fmt.Errorf("%s has no native source anchor", alias)
+		}
+		base, baseBranch = anchor.Commit, anchor.Branch
+	}
+	if mode == "worktree" && (!ownsLifecycle || !write) {
+		destination := filepath.Join(s.Layout.WorktreesDir, alias, "workspace-"+task)
+		if err := fsutil.RequireRealParents(filepath.Dir(s.Layout.WorktreesDir), destination); err != nil {
+			return Checkout{}, err
+		}
+		if _, err := os.Lstat(destination); !os.IsNotExist(err) {
+			return Checkout{}, fmt.Errorf("worktree destination exists or cannot be inspected: %s", destination)
+		}
+	}
+	return Checkout{Source: source, Path: path, Base: base, BaseBranch: baseBranch, Branch: branch, CommonDir: common, GitDir: gitdir, Isolation: mode, Changed: write, Ready: mode == "existing"}, nil
 }
 
 // allocate completes every pending checkout. It is safe to repeat after an
@@ -419,37 +449,8 @@ func (s *Store) allocate(ctx context.Context, t *Task, inputs []string) error {
 				c.Path = w.Path
 			}
 		} else {
-			c.Path = filepath.Join(s.Layout.WorktreesDir, alias, "workspace-"+t.Name)
-			if err := fsutil.RequireRealParents(filepath.Dir(s.Layout.WorktreesDir), c.Path); err != nil {
-				return err
-			}
-			if !c.Owned {
-				if _, err := os.Lstat(c.Path); !os.IsNotExist(err) {
-					return fmt.Errorf("worktree destination already exists or cannot be inspected: %s", c.Path)
-				}
-				// Persist allocation intent before Git runs, so an interrupted command
-				// leaves the exact destination for resume or cleanup to inspect.
-				c.Owned = true
-				t.Checkouts[alias] = c
-				if err := s.save(t); err != nil {
-					return err
-				}
-			}
-			if _, err := os.Lstat(c.Path); os.IsNotExist(err) {
-				args := []string{"worktree", "add", "--detach", c.Path, c.Base}
-				if c.Changed {
-					args = []string{"worktree", "add", "-b", taskBranch(t.Name, alias), c.Path, c.Base}
-				}
-				if _, err := git(ctx, c.Source, args...); err != nil {
-					hint := ""
-					if c.Changed {
-						// An interrupted add can leave the branch behind; it may
-						// also be the user's, so it is never adopted or deleted.
-						hint = fmt.Sprintf(" (if %s is a leftover from an interrupted create, delete it)", taskBranch(t.Name, alias))
-					}
-					return fmt.Errorf("%w; resolve the cause%s and rerun create to resume, or run cleanup to abandon %s", err, hint, alias)
-				}
-			} else if err != nil {
+			var err error
+			if c, err = s.allocateWorktree(ctx, t, alias, c); err != nil {
 				return err
 			}
 		}
@@ -463,6 +464,46 @@ func (s *Store) allocate(ctx context.Context, t *Task, inputs []string) error {
 		}
 	}
 	return nil
+}
+
+// allocateWorktree places a task-owned worktree for one checkout. Allocation
+// intent is saved before Git runs, so an interrupted command leaves the exact
+// destination for resume or cleanup to inspect.
+func (s *Store) allocateWorktree(ctx context.Context, t *Task, alias string, c Checkout) (Checkout, error) {
+	c.Path = filepath.Join(s.Layout.WorktreesDir, alias, "workspace-"+t.Name)
+	if err := fsutil.RequireRealParents(filepath.Dir(s.Layout.WorktreesDir), c.Path); err != nil {
+		return c, err
+	}
+	if !c.Owned {
+		if _, err := os.Lstat(c.Path); !os.IsNotExist(err) {
+			return c, fmt.Errorf("worktree destination already exists or cannot be inspected: %s", c.Path)
+		}
+		// Persist allocation intent before Git runs, so an interrupted command
+		// leaves the exact destination for resume or cleanup to inspect.
+		c.Owned = true
+		t.Checkouts[alias] = c
+		if err := s.save(t); err != nil {
+			return c, err
+		}
+	}
+	if _, err := os.Lstat(c.Path); os.IsNotExist(err) {
+		args := []string{"worktree", "add", "--detach", c.Path, c.Base}
+		if c.Changed {
+			args = []string{"worktree", "add", "-b", taskBranch(t.Name, alias), c.Path, c.Base}
+		}
+		if _, err := git(ctx, c.Source, args...); err != nil {
+			hint := ""
+			if c.Changed {
+				// An interrupted add can leave the branch behind; it may
+				// also be the user's, so it is never adopted or deleted.
+				hint = fmt.Sprintf(" (if %s is a leftover from an interrupted create, delete it)", taskBranch(t.Name, alias))
+			}
+			return c, fmt.Errorf("%w; resolve the cause%s and rerun create to resume, or run cleanup to abandon %s", err, hint, alias)
+		}
+	} else if err != nil {
+		return c, err
+	}
+	return c, nil
 }
 
 // ownsLifecycle reports whether the task's engine binds its writable
@@ -665,93 +706,107 @@ func (s *Store) cleanupTask(ctx context.Context, name string, yes, keepBranches 
 }
 
 func (s *Store) cleanup(ctx context.Context, t *Task, keepBranches bool) error {
-	for _, alias := range sortedCheckouts(t) {
-		c := t.Checkouts[alias]
-		if !c.Owned || c.Removed {
-			continue
+	for _, alias := range slices.Sorted(maps.Keys(t.Checkouts)) {
+		if err := s.cleanupCheckout(ctx, t, alias, t.Checkouts[alias], keepBranches); err != nil {
+			return err
 		}
-		if c.Removing {
-			complete, err := removalComplete(ctx, c)
-			if err != nil {
-				return err
-			}
-			if complete {
-				if !keepBranches {
-					if err := s.releaseBranch(ctx, c); err != nil {
-						return err
-					}
-				}
-				c.Removing, c.Removed = false, true
-				t.Checkouts[alias] = c
-				if err := s.save(t); err != nil {
-					return err
-				}
-				continue
-			}
-		}
-		if !c.Ready {
-			if _, err := os.Lstat(c.Path); os.IsNotExist(err) {
-				c.Removed = true
-				t.Checkouts[alias] = c
-				if err := s.save(t); err != nil {
-					return err
-				}
-				continue
-			} else if err != nil {
-				return err
-			}
-			adopted, err := s.adopt(ctx, t, alias, c)
-			if err != nil {
-				return err
-			}
-			c = adopted
-		}
-		head, err := s.validateCheckout(ctx, t, alias, c)
+	}
+	return nil
+}
+
+// cleanupCheckout removes one owned allocation once it is clean and its work
+// is safe: a changed checkout integrated (or retained on its branch), a
+// verification input still at its pinned revision. Intent is saved before Git
+// removes anything, so a retry reconciles a completed removal. keepBranches
+// leaves the task-owned branch in place.
+func (s *Store) cleanupCheckout(ctx context.Context, t *Task, alias string, c Checkout, keepBranches bool) error {
+	if !c.Owned || c.Removed {
+		return nil
+	}
+	if c.Removing {
+		complete, err := removalComplete(ctx, c)
 		if err != nil {
 			return err
 		}
-		// The same cleanliness rules as worktree remove, including ignored files,
-		// hidden index flags, and in-progress Git operations.
-		if err := workspace.CheckoutClean(ctx, c.Path, true); err != nil {
-			return fmt.Errorf("%s: %w", alias, err)
+		if complete {
+			if !keepBranches {
+				if err := s.releaseBranch(ctx, c); err != nil {
+					return err
+				}
+			}
+			c.Removing, c.Removed = false, true
+			t.Checkouts[alias] = c
+			return s.save(t)
 		}
-		if c.Changed {
-			if c.BaseBranch == "" {
-				return fmt.Errorf("%s has no recorded integration target", alias)
-			}
-			if _, err := git(ctx, c.Path, "merge-base", "--is-ancestor", "HEAD", "refs/heads/"+c.BaseBranch); err != nil {
-				// A PR delivery not yet merged: the task-owned branch keeps the
-				// commits, and releaseBranch retains it (ADR 0086).
-				if !c.Owned || c.Branch == "" {
-					return fmt.Errorf("%s is not integrated into %s: %w", alias, c.BaseBranch, err)
-				}
-				if _, branchErr := git(ctx, c.Path, "merge-base", "--is-ancestor", "HEAD", "refs/heads/"+c.Branch); branchErr != nil {
-					return fmt.Errorf("%s is neither integrated into %s nor on its branch %s: %w", alias, c.BaseBranch, c.Branch, err)
-				}
-			}
-		} else if head != c.Base {
+	}
+	if !c.Ready {
+		if _, err := os.Lstat(c.Path); os.IsNotExist(err) {
+			c.Removed = true
+			t.Checkouts[alias] = c
+			return s.save(t)
+		} else if err != nil {
+			return err
+		}
+		adopted, err := s.adopt(ctx, t, alias, c)
+		if err != nil {
+			return err
+		}
+		c = adopted
+	}
+	head, err := s.validateCheckout(ctx, t, alias, c)
+	if err != nil {
+		return err
+	}
+	// The same cleanliness rules as worktree remove, including ignored files,
+	// hidden index flags, and in-progress Git operations.
+	if err := workspace.CheckoutClean(ctx, c.Path, true); err != nil {
+		return fmt.Errorf("%s: %w", alias, err)
+	}
+	if err := checkIntegrated(ctx, alias, c, head); err != nil {
+		return err
+	}
+	// Persist intent before Git removes either the directory or registration.
+	// A retry revalidates a surviving checkout or reconciles a completed removal.
+	c.Removing = true
+	t.Checkouts[alias] = c
+	if err := s.save(t); err != nil {
+		return err
+	}
+	if _, err := git(ctx, c.Source, "worktree", "remove", c.Path); err != nil {
+		return err
+	}
+	if !keepBranches {
+		if err := s.releaseBranch(ctx, c); err != nil {
+			return err
+		}
+	}
+	c.Removing, c.Removed = false, true
+	t.Checkouts[alias] = c
+	return s.save(t)
+}
+
+// checkIntegrated requires a changed checkout's HEAD in its integration target
+// or, for a PR delivery not yet merged, on the task-owned branch that
+// releaseBranch retains (ADR 0086); an input must not have moved.
+func checkIntegrated(ctx context.Context, alias string, c Checkout, head string) error {
+	if !c.Changed {
+		if head != c.Base {
 			return fmt.Errorf("verification input %s moved from pinned revision %s; preserve its commits before cleanup", alias, c.Base)
 		}
-		// Persist intent before Git removes either the directory or registration.
-		// A retry revalidates a surviving checkout or reconciles a completed removal.
-		c.Removing = true
-		t.Checkouts[alias] = c
-		if err := s.save(t); err != nil {
-			return err
-		}
-		if _, err := git(ctx, c.Source, "worktree", "remove", c.Path); err != nil {
-			return err
-		}
-		if !keepBranches {
-			if err := s.releaseBranch(ctx, c); err != nil {
-				return err
-			}
-		}
-		c.Removing, c.Removed = false, true
-		t.Checkouts[alias] = c
-		if err := s.save(t); err != nil {
-			return err
-		}
+		return nil
+	}
+	if c.BaseBranch == "" {
+		return fmt.Errorf("%s has no recorded integration target", alias)
+	}
+	_, err := git(ctx, c.Path, "merge-base", "--is-ancestor", "HEAD", "refs/heads/"+c.BaseBranch)
+	if err == nil {
+		return nil
+	}
+	if !c.Owned || c.Branch == "" {
+		return fmt.Errorf("%s is not integrated into %s: %w", alias, c.BaseBranch, err)
+	}
+	if _, branchErr := git(ctx, c.Path, "merge-base", "--is-ancestor", "HEAD", "refs/heads/"+c.Branch); branchErr != nil {
+		return fmt.Errorf("%s is neither integrated into %s nor on its branch %s: %w", alias, c.BaseBranch, c.Branch, err)
 	}
 	return nil
 }
@@ -774,13 +829,4 @@ func (s *Store) releaseBranch(ctx context.Context, c Checkout) error {
 	}
 	_, err = git(ctx, c.Source, "update-ref", "-d", ref, tip)
 	return err
-}
-
-func sortedCheckouts(t *Task) []string {
-	names := make([]string, 0, len(t.Checkouts))
-	for name := range t.Checkouts {
-		names = append(names, name)
-	}
-	slices.Sort(names)
-	return names
 }

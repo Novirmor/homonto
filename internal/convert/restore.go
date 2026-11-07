@@ -123,20 +123,8 @@ func finishRestore(spec directionSpec, stg string, m manifest, lin lineage, e ev
 	}
 
 	// 1. Move the whole current workspace into staging (once).
-	if fi, err := os.Lstat(srcDir); err == nil && fi.IsDir() {
-		if _, err := os.Lstat(work); err == nil {
-			return "", fmt.Errorf("%s: interrupted restore staging is inconsistent; inspect %s manually", spec.name, stg)
-		}
-		if digest, err := digestActive(srcDir); err != nil || digest != e.To.Digest {
-			return "", fmt.Errorf("%s: restore source changed or its name was reused; refusing to move it", spec.name)
-		}
-		snapshot := filepath.Join(srcDir, controlDir, snapshotsDir, m.SourceOperationID, spec.to.workflow)
-		if _, digest, err := snapshotTree(snapshot); err != nil || digest != m.SourceDigest {
-			return "", fmt.Errorf("%s: restore source snapshot does not match its manifest; refusing to move it", spec.name)
-		}
-		if err := os.Rename(srcDir, work); err != nil {
-			return "", fmt.Errorf("%s: staging the source for restore: %w", spec.name, err)
-		}
+	if err := stageRestoreSource(spec, srcDir, work, stg, m, e); err != nil {
+		return "", err
 	}
 	if _, err := os.Lstat(work); err != nil {
 		return "", fmt.Errorf("%s: restore staging lost its source; inspect %s manually", spec.name, stg)
@@ -165,17 +153,56 @@ func finishRestore(spec directionSpec, stg string, m manifest, lin lineage, e ev
 	}
 
 	// 3. The control plane follows, flat, with a restore event appended.
+	if err := writeRestoreHistory(spec, work, restored, m, lin, e); err != nil {
+		return "", err
+	}
+
+	// 4. Atomic install, then the staging goes away.
+	if err := os.Rename(restored, tgt); err != nil {
+		return "", fmt.Errorf("%s: installing the restored workspace: %w", spec.name, err)
+	}
+	if err := os.RemoveAll(stg); err != nil {
+		return "", err
+	}
+	return tgt, nil
+}
+
+// stageRestoreSource moves the active source into staging, once, after
+// checking it is the generation the receipt converted and that its snapshot
+// matches the manifest.
+func stageRestoreSource(spec directionSpec, srcDir, work, stg string, m manifest, e event) error {
+	if fi, err := os.Lstat(srcDir); err == nil && fi.IsDir() {
+		if _, err := os.Lstat(work); err == nil {
+			return fmt.Errorf("%s: interrupted restore staging is inconsistent; inspect %s manually", spec.name, stg)
+		}
+		if digest, err := digestActive(srcDir); err != nil || digest != e.To.Digest {
+			return fmt.Errorf("%s: restore source changed or its name was reused; refusing to move it", spec.name)
+		}
+		snapshot := filepath.Join(srcDir, controlDir, snapshotsDir, m.SourceOperationID, spec.to.workflow)
+		if _, digest, err := snapshotTree(snapshot); err != nil || digest != m.SourceDigest {
+			return fmt.Errorf("%s: restore source snapshot does not match its manifest; refusing to move it", spec.name)
+		}
+		if err := os.Rename(srcDir, work); err != nil {
+			return fmt.Errorf("%s: staging the source for restore: %w", spec.name, err)
+		}
+	}
+	return nil
+}
+
+// writeRestoreHistory carries the staged control plane into the restored tree
+// and appends the restore to its lineage and events.
+func writeRestoreHistory(spec directionSpec, work, restored string, m manifest, lin lineage, e event) error {
 	ctl := filepath.Join(restored, controlDir)
 	if err := os.MkdirAll(filepath.Join(ctl, eventsDir), 0o755); err != nil {
-		return "", err
+		return err
 	}
 	if prior := filepath.Join(work, controlDir); prior != ctl {
 		if fi, err := os.Lstat(prior); err == nil && fi.IsDir() {
 			if err := validateRealTree(prior); err != nil {
-				return "", fmt.Errorf("%s: unsafe staged control plane: %w", spec.name, err)
+				return fmt.Errorf("%s: unsafe staged control plane: %w", spec.name, err)
 			}
 			if err := moveContents(prior, ctl); err != nil {
-				return "", fmt.Errorf("%s: carrying history across the restore: %w", spec.name, err)
+				return fmt.Errorf("%s: carrying history across the restore: %w", spec.name, err)
 			}
 		}
 	}
@@ -201,20 +228,12 @@ func finishRestore(spec directionSpec, stg string, m manifest, lin lineage, e ev
 	}
 	updated.Events = append(updated.Events, re.OperationID)
 	if err := writeJSON(filepath.Join(ctl, lineageFile), updated); err != nil {
-		return "", err
+		return err
 	}
 	if err := writeJSON(filepath.Join(ctl, eventsDir, re.OperationID+".json"), re); err != nil {
-		return "", err
+		return err
 	}
-
-	// 4. Atomic install, then the staging goes away.
-	if err := os.Rename(restored, tgt); err != nil {
-		return "", fmt.Errorf("%s: installing the restored workspace: %w", spec.name, err)
-	}
-	if err := os.RemoveAll(stg); err != nil {
-		return "", err
-	}
-	return tgt, nil
+	return nil
 }
 
 func authenticateRestore(stg string, m manifest, e event) error {
@@ -287,51 +306,58 @@ func resumeRestore(spec directionSpec, root, wfRoot, srcDir, source, target stri
 		if m.Kind != "restore" || m.Direction != spec.name || m.Source != source || m.Target != target {
 			continue
 		}
-		if err := validateRealTree(stg); err != nil {
-			return false, "", err
-		}
-		work := filepath.Join(stg, "work")
-		history := work
-		if _, err := os.Lstat(work); os.IsNotExist(err) {
-			if !onlyManifest(stg) {
-				return false, "", fmt.Errorf("%s: interrupted restore %s has no source and unexpected entries; inspect manually", spec.name, stg)
-			}
-			history = srcDir
-		} else if err != nil {
-			return false, "", err
-		}
-		lin, ok, err := loadLineage(history)
-		if err == nil && !ok {
-			lin, ok, err = loadLineage(filepath.Join(stg, "restored"))
-		}
-		if err != nil || !ok {
-			return false, "", fmt.Errorf("%s: interrupted restore %s lost its history; inspect manually", spec.name, stg)
-		}
-		e, ok, err := eventByID(history, m.SourceOperationID)
-		if err == nil && !ok {
-			e, ok, err = eventByID(filepath.Join(stg, "restored"), m.SourceOperationID)
-		}
-		if err != nil || !ok {
-			return false, "", fmt.Errorf("%s: interrupted restore %s lost its receipt; inspect manually", spec.name, stg)
-		}
-		if e.OperationID != m.SourceOperationID || e.To.Workflow != spec.from.workflow || e.To.Name != source || e.From.Workflow != spec.to.workflow || e.From.Name != target {
-			return false, "", fmt.Errorf("%s: restore receipt does not match its manifest", spec.name)
-		}
-		// Older interrupted manifests did not record restore time. Mint it once
-		// before resuming, rather than copying the original conversion time.
-		if m.At == "" {
-			m.At = time.Now().UTC().Format(time.RFC3339Nano)
-			if err := writeJSON(filepath.Join(stg, manifestFile), m); err != nil {
-				return false, "", err
-			}
-		}
-		created, err := finishRestore(spec, stg, m, lin, e, wfRoot)
-		if err != nil {
-			return false, "", err
-		}
-		return true, created, nil
+		return resumeStagedRestore(spec, stg, m, srcDir, source, target, wfRoot)
 	}
 	return false, "", nil
+}
+
+// resumeStagedRestore finishes the interrupted restore stg once its history
+// and receipt are found, in the staged work or the restored tree, and match
+// its manifest.
+func resumeStagedRestore(spec directionSpec, stg string, m manifest, srcDir, source, target, wfRoot string) (bool, string, error) {
+	if err := validateRealTree(stg); err != nil {
+		return false, "", err
+	}
+	work := filepath.Join(stg, "work")
+	history := work
+	if _, err := os.Lstat(work); os.IsNotExist(err) {
+		if !onlyManifest(stg) {
+			return false, "", fmt.Errorf("%s: interrupted restore %s has no source and unexpected entries; inspect manually", spec.name, stg)
+		}
+		history = srcDir
+	} else if err != nil {
+		return false, "", err
+	}
+	lin, ok, err := loadLineage(history)
+	if err == nil && !ok {
+		lin, ok, err = loadLineage(filepath.Join(stg, "restored"))
+	}
+	if err != nil || !ok {
+		return false, "", fmt.Errorf("%s: interrupted restore %s lost its history; inspect manually", spec.name, stg)
+	}
+	e, ok, err := eventByID(history, m.SourceOperationID)
+	if err == nil && !ok {
+		e, ok, err = eventByID(filepath.Join(stg, "restored"), m.SourceOperationID)
+	}
+	if err != nil || !ok {
+		return false, "", fmt.Errorf("%s: interrupted restore %s lost its receipt; inspect manually", spec.name, stg)
+	}
+	if e.OperationID != m.SourceOperationID || e.To.Workflow != spec.from.workflow || e.To.Name != source || e.From.Workflow != spec.to.workflow || e.From.Name != target {
+		return false, "", fmt.Errorf("%s: restore receipt does not match its manifest", spec.name)
+	}
+	// Older interrupted manifests did not record restore time. Mint it once
+	// before resuming, rather than copying the original conversion time.
+	if m.At == "" {
+		m.At = time.Now().UTC().Format(time.RFC3339Nano)
+		if err := writeJSON(filepath.Join(stg, manifestFile), m); err != nil {
+			return false, "", err
+		}
+	}
+	created, err := finishRestore(spec, stg, m, lin, e, wfRoot)
+	if err != nil {
+		return false, "", err
+	}
+	return true, created, nil
 }
 
 func eventByID(dir, id string) (event, bool, error) {

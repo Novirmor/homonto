@@ -102,22 +102,8 @@ func (r Record) Validate(change string) error {
 			return fmt.Errorf("integration record has duplicate repository entry %q", e.Alias)
 		}
 		seen[e.Alias] = true
-		if r.RepoMode == "explicit" && strings.TrimSpace(e.Alias) == "" {
-			return fmt.Errorf("explicit integration record cannot contain implicit config repository")
-		}
-		if r.RepoMode == "" && e.BaseBranch != r.BaseBranch {
-			return fmt.Errorf("integration record entry %q base branch %q does not match record base branch %q", e.Alias, e.BaseBranch, r.BaseBranch)
-		}
-		if strings.TrimSpace(e.BaseBranch) == "" || strings.TrimSpace(e.SourceBranch) == "" || strings.TrimSpace(e.BaseCommit) == "" || strings.TrimSpace(e.SourceCommit) == "" {
-			return fmt.Errorf("integration record entry %q requires baseBranch, baseCommit, sourceBranch, and sourceCommit", e.Alias)
-		}
-		if e.Receipt != "" {
-			if err := validateReceipt(r.Mode, e.Receipt); err != nil {
-				return fmt.Errorf("integration record entry %q: %w", e.Alias, err)
-			}
-		}
-		if e.PublicationHead != "" && (!canonicalHead.MatchString(e.PublicationHead) || !strings.HasPrefix(e.Receipt, "pr:")) {
-			return fmt.Errorf("integration record entry %q publicationHead requires a PR receipt and canonical commit id", e.Alias)
+		if err := r.validateEntry(e); err != nil {
+			return err
 		}
 	}
 	if r.Status != StatusPending && r.Status != StatusComplete {
@@ -129,6 +115,28 @@ func (r Record) Validate(change string) error {
 				return fmt.Errorf("complete integration record is missing repository %q receipt", e.Alias)
 			}
 		}
+	}
+	return nil
+}
+
+// validateEntry checks one repository entry against the record it is in.
+func (r Record) validateEntry(e Entry) error {
+	if r.RepoMode == "explicit" && strings.TrimSpace(e.Alias) == "" {
+		return fmt.Errorf("explicit integration record cannot contain implicit config repository")
+	}
+	if r.RepoMode == "" && e.BaseBranch != r.BaseBranch {
+		return fmt.Errorf("integration record entry %q base branch %q does not match record base branch %q", e.Alias, e.BaseBranch, r.BaseBranch)
+	}
+	if strings.TrimSpace(e.BaseBranch) == "" || strings.TrimSpace(e.SourceBranch) == "" || strings.TrimSpace(e.BaseCommit) == "" || strings.TrimSpace(e.SourceCommit) == "" {
+		return fmt.Errorf("integration record entry %q requires baseBranch, baseCommit, sourceBranch, and sourceCommit", e.Alias)
+	}
+	if e.Receipt != "" {
+		if err := validateReceipt(r.Mode, e.Receipt); err != nil {
+			return fmt.Errorf("integration record entry %q: %w", e.Alias, err)
+		}
+	}
+	if e.PublicationHead != "" && (!canonicalHead.MatchString(e.PublicationHead) || !strings.HasPrefix(e.Receipt, "pr:")) {
+		return fmt.Errorf("integration record entry %q publicationHead requires a PR receipt and canonical commit id", e.Alias)
 	}
 	return nil
 }

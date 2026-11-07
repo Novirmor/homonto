@@ -159,71 +159,9 @@ func runClose(cmd *cobra.Command, root, name string) error {
 		return fmt.Errorf("onto close: state change %q does not match directory %q", st.Change, name)
 	}
 
-	// Abandoned is the UNSUCCESSFUL terminal state; archiving is the successful
-	// one. Without this guard a change abandoned at phase close still passed
-	// every evidence gate below and archived as a success — a contradictory
-	// terminal (archived+abandoned) that then falsely resolved other changes'
-	// dependencies.
-	if st.Abandoned {
-		return fmt.Errorf("onto close: change %q is abandoned (the unsuccessful terminal state); an abandoned change is never archived as a success", name)
-	}
-
-	if st.Phase != "close" {
-		return fmt.Errorf("onto close: change %q is at phase %q; run `onto advance` until it reaches close", name, st.Phase)
-	}
-	for _, artifact := range ontostate.RequiredArtifacts("close", st.Workflow) {
-		if _, statErr := os.Stat(filepath.Join(changeDir, artifact)); statErr != nil {
-			return fmt.Errorf("onto close: missing required artifact %s", artifact)
-		}
-	}
-
-	if err := closeEvidenceGate(root, changeDir, st); err != nil {
+	integration, integrationExists, err := closeGate(root, changeDir, name, st)
+	if err != nil {
 		return err
-	}
-	if err := verifyHeadsIntact(root, st); err != nil {
-		return fmt.Errorf("onto close: %w", err)
-	}
-	if err := validateCompletedMergeReceipt(root, changeDir, name); err != nil {
-		return fmt.Errorf("onto close: merge receipt is stale or missing: %w; run `onto merge-deltas %s`", err, name)
-	}
-
-	unresolved := ontostate.DepsResolved(root, st.Deps)
-	if len(unresolved) > 0 {
-		return fmt.Errorf("onto close: unresolved dependencies: %v", unresolved)
-	}
-	integration, integrationExists, err := integrationrecord.Load(changeDir, name)
-	if err != nil {
-		return fmt.Errorf("onto close: %w", err)
-	}
-	if integrationExists {
-		if err := validateIntegrationRecord(st, integration); err != nil {
-			return fmt.Errorf("onto close: %w", err)
-		}
-		if st.RepoMode == "explicit" {
-			dirs, err := stateSourceDirs(root, st)
-			if err != nil {
-				return err
-			}
-			for _, entry := range integration.Repositories {
-				if err := validateIntegrationSource(root, dirs[entry.Alias], st, entry); err != nil {
-					return err
-				}
-			}
-		}
-		if integration.Status != integrationrecord.StatusPending {
-			return fmt.Errorf("onto close: active change has an integration record with status %q", integration.Status)
-		}
-	}
-
-	dirt, err := stateWorktreeDirt(root, st)
-	if err != nil {
-		return fmt.Errorf("onto close: cannot verify scoped worktrees; refusing close: %w", err)
-	}
-	if integrationExists {
-		dirt = ignorePendingIntegrationDirt(root, dirt, name)
-	}
-	if msg := scopedDirtGateError(dirt, name); msg != "" {
-		return fmt.Errorf("onto close: dirty worktree blocks close: %s", msg)
 	}
 
 	archiveDir, _, planned, err := workspace.ArchiveTarget(cmd.Context(), changeDir)
@@ -283,6 +221,81 @@ func runClose(cmd *cobra.Command, root, name string) error {
 
 	fmt.Fprintf(cmd.OutOrStdout(), "%s: archived to %s; integration pending\n", name, archiveDir)
 	return nil
+}
+
+// closeGate admits a change to archiving: not abandoned, at close with every
+// required artifact, passing evidence on intact heads, a current merge
+// receipt, resolved dependencies, any existing integration record still
+// pending and consistent, and clean scoped worktrees. It returns the change's
+// integration record, if one exists.
+func closeGate(root, changeDir, name string, st ontostate.State) (integrationrecord.Record, bool, error) {
+	// Abandoned is the UNSUCCESSFUL terminal state; archiving is the successful
+	// one. Without this guard a change abandoned at phase close still passed
+	// every evidence gate below and archived as a success — a contradictory
+	// terminal (archived+abandoned) that then falsely resolved other changes'
+	// dependencies.
+	if st.Abandoned {
+		return integrationrecord.Record{}, false, fmt.Errorf("onto close: change %q is abandoned (the unsuccessful terminal state); an abandoned change is never archived as a success", name)
+	}
+
+	if st.Phase != "close" {
+		return integrationrecord.Record{}, false, fmt.Errorf("onto close: change %q is at phase %q; run `onto advance` until it reaches close", name, st.Phase)
+	}
+	for _, artifact := range ontostate.RequiredArtifacts("close", st.Workflow) {
+		if _, statErr := os.Stat(filepath.Join(changeDir, artifact)); statErr != nil {
+			return integrationrecord.Record{}, false, fmt.Errorf("onto close: missing required artifact %s", artifact)
+		}
+	}
+
+	if err := closeEvidenceGate(root, changeDir, st); err != nil {
+		return integrationrecord.Record{}, false, err
+	}
+	if err := verifyHeadsIntact(root, st); err != nil {
+		return integrationrecord.Record{}, false, fmt.Errorf("onto close: %w", err)
+	}
+	if err := validateCompletedMergeReceipt(root, changeDir, name); err != nil {
+		return integrationrecord.Record{}, false, fmt.Errorf("onto close: merge receipt is stale or missing: %w; run `onto merge-deltas %s`", err, name)
+	}
+
+	unresolved := ontostate.DepsResolved(root, st.Deps)
+	if len(unresolved) > 0 {
+		return integrationrecord.Record{}, false, fmt.Errorf("onto close: unresolved dependencies: %v", unresolved)
+	}
+	integration, integrationExists, err := integrationrecord.Load(changeDir, name)
+	if err != nil {
+		return integrationrecord.Record{}, false, fmt.Errorf("onto close: %w", err)
+	}
+	if integrationExists {
+		if err := validateIntegrationRecord(st, integration); err != nil {
+			return integrationrecord.Record{}, false, fmt.Errorf("onto close: %w", err)
+		}
+		if st.RepoMode == "explicit" {
+			dirs, err := stateSourceDirs(root, st)
+			if err != nil {
+				return integrationrecord.Record{}, false, err
+			}
+			for _, entry := range integration.Repositories {
+				if err := validateIntegrationSource(root, dirs[entry.Alias], st, entry); err != nil {
+					return integrationrecord.Record{}, false, err
+				}
+			}
+		}
+		if integration.Status != integrationrecord.StatusPending {
+			return integrationrecord.Record{}, false, fmt.Errorf("onto close: active change has an integration record with status %q", integration.Status)
+		}
+	}
+
+	dirt, err := stateWorktreeDirt(root, st)
+	if err != nil {
+		return integrationrecord.Record{}, false, fmt.Errorf("onto close: cannot verify scoped worktrees; refusing close: %w", err)
+	}
+	if integrationExists {
+		dirt = ignorePendingIntegrationDirt(root, dirt, name)
+	}
+	if msg := scopedDirtGateError(dirt, name); msg != "" {
+		return integrationrecord.Record{}, false, fmt.Errorf("onto close: dirty worktree blocks close: %s", msg)
+	}
+	return integration, integrationExists, nil
 }
 
 func recoverInterruptedClose(cmd *cobra.Command, root, name string) error {

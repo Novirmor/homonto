@@ -344,7 +344,7 @@ func recoverInterruptedClose(cmd *cobra.Command, root, name string) error {
 		if entriesErr != nil {
 			return fmt.Errorf("onto close: archive recovery: %w", entriesErr)
 		}
-		integration := integrationrecord.NewPending(name, st.Integration, st.BaseBranch, entries)
+		integration = integrationrecord.NewPending(name, st.Integration, st.BaseBranch, entries)
 		if st.RepoMode == "explicit" {
 			integration = integrationrecord.NewExplicitPending(name, st.Integration, entries)
 		}

@@ -3,6 +3,7 @@ package ontocli
 import (
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"reflect"
 	"strings"
@@ -206,6 +207,60 @@ Scenario-ID: SC-cross
 	if err != nil || r.RepoMode != "explicit" || len(r.Repositories) != 2 || r.Repositories[0].BaseBranch == r.Repositories[1].BaseBranch {
 		t.Fatalf("integration: %+v %v", r, err)
 	}
+	t.Run("recovery revalidates newly captured entries", func(t *testing.T) {
+		statePath := filepath.Join(archiveDir, "onto-state.yaml")
+		recordPath := integrationrecord.Path(archiveDir)
+		stateBytes, err := os.ReadFile(statePath)
+		if err != nil {
+			t.Fatal(err)
+		}
+		recordBytes, err := os.ReadFile(recordPath)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer func() {
+			if err := os.WriteFile(statePath, stateBytes, 0o644); err != nil {
+				t.Error(err)
+			}
+			if err := os.WriteFile(recordPath, recordBytes, 0o644); err != nil {
+				t.Error(err)
+			}
+		}()
+		interrupted := archived
+		interrupted.Archived = false
+		interrupted.IntegrationRequired = false
+		if err := ontostate.Save(statePath, interrupted); err != nil {
+			t.Fatal(err)
+		}
+		// Keep the worktree ownership lookup bound while simulating the
+		// interrupted archive: the registry otherwise requires terminal state.
+		active := filepath.Join(l.WorkflowRoot, "changes", "cross")
+		if err := os.Mkdir(active, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		defer os.Remove(active)
+		activeState := filepath.Join(active, "onto-state.yaml")
+		if err := ontostate.Save(activeState, interrupted); err != nil {
+			t.Fatal(err)
+		}
+		defer os.Remove(activeState)
+		if err := os.Remove(recordPath); err != nil {
+			t.Fatal(err)
+		}
+		git, err := exec.LookPath("git")
+		if err != nil {
+			t.Fatal(err)
+		}
+		bin := t.TempDir()
+		script := fmt.Sprintf("#!/bin/sh\ncase \" $* \" in *' merge-base '*' HEAD ') ;; *' merge-base '*) if [ -f %q ]; then exit 1; fi;; esac\nexec %q \"$@\"\n", recordPath, git)
+		if err := os.WriteFile(filepath.Join(bin, "git"), []byte(script), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
+		if err := recoverInterruptedClose(NewRootCmd(), root, "cross"); err == nil || !strings.Contains(err.Error(), "integration base") {
+			t.Fatalf("recovery must revalidate captured entries after saving: %v", err)
+		}
+	})
 	wrongSource := r.Repositories[0]
 	wrongSource.SourceCommit = wrongSource.BaseCommit
 	if err := validateIntegrationSource(root, execution[wrongSource.Alias], archived, wrongSource); err == nil {

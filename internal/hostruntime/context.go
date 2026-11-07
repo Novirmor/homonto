@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"path/filepath"
+	"slices"
 	"strings"
 )
 
@@ -84,71 +85,77 @@ func ParseSnapshot(raw, configPath string) (WorkflowSnapshot, error) {
 		}
 	}
 	changes, ok := m["changes"].([]any)
-	if !ok {
+	if !ok || slices.ContainsFunc(changes, func(c any) bool { return !validSnapshotChange(c) }) {
 		return WorkflowSnapshot{}, errSnapshot
-	}
-	for _, c := range changes {
-		cm, ok := record(c)
-		if !ok {
-			return WorkflowSnapshot{}, errSnapshot
-		}
-		for _, k := range []string{"identity", "status", "path", "workflow", "name", "phase"} {
-			if s, ok := text(cm[k]); !ok || s == "" {
-				return WorkflowSnapshot{}, errSnapshot
-			}
-		}
-		for _, k := range []string{"derivedPhase", "verifyResult", "integration"} {
-			if x, has := cm[k]; has {
-				if _, ok := text(x); !ok {
-					return WorkflowSnapshot{}, errSnapshot
-				}
-			}
-		}
-		for _, k := range []string{"tasksCompleted", "tasksTotal"} {
-			n, ok := cm[k].(json.Number)
-			if !ok {
-				return WorkflowSnapshot{}, errSnapshot
-			}
-			if i, err := n.Int64(); err != nil || i < 0 || i > 1<<53-1 {
-				return WorkflowSnapshot{}, errSnapshot
-			}
-		}
-		pending, ok := cm["pending"].([]any)
-		if !ok {
-			return WorkflowSnapshot{}, errSnapshot
-		}
-		for _, p := range pending {
-			if _, ok := text(p); !ok {
-				return WorkflowSnapshot{}, errSnapshot
-			}
-		}
 	}
 	findings, ok := m["findings"].([]any)
-	if !ok {
+	if !ok || slices.ContainsFunc(findings, func(f any) bool { return !validSnapshotFinding(f) }) {
 		return WorkflowSnapshot{}, errSnapshot
-	}
-	for _, f := range findings {
-		fm, ok := record(f)
-		if !ok {
-			return WorkflowSnapshot{}, errSnapshot
-		}
-		if s, ok := text(fm["workflow"]); !ok || s == "" {
-			return WorkflowSnapshot{}, errSnapshot
-		}
-		if _, ok := text(fm["message"]); !ok {
-			return WorkflowSnapshot{}, errSnapshot
-		}
-		if x, has := fm["change"]; has {
-			if _, ok := text(x); !ok {
-				return WorkflowSnapshot{}, errSnapshot
-			}
-		}
 	}
 	var out WorkflowSnapshot
 	if err := json.Unmarshal([]byte(raw), &out); err != nil {
 		return WorkflowSnapshot{}, errSnapshot
 	}
 	return out, nil
+}
+
+// validSnapshotChange checks one change entry's required and optional fields.
+func validSnapshotChange(c any) bool {
+	cm, ok := record(c)
+	if !ok {
+		return false
+	}
+	for _, k := range []string{"identity", "status", "path", "workflow", "name", "phase"} {
+		if s, ok := text(cm[k]); !ok || s == "" {
+			return false
+		}
+	}
+	for _, k := range []string{"derivedPhase", "verifyResult", "integration"} {
+		if x, has := cm[k]; has {
+			if _, ok := text(x); !ok {
+				return false
+			}
+		}
+	}
+	for _, k := range []string{"tasksCompleted", "tasksTotal"} {
+		n, ok := cm[k].(json.Number)
+		if !ok {
+			return false
+		}
+		if i, err := n.Int64(); err != nil || i < 0 || i > 1<<53-1 {
+			return false
+		}
+	}
+	pending, ok := cm["pending"].([]any)
+	if !ok {
+		return false
+	}
+	for _, p := range pending {
+		if _, ok := text(p); !ok {
+			return false
+		}
+	}
+	return true
+}
+
+// validSnapshotFinding checks one finding entry.
+func validSnapshotFinding(f any) bool {
+	fm, ok := record(f)
+	if !ok {
+		return false
+	}
+	if s, ok := text(fm["workflow"]); !ok || s == "" {
+		return false
+	}
+	if _, ok := text(fm["message"]); !ok {
+		return false
+	}
+	if x, has := fm["change"]; has {
+		if _, ok := text(x); !ok {
+			return false
+		}
+	}
+	return true
 }
 
 // jsonText encodes like JavaScript's JSON.stringify: no HTML escaping and no

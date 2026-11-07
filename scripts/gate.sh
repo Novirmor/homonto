@@ -79,6 +79,9 @@ step "opencode permission-telemetry contract stays pinned and tested"
 step "installer mocked-network tests"
 ./scripts/install-test.sh
 
+step "next release version allocation"
+bash ./scripts/next-release-version-test.sh
+
 step "govulncheck ./..."
 # Pin the toolchain for the tool build too: with GOTOOLCHAIN=auto, x/vuln's own
 # go.mod can select a toolchain older than this module's pin, and a govulncheck

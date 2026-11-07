@@ -136,3 +136,4 @@ numbering: [`../agents/adr.md`](../agents/adr.md).
 | [0114](0114-select-only-a-verified-swarm-candidate.md) | Select only a verified swarm candidate | Accepted |
 | [0115](0115-preview-candidates-in-docker-under-fixed-budgets.md) | Preview candidates in Docker under fixed budgets | Accepted |
 | [0116](0116-key-repository-partitions-by-harness-id.md) | Key repository state partitions by harness id | Accepted |
+| [0117](0117-publish-manual-next-test-releases.md) | Publish manual next test releases | Accepted |

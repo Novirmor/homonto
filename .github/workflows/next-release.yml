@@ -1,0 +1,104 @@
+name: next release
+
+# Manual pre-release of the current `next` tip (ADR 0117). The gate and the
+# build execute `next`'s own code, so they run in a read-only job without a
+# persisted token; only the publish job, which runs nothing from `next`, can
+# write tags and releases.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: next-release
+  cancel-in-progress: false
+
+jobs:
+  build:
+    # Only the default branch's workflow definition may publish.
+    if: github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      commit: ${{ steps.version.outputs.commit }}
+    steps:
+      - name: check out release tooling
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          path: control
+          persist-credentials: false
+
+      - name: capture latest next commit
+        uses: actions/checkout@v4
+        with:
+          ref: refs/heads/next
+          path: source
+          fetch-depth: 0
+          persist-credentials: false
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.26.10"
+          cache-dependency-path: source/go.sum
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+
+      - name: gate
+        working-directory: source
+        run: ./scripts/gate.sh
+
+      - name: allocate version
+        id: version
+        working-directory: source
+        run: |
+          set -eu
+          version="$(bash ../control/scripts/next-release-version.sh "https://github.com/${GITHUB_REPOSITORY}.git")"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "commit=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+
+      - name: build release artifacts
+        working-directory: source
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: scripts/build-release.sh "$VERSION"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dist
+          path: source/dist/
+          if-no-files-found: error
+          retention-days: 7
+
+  publish:
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist
+
+      - name: tag and publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ needs.build.outputs.version }}
+          COMMIT: ${{ needs.build.outputs.commit }}
+        run: |
+          set -eu
+          # Creating the ref fails if the name already exists, so a tag is never
+          # moved or reused.
+          tag_sha="$(gh api "repos/$GITHUB_REPOSITORY/git/tags" \
+            -f tag="$VERSION" -f message="$VERSION" -f object="$COMMIT" -f type=commit --jq .sha)"
+          gh api "repos/$GITHUB_REPOSITORY/git/refs" \
+            -f ref="refs/tags/$VERSION" -f sha="$tag_sha" >/dev/null
+          # shellcheck disable=SC2016 # the backticks are Markdown, not expansions
+          printf 'Test build from `next` at commit `%s`.\n\nThis is a pre-release, not a stable release. The automated gate passed; the stable release evidence and live checks have not necessarily been completed.\n' "$COMMIT" > "$RUNNER_TEMP/next-release-notes.md"
+          gh release create "$VERSION" --repo "$GITHUB_REPOSITORY" --verify-tag --prerelease \
+            --title "$VERSION" --notes-file "$RUNNER_TEMP/next-release-notes.md" \
+            dist/*.tar.gz dist/*.zip dist/SHA256SUMS

@@ -1,5 +1,8 @@
 # Release checklist
 
+For experimental `next` builds, see [Next test releases](#next-test-releases).
+The stable release evidence process below does not apply to those builds.
+
 How to cut a release of the three binaries, `homonto`, `onto`, and `to`.
 The gate below decides *whether* to release; the rest of this page is *how*.
 
@@ -35,6 +38,22 @@ Releases run through the `release` GitHub workflow
 only after the local gate passes. The workflow then re-runs the gate,
 cross-compiles every target, checksums the archives, and publishes the GitHub
 release.
+
+## Next test releases
+
+Run **Actions → next release → Run workflow** from the default branch. The
+workflow checks out the current tip of `next` when the job starts and keeps
+that commit even if `next` advances during the run. It runs the full automated
+gate, builds all 18 archives, and publishes a GitHub pre-release with checksums
+and the captured commit. Runs are serialized; existing remote tags determine
+the next `homonto-next-N` number. Never move or reuse one of these tags.
+
+These are test builds, not stable releases: the stable evidence manifest,
+live checks, and supported-cell claims are not implied. The pre-release does
+not become GitHub's latest stable release. If publication fails after the tag
+is pushed, leave the tag in place and run the workflow again; the next run
+uses a new number. See [installation](guides/installation.md#next-test-releases)
+for the tester download and rollback instructions.
 
 ## 1. Pre-tag verification
 

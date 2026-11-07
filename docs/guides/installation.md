@@ -24,6 +24,31 @@ Pick one installation method:
 After any of them, [verify the install](#verify) and run
 [first steps](getting-started.md).
 
+## Next test releases
+
+Experimental builds of the `next` branch appear as pre-releases named
+`homonto-next-N` on the [releases page](https://github.com/Novirmor/homonto/releases).
+They are independently numbered and do not replace the latest stable release.
+The interactive installer accepts semantic versions, not these names; use the
+archives instead. For example, on Linux amd64, download the `homonto`, `onto`,
+and `to` archives you need and `SHA256SUMS` from the same pre-release, then:
+
+```sh
+TAG=homonto-next-1  # replace with the chosen release
+sha256sum -c SHA256SUMS --ignore-missing  # macOS: shasum -a 256 -c SHA256SUMS
+tar -xzf "homonto_${TAG}_linux_amd64.tar.gz"
+./"homonto_${TAG}_linux_amd64"/homonto version
+```
+
+On macOS, run the checksum command in a directory containing all 18 archives,
+or verify the downloaded files against their entries in `SHA256SUMS` manually;
+`shasum` does not ignore missing files. Choose the appropriate OS and
+architecture archive; Windows uses ZIP files. Keep test binaries in a
+separate directory on your PATH. To return to stable, remove that directory
+from PATH or reinstall a stable release using the methods below. Report issues
+on the project's issue tracker with the release name and commit from its notes.
+These names are not Go semantic versions; use archives rather than `go install`.
+
 ## mise (recommended)
 
 [mise](https://mise.jdx.dev/) installs prebuilt GitHub releases through its

@@ -42,72 +42,7 @@ var openCodeCLIRules = map[string]string{
 }
 
 func OpenCodeCLISettings(raw map[string]any) (map[string]any, error) {
-	out := map[string]any{}
-	origins := map[string]string{}
-	put := func(path, origin string, value any) error {
-		if previous, ok := origins[path]; ok {
-			return fmt.Errorf("tui.opencode: %s and %s both configure V2 %s; declare only one", previous, origin, path)
-		}
-		if _, err := json.Marshal(value); err != nil {
-			return fmt.Errorf("tui.opencode.%s: invalid JSON value: %w", origin, err)
-		}
-		origins[path], out[path] = origin, value
-		return nil
-	}
-	var walk func(string, string, any) error
-	walk = func(path, origin string, value any) error {
-		if rule, ok := openCodeCLIRules[path]; ok {
-			if !validCLIValue(rule, value) {
-				return fmt.Errorf("tui.opencode.%s: V2 %s requires %s", origin, path, rule)
-			}
-			return put(path, origin, value)
-		}
-		group := path == "keybinds" || path == "experimental"
-		for key := range openCodeCLIRules {
-			group = group || strings.HasPrefix(key, path+".")
-		}
-		if !group {
-			return fmt.Errorf("tui.opencode.%s: unsupported OpenCode V2 CLI setting; use the native keys at https://opencode.ai/v2/docs/cli/config/ (legacy keybind IDs, diff_style, attention.enabled and terminal plugins are not migrated)", origin)
-		}
-		obj, ok := value.(map[string]any)
-		if !ok {
-			return fmt.Errorf("tui.opencode.%s: V2 %s requires a table", origin, path)
-		}
-		for _, key := range slices.Sorted(maps.Keys(obj)) {
-			v := obj[key]
-			if err := validateKey("tui.opencode."+origin, key); err != nil {
-				return err
-			}
-			if path == "keybinds" {
-				if !openCodeCLIKeybinds[key] {
-					return fmt.Errorf("tui.opencode.keybinds.%s: unsupported V2 command ID; use a native command ID from https://opencode.ai/v2/docs/cli/keybinds/", key)
-				}
-				if !validCLIBinding(v) {
-					return fmt.Errorf("tui.opencode.keybinds.%s: invalid V2 binding; use a string, false, descriptor, binding object or array of alternatives", key)
-				}
-				if err := put(path+"."+jsonutil.EscapePath(key), origin+"."+key, v); err != nil {
-					return err
-				}
-				continue
-			}
-			if path == "experimental" {
-				if _, ok := v.(bool); !ok {
-					return fmt.Errorf("tui.opencode.experimental.%s: requires a boolean", key)
-				}
-				if err := put(path+"."+jsonutil.EscapePath(key), origin+"."+key, v); err != nil {
-					return err
-				}
-				continue
-			}
-			if strings.ContainsAny(key, `.|*?#@\:`) {
-				return fmt.Errorf("tui.opencode.%s: unsupported V2 field %q; use nested TOML tables", origin, key)
-			}
-			if err := walk(path+"."+key, origin+"."+key, v); err != nil {
-				return err
-			}
-		}
-		return nil
-	}
+	c := cliSettings{out: map[string]any{}, origins: map[string]string{}}
 	for _, key := range slices.Sorted(maps.Keys(raw)) {
 		if err := validateKey("tui.opencode", key); err != nil {
 			return nil, err
@@ -124,11 +59,84 @@ func OpenCodeCLISettings(raw map[string]any) (map[string]any, error) {
 		if strings.ContainsAny(key, `.|*?#@\:`) && key != "$schema" {
 			return nil, fmt.Errorf("tui.opencode: unsupported V2 field %q; use nested TOML tables", key)
 		}
-		if err := walk(key, key, value); err != nil {
+		if err := c.walk(key, key, value); err != nil {
 			return nil, err
 		}
 	}
-	return out, nil
+	return c.out, nil
+}
+
+// cliSettings accumulates V2 cli.json settings by document path, remembering
+// which TOML key set each one.
+type cliSettings struct {
+	out     map[string]any
+	origins map[string]string
+}
+
+func (c cliSettings) put(path, origin string, value any) error {
+	if previous, ok := c.origins[path]; ok {
+		return fmt.Errorf("tui.opencode: %s and %s both configure V2 %s; declare only one", previous, origin, path)
+	}
+	if _, err := json.Marshal(value); err != nil {
+		return fmt.Errorf("tui.opencode.%s: invalid JSON value: %w", origin, err)
+	}
+	c.origins[path], c.out[path] = origin, value
+	return nil
+}
+
+// walk validates value at a V2 path: a known leaf against its rule, or a
+// group table entry by entry.
+func (c cliSettings) walk(path, origin string, value any) error {
+	if rule, ok := openCodeCLIRules[path]; ok {
+		if !validCLIValue(rule, value) {
+			return fmt.Errorf("tui.opencode.%s: V2 %s requires %s", origin, path, rule)
+		}
+		return c.put(path, origin, value)
+	}
+	group := path == "keybinds" || path == "experimental"
+	for key := range openCodeCLIRules {
+		group = group || strings.HasPrefix(key, path+".")
+	}
+	if !group {
+		return fmt.Errorf("tui.opencode.%s: unsupported OpenCode V2 CLI setting; use the native keys at https://opencode.ai/v2/docs/cli/config/ (legacy keybind IDs, diff_style, attention.enabled and terminal plugins are not migrated)", origin)
+	}
+	obj, ok := value.(map[string]any)
+	if !ok {
+		return fmt.Errorf("tui.opencode.%s: V2 %s requires a table", origin, path)
+	}
+	for _, key := range slices.Sorted(maps.Keys(obj)) {
+		if err := validateKey("tui.opencode."+origin, key); err != nil {
+			return err
+		}
+		if err := c.walkEntry(path, origin, key, obj[key]); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// walkEntry handles one key of a group table. keybinds and experimental hold
+// free-form keys stored escaped; every other group nests further.
+func (c cliSettings) walkEntry(path, origin, key string, v any) error {
+	switch path {
+	case "keybinds":
+		if !openCodeCLIKeybinds[key] {
+			return fmt.Errorf("tui.opencode.keybinds.%s: unsupported V2 command ID; use a native command ID from https://opencode.ai/v2/docs/cli/keybinds/", key)
+		}
+		if !validCLIBinding(v) {
+			return fmt.Errorf("tui.opencode.keybinds.%s: invalid V2 binding; use a string, false, descriptor, binding object or array of alternatives", key)
+		}
+		return c.put(path+"."+jsonutil.EscapePath(key), origin+"."+key, v)
+	case "experimental":
+		if _, ok := v.(bool); !ok {
+			return fmt.Errorf("tui.opencode.experimental.%s: requires a boolean", key)
+		}
+		return c.put(path+"."+jsonutil.EscapePath(key), origin+"."+key, v)
+	}
+	if strings.ContainsAny(key, `.|*?#@\:`) {
+		return fmt.Errorf("tui.opencode.%s: unsupported V2 field %q; use nested TOML tables", origin, key)
+	}
+	return c.walk(path+"."+key, origin+"."+key, v)
 }
 
 func validCLIValue(rule string, value any) bool {

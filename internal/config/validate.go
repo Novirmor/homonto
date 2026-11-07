@@ -801,110 +801,129 @@ func validateModels(c *Config) error {
 	for _, tool := range c.EnabledModelTools() {
 		// A routing policy is a model source too (ADR 0099): an agent it
 		// covers needs no pin. Expansion errors are tolerated here exactly as
-		// in the framework walk below.
+		// in validateExpandedModels.
 		routes, _ := c.AgentRoutes(tool)
 		required := func(identity string) bool { return routes[identity].From != RouteFromPolicy }
-		for _, name := range slices.Sorted(maps.Keys(c.Subagents)) {
-			sa := c.Subagents[name]
-			// A tune-only entry declares no agent; its overrides (if any) are
-			// checked below by validateSubagentOverrides. The must-declare
-			// check applies only to subagents that actually project one.
-			if sa.IsTuneOnly() {
-				continue
-			}
-			// Only builtin: subagents are rendered through agentfm; local:
-			// and remote: content is projected verbatim and has no model line
-			// to stamp, so requiring an override would contradict the
-			// override-on-non-builtin rejection below.
-			if !isBuiltinSubagent(sa) {
-				continue
-			}
-			if !slices.Contains(sa.TargetsOrAll(), tool) {
-				continue
-			}
-			label := "subagents." + name + "." + tool
-			cat, _ := SubagentCatalogName(sa.Source)
-			if err := validateModelSpec(tool, label, sa.ModelOverrideFor(tool), required(cat)); err != nil {
-				return err
-			}
+		if err := validateDeclaredModels(c, tool, required); err != nil {
+			return err
 		}
-		// Framework-expanded walk: cover builtin subagents a framework
-		// installs that have no matching explicit [subagents.<name>]
-		// declaration. The explicit walk above misses them (their config
-		// keys are absent from c.Subagents), and without this check they
-		// would render through agentfm with no model line.
-		//
-		// Resolve an expanded entry's model the same way rendering does
-		// (engine.subagentRenderContext): iterate c.Subagents and key each
-		// override by the entry's resolved catalog name, so an explicit
-		// [subagents.x] source="builtin:architect" contributes the override
-		// for catalog name "architect" (not "x"). An explicit declaration
-		// (any non-tune-only entry whose source resolves to the catalog
-		// name) targeting this tool was already checked above; only entries with
-		// NO explicit declaration for this tool — or with only a tune-only retune
-		// — fall through here.
-		//
-		// Tolerate expansion errors (e.g. a stale [engines.comet] whose
-		// catalog was removed): the engine and doctor already report them
-		// as warnings, the explicit walk above still catches must-declare
-		// failures for explicit declarations, and propagating here would
-		// regress `homonto doctor` on configs it was designed to tolerate.
-		expanded, err := c.ExpandedSubagentEntriesForTool(tool)
-		if err != nil {
-			continue
-		}
-		aliases := map[string]string{}
-		for _, entry := range expanded {
-			if cat, ok := SubagentCatalogName(entry.Resource.Source); ok {
-				if previous, exists := aliases[cat]; exists && previous != entry.Name {
-					return fmt.Errorf("parse config: subagents.%s and subagents.%s install builtin:%s under different aliases; one builtin renders one host name, so install it under only one name", previous, entry.Name, cat)
-				}
-				aliases[cat] = entry.Name
-			}
-		}
-		routeByCat := map[string]ModelRoute{}
-		declaredByCat := map[string]bool{}
-		for _, name := range slices.Sorted(maps.Keys(c.Subagents)) {
-			sa := c.Subagents[name]
-			var cat string
-			if sa.IsTuneOnly() {
-				// A tune-only entry names the catalog agent directly (its
-				// retune target). Its override still applies, but it does
-				// not count as an explicit declaration for the must-declare
-				// check (which the explicit walk owns).
-				cat = name
-			} else {
-				catName, ok := SubagentCatalogName(sa.Source)
-				if !ok {
-					continue
-				}
-				cat = catName
-				// A declaration only covers an expanded agent for tools it
-				// targets. Its override may still be a model source for either
-				// rendered tool, matching engine.subagentRenderContext.
-				if slices.Contains(sa.TargetsOrAll(), tool) {
-					declaredByCat[cat] = true
-				}
-			}
-			if r := sa.ModelOverrideFor(tool); r.IsSet() {
-				routeByCat[cat] = r
-			}
-		}
-		for _, e := range expanded {
-			cat, ok := SubagentCatalogName(e.Resource.Source)
-			if !ok {
-				continue // local:/remote: content is projected verbatim
-			}
-			if declaredByCat[cat] {
-				continue // explicit declaration; checked above
-			}
-			label := "subagents." + cat + "." + tool
-			if err := validateModelSpec(tool, label, routeByCat[cat], required(cat)); err != nil {
-				return err
-			}
+		if err := validateExpandedModels(c, tool, required); err != nil {
+			return err
 		}
 	}
 	return validateSubagentOverrides(c)
+}
+
+// validateDeclaredModels requires a model for every explicit builtin subagent
+// declaration targeting tool, unless a routing policy covers it.
+func validateDeclaredModels(c *Config, tool string, required func(string) bool) error {
+	for _, name := range slices.Sorted(maps.Keys(c.Subagents)) {
+		sa := c.Subagents[name]
+		// A tune-only entry declares no agent; its overrides (if any) are
+		// checked below by validateSubagentOverrides. The must-declare
+		// check applies only to subagents that actually project one.
+		if sa.IsTuneOnly() {
+			continue
+		}
+		// Only builtin: subagents are rendered through agentfm; local:
+		// and remote: content is projected verbatim and has no model line
+		// to stamp, so requiring an override would contradict the
+		// override-on-non-builtin rejection below.
+		if !isBuiltinSubagent(sa) {
+			continue
+		}
+		if !slices.Contains(sa.TargetsOrAll(), tool) {
+			continue
+		}
+		label := "subagents." + name + "." + tool
+		cat, _ := SubagentCatalogName(sa.Source)
+		if err := validateModelSpec(tool, label, sa.ModelOverrideFor(tool), required(cat)); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// validateExpandedModels covers builtin subagents a framework installs for
+// tool without an explicit declaration, resolving their model as rendering
+// does, and requires one alias per builtin.
+func validateExpandedModels(c *Config, tool string, required func(string) bool) error {
+	// Framework-expanded walk: cover builtin subagents a framework
+	// installs that have no matching explicit [subagents.<name>]
+	// declaration. validateDeclaredModels misses them (their config
+	// keys are absent from c.Subagents), and without this check they
+	// would render through agentfm with no model line.
+	//
+	// Resolve an expanded entry's model the same way rendering does
+	// (engine.subagentRenderContext): iterate c.Subagents and key each
+	// override by the entry's resolved catalog name, so an explicit
+	// [subagents.x] source="builtin:architect" contributes the override
+	// for catalog name "architect" (not "x"). An explicit declaration
+	// (any non-tune-only entry whose source resolves to the catalog
+	// name) targeting this tool was already checked by validateDeclaredModels; only entries with
+	// NO explicit declaration for this tool — or with only a tune-only retune
+	// — fall through here.
+	//
+	// Tolerate expansion errors (e.g. a stale [engines.comet] whose
+	// catalog was removed): the engine and doctor already report them
+	// as warnings, validateDeclaredModels still catches must-declare
+	// failures for explicit declarations, and propagating here would
+	// regress `homonto doctor` on configs it was designed to tolerate.
+	expanded, err := c.ExpandedSubagentEntriesForTool(tool)
+	if err != nil {
+		return nil
+	}
+	aliases := map[string]string{}
+	for _, entry := range expanded {
+		if cat, ok := SubagentCatalogName(entry.Resource.Source); ok {
+			if previous, exists := aliases[cat]; exists && previous != entry.Name {
+				return fmt.Errorf("parse config: subagents.%s and subagents.%s install builtin:%s under different aliases; one builtin renders one host name, so install it under only one name", previous, entry.Name, cat)
+			}
+			aliases[cat] = entry.Name
+		}
+	}
+	routeByCat := map[string]ModelRoute{}
+	declaredByCat := map[string]bool{}
+	for _, name := range slices.Sorted(maps.Keys(c.Subagents)) {
+		sa := c.Subagents[name]
+		var cat string
+		if sa.IsTuneOnly() {
+			// A tune-only entry names the catalog agent directly (its
+			// retune target). Its override still applies, but it does
+			// not count as an explicit declaration for the must-declare
+			// check (which validateDeclaredModels owns).
+			cat = name
+		} else {
+			catName, ok := SubagentCatalogName(sa.Source)
+			if !ok {
+				continue
+			}
+			cat = catName
+			// A declaration only covers an expanded agent for tools it
+			// targets. Its override may still be a model source for either
+			// rendered tool, matching engine.subagentRenderContext.
+			if slices.Contains(sa.TargetsOrAll(), tool) {
+				declaredByCat[cat] = true
+			}
+		}
+		if r := sa.ModelOverrideFor(tool); r.IsSet() {
+			routeByCat[cat] = r
+		}
+	}
+	for _, e := range expanded {
+		cat, ok := SubagentCatalogName(e.Resource.Source)
+		if !ok {
+			continue // local:/remote: content is projected verbatim
+		}
+		if declaredByCat[cat] {
+			continue // explicit declaration; validateDeclaredModels checked it
+		}
+		label := "subagents." + cat + "." + tool
+		if err := validateModelSpec(tool, label, routeByCat[cat], required(cat)); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // isBuiltinSubagent reports whether the subagent's source resolves to a
@@ -954,78 +973,34 @@ func rejectLegacyModels(m modelsTable) error {
 // typo'd name would otherwise validate, plan, and apply clean while retuning
 // nothing).
 func validateSubagentOverrides(c *Config) error {
-	names := make([]string, 0, len(c.Subagents))
-	for name := range c.Subagents {
-		names = append(names, name)
-	}
-	sort.Strings(names) // deterministic: the same config must fail on the same offender
-
 	// The installed builtin agents, by catalog name — what a tune-only entry
 	// must resolve against. Computed lazily: only configs that carry overrides
 	// pay for the framework expansion.
 	var installed map[string]bool
 	installedBuiltins := func() (map[string]bool, error) {
-		if installed != nil {
-			return installed, nil
-		}
-		installed = map[string]bool{}
-		for _, tool := range resourceTargetTools {
-			entries, err := c.ExpandedSubagentEntriesForTool(tool)
-			if err != nil {
+		if installed == nil {
+			var err error
+			if installed, err = installedBuiltinAgents(c); err != nil {
 				return nil, err
-			}
-			for _, e := range entries {
-				if cat, ok := SubagentCatalogName(e.Resource.Source); ok {
-					installed[cat] = true
-				}
 			}
 		}
 		return installed, nil
 	}
 
-	seen := map[string]map[string]struct {
-		entry string
-		ov    ModelRoute
-	}{} // catalog name -> tool -> first override seen
-	for _, name := range names {
+	seen := map[string]map[string]firstOverride{} // catalog name -> tool -> first override seen
+	// Sorted: the same config must fail on the same offender.
+	for _, name := range slices.Sorted(maps.Keys(c.Subagents)) {
 		sa := c.Subagents[name]
-		hasOverride := sa.OpenCode.IsSet() || sa.Claude.IsSet()
-		if !hasOverride {
+		if !sa.OpenCode.IsSet() && !sa.Claude.IsSet() {
 			continue
 		}
-
-		// Resolve the catalog name the override applies to. Overrides only make
-		// sense for builtin (catalog-rendered) agents: local:/remote: content is
-		// projected verbatim, so an override there would be accepted and then
-		// silently discarded — reject it instead.
-		cat := name
-		if !sa.IsTuneOnly() {
-			var ok bool
-			if cat, ok = SubagentCatalogName(sa.Source); !ok {
-				// A local:/remote: agent renders, and takes the override, only
-				// when its content carries a homonto: intent block; the engine
-				// reads that content and rejects an override on a verbatim
-				// agent (ADR 0096). Its fragment is still checked here.
-				for _, tool := range resourceTargetTools {
-					if err := validateModelSpec(tool, "subagents."+name+"."+tool, sa.ModelOverrideFor(tool), false); err != nil {
-						return err
-					}
-				}
-				continue
-			}
-		} else {
-			known, err := installedBuiltins()
-			if err != nil {
-				return err
-			}
-			if !known[cat] && c.anyRemotePending() {
-				continue // a pending remote package may ship it; rechecked after injection
-			}
-			if !known[cat] {
-				return fmt.Errorf("parse config: subagents.%s tunes an agent that is not installed — no framework or [subagents.*] declaration provides builtin:%s; if this is a retired onto/to primary, rename the model block to subagents.homonto", name, cat)
-			}
+		cat, ok, err := overrideCatalogName(c, name, sa, installedBuiltins)
+		if err != nil {
+			return err
 		}
-
+		if !ok {
+			continue
+		}
 		for _, tool := range resourceTargetTools {
 			ov := sa.ModelOverrideFor(tool)
 			if !ov.IsSet() {
@@ -1045,21 +1020,73 @@ func validateSubagentOverrides(c *Config) error {
 			// would be map-iteration luck (a different render — and a different
 			// materialize fingerprint — every run).
 			if seen[cat] == nil {
-				seen[cat] = map[string]struct {
-					entry string
-					ov    ModelRoute
-				}{}
+				seen[cat] = map[string]firstOverride{}
 			}
 			if prev, dup := seen[cat][tool]; dup && !prev.ov.Equal(ov) {
 				return fmt.Errorf("parse config: subagents.%s.%s conflicts with subagents.%s.%s — one builtin (%s) renders one file, so its overrides must agree", name, tool, prev.entry, tool, cat)
 			}
-			seen[cat][tool] = struct {
-				entry string
-				ov    ModelRoute
-			}{name, ov}
+			seen[cat][tool] = firstOverride{name, ov}
 		}
 	}
 	return nil
+}
+
+// firstOverride is the first entry seen overriding one builtin for one tool.
+type firstOverride struct {
+	entry string
+	ov    ModelRoute
+}
+
+// installedBuiltinAgents names every builtin agent some framework or
+// declaration installs, by catalog name.
+func installedBuiltinAgents(c *Config) (map[string]bool, error) {
+	installed := map[string]bool{}
+	for _, tool := range resourceTargetTools {
+		entries, err := c.ExpandedSubagentEntriesForTool(tool)
+		if err != nil {
+			return nil, err
+		}
+		for _, e := range entries {
+			if cat, ok := SubagentCatalogName(e.Resource.Source); ok {
+				installed[cat] = true
+			}
+		}
+	}
+	return installed, nil
+}
+
+// overrideCatalogName resolves the builtin an entry's overrides apply to.
+// Overrides only make sense for builtin (catalog-rendered) agents: local: and
+// remote: content is projected verbatim, so an override there would be
+// accepted and then silently discarded. ok is false when there is nothing
+// further to check for this entry.
+func overrideCatalogName(c *Config, name string, sa Subagent, installedBuiltins func() (map[string]bool, error)) (string, bool, error) {
+	if !sa.IsTuneOnly() {
+		if cat, ok := SubagentCatalogName(sa.Source); ok {
+			return cat, true, nil
+		}
+		// A local:/remote: agent renders, and takes the override, only when
+		// its content carries a homonto: intent block; the engine reads that
+		// content and rejects an override on a verbatim agent (ADR 0096). Its
+		// fragment is still checked here.
+		for _, tool := range resourceTargetTools {
+			if err := validateModelSpec(tool, "subagents."+name+"."+tool, sa.ModelOverrideFor(tool), false); err != nil {
+				return "", false, err
+			}
+		}
+		return "", false, nil
+	}
+	known, err := installedBuiltins()
+	if err != nil {
+		return "", false, err
+	}
+	if !known[name] && c.anyRemotePending() {
+		return "", false, nil // a pending remote package may ship it; rechecked after injection
+	}
+	if !known[name] {
+		return "", false, fmt.Errorf("parse config: subagents.%s tunes an agent that is not installed — no framework or [subagents.*] declaration provides builtin:%s; if this is a retired onto/to primary, rename the model block to subagents.homonto", name, name)
+	}
+	return name, true, nil
 }
 
 // indexLike reports whether sjson would treat name as an array index:

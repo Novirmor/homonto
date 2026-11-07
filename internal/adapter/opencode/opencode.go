@@ -430,6 +430,72 @@ func (a *Adapter) ObserveHashes(st *state.State) (map[string]string, error) {
 	return out, nil
 }
 
+// applyPlugins applies the plugin.* changes to opencode.jsonc's plugin array.
+// plugin.* is bespoke array membership (structproj's keyed codec cannot model
+// it): create/update adds the element, delete removes it, adopt records state.
+func applyPlugins(changes []adapter.Change, res *secret.Resolver, st *state.State, doc []byte) ([]byte, bool, error) {
+	docChanged := false
+	for _, c := range filterChanges(changes, "plugin.") {
+		switch c.Action {
+		case "noop":
+			continue
+		case "adopt":
+			// Records a pre-existing membership into state without touching disk.
+			val, err := res.ResolveJSON(c.New)
+			if err != nil {
+				return nil, false, err
+			}
+			st.Set("opencode", c.Key, c.New, secret.Hash(jsonutil.Canonical(structproj.MustJSON(val))))
+		case "delete":
+			// Remove the RESOLVED element: a bundled plugin's doc entry is its
+			// materialized path, recovered from the recorded New when present.
+			elem := trim(c.Key, "plugin.")
+			if e, ok := st.Get("opencode", c.Key); ok && e.Desired != "" {
+				if v, err := res.ResolveJSON(e.Desired); err == nil {
+					elem = fmt.Sprintf("%v", v)
+				}
+			}
+			next, rerr := jsonutil.RemoveArrayElem(doc, "plugin", elem)
+			if rerr != nil {
+				return nil, false, rerr
+			}
+			// Only count a real removal as a doc change: a delete that merely
+			// drops an orphaned state record (element already absent on disk)
+			// must not rewrite opencode.jsonc — a rewrite normalizes the JSONC
+			// and destroys the user's comments for nothing.
+			if !bytes.Equal(next, doc) {
+				doc = next
+				docChanged = true
+			}
+			st.Delete("opencode", c.Key)
+		default: // create | update
+			val, err := res.ResolveJSON(c.New)
+			if err != nil {
+				return nil, false, err
+			}
+			// A bundled source used to resolve to a directory. Retire only its
+			// recorded membership when the same source now resolves to plugin.ts.
+			if previous, ok := st.Get("opencode", c.Key); ok && catalogPluginNames[trim(c.Key, "plugin.")] && previous.Desired != "" && previous.Desired != c.New {
+				old, err := res.ResolveJSON(previous.Desired)
+				if err != nil {
+					return nil, false, err
+				}
+				if doc, err = jsonutil.RemoveArrayElem(doc, "plugin", fmt.Sprintf("%v", old)); err != nil {
+					return nil, false, err
+				}
+			}
+			// The element is the RESOLVED entry (c.New): a bundled plugin
+			// projects its materialized path, not the bare name.
+			if doc, err = jsonutil.EnsureArrayElem(doc, "plugin", fmt.Sprintf("%v", val)); err != nil {
+				return nil, false, err
+			}
+			docChanged = true
+			st.Set("opencode", c.Key, c.New, secret.Hash(jsonutil.Canonical(structproj.MustJSON(val))))
+		}
+	}
+	return doc, docChanged, nil
+}
+
 func (a *Adapter) Apply(cfg *config.Config, cs adapter.ChangeSet, res *secret.Resolver, st *state.State) error {
 	if _, err := desiredTUI(cfg); err != nil {
 		return err
@@ -474,83 +540,18 @@ func (a *Adapter) Apply(cfg *config.Config, cs adapter.ChangeSet, res *secret.Re
 			st.Delete("opencode", c.Key)
 		}
 	}
-	docChanged := false
-	// plugin.* is bespoke array membership (structproj's keyed codec cannot model
-	// it): create/update adds the element, delete removes it, adopt records state.
-	for _, c := range filterChanges(cs.Changes, "plugin.") {
-		switch c.Action {
-		case "noop":
-			continue
-		case "adopt":
-			// Records a pre-existing membership into state without touching disk.
-			val, err := res.ResolveJSON(c.New)
-			if err != nil {
-				return err
-			}
-			st.Set("opencode", c.Key, c.New, secret.Hash(jsonutil.Canonical(structproj.MustJSON(val))))
-		case "delete":
-			// Remove the RESOLVED element: a bundled plugin's doc entry is its
-			// materialized path, recovered from the recorded New when present.
-			elem := trim(c.Key, "plugin.")
-			if e, ok := st.Get("opencode", c.Key); ok && e.Desired != "" {
-				if v, err := res.ResolveJSON(e.Desired); err == nil {
-					elem = fmt.Sprintf("%v", v)
-				}
-			}
-			next, rerr := jsonutil.RemoveArrayElem(doc, "plugin", elem)
-			if rerr != nil {
-				return rerr
-			}
-			// Only count a real removal as a doc change: a delete that merely
-			// drops an orphaned state record (element already absent on disk)
-			// must not rewrite opencode.jsonc — a rewrite normalizes the JSONC
-			// and destroys the user's comments for nothing.
-			if !bytes.Equal(next, doc) {
-				doc = next
-				docChanged = true
-			}
-			st.Delete("opencode", c.Key)
-		default: // create | update
-			val, err := res.ResolveJSON(c.New)
-			if err != nil {
-				return err
-			}
-			// A bundled source used to resolve to a directory. Retire only its
-			// recorded membership when the same source now resolves to plugin.ts.
-			if previous, ok := st.Get("opencode", c.Key); ok && catalogPluginNames[trim(c.Key, "plugin.")] && previous.Desired != "" && previous.Desired != c.New {
-				old, err := res.ResolveJSON(previous.Desired)
-				if err != nil {
-					return err
-				}
-				if doc, err = jsonutil.RemoveArrayElem(doc, "plugin", fmt.Sprintf("%v", old)); err != nil {
-					return err
-				}
-			}
-			// The element is the RESOLVED entry (c.New): a bundled plugin
-			// projects its materialized path, not the bare name.
-			if doc, err = jsonutil.EnsureArrayElem(doc, "plugin", fmt.Sprintf("%v", val)); err != nil {
-				return err
-			}
-			docChanged = true
-			st.Set("opencode", c.Key, c.New, secret.Hash(jsonutil.Canonical(structproj.MustJSON(val))))
-		}
+	doc, docChanged, err := applyPlugins(cs.Changes, res, st, doc)
+	if err != nil {
+		return err
 	}
-	{
-		var ch bool
-		doc, ch, err = structproj.Apply("opencode", "setting.", filterChanges(cs.Changes, "setting."), doc, codec, res, st, settingDocPath)
-		if err != nil {
-			return err
-		}
-		docChanged = docChanged || ch
+	doc, settingsChanged, err := structproj.Apply("opencode", "setting.", filterChanges(cs.Changes, "setting."), doc, codec, res, st, settingDocPath)
+	if err != nil {
+		return err
 	}
-	projChanged := false
-	{
-		var ch bool
-		projDoc, ch, err = structproj.Apply("opencode", "projsetting.", filterChanges(cs.Changes, "projsetting."), projDoc, codec, res, st, projSettingDocPath)
-		if err != nil {
-			return err
-		}
-		projChanged = projChanged || ch
+	docChanged = docChanged || settingsChanged
+	projDoc, projChanged, err := structproj.Apply("opencode", "projsetting.", filterChanges(cs.Changes, "projsetting."), projDoc, codec, res, st, projSettingDocPath)
+	if err != nil {
+		return err
 	}
 	tuiDoc, tuiChanged, err := structproj.Apply("opencode", cliStatePrefix, filterChanges(cs.Changes, cliStatePrefix), tuiDoc, cliCodec{}, res, st, cliDocPath)
 	if err != nil {

@@ -62,6 +62,9 @@ func validate(c *Config) error {
 	if err := validateIntegration(c); err != nil {
 		return err
 	}
+	if err := validatePreviews(c); err != nil {
+		return err
+	}
 	if err := validateRepoTargets(c); err != nil {
 		return err
 	}

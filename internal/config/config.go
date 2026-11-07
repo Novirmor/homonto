@@ -309,6 +309,8 @@ const CurrentConfigSchemaVersion = 2
 // Config is the tool-agnostic desired state parsed from homonto.toml.
 type Config struct {
 	Integration map[string]IntegrationCheck `toml:"integration"`
+	// Preview declares swarm candidate previews (ADR 0115).
+	Preview map[string]Preview `toml:"preview"`
 	// SchemaVersion is the homonto.toml format version. Absent/0 means a legacy
 	// (pre-versioning) config and retains implicit-repository semantics; a value
 	// greater than CurrentConfigSchemaVersion is rejected fail-closed at load so

@@ -44,9 +44,11 @@ Each credentialed suite names its scenarios with stable IDs
 (`<suite>/<tool>/<scenario>`, listed at the top of each suite) and prints one
 `E2E-EVIDENCE` line per outcome (`scenario` / `scenario_pass` in
 `suites/lib.sh`). The orchestrator writes them, plus one line per cell, to
-`test/e2e/.out/evidence.tsv`, headed by the commit under test and whether the
-tree was clean. A cell's release evidence key is `e2e/<cell>`, declared in
-`internal/starter` (`HarnessEvidence`); record it with
+`test/e2e/.out/evidence.tsv`, headed by the checkout commit, tree status, and
+image provenance. A dirty tree (including untracked files) or a `--no-build`
+run has unverified provenance and is not release evidence: the reused image
+may have been built from another checkout. A cell's release evidence key is
+`e2e/<cell>`, declared in `internal/starter` (`HarnessEvidence`); record it with
 `go run ./scripts/releaseevidence record <manifest> e2e/<cell> pass --log test/e2e/.out/<cell>.log`.
 A skipped cell is a `skip` line with its reason, never a pass.
 

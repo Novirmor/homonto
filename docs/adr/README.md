@@ -132,3 +132,6 @@ numbering: [`../agents/adr.md`](../agents/adr.md).
 | [0110](0110-generate-starting-configurations-in-the-binary.md) | Generate starting configurations in the binary | Accepted |
 | [0111](0111-test-the-published-reference-set-by-pin.md) | Test the published reference set by pin | Accepted |
 | [0112](0112-back-hosting-support-with-prose-not-sandbox-runs.md) | Back hosting support with prose, not sandbox runs | Accepted |
+| [0113](0113-run-swarm-candidates-as-stateless-workspace-tasks.md) | Run swarm candidates as stateless workspace tasks | Accepted |
+| [0114](0114-select-only-a-verified-swarm-candidate.md) | Select only a verified swarm candidate | Accepted |
+| [0115](0115-preview-candidates-in-docker-under-fixed-budgets.md) | Preview candidates in Docker under fixed budgets | Accepted |

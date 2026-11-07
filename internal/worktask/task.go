@@ -673,6 +673,16 @@ func removalComplete(ctx context.Context, c Checkout) (bool, error) {
 // Cleanup removes only this task's clean, integrated allocations, never source
 // checkouts. An allocation Git never created is released without inspection.
 func (s *Store) Cleanup(ctx context.Context, name string, yes bool) (*Task, error) {
+	return s.cleanupTask(ctx, name, yes, false)
+}
+
+// CleanupKeepBranches releases a task's worktrees without deleting branches.
+// Callers that manage branch retention themselves can then apply their policy.
+func (s *Store) CleanupKeepBranches(ctx context.Context, name string, yes bool) (*Task, error) {
+	return s.cleanupTask(ctx, name, yes, true)
+}
+
+func (s *Store) cleanupTask(ctx context.Context, name string, yes, keepBranches bool) (*Task, error) {
 	if !yes {
 		return nil, fmt.Errorf("workspace task cleanup requires --yes")
 	}
@@ -692,12 +702,12 @@ func (s *Store) Cleanup(ctx context.Context, name string, yes bool) (*Task, erro
 	if err := engine.requireOperation(catalog.OpRelease); err != nil {
 		return nil, err
 	}
-	return t, s.cleanup(ctx, t)
+	return t, s.cleanup(ctx, t, keepBranches)
 }
 
-func (s *Store) cleanup(ctx context.Context, t *Task) error {
+func (s *Store) cleanup(ctx context.Context, t *Task, keepBranches bool) error {
 	for _, alias := range slices.Sorted(maps.Keys(t.Checkouts)) {
-		if err := s.cleanupCheckout(ctx, t, alias, t.Checkouts[alias]); err != nil {
+		if err := s.cleanupCheckout(ctx, t, alias, t.Checkouts[alias], keepBranches); err != nil {
 			return err
 		}
 	}
@@ -707,8 +717,9 @@ func (s *Store) cleanup(ctx context.Context, t *Task) error {
 // cleanupCheckout removes one owned allocation once it is clean and its work
 // is safe: a changed checkout integrated (or retained on its branch), a
 // verification input still at its pinned revision. Intent is saved before Git
-// removes anything, so a retry reconciles a completed removal.
-func (s *Store) cleanupCheckout(ctx context.Context, t *Task, alias string, c Checkout) error {
+// removes anything, so a retry reconciles a completed removal. keepBranches
+// leaves the task-owned branch in place.
+func (s *Store) cleanupCheckout(ctx context.Context, t *Task, alias string, c Checkout, keepBranches bool) error {
 	if !c.Owned || c.Removed {
 		return nil
 	}
@@ -718,8 +729,10 @@ func (s *Store) cleanupCheckout(ctx context.Context, t *Task, alias string, c Ch
 			return err
 		}
 		if complete {
-			if err := s.releaseBranch(ctx, c); err != nil {
-				return err
+			if !keepBranches {
+				if err := s.releaseBranch(ctx, c); err != nil {
+					return err
+				}
 			}
 			c.Removing, c.Removed = false, true
 			t.Checkouts[alias] = c
@@ -762,15 +775,14 @@ func (s *Store) cleanupCheckout(ctx context.Context, t *Task, alias string, c Ch
 	if _, err := git(ctx, c.Source, "worktree", "remove", c.Path); err != nil {
 		return err
 	}
-	if err := s.releaseBranch(ctx, c); err != nil {
-		return err
+	if !keepBranches {
+		if err := s.releaseBranch(ctx, c); err != nil {
+			return err
+		}
 	}
 	c.Removing, c.Removed = false, true
 	t.Checkouts[alias] = c
-	if err := s.save(t); err != nil {
-		return err
-	}
-	return nil
+	return s.save(t)
 }
 
 // checkIntegrated requires a changed checkout's HEAD in its integration target

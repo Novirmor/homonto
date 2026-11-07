@@ -64,12 +64,11 @@ case "$TOOL" in
     timeout "$T" claude -p --resume "$sid" --model haiku "/compact" >/dev/null 2>&1 || true
     out="$(timeout "$T" claude -p --resume "$sid" --model haiku --max-turns 3 "$ASK" 2>&1)"; printf '%s\n' "$out"
     contains "$out" "recovery-probe" "the change was lost after compaction"
-    # The hook output, not the model's answer, proves the re-injection: a
-    # SessionStart after the compaction (source "compact", or the "resume"
-    # that follows it) carried both the policy and the snapshot.
-    src="$(shimlog homonto.jsonl "select(.kind == \"hook\" and .t >= $since and .input.hook_event_name == \"SessionStart\" and (.out | test(\"recovery-probe\")) and (.out | test(\"Homonto execution continuity\"))) | .input.source" | tr -d '"' | sort -u | tr '\n' ' ')"
-    [ -n "$src" ] || fail "no SessionStart hook after the compaction re-injected the policy and the snapshot"
-    pass "compaction context (policy and snapshot re-injected by SessionStart: ${src% })"; scenario_pass
+    # The hook output proves re-injection; a resume alone is not proof
+    # that /compact actually ran.
+    compact="$(shimlog homonto.jsonl 'select(.kind == "hook" and .t >= $s and .input.session_id == $sid and .input.hook_event_name == "SessionStart" and .input.source == "compact" and (.out | test("recovery-probe")) and (.out | test("Homonto execution continuity")))' --argjson s "$since" --arg sid "$sid")"
+    [ -n "$compact" ] || fail "no compact SessionStart re-injected the policy and the snapshot for this session"
+    pass "compaction context (policy and snapshot re-injected by compact SessionStart)"; scenario_pass
     scenario recovery/claude/status-tool
     out="$(timeout "$T" claude -p --model haiku --max-turns 3 --allowedTools=mcp__homonto__homonto_status \
       'Call the mcp__homonto__homonto_status tool once and reply with the value of the "name" field of its first change.' 2>&1)"

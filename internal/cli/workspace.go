@@ -108,6 +108,6 @@ func workspaceCmd() *cobra.Command {
 	pull.Flags().StringVar(&pullBranch, "branch", "", "local base branch to update from its upstream")
 	pull.Flags().BoolVar(&pullJSON, "json", false, "print the result as JSON")
 	_ = pull.MarkFlagRequired("branch")
-	cmd.AddCommand(inspect, init, checkpoint, recover, pull, workspaceTaskCmd())
+	cmd.AddCommand(inspect, init, checkpoint, recover, pull, workspaceTaskCmd(), workspaceSwarmCmd())
 	return cmd
 }

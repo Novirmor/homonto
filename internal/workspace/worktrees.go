@@ -903,13 +903,8 @@ func createWorktree(l Layout, workflow, change, repo, base, branch, role, identi
 	if err != nil {
 		return w, err
 	}
-	for _, existing := range r.Entries {
-		if existing.Workflow == workflow && existing.Change == change {
-			if identity != "" && identity != existing.StateID {
-				return w, fmt.Errorf("worktree: ownership: bindings for %s/%s disagree on state identity", workflow, change)
-			}
-			identity = existing.StateID
-		}
+	if identity, err = r.stateIdentity(workflow, change, identity); err != nil {
+		return w, err
 	}
 	s, err := bindingState(l, workflow, change, identity, !receiver)
 	if err != nil {
@@ -949,16 +944,7 @@ func createWorktree(l Layout, workflow, change, repo, base, branch, role, identi
 		return w, err
 	}
 	if existing, ok := r.binding(workflow, change, repo, receiver); ok {
-		if receiver {
-			if err := cleanWorktree(existing.Path); err != nil {
-				return w, err
-			}
-			return existing, nil
-		}
-		if existing.BaseRef != base || existing.Branch != branch {
-			return w, fmt.Errorf("worktree: ownership: binding already exists with a different base or branch")
-		}
-		return existing, nil
+		return reuseBinding(existing, receiver, base, branch)
 	}
 	if receiver {
 		if base, branch, err = receiverBase(authority, s, r, workflow, change, repo); err != nil {
@@ -1077,6 +1063,35 @@ func commitWorktree(l Layout, w Worktree, authority string) (Worktree, error) {
 		return w, fmt.Errorf("worktree created at %s but registry completion failed: %w; pending record retained, do not delete unknown work", dest, err)
 	}
 	return w, nil
+}
+
+// stateIdentity is the state identity every binding of workflow/change
+// records; a requested identity must agree with it.
+func (r worktreeRegistry) stateIdentity(workflow, change, identity string) (string, error) {
+	for _, existing := range r.Entries {
+		if existing.Workflow == workflow && existing.Change == change {
+			if identity != "" && identity != existing.StateID {
+				return "", fmt.Errorf("worktree: ownership: bindings for %s/%s disagree on state identity", workflow, change)
+			}
+			identity = existing.StateID
+		}
+	}
+	return identity, nil
+}
+
+// reuseBinding returns an already-registered binding: a receiver once it is
+// still clean, an execution checkout only for the same base and branch.
+func reuseBinding(existing Worktree, receiver bool, base, branch string) (Worktree, error) {
+	if receiver {
+		if err := cleanWorktree(existing.Path); err != nil {
+			return Worktree{}, err
+		}
+		return existing, nil
+	}
+	if existing.BaseRef != base || existing.Branch != branch {
+		return Worktree{}, fmt.Errorf("worktree: ownership: binding already exists with a different base or branch")
+	}
+	return existing, nil
 }
 
 // binding returns the registered execution or receiver binding for one

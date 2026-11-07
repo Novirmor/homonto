@@ -94,19 +94,9 @@ func runNewWithRepos(cmd *cobra.Command, root, name string, jsonMode bool, repos
 			return fmt.Errorf("to new: repo %q must be a unique declared [repos] name", repo)
 		}
 	}
-	baseBranches := make(map[string]string, len(bases))
-	for _, selection := range bases {
-		alias, branch, ok := strings.Cut(selection, "=")
-		if !ok || alias == "" || branch == "" {
-			return fmt.Errorf("to new: --base %q must be alias=branch", selection)
-		}
-		if i := sort.SearchStrings(names, alias); i == len(names) || names[i] != alias {
-			return fmt.Errorf("to new: --base repo %q is not selected by --repo", alias)
-		}
-		if _, exists := baseBranches[alias]; exists {
-			return fmt.Errorf("to new: duplicate --base for repo %q", alias)
-		}
-		baseBranches[alias] = branch
+	baseBranches, err := parseBaseBranches(bases, names)
+	if err != nil {
+		return err
 	}
 	authorities := append([]string(nil), names...)
 	if !l.ExplicitRepos() && len(names) > 0 {
@@ -124,38 +114,9 @@ func runNewWithRepos(cmd *cobra.Command, root, name string, jsonMode bool, repos
 		}
 		base := tostate.RepoBase{GitCommonDir: identity}
 		if l.ExplicitRepos() {
-			branch := baseBranches[repo]
-			ref := "HEAD"
-			if branch == "" {
-				out, err := repoGitOutput(dir, "symbolic-ref", "--quiet", "HEAD")
-				if err != nil {
-					return fmt.Errorf("to new: repo %q requires a current local branch or an explicit --base %s=branch: %w", repo, repo, err)
-				}
-				branch = strings.TrimSuffix(string(out), "\n")
-			} else {
-				ref = "refs/heads/" + strings.TrimPrefix(branch, "refs/heads/")
+			if base.BaseRef, base.BaseBranch, err = resolveBaseBranch(dir, repo, baseBranches[repo]); err != nil {
+				return err
 			}
-			if strings.HasPrefix(branch, "refs/") && !strings.HasPrefix(branch, "refs/heads/") {
-				return fmt.Errorf("to new: repo %q base %q must name a local branch", repo, branch)
-			}
-			branch = strings.TrimPrefix(branch, "refs/heads/")
-			if branch == "" || branch == "HEAD" || strings.HasPrefix(branch, "-") {
-				return fmt.Errorf("to new: repo %q base %q must name a local branch", repo, branch)
-			}
-			if _, err := repoGitOutput(dir, "check-ref-format", "refs/heads/"+branch); err != nil {
-				return fmt.Errorf("to new: repo %q base %q must name a local branch: %w", repo, branch, err)
-			}
-			// Verify the exact ref before revision parsing, which can otherwise
-			// resolve a similarly named tag through Git's ref-name guessing.
-			if _, err := repoGitOutput(dir, "show-ref", "--verify", "--quiet", "refs/heads/"+branch); err != nil {
-				return fmt.Errorf("to new: repo %q base %q must be a known local branch: %w", repo, branch, err)
-			}
-			commit, err := repoGitOutput(dir, "rev-parse", "--verify", "--end-of-options", ref+"^{commit}")
-			if err != nil {
-				return fmt.Errorf("to new: repo %q base %q must be a known local branch with a commit: %w", repo, branch, err)
-			}
-			base.BaseRef = strings.TrimSpace(string(commit))
-			base.BaseBranch = branch
 		}
 		st.RepoBases[repo] = base
 	}
@@ -221,4 +182,59 @@ func runNewWithRepos(cmd *cobra.Command, root, name string, jsonMode bool, repos
 	cmd.Printf("  %s\n", statePath(root, name))
 	cmd.Printf("  %s\n", planPath(root, name))
 	return nil
+}
+
+// parseBaseBranches reads --base alias=branch selections; each alias must be
+// selected by --repo, and only once.
+func parseBaseBranches(bases, names []string) (map[string]string, error) {
+	branches := make(map[string]string, len(bases))
+	for _, selection := range bases {
+		alias, branch, ok := strings.Cut(selection, "=")
+		if !ok || alias == "" || branch == "" {
+			return nil, fmt.Errorf("to new: --base %q must be alias=branch", selection)
+		}
+		if i := sort.SearchStrings(names, alias); i == len(names) || names[i] != alias {
+			return nil, fmt.Errorf("to new: --base repo %q is not selected by --repo", alias)
+		}
+		if _, exists := branches[alias]; exists {
+			return nil, fmt.Errorf("to new: duplicate --base for repo %q", alias)
+		}
+		branches[alias] = branch
+	}
+	return branches, nil
+}
+
+// resolveBaseBranch pins repo's base: the requested local branch, or the
+// current one, and its commit. The exact ref is verified before revision
+// parsing, which could otherwise resolve a similarly named tag through Git's
+// ref-name guessing.
+func resolveBaseBranch(dir, repo, branch string) (commit, name string, err error) {
+	ref := "HEAD"
+	if branch == "" {
+		out, err := repoGitOutput(dir, "symbolic-ref", "--quiet", "HEAD")
+		if err != nil {
+			return "", "", fmt.Errorf("to new: repo %q requires a current local branch or an explicit --base %s=branch: %w", repo, repo, err)
+		}
+		branch = strings.TrimSuffix(string(out), "\n")
+	} else {
+		ref = "refs/heads/" + strings.TrimPrefix(branch, "refs/heads/")
+	}
+	if strings.HasPrefix(branch, "refs/") && !strings.HasPrefix(branch, "refs/heads/") {
+		return "", "", fmt.Errorf("to new: repo %q base %q must name a local branch", repo, branch)
+	}
+	branch = strings.TrimPrefix(branch, "refs/heads/")
+	if branch == "" || branch == "HEAD" || strings.HasPrefix(branch, "-") {
+		return "", "", fmt.Errorf("to new: repo %q base %q must name a local branch", repo, branch)
+	}
+	if _, err := repoGitOutput(dir, "check-ref-format", "refs/heads/"+branch); err != nil {
+		return "", "", fmt.Errorf("to new: repo %q base %q must name a local branch: %w", repo, branch, err)
+	}
+	if _, err := repoGitOutput(dir, "show-ref", "--verify", "--quiet", "refs/heads/"+branch); err != nil {
+		return "", "", fmt.Errorf("to new: repo %q base %q must be a known local branch: %w", repo, branch, err)
+	}
+	out, err := repoGitOutput(dir, "rev-parse", "--verify", "--end-of-options", ref+"^{commit}")
+	if err != nil {
+		return "", "", fmt.Errorf("to new: repo %q base %q must be a known local branch with a commit: %w", repo, branch, err)
+	}
+	return strings.TrimSpace(string(out)), branch, nil
 }

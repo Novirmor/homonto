@@ -13,6 +13,7 @@ import (
 	"path/filepath"
 	"reflect"
 	"regexp"
+	"slices"
 	"sort"
 	"strings"
 	"unicode"
@@ -880,8 +881,14 @@ func ReceiverWorktree(l Layout, workflow, change, repo string, stateID ...string
 	return createWorktree(l, workflow, change, repo, "", "", "receiver", identity, false)
 }
 
+// createWorktree allocates one execution or receiver checkout in four steps:
+// read-only preflight, a re-checked registry claim journaled before Git runs,
+// `git worktree add`, and the ownership token that completes the binding.
+// A failure after the journal keeps the pending record rather than removing
+// anything that might now hold user work.
 func createWorktree(l Layout, workflow, change, repo, base, branch, role, identity string, anchored bool) (Worktree, error) {
 	var w Worktree
+	receiver := role == "receiver"
 	if err := checkWorktreeNames(workflow, change); err != nil {
 		return w, err
 	}
@@ -910,7 +917,7 @@ func createWorktree(l Layout, workflow, change, repo, base, branch, role, identi
 			identity = existing.StateID
 		}
 	}
-	s, err := bindingState(l, workflow, change, identity, role != "receiver")
+	s, err := bindingState(l, workflow, change, identity, !receiver)
 	if err != nil {
 		return w, err
 	}
@@ -918,11 +925,7 @@ func createWorktree(l Layout, workflow, change, repo, base, branch, role, identi
 	if err != nil {
 		return w, err
 	}
-	selected := false
-	for _, alias := range aliases {
-		selected = selected || alias == repo
-	}
-	if !selected {
+	if !slices.Contains(aliases, repo) {
 		return w, fmt.Errorf("worktree: repository %q is not selected by state %s/%s", repo, workflow, change)
 	}
 	if anchored {
@@ -932,10 +935,10 @@ func createWorktree(l Layout, workflow, change, repo, base, branch, role, identi
 		}
 		base = anchor.BaseRef
 	}
-	if role != "receiver" && (base == "" || strings.HasPrefix(base, "-") || branch == "" || strings.HasPrefix(branch, "-")) {
-		return w, fmt.Errorf("worktree: explicit --base REF and --branch NAME are required")
-	}
-	if role != "receiver" {
+	if !receiver {
+		if base == "" || strings.HasPrefix(base, "-") || branch == "" || strings.HasPrefix(branch, "-") {
+			return w, fmt.Errorf("worktree: explicit --base REF and --branch NAME are required")
+		}
 		if _, err := worktreeGit(authority, "check-ref-format", "refs/heads/"+branch); err != nil {
 			return w, err
 		}
@@ -947,49 +950,24 @@ func createWorktree(l Layout, workflow, change, repo, base, branch, role, identi
 	if err := s.checkAuthority(l, repo, common); err != nil {
 		return w, err
 	}
-	var boundTarget, boundCommit string
-	for _, existing := range r.Entries {
-		if existing.Workflow != workflow || existing.Change != change || existing.Repo != repo {
-			continue
-		}
-		if err := validateWorktree(l, existing); err != nil {
-			return w, err
-		}
-		if boundTarget != "" && (boundTarget != existing.BaseTarget || boundCommit != existing.BaseCommit) {
-			return w, fmt.Errorf("worktree: ownership: execution and receiver bindings disagree on integration base")
-		}
-		boundTarget, boundCommit = existing.BaseTarget, existing.BaseCommit
+	boundTarget, boundCommit, err := boundIntegrationBase(l, r, workflow, change, repo)
+	if err != nil {
+		return w, err
 	}
-	for _, existing := range r.Entries {
-		if existing.Workflow == workflow && existing.Change == change && existing.Repo == repo && (existing.Role == "receiver") == (role == "receiver") {
-			if role == "receiver" {
-				if err := cleanWorktree(existing.Path); err != nil {
-					return w, err
-				}
-				return existing, nil
-			}
-			if existing.BaseRef != base || existing.Branch != branch {
-				return w, fmt.Errorf("worktree: ownership: binding already exists with a different base or branch")
+	if existing, ok := r.binding(workflow, change, repo, receiver); ok {
+		if receiver {
+			if err := cleanWorktree(existing.Path); err != nil {
+				return w, err
 			}
 			return existing, nil
 		}
+		if existing.BaseRef != base || existing.Branch != branch {
+			return w, fmt.Errorf("worktree: ownership: binding already exists with a different base or branch")
+		}
+		return existing, nil
 	}
-	if role == "receiver" {
-		anchor := s.RepoBases[repo]
-		base, branch = anchor.BaseRef, anchor.BaseBranch
-		if base == "" || branch == "" {
-			for _, existing := range r.Entries {
-				if existing.Workflow == workflow && existing.Change == change && existing.Repo == repo && existing.Role != "receiver" {
-					if strings.HasPrefix(existing.BaseTarget, "refs/heads/") {
-						base, branch = existing.BaseCommit, strings.TrimPrefix(existing.BaseTarget, "refs/heads/")
-					}
-				}
-			}
-		}
-		if base == "" || branch == "" {
-			return w, fmt.Errorf("worktree: receiver requires a recorded local base target and commit; no default branch is guessed")
-		}
-		if _, err := worktreeGit(authority, "check-ref-format", "refs/heads/"+branch); err != nil {
+	if receiver {
+		if base, branch, err = receiverBase(authority, s, r, workflow, change, repo); err != nil {
 			return w, err
 		}
 	}
@@ -1009,23 +987,10 @@ func createWorktree(l Layout, workflow, change, repo, base, branch, role, identi
 			return w, fmt.Errorf("worktree: integration target %s no longer contains the recorded base %s: %w", target, commit, err)
 		}
 	}
-	if role == "receiver" {
+	if receiver {
 		target = "refs/heads/" + branch
-		if _, err := worktreeGit(authority, "merge-base", "--is-ancestor", commit, target); err != nil {
-			return w, fmt.Errorf("worktree: receiver target no longer contains the recorded base: %w", err)
-		}
-		listed, err := worktreeGit(authority, "worktree", "list", "--porcelain", "-z")
-		if err != nil {
+		if err := checkReceiverTarget(authority, commit, target); err != nil {
 			return w, err
-		}
-		path := ""
-		for _, field := range strings.Split(listed, "\x00") {
-			if p, ok := strings.CutPrefix(field, "worktree "); ok {
-				path = p
-			}
-			if field == "branch "+target {
-				return w, fmt.Errorf("worktree: receiver target %q is already checked out at %s; refusing to adopt or modify that checkout, release it explicitly before allocation", target, path)
-			}
 		}
 	}
 	if err := s.checkBase(repo, commit, target); err != nil {
@@ -1034,6 +999,7 @@ func createWorktree(l Layout, workflow, change, repo, base, branch, role, identi
 	if boundTarget != "" && (boundTarget != target || boundCommit != commit) {
 		return w, fmt.Errorf("worktree: ownership: requested integration base disagrees with the existing binding")
 	}
+
 	unlock, err := lockWorktreeRegistry(l)
 	if err != nil {
 		return w, err
@@ -1043,29 +1009,15 @@ func createWorktree(l Layout, workflow, change, repo, base, branch, role, identi
 	if err != nil {
 		return w, err
 	}
-	for _, existing := range r.Entries {
-		if existing.Workflow == workflow && existing.Change == change && existing.Repo == repo && (existing.Role == "receiver") == (role == "receiver") {
-			return w, fmt.Errorf("worktree: registry changed during creation preflight; retry to validate the existing binding")
+	if _, ok := r.binding(workflow, change, repo, receiver); ok {
+		return w, fmt.Errorf("worktree: registry changed during creation preflight; retry to validate the existing binding")
+	}
+	if !receiver {
+		if err := checkBranchAbsent(authority, branch); err != nil {
+			return w, err
 		}
 	}
-	if role != "receiver" {
-		if _, err := worktreeGit(authority, "show-ref", "--verify", "--quiet", "refs/heads/"+branch); err == nil {
-			return w, fmt.Errorf("worktree: ownership: branch %q already exists; refusing overwrite", branch)
-		} else {
-			var exit *exec.ExitError
-			if !errors.As(err, &exit) || exit.ExitCode() != 1 {
-				return w, err
-			}
-		}
-	}
-	repoDir := repo
-	if repoDir == "" {
-		repoDir = "_config"
-	}
-	dest := filepath.Join(parent, repoDir, workflow+"-"+change)
-	if role == "receiver" {
-		dest = filepath.Join(parent, repoDir, ".receivers", workflow+"-"+change)
-	}
+	dest := worktreeDestination(parent, repo, workflow, change, receiver)
 	if err := realWorktreePath(dest, true); err != nil {
 		return w, err
 	}
@@ -1085,50 +1037,18 @@ func createWorktree(l Layout, workflow, change, repo, base, branch, role, identi
 	if err := saveWorktreeRegistry(l, r); err != nil {
 		return w, err
 	}
-	if err := os.MkdirAll(filepath.Dir(dest), 0o755); err != nil {
+
+	if err := addGitWorktree(l, authority, dest, branch, commit, receiver); err != nil {
 		return w, err
 	}
-	if err := realWorktreePath(dest, true); err != nil {
-		return w, err
-	}
-	if err := os.Mkdir(dest, 0o755); err != nil {
-		return w, fmt.Errorf("worktree: ownership: reserving destination: %w", err)
-	}
-	args := []string{"-c", "core.hooksPath=" + os.DevNull, "worktree", "add"}
-	if role == "receiver" {
-		args = append(args, "--", dest, branch)
-	} else {
-		args = append(args, "-b", branch, "--", dest, commit)
-	}
-	if _, err := worktreeGit(authority, args...); err != nil {
-		return w, fmt.Errorf("%w; pending registry retained at %s, inspect before recovery", err, registryPath(l))
-	}
-	w.GitDir, err = worktreeGit(dest, "rev-parse", "--absolute-git-dir")
-	if err != nil {
-		return w, err
-	}
-	ownerPath := filepath.Join(w.GitDir, "homonto-owner")
-	if filepath.Dir(w.GitDir) != filepath.Join(common, "worktrees") {
-		return w, fmt.Errorf("worktree: ownership: unexpected Git administrative directory %s", w.GitDir)
-	}
-	if err := realWorktreePath(ownerPath, false); err != nil {
-		return w, err
-	}
-	f, err := os.OpenFile(ownerPath, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
-	if err != nil {
-		return w, fmt.Errorf("worktree: ownership: creating token: %w", err)
-	}
-	_, writeErr := f.WriteString(w.Ownership)
-	syncErr := f.Sync()
-	closeErr := f.Close()
-	if err := errors.Join(writeErr, syncErr, closeErr); err != nil {
+	if w.GitDir, err = writeOwnerToken(dest, common, w.Ownership); err != nil {
 		return w, err
 	}
 	w.Status = "ready"
 	if err := validateWorktree(l, w); err != nil {
 		return w, err
 	}
-	if role == "receiver" {
+	if receiver {
 		if err := cleanWorktree(w.Path); err != nil {
 			return w, err
 		}
@@ -1142,6 +1062,154 @@ func createWorktree(l Layout, workflow, change, repo, base, branch, role, identi
 		return w, fmt.Errorf("worktree created at %s but registry completion failed: %w; pending record retained, do not delete unknown work", dest, err)
 	}
 	return w, nil
+}
+
+// binding returns the registered execution or receiver binding for one
+// workflow/change/repo.
+func (r worktreeRegistry) binding(workflow, change, repo string, receiver bool) (Worktree, bool) {
+	for _, existing := range r.Entries {
+		if existing.Workflow == workflow && existing.Change == change && existing.Repo == repo && (existing.Role == "receiver") == receiver {
+			return existing, true
+		}
+	}
+	return Worktree{}, false
+}
+
+// boundIntegrationBase validates every existing binding for the repo and
+// returns the integration base they share; execution and receiver bindings
+// must agree.
+func boundIntegrationBase(l Layout, r worktreeRegistry, workflow, change, repo string) (target, commit string, err error) {
+	for _, existing := range r.Entries {
+		if existing.Workflow != workflow || existing.Change != change || existing.Repo != repo {
+			continue
+		}
+		if err := validateWorktree(l, existing); err != nil {
+			return "", "", err
+		}
+		if target != "" && (target != existing.BaseTarget || commit != existing.BaseCommit) {
+			return "", "", fmt.Errorf("worktree: ownership: execution and receiver bindings disagree on integration base")
+		}
+		target, commit = existing.BaseTarget, existing.BaseCommit
+	}
+	return target, commit, nil
+}
+
+// receiverBase is the recorded local base a receiver checks out: the state's
+// anchor, else the execution binding's local branch target. No default branch
+// is guessed.
+func receiverBase(authority string, s worktreeState, r worktreeRegistry, workflow, change, repo string) (base, branch string, err error) {
+	anchor := s.RepoBases[repo]
+	base, branch = anchor.BaseRef, anchor.BaseBranch
+	if base == "" || branch == "" {
+		for _, existing := range r.Entries {
+			if existing.Workflow == workflow && existing.Change == change && existing.Repo == repo && existing.Role != "receiver" {
+				if strings.HasPrefix(existing.BaseTarget, "refs/heads/") {
+					base, branch = existing.BaseCommit, strings.TrimPrefix(existing.BaseTarget, "refs/heads/")
+				}
+			}
+		}
+	}
+	if base == "" || branch == "" {
+		return "", "", fmt.Errorf("worktree: receiver requires a recorded local base target and commit; no default branch is guessed")
+	}
+	if _, err := worktreeGit(authority, "check-ref-format", "refs/heads/"+branch); err != nil {
+		return "", "", err
+	}
+	return base, branch, nil
+}
+
+// checkReceiverTarget requires the receiver's branch to still contain the
+// recorded base and to be checked out nowhere else.
+func checkReceiverTarget(authority, commit, target string) error {
+	if _, err := worktreeGit(authority, "merge-base", "--is-ancestor", commit, target); err != nil {
+		return fmt.Errorf("worktree: receiver target no longer contains the recorded base: %w", err)
+	}
+	listed, err := worktreeGit(authority, "worktree", "list", "--porcelain", "-z")
+	if err != nil {
+		return err
+	}
+	path := ""
+	for _, field := range strings.Split(listed, "\x00") {
+		if p, ok := strings.CutPrefix(field, "worktree "); ok {
+			path = p
+		}
+		if field == "branch "+target {
+			return fmt.Errorf("worktree: receiver target %q is already checked out at %s; refusing to adopt or modify that checkout, release it explicitly before allocation", target, path)
+		}
+	}
+	return nil
+}
+
+// checkBranchAbsent refuses to overwrite an existing branch. Only Git's
+// "not found" exit counts as absent.
+func checkBranchAbsent(authority, branch string) error {
+	_, err := worktreeGit(authority, "show-ref", "--verify", "--quiet", "refs/heads/"+branch)
+	if err == nil {
+		return fmt.Errorf("worktree: ownership: branch %q already exists; refusing overwrite", branch)
+	}
+	var exit *exec.ExitError
+	if !errors.As(err, &exit) || exit.ExitCode() != 1 {
+		return err
+	}
+	return nil
+}
+
+func worktreeDestination(parent, repo, workflow, change string, receiver bool) string {
+	repoDir := repo
+	if repoDir == "" {
+		repoDir = "_config"
+	}
+	if receiver {
+		return filepath.Join(parent, repoDir, ".receivers", workflow+"-"+change)
+	}
+	return filepath.Join(parent, repoDir, workflow+"-"+change)
+}
+
+// addGitWorktree reserves dest and runs `git worktree add` with hooks off.
+func addGitWorktree(l Layout, authority, dest, branch, commit string, receiver bool) error {
+	if err := os.MkdirAll(filepath.Dir(dest), 0o755); err != nil {
+		return err
+	}
+	if err := realWorktreePath(dest, true); err != nil {
+		return err
+	}
+	if err := os.Mkdir(dest, 0o755); err != nil {
+		return fmt.Errorf("worktree: ownership: reserving destination: %w", err)
+	}
+	args := []string{"-c", "core.hooksPath=" + os.DevNull, "worktree", "add"}
+	if receiver {
+		args = append(args, "--", dest, branch)
+	} else {
+		args = append(args, "-b", branch, "--", dest, commit)
+	}
+	if _, err := worktreeGit(authority, args...); err != nil {
+		return fmt.Errorf("%w; pending registry retained at %s, inspect before recovery", err, registryPath(l))
+	}
+	return nil
+}
+
+// writeOwnerToken records ownership in the new checkout's Git administrative
+// directory, which must sit under common/worktrees. It returns that directory.
+func writeOwnerToken(dest, common, ownership string) (string, error) {
+	gitDir, err := worktreeGit(dest, "rev-parse", "--absolute-git-dir")
+	if err != nil {
+		return "", err
+	}
+	if filepath.Dir(gitDir) != filepath.Join(common, "worktrees") {
+		return gitDir, fmt.Errorf("worktree: ownership: unexpected Git administrative directory %s", gitDir)
+	}
+	ownerPath := filepath.Join(gitDir, "homonto-owner")
+	if err := realWorktreePath(ownerPath, false); err != nil {
+		return gitDir, err
+	}
+	f, err := os.OpenFile(ownerPath, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
+	if err != nil {
+		return gitDir, fmt.Errorf("worktree: ownership: creating token: %w", err)
+	}
+	_, writeErr := f.WriteString(ownership)
+	syncErr := f.Sync()
+	closeErr := f.Close()
+	return gitDir, errors.Join(writeErr, syncErr, closeErr)
 }
 
 // ListWorktrees validates every binding, rather than presenting stale paths as

@@ -242,6 +242,70 @@ model = "p/verify"
 	}
 }
 
+// Apply records the routes of every targeted harness in routing.json, so
+// status can show Claude Code routes too (M4.6). The top level stays the
+// opencode routing an older reader expects.
+func TestRoutingRecordHoldsEveryHarness(t *testing.T) {
+	e, _, _ := claudeEngine(t, claudeConfig)
+	if err := e.Apply(context.Background(), mustPlan(t, e)); err != nil {
+		t.Fatal(err)
+	}
+	rec, ok, err := e.AppliedRoutes()
+	if err != nil || !ok {
+		t.Fatalf("record: %v %v", ok, err)
+	}
+	by := rec.ByHarness()
+	if len(by) != 2 {
+		t.Fatalf("harnesses = %v", by)
+	}
+	model := func(harness, agent string) string {
+		for _, r := range by[harness].Routes {
+			if r.Agent == agent && r.Selection != nil {
+				if r.Tool != harness {
+					t.Errorf("%s route of %s is tagged %q", harness, agent, r.Tool)
+				}
+				return r.Selection.Model
+			}
+		}
+		return ""
+	}
+	for _, c := range []struct{ harness, agent, want string }{
+		{"claude", "onto-skeptic", "opus"},
+		{"claude", "onto-implementer", "sonnet"},
+		{"opencode", "onto-skeptic", "p/default"},
+	} {
+		if got := model(c.harness, c.agent); got != c.want {
+			t.Errorf("%s %s = %q, want %q", c.harness, c.agent, got, c.want)
+		}
+	}
+	if len(rec.Routes) == 0 || len(rec.Routes) != len(by["opencode"].Routes) || rec.Routes[0].Tool != "opencode" {
+		t.Fatalf("top level is not the opencode routing: %+v", rec.RouteReport)
+	}
+	raw := readJSON(t, filepath.Join(e.StateDir, RoutingRecordFile))
+	if _, ok := raw["routes"]; !ok {
+		t.Errorf("routing.json lost its top-level routes: %v", raw)
+	}
+	if h, _ := raw["harnesses"].(map[string]any); h["claude"] == nil || h["opencode"] == nil {
+		t.Errorf("routing.json harnesses = %v", raw["harnesses"])
+	}
+}
+
+// A Claude-only config records Claude Code routes and no opencode ones.
+func TestRoutingRecordClaudeOnly(t *testing.T) {
+	e, _, _ := claudeEngine(t, strings.Replace(claudeConfig, `harnesses = ["opencode", "claude"]`, `harnesses = ["claude"]`, 1))
+	if err := e.Apply(context.Background(), mustPlan(t, e)); err != nil {
+		t.Fatal(err)
+	}
+	rec, ok, err := e.AppliedRoutes()
+	if err != nil || !ok {
+		t.Fatalf("record: %v %v", ok, err)
+	}
+	by := rec.ByHarness()
+	if _, ok := by["opencode"]; ok || len(by["claude"].Routes) == 0 || len(rec.Routes) != 0 {
+		t.Fatalf("claude-only record = %+v", rec)
+	}
+}
+
 // Claude Code cannot list its models, so an auto policy chooses among the
 // models the config describes, and falls back when it describes none.
 func TestClaudeAutoRoutingUsesDescribedModels(t *testing.T) {

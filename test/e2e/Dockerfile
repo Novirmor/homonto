@@ -18,13 +18,15 @@ WORKDIR /src
 COPY go.mod go.sum ./
 RUN go mod download
 
-# Build both binaries from the full source tree.
+# Build both binaries from the full source tree. The build context has no .git,
+# so scripts/e2e-matrix.sh passes the checkout's `git describe` as
+# HOMONTO_VERSION; suites that record evidence name it via `homonto version`.
 COPY . .
-RUN go build -o /usr/local/bin/homonto . \
+ARG HOMONTO_VERSION=
+RUN ldflags=""; [ -z "$HOMONTO_VERSION" ] || ldflags="-X github.com/Novirmor/homonto/internal/cli.Version=$HOMONTO_VERSION"; \
+    go build -ldflags "$ldflags" -o /usr/local/bin/homonto . \
     && go build -o /usr/local/bin/onto ./cmd/onto \
-    && go build -o /usr/local/bin/to ./cmd/to \
-    && install -m 0755 examples/reference-set/ticket-engine/bin/ticket-engine /usr/local/bin/ticket-engine \
-    && install -m 0755 examples/reference-set/ticket-service/bin/ticket-cli /usr/local/bin/ticket-cli
+    && go build -o /usr/local/bin/to ./cmd/to
 
 # --- install the real tool (native installer, no npm needed) -----------------
 ENV HOME=/root
@@ -39,9 +41,9 @@ ENV PATH="/root/.opencode/bin:/root/.local/bin:${PATH}"
 RUN homonto version && onto version \
     && opencode --version && claude --version
 
-# The reference extension set, packed as the remote: archives a user would pin.
-RUN mkdir -p /opt/reference && for p in ticket-engine ticket-workflow ticket-service; do \
-      tar -C examples/reference-set/$p -czf /opt/reference/$p.tar.gz . ; done
+# The reference extension set's published release pins. The reference suite
+# installs that release over https as remote: sources, not this tree's copy.
+COPY examples/reference-set/published.toml /opt/reference/published.toml
 
 COPY test/e2e/entrypoint.sh /usr/local/bin/e2e-entrypoint
 COPY test/e2e/suites /opt/e2e-suites

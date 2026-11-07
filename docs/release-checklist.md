@@ -18,10 +18,12 @@ go run ./scripts/releaseevidence check ../evidence-vX.Y.Z.json   # exits 1 until
 ```
 
 The required keys are the gate's own (`gate/full`, `compat/*`, `live/*`,
-`extension/published`, `docs/limitations`) and, for every host × harness cell
+`extension/published`, `docs/hosting`, `docs/limitations`) and, for every host × harness cell
 in [supported combinations](guides/supported-combinations.md), the evidence
-that cell declares (`unit/starter`, `install/first-task`, `e2e/*`,
-`sandbox/<host>`). `record` refuses another commit or a dirty tree. Only
+that cell declares (`unit/starter`, `install/first-task`, `e2e/*`). A host
+adds no key: hosting support is backed by the offline provider tests in the
+gate and the prose [differences map](guides/hosting-differences.md), never a
+live sandbox run ([ADR 0112](adr/0112-back-hosting-support-with-prose-not-sandbox-runs.md)). `record` refuses another commit or a dirty tree. Only
 `compat/upgrade` may be `n/a`, with a note, when there is no earlier 1.x
 release to upgrade from. Keep the manifest outside the repository, because
 the tagged commit cannot contain evidence about itself, and attach it to the
@@ -85,6 +87,35 @@ for the candidate:
 A release that cannot meet a row is not a 1.x release. It waits, or it
 becomes 2.0.
 
+### Published extension (`extension/published`)
+
+The reference set is published separately at
+[Novirmor/homonto-reference-set](https://github.com/Novirmor/homonto-reference-set).
+[`examples/reference-set/published.toml`](../examples/reference-set/published.toml)
+pins the release the `reference` E2E cell installs: today `v0.1.0`, commit
+`37931ba`, content digests `ticket-engine`
+`sha256:7ea9996c1f35e01d0e60174daa4bf548c8e42f0609be79ea6518079ad7126143`,
+`ticket-workflow`
+`sha256:1a20b9c7506926203500f1fe5c326c3a14439e5f5eaab07dfd6aeaaee2525b80`,
+`ticket-service`
+`sha256:3738da490229a98a29e72dde2fb6bf896026e1bb0a39648b32cf08a4dac3fc8f`.
+`TestReferenceSetMatchesItsPublishedPins` (part of the gate's `go test`) fails
+when the in-repo copy drifts from those pins. Record `extension/published` as
+passing only when all of these hold:
+
+1. `HOMONTO_REF` in the published repository's `.github/workflows/ci.yml` and
+   `release.yml` is the release candidate commit, and its `ci` run is green.
+   Its `release` workflow re-runs that check for every tag it publishes.
+2. `task reference-published` passes. It downloads the pinned assets and
+   checks their archive hashes, their content digests and the release's own
+   `pins.toml` against `published.toml`.
+3. The `reference` cell passes, and its `EVIDENCE reference:` line names the
+   pinned tag and digests.
+
+If the release changed the package contract, update the published repository
+first, cut a new tag there, and move `published.toml` and the in-repo copy to
+it in one commit.
+
 ## 2. Live host checks
 
 The gate never boots a real OpenCode 2 host or publishes to GitHub. When a
@@ -104,18 +135,15 @@ commit, and keep the evidence:
    standalone, unregistered server must not be able to authorize publication.
    A local model with a fake `gh` proves no external send happened, not that
    GitHub accepted a receipt.
-3. **Hosting sandboxes** (evidence keys `sandbox/<host>`; `scripts/hosting-sandbox.sh`, fixtures in
-   `test/e2e/hosting/sandbox.env`): for each of GitHub, GitLab.com and
-   Bitbucket Cloud whose release content changed, the runtime layer (draft,
-   unapproved publish is a no-op, native approval, publish, reconcile,
-   cleanup against the real host) and the process layer (every read-only
-   `/h-*` process ends at a shown draft with nothing published). With
-   `--write`, the write processes push to and then reset their fixtures.
-   Throwaway repositories and accounts only, never a production issue or
-   PR. A host without a sandbox reports SKIP, and a SKIP is not a pass. The
-   output links [hosting provider differences](guides/hosting-differences.md);
-   confirm every **(unverified)** claim the run exercised and update the
-   page.
+3. **Hosting is prose only**
+   ([ADR 0112](adr/0112-back-hosting-support-with-prose-not-sandbox-runs.md)):
+   no release runs against real GitHub, GitLab.com or Bitbucket Cloud
+   sandboxes, and no evidence key asks for one. For `docs/hosting`, the
+   release notes link [hosting provider differences](guides/hosting-differences.md)
+   and repeat each **(unverified)** claim as unverified. The offline provider
+   tests (`internal/hostruntime`, `internal/bitbucket`) run in `gate/full`.
+   `scripts/hosting-sandbox.sh` remains an optional manual tool; a run of it
+   may correct the differences page but is never release evidence.
 4. **Real-harness matrix** (`scripts/e2e-matrix.sh`, [test/e2e](../test/e2e/README.md);
    evidence keys `e2e/<cell>`):
    real OpenCode 2 and Claude Code in a container, reusing the operator's
@@ -128,13 +156,45 @@ commit, and keep the evidence:
    | `projection/opencode` | apply next to a bring-your-own server and skill; OpenCode reads the config back |
    | `projection/claude` | the builtins project natively for both harnesses; an untrusted folder does not start the MCP server; once trusted, Claude Code connects to `homonto runtime mcp`; doctor reports the tier and ADR 0105 limitations |
    | `onto` | the full onto lifecycle through the real binaries |
-   | `reference` | the reference set from digest-pinned `remote:` archives on both harnesses, through its engine's native lifecycle: start, bind, task create, resume, integration check, snapshot, finish, release |
+   | `reference` | the published reference set release pinned in `examples/reference-set/published.toml` (`homonto-reference-set` `v0.1.0`), fetched over https as digest-pinned `remote:` sources on both harnesses, through its engine's native lifecycle: start, bind, task create, resume, integration check, snapshot, finish, release; record its `EVIDENCE reference:` line |
    | `live/opencode` | OpenCode answers on the mounted account |
-   | `recovery/opencode` | an active change reaches a new and a continued OpenCode session through the workflow plugin |
-   | `recovery/claude` | an active change reaches a Claude Code session at startup, after `--resume` and after `/compact`; the session calls `homonto_status` over MCP |
+   | `recovery/opencode` | an active change reaches a new and a continued OpenCode session through the workflow plugin; after a real compaction the context starts at the summary, the next request carries a fresh snapshot (it names a change created after the compaction) and `homonto_status` reports it |
+   | `recovery/claude` | an active change reaches a Claude Code session at startup, after `--resume` and after `/compact`, where the post-compaction `SessionStart` hook output carries the policy and the snapshot; the session calls `homonto_status` over MCP |
    | `policy/claude` | Claude Code reports the coordinator and its worker to homonto's hooks; a worker's denied push is stopped and an allowed command runs on the hook's decision; a refused worker permission prompt is handed back to the coordinator |
+   | `process/opencode` | the model runs the builtin `to` process through the projected `/to` command (expanded by OpenCode's `session.command`) as the coordinator: `to new` and `to phase` reach the binary from the session, and `to status` and the workflow snapshot show the change at do |
+   | `process/claude` | the same through `claude -p "/to …"` with homonto's hooks active: the coordinator starts with the continuation policy injected, the policy hook allows each `to` command as the coordinator and denies none, and the records show the change at do |
+   | `interrupt/opencode` | the process is held at a defined boundary (`to new` recorded, its tool call not returned), the background service is SIGKILLed, and a restarted service resumes the session: the context hook's snapshot shows the change at plan and the resumed run advances it to do |
+   | `interrupt/claude` | the same with the `claude` process group SIGKILLed and `--resume`: the resume `SessionStart` hook output carries the policy and the snapshot at plan, and the resumed run advances the change to do without re-creating it |
 
-5. **Migration both ways** in throwaway projects. OpenCode 2 reads supported
+   The `plumbing` cell runs offline without an account and checks the
+   machinery these cells assert with (observation shims, the boundary hold,
+   the hook-output filters, OpenCode's command expansion); it has no release
+   key, and a failure there means the credentialed cells cannot be trusted.
+   Each suite also names its scenarios (`<suite>/<tool>/<scenario>`, listed at
+   the top of each suite, for example `interrupt/claude/restore`). The run
+   writes every scenario and cell outcome, with the commit and whether the
+   tree was clean, to `test/e2e/.out/evidence.tsv`; keep that file with the
+   cell logs and pass its log path to `releaseevidence record`. A dirty tree
+   is not release evidence.
+
+   Not covered by the matrix: a worker dispatched *inside* a builtin process
+   on a real harness (the worker policy and handback are proven by
+   `policy/claude` on a direct dispatch), the `onto`, `no` and `h-*`
+   processes inside a real session (`process/*` runs `to`), and any step that
+   needs the user's answer (below).
+5. **Claude Code native approval (interactive only).** `AskUserQuestion` is
+   absent in `claude -p` (ADR 0105), so no matrix cell can answer it. In an
+   interactive Claude Code session on a throwaway project, run one builtin
+   process to a step that needs a decision and check that the question
+   arrives as the native dialog (at most four questions), that answering it
+   lets the process continue, and that dismissing it leaves the decision
+   reported as pending. For a release with a hosting workflow, also stage a
+   draft and confirm that publication needs the dialog's correlated answer
+   and that a pre-answered question is denied. Keep a transcript; there is
+   no evidence key for this check, so name it in the release notes when it
+   was run.
+
+6. **Migration both ways** in throwaway projects. OpenCode 2 reads supported
    V1 server config, but its terminal settings live in the global `cli.json`;
    V1 files stay untouched, and snapshot undo does not restore their terminal
    values.

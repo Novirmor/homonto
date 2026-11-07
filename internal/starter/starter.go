@@ -289,6 +289,8 @@ var HarnessEvidence = map[string][]Evidence{
 		{"e2e/projection/opencode", "scripts/e2e-matrix.sh projection/opencode"},
 		{"e2e/live/opencode", "scripts/e2e-matrix.sh live/opencode"},
 		{"e2e/recovery/opencode", "scripts/e2e-matrix.sh recovery/opencode"},
+		{"e2e/process/opencode", "scripts/e2e-matrix.sh process/opencode"},
+		{"e2e/interrupt/opencode", "scripts/e2e-matrix.sh interrupt/opencode"},
 		{"e2e/onto", "scripts/e2e-matrix.sh onto"},
 		{"e2e/reference", "scripts/e2e-matrix.sh reference"},
 	},
@@ -296,21 +298,18 @@ var HarnessEvidence = map[string][]Evidence{
 		{"e2e/projection/claude", "scripts/e2e-matrix.sh projection/claude"},
 		{"e2e/recovery/claude", "scripts/e2e-matrix.sh recovery/claude"},
 		{"e2e/policy/claude", "scripts/e2e-matrix.sh policy/claude"},
+		{"e2e/process/claude", "scripts/e2e-matrix.sh process/claude"},
+		{"e2e/interrupt/claude", "scripts/e2e-matrix.sh interrupt/claude"},
 		{"e2e/reference", "scripts/e2e-matrix.sh reference"},
 	},
 }
 
-// HostEvidence are the hosting sandbox runs each host needs.
-var HostEvidence = map[string][]Evidence{
-	"github":    {{"sandbox/github", "scripts/hosting-sandbox.sh github (runtime and process layers)"}},
-	"gitlab":    {{"sandbox/gitlab", "scripts/hosting-sandbox.sh gitlab (runtime and process layers)"}},
-	"bitbucket": {{"sandbox/bitbucket", "scripts/hosting-sandbox.sh bitbucket (runtime and process layers)"}},
-}
-
-// CellEvidence lists every evidence key one host × harness cell needs.
-func CellEvidence(host, harness string) []Evidence {
+// CellEvidence lists every evidence key one host × harness cell needs. A host
+// adds no key of its own: hosting support rests on the offline provider tests
+// in gate/full and the prose differences map, never a live sandbox run
+// (ADR 0112).
+func CellEvidence(_, harness string) []Evidence {
 	out := append([]Evidence(nil), AllCells...)
 	out = append(out, HarnessEvidence[harness]...)
-	out = append(out, HostEvidence[host]...)
 	return out
 }

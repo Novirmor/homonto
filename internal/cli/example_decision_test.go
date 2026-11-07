@@ -40,6 +40,38 @@ func buildHomonto(t *testing.T) string {
 // protocol, and the answer picks which configured process runs. An
 // uncertain or failed decision makes the plugin ask instead of guessing.
 func TestExampleWorkflowClassifiesWithTypedDecisions(t *testing.T) {
+	classifyThroughHarness(t, "opencode")
+}
+
+// TestClaudeCodeClassifiesWithTypedDecisions is the decision half of M4.6
+// (#66): the same example workflow projected onto Claude Code runs the
+// classify script from its .claude projection the way a Claude Code
+// session's Bash tool runs it, with the same outcomes on both protocols, and
+// the projected permissions leave `homonto decide` callable.
+func TestClaudeCodeClassifiesWithTypedDecisions(t *testing.T) {
+	project := classifyThroughHarness(t, "claude")
+	settings, err := os.ReadFile(filepath.Join(project, ".claude", "settings.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var doc struct {
+		Permissions struct{ Deny []string }
+	}
+	if err := json.Unmarshal(settings, &doc); err != nil {
+		t.Fatal(err)
+	}
+	for _, rule := range doc.Permissions.Deny {
+		if rule == "Bash(homonto:*)" || strings.HasPrefix(rule, "Bash(homonto decide") {
+			t.Errorf("the Claude projection denies decision calls: %q", rule)
+		}
+	}
+}
+
+// classifyThroughHarness projects the example workflow onto one harness,
+// runs the classify script that harness's projection carries, and returns
+// the project directory.
+func classifyThroughHarness(t *testing.T, harness string) string {
+	t.Helper()
 	bin := buildHomonto(t)
 	var issueSeen []string
 	answer := func(body string) *httptest.Server {
@@ -66,7 +98,9 @@ func TestExampleWorkflowClassifiesWithTypedDecisions(t *testing.T) {
 		t.Fatal(err)
 	}
 	config := func(provider string, minConfidence string) {
-		body := `[engines.example-engine]
+		body := `harnesses = ["` + harness + `"]
+
+[engines.example-engine]
 source = "local:` + filepath.Join(ex, "example-engine") + `"
 scope = "project"
 [workflows.example-workflow]
@@ -85,6 +119,8 @@ steps = ["answer", "close"]
 
 [routing.default.opencode]
 model = "test/model"
+[routing.default.claude]
+model = "sonnet"
 
 [decisions.providers.openai]
 protocol = "openai-decisions"
@@ -125,7 +161,7 @@ provider = "` + provider + `"
 
 	config("openai", "")
 	run(bin, "apply", "--yes")
-	scripts, _ := filepath.Glob(filepath.Join(project, ".opencode", "skill*", "example-triage", "scripts", "classify.sh"))
+	scripts, _ := filepath.Glob(filepath.Join(project, "."+harness, "skill*", "example-triage", "scripts", "classify.sh"))
 	if len(scripts) != 1 {
 		t.Fatalf("classify.sh is not projected: %v", scripts)
 	}
@@ -165,4 +201,5 @@ provider = "` + provider + `"
 			t.Errorf("status lacks %q:\n%s", want, status)
 		}
 	}
+	return project
 }

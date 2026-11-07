@@ -55,7 +55,8 @@ var gateRequirements = []Requirement{
 	{ID: "compat/upgrade", Check: "upgrade in place from the previous 1.x release (release checklist, Compatibility)", NotApplicable: true},
 	{ID: "live/opencode-host", Check: "release checklist 2.1: OpenCode 2 host check"},
 	{ID: "live/draft-approval", Check: "release checklist 2.2: draft denial and native approval"},
-	{ID: "extension/published", Check: "the published homonto-reference-set CI passes against the release commit"},
+	{ID: "extension/published", Check: "release checklist, Published extension: homonto-reference-set CI passes against the release commit, task reference-published, the reference cell's EVIDENCE line"},
+	{ID: "docs/hosting", Check: "release notes link docs/guides/hosting-differences.md and carry its (unverified) claims as unverified (ADR 0112)"},
 	{ID: "docs/limitations", Check: "release notes list the accepted Claude Code limitations (ADR 0105) and the verified cells"},
 }
 

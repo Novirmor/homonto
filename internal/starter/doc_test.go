@@ -44,9 +44,6 @@ func renderCombinations() string {
 	for _, h := range Harnesses {
 		add(HarnessEvidence[h.ID])
 	}
-	for _, h := range Hosts {
-		add(HostEvidence[h.ID])
-	}
 	b.WriteString("\n" + combosEnd)
 	return b.String()
 }
@@ -77,12 +74,38 @@ func TestSupportedCombinationsDocMatchesTheMatrix(t *testing.T) {
 	t.Fatalf("%s is out of date with internal/starter; run `task docs-config`", combosDoc)
 }
 
-func TestEveryHostAndHarnessHasEvidence(t *testing.T) {
-	for _, h := range Hosts {
-		if len(HostEvidence[h.ID]) == 0 {
-			t.Errorf("host %s has no release evidence", h.ID)
+// TestEveryE2EEvidenceKeyIsAMatrixCell keeps each e2e/<cell> release key
+// produced by a cell scripts/e2e-matrix.sh runs, from a suite that exists, so
+// a key can never name a cell that no run can pass.
+func TestEveryE2EEvidenceKeyIsAMatrixCell(t *testing.T) {
+	matrix, err := os.ReadFile("../../scripts/e2e-matrix.sh")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, h := range Harnesses {
+		for _, e := range HarnessEvidence[h.ID] {
+			cell, ok := strings.CutPrefix(e.ID, "e2e/")
+			if !ok {
+				continue
+			}
+			suite, tool, _ := strings.Cut(cell, "/")
+			if tool == "" {
+				tool = `""`
+			}
+			if !strings.Contains(string(matrix), "_cell "+suite+" "+tool+"\n") {
+				t.Errorf("%s: scripts/e2e-matrix.sh runs no %s cell", e.ID, cell)
+			}
+			if e.Check != "scripts/e2e-matrix.sh "+cell {
+				t.Errorf("%s: check %q does not name its cell", e.ID, e.Check)
+			}
+			if _, err := os.Stat("../../test/e2e/suites/" + suite + ".sh"); err != nil {
+				t.Errorf("%s: %v", e.ID, err)
+			}
 		}
 	}
+}
+
+func TestEveryHarnessHasEvidence(t *testing.T) {
 	for _, h := range Harnesses {
 		if len(HarnessEvidence[h.ID]) == 0 {
 			t.Errorf("harness %s has no release evidence", h.ID)

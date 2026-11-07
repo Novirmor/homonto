@@ -67,13 +67,13 @@ func TestSkipAndMissingStayVisible(t *testing.T) {
 	fakeGit(t, "abc123", "")
 	path := filepath.Join(t.TempDir(), "evidence.json")
 	runOK(t, "init", "--version", "v1.0.0", "--out", path)
-	runOK(t, "record", path, "sandbox/gitlab", "skip", "--note", "no sandbox.env")
+	runOK(t, "record", path, "e2e/recovery/claude", "skip", "--note", "no credentials mounted")
 	var out bytes.Buffer
 	err := run([]string{"check", path}, &out)
-	if err == nil || !strings.Contains(out.String(), "skip     sandbox/gitlab") || !strings.Contains(out.String(), "missing  gate/full") {
+	if err == nil || !strings.Contains(out.String(), "skip     e2e/recovery/claude") || !strings.Contains(out.String(), "missing  gate/full") {
 		t.Fatalf("err %v\n%s", err, out.String())
 	}
-	if strings.Contains(out.String(), "claimable: host gitlab") {
+	if strings.Contains(out.String(), "harness claude") {
 		t.Error("a cell with a skipped key was claimable")
 	}
 }
@@ -91,7 +91,7 @@ func TestRecordRefusesOtherCommitsAndBadValues(t *testing.T) {
 		"dirty tree":   {"abc123", " M x.go", []string{"record", path, "gate/full", "pass"}, "uncommitted changes"},
 		"unknown key":  {"abc123", "", []string{"record", path, "gate/nope", "pass"}, "is not a key"},
 		"bad status":   {"abc123", "", []string{"record", path, "gate/full", "green"}, "is not pass, fail, skip or n/a"},
-		"cell n/a":     {"abc123", "", []string{"record", path, "sandbox/github", "n/a", "--note", "x"}, "cannot be n/a"},
+		"cell n/a":     {"abc123", "", []string{"record", path, "e2e/onto", "n/a", "--note", "x"}, "cannot be n/a"},
 		"n/a no note":  {"abc123", "", []string{"record", path, "compat/upgrade", "n/a"}, "needs a --note"},
 	} {
 		t.Run(name, func(t *testing.T) {

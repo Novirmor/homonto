@@ -4,8 +4,10 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
+	"maps"
 	"os"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strings"
 
@@ -188,58 +190,37 @@ func (e *Engine) preflightCatalogRoots() error {
 // under .homonto — generated content, never user-authored — so pruning the
 // undeclared is safe by construction.
 func gcCatalogRoots(skillRoot, cmdRoot, subRoot, pluginRoot string, p *catalogPlan) error {
-	inSet := func(names []string) map[string]bool {
-		m := make(map[string]bool, len(names))
-		for _, n := range names {
-			m[n] = true
-		}
-		return m
+	same := func(entry string) string { return entry }
+	if err := pruneRoot(skillRoot, p.skills, same); err != nil {
+		return err
 	}
-	skills, cmds, subs := inSet(p.skills), inSet(p.commands), inSet(p.subagents)
+	if err := pruneRoot(cmdRoot, p.commands, func(entry string) string { return strings.TrimSuffix(entry, ".md") }); err != nil {
+		return err
+	}
+	if err := pruneRoot(pluginRoot, p.plugins, same); err != nil {
+		return err
+	}
+	// Subagent owner name: strip .md, then an optional per-tool variant suffix.
+	return pruneRoot(subRoot, p.subagents, func(entry string) string {
+		name := strings.TrimSuffix(entry, ".md")
+		for _, tool := range config.HarnessIDs() {
+			name = strings.TrimSuffix(name, "."+tool)
+		}
+		return name
+	})
+}
 
-	if entries, err := os.ReadDir(skillRoot); err == nil {
-		for _, e := range entries {
-			if !skills[e.Name()] {
-				if err := os.RemoveAll(filepath.Join(skillRoot, e.Name())); err != nil {
-					return err
-				}
-			}
-		}
+// pruneRoot removes every entry of root whose owner is not in keep. A root
+// that cannot be read has nothing to prune.
+func pruneRoot(root string, keep []string, owner func(entry string) string) error {
+	entries, err := os.ReadDir(root)
+	if err != nil {
+		return nil
 	}
-	if entries, err := os.ReadDir(cmdRoot); err == nil {
-		for _, e := range entries {
-			name := strings.TrimSuffix(e.Name(), ".md")
-			if !cmds[name] {
-				if err := os.RemoveAll(filepath.Join(cmdRoot, e.Name())); err != nil {
-					return err
-				}
-			}
-		}
-	}
-	if entries, err := os.ReadDir(pluginRoot); err == nil {
-		owned := map[string]bool{}
-		for _, n := range p.plugins {
-			owned[n] = true
-		}
-		for _, e := range entries {
-			if !owned[e.Name()] {
-				if err := os.RemoveAll(filepath.Join(pluginRoot, e.Name())); err != nil {
-					return err
-				}
-			}
-		}
-	}
-	if entries, err := os.ReadDir(subRoot); err == nil {
-		for _, e := range entries {
-			// Owner name: strip .md, then an optional per-tool variant suffix.
-			name := strings.TrimSuffix(e.Name(), ".md")
-			for _, tool := range config.HarnessIDs() {
-				name = strings.TrimSuffix(name, "."+tool)
-			}
-			if !subs[name] {
-				if err := os.RemoveAll(filepath.Join(subRoot, e.Name())); err != nil {
-					return err
-				}
+	for _, e := range entries {
+		if !slices.Contains(keep, owner(e.Name())) {
+			if err := os.RemoveAll(filepath.Join(root, e.Name())); err != nil {
+				return err
 			}
 		}
 	}
@@ -299,42 +280,9 @@ func (e *Engine) planCatalog() (*catalogPlan, error) {
 	if err := e.preflightCatalogRoots(); err != nil {
 		return nil, err
 	}
-	skillSet := map[string]bool{}
-	cmdSet := map[string]bool{}
-	subSet := map[string]bool{}
-	pluginSet := map[string]bool{}
-	targetedSubagents := map[string]map[string]bool{}
-	for _, tool := range config.HarnessIDs() {
-		targetedSubagents[tool] = map[string]bool{}
-		sEntries, err := e.Cfg.ExpandedSkillEntriesForTool(tool)
-		if err != nil {
-			return nil, err
-		}
-		for _, entry := range sEntries {
-			if strings.HasPrefix(entry.Resource.Source, "builtin:") {
-				skillSet[strings.TrimPrefix(entry.Resource.Source, "builtin:")] = true
-			}
-		}
-		cEntries, err := e.Cfg.ExpandedCommandEntriesForTool(tool)
-		if err != nil {
-			return nil, err
-		}
-		for _, entry := range cEntries {
-			if strings.HasPrefix(entry.Resource.Source, "builtin:") {
-				cmdSet[strings.TrimPrefix(entry.Resource.Source, "builtin:")] = true
-			}
-		}
-		saEntries, err := e.Cfg.ExpandedSubagentEntriesForTool(tool)
-		if err != nil {
-			return nil, err
-		}
-		for _, entry := range saEntries {
-			if strings.HasPrefix(entry.Resource.Source, "builtin:") {
-				name := strings.TrimPrefix(entry.Resource.Source, "builtin:")
-				subSet[name] = true
-				targetedSubagents[tool][name] = true
-			}
-		}
+	skillSet, cmdSet, subSet, targetedSubagents, err := e.declaredBuiltins()
+	if err != nil {
+		return nil, err
 	}
 	// Build the catalog including the config's local frameworks so a
 	// local:<path> framework's resources materialize (from their own FS) into
@@ -344,39 +292,13 @@ func (e *Engine) planCatalog() (*catalogPlan, error) {
 	if err != nil {
 		return nil, err
 	}
-	for _, name := range cl.PluginNames() {
-		// Framework/resource catalogs retain their bundled plugins. Explicit
-		// bundled-plugin-only configs also need content before adapter projection.
-		if len(skillSet)+len(cmdSet)+len(subSet) > 0 {
-			pluginSet[name] = true
-		}
-		for _, plugin := range e.Cfg.Plugins.OpenCode {
-			if plugin.IsEnabled() && plugin.Source == name {
-				pluginSet[name] = true
-			}
-		}
-	}
-	if e.Cfg.WorkflowContextEnabled() {
-		pluginSet[workflowBridgePlugin] = true
-	}
+	pluginSet := e.bundledPlugins(cl, len(skillSet)+len(cmdSet)+len(subSet) > 0)
 	if len(skillSet)+len(cmdSet)+len(subSet)+len(pluginSet) == 0 {
 		return nil, nil
 	}
-	skillNames := make([]string, 0, len(skillSet))
-	for n := range skillSet {
-		skillNames = append(skillNames, n)
-	}
-	sort.Strings(skillNames)
-	cmdNames := make([]string, 0, len(cmdSet))
-	for n := range cmdSet {
-		cmdNames = append(cmdNames, n)
-	}
-	sort.Strings(cmdNames)
-	subNames := make([]string, 0, len(subSet))
-	for n := range subSet {
-		subNames = append(subNames, n)
-	}
-	sort.Strings(subNames)
+	skillNames := slices.Sorted(maps.Keys(skillSet))
+	cmdNames := slices.Sorted(maps.Keys(cmdSet))
+	subNames := slices.Sorted(maps.Keys(subSet))
 
 	// Gate on every input the materialized bytes are derived from:
 	//   - the base catalog version (an embedded-catalog upgrade),
@@ -393,11 +315,7 @@ func (e *Engine) planCatalog() (*catalogPlan, error) {
 	if err != nil {
 		return nil, err
 	}
-	pluginNames := make([]string, 0, len(pluginSet))
-	for n := range pluginSet {
-		pluginNames = append(pluginNames, n)
-	}
-	sort.Strings(pluginNames)
+	pluginNames := slices.Sorted(maps.Keys(pluginSet))
 	contentFP, err := cl.ContentFingerprint(skillNames, cmdNames, subNames, pluginNames)
 	if err != nil {
 		return nil, err
@@ -465,6 +383,74 @@ func (e *Engine) planCatalog() (*catalogPlan, error) {
 		fingerprint:     fingerprint,
 		upToDate:        upToDate,
 	}, nil
+}
+
+// declaredBuiltins names the builtin skills, commands and subagents any
+// harness installs, and the subagents each harness targets.
+func (e *Engine) declaredBuiltins() (skillSet, cmdSet, subSet map[string]bool, targeted map[string]map[string]bool, err error) {
+	skillSet = map[string]bool{}
+	cmdSet = map[string]bool{}
+	subSet = map[string]bool{}
+	targeted = map[string]map[string]bool{}
+	for _, tool := range config.HarnessIDs() {
+		targeted[tool] = map[string]bool{}
+		sEntries, err := e.Cfg.ExpandedSkillEntriesForTool(tool)
+		if err != nil {
+			return nil, nil, nil, nil, err
+		}
+		for _, entry := range sEntries {
+			if strings.HasPrefix(entry.Resource.Source, "builtin:") {
+				skillSet[strings.TrimPrefix(entry.Resource.Source, "builtin:")] = true
+			}
+		}
+		cEntries, err := e.Cfg.ExpandedCommandEntriesForTool(tool)
+		if err != nil {
+			return nil, nil, nil, nil, err
+		}
+		for _, entry := range cEntries {
+			if strings.HasPrefix(entry.Resource.Source, "builtin:") {
+				cmdSet[strings.TrimPrefix(entry.Resource.Source, "builtin:")] = true
+			}
+		}
+		saEntries, err := e.Cfg.ExpandedSubagentEntriesForTool(tool)
+		if err != nil {
+			return nil, nil, nil, nil, err
+		}
+		for _, entry := range saEntries {
+			if strings.HasPrefix(entry.Resource.Source, "builtin:") {
+				name := strings.TrimPrefix(entry.Resource.Source, "builtin:")
+				subSet[name] = true
+				targeted[tool][name] = true
+			}
+		}
+	}
+	return skillSet, cmdSet, subSet, targeted, nil
+}
+
+// bundledPlugins are the catalog plugins to materialize: every one when any
+// builtin resource is declared (framework catalogs retain their bundled
+// plugins), each explicitly enabled one (bundled-plugin-only configs also need
+// content before adapter projection), and the workflow bridge when the
+// workflow context is on.
+func (e *Engine) bundledPlugins(cl *catalog.Catalog, anyResource bool) map[string]bool {
+	pluginSet := map[string]bool{}
+	for _, name := range cl.PluginNames() {
+		if anyResource {
+			pluginSet[name] = true
+		}
+		for _, plugin := range e.Cfg.Plugins.OpenCode {
+			if plugin.IsEnabled() && plugin.Source == name {
+				pluginSet[name] = true
+			}
+		}
+	}
+	if e.Cfg.WorkflowContextEnabled() {
+		pluginSet[workflowBridgePlugin] = true
+	}
+	if e.Cfg.WorkflowContextEnabled() {
+		pluginSet[workflowBridgePlugin] = true
+	}
+	return pluginSet
 }
 
 // allSkillDirsExist reports whether every declared skill is materialized. For a

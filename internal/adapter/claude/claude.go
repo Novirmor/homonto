@@ -284,18 +284,18 @@ func (a *Adapter) Plan(c *config.Config, st *state.State) (adapter.ChangeSet, er
 	}
 	codec := jsoncodec.Codec{}
 	for _, ns := range spaces {
-		changes, err := structproj.Project(a.Name(), ns.prefix, ns.desired, ns.doc, st, codec, ns.path)
+		changes, err := structproj.Project(a.HarnessID(), ns.prefix, ns.desired, ns.doc, st, codec, ns.path)
 		if err != nil {
 			return adapter.ChangeSet{}, err
 		}
 		cs.Changes = append(cs.Changes, changes...)
 	}
-	files, declared, err := a.PlanFiles(a.Name(), st)
+	files, declared, err := a.PlanFiles(a.HarnessID(), st)
 	if err != nil {
 		return adapter.ChangeSet{}, err
 	}
 	cs.Changes = append(cs.Changes, files...)
-	for _, k := range st.Keys(a.Name()) {
+	for _, k := range st.Keys(a.HarnessID()) {
 		if declared[k] || !managedPrefix(k) {
 			continue
 		}
@@ -327,7 +327,7 @@ func (a *Adapter) ObserveHashes(st *state.State) (map[string]string, error) {
 		if err != nil {
 			return nil, err
 		}
-		got, err := structproj.Observe(a.Name(), o.prefix, doc, st, codec, o.path)
+		got, err := structproj.Observe(a.HarnessID(), o.prefix, doc, st, codec, o.path)
 		if err != nil {
 			return nil, err
 		}
@@ -336,15 +336,15 @@ func (a *Adapter) ObserveHashes(st *state.State) (map[string]string, error) {
 		}
 	}
 	for _, prefix := range []string{"skill.", "command.", "subagent."} {
-		for k, v := range fileproj.Observe(a.Name(), prefix, st) {
+		for k, v := range fileproj.Observe(a.HarnessID(), prefix, st) {
 			out[k] = v
 		}
 	}
-	for _, key := range st.Keys(a.Name()) {
+	for _, key := range st.Keys(a.HarnessID()) {
 		if !strings.HasPrefix(key, "subagentcopy.") {
 			continue
 		}
-		e, _ := st.Get(a.Name(), key)
+		e, _ := st.Get(a.HarnessID(), key)
 		if content, err := os.ReadFile(e.Desired); err == nil {
 			out[key] = copyfile.Hash(content)
 		}
@@ -362,12 +362,12 @@ func (a *Adapter) Apply(cfg *config.Config, cs adapter.ChangeSet, res *secret.Re
 		return err
 	}
 	// Fail on any link or copy conflict before writing a single file.
-	if err := a.CheckFileConflicts(a.Name(), st); err != nil {
+	if err := a.CheckFileConflicts(a.HarnessID(), st); err != nil {
 		return err
 	}
 	codec := jsoncodec.Codec{}
 	for _, ns := range spaces {
-		doc, changed, err := structproj.Apply(a.Name(), ns.prefix, baseadapter.FilterChanges(cs.Changes, ns.prefix), ns.doc, codec, res, st, ns.path)
+		doc, changed, err := structproj.Apply(a.HarnessID(), ns.prefix, baseadapter.FilterChanges(cs.Changes, ns.prefix), ns.doc, codec, res, st, ns.path)
 		if err != nil {
 			return err
 		}
@@ -380,10 +380,10 @@ func (a *Adapter) Apply(cfg *config.Config, cs adapter.ChangeSet, res *secret.Re
 			}
 		}
 	}
-	if err := a.ApplyFileState(a.Name(), cs.Changes, st); err != nil {
+	if err := a.ApplyFileState(a.HarnessID(), cs.Changes, st); err != nil {
 		return err
 	}
-	return a.ApplyFiles(a.Name(), st)
+	return a.ApplyFiles(a.HarnessID(), st)
 }
 
 // Describe enumerates the keys this adapter projects, for explain.

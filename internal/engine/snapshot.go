@@ -151,25 +151,9 @@ func recordDiskBefore(e *Engine, sets []adapter.ChangeSet, blobs *snapshot.BlobS
 	return nil
 }
 
-// stateFor resolves an adapter label to its state partition and the state key
-// recorded inside that partition. Repo adapters add @<repo> to their adapter
-// label, while their partition keeps the base adapter key.
-func stateFor(e *Engine, tool string) (*state.State, string) {
-	for _, t := range e.RepoTargets {
-		if t.Adapter.Name() == tool {
-			key, _ := strings.CutSuffix(tool, "@"+t.Name)
-			return t.State, key
-		}
-	}
-	return e.State, tool
-}
-
 // recordedLinkDst recovers a link key's recorded destination from state.
 func recordedLinkDst(e *Engine, tool, key string) (string, bool) {
-	st, stateTool := stateFor(e, tool)
-	if st == nil {
-		return "", false
-	}
+	st, stateTool, _ := e.Partition(tool)
 	entry, ok := st.Get(stateTool, key)
 	if !ok {
 		return "", false

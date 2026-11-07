@@ -69,7 +69,8 @@ func (en *enricher) captureDeletes(tool string, cs adapter.ChangeSet, st *state.
 }
 
 // record applies provenance updates for one adapter's completed changeset.
-func (en *enricher) record(cs adapter.ChangeSet, deletes []state.Tombstone, st *state.State) {
+// Descriptors are keyed by the adapter's label; its entries live under key.
+func (en *enricher) record(cs adapter.ChangeSet, key string, deletes []state.Tombstone, st *state.State) {
 	for _, c := range cs.Changes {
 		switch c.Action {
 		case adapter.ActionNoop:
@@ -84,7 +85,7 @@ func (en *enricher) record(cs adapter.ChangeSet, deletes []state.Tombstone, st *
 			origin = &o
 		}
 		cause := c.Cause
-		st.Enrich(cs.Tool, c.Key, origin, state.LastEvent{Op: en.op, Action: string(c.Action), Cause: string(cause), At: en.at})
+		st.Enrich(key, c.Key, origin, state.LastEvent{Op: en.op, Action: string(c.Action), Cause: string(cause), At: en.at})
 	}
 	for _, d := range deletes {
 		en.allocate()
@@ -99,8 +100,9 @@ func (en *enricher) record(cs adapter.ChangeSet, deletes []state.Tombstone, st *
 func (e *Engine) enrichApply() func(cs adapter.ChangeSet, st *state.State) (post func()) {
 	en := newEnricher(e)
 	return func(cs adapter.ChangeSet, st *state.State) func() {
-		deletes := en.captureDeletes(cs.Tool, cs, st)
-		return func() { en.record(cs, deletes, st) }
+		_, key, _ := e.Partition(cs.Tool)
+		deletes := en.captureDeletes(key, cs, st)
+		return func() { en.record(cs, key, deletes, st) }
 	}
 }
 

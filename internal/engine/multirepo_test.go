@@ -271,11 +271,11 @@ repo = "svc"
 		}
 	}
 	for _, target := range build().RepoTargets {
-		keys := target.State.Keys(target.Adapter.Name())
-		if target.Adapter.Name() == "opencode@svc" {
-			keys = target.State.Keys("opencode")
+		// A partition records under the harness id, never the adapter label.
+		if len(target.State.Keys(target.Adapter.Name())) != 0 {
+			t.Errorf("%s recorded under its label", target.Adapter.Name())
 		}
-		if len(keys) == 0 {
+		if keys := target.State.Keys(stateKey(target.Adapter, target.Name)); len(keys) == 0 {
 			t.Errorf("state has no records for %s", target.Adapter.Name())
 		}
 	}

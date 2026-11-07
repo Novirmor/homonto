@@ -72,19 +72,7 @@ func (e *Engine) Status() (drift []string, pending int, err error) {
 			e.Warnings = append(e.Warnings, fmt.Sprintf("%s drift skipped: %v", t.Adapter.Name(), oerr))
 			continue
 		}
-		// Repository adapters do not all use the same state namespace: the
-		// established OpenCode adapter uses its harness id, while Claude's
-		// structured projections use its repo-qualified adapter name. Check both
-		// namespaces so a partition can report every projection it contains.
-		tools := []string{t.Adapter.Name()}
-		if h, ok := t.Adapter.(interface{ HarnessID() string }); ok {
-			if harness := h.HarnessID(); harness != t.Adapter.Name() {
-				tools = append(tools, harness)
-			}
-		}
-		for _, tool := range tools {
-			drift = append(drift, driftLines(t.Adapter.Name(), tool, t.State, observed, mark)...)
-		}
+		drift = append(drift, driftLines(t.Adapter.Name(), stateKey(t.Adapter, t.Name), t.State, observed, mark)...)
 	}
 
 	for _, cs := range sets {

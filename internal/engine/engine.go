@@ -196,6 +196,9 @@ func Build(ctx context.Context, configPath, home, contentDir string) (*Engine, e
 		e.RepoTargets = append(e.RepoTargets, RepoTarget{Name: name, Dir: cfg.RepoDirs()[name], Adapter: a, State: st})
 	}
 	e.configureHarnesses()
+	if err := e.migrateRepoStateKeys(); err != nil {
+		return nil, err
+	}
 	if err := e.validateExternalSubagents(); err != nil {
 		return nil, err
 	}

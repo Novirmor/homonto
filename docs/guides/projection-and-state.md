@@ -100,7 +100,8 @@ No drift.
 ```
 
 `--exit-code` makes scripts easy: `0` clean, `2` pending, `3` drift.
-Declared-repository findings are labelled `opencode@<alias>`.
+Declared-repository findings are labelled `<harness>@<alias>`, such as
+`opencode@api`; their records live in `.homonto/state.<alias>.json`.
 
 ## Adoption
 

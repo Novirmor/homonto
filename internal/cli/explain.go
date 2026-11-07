@@ -64,35 +64,15 @@ type eventJSON struct {
 	At     string `json:"at"`
 }
 
-// stateFor returns the state partition an adapter label reads: the main state
-// for "opencode", the named partition for "opencode@<repo>".
-func stateFor(e *engine.Engine, tool string) *state.State {
-	if name, ok := strings.CutPrefix(tool, "opencode@"); ok {
-		for _, t := range e.RepoTargets {
-			if t.Name == name {
-				return t.State
-			}
-		}
-	}
-	return e.State
-}
-
-// partitionRepo extracts the repo alias from an adapter label, "" for main.
-func partitionRepo(tool string) string {
-	if name, ok := strings.CutPrefix(tool, "opencode@"); ok {
-		return name
-	}
-	return ""
-}
-
 // buildRows joins descriptors (what is declared now) with state history (what
 // happened) and tombstones (what was removed and why).
 func buildRows(e *engine.Engine) []explainRow {
 	rows := map[string]explainRow{}
 	for _, r := range e.DescribeAll() {
+		st, stateKey, repo := e.Partition(r.Tool)
 		row := explainRow{
 			Kind: r.Kind, Name: r.Name, Key: r.Key, Tool: r.Tool,
-			Repo: partitionRepo(r.Tool), Destination: r.Destination,
+			Repo: repo, Destination: r.Destination,
 		}
 		if r.Origin != nil {
 			row.OriginJSON = &originJSON{Kind: r.Origin.Kind, Framework: r.Origin.Framework, Provider: r.Origin.Provider, Source: r.Origin.Source, Scope: r.Origin.Scope, Repo: r.Origin.Repo}
@@ -100,30 +80,34 @@ func buildRows(e *engine.Engine) []explainRow {
 		} else {
 			row.Origin = "unknown (predates provenance)"
 		}
-		if st := stateFor(e, r.Tool); st != nil {
-			if entry, ok := st.Get(r.Tool, r.Key); ok {
-				if entry.LastEvent != nil {
-					row.LastEvent = &eventJSON{Op: entry.LastEvent.Op, Action: entry.LastEvent.Action, Cause: entry.LastEvent.Cause, At: entry.LastEvent.At}
-				}
-				if entry.Origin != nil && r.Origin == nil {
-					row.OriginJSON = &originJSON{Kind: entry.Origin.Kind, Framework: entry.Origin.Framework, Provider: entry.Origin.Provider, Source: entry.Origin.Source, Scope: entry.Origin.Scope, Repo: entry.Origin.Repo}
-					row.Origin = describeOrigin(entry.Origin)
-				}
+		if entry, ok := st.Get(stateKey, r.Key); ok {
+			if entry.LastEvent != nil {
+				row.LastEvent = &eventJSON{Op: entry.LastEvent.Op, Action: entry.LastEvent.Action, Cause: entry.LastEvent.Cause, At: entry.LastEvent.At}
+			}
+			if entry.Origin != nil && r.Origin == nil {
+				row.OriginJSON = &originJSON{Kind: entry.Origin.Kind, Framework: entry.Origin.Framework, Provider: entry.Origin.Provider, Source: entry.Origin.Source, Scope: entry.Origin.Scope, Repo: entry.Origin.Repo}
+				row.Origin = describeOrigin(entry.Origin)
 			}
 		}
 		rows[r.Tool+"\x00"+r.Key] = row
 	}
 	// Tombstones: resources no longer declared, with their removal record.
-	for _, part := range append([]*state.State{e.State}, repoStates(e)...) {
-		for _, t := range part.Tombstones {
+	// A repository partition records under the harness id; its rows carry the
+	// adapter label, which names the repository.
+	for _, part := range partitions(e) {
+		for _, t := range part.st.Tombstones {
+			label := t.Tool
+			if part.repo != "" {
+				label += "@" + part.repo
+			}
 			row := explainRow{
-				Key: t.Key, Tool: t.Tool, Repo: partitionRepo(t.Tool), Removed: true,
+				Key: t.Key, Tool: label, Repo: part.repo, Removed: true,
 				Origin: "(removed; declaration gone)", LastEvent: &eventJSON{Op: t.Op, Action: "delete", Cause: t.Cause, At: t.At},
 			}
 			if kind, name, ok := splitKey(t.Key); ok {
 				row.Kind, row.Name = kind, name
 			}
-			rows[t.Tool+"\x00"+t.Key] = row
+			rows[label+"\x00"+t.Key] = row
 		}
 	}
 	out := make([]explainRow, 0, len(rows))
@@ -139,10 +123,21 @@ func buildRows(e *engine.Engine) []explainRow {
 	return out
 }
 
-func repoStates(e *engine.Engine) []*state.State {
-	var out []*state.State
+type partition struct {
+	st   *state.State
+	repo string
+}
+
+// partitions lists the config repository's state and each repository's
+// partition once; a repository's harness adapters share one partition.
+func partitions(e *engine.Engine) []partition {
+	out := []partition{{st: e.State}}
+	seen := map[*state.State]bool{e.State: true}
 	for _, t := range e.RepoTargets {
-		out = append(out, t.State)
+		if !seen[t.State] {
+			seen[t.State] = true
+			out = append(out, partition{st: t.State, repo: t.Name})
+		}
 	}
 	return out
 }

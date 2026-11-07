@@ -252,3 +252,32 @@ func (s *State) Keys(tool string) []string {
 	sort.Strings(keys)
 	return keys
 }
+
+// Rekey moves every entry and tombstone recorded under tool from to tool to.
+// Releases before ADR 0116 recorded some of a repository partition's keys
+// under the repo-qualified adapter label ("claude@svc") instead of the
+// harness id the partition keys on ("claude"). A key present under both names
+// is ambiguous and fails closed rather than picking one record.
+func (s *State) Rekey(from, to string) error {
+	if from == to {
+		return nil
+	}
+	for _, key := range s.Keys(from) {
+		if _, clash := s.Managed[to][key]; clash {
+			return fmt.Errorf("state: %s is recorded under both %q and %q; remove one record by hand", key, from, to)
+		}
+	}
+	for key, e := range s.Managed[from] {
+		if s.Managed[to] == nil {
+			s.Managed[to] = map[string]Entry{}
+		}
+		s.Managed[to][key] = e
+	}
+	delete(s.Managed, from)
+	for i := range s.Tombstones {
+		if s.Tombstones[i].Tool == from {
+			s.Tombstones[i].Tool = to
+		}
+	}
+	return nil
+}

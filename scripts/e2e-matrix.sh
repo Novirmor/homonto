@@ -54,14 +54,22 @@ for a in "$@"; do
   esac
 done
 
+for cell in "${SELECT[@]}"; do
+  case "$cell" in
+    projection/opencode|projection/claude|onto|reference|plumbing|live/opencode|recovery/opencode|recovery/claude|policy/claude|process/opencode|process/claude|interrupt/opencode|interrupt/claude|analyze) ;;
+    *) echo "unknown cell: $cell" >&2; exit 2 ;;
+  esac
+done
+
 mkdir -p "$OUT"
 RESULTS=()  # "suite/tool<TAB>PASS|FAIL|SKIP"
 COMMIT="$(git -C "$ROOT" rev-parse HEAD 2>/dev/null || echo unknown)"
-DIRTY="$(git -C "$ROOT" status --porcelain --untracked-files=no 2>/dev/null | head -1)"
+DIRTY="$(git -C "$ROOT" status --porcelain --untracked-files=normal 2>/dev/null | head -1)"
 TREE=clean; [ -n "$DIRTY" ] && TREE=dirty
+IMAGE_PROVENANCE=built; [ "$DO_BUILD" -eq 0 ] && IMAGE_PROVENANCE=unknown
 EVIDENCE="$OUT/evidence.tsv"
 {
-  printf '# e2e matrix evidence: commit=%s tree=%s started=%s\n' "$COMMIT" "$TREE" "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+  printf '# e2e matrix evidence: checkout=%s tree=%s image=%s started=%s\n' "$COMMIT" "$TREE" "$IMAGE_PROVENANCE" "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
   printf 'kind\tid\tstatus\tcell\trelease_key\tlog\tnote\n'
 } > "$EVIDENCE"
 
@@ -188,7 +196,10 @@ for r in "${RESULTS[@]}"; do
   esac
   printf '  %-6s  %-22s %s\n' "$mark" "$cell" "$(release_key "$cell")"
 done
-printf '  logs: %s\n  evidence: %s (commit %s%s)\n' "$OUT" "$EVIDENCE" "$COMMIT" "${DIRTY:+, dirty tree: not release evidence}"
+printf '  logs: %s\n  evidence: %s (checkout %s, tree %s, image %s)\n' "$OUT" "$EVIDENCE" "$COMMIT" "$TREE" "$IMAGE_PROVENANCE"
+if [ "$TREE" != clean ] || [ "$IMAGE_PROVENANCE" != built ] || [ "$COMMIT" = unknown ]; then
+  printf '  not release evidence: checkout or image provenance is unverified\n'
+fi
 if [ "$fails" -gt 0 ]; then
   printf '\n%d cell(s) FAILED\n' "$fails"; exit 1
 fi

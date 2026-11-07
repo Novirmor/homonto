@@ -877,11 +877,9 @@ func ReceiverWorktree(l Layout, workflow, change, repo string, stateID ...string
 	return createWorktree(l, workflow, change, repo, "", "", "receiver", identity, false)
 }
 
-// createWorktree allocates one execution or receiver checkout in four steps:
-// read-only preflight, a re-checked registry claim journaled before Git runs,
-// `git worktree add`, and the ownership token that completes the binding.
-// A failure after the journal keeps the pending record rather than removing
-// anything that might now hold user work.
+// createWorktree allocates one execution or receiver checkout: a read-only
+// preflight resolves and checks the binding, then commitWorktree claims and
+// creates it. An existing matching binding is returned unchanged.
 func createWorktree(l Layout, workflow, change, repo, base, branch, role, identity string, anchored bool) (Worktree, error) {
 	var w Worktree
 	receiver := role == "receiver"
@@ -996,37 +994,46 @@ func createWorktree(l Layout, workflow, change, repo, base, branch, role, identi
 		return w, fmt.Errorf("worktree: ownership: requested integration base disagrees with the existing binding")
 	}
 
+	return commitWorktree(l, Worktree{Role: role, Workflow: workflow, Change: change, Repo: repo, StateID: s.identity,
+		WorkflowRoot: filepath.Dir(worktreeStatesDir(l, workflow)), Parent: parent,
+		CommonDir: common, Branch: branch, BaseRef: base, BaseTarget: target, BaseCommit: commit}, authority)
+}
+
+// commitWorktree claims a preflighted binding in the registry, journals it
+// before Git changes anything, then adds the checkout and its ownership token.
+// A failure after the journal keeps the pending record rather than removing
+// anything that might now hold user work.
+func commitWorktree(l Layout, w Worktree, authority string) (Worktree, error) {
+	receiver := w.Role == "receiver"
 	unlock, err := lockWorktreeRegistry(l)
 	if err != nil {
-		return w, err
+		return Worktree{}, err
 	}
 	defer unlock()
-	r, err = readWorktreeRegistry(l)
+	r, err := readWorktreeRegistry(l)
 	if err != nil {
-		return w, err
+		return Worktree{}, err
 	}
-	if _, ok := r.binding(workflow, change, repo, receiver); ok {
-		return w, fmt.Errorf("worktree: registry changed during creation preflight; retry to validate the existing binding")
+	if _, ok := r.binding(w.Workflow, w.Change, w.Repo, receiver); ok {
+		return Worktree{}, fmt.Errorf("worktree: registry changed during creation preflight; retry to validate the existing binding")
 	}
 	if !receiver {
-		if err := checkBranchAbsent(authority, branch); err != nil {
-			return w, err
+		if err := checkBranchAbsent(authority, w.Branch); err != nil {
+			return Worktree{}, err
 		}
 	}
-	dest := worktreeDestination(parent, repo, workflow, change, receiver)
+	dest := worktreeDestination(w.Parent, w.Repo, w.Workflow, w.Change, receiver)
 	if err := realWorktreePath(dest, true); err != nil {
-		return w, err
+		return Worktree{}, err
 	}
 	if _, err := os.Lstat(dest); !os.IsNotExist(err) {
-		return w, fmt.Errorf("worktree: ownership: destination %s already exists or cannot be inspected; refusing overwrite", dest)
+		return Worktree{}, fmt.Errorf("worktree: ownership: destination %s already exists or cannot be inspected; refusing overwrite", dest)
 	}
 	var token [16]byte
 	if _, err := rand.Read(token[:]); err != nil {
-		return w, err
+		return Worktree{}, err
 	}
-	w = Worktree{Role: role, Workflow: workflow, Change: change, Repo: repo, StateID: s.identity,
-		WorkflowRoot: filepath.Dir(worktreeStatesDir(l, workflow)), Parent: parent, Path: dest,
-		CommonDir: common, Ownership: hex.EncodeToString(token[:]), Branch: branch, BaseRef: base, BaseTarget: target, BaseCommit: commit, Status: "creating"}
+	w.Path, w.Ownership, w.Status = dest, hex.EncodeToString(token[:]), "creating"
 	r.Entries = append(r.Entries, w)
 	// Journal intent before Git changes anything. Failures retain this record and
 	// never force-remove a directory/branch whose contents might now be user work.
@@ -1034,10 +1041,10 @@ func createWorktree(l Layout, workflow, change, repo, base, branch, role, identi
 		return w, err
 	}
 
-	if err := addGitWorktree(l, authority, dest, branch, commit, receiver); err != nil {
+	if err := addGitWorktree(l, authority, dest, w.Branch, w.BaseCommit, receiver); err != nil {
 		return w, err
 	}
-	if w.GitDir, err = writeOwnerToken(dest, common, w.Ownership); err != nil {
+	if w.GitDir, err = writeOwnerToken(dest, w.CommonDir, w.Ownership); err != nil {
 		return w, err
 	}
 	w.Status = "ready"

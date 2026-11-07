@@ -61,37 +61,8 @@ func runMergeDeltas(cmd *cobra.Command, root, name string) error {
 	if err != nil {
 		return fmt.Errorf("onto merge-deltas: %w", err)
 	}
-	// Validate before consulting Abandoned/Close.Merged: a malformed state must
-	// not reach the merge logic. Load migrates but does not validate (F9).
-	if err := st.Validate(); err != nil {
-		return fmt.Errorf("onto merge-deltas: %w", err)
-	}
-	if st.Change != name {
-		return fmt.Errorf("onto merge-deltas: state change %q does not match directory %q", st.Change, name)
-	}
-	// An abandoned change is the unsuccessful terminal state: its deltas were
-	// never accepted, so they must never mutate the living specs.
-	if st.Abandoned {
-		return fmt.Errorf("onto merge-deltas: change %q is abandoned; an abandoned change's deltas are never merged into the living specs", name)
-	}
-	// Spec deltas are accepted only at close — an open/design/build/verify change
-	// has not yet been verified, so its deltas must not mutate the living specs
-	// (F7). Idempotent re-runs at close are covered by the Close.Merged check
-	// below.
-	if st.Phase != "close" {
-		return fmt.Errorf("onto merge-deltas: change %q is at phase %q; merge-deltas runs only at close", name, st.Phase)
-	}
-	if err := passingVerificationEvidence(changeDir, st); err != nil {
-		return fmt.Errorf("onto merge-deltas: %w", err)
-	}
-	if st.RepoMode == "explicit" {
-		if err := verifyHeadsIntact(root, st); err != nil {
-			return err
-		}
-	} else if len(st.Repos) > 0 {
-		if _, err := stateSourceDirs(root, st); err != nil {
-			return fmt.Errorf("onto merge-deltas: %w", err)
-		}
+	if err := checkMergeable(root, changeDir, name, st); err != nil {
+		return err
 	}
 	inputs, err := deltaInputs(root, changeDir)
 	if err != nil {
@@ -216,6 +187,45 @@ func runMergeDeltas(cmd *cobra.Command, root, name string) error {
 		fmt.Fprintf(cmd.OutOrStdout(), "  merged %s → %s\n", r.capability, filepath.Join(workflowRoot(root), "specs", r.capability+".md"))
 	}
 	fmt.Fprintf(cmd.OutOrStdout(), "%s: %d delta spec(s) merged; marked close.merged\n", name, len(inputs))
+	return nil
+}
+
+// checkMergeable admits only a valid, unabandoned change at close with
+// passing verification evidence and intact sources: deltas mutate the living
+// specs, so nothing less verified may reach them.
+func checkMergeable(root, changeDir, name string, st ontostate.State) error {
+	// Validate before consulting Abandoned/Close.Merged: a malformed state must
+	// not reach the merge logic. Load migrates but does not validate (F9).
+	if err := st.Validate(); err != nil {
+		return fmt.Errorf("onto merge-deltas: %w", err)
+	}
+	if st.Change != name {
+		return fmt.Errorf("onto merge-deltas: state change %q does not match directory %q", st.Change, name)
+	}
+	// An abandoned change is the unsuccessful terminal state: its deltas were
+	// never accepted, so they must never mutate the living specs.
+	if st.Abandoned {
+		return fmt.Errorf("onto merge-deltas: change %q is abandoned; an abandoned change's deltas are never merged into the living specs", name)
+	}
+	// Spec deltas are accepted only at close — an open/design/build/verify change
+	// has not yet been verified, so its deltas must not mutate the living specs
+	// (F7). Idempotent re-runs at close are covered by the Close.Merged check
+	// below.
+	if st.Phase != "close" {
+		return fmt.Errorf("onto merge-deltas: change %q is at phase %q; merge-deltas runs only at close", name, st.Phase)
+	}
+	if err := passingVerificationEvidence(changeDir, st); err != nil {
+		return fmt.Errorf("onto merge-deltas: %w", err)
+	}
+	if st.RepoMode == "explicit" {
+		if err := verifyHeadsIntact(root, st); err != nil {
+			return err
+		}
+	} else if len(st.Repos) > 0 {
+		if _, err := stateSourceDirs(root, st); err != nil {
+			return fmt.Errorf("onto merge-deltas: %w", err)
+		}
+	}
 	return nil
 }
 

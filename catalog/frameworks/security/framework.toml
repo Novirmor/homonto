@@ -1,0 +1,19 @@
+name = "security"
+kind = "expert"
+version = "0.1.0"
+description = "Threat modeling, evidence-backed security findings, remediation and adversarial review"
+
+[expert]
+skill = "expert-security"
+analyst = "expert-security"
+reviewer = "expert-security-reviewer"
+
+[skills]
+expert-security = "skills/expert-security"
+
+[subagents]
+expert-security = "subagents/expert-security.md"
+expert-security-reviewer = "subagents/expert-security-reviewer.md"
+
+[commands]
+security-review = "commands/security-review.md"

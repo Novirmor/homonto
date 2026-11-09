@@ -1,6 +1,6 @@
 # Bring your own MCP servers and skills
 
-- **Status:** Accepted
+- **Status:** Partially superseded by [0089](0089-compose-experts-independently-of-engines.md) (explicit expert references to native agents and skills)
 - **Date:** 2026-10-29
 - **Partially supersedes:** [0024](0024-multi-repo-designated-state-cross-repo-effect.md)
   (per-repo MCP servers and `local:` skills and commands)

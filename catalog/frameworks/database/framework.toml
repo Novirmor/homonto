@@ -1,0 +1,19 @@
+name = "database"
+kind = "expert"
+version = "0.1.0"
+description = "Data modeling, query and workload analysis, transactions, migrations and recovery"
+
+[expert]
+skill = "expert-database"
+analyst = "expert-database"
+reviewer = "expert-database-reviewer"
+
+[skills]
+expert-database = "skills/expert-database"
+
+[subagents]
+expert-database = "subagents/expert-database.md"
+expert-database-reviewer = "subagents/expert-database-reviewer.md"
+
+[commands]
+database-design = "commands/database-design.md"

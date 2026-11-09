@@ -80,7 +80,7 @@ done
 # read a file that ships nowhere. `references/tooling.md` and
 # `references/tmp.md` and `references/workspace.md` are generated names —
 # `homonto apply` renders them from tooling, tmp, and schema-2 workspace config.
-GENERATED='references/tooling.md references/tmp.md references/workspace.md'
+GENERATED='references/tooling.md references/tmp.md references/workspace.md references/experts.md'
 
 CATALOG_DOCS=()
 while IFS= read -r f; do CATALOG_DOCS+=("$f"); done < <(find catalog -name '*.md' | sort)

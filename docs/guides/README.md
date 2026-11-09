@@ -15,6 +15,7 @@
 |---|---|
 | [Configuration](configuration.md) | Every `homonto.toml` table and field |
 | [Catalog](catalog.md) | Every package, skill, command, agent, and plugin — and what it's for |
+| [Experts](experts.md) | Built-in and BYO expertise, standalone design, and composition with engines |
 | [Subagents and permissions](subagents.md) | Agent files, model blocks, permission rendering, what shipped agents may do |
 | [Secrets](secrets.md) | `${pass:…}` and `${ENV}` references |
 | [Projection and state](projection-and-state.md) | How apply writes, drift vs. pending, adoption, pruning, snapshots |

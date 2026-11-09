@@ -20,6 +20,7 @@ shell's working directory.
 | [`[subagents.<name>.opencode]`](#agent-models--subagentsnameopencode) | Each agent's model, variant, step budget, extra allowed commands |
 | [`[engines.<name>]`](#engines--enginesname) | Work-model packages: `onto`, `to`, `no` |
 | [`[workflows.<name>]`](#workflows--workflowsname) | User-facing packages: `h` |
+| [`[experts.<name>]`](#experts--expertsname) | Domain expertise and native expert references |
 | [`[plugins.opencode.<name>]`](#plugins--pluginsopencodename) | OpenCode plugins |
 | [`[settings.opencode]`](#settings--settingsopencode) | OpenCode settings |
 | [`[tui.opencode]`](#terminal-settings--tuiopencode) | OpenCode terminal settings |
@@ -61,16 +62,17 @@ fail at load (support removed in v0.13.0).
 
 | Resource | `scope` |
 |---|---|
-| skills, commands, engines, workflows | required |
+| skills, commands, engines, workflows, experts | required |
 | subagents | optional, default `project` |
 
 **Sources.**
 
 | Source | Resolves from | Valid for |
 |---|---|---|
-| `builtin:<name>` | The catalog in the binary, materialized to `.homonto/catalog/` | skills, commands, subagents, engines, workflows |
-| `local:<name>` | `homonto/subagents/<name>.md`, or a package root path | subagents, engines, workflows |
-| `remote:<url>` | A fetched archive; requires `digest` ([remote sources](remote-sources.md)) | subagents, engines, workflows |
+| `builtin:<name>` | The catalog in the binary, materialized to `.homonto/catalog/` | skills, commands, subagents, engines, workflows, experts |
+| `local:<name>` | `homonto/subagents/<name>.md`, or a package root path | subagents, engines, workflows, experts |
+| `remote:<url>` | A fetched archive; requires `digest` ([remote sources](remote-sources.md)) | subagents, engines, workflows, experts |
+| `external:<agent-id>` | Existing native OpenCode agent; referenced, never owned | experts |
 
 **Secrets** are written as `${pass:path}` or `${ENV_VAR}` and resolved only
 during apply. See [secrets](secrets.md).
@@ -109,6 +111,16 @@ entries stay in `opencode.jsonc` byte for byte; links to your own
 `homonto/skills/` and `homonto/commands/` content stay where they are. Both
 drop out of homonto's state and are yours from then on. `plan` shows each as
 a `release`.
+
+## Experts — `[experts.<name>]`
+
+Declare independent domain expertise with required `source` and `scope`, optional
+`targets`, and a required `digest` for remote packages. Builtins are `architecture`,
+`ui-ux`, `database` and `security`; local packages declare `kind = "expert"`.
+`external:<agent-id>` references native expertise with required `description` and
+optional `skill` and `reviewer` IDs. `repo` is not supported. Expert packages
+install shared coordinator support without an engine. Each managed agent needs
+its model route. See [experts](experts.md) for complete examples and the contract.
 
 ## Skills — `[skills.<name>]`
 

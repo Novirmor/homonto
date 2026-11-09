@@ -20,7 +20,8 @@ import (
 // Framework is one catalog framework's parsed metadata.
 type Framework struct {
 	Name         string
-	Kind         string // "workflow" or "engine" for shipped packages
+	Kind         string // "workflow", "engine", or "expert"
+	Expert       *ExpertContract
 	Version      string
 	Description  string
 	Dependencies []string // framework names (version constraints stripped)
@@ -72,11 +73,12 @@ type Catalog struct {
 const CurrentManifestSchemaVersion = 1
 
 type frameworkTOML struct {
-	ManifestSchema int    `toml:"manifest_schema"`
-	Name           string `toml:"name"`
-	Kind           string `toml:"kind"`
-	Version        string `toml:"version"`
-	Description    string `toml:"description"`
+	ManifestSchema int             `toml:"manifest_schema"`
+	Name           string          `toml:"name"`
+	Kind           string          `toml:"kind"`
+	Expert         *ExpertContract `toml:"expert"`
+	Version        string          `toml:"version"`
+	Description    string          `toml:"description"`
 	Dependencies   struct {
 		Frameworks   []string `toml:"frameworks"`
 		Capabilities []string `toml:"capabilities"`
@@ -369,6 +371,9 @@ func validResourceName(kind, name string) error {
 // source. Shared by mergeSource (base/overlay frameworks under frameworks/<dir>)
 // and mergeFrameworkRoot (a local single-framework root).
 func (c *Catalog) indexFramework(name string, src fs.FS, ft frameworkTOML) error {
+	if err := validateExpertManifest(name, src, ft); err != nil {
+		return err
+	}
 	for skill, sp := range ft.Skills {
 		if err := validResourceName("skill", skill); err != nil {
 			return err
@@ -480,6 +485,7 @@ func (c *Catalog) indexFramework(name string, src fs.FS, ft frameworkTOML) error
 		srcFS:                 src,
 		Name:                  ft.Name,
 		Kind:                  ft.Kind,
+		Expert:                ft.Expert,
 		Version:               ft.Version,
 		Description:           ft.Description,
 		Dependencies:          depNames,

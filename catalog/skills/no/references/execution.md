@@ -4,6 +4,12 @@ This reference owns the parent coordination contract for both `/no` and callers
 such as h resolve. The no skill remains an informational inventory of its two
 workers; no lifecycle plan, phase or binary is required.
 
+When domain expertise is configured, load `expert` for consultation and domain
+review. Supply its selected skill, recommendations and acceptance criteria to
+`no-implementer`; keep `no-reviewer` as the general review pass. Experts do not
+write source files or replace no's execution workers. A requested UI proceeds
+through implementation and rendered inspection, not just a design handoff.
+
 Use OpenCode's built-in `question` tool for every question to the user, including
 clarifications, free-form input and confirmations. Always display the native dialog
 box, including on standalone entry. If unavailable, denied or dismissed, preserve

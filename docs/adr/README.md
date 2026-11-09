@@ -86,7 +86,7 @@ numbering: [`../agents/adr.md`](../agents/adr.md).
 | [0064](0064-deliver-continuation-policy-through-model-context.md) | Deliver continuation policy through model context | Accepted |
 | [0065](0065-resolve-no-delta-scenarios-for-every-workflow.md) | Resolve no-delta scenarios for every workflow | Accepted |
 | [0066](0066-ground-development-in-codegraph.md) | Ground development in CodeGraph | Accepted |
-| [0067](0067-separate-workflows-from-engines.md) | Separate workflows from engines | Accepted |
+| [0067](0067-separate-workflows-from-engines.md) | Separate workflows from engines | Partially superseded by 0089 |
 | [0068](0068-coordinate-parallel-work-by-repository.md) | Coordinate parallel work by repository | Accepted |
 | [0069](0069-drive-onto-to-the-requested-delivery-endpoint.md) | Drive onto to the requested delivery endpoint | Accepted |
 | [0070](0070-trust-authorized-coordinator-delivery.md) | Trust authorized coordinator delivery | Accepted |
@@ -104,7 +104,8 @@ numbering: [`../agents/adr.md`](../agents/adr.md).
 | [0082](0082-support-harnesses-natively-in-tiers.md) | Support harnesses natively, in tiers | Accepted |
 | [0083](0083-pull-the-chosen-base-before-every-change.md) | Pull the chosen base before every change | Accepted |
 | [0084](0084-allow-draft-prs-at-any-phase.md) | Allow draft PRs at any phase | Accepted |
-| [0085](0085-bring-your-own-mcp-servers-and-skills.md) | Bring your own MCP servers and skills | Accepted |
+| [0085](0085-bring-your-own-mcp-servers-and-skills.md) | Bring your own MCP servers and skills | Partially superseded by 0089 |
 | [0086](0086-clean-up-at-close.md) | Clean up at close | Accepted |
 | [0087](0087-provision-dev-tools-with-mise.md) | Provision dev tools with mise | Accepted |
 | [0088](0088-module-path-matches-canonical-repository.md) | Name the Go module after the canonical repository | Accepted |
+| [0089](0089-compose-experts-independently-of-engines.md) | Compose experts independently of engines | Accepted |

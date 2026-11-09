@@ -195,6 +195,30 @@ func (c *Config) expandEntriesForTool(tool, kind string, base []NamedResource, e
 			byName[name] = nr
 		}
 	}
+	// Expert-only installations need the same coordinator and entrypoint as a
+	// mixed installation. Package authors never copy the shared runtime files.
+	for _, expert := range sortedExpertNames(c.Experts) {
+		r := c.Experts[expert].Resource
+		if !slices.Contains(r.TargetsOrAll(), tool) {
+			continue
+		}
+		for _, name := range expertSupport(kind) {
+			nr := NamedResource{Name: name, Resource: Resource{Source: "builtin:" + name, Scope: r.Scope, Targets: r.Targets}, Mode: "link",
+				Origins: []ResourceOrigin{{Kind: "framework", Framework: expert, Provider: expert, Source: "builtin:" + name, Scope: r.Scope}}}
+			if explicitNames[name] {
+				return nil, fmt.Errorf("config: %s %q is declared explicitly and required by expert %q", kind, name, expert)
+			}
+			if prev, ok := byName[name]; ok {
+				if !sameResource(prev.Resource, nr.Resource) {
+					return nil, fmt.Errorf("config: expert %q requires %s %q with conflicting scope/targets", expert, kind, name)
+				}
+				prev.Origins = append(prev.Origins, nr.Origins...)
+				byName[name] = prev
+			} else {
+				byName[name] = nr
+			}
+		}
+	}
 	out := make([]NamedResource, 0, len(byName))
 	for _, nr := range byName {
 		out = append(out, nr)
@@ -280,6 +304,11 @@ func (c *Config) ExpandedSubagentEntriesForTool(tool string) ([]NamedResource, e
 // routing. Used by validateModels to scope its checks.
 func (c *Config) EnabledModelTools() []string {
 	seen := map[string]bool{}
+	for _, e := range c.Experts {
+		for _, target := range e.TargetsOrAll() {
+			seen[target] = true
+		}
+	}
 	// Builtin frameworks enable model routing for their targeted tools (they
 	// expand model-routed commands/agents). A local:<path> framework may
 	// contribute only skills — like a skills-only config, which needs no models

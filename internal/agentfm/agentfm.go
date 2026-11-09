@@ -98,6 +98,11 @@ type RenderContext struct {
 	// Targets names actually projected to this tool. It lets materialization skip
 	// an unselected tool variant without weakening validation for selected agents.
 	Targets map[string]bool
+	// CoordinatorAgents replaces the static dispatch list with installed workers.
+	// A pointer distinguishes an intentionally empty list from catalog-only renders.
+	CoordinatorAgents  *[]string
+	ExpertWorkers      map[string]bool
+	CoordinatorContext string
 }
 
 // NeedsTransform reports whether content carries a `homonto:` frontmatter block
@@ -193,6 +198,11 @@ func Render(name string, content []byte, tool string, ctx *RenderContext) ([]byt
 		managesExternalDirectories bool
 	)
 	if ctx != nil {
+		if ctx.ExpertWorkers[name] {
+			if err := ValidateExpertWorker(content); err != nil {
+				return nil, err
+			}
+		}
 		var ok bool
 		spec, ok = ctx.Overrides[name]
 		if !ok || spec.Model == "" {
@@ -224,7 +234,9 @@ func Render(name string, content []byte, tool string, ctx *RenderContext) ([]byt
 			}
 			h.Steps = *spec.Steps
 		}
-		if h.Spawn != nil {
+		if name == "homonto" && ctx.CoordinatorAgents != nil {
+			h.Spawn = ctx.CoordinatorAgents
+		} else if h.Spawn != nil {
 			spawn := append([]string(nil), (*h.Spawn)...)
 			for i, source := range spawn {
 				if alias := ctx.Names[source]; alias != "" {
@@ -290,7 +302,7 @@ func Render(name string, content []byte, tool string, ctx *RenderContext) ([]byt
 			return nil, err
 		}
 		if perm := opencodePermission(h, spec.BashAllowAdd, externalDirectories, externalDirectoryDenies, editDirectoryDenies, managesExternalDirectories); perm != "" {
-			if role, builtin := roles[name]; builtin {
+			if role, builtin := roles[name]; builtin || (ctx != nil && ctx.ExpertWorkers[name]) {
 				action := "deny"
 				if role.Coordinator && !h.ReadOnly && (h.Bash == nil || *h.Bash) {
 					action = "allow"
@@ -317,6 +329,10 @@ func Render(name string, content []byte, tool string, ctx *RenderContext) ([]byt
 	}
 	b.WriteString("---\n")
 	b.Write(body)
+	if ctx != nil && name == "homonto" && ctx.CoordinatorContext != "" {
+		b.WriteString("\n\n")
+		b.WriteString(ctx.CoordinatorContext)
+	}
 	if ctx != nil && ctx.Names[name] != "" {
 		if err := ValidateInstalledName(ctx.Names[name], b.Bytes()); err != nil {
 			return nil, fmt.Errorf("agentfm: agent %q alias projection: %w", name, err)

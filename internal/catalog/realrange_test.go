@@ -11,7 +11,7 @@ import (
 
 // TestNew_CatalogShipsOnlyNativeFrameworks pins the shipped-framework
 // surface: the embedded catalog carries exactly the homonto-native
-// packages — onto, to, no, and the standalone h GitHub workflow — (plus loose
+// packages — engines, the h GitHub workflow and four domain experts — (plus loose
 // skills/commands indexed
 // separately). comet, openspec, and superpowers were removed deliberately —
 // a third-party framework reappearing here is a packaging regression, not a
@@ -33,7 +33,7 @@ func TestNew_CatalogShipsOnlyNativeFrameworks(t *testing.T) {
 		}
 	}
 	sort.Strings(names)
-	if want := []string{"h", "no", "onto", "to"}; !reflect.DeepEqual(names, want) {
+	if want := []string{"architecture", "database", "h", "no", "onto", "security", "to", "ui-ux"}; !reflect.DeepEqual(names, want) {
 		t.Errorf("shipped frameworks = %v, want exactly %v", names, want)
 	}
 }

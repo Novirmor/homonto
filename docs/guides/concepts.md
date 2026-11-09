@@ -11,10 +11,11 @@ homonto.toml ──plan──▶ diff ──apply──▶ OpenCode files
 ```
 
 You describe the desired state of your AI tooling in **`homonto.toml`**:
-workflow packages, builtin skills and slash commands, agents, plugins, and
+workflow, engine and expert packages, skills and slash commands, agents, plugins, and
 settings. homonto **projects** that description into the tool's own files.
-MCP servers and skills you write yourself are bring-your-own: they live in
-OpenCode's own files, and homonto never touches them.
+Native MCP servers, agents and skills can remain user-managed in OpenCode's own
+files. External expert references leave those files alone; managed expert
+packages can bundle your own skills and agents.
 
 - **`plan`** computes the diff and prints it. It writes nothing and resolves
   no secrets.
@@ -52,6 +53,7 @@ Every skill, command, agent, and package names where its content comes from:
 | `builtin:<name>` | Shipped inside the binary (the *catalog*), materialized to `.homonto/catalog/`. |
 | `local:<name>` | Your agent or package next to `homonto.toml`, under `homonto/`. |
 | `remote:<url>` | A fetched archive pinned by `digest = "sha256:…"`, verified before use. |
+| `external:<agent-id>` | Expert reference to an existing native agent; its files remain user-owned. |
 
 ## Scope
 
@@ -67,23 +69,28 @@ packages, skills, slash commands, agents, and plugins. It is versioned with
 the binary. After upgrading the binary, `homonto update` re-materializes it.
 The [catalog guide](catalog.md) describes every item.
 
-## Packages: workflows and engines
+## Packages: workflows, engines and experts
 
 A **package** bundles skills, commands, agents, and plugins that only make
-sense together. Declaring one installs all of it. Packages come in two roles:
+sense together. Declaring one installs all of it. Packages come in three roles:
 
 | Role | Table | Builtin | What it provides |
 |---|---|---|---|
 | **Engine** | `[engines.<name>]` | `onto`, `to`, `no` | A work model for implementing changes. `onto` and `to` also have a binary that owns lifecycle state. |
 | **Workflow** | `[workflows.<name>]` | `h` | User-facing coordination that uses engines, e.g. GitHub issue and PR work. |
+| **Expert** | `[experts.<name>]` | `architecture`, `ui-ux`, `database`, `security` | Domain methods, advisory analysis and independent review. |
 
 Engines can coexist. Each **task** uses exactly one engine and keeps it on
 resume. `h` needs no engine to research issues or review PRs; resolving an
 issue needs one installed.
 
+[Experts](experts.md) compose with every engine. Standalone analysis and design
+can finish without an engine, Git repository or lifecycle task. For implementation,
+the selected engine's writer receives domain knowledge and acceptance criteria.
+
 ## The coordinator and its specialists
 
-The `onto`, `to`, and `h` packages all install the same primary agent,
+The `onto`, `to`, `h`, and expert packages all install the same primary agent,
 **`homonto`** — the coordinator. Every `/onto*`, `/to*`, and `/h-*` slash
 command runs in it. The coordinator:
 

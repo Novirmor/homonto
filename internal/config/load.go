@@ -112,6 +112,11 @@ func normalize(c *Config) {
 	for name, r := range c.Engines {
 		c.Frameworks[name] = r
 	}
+	for name, expert := range c.Experts {
+		if !expert.External() {
+			c.Frameworks[name] = expert.Resource
+		}
+	}
 	// Subagents default to project scope when omitted (skills and commands still
 	// require an explicit scope). Normalize before validation so downstream
 	// projection sees a concrete scope. Model-route values are whitespace-trimmed
@@ -157,10 +162,10 @@ func Load(path string) (c *Config, err error) {
 	}
 	migrate(c)
 	normalize(c)
+	c.baseDir = filepath.Dir(abs)
 	if err := validate(c); err != nil {
 		return nil, err
 	}
-	c.baseDir = filepath.Dir(abs)
 	if c.SchemaVersion >= 2 {
 		layout, err := workspace.Load(abs)
 		if err != nil {

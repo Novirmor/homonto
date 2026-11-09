@@ -178,6 +178,9 @@ func Build(ctx context.Context, configPath, home, contentDir string) (*Engine, e
 	if len(dirs) > 0 {
 		cfg.SetRemoteFrameworkDirs(dirs)
 	}
+	if err := cfg.ValidateExpertInstallation(); err != nil {
+		return nil, err
+	}
 	// Fan out one adapter+state pair per declared repository (ADR 0024 stage
 	// 2). Each shares the config repo's materialized catalog roots (links
 	// point here, absolute) but projects into its own root with its own state
@@ -398,6 +401,16 @@ func (e *Engine) subagentRenderContext() (map[string]agentfm.RenderContext, erro
 }
 
 func (e *Engine) subagentRenderContextFor(targets map[string]map[string]bool) (map[string]agentfm.RenderContext, error) {
+	experts, err := e.Cfg.ResolvedExperts("opencode")
+	if err != nil {
+		return nil, err
+	}
+	expertWorkers := map[string]bool{}
+	for _, expert := range experts {
+		if !expert.External {
+			expertWorkers[expert.Analyst], expertWorkers[expert.Reviewer] = true, true
+		}
+	}
 	externalDirectories := make([]string, 0, len(e.Cfg.RepoDirs()))
 	for _, dir := range e.Cfg.RepoDirs() {
 		externalDirectories = append(externalDirectories, dir)
@@ -431,7 +444,7 @@ func (e *Engine) subagentRenderContextFor(targets map[string]map[string]bool) (m
 	}
 	// ADR 0068: builtin workers may inspect all declared repositories. Directory
 	// access does not grant shell or edit capability to read-only specialists.
-	workflowFrameworkInstalled := false
+	workflowFrameworkInstalled := len(experts) > 0
 	for _, resource := range e.Cfg.Frameworks {
 		switch resource.Source {
 		case "builtin:onto", "builtin:to", "builtin:no", "builtin:h":
@@ -468,6 +481,9 @@ func (e *Engine) subagentRenderContextFor(targets map[string]map[string]bool) (m
 		for agent := range roles {
 			externalDirectoriesByAgent[agent] = append(append([]string(nil), externalDirectories...), recordRoots...)
 		}
+		for agent := range expertWorkers {
+			externalDirectoriesByAgent[agent] = append(append([]string(nil), externalDirectories...), recordRoots...)
+		}
 	}
 	names := map[string]string{}
 	if entries, err := e.Cfg.ExpandedSubagentEntriesForTool("opencode"); err == nil {
@@ -502,6 +518,28 @@ func (e *Engine) subagentRenderContextFor(targets map[string]map[string]bool) (m
 			}
 		}
 	}
+	dispatch := map[string]bool{}
+	for source, installed := range names {
+		if role, ok := roles[source]; ok && !role.Coordinator {
+			dispatch[installed] = true
+		}
+	}
+	for _, expert := range experts {
+		for _, agent := range []string{expert.Analyst, expert.Reviewer} {
+			if agent == "" {
+				continue
+			}
+			if agent == names["homonto"] {
+				return nil, fmt.Errorf("expert %q refers to the coordinator as a worker", expert.Name)
+			}
+			dispatch[agent] = true
+		}
+	}
+	agents := make([]string, 0, len(dispatch))
+	for agent := range dispatch {
+		agents = append(agents, agent)
+	}
+	sort.Strings(agents)
 	overrides := func(pick func(config.Subagent) config.ModelRoute) map[string]agentfm.ModelSpec {
 		m := map[string]agentfm.ModelSpec{}
 		for key, sa := range e.Cfg.Subagents {
@@ -534,6 +572,9 @@ func (e *Engine) subagentRenderContextFor(targets map[string]map[string]bool) (m
 			ExternalDirectoryDeniesByAgent: externalDirectoryDeniesByAgent,
 			EditDirectoryDeniesByAgent:     editDirectoryDeniesByAgent,
 			Targets:                        targets["opencode"],
+			CoordinatorAgents:              &agents,
+			ExpertWorkers:                  expertWorkers,
+			CoordinatorContext:             string(catalog.RenderExperts(experts)),
 		},
 	}, nil
 }
@@ -562,7 +603,7 @@ func (e *Engine) materializeCatalog() error {
 			return err
 		}
 	}
-	if err := p.cl.Materialize(e.CatalogRoot, p.skills, p.shellProxy, p.codeIntel, p.tmpDir, p.workspaceRef); err != nil {
+	if err := p.cl.Materialize(e.CatalogRoot, p.skills, p.shellProxy, p.codeIntel, p.tmpDir, p.workspaceRef, p.expertRef); err != nil {
 		return err
 	}
 	if err := p.cl.MaterializeCommands(e.CommandCatalogRoot, p.commands); err != nil {
@@ -781,6 +822,7 @@ type catalogPlan struct {
 	// declared) rendered into the dispatchers and the shared knowledge skill.
 	tmpDir          string
 	workspaceRef    []byte
+	expertRef       []byte
 	workflowBinding []byte
 	fingerprint     string
 	upToDate        bool
@@ -1161,6 +1203,7 @@ func (e *Engine) planCatalog() (*catalogPlan, error) {
 	}
 	tmpFP := catalog.TmpFingerprint(tmpEnabled, tmpDir)
 	workspaceRef := catalog.RenderWorkspace(e.WorkspaceLayout)
+	expertRef := []byte(renderCtx["opencode"].CoordinatorContext)
 	fingerprint := renderFingerprint(renderCtx) + ":" + contentFP + ":" + toolingFP + ":" + tmpFP
 	if len(workspaceRef) > 0 {
 		workspaceFP := sha256.Sum256(workspaceRef)
@@ -1179,6 +1222,7 @@ func (e *Engine) planCatalog() (*catalogPlan, error) {
 		e.State.RenderFingerprintRecorded() == fingerprint &&
 		allSkillDirsExist(e.CatalogRoot, skillNames, cl, tmpDir) &&
 		allWorkspaceReferencesExist(e.CatalogRoot, skillNames, workspaceRef) &&
+		allExpertReferencesMatch(e.CatalogRoot, skillNames, expertRef) &&
 		allCommandFilesExist(e.CommandCatalogRoot, cmdNames) &&
 		allSubagentFilesExist(e.SubagentCatalogRoot, subNames, cl, renderCtx) &&
 		allPluginDirsExist(e.PluginCatalogRoot, pluginNames, e.Cfg.WorkflowContextEnabled()) &&
@@ -1194,6 +1238,7 @@ func (e *Engine) planCatalog() (*catalogPlan, error) {
 		codeIntel:       tooling.CodeIntel,
 		tmpDir:          tmpDir,
 		workspaceRef:    workspaceRef,
+		expertRef:       expertRef,
 		workflowBinding: workflowBinding,
 		fingerprint:     fingerprint,
 		upToDate:        upToDate,
@@ -1288,6 +1333,12 @@ func renderFingerprint(ctx map[string]agentfm.RenderContext) string {
 	}
 	sort.Strings(tools)
 	for _, tool := range tools {
+		extra, _ := json.Marshal(struct {
+			Agents  *[]string
+			Experts map[string]bool
+			Context string
+		}{ctx[tool].CoordinatorAgents, ctx[tool].ExpertWorkers, ctx[tool].CoordinatorContext})
+		fmt.Fprintf(h, "expert-context\x00%s\x00%s\x00", tool, extra)
 		names := make([]string, 0, len(ctx[tool].Names))
 		for source := range ctx[tool].Names {
 			names = append(names, source)

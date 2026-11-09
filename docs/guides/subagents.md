@@ -71,6 +71,10 @@ no effort setting; declaring one is an error.
 `local:` and `remote:` agents are projected **verbatim** and may not carry
 this block — put `model:` in the agent file's own frontmatter.
 
+Agents bundled in managed [expert packages](experts.md), including local/remote
+packages, are catalog-rendered and require these model routes. `external:` expert
+references keep the native agent's own model and permissions.
+
 ## The agent file
 
 ```markdown
@@ -138,10 +142,11 @@ command-pattern checks; they do not inspect what a script does.
 
 | Agent | Edit | Shell | Web | Asks user | Delegates | Steps |
 |---|---|---|---|---|---|---|
-| `homonto` (coordinator) | yes | allow, with protected asks | yes | yes | all specialists | 1200 |
+| `homonto` (coordinator) | yes | allow, with protected asks | yes | yes | installed specialists and configured external experts | 1200 |
 | `onto-implementer`, `to-implementer`, `no-implementer` | yes | allow, with asks and denies | yes | no | no | 300 |
 | explorers, reviewers, skeptics, `h-spike`, `h-review` | no | denied | yes | no | no | 120 |
 | `no-reviewer` | no | denied | yes | no | no | 160 |
+| `expert-*` analysts / reviewers | no | denied | yes | no | no | 180 / 160 |
 
 ### Coordinator
 

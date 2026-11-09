@@ -94,10 +94,13 @@ func validateWorkflow(c *Config) error {
 	return nil
 }
 
-// validatePackages checks the workflow and engine source rules. A declaration
-// cannot occupy both namespaces: model selection is dynamic, but a catalog
+// validatePackages checks workflow, engine and expert source rules. A declaration
+// cannot occupy multiple namespaces: model selection is dynamic, but a catalog
 // package has one role.
 func validatePackages(c *Config) error {
+	if err := c.validateExperts(); err != nil {
+		return err
+	}
 	for _, name := range slices.Sorted(maps.Keys(c.Workflows)) {
 		if _, duplicate := c.Engines[name]; duplicate {
 			return fmt.Errorf("parse config: %q is declared as both a workflow and an engine", name)
@@ -113,8 +116,8 @@ func validatePackages(c *Config) error {
 }
 
 // validateBuiltinPackageKinds makes the public split semantic rather than a
-// pair of aliases: a bundled workflow cannot be installed as an engine and
-// vice versa. Local and remote packages carry their kind in their own manifest
+// set of aliases: bundled workflows, engines and experts retain their role.
+// Local and remote packages carry their kind in their own manifest
 // and are checked when that manifest is loaded for expansion.
 func validateBuiltinPackageKinds(c *Config) error {
 	cl, err := loadedCatalog()
@@ -128,7 +131,7 @@ func validatePackageKinds(c *Config, cl *catalog.Catalog, builtinOnly bool) erro
 	for _, group := range []struct {
 		kind      string
 		resources map[string]Resource
-	}{{"workflow", c.Workflows}, {"engine", c.Engines}} {
+	}{{"workflow", c.Workflows}, {"engine", c.Engines}, {"expert", c.ExpertPackages()}} {
 		for _, name := range sortedResourceNames(group.resources) {
 			r := group.resources[name]
 			if builtinOnly && !strings.HasPrefix(r.Source, "builtin:") {
@@ -139,7 +142,10 @@ func validatePackageKinds(c *Config, cl *catalog.Catalog, builtinOnly bool) erro
 				continue
 			}
 			pkg, known := cl.Framework(catalogName)
-			if known && pkg.Kind != "" && pkg.Kind != group.kind {
+			if group.kind == "expert" && !known {
+				return fmt.Errorf("parse config: experts.%s: unknown expert package %q", name, catalogName)
+			}
+			if known && (pkg.Kind != "" || group.kind == "expert") && pkg.Kind != group.kind {
 				return fmt.Errorf("parse config: %s.%s source %q is %s, not %s", group.kind+"s", name, r.Source, article(pkg.Kind), article(group.kind))
 			}
 		}
@@ -229,6 +235,9 @@ func validateRepoTargets(c *Config) error {
 			table := "workflows"
 			if _, ok := c.Engines[name]; ok {
 				table = "engines"
+			}
+			if _, ok := c.Experts[name]; ok {
+				table = "experts"
 			}
 			return fmt.Errorf("parse config: %s.%s repo %q — workflows and engines project into the config repository only; declare their skills/commands/subagents per repo instead", table, name, r.Repo)
 		}
@@ -996,7 +1005,9 @@ func validateSubagentOverrides(c *Config) error {
 			if cat, ok = SubagentCatalogName(sa.Source); !ok {
 				return fmt.Errorf("parse config: subagents.%s declares a model override, but its source %q is not builtin: — local:/remote: agents are projected verbatim and never rendered, so the override could never apply", name, sa.Source)
 			}
-		} else {
+		} else if !c.unresolvedRemoteExperts() {
+			// Remote expert manifests arrive after Load. Build repeats this
+			// membership check through ValidateExpertInstallation before planning.
 			known, err := installedBuiltins()
 			if err != nil {
 				return err

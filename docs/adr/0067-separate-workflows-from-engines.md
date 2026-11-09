@@ -1,6 +1,6 @@
 # Separate workflows from engines
 
-- **Status:** Accepted
+- **Status:** Partially superseded by [0089](0089-compose-experts-independently-of-engines.md) (expert packages and advisory composition with no)
 - **Date:** 2026-10-25
 
 ## Context

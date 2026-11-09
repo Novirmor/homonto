@@ -5,6 +5,19 @@ release page for a tag shows only that release's notes
 ([`docs/release-notes.md`](docs/release-notes.md)) plus the generated commit
 list. Release candidates are folded into their stable release.
 
+## Unreleased
+
+- **Composable experts.** `[experts.*]` installs architecture, UI/UX, database
+  and security expertise, local or pinned-remote expert packages, or references
+  user-owned native agents/skills with `external:`. `/expert` and domain shortcuts
+  support standalone analysis/design and domain-guided engine implementation.
+  The coordinator discovers configured experts; managed analysts/reviewers stay
+  read-only and engine implementers receive domain skills and acceptance criteria.
+  Expert-only installs need neither Git nor an implementation engine.
+- Coordinator dispatch permissions now name installed workers rather than all
+  shipped workers. Expert inventory changes and missing generated references are
+  refreshed on apply.
+
 ## v0.36.1 — safer cleanup, remote sources, and installation
 
 All three binaries are stamped v0.36.1. The embedded catalog is 0.36.1

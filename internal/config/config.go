@@ -315,7 +315,8 @@ type Config struct {
 	// a workflow such as h can be installed without an engine.
 	Workflows map[string]Resource `toml:"workflows"`
 	Engines   map[string]Resource `toml:"engines"`
-	// Frameworks is the normalized union of Workflows and Engines. It is kept
+	Experts   map[string]Expert   `toml:"experts"`
+	// Frameworks is the normalized union of workflows, engines and managed experts. It is kept
 	// internal to the config API while the projection pipeline is generalized;
 	// it is never decoded from a [frameworks] TOML table.
 	Frameworks map[string]Resource `toml:"-"`

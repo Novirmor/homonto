@@ -7,6 +7,11 @@ missing or stale, inspect the active configuration rather than guessing paths.
 
 ## Resolve roots before writes
 
+For standalone expert analysis/design, inspect the supplied material and agreed
+artifact destination. No engine task, repository alias or managed records history
+is required. Keep requested standalone outputs at that destination; the lifecycle
+record and initialization rules below apply when an engine workflow is selected.
+
 Run `homonto workspace inspect --json` from the config root. From another cwd,
 pass `--config "<configRoot>/homonto.toml"` to every homonto workspace/worktree
 command. Inspection is read-only; it does not initialize Git or list source dirt.

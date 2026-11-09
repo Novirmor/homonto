@@ -243,8 +243,7 @@ func TestDoctorReportsPrimaryAgentHealthy(t *testing.T) {
 }
 
 // TestHomontoPrimaryRendersViaToFramework: the shared homonto primary renders
-// mode: primary with its full delegation topology — both frameworks'
-// specialists — even when only the to framework is declared (ADR 0045).
+// mode: primary with only the installed specialists in its delegation topology.
 func TestHomontoPrimaryRendersViaToFramework(t *testing.T) {
 	home := t.TempDir()
 	repo := t.TempDir()
@@ -260,10 +259,13 @@ func TestHomontoPrimaryRendersViaToFramework(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, want := range []string{"mode: primary", "steps: 1200", `"to-implementer": allow`, `"to-reviewer": allow`, `"onto-implementer": allow`} {
+	for _, want := range []string{"mode: primary", "steps: 1200", `"to-implementer": allow`, `"to-reviewer": allow`} {
 		if !strings.Contains(string(agent), want) {
 			t.Errorf("homonto primary missing %q:\n%s", want, agent)
 		}
+	}
+	if strings.Contains(string(agent), `"onto-implementer": allow`) {
+		t.Error("uninstalled onto worker remains dispatchable")
 	}
 }
 

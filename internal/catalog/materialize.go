@@ -25,10 +25,11 @@ import (
 // 0048), dispatchers and the shared knowledge skill also receive a generated
 // TmpReferencePath naming the workspace scratch directory. A non-empty workspaceRef
 // adds WorkspaceReferencePath to the shared homonto and onto/to entry points.
+// An optional expertRef adds the installed inventory to homonto and expert.
 // These writes land in
 // the staging directory before the atomic swap, so a crash never leaves a
 // half-written reference in place.
-func (c *Catalog) Materialize(dstRoot string, skillNames []string, shellProxy, codeIntel, tmpDir string, workspaceRef []byte) error {
+func (c *Catalog) Materialize(dstRoot string, skillNames []string, shellProxy, codeIntel, tmpDir string, workspaceRef []byte, expertRef ...[]byte) error {
 	for _, name := range skillNames {
 		sp, ok := c.skills[name]
 		if !ok {
@@ -114,6 +115,17 @@ func (c *Catalog) Materialize(dstRoot string, skillNames []string, shellProxy, c
 				return err
 			}
 			if err := fsutil.WriteControlPlane(target, workspaceRef, 0o644); err != nil {
+				_ = os.RemoveAll(staging)
+				return err
+			}
+		}
+		if (name == "expert" || name == SharedKnowledgeSkill) && len(expertRef) > 0 {
+			target := filepath.Join(staging, filepath.FromSlash(ExpertReferencePath))
+			if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
+				_ = os.RemoveAll(staging)
+				return err
+			}
+			if err := fsutil.WriteControlPlane(target, expertRef[0], 0o644); err != nil {
 				_ = os.RemoveAll(staging)
 				return err
 			}

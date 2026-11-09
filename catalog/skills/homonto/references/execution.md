@@ -261,3 +261,11 @@ Illustrative returns (replace the sample evidence with the task's actual results
 The coordinator validates the diff and evidence against the actual candidate
 under the verification policy above. A formatted worker report alone never
 establishes completion.
+## Domain expertise
+
+For a task requiring installed domain expertise, load `expert` and the selected
+domain skill. Give the selected engine's writer the skill, grounded analysis,
+decisions and acceptance criteria. Obtain domain review of the actual candidate
+when warranted. Experts supplement general review and required skeptics; they do
+not own source writes, lifecycle mutations or publication. An expert-only design
+or analysis stops at its requested deliverable without creating an engine task.

@@ -1,0 +1,19 @@
+name = "ui-ux"
+kind = "expert"
+version = "0.1.0"
+description = "User flows, visual direction, design systems, responsive components and rendered interface review"
+
+[expert]
+skill = "expert-ui-ux"
+analyst = "expert-ui-ux"
+reviewer = "expert-ui-ux-reviewer"
+
+[skills]
+expert-ui-ux = "skills/expert-ui-ux"
+
+[subagents]
+expert-ui-ux = "subagents/expert-ui-ux.md"
+expert-ui-ux-reviewer = "subagents/expert-ui-ux-reviewer.md"
+
+[commands]
+ui-design = "commands/ui-design.md"

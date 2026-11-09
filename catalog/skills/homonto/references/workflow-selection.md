@@ -1,5 +1,10 @@
 # Choose a workflow for new work
 
+This selection applies to implementation work. Standalone expert analysis,
+design and review can finish at their requested deliverable without an engine,
+Git repository or lifecycle task. Consult the installed expert inventory first
+when domain reasoning is needed; expert selection does not select an engine.
+
 Before creating a task, inspect the request and any recorded workspace task.
 Resume a matching task in its recorded engine; ignore other installed engines
 after selection. Only inspect a native inventory when selecting or resuming

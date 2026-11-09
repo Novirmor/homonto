@@ -7,6 +7,13 @@ item is for. How the pieces work together is in [workflows](workflows.md).
 
 ## Packages at a glance
 
+Four [expert packages](experts.md) also ship: `architecture`, `ui-ux`, `database`
+and `security`, declared under `[experts.<name>]`. Each supplies its
+`expert-<domain>` skill and analyst, an `expert-<domain>-reviewer`, and a shortcut
+(`/architecture`, `/ui-design`, `/database-design`, `/security-review`). Expert
+installation adds shared `homonto`/`expert` skills, the `homonto` coordinator and
+`/expert` once. They need no engine or lifecycle binary.
+
 | Package | Table | Skills | Commands | Agents | Binary |
 |---|---|---|---|---|---|
 | `onto` | `[engines.onto]` | `homonto`, `onto`, `onto-open`, `onto-design`, `onto-build`, `onto-verify`, `onto-close`, `onto-light`, `onto-no-slop` | `/onto`, `/onto-open`, `/onto-design`, `/onto-build`, `/onto-verify`, `/onto-close`, `/onto-light`, `/onto-no-slop`, `/onto-bypass` | `homonto`, `onto-explorer`, `onto-implementer`, `onto-reviewer`, `onto-skeptic` | `onto` |

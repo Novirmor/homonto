@@ -20,7 +20,7 @@ func NewRootCmd() *cobra.Command {
 	version := buildinfo.Resolve(Version, buildinfo.DevVersion)
 	root := &cobra.Command{
 		Use:           "homonto",
-		Short:         "Agent workflows for OpenCode, installed from one declarative config",
+		Short:         "Experts and agent workflows for OpenCode, installed from one declarative config",
 		Version:       version,
 		SilenceUsage:  true,
 		SilenceErrors: true,

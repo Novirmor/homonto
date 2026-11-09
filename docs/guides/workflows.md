@@ -5,6 +5,11 @@ them, shows how a request is routed, and describes the behavior they all
 share. Each has its own page: [onto](onto-workflow.md), [to](to-workflow.md),
 [no](no-workflow.md), [h](h-workflow.md).
 
+[Experts](experts.md) supply architecture, UI/UX, database and security knowledge
+independently of these execution choices. Their analysis/design can stand alone;
+implementation passes their skills and criteria to the selected engine's writer,
+with domain review supplementing its existing review passes.
+
 ## At a glance
 
 | | **onto** | **to** | **no** | **h** |
@@ -23,6 +28,9 @@ someone who wasn't there has to pick the change up or check what was done,
 pay for onto.
 
 ## How a request is routed
+
+The following routing is for implementation. An expert-only analysis, design or
+review finishes at its requested deliverable without creating a lifecycle task.
 
 ```mermaid
 flowchart TD

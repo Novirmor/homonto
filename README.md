@@ -1,6 +1,6 @@
 # homonto
 
-**Agent workflows for OpenCode, installed from one declarative config.**
+**Experts and agent workflows for OpenCode, installed from one declarative config.**
 
 homonto gives OpenCode a coordinator agent and four workflows that take a
 change from request to a verified, integrated result: evidence-gated (`onto`),
@@ -9,18 +9,25 @@ once which workflow fits, then drives implementation, review, verification,
 archive, integration, and authorized publication. It stops only for a decision
 that is yours, an endpoint you named, or a real blocker.
 
+Composable **architecture, UI/UX, database, and security experts** add domain
+analysis, design and review. Use them standalone or pass their guidance to an
+engine's implementer. Bring your own local/pinned-remote expert package or
+reference existing native agents and skills. [Expert setup and examples](docs/guides/experts.md).
+
 ```text
 /onto-light search crashes on an empty query
 /to add a --json flag to the list command
 /h-resolve-issue 142
+/architecture design the billing service boundaries; proposal only
+/ui-design use no to build and inspect the account settings page
 ```
 
 Underneath is a declarative projector. You describe the workflows, builtin
-skills and commands, agents, plugins, and settings once in `homonto.toml`;
+experts, skills and commands, agents, plugins, and settings once in `homonto.toml`;
 homonto shows you the diff, asks, and writes exactly that into OpenCode. When
-you delete a declaration, it removes it again. MCP servers and skills you
-write yourself are bring-your-own: they live in OpenCode's own files and
-homonto never touches them.
+you delete a declaration, it removes it again. Native MCP servers, agents and
+skills can remain user-managed in OpenCode's own files; external expert
+references leave those files alone.
 
 ```console
 $ homonto plan

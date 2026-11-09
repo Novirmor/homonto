@@ -1,0 +1,19 @@
+name = "architecture"
+kind = "expert"
+version = "0.1.0"
+description = "System architecture, boundaries, alternatives, failure modes, diagrams and proposed decisions"
+
+[expert]
+skill = "expert-architecture"
+analyst = "expert-architecture"
+reviewer = "expert-architecture-reviewer"
+
+[skills]
+expert-architecture = "skills/expert-architecture"
+
+[subagents]
+expert-architecture = "subagents/expert-architecture.md"
+expert-architecture-reviewer = "subagents/expert-architecture-reviewer.md"
+
+[commands]
+architecture = "commands/architecture.md"

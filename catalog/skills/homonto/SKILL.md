@@ -1,6 +1,6 @@
 ---
 name: homonto
-description: Shared homonto reference for configuration, catalog projection, workspace tasks, and selecting an engine; it does not dispatch work.
+description: Shared homonto reference for configuration, expert composition, catalog projection, workspace tasks, and selecting an engine; it does not dispatch work.
 ---
 
 # homonto knowledge reference
@@ -34,9 +34,20 @@ homonto reads `homonto.toml` and projects declared resources into OpenCode. `hom
 `.homonto/` and homonto-projected `.opencode/` links as managed data. Change the
 source configuration and re-apply instead of editing projections.
 
-The catalog ships skills, commands, and agents with the binary. A `[workflows.*]`
-or `[engines.*]` declaration installs its package. Each expanded agent needs
+The catalog ships skills, commands, and agents with the binary. A `[workflows.*]`,
+`[engines.*]` or `[experts.*]` declaration installs its package. Each expanded agent needs
 its own `[subagents.<name>.opencode]` model route.
+
+## Experts
+
+Experts supply domain reasoning independently of engines. Consult the generated
+`references/experts.md` for the installed inventory. When an expert is selected,
+load `expert` and its domain skill for analysis, design, review or an implementation
+handoff. Analysis and design can finish without Git or an engine lifecycle.
+Implementation keeps one selected engine and passes domain knowledge to its writer.
+Builtins cover architecture, UI/UX, database and security. Local/remote expert
+packages use the same contract. `external:` entries reference user-owned native
+agents and optional skills without taking ownership of their files or permissions.
 
 ## MCP servers, own skills and extra tools
 
@@ -54,7 +65,8 @@ still declared in `homonto.toml`, followed by `homonto plan` and
 `[repos]` names trusted sibling Git worktrees. For installed engines or h,
 apply renders those resolved paths as OpenCode external-directory permissions
 for builtin workers and the coordinator, with a deny baseline for other external
-paths. Read-only specialists retain shell/edit denials. Custom agents receive no rule.
+paths. Read-only specialists retain shell/edit denials. Validated managed expert
+workers receive the same read context; other custom agents receive no rule.
 Declared repositories and their symlinks are trusted rather than sandboxed;
 add a repo declaration rather than approving an arbitrary directory at runtime.
 

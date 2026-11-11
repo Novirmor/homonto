@@ -513,6 +513,7 @@ root = "docs"        # default
 |---|---|---|
 | `root` | `docs` | Relative to the config root. Schema 2 also accepts external and absolute paths. |
 | `git` | `existing` | Schema 2 only. `existing`: records use their Git owner's normal commit policy. `managed`: a homonto-owned records repository with automatic, path-scoped checkpoints. |
+| `final_skeptic` | `one` for `to`, `two` for `onto` and `no` | `off`, `one`, `two`, or `auto`; an explicit value applies to all three engines. |
 
 In schema 0/1 the root must stay below the config root (no absolute paths, no
 `..`, no escaping symlinks). Schema 2 rules and the managed mode are in

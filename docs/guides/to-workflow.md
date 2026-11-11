@@ -2,7 +2,7 @@
 
 `to` is the minimal engine: three phases, one artifact, and a small
 bookkeeper binary. It keeps onto's coding standards — grounded plans,
-reviewed diffs, real verification, an adversarial pass — without onto's
+reviewed diffs and real verification, with configurable adversarial review — without onto's
 evidence gates, spec deltas, or dependency graph.
 
 Use it for focused work where nobody needs an audit trail beyond a plan file
@@ -19,11 +19,15 @@ and Git history. Comparison: [workflows](workflows.md). Command details:
 
 The binary does **not** check verification: `to done --verified` records your
 assertion. The rigor lives in the `to-done` skill, which requires a real
-verification run and at least one completed skeptic pass.
+verification run and the configured final-skeptic policy. The default is one
+completed pass; disabling it does not bypass explicit review requirements.
 
 ## Install
 
 ```toml
+[workflow]
+final_skeptic = "auto" # optional; applies to to, onto, and no
+
 [engines.to]
 source = "builtin:to"
 scope  = "project"
@@ -151,15 +155,16 @@ Independent repositories run in parallel; each checkout has one writer.
 
 1. Run `Final Verify:` on the final candidate (reusing earlier output only if
    inputs are unchanged).
-2. Obtain at least one **completed** `to-skeptic` pass on that exact
-   candidate, with a complete evidence pack. Several lenses may run
-   concurrently: does it do what it claims, what breaks it, does the evidence
-   hold. If dispatch is unavailable, a direct review is recorded as such —
-   never labelled a skeptic pass.
+2. Apply the [final-skeptic policy](configuration.md#workflow-records--workflow)
+   to that exact candidate: `off`, `one` (default), `two`, or risk-based
+   `auto`. Give each dispatched skeptic a complete evidence pack. If dispatch
+   is unavailable, record a direct review as such — never label it a skeptic
+   pass. Explicit independent-review requirements still apply.
 3. Triage findings. An in-scope defect becomes a new task, and the flow goes
    back to `do` in the same invocation; any code change invalidates the
    previous verification and verdict.
-4. Record the outcome under `## Verification`.
+4. Record the policy, selected and completed pass counts, candidate identity,
+   rationale where applicable, and outcomes under `## Verification`.
 5. Finish:
 
 ```console
@@ -178,7 +183,7 @@ change "tune-cache" done, archived at docs/tasks/archive/2026-10-27-tune-cache
 | `to-explorer` | Read-only codebase questions with cited conclusions | one per question |
 | `to-implementer` | One repository assignment; returns edits and evidence | parallel across repos, serial per checkout |
 | `to-reviewer` | Diff review for correctness, security, contract, clarity | one per lens |
-| `to-skeptic` | Fresh-context attempt to refute "it works" | one per lens, ≥1 completed |
+| `to-skeptic` | Fresh-context attempt to refute "it works" | configured policy; one completed by default |
 
 Bookkeeping — `plan.md` edits, checkoffs, commits — stays with the
 coordinator and is never concurrent.

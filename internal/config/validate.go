@@ -72,6 +72,9 @@ func validate(c *Config) error {
 }
 
 func validateWorkflow(c *Config) error {
+	if v := c.Workflow.FinalSkepticOrDefault(); v != "off" && v != "one" && v != "two" && v != "auto" {
+		return fmt.Errorf("parse config: workflow.final_skeptic %q must be off, one, two, or auto", v)
+	}
 	if c.SchemaVersion >= 2 {
 		if c.Workflow.Git != "" && c.Workflow.Git != "existing" && c.Workflow.Git != "managed" {
 			return fmt.Errorf("parse config: workflow.git %q must be 'existing' or 'managed'", c.Workflow.Git)

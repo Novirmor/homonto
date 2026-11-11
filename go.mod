@@ -9,8 +9,8 @@ go 1.25
 // into crypto/tls, crypto/x509, net/textproto, encoding/asn1, and net/http,
 // whose go1.26.3 advisories (GO-2026-5856/5037/5039) and go1.26.5 advisories
 // (GO-2026-5972/5026) are fixed in go1.26.6; subsequent standard-library
-// advisories are fixed in go1.26.10. govulncheck is clean under it.
-toolchain go1.26.10
+// advisories including GO-2026-6859 are fixed in go1.26.11.
+toolchain go1.26.11
 
 require (
 	github.com/pelletier/go-toml/v2 v2.4.2

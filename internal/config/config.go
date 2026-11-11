@@ -386,8 +386,17 @@ func (c *Config) WorkflowContextEnabled() bool {
 // The frameworks share this root; their records stay in disjoint subtrees
 // (changes/ vs tasks/, ADR 0042).
 type Workflow struct {
-	Root string `toml:"root"`
-	Git  string `toml:"git"`
+	Root         string  `toml:"root"`
+	Git          string  `toml:"git"`
+	FinalSkeptic *string `toml:"final_skeptic"`
+}
+
+// FinalSkepticOrDefault preserves to's existing minimum of one pass.
+func (w Workflow) FinalSkepticOrDefault() string {
+	if w.FinalSkeptic == nil {
+		return "one"
+	}
+	return *w.FinalSkeptic
 }
 
 // Worktrees declares a dedicated allocation parent, independent of records.

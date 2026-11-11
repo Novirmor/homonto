@@ -485,6 +485,23 @@ tmp.path ".tmp" is an unknown key — [tmp] takes only dir
 
 ## Workflow records — `[workflow]`
 
+For the `to` workflow, `final_skeptic = "one"` (the default) requires one
+independent final skeptic. `"off"` skips it, reducing assurance; `"two"`
+requires independent conformance and robustness passes, increasing review
+time. `"auto"` chooses two for security-sensitive surfaces, public APIs,
+schemas, dependencies, or multiple source repositories; zero for prose-only
+changes with no executable instructions or behavior; and one otherwise. It
+chooses two if risk or the full diff is unknown. Higher-risk criteria win.
+The final verification record includes the selection, rationale, candidate and
+outcomes. Changes after review require fresh passes. Tests and explicit review
+requirements still apply when disabled. Inspect the resolved policy with
+`homonto final-skeptic --config homonto.toml`. Other engines are unaffected.
+
+```toml
+[workflow]
+final_skeptic = "auto"
+```
+
 ```toml
 [workflow]
 root = "docs"        # default

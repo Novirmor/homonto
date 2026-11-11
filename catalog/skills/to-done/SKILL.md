@@ -1,6 +1,6 @@
 ---
 name: to-done
-description: Finish an existing to change after its tasks land. Verify the final candidate, obtain a skeptic pass when dispatch is available or record the permitted direct-review fallback, then archive and complete authorized integration.
+description: Finish an existing to change after its tasks land. Verify the final candidate, apply the configured skeptic policy, then archive and complete authorized integration.
 ---
 
 # to-done — Phase 3: Done
@@ -42,15 +42,31 @@ Ask before partial delivery. Native to completion requirements still apply.
    and read its output. State honestly what it covered; record any unavailable or
    skipped checks as gaps rather than treating one green command as universal
    proof.
-2. **Review the final candidate.** With actual dispatch available, obtain at least
-   one completed `to-skeptic` pass. If dispatch or the worker is unavailable,
+2. **Review the final candidate.** Read the policy with
+   `homonto final-skeptic --config "<configRoot>/homonto.toml"`. If the command
+   is unavailable, use `one` and record the fallback. Any other failure is a
+   blocker, not a default. Choose the required number of fresh-context
+   `to-skeptic` passes:
+   - `off`: zero, intentionally disabled.
+   - `one`: one.
+   - `two`: two independent passes, one for conformance and one for robustness.
+   - `auto`: two if the complete diff from the frozen base touches a
+     security-sensitive surface, public API, schema or dependencies, or spans
+     multiple source repositories. Otherwise zero only for documentation or prose
+     with no executable instructions, configuration or behavior change;
+     otherwise one. If risk or the complete diff cannot be determined, use two.
+     Higher-risk criteria take precedence. Record the criteria and rationale.
+
+   User or applicable policy requirements for independent review override a
+   lower count, including `off`. `off` never skips tests, final verification,
+   or separate reviews. If dispatch or the worker is unavailable,
    follow the shared [capability policy](../homonto/references/execution.md#dispatch-capability):
    perform the claim/gap checks directly and record the unavailable independent
    pass in `## Verification`. Explicit independent-review requirements still block;
    denial, blocked evidence, or an unsuccessful worker are not absence. Never
    label direct review a completed skeptic pass.
    Apply shared [review triage and bounded rechecks](../homonto/references/review-triage.md).
-   Hand it a complete evidence pack: the complete `plan.md` (including `## Notes`),
+   Give each dispatched skeptic a complete evidence pack: the complete `plan.md` (including `## Notes`),
    each source alias and absolute cwd, frozen base and final candidate OIDs,
    exact diff and supporting files, literal Final Verify command, exit status
    and full output, the current user request and assignment boundary (even when
@@ -58,10 +74,8 @@ Ask before partial delivery. Native to completion requirements still apply.
    prior finding IDs/dispositions, and coverage gaps. Materialize
    worker-readable absolute paths or paste the full contents; a claim or the
    coordinator's earlier tool output is not a pack. Require confirmation that
-   it read the pack. Skeptics are read-only, so dispatch
-   several concurrently when the change warrants it, each with a distinct lens
-   (does it do what it claims / what breaks it / does the evidence hold). One
-   completed pass is the floor, not the ceiling.
+   it read the pack. Skeptics are read-only; dispatch independent passes
+   concurrently when possible, each with a distinct lens.
     - Only a literal `Status: complete` is a completed pass. Run a blocked,
       missing, or unrecognized status's technical probes and resolve factual
       questions yourself; ask the user only for missing product intent. Then
@@ -69,9 +83,10 @@ Ask before partial delivery. Native to completion requirements still apply.
       `Evidence requests: none` and `Questions: none` are compatible with
       `Status: complete`.
    - If accepted findings change code, the previous verdict describes an old
-     tree. Re-run `Final Verify:`, then re-dispatch once against the new final
+     tree. Re-run `Final Verify:`, then re-dispatch against the new final
      candidate with a bounded repair recheck under the shared triage policy.
-     Keep only the completed verdict for the tree being archived.
+     Reclassify `auto` and refresh every required pass. Keep only completed
+     verdicts for the tree being archived.
 3. **Triage its findings.** Apply shared [proportionality and scope approval](../homonto/references/review-triage.md#proportionality-before-repair)
 before creating repair tasks. Verify each finding against the candidate. A real
 in-scope source defect becomes a new unchecked repair task with the complete
@@ -92,8 +107,10 @@ steps 1–2 on the new candidate before finishing.
    make receiver allocation the first post-archive action.
 4. **Record the outcome** under `## Verification` at the bottom of `plan.md`:
    the literal verify command and result, coverage gaps or skipped checks, and
-   the skeptic's verdict (including declined findings), or the permitted
-   unavailable-pass gap and direct-review findings. Edit the prose for clarity, but
+   policy, candidate identity, selected and completed counts, auto rationale or
+   fallback, and each verdict (including declined findings). Distinguish disabled,
+   completed, and unavailable reviews; record any permitted unavailable-pass gap
+   and direct-review findings. Edit the prose for clarity, but
    record each verified source candidate OID and tree OID plus its intended
    integration target and canonical publication identity for recovery; to has
    no onto integration sidecar or receipt API. Do not replace those OIDs with
@@ -125,7 +142,7 @@ steps 1–2 on the new candidate before finishing.
    After joining isolated source commits,
    rerun `Final Verify:` in the actual receiving checkout and inspect the final
    tree before any push. If target changes or conflict resolution changes the
-   reviewed tree, repeat final review under the same capability policy with the
+   reviewed tree, reclassify `auto` and repeat all required final passes under the same capability policy with the
    full evidence pack for that integrated candidate. Pin its commit/tree and push only that
    reverified candidate. Do not treat pre-merge tests or `--verified` as proof
    of a new integration tree. Record recovery evidence outside immutable archives

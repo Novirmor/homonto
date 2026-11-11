@@ -5,6 +5,29 @@ release page for a tag shows only that release's notes
 ([`docs/release-notes.md`](docs/release-notes.md)) plus the generated commit
 list. Release candidates are folded into their stable release.
 
+## v0.37.0 — configurable final skeptic review
+
+All three binaries are stamped v0.37.0. The embedded catalog is 0.37.0
+(onto 0.29.0, to 0.26.0, h 0.15.0, and no 0.4.0).
+
+- Configure `[workflow].final_skeptic` as `off`, `one`, `two`, or `auto`.
+  An explicit value applies to `to`, `onto`, and `no`; inspect the resolved
+  value with `homonto final-skeptic <engine>`. When omitted, `to` defaults to
+  one pass and `onto` and `no` default to two.
+- The `onto` light preset and the `no` engine now use final skeptic review;
+  `no` gains the read-only `no-skeptic`, which inherits the `no-reviewer` model
+  and variant unless given its own model.
+- Review instructions record the selected policy and outcomes and refresh
+  required passes when the candidate changes. `off` never skips verification or
+  explicit review requirements. These instructions do not prove an independent
+  review occurred.
+- The Go toolchain is updated to 1.26.11 for GO-2026-6859.
+
+**Upgrade:** install matching v0.37.0 binaries, run `homonto plan` and
+`homonto apply`, and restart OpenCode. Existing `onto` light and `no` users
+should expect two final skeptic passes by default; set an explicit policy if
+another trade-off is appropriate. The setting is shared across the three engines.
+
 ## v0.36.1 — safer cleanup, remote sources, and installation
 
 All three binaries are stamped v0.36.1. The embedded catalog is 0.36.1

@@ -17,43 +17,28 @@ Windows on amd64 and arm64. Each binary is a separate archive, and one
 [installation guide](https://github.com/Novirmor/homonto/blob/main/docs/guides/installation.md).
 Earlier releases: [CHANGELOG.md](https://github.com/Novirmor/homonto/blob/main/CHANGELOG.md).
 
-### v0.36.1 — safer cleanup, remote sources, and installation
+### v0.37.0 — configurable final skeptic review
 
-All three binaries are stamped v0.36.1. The embedded catalog is 0.36.1
-(onto 0.28.0, to 0.25.0, h 0.14.0, and no 0.3.0).
+All three binaries are stamped v0.37.0. The embedded catalog is 0.37.0
+(onto 0.29.0, to 0.26.0, h 0.15.0, and no 0.4.0).
 
-- **Preserve user files and links.** Atomic config writes refuse unresolved
-  symlinks instead of replacing them. Copy-mode removal refuses user-replaced
-  symlinks and directory traversal through symlinked parents. Backups obey the
-  same removal boundary and refuse foreign `.bak` symlinks. Fallback skill and
-  command cleanup prunes only managed links.
-- **Keep scratch cleanup confined.** Canonical-path checks reject scratch
-  directories that overlap repository, workflow, or other owned trees.
-- **Validate complete remote archives.** Gzip checksum, truncation, and size
-  checks cover the full decompressed stream. Standard tarballs containing a
-  `./` root directory are accepted without weakening traversal checks.
-- **Redact remote credentials in failures.** HTTP errors, redirects, Git
-  diagnostics, malformed URLs, and `remote:`-prefixed locators no longer expose
-  the credentials covered by locator redaction. Original transport error causes
-  remain inspectable.
-- **Handle filesystem aliases and config encoding.** All three binaries resolve
-  symlinked working directories and explicit directory/config roots. A UTF-8
-  byte-order mark at the start of `homonto.toml` is accepted.
-- **More reliable diagnostics and spec merging.** Config validation, missing
-  secret references, and foreign-link errors report offenders deterministically.
-  Missing onto layout directories name `onto init` as the repair. Fenced code in
-  specs is preserved as body text during delta merges.
-- **Canonical installation paths.** Release downloads use `Novirmor/homonto`.
-  **Go install path change (ADR 0088):** use
-  `github.com/Novirmor/homonto@v0.36.1`, with `/cmd/onto` and `/cmd/to` for the
-  workflow binaries. Tags through v0.36.0 retain the old
-  `github.com/noviopenworks/homonto` module path.
-- **Pinned development tools.** `mise trust && mise install` provisions the
-  development toolchain, and the gate checks for pin drift.
+- Configure `[workflow].final_skeptic` as `off`, `one`, `two`, or `auto`.
+  An explicit value applies to `to`, `onto`, and `no`; inspect the resolved
+  value with `homonto final-skeptic <engine>`. When omitted, `to` defaults to
+  one pass and `onto` and `no` default to two.
+- The `onto` light preset and the `no` engine now use final skeptic review;
+  `no` gains the read-only `no-skeptic`, which inherits the `no-reviewer` model
+  and variant unless given its own model.
+- Review instructions record the selected policy and outcomes and refresh
+  required passes when the candidate changes. `off` never skips verification or
+  explicit review requirements. These instructions do not prove an independent
+  review occurred.
+- The Go toolchain is updated to 1.26.11 for GO-2026-6859.
 
-**Upgrade:** install all three matching v0.36.1 binaries, run `homonto plan`
-and `homonto apply`, and restart OpenCode. No configuration or workflow-state
-schema change is introduced by this patch.
+**Upgrade:** install matching v0.37.0 binaries, run `homonto plan` and
+`homonto apply`, and restart OpenCode. Existing `onto` light and `no` users
+should expect two final skeptic passes by default; set an explicit policy if
+another trade-off is appropriate. The setting is shared across the three engines.
 
 **Automated release gate:** race tests, vulnerability scanning, all nine Docker
 E2E suites, and release packaging are required before tagging. The release

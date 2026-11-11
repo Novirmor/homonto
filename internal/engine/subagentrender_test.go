@@ -286,7 +286,7 @@ func TestFrameworkAgentsAllowDeclaredRepoDirectories(t *testing.T) {
 	}{
 		{"onto", ontoFrameworkTOML, []string{"homonto", "onto-implementer"}, []string{"onto-explorer", "onto-reviewer", "onto-skeptic"}},
 		{"to", toFrameworkTOML, []string{"homonto", "to-implementer"}, []string{"to-explorer", "to-reviewer", "to-skeptic"}},
-		{"no", noFrameworkTOML, []string{"no-implementer"}, []string{"no-reviewer"}},
+		{"no", noFrameworkTOML, []string{"no-implementer"}, []string{"no-reviewer", "no-skeptic"}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			home := t.TempDir()
@@ -336,7 +336,7 @@ func TestFrameworkAgentsDenyExternalDirectoriesWithoutDeclaredRepos(t *testing.T
 	}{
 		{"onto", ontoFrameworkTOML, []string{"homonto", "onto-implementer"}, []string{"onto-explorer", "onto-reviewer", "onto-skeptic"}},
 		{"to", toFrameworkTOML, []string{"homonto", "to-implementer"}, []string{"to-explorer", "to-reviewer", "to-skeptic"}},
-		{"no", noFrameworkTOML, []string{"no-implementer"}, []string{"no-reviewer"}},
+		{"no", noFrameworkTOML, []string{"no-implementer"}, []string{"no-reviewer", "no-skeptic"}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			home := t.TempDir()

@@ -516,7 +516,7 @@ func TestShippedWorkspaceExecutionRenderedPatterns(t *testing.T) {
 }
 
 func TestShippedReadOnlyWorkersKeepCoordinatorToolsDenied(t *testing.T) {
-	for _, name := range []string{"onto-explorer", "onto-reviewer", "onto-skeptic", "to-explorer", "to-reviewer", "to-skeptic", "no-reviewer", "h-spike", "h-review"} {
+	for _, name := range []string{"onto-explorer", "onto-reviewer", "onto-skeptic", "to-explorer", "to-reviewer", "to-skeptic", "no-reviewer", "no-skeptic", "h-spike", "h-review"} {
 		t.Run(name, func(t *testing.T) {
 			content, err := fs.ReadFile(embedded.FS, "subagents/"+name+".md")
 			if err != nil {

@@ -53,8 +53,8 @@ findings, not footnotes>
 
 <For a repair round, identify changed claims and adjacent regression risks;
 carry prior dispositions forward unless new evidence or changed scope reopens them.>
-<!-- Or record "light: no skeptic pass" / an unavailable independent pass here,
-     with reason and direct checks performed. Explicit independent-review
+<!-- Record policy, selected/completed counts and rationale, or an intentionally
+     disabled / unavailable independent pass, with reason and direct checks performed. Explicit independent-review
      requirements still block; denial or a blocked worker is not absence.
      Direct review is never labeled a completed skeptic verdict. -->
 

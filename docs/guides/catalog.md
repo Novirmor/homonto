@@ -11,7 +11,7 @@ item is for. How the pieces work together is in [workflows](workflows.md).
 |---|---|---|---|---|---|
 | `onto` | `[engines.onto]` | `homonto`, `onto`, `onto-open`, `onto-design`, `onto-build`, `onto-verify`, `onto-close`, `onto-light`, `onto-no-slop` | `/onto`, `/onto-open`, `/onto-design`, `/onto-build`, `/onto-verify`, `/onto-close`, `/onto-light`, `/onto-no-slop`, `/onto-bypass` | `homonto`, `onto-explorer`, `onto-implementer`, `onto-reviewer`, `onto-skeptic` | `onto` |
 | `to` | `[engines.to]` | `homonto`, `to`, `to-plan`, `to-do`, `to-done`, `to-no-slop` | `/to`, `/to-plan`, `/to-do`, `/to-done`, `/to-no-slop`, `/to-bypass` | `homonto`, `to-explorer`, `to-implementer`, `to-reviewer`, `to-skeptic` | `to` |
-| `no` | `[engines.no]` | `no` | `/no` | `no-implementer`, `no-reviewer` | — |
+| `no` | `[engines.no]` | `no`, `homonto` | `/no` | `no-implementer`, `no-reviewer`, `no-skeptic` | — |
 | `h` | `[workflows.h]` | `homonto`, `h-spike-issue`, `h-resolve-issue`, `h-review-pr`, `h-continue-pr`, `h-resolve-conflicts`, `h-review-batch` | `/h-spike-issue`, `/h-resolve-issue`, `/h-review-pr`, `/h-continue-pr`, `/h-resolve-conflicts`, `/h-review-batch` | `homonto`, `h-spike`, `h-review` | — |
 
 `onto`, `to`, and `h` also install the `homonto-workflow` OpenCode plugin
@@ -37,9 +37,9 @@ Standalone items: skills `handoff` and `grilling`; commands `/handoff` and
 | `onto-open` | **Phase 1.** Clarifies the requirement, checks whether the work should be split into several changes, runs `onto new`, writes `proposal.md` (why, scope, out of scope), and records `proposal-approved`. |
 | `onto-design` | **Phase 2.** Explores the code for ground truth, evaluates 2–3 approaches, selects one from evidence and your constraints, then writes `design.md`, ADR drafts, delta specs with testable scenarios, and `tasks.md`; records `approach-confirmed` and the isolation choice. No implementation code. |
 | `onto-build` | **Phase 3.** Writes `plan.md` (one `## Task N.M` per `tasks.md` item: files, steps, verification), then executes task by task — implementer, review, one commit per task, checkoff in the same commit. Root-cause-first debugging on failure; discovered work is appended before it is coded. References: subagent, worktree, TDD, and receiving-review protocols. |
-| `onto-verify` | **Phase 4.** Measures the diff (`onto scale`), applies risk overrides (security-sensitive → full), checks every delta-spec scenario with fresh command output, runs the regression suite, dispatches at least two skeptics (conformance + robustness), triages findings into repairs or justified dismissals, writes `verification.md`, records evidence and `verify-result`. |
+| `onto-verify` | **Phase 4.** Measures the diff (`onto scale`), applies risk overrides, checks scenarios and regression, applies the configured skeptic policy, triages findings, writes `verification.md`, records evidence and `verify-result`. |
 | `onto-close` | **Phase 5.** Validates the close plan, merges delta specs (`onto merge-deltas`), numbers and accepts ADRs, resolves the guides obligation, archives (`onto close`), integrates (merge or PR), and records the receipt (`onto complete-integration`). |
-| `onto-light` | **Preset: light.** A bounded bug fix (failing reproduction test first) or a small non-bug change: open-lite (proposal + tasks), build, verify without skeptics, close. Escalates to full onto when scope or risk outgrows it. |
+| `onto-light` | **Preset: light.** A bounded bug fix (failing reproduction test first) or a small non-bug change: open-lite (proposal + tasks), build, verify with configured skeptics, close. Escalates to full onto when scope or risk outgrows it. |
 | `onto-no-slop` | Edits onto prose (proposals, designs, ADRs, guides, reports, commit messages) for clarity while keeping technical meaning, evidence, and machine-read markers intact. Adapted from stop-slop (MIT). |
 
 ### to engine
@@ -49,7 +49,7 @@ Standalone items: skills `handoff` and `grilling`; commands `/handoff` and
 | `to` | **Dispatcher.** Preflights the `to` binary and tooling, finds active changes (`to status --json`) and interrupted archived deliveries, and routes `plan → do → done`. Owns delegation rules. Reference: `recovery.md` (resume integration/publication after archive). |
 | `to-plan` | **Phase 1.** Grounds the approach, writes `plan.md` — goal, boundary, a short list of task contracts (`Files:`, `Change:`, `Verify:`), and a `Final Verify:` line — de-slops it, then `to phase`. Reference: `task-examples.md`. |
 | `to-do` | **Phase 2.** Runs each task through implementer → coordinator verification → reviewer passes → fix or decline findings in writing → check off in its own commit. Parallel across repositories, one writer per checkout. |
-| `to-done` | **Phase 3.** Runs `Final Verify:`, obtains at least one completed `to-skeptic` pass on the unchanged final candidate (or records the permitted direct-review fallback), records results under `## Verification`, runs `to done --verified`, and completes authorized integration and publication. |
+| `to-done` | **Phase 3.** Runs `Final Verify:`, applies the configured skeptic policy to the unchanged final candidate (default one pass, or the permitted direct-review fallback), records results under `## Verification`, runs `to done --verified`, and completes authorized integration and publication. |
 | `to-no-slop` | Edits to prose (plans, notes, verification records, commit messages) for clarity without touching task checkboxes, commands, or their output. |
 
 ### no engine
@@ -119,13 +119,14 @@ pause.
 | `onto-explorer` | onto | Answers "how does X work / where does Y live" by reading across many files and returning cited conclusions, not dumps. One per independent question, in parallel. |
 | `onto-implementer` | onto | Executes one bite-sized task from a precise spec, runs its verification, returns a diff summary. Does not plan, judge scope, or delegate; reports discovered work instead of doing it. |
 | `onto-reviewer` | onto | Reviews a diff for correctness, security, contract, and clarity; findings ranked by severity with the smallest fix. Per task in build and across the diff in verify; one per lens. |
-| `onto-skeptic` | onto | Attacks a verification claim from a fresh context, prompted to **refute, never approve**. At least two per verify (conformance and robustness lenses). Requests exact probes for the coordinator to run. |
+| `onto-skeptic` | onto | Attacks a verification claim from a fresh context, prompted to **refute, never approve**. As many per verify as the `final_skeptic` setting selects (default two: conformance and robustness lenses). Requests exact probes for the coordinator to run. |
 | `to-explorer` | to | Same as `onto-explorer`, for to. |
 | `to-implementer` | to | Executes one assignment in one repository and returns edits plus evidence; the coordinator commits. Parallel across repositories, one per checkout. |
 | `to-reviewer` | to | Reviews the implementer's diff; one per lens. |
 | `to-skeptic` | to | Attacks the "it works" claim before archiving. Each completed pass must describe the unchanged final candidate; a code change means a new pass. |
 | `no-implementer` | no | Implements the assigned change and runs the verification the task warrants. No delegation, workflow state, or publication. |
 | `no-reviewer` | no | Reviews one implementation diff for correctness and task conformance. |
+| `no-skeptic` | no | Independently challenges final-candidate claims and evidence. |
 | `h-spike` | h | Researches an issue from a supplied packet; returns findings, candidate code paths, unknowns, risks, and a workflow recommendation. |
 | `h-review` | h | Reviews a PR from a supplied context packet (metadata, diff, linked issues, checks, existing threads); ranked findings. Several run concurrently across PRs or lenses. |
 

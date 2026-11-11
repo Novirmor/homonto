@@ -21,7 +21,7 @@ func TestNewChangeWorkflowSelectionPolicy(t *testing.T) {
 		"`/onto` selects the onto family, not its preset",
 		"ask **once before task creation**",
 		"short task-specific recommendation",
-		"**`to`**", "**`onto light`**", "**Full `onto`**", "**without skeptics**",
+		"**`to`**", "**`onto light`**", "**Full `onto`**", "configured final skepticism",
 		"Small work may fit either `to` or `onto light`",
 		"Exclude unavailable or invalid options",
 		"follow its normal upgrade to full onto without another selection prompt",

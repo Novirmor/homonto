@@ -71,8 +71,8 @@ workflows, including re-verification after integration:
 
 Use one worker per focused question, with bounded concurrency appropriate to
 scope and cost. Small source tasks may run directly. With dispatch available,
-to uses a task reviewer and at least one completed final skeptic; full onto uses
-its two final skeptic lenses, while onto light runs no skeptic.
+onto, to and no use their configured final skeptic policy (default two); it does
+not replace the task reviewer.
 Technical inability must be recorded as a gap, not a passing worker verdict.
 An exhausted recovery is a factual blocker under autonomy.
 

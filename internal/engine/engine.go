@@ -523,6 +523,15 @@ func (e *Engine) subagentRenderContextFor(targets map[string]map[string]bool) (m
 			}
 			m[name] = agentfm.ModelSpec{Model: r.Model, Variant: r.Variant, Effort: r.Effort, Steps: r.Steps, BashAllowAdd: r.BashAllowAdd}
 		}
+		skeptic := m["no-skeptic"]
+		if _, installed := names["no-skeptic"]; installed && skeptic.Model == "" {
+			reviewer := m["no-reviewer"]
+			skeptic.Model = reviewer.Model
+			if skeptic.Variant == "" {
+				skeptic.Variant = reviewer.Variant
+			}
+			m["no-skeptic"] = skeptic
+		}
 		return m
 	}
 	return map[string]agentfm.RenderContext{

@@ -874,6 +874,7 @@ func validateModels(c *Config) error {
 				routeByCat[cat] = r
 			}
 		}
+		routeByCat["no-skeptic"] = SkepticFallback(routeByCat["no-skeptic"], routeByCat["no-reviewer"])
 		for _, e := range expanded {
 			cat, ok := SubagentCatalogName(e.Resource.Source)
 			if !ok {

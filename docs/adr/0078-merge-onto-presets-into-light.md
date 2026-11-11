@@ -1,6 +1,6 @@
 # Merge onto fix and tweak into onto light
 
-- **Status:** Accepted
+- **Status:** Partially superseded by 0090 (final skeptic policy)
 - **Date:** 2026-10-28
 - **Amends:** [0062](0062-ask-once-before-unselected-workflow-creation.md) (the offered paths)
 

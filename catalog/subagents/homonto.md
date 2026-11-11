@@ -11,7 +11,7 @@ homonto:
   dialogs: true
   read_only: false
   network: true
-  spawn: [onto-implementer, onto-explorer, onto-reviewer, onto-skeptic, to-implementer, to-explorer, to-reviewer, to-skeptic, no-implementer, no-reviewer, h-spike, h-review]
+  spawn: [onto-implementer, onto-explorer, onto-reviewer, onto-skeptic, to-implementer, to-explorer, to-reviewer, to-skeptic, no-implementer, no-reviewer, no-skeptic, h-spike, h-review]
   # Trusted general shell, not a script sandbox. Exceptions match requests only.
   bash_default: allow
   bash_ask: [

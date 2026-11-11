@@ -90,9 +90,10 @@ func enumSetterCmd(field string, allowed []string, set func(*ontostate.State, st
 	return cmd
 }
 
-// lightFullScale refuses full verification inside a light change: light never
-// runs skeptics, so work that needs full verification escalates to the full
-// workflow instead (ADR 0078).
+// lightFullScale refuses full verification inside a light change: full scale
+// checks every delta-spec scenario and the full design, which a light change
+// does not carry, so work that needs it escalates to the full workflow instead
+// (ADR 0078). Skeptic passes follow the final skeptic policy at either scale.
 func lightFullScale(command, name string, st ontostate.State) error {
 	if st.Workflow != "light" {
 		return nil

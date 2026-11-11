@@ -35,3 +35,36 @@ func TestFinalSkepticPolicy(t *testing.T) {
 		})
 	}
 }
+
+func TestFinalSkepticEngineDefaults(t *testing.T) {
+	w := Workflow{}
+	for engine, want := range map[string]string{"to": "one", "onto": "two", "no": "two"} {
+		if got := w.FinalSkepticFor(engine); got != want {
+			t.Errorf("%s: got %q, want %q", engine, got, want)
+		}
+	}
+	v := "off"
+	w.FinalSkeptic = &v
+	for _, engine := range []string{"to", "onto", "no"} {
+		if got := w.FinalSkepticFor(engine); got != "off" {
+			t.Errorf("%s: got %q", engine, got)
+		}
+	}
+}
+
+func TestNoSkepticModelFallback(t *testing.T) {
+	reviewer := ModelRoute{Model: "provider/reviewer", Variant: "high"}
+	for _, tc := range []struct {
+		skeptic        ModelRoute
+		model, variant string
+	}{
+		{ModelRoute{}, "provider/reviewer", "high"},
+		{ModelRoute{Variant: "low"}, "provider/reviewer", "low"},
+		{ModelRoute{Model: "provider/other"}, "provider/other", ""},
+	} {
+		got := SkepticFallback(tc.skeptic, reviewer)
+		if got.Model != tc.model || got.Variant != tc.variant {
+			t.Errorf("got %+v", got)
+		}
+	}
+}

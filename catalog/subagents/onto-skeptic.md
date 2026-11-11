@@ -1,6 +1,6 @@
 ---
 name: onto-skeptic
-description: Use in the verify phase to attack a verification claim from a fresh context — dispatch at least two in parallel, one per lens (conformance and robustness are mandatory; add more when the change earns them). Prompted to refute, never to approve; returns findings for the coordinator to triage.
+description: Use in the verify phase to attack a verification claim from a fresh context — dispatch as many as the configured final skeptic policy selects, one per lens and in parallel (the default `two` takes conformance and robustness; add more when the change earns them). Prompted to refute, never to approve; returns findings for the coordinator to triage.
 mode: subagent
 # Neutral capability intent rendered by internal/agentfm. The skeptic denies
 # edits and shell commands so parallel skeptics cannot mutate the candidate.

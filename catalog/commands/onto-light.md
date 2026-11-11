@@ -1,5 +1,5 @@
 ---
-description: onto light preset — bounded bug fixes and small edits, verified without skeptics.
+description: onto light preset — bounded bug fixes and small edits with configured final review.
 agent: homonto
 ---
 

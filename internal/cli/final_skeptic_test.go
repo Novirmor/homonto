@@ -42,3 +42,19 @@ func TestFinalSkepticCommand(t *testing.T) {
 		})
 	}
 }
+
+func TestFinalSkepticCommandEngineDefaults(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "homonto.toml")
+	if err := os.WriteFile(path, []byte("[workflow]\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	for engine, want := range map[string]string{"onto": "two\n", "no": "two\n", "to": "one\n"} {
+		cmd := NewRootCmd()
+		var out bytes.Buffer
+		cmd.SetOut(&out)
+		cmd.SetArgs([]string{"final-skeptic", engine, "--config", path})
+		if err := cmd.Execute(); err != nil || out.String() != want {
+			t.Fatalf("%s: got %q, err %v", engine, out.String(), err)
+		}
+	}
+}

@@ -1,7 +1,7 @@
 # No task execution
 
 This reference owns the parent coordination contract for both `/no` and callers
-such as h resolve. The no skill remains an informational inventory of its two
+such as h resolve. The no skill remains an informational inventory of its three
 workers; no lifecycle plan, phase or binary is required.
 
 Use OpenCode's built-in `question` tool for every question to the user, including
@@ -46,6 +46,13 @@ run when any listed repo changes, using pinned clean commits for unchanged
 inputs and the generated checkout-aware JSON context. Later changes invalidate
 results. Choose fallback verification only if no configured check matches;
 never substitute for a configured failure. Ask before partial delivery.
+After final verification and separate reviewer passes, apply the shared
+[final skeptic policy](../../homonto/references/final-skeptic.md) using
+`no-skeptic`. Triage findings under the shared review policy; repair confirmed
+in-scope defects and repeat verification and every required skeptic pass against
+the resulting candidate. The skeptic does not replace `no-reviewer`. Record
+policy, counts, rationale and outcomes in the session evidence and handoff.
+If integration changes the tree, repeat verification and the policy before push.
 At delivery, run the recorded task's
 `homonto workspace task cleanup NAME --yes` without asking. It removes clean
 task-owned worktrees; an integrated branch is released, an unmerged PR

@@ -43,7 +43,7 @@ func TestOntoDeliveryPolicyScenarios(t *testing.T) {
 			"recommending destructive purge for an unrelated failure", "never excuses proven credential exposure or data loss",
 		}},
 		{"bounded final candidate recheck", "skills/onto-verify/references/adversarial.md", []string{
-			"Both mandatory lenses still cover the final candidate in full mode",
+			"Every required pass covers the final",
 			"matching configured integration checks", "complete pack with finding IDs",
 			"Do not reopen dismissed findings without new evidence or changed scope",
 			"Rebind report receipts", "not a finding quota",

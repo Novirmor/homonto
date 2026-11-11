@@ -40,6 +40,11 @@ All three binaries are stamped v0.37.0. The embedded catalog is 0.37.0
 should expect two final skeptic passes by default; set an explicit policy if
 another trade-off is appropriate. The setting is shared across the three engines.
 
+**Live-check gaps approved for v0.37.0:** the real OpenCode 2 host check,
+GitHub draft denial and approval check, real GitHub sandbox publication and
+reconciliation check, and V1/V2 migration checks were not run. Automated
+tests do not establish those live-host outcomes.
+
 **Automated release gate:** race tests, vulnerability scanning, all nine Docker
 E2E suites, and release packaging are required before tagging. The release
 workflow repeats the complete gate before publishing.

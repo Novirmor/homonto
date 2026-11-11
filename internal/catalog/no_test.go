@@ -17,14 +17,14 @@ func TestNoEngineHasMinimalCatalogSurface(t *testing.T) {
 	if no.Kind != "engine" {
 		t.Fatalf("no kind = %q, want engine", no.Kind)
 	}
-	if len(no.Skills) != 1 || no.Skills["no"] != "skills/no" {
-		t.Fatalf("no skills = %#v, want only no", no.Skills)
+	if len(no.Skills) != 2 || no.Skills["no"] != "skills/no" || no.Skills["homonto"] != "skills/homonto" {
+		t.Fatalf("no skills = %#v, want no and shared homonto policy", no.Skills)
 	}
 	if len(no.Commands) != 1 || no.Commands["no"] != "commands/no.md" {
 		t.Fatalf("no commands = %#v, want only no", no.Commands)
 	}
-	if len(no.Subagents) != 2 || no.Subagents["no-implementer"] == "" || no.Subagents["no-reviewer"] == "" {
-		t.Fatalf("no subagents = %#v, want implementer and reviewer only", no.Subagents)
+	if len(no.Subagents) != 3 || no.Subagents["no-implementer"] == "" || no.Subagents["no-reviewer"] == "" || no.Subagents["no-skeptic"] == "" {
+		t.Fatalf("no subagents = %#v, want implementer, reviewer and skeptic", no.Subagents)
 	}
 
 	entries, err := c.Expand([]string{"no"})
@@ -38,7 +38,7 @@ func TestNoEngineHasMinimalCatalogSurface(t *testing.T) {
 	}
 
 	skill := hPromptText(t, "skills/no/SKILL.md")
-	for _, want := range []string{"`no` provides exactly two subagents", "`no-implementer`", "`no-reviewer`"} {
+	for _, want := range []string{"`no` provides three subagents", "`no-implementer`", "`no-reviewer`", "`no-skeptic`"} {
 		if !strings.Contains(skill, want) {
 			t.Errorf("no skill missing %q", want)
 		}

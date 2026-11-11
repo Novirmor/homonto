@@ -161,7 +161,7 @@ installs or runs them.
 | Evidence token | An `onto set …` record the binary requires before a transition. |
 | Generation | One lifetime of a change name, with its own `identity`. A name reused after archive or cleanup starts a new generation. |
 | Pending | Config edits not yet applied. |
-| Preset | onto's reduced path: `light`, with no design phase and no skeptics. |
+| Preset | onto's reduced path: `light`, with no design phase and configurable skeptics. |
 | Receipt | onto's record of how an archived change was integrated (`merge:`, `pr:`, `unchanged:`). |
 | Skeptic | A read-only agent prompted to refute a verification claim. |
 | Workflow (package) | A user-facing package such as `h`. |

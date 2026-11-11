@@ -26,10 +26,10 @@ and plain-language reasons:
   self-asserted, without onto's evidence-backed handoff.
 - **`onto light`** — a bounded bug fix (failing reproduction test first) or a
   small non-bug edit within the preset limits; an evidence-gated
-  build/verify/close record without design and **without skeptics**. Apply the
+  build/verify/close record without design, with configured final skepticism. Apply the
   eligibility table below before recommending it.
 - **Full `onto`** — work needing design, new capability, changed requirements,
-  a security-sensitive surface, independent skeptic review, or a reviewable
+  a security-sensitive surface, or a reviewable
   handoff/audit trail with full evidence gates.
 
 Recommend based on the inspected scope and risk, not the shortest path by
@@ -63,8 +63,8 @@ alone never forces escalation. A configuration key addition/removal is assessed
 by its behavior and compatibility impact: a new public contract or migration
 requires full onto; a private implementation detail need not. A small change
 touching a security-sensitive surface (secret resolution, remote fetch/verify,
-file deletion/pruning, permission/ownership) needs skeptic review, so it is not
-light: offer full at selection, and escalate a light change that reaches one.
+file deletion/pruning, permission/ownership) needs full-scale verification, so it
+is not light: offer full at selection, and escalate a light change that reaches one.
 
 Assess actual dispatch capability before creation using
 [execution policy](execution.md). Missing optional dispatch does not make a path

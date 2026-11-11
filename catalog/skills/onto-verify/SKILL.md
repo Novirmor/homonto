@@ -56,7 +56,7 @@ level with `onto set verify-scale <name> light|full` (or `onto scale <name>
 - **light** — a light change within its limits (≤5 non-test files, by
   construction under the escalation gates) **and touching no security-sensitive
   surface**. Checks the changed behavior's scenarios plus the regression suite,
-  with no skeptic; the report may be brief but never absent. A light change that
+  with the configured skeptic policy; the report may be brief but never absent. A light change that
   measures `full` or hits a risk trigger does not verify at full scale in place:
   it escalates to the full workflow under `onto-light`'s escalation rules, and
   the binary refuses `verify-scale full` for it.
@@ -112,22 +112,12 @@ fact as the regression result. It is a valid result, not a skipped check.
 
 ### 3b. Adversarial pass
 
-After the self-evidence table and regression results are ready, supply the
-complete evidence pack to skeptics. Follow
-`references/adversarial.md`: **full mode requires two parallel
-fresh-context skeptics** — dispatch the **`onto-skeptic`** subagent twice at
-once, naming one lens per dispatch: conformance (refute each scenario claim)
-and robustness (edge cases, drift/recovery paths). Two is the floor, not the
-ceiling, and there are two ways to add: a large full verify (many scenarios,
-several capabilities) MAY shard the conformance lens across additional
-skeptics — one per capability, each dispatch naming its capability's scenarios
-— while robustness stays one; and a change may earn an extra **lens**
-(abuse, data/migration, compatibility) per `references/adversarial.md` — those
-names differ from build's reviewer lenses on purpose, because a skeptic attacks
-the running system, not the diff. All deny edits and shell commands, so they go
-in the same parallel batch without mutating the candidate. Both mandatory lenses
-are prompted to refute, never approve; light mode runs no skeptic and records
-that in Adversarial.
+After self-evidence and regression, apply the shared
+[final skeptic policy](../homonto/references/final-skeptic.md) to both full and
+light workflows, dispatching `onto-skeptic` as required. Follow
+`references/adversarial.md` for evidence packs, lenses, triage and rechecks.
+Record policy, counts, rationale and outcomes in Adversarial. Skeptics refute,
+never approve, and do not replace build reviewers or other verification.
 
 Triage findings per the protocol: a refuted claim fails its scenario; new
 defects are CRITICAL-fix or gate-decided deviations. **Non-waivable classes:** a

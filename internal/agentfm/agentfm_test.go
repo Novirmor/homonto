@@ -382,7 +382,7 @@ func TestBuiltinRolesFollowCatalogCapabilities(t *testing.T) {
 	if !slices.Equal(coordinators, []string{"homonto"}) || !slices.Equal(writers, []string{"no-implementer", "onto-implementer", "to-implementer"}) {
 		t.Fatalf("coordinators = %v, writers = %v", coordinators, writers)
 	}
-	for _, name := range []string{"h-review", "h-spike", "no-reviewer", "onto-explorer", "onto-reviewer", "onto-skeptic", "to-explorer", "to-reviewer", "to-skeptic"} {
+	for _, name := range []string{"h-review", "h-spike", "no-reviewer", "no-skeptic", "onto-explorer", "onto-reviewer", "onto-skeptic", "to-explorer", "to-reviewer", "to-skeptic"} {
 		if role, ok := roles[name]; !ok || role.Coordinator || role.Writer {
 			t.Errorf("%s = %+v, %t; want a read-only builtin role", name, role, ok)
 		}

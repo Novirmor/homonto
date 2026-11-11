@@ -291,7 +291,7 @@ scope  = "project"
 |---|---|---|
 | `builtin:onto` | 10 skills, 10 commands, workflow plugin | `homonto`, `onto-explorer`, `onto-implementer`, `onto-reviewer`, `onto-skeptic` |
 | `builtin:to` | 6 skills, 6 commands, workflow plugin | `homonto`, `to-explorer`, `to-implementer`, `to-reviewer`, `to-skeptic` |
-| `builtin:no` | `no` skill, `/no` command | `no-implementer`, `no-reviewer` |
+| `builtin:no` | `no` and `homonto` skills, `/no` command | `no-implementer`, `no-reviewer`, `no-skeptic` |
 
 Engines coexist; `homonto` is declared once even when several packages
 install it. The full inventory is in the [catalog](catalog.md). A `local:` or
@@ -485,7 +485,7 @@ tmp.path ".tmp" is an unknown key — [tmp] takes only dir
 
 ## Workflow records — `[workflow]`
 
-For the `to` workflow, `final_skeptic = "one"` (the default) requires one
+For the `to`, `onto`, and `no` workflows, `final_skeptic = "one"` requires one
 independent final skeptic. `"off"` skips it, reducing assurance; `"two"`
 requires independent conformance and robustness passes, increasing review
 time. `"auto"` chooses two for security-sensitive surfaces, public APIs,
@@ -495,7 +495,9 @@ chooses two if risk or the full diff is unknown. Higher-risk criteria win.
 The final verification record includes the selection, rationale, candidate and
 outcomes. Changes after review require fresh passes. Tests and explicit review
 requirements still apply when disabled. Inspect the resolved policy with
-`homonto final-skeptic --config homonto.toml`. Other engines are unaffected.
+`homonto final-skeptic <engine> --config homonto.toml`. When omitted, `to`
+defaults to `one`, while `onto` and `no` default to `two`. The same explicit
+setting applies to all three engines; skeptic dispatch is instruction-enforced.
 
 ```toml
 [workflow]

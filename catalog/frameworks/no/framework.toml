@@ -8,6 +8,7 @@ frameworks = []
 
 [skills]
 no = "skills/no"
+homonto = "skills/homonto"
 
 [commands]
 no = "commands/no.md"
@@ -15,3 +16,4 @@ no = "commands/no.md"
 [subagents]
 no-implementer = "subagents/no-implementer.md"
 no-reviewer = "subagents/no-reviewer.md"
+no-skeptic = "subagents/no-skeptic.md"

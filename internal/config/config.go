@@ -399,6 +399,30 @@ func (w Workflow) FinalSkepticOrDefault() string {
 	return *w.FinalSkeptic
 }
 
+// FinalSkepticFor preserves to's existing default while requiring two passes
+// for onto and no when no project-wide policy was explicitly configured.
+func (w Workflow) FinalSkepticFor(engine string) string {
+	if w.FinalSkeptic != nil {
+		return *w.FinalSkeptic
+	}
+	if engine == "onto" || engine == "no" {
+		return "two"
+	}
+	return "one"
+}
+
+// SkepticFallback retains the skeptic's own settings while inheriting the
+// reviewer's model and variant when no skeptic model was specified.
+func SkepticFallback(skeptic, reviewer ModelRoute) ModelRoute {
+	if skeptic.Model == "" {
+		skeptic.Model = reviewer.Model
+		if skeptic.Variant == "" {
+			skeptic.Variant = reviewer.Variant
+		}
+	}
+	return skeptic
+}
+
 // Worktrees declares a dedicated allocation parent, independent of records.
 // An empty Dir does not authorize worktree allocation.
 type Worktrees struct {

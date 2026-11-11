@@ -1,6 +1,6 @@
 # Configure final skeptic review for to
 
-- **Status:** Accepted
+- **Status:** Partially superseded by 0090 (scope of engines)
 - **Date:** 2026-11-11
 
 ## Context

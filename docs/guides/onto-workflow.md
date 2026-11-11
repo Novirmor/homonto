@@ -58,7 +58,7 @@ applied (the install gate). Read-only commands always work.
               │        └ design.md, tasks.md, approach-confirmed, isolation
               └ proposal.md, proposal-approved
 
- light:                  open-lite ─▶ build ─▶ verify ─▶ close     (design and skeptics skipped)
+ light:                  open-lite ─▶ build ─▶ verify ─▶ close     (design skipped)
  failure:                onto abandon <change>  → abandoned
  afterwards:             onto cleanup preview|apply <change>  → archive, remove worktrees
 ```
@@ -224,7 +224,8 @@ Then:
 
 1. Every scenario is checked with **fresh** command output.
 2. The regression suite runs.
-3. In the full workflow, at least **two skeptics** run in parallel from fresh context — a
+3. Both workflows use the configured skeptic policy (default two). With two,
+   skeptics run in parallel from fresh context — a
    *conformance* lens (refute each scenario's evidence) and a *robustness*
    lens (attack what the scenarios don't cover) — prompted to refute, never
    approve. They have no shell; they request probes the coordinator runs.
@@ -322,8 +323,8 @@ A bug then builds **starting from a failing test that reproduces it**; other
 testable changes use TDD, and content edits implement then verify.
 
 Light skips design and `plan.md`, is exempt from `proposal-approved` and
-`approach-confirmed`, and still needs `close-confirmed`. **It never runs a
-skeptic**: that is the main difference from full onto. Verification stays at
+`approach-confirmed`, and still needs `close-confirmed`. It uses the same
+configurable skeptic policy as full onto. Verification stays at
 light scale, and the binary refuses `onto set verify-scale <change> full` for
 a light change. `--to build` walks the gated hops in one call.
 
@@ -336,7 +337,7 @@ $ onto set workflow fix-empty-query full
 ```
 
 …which returns it to design, invalidates build, verify, and close evidence,
-and brings in full verification with its two skeptics.
+and brings in full verification with the configured skeptic policy.
 
 Changes **without delta specs** (presets, documentation-only changes) declare
 each scenario once, on its own line, in either `tasks.md` or
@@ -368,7 +369,7 @@ committed, so `git log` over the change directory attributes each answer.
 | `onto-explorer` | open, design, triage | one per independent question |
 | `onto-implementer` | build, repairs | one per checkout; parallel across repositories or worktrees |
 | `onto-reviewer` | build (per task), verify (whole diff) | one per lens |
-| `onto-skeptic` | verify (full only) | ≥2 per round; none in light |
+| `onto-skeptic` | verify (full and light) | configurable; two by default |
 
 ## Working with a dirty tree
 

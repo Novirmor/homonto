@@ -7,12 +7,9 @@ defects self-review missed).
 
 ## When
 
-- `verify.scale: full` → REQUIRED: **at least** two skeptics, dispatched in
-  parallel, after the self-evidence table is drafted. Two is the floor, not
-  the ceiling — see "More than two" below.
-- `verify.scale: light` (a light change) → no skeptic. Record "light: no
-  skeptic pass" in the report's Adversarial section. Work that needs a skeptic
-  escalates to the full workflow; it is never added inside a light change.
+- Both verification scales follow the [final skeptic policy](../../homonto/references/final-skeptic.md),
+  defaulting to two passes. Record the selected policy, count and outcome in
+  Adversarial; `off` and zero-pass `auto` are intentional skips.
 - Unavailable dispatch/worker → apply the shared
   [capability policy](../../homonto/references/execution.md#dispatch-capability).
   Perform claim/gap checks directly and record the missing independent pass in
@@ -20,16 +17,16 @@ defects self-review missed).
   blocked/failed workers do not qualify as absence. Never claim a completed
   independent pass for direct review.
 
-## The two mandatory skeptics
+## Skeptic lenses
 
-Both are the **`onto-skeptic`** subagent that ships with onto — the same
-agent dispatched **twice, concurrently**, with a different **lens** named
-in each dispatch (`conformance` and `robustness`). It denies edits and shell
+Each is the **`onto-skeptic`** subagent that ships with onto. When two are
+required, dispatch concurrently with `conformance` and `robustness` lenses;
+for one, cover both claims and gaps in its assigned lens. It denies edits and shell
 commands so parallel skeptics cannot mutate the candidate. The coordinator
 runs any exact probes they request and returns the literal output for a fresh
 pass.
 
-Both get a complete worker-readable evidence pack: Repo and absolute Cwd for
+Each gets a complete worker-readable evidence pack: Repo and absolute Cwd for
 every source, frozen base and candidate OIDs, exact diff/supporting files,
 delta specs and design (or preset proposal scenarios), task/notes context,
 literal commands, exit statuses and full output, evidence table, regression
@@ -40,7 +37,7 @@ dispatch so that it can attack the complete claim. Confirm pack consumption;
 coordinator tool output is not automatically shared. A summary or one-line pack
 is insufficient: supply readable artifacts and full output paths, checking access.
 Re-dispatch after candidate changes or missing probes with the new complete pack
-and a bounded recheck assignment (below). Both are prompted to **REFUTE, never approve** — an
+and a bounded recheck assignment (below). Each is prompted to **REFUTE, never approve** — an
 approving skeptic has failed its job; "I could not refute X because
 <evidence>" is the only acceptable positive form.
 
@@ -58,7 +55,7 @@ approving skeptic has failed its job; "I could not refute X because
 
 Skeptics deny edits and shell commands. Add bounded, distinct lenses when their
 expected coverage justifies the latency, context and token cost, in the same parallel
-batch and named in the report's Adversarial section like the mandatory two:
+batch and named in the report's Adversarial section:
 
 - **abuse** — drive the shipped behavior as a hostile user would: untrusted
   input, secrets, path traversal, privilege, deletion and overwrite paths. Add
@@ -130,8 +127,8 @@ Turn confirmed repairs into tasks and execute them through the
 
 After repair, refresh candidate OIDs, diff, affected scenario evidence, regression
 and matching configured integration checks. Reissue the complete pack with finding
-IDs, repairs and prior dispositions. Both mandatory lenses still cover the final
-candidate in full mode; focus their fresh passes on the repairs, affected claims
+IDs, repairs and prior dispositions. Every required pass covers the final
+candidate; focus its fresh pass on the repairs, affected claims
 and adjacent regression risks. Retain unchanged evidence only with valid
 candidate/input provenance under the execution policy. Rebind report receipts as
 onto-verify requires even when command output is reusable.

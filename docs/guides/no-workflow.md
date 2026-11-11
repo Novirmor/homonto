@@ -1,6 +1,6 @@
 # The no engine
 
-`no` is the smallest engine: one implementer, one reviewer, and a
+`no` is the smallest engine: an implementer, reviewer, skeptic, and a
 coordination contract. No binary, no phases, no lifecycle records. The model
 chooses how to break down and verify the work.
 
@@ -20,7 +20,9 @@ model = "anthropic/claude-sonnet-5-5"
 model = "anthropic/claude-opus-5-5"
 ```
 
-This installs the `no` skill, the `/no` command, and the two agents. It does
+This installs the `no` and shared `homonto` skills, the `/no` command, and the three agents. When
+no separate skeptic model is configured, `no-skeptic` inherits
+the pinned `no-reviewer` model and its variant. It does
 **not** install the `homonto` coordinator; `/no` runs in your current agent.
 Install `onto`, `to`, or `h` alongside to get the coordinator as well.
 
@@ -39,7 +41,7 @@ coordinator asks which workflow fits.
  request ─▶ inspect checkouts & dirty work ─▶ (ask once: existing checkout or worktree?)
          ─▶ implementer (one per repository) ─▶ parent reviews evidence, commits
          ─▶ no-reviewer on each repository's candidate ─▶ combined review / integration checks
-         ─▶ deliver to the requested endpoint
+         ─▶ configured final skeptics ─▶ deliver to the requested endpoint
 ```
 
 1. **Scope.** The parent reads the request, the declared roots, and every
@@ -57,7 +59,9 @@ coordinator asks which workflow fits.
 5. **Integration checks.** Configured `[integration.*]` checks run when their
    repositories changed; a configured failure can't be replaced by an ad-hoc
    check.
-6. **Deliver.** Stop at your endpoint: a commit, a pushed branch, a PR
+6. **Skeptic review.** Apply the [final skeptic policy](configuration.md#workflow-records--workflow)
+   using `no-skeptic`; record the outcome in session evidence and handoff.
+7. **Deliver.** Stop at your endpoint: a commit, a pushed branch, a PR
    (publication needs the caller's authority, e.g. `h-resolve-issue`).
 
 ## Shared task bookkeeping (schema 2)
@@ -91,3 +95,4 @@ session and handoff instead.
 |---|---|---|
 | `no-implementer` | Edit files, run trusted shell (builds, tests, scripts) in its assigned repository | Push, `gh` publishing, run `onto`/`to`/`homonto`, delegate, ask you |
 | `no-reviewer` | Read files and the web | Edit, run shell, delegate, ask you |
+| `no-skeptic` | Challenge final claims and evidence | Edit, run shell, delegate, ask you |

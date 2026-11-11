@@ -1,15 +1,15 @@
 ---
 name: onto-light
-description: onto light preset — bounded bug fixes and small non-bug edits (copy, config, docs, prompts, a small feature). Use when onto light is explicitly selected or an active light change resumes — open-lite, build, verify without skeptics, close; escalates to the full workflow when scope or risk grows.
+description: onto light preset — bounded bug fixes and small non-bug edits; open-lite, build, verify, close; escalates to full when scope or risk grows.
 ---
 
 # onto-light — Preset: Light
 
 Fast path for bounded work: **open-lite → build → verify → close**. Light skips
-design and plan, and it never runs a skeptic. That is its main difference from
-full onto, and it is why the escalation rules below are non-negotiable: work
-that needs design, a contract change, or independent adversarial review is full
-work.
+design and plan, and verifies at light scale only. It uses the configured final
+skeptic policy, like full onto. The escalation rules below are non-negotiable:
+work that needs design, a contract change, or full-scale verification (every
+delta-spec scenario and the full design) is full work.
 Apply the shared [autonomous workflow policy](../homonto/references/autonomy.md),
 including workspace roots and dirty-work decisions, even on direct entry. Continue
 through the entire preset unless the user names an endpoint or asks to pause.
@@ -160,9 +160,9 @@ workflow, existing isolation, TDD mode and the recorded phase. Do not create
 before repair, then return to step 3 for fresh verification. Escalate only under
 the shared eligibility table, not because a check failed.
 
-### 3. Verify — light scale, no skeptic
+### 3. Verify — light scale
 
-Light verification never dispatches a skeptic. Run `onto scale <name> --set
+Run `onto scale <name> --set
 --dir "<configRoot>"`. If it measures `full`, or the diff reaches any risk
 trigger in `onto-verify`'s scale check (a new capability or a security-sensitive
 surface), the change no longer fits light: **escalate** under the rules below.
@@ -173,8 +173,8 @@ Demonstrate every Acceptance Scenario with fresh command + output in
 `onto-verify/references/verification.md`), plus regression-suite results. For a
 bug, the reproduction is the core scenario: show it no longer occurs. For
 content, render the doc, run the config consumer, or show the diff taking
-effect. Brief is fine, absent is not. Record the Adversarial section as "light:
-no skeptic pass" rather than leaving it blank. Fix failures by default; ask only
+effect. Brief is fine, absent is not. Apply onto-verify's configured final
+skeptic policy and record the outcome in Adversarial. Fix failures by default; ask only
 before accepting a lower-severity deviation. Non-waivable classes (security
 defect, data loss, failed core-acceptance scenario) still block.
 
@@ -224,8 +224,8 @@ Never keep patching past a trigger "because it's almost done".
       and seen passing; other tasks checked and committed one by one; tree
       clean; advanced build → verify only from recorded build
 - [ ] Verify: scale measured light with no risk trigger (else escalated);
-      `verification.md` with fresh evidence, regression results, and no skeptic
-      pass recorded; `verify.result` set via `onto set verify-result`; advanced
+      `verification.md` with fresh evidence, regression results, and the final
+      skeptic policy outcome recorded; `verify.result` set via `onto set verify-result`; advanced
       verify → close only from recorded verify; later-phase repair preserves
       phase and returns through the dispatcher; workspace committed at exit
 - [ ] Close: delta coverage checked (lint §0), guides unset or any carried

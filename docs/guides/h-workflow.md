@@ -32,7 +32,7 @@ transferred repositories are resolved by GitHub repository ID). In schema 2,
 that checkout must be a declared `[repos]` alias; the config directory itself
 may be non-Git.
 
-## The six commands
+## The commands
 
 | Command | Input | Endpoint | Writes code | Publishes |
 |---|---|---|---|---|
@@ -42,6 +42,7 @@ may be non-Git.
 | `/h-continue-pr` | PR | Verified fixes on the same PR | yes, directly | push to the PR branch + one summary comment, after verification |
 | `/h-resolve-conflicts` | PR | Verified conflict resolution, or an evidenced no-op | conflicts only, directly | normal push to the same PR head; no comments by default |
 | `/h-review-batch` | repo or PR list | Drafts for every PR | never | after one decision over all drafts |
+| `/h-continue-batch` | repo or PR list | Continuation or blocker for every PR | yes, directly | per-PR push and summary after verification |
 
 Issue references: `https://github.com/OWNER/REPO/issues/N` or
 `OWNER/REPO#N`. PR references: a URL, `OWNER/REPO#N`, a number, or a unique
@@ -155,17 +156,32 @@ by default, and conflict-free does not mean CI is green.
 ```
 
 Default limit 10; the author filter is applied server-side. One `h-review`
-worker per PR runs concurrently. A PR that can't be fetched is reported as a
+worker per PR runs in bounded waves. The workflow asks whether changes are
+independent or connected unless you already said; connected reviews include
+relevant cross-PR context and interactions. A PR that can't be fetched is reported as a
 failure without stopping the batch. All drafts are shown together, then one
 publication decision; the final table reports reviewed / failed / posted
 counts and URLs. "All open PRs" over ten asks about cost once.
+
+### `/h-continue-batch` — address feedback across PRs
+
+```text
+/h-continue-batch acme/notes#57 acme/notes#58
+/h-continue-batch https://github.com/acme/notes limit 5 author alice
+```
+
+Selection follows the batch review rules. The workflow asks whether changes are
+independent or connected unless you already said. Connected PRs are handled in
+dependency order with shared context; a blocked prerequisite blocks its
+dependents, not unrelated PRs. Each PR retains the checkout, feedback,
+verification, push and reporting safeguards of `/h-continue-pr`.
 
 ## Publication rules
 
 - Review comments and spike briefs: posted only after **explicit approval of
   the exact draft shown**. A permission prompt, an earlier approval, or shell
   access never counts.
-- `h-resolve-issue` and `h-continue-pr` publish as part of their invocation,
+- `h-resolve-issue`, `h-continue-pr` and `h-continue-batch` publish as part of their invocation,
   but only after the applicable verification has passed.
 - `h-resolve-conflicts` authorizes only its verified same-PR push, not comments,
   reviews, thread resolution, or merging the PR.

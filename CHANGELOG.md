@@ -5,6 +5,19 @@ release page for a tag shows only that release's notes
 ([`docs/release-notes.md`](docs/release-notes.md)) plus the generated commit
 list. Release candidates are folded into their stable release.
 
+## v0.37.2 — continue GitHub PRs in batches
+
+All three binaries are stamped v0.37.2. The embedded catalog is 0.37.2
+(onto 0.29.0, to 0.26.0, h 0.16.0, and no 0.4.0).
+
+- Add `/h-continue-batch` to address feedback across selected GitHub PRs,
+  retaining each PR's checkout, verification, and publication safeguards.
+- Both batch workflows ask whether changes are independent or connected unless
+  already specified, and use relevant cross-PR context and dependencies.
+
+**Upgrade:** install matching v0.37.2 binaries, run `homonto plan` and
+`homonto apply`, and restart OpenCode.
+
 ## v0.37.1 — recover squash-merged PRs
 
 All three binaries are stamped v0.37.1. The embedded catalog is 0.37.1

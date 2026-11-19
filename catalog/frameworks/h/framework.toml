@@ -1,7 +1,7 @@
 name = "h"
 kind = "workflow"
-version = "0.15.0"
-description = "Standalone GitHub workflow skill bundle — spike, resolve, review, continue, conflict resolution, batch review"
+version = "0.16.0"
+description = "Standalone GitHub workflow skill bundle — spike, resolve, review, continue, conflict resolution, batch review and continuation"
 
 [dependencies]
 frameworks = []
@@ -14,6 +14,7 @@ h-review-pr = "skills/h-review-pr"
 h-continue-pr = "skills/h-continue-pr"
 h-resolve-conflicts = "skills/h-resolve-conflicts"
 h-review-batch = "skills/h-review-batch"
+h-continue-batch = "skills/h-continue-batch"
 
 [commands]
 h-spike-issue = "commands/h-spike-issue.md"
@@ -22,6 +23,7 @@ h-review-pr = "commands/h-review-pr.md"
 h-continue-pr = "commands/h-continue-pr.md"
 h-resolve-conflicts = "commands/h-resolve-conflicts.md"
 h-review-batch = "commands/h-review-batch.md"
+h-continue-batch = "commands/h-continue-batch.md"
 
 [plugins]
 homonto-workflow = "plugins/homonto-workflow"

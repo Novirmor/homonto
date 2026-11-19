@@ -110,3 +110,4 @@ numbering: [`../agents/adr.md`](../agents/adr.md).
 | [0086](0086-clean-up-at-close.md) | Clean up at close | Accepted |
 | [0087](0087-provision-dev-tools-with-mise.md) | Provision dev tools with mise | Accepted |
 | [0088](0088-module-path-matches-canonical-repository.md) | Name the Go module after the canonical repository | Accepted |
+| [0091](0091-verify-squash-pr-recovery-with-github.md) | Verify squash PR recovery with GitHub | Accepted |

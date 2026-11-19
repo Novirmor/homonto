@@ -76,6 +76,9 @@ func completeIntegrationCmd() *cobra.Command {
 			if err != nil {
 				return fmt.Errorf("onto complete-integration: %w", err)
 			}
+			if strings.HasPrefix(receipt, "squash-pr:") && strings.HasPrefix(entry.Receipt, receipt+"#") {
+				receipt = entry.Receipt
+			}
 			if entry.Receipt == receipt && head != "" && head != entry.PublicationHead {
 				return fmt.Errorf("onto complete-integration: publication head cannot replace an existing receipt")
 			}
@@ -107,7 +110,19 @@ func completeIntegrationCmd() *cobra.Command {
 			if err := validateIntegrationSource(dir, repoDir, st, entry); err != nil {
 				return err
 			}
-			if strings.HasPrefix(receipt, "unchanged:") {
+			if strings.HasPrefix(receipt, "squash-pr:") {
+				if record.Mode != "pr" || st.RepoMode != "explicit" {
+					return fmt.Errorf("onto complete-integration: squash-pr requires PR integration with an explicit source")
+				}
+				if head != "" {
+					return fmt.Errorf("onto complete-integration: --head is not valid for a squash-pr receipt")
+				}
+				canonical, validateErr := validateSquashPR(dir, repoDir, receipt, entry)
+				if validateErr != nil {
+					return fmt.Errorf("onto complete-integration: %w", validateErr)
+				}
+				receipt = canonical
+			} else if strings.HasPrefix(receipt, "unchanged:") {
 				canonical, validateErr := validateUnchangedReceipt(repoDir, receipt, entry)
 				if validateErr != nil {
 					return fmt.Errorf("onto complete-integration: %w", validateErr)
@@ -161,7 +176,7 @@ func completeIntegrationCmd() *cobra.Command {
 	}
 	cmd.Flags().StringVar(&dir, "dir", ".", "workspace root containing the archive")
 	cmd.Flags().StringVar(&repo, "repo", "", "receipt repository (required for multiple explicit repos; legacy default: config)")
-	cmd.Flags().StringVar(&receipt, "receipt", "", "merge:<commit-sha>, unchanged:<receiving-commit-sha>, or pr:<https-url>")
+	cmd.Flags().StringVar(&receipt, "receipt", "", "merge:<commit-sha>, unchanged:<receiving-commit-sha>, pr:<https-url>, or squash-pr:<github-pr-url>")
 	cmd.Flags().StringVar(&head, "head", "", "canonical PR head reported by the publication tool (required for explicit sources; no network verification)")
 	_ = cmd.MarkFlagRequired("receipt")
 	return cmd

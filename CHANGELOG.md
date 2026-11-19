@@ -5,6 +5,20 @@ release page for a tag shows only that release's notes
 ([`docs/release-notes.md`](docs/release-notes.md)) plus the generated commit
 list. Release candidates are folded into their stable release.
 
+## v0.37.1 — recover squash-merged PRs
+
+All three binaries are stamped v0.37.1. The embedded catalog is 0.37.1
+(onto 0.29.0, to 0.26.0, h 0.15.0, and no 0.4.0).
+
+- Complete a pending explicit-source PR integration after a GitHub.com squash
+  merge using `squash-pr:<pr-url>`. The command verifies GitHub's merged PR,
+  recorded candidate and target, local receiving history, and exact tree.
+  It requires `gh`, a matching origin, and locally available Git objects; it
+  does not support GitHub Enterprise or squash results with different trees.
+
+**Upgrade:** install matching v0.37.1 binaries. Existing pending archives can
+use the new receipt without state edits when they meet those requirements.
+
 ## v0.37.0 — configurable final skeptic review
 
 All three binaries are stamped v0.37.0. The embedded catalog is 0.37.0

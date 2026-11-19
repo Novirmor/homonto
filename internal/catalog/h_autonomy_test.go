@@ -29,7 +29,7 @@ func TestHSkillBundleNamingAndEntryPoints(t *testing.T) {
 	if !strings.Contains(h.Description, "GitHub workflow skill bundle") || strings.Contains(h.Description, "GitHub intake workflows") {
 		t.Errorf("h description must identify a GitHub workflow skill bundle: %q", h.Description)
 	}
-	entries := []string{"h-spike-issue", "h-resolve-issue", "h-review-pr", "h-continue-pr", "h-resolve-conflicts", "h-review-batch"}
+	entries := []string{"h-spike-issue", "h-resolve-issue", "h-review-pr", "h-continue-pr", "h-resolve-conflicts", "h-review-batch", "h-continue-batch"}
 	if len(h.Skills) != len(entries)+1 || len(h.Commands) != len(entries) {
 		t.Errorf("h must declare its shared skill plus %d skill/command entry points, got %d skills and %d commands", len(entries), len(h.Skills), len(h.Commands))
 	}
@@ -117,6 +117,7 @@ func TestHAutonomySuccessEndpoints(t *testing.T) {
 		{"h-resolve-conflicts", "verified conflict-resolution commits are pushed to the existing PR head"},
 		{"h-review-pr", "a validated draft shown with verification and residual risks"},
 		{"h-review-batch", "every selected PR accounted for by a validated draft or an explicit failure"},
+		{"h-continue-batch", "every selected PR has completed its continuation or has"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			skill := hPromptText(t, "skills/"+tc.name+"/SKILL.md")
@@ -224,6 +225,23 @@ func TestHAutonomyRoutingTrustAndSafety(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+func TestHBatchRelationshipAndContinuationSafety(t *testing.T) {
+	for _, tc := range []struct {
+		file string
+		want []string
+	}{
+		{"skills/h-review-batch/SKILL.md", []string{"independent or connected", "unless the user already specified it", "cross-PR intent", "per-draft approval"}},
+		{"skills/h-continue-batch/SKILL.md", []string{"independent or connected", "unless the user already made that clear", "dependency order", "block affected dependents", "Run `h-continue-pr` to completion separately", "never switch a shared checkout", "Reconcile remote mutations before retrying", "Do not require an engine"}},
+	} {
+		text := hPromptText(t, tc.file)
+		for _, want := range tc.want {
+			if !strings.Contains(text, want) {
+				t.Errorf("%s missing %q", tc.file, want)
+			}
+		}
 	}
 }
 

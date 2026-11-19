@@ -63,7 +63,16 @@ retain the explicit shown-draft approval path below rather than truncating them.
    full count with pagination; ask about cost only if it exceeds ten and the
    user has not already authorized that count. Otherwise use the default ten
    and report the selected scope, never silently truncate an "all" request.
-4. **Build one context pack per PR** — each independent, exactly per
+4. **Ask about relationships.** Before analysis, ask whether the selected
+   changes are independent or connected unless the user already specified it.
+   For connected changes, determine relevant dependencies and ordering from
+   the PRs, asking when material relationships remain unclear. Give each
+   worker relevant cross-PR intent, dependency and interface context as clearly
+   attributed evidence; review interactions and compatibility as well as each
+   diff. A shared goal does not imply a branch dependency. For independent
+   changes, keep analysis separate. Relationship context never replaces complete
+   per-PR packs, pinned refs, or per-draft approval.
+5. **Build one context pack per PR** — each independent, exactly per
    [`h-review-pr/references/context-pack.md`](../h-review-pr/references/context-pack.md).
    Materialize each pack in its own worker-readable directory and validate it
    before dispatch. Recover transient in-scope failures with bounded retries
@@ -74,26 +83,26 @@ retain the explicit shown-draft approval path below rather than truncating them.
    still cannot be completed (fetch failure, broken pagination) is
    marked failed and skipped; the others proceed. Partial success is the
    design, not an error.
-5. **Dispatch in waves.** One `h-review` worker per PR, a few at a time
+6. **Dispatch in waves.** One `h-review` worker per PR, a few at a time
    (three to five concurrent keeps results tractable); each gets its own
    complete pack's absolute manifest/component paths and pinned refs. Only
    ready packs enter a wave; earlier coordinator tool output is not a handoff.
    Workers have no shell: the coordinator supplies `git show`/other probe output
    and re-dispatches missing evidence. Workers are read-only, so waves are safe; the boundary
    exists for attention and rate limits, not safety.
-6. **Validate and draft per PR** — confirm cited file:line against each
+7. **Validate and draft per PR** — confirm cited file:line against each
    fetched diff, fold findings already covered by that PR's unresolved
    threads, require the worker's Context used report, and shape each draft per
    [`h-review-pr/references/draft-format.md`](../h-review-pr/references/draft-format.md).
-7. **Present the batch**: one table (PR, title, findings by severity, draft
+8. **Present the batch**: one table (PR, title, findings by severity, draft
    ready / failed with reason) followed by the drafts. Distinguish unresolved
    identity, missing handoff files, and exhausted diff retries from a completed
    review. Include attempts and fallback provenance; retain retryable failures
    with the exact next action. Never count a Questions-only return as reviewed.
-8. **One publication decision.** A single dialog after all drafts: post all,
+9. **One publication decision.** A single dialog after all drafts: post all,
    post selected (name them), or post none. Approval covers exactly the
    shown drafts; any later finding change reopens it.
-9. **Post the approved drafts**, one comment per PR via a body file
+10. **Post the approved drafts**, one comment per PR via a body file
    (`gh pr comment NUMBER --repo HOST/OWNER/REPO --body-file COMMENT_FILE` —
    draft and comment files are transient: keep them under the workspace tmp
    directory when the shared `homonto` skill's generated
@@ -102,7 +111,7 @@ retain the explicit shown-draft approval path below rather than truncating them.
    following the shared publication-freshness contract. Changed refs require
    a new review and approval for that PR; unaffected approved drafts proceed.
    Include reviewed OIDs in every body; report each URL and each failure exactly.
-10. **Report.** Counts (reviewed, failed, posted), the table, posted comment
+11. **Report.** Counts (reviewed, failed, posted), the table, posted comment
     URLs, and residual risks.
 
 ## Common mistakes

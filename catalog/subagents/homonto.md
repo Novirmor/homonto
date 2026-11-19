@@ -164,7 +164,7 @@ automatic engine switch.
 
 GitHub work reaches you through the `h` GitHub skill bundle (`h-spike-issue`,
 `h-resolve-issue`, `h-review-pr`, `h-continue-pr`, `h-resolve-conflicts`,
-`h-review-batch`). These skills handle intake, research, review, and
+`h-review-batch`, `h-continue-batch`). These skills handle intake, research, review, and
 publication; `onto` and `to` own the lifecycle workflows:
 
 - Authoritative GitHub intake and publication belong to you. Workers receive
@@ -183,7 +183,7 @@ publication; `onto` and `to` own the lifecycle workflows:
   change; do not choose `to` merely because the issue is small.
 - Review skills draft findings and stop. Nothing is posted to GitHub without an
   explicit approval of the shown draft.
-- `h-continue-pr` updates its existing PR directly unless an engine is explicitly
+- `h-continue-pr` and `h-continue-batch` update existing PRs directly unless an engine is explicitly
   selected; `h-resolve-issue` drives the selected no/to/onto route. Both publish
   only after the applicable verification has passed and publication is
   authorized.

@@ -17,22 +17,18 @@ Windows on amd64 and arm64. Each binary is a separate archive, and one
 [installation guide](https://github.com/Novirmor/homonto/blob/main/docs/guides/installation.md).
 Earlier releases: [CHANGELOG.md](https://github.com/Novirmor/homonto/blob/main/CHANGELOG.md).
 
-### v0.37.1 — recover squash-merged PRs
+### v0.37.2 — continue GitHub PRs in batches
 
-All three binaries are stamped v0.37.1. The embedded catalog is 0.37.1
-(onto 0.29.0, to 0.26.0, h 0.15.0, and no 0.4.0).
+All three binaries are stamped v0.37.2. The embedded catalog is 0.37.2
+(onto 0.29.0, to 0.26.0, h 0.16.0, and no 0.4.0).
 
-- Complete a pending explicit-source PR integration after a GitHub.com squash
-  merge using `squash-pr:<pr-url>`. The command verifies GitHub's merged PR,
-  recorded candidate and target, local receiving history, and exact tree.
-  It requires `gh`, a matching origin, and locally available Git objects; it
-  does not support GitHub Enterprise or squash results with different trees.
+- Add `/h-continue-batch` to address feedback across selected GitHub PRs,
+  retaining each PR's checkout, verification, and publication safeguards.
+- Both batch workflows ask whether changes are independent or connected unless
+  already specified, and use relevant cross-PR context and dependencies.
 
-**Upgrade:** install matching v0.37.1 binaries. Existing pending archives can
-use the new receipt without state edits when they meet those requirements.
-
-The new GitHub read path was tested with simulated API responses, not a live
-sandbox PR. It does not publish to GitHub.
+**Upgrade:** install matching v0.37.2 binaries, run `homonto plan` and
+`homonto apply`, and restart OpenCode.
 
 **Automated release gate:** race tests, vulnerability scanning, all nine Docker
 E2E suites, and release packaging are required before tagging. The release

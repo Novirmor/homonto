@@ -12,7 +12,7 @@ item is for. How the pieces work together is in [workflows](workflows.md).
 | `onto` | `[engines.onto]` | `homonto`, `onto`, `onto-open`, `onto-design`, `onto-build`, `onto-verify`, `onto-close`, `onto-light`, `onto-no-slop` | `/onto`, `/onto-open`, `/onto-design`, `/onto-build`, `/onto-verify`, `/onto-close`, `/onto-light`, `/onto-no-slop`, `/onto-bypass` | `homonto`, `onto-explorer`, `onto-implementer`, `onto-reviewer`, `onto-skeptic` | `onto` |
 | `to` | `[engines.to]` | `homonto`, `to`, `to-plan`, `to-do`, `to-done`, `to-no-slop` | `/to`, `/to-plan`, `/to-do`, `/to-done`, `/to-no-slop`, `/to-bypass` | `homonto`, `to-explorer`, `to-implementer`, `to-reviewer`, `to-skeptic` | `to` |
 | `no` | `[engines.no]` | `no`, `homonto` | `/no` | `no-implementer`, `no-reviewer`, `no-skeptic` | — |
-| `h` | `[workflows.h]` | `homonto`, `h-spike-issue`, `h-resolve-issue`, `h-review-pr`, `h-continue-pr`, `h-resolve-conflicts`, `h-review-batch` | `/h-spike-issue`, `/h-resolve-issue`, `/h-review-pr`, `/h-continue-pr`, `/h-resolve-conflicts`, `/h-review-batch` | `homonto`, `h-spike`, `h-review` | — |
+| `h` | `[workflows.h]` | `homonto`, `h-spike-issue`, `h-resolve-issue`, `h-review-pr`, `h-continue-pr`, `h-resolve-conflicts`, `h-review-batch`, `h-continue-batch` | `/h-spike-issue`, `/h-resolve-issue`, `/h-review-pr`, `/h-continue-pr`, `/h-resolve-conflicts`, `/h-review-batch`, `/h-continue-batch` | `homonto`, `h-spike`, `h-review` | — |
 
 `onto`, `to`, and `h` also install the `homonto-workflow` OpenCode plugin
 ([OpenCode integration](opencode.md)). Items shared between packages
@@ -68,6 +68,7 @@ Standalone items: skills `handoff` and `grilling`; commands `/handoff` and
 | `h-continue-pr` | Address feedback on an existing PR: collect requested changes and unresolved threads, check out the exact head, make the smallest verified fixes, push to the same branch, post one summary comment, resolve only threads actually addressed. Needs no engine. |
 | `h-resolve-conflicts` | Resolve only an existing PR's merge conflicts: pin base/head, preserve both sides' intent, verify and push normally to the same head. No engine, unrelated hardening or implicit comments. A conflict-free pair is a no-op; broader repairs need native-dialog scope approval. |
 | `h-review-batch` | Review many open PRs (default 10, filter by author) or a list: one `h-review` worker per PR, all drafts shown together, one publication decision. |
+| `h-continue-batch` | Address feedback on a batch of PRs, taking their relationships into account and preserving per-PR verification and publication safeguards. |
 
 ### Standalone
 
@@ -101,6 +102,7 @@ Arguments after the command describe the work.
 | `/h-continue-pr <pr>` | Address a PR's feedback and update it. |
 | `/h-resolve-conflicts <pr>` | Resolve only merge conflicts and update the same PR head. |
 | `/h-review-batch <repo-url \| prs…> [limit N] [author USER]` | Draft reviews for many PRs. |
+| `/h-continue-batch <repo-url \| prs…> [limit N] [author USER]` | Continue many PRs. |
 | `/handoff [focus]` | Write a handoff document. |
 | `/grill [plan]` | Stress-test a plan by interview. |
 

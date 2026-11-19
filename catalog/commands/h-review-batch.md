@@ -15,6 +15,8 @@ and stop.
 `author USER` — or one or more unambiguous PR references (PR URLs,
 `OWNER/REPO#NUMBER`, numbers, or unique head branches resolved against the
 repository). An explicit count or list above ten needs no duplicate count approval.
+Ask whether the changes are independent or connected unless already specified;
+use that answer to guide the review.
 
 The skill reviews each selected PR through a read-only `h-review` worker,
 preserves partial results when one PR cannot be fetched, and asks for one

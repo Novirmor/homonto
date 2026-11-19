@@ -205,16 +205,22 @@ onto complete-integration <change> --receipt <receipt> [--repo <alias>] [--head 
 | `merge:<sha>` | A real two-parent merge reachable from the recorded base branch, whose first parent descends from the captured base and whose second parent is the verified candidate (or a records-only descendant in a combined checkout). Squash, rebase, and fast-forward merges don't qualify. |
 | `unchanged:<sha>` | A proven no-op: the receiving commit descends from the base and is on the target branch, and the source was already contained (or tree-identical) at capture. |
 | `pr:<https-url>` | An opened PR. Explicit sources also need `--head <40/64-hex sha>` from the publication tool, checked locally against the candidate. Not verified with the host. |
+| `squash-pr:<github-pr-url>` | A merged GitHub.com PR for an explicit source in PR mode, verified using `gh` against the source origin, recorded branch and candidate, and a locally available single-parent merge commit on the receiving branch. Its tree must exactly equal the PR head tree. |
 
 `--repo` is required when several explicit sources are selected (one is
 inferred; legacy defaults to the config repository). Repeating the same
 receipt is idempotent; replacing it is refused. The change derives `done`
 when every repository is complete.
 
+For squash recovery, fetch the merge commit and update the local receiving
+branch first. `gh` must be authenticated for the repository. The recorded
+receipt includes the merge commit ID; `--head` is not used for this route.
+
 ```console
 $ onto complete-integration add-search --receipt merge:$(git rev-parse HEAD)
 add-search: integration complete for repository config (merge:b7e101e…)
 $ onto complete-integration add-search --repo api --receipt pr:https://github.com/acme/api/pull/42 --head 3f2a…
+$ onto complete-integration add-search --repo api --receipt squash-pr:https://github.com/acme/api/pull/42
 ```
 
 ## `onto abandon <change>`

@@ -26,6 +26,9 @@ func TestCompleteForValidatesModeSpecificReceipt(t *testing.T) {
 		{mode: "merge", receipt: "unchanged:abcdef1", valid: true},
 		{mode: "pr", receipt: "unchanged:abcdef1", valid: true},
 		{mode: "merge", receipt: "unchanged:HEAD"},
+		{mode: "pr", receipt: "squash-pr:https://github.com/acme/repo/pull/1#" + strings.Repeat("a", 40), valid: true},
+		{mode: "pr", receipt: "squash-pr:https://github.com/acme/repo/pull/1"},
+		{mode: "merge", receipt: "squash-pr:https://github.com/acme/repo/pull/1#" + strings.Repeat("a", 40)},
 	} {
 		record := NewPending("c", tc.mode, "main", []Entry{fixtureEntry("")})
 		completed, err := record.CompleteFor("", tc.receipt)

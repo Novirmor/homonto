@@ -232,8 +232,16 @@ func Save(changeDir string, record Record) error {
 var mergeReceipt = regexp.MustCompile(`^merge:[0-9a-fA-F]{7,64}$`)
 var unchangedReceipt = regexp.MustCompile(`^unchanged:[0-9a-fA-F]{7,64}$`)
 var canonicalHead = regexp.MustCompile(`^[0-9a-f]{40}$|^[0-9a-f]{64}$`)
+var squashURL = regexp.MustCompile(`^https://github\.com/[A-Za-z0-9][A-Za-z0-9-]*/[A-Za-z0-9_.][A-Za-z0-9_.-]*/pull/[1-9][0-9]*$`)
 
 func validateReceipt(mode, receipt string) error {
+	if mode == "pr" && strings.HasPrefix(receipt, "squash-pr:") {
+		address, commit, ok := strings.Cut(strings.TrimPrefix(receipt, "squash-pr:"), "#")
+		if ok && squashURL.MatchString(address) && canonicalHead.MatchString(commit) {
+			return nil
+		}
+		return fmt.Errorf("squash PR integration receipt must be squash-pr:<github-pr-url>#<commit-sha>")
+	}
 	if (mode == "merge" || mode == "pr") && unchangedReceipt.MatchString(receipt) {
 		return nil
 	}

@@ -17,33 +17,22 @@ Windows on amd64 and arm64. Each binary is a separate archive, and one
 [installation guide](https://github.com/Novirmor/homonto/blob/main/docs/guides/installation.md).
 Earlier releases: [CHANGELOG.md](https://github.com/Novirmor/homonto/blob/main/CHANGELOG.md).
 
-### v0.37.0 — configurable final skeptic review
+### v0.37.1 — recover squash-merged PRs
 
-All three binaries are stamped v0.37.0. The embedded catalog is 0.37.0
+All three binaries are stamped v0.37.1. The embedded catalog is 0.37.1
 (onto 0.29.0, to 0.26.0, h 0.15.0, and no 0.4.0).
 
-- Configure `[workflow].final_skeptic` as `off`, `one`, `two`, or `auto`.
-  An explicit value applies to `to`, `onto`, and `no`; inspect the resolved
-  value with `homonto final-skeptic <engine>`. When omitted, `to` defaults to
-  one pass and `onto` and `no` default to two.
-- The `onto` light preset and the `no` engine now use final skeptic review;
-  `no` gains the read-only `no-skeptic`, which inherits the `no-reviewer` model
-  and variant unless given its own model.
-- Review instructions record the selected policy and outcomes and refresh
-  required passes when the candidate changes. `off` never skips verification or
-  explicit review requirements. These instructions do not prove an independent
-  review occurred.
-- The Go toolchain is updated to 1.26.11 for GO-2026-6859.
+- Complete a pending explicit-source PR integration after a GitHub.com squash
+  merge using `squash-pr:<pr-url>`. The command verifies GitHub's merged PR,
+  recorded candidate and target, local receiving history, and exact tree.
+  It requires `gh`, a matching origin, and locally available Git objects; it
+  does not support GitHub Enterprise or squash results with different trees.
 
-**Upgrade:** install matching v0.37.0 binaries, run `homonto plan` and
-`homonto apply`, and restart OpenCode. Existing `onto` light and `no` users
-should expect two final skeptic passes by default; set an explicit policy if
-another trade-off is appropriate. The setting is shared across the three engines.
+**Upgrade:** install matching v0.37.1 binaries. Existing pending archives can
+use the new receipt without state edits when they meet those requirements.
 
-**Live-check gaps approved for v0.37.0:** the real OpenCode 2 host check,
-GitHub draft denial and approval check, real GitHub sandbox publication and
-reconciliation check, and V1/V2 migration checks were not run. Automated
-tests do not establish those live-host outcomes.
+The new GitHub read path was tested with simulated API responses, not a live
+sandbox PR. It does not publish to GitHub.
 
 **Automated release gate:** race tests, vulnerability scanning, all nine Docker
 E2E suites, and release packaging are required before tagging. The release

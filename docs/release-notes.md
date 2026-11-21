@@ -35,6 +35,11 @@ All three binaries are stamped v0.37.3. The embedded catalog is 0.37.3
 E2E suites, and release packaging are required before tagging. The release
 workflow repeats the complete gate before publishing.
 
+**Manual verification not run for this tag:** the disposable OpenCode 2 host
+smoke, native draft approval and denial on that host, a real GitHub sandbox
+send and reconciliation (including actor, destination and PR changes), and
+the V1↔V2 migration smoke. These checks were waived for v0.37.3 only.
+
 ## Known limitations
 
 homonto is young and deliberately narrow. For the 0.x line:

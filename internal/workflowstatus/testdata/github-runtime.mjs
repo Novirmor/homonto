@@ -12,7 +12,7 @@ function setup() {
   const calls = [], comments = [], timeline = []
   let mutateError = '', state = 'open', head = B, actor = 7, denyScope = false
   let sources = { app: '/workspace/source' }, origins = { '/workspace/source': 'git@github.com:owner/repo.git' }
-  let nextID = 100, beforeMutation
+  let nextID = 100, beforeMutation, listPages
   const run = async (argv, options = {}) => {
     timeline.push({ command: argv })
     calls.push({ argv, options })
@@ -55,8 +55,10 @@ function setup() {
       return JSON.stringify(record)
     }
     if (endpoint.includes('?per_page=100')) {
-      assert.ok(argv.includes('--paginate') && argv.includes('--slurp'))
-      return JSON.stringify([comments])
+      assert.ok(argv.includes('--paginate'))
+      assert.equal(argv[argv.indexOf('--jq') + 1], '.')
+      assert.ok(!argv.includes('--slurp'), 'gh 2.46 does not support --slurp')
+      return listPages ? listPages() : `${JSON.stringify(comments)}\n`
     }
     const target = /^repos\/([^/]+\/[^/]+)\/(issues|pulls)\//.exec(endpoint)
     assert.ok(target, `unexpected endpoint ${endpoint}`)
@@ -70,6 +72,7 @@ function setup() {
   return { service, calls, comments, timeline, postCount: () => calls.filter(c => c.argv.includes('POST')).length,
     setState: value => state = value, setHead: value => head = value, setActor: value => actor = value,
     setError: value => mutateError = value, setBeforeMutation: value => beforeMutation = value,
+    setListPages: value => listPages = value,
     setSources: value => { sources = value.sources; origins = value.origins } }
 }
 const invoke = async (s, name, args, ctx = context()) => JSON.parse(await s.service.tools[`homonto_github_${name}`].execute(args, ctx))
@@ -229,8 +232,69 @@ for (const mutate of [s => s.setState('closed'), s => s.setActor(8), s => s.setH
 {
   const s = setup(), d = await stage(s)
   approve(s, d)
-  const denied = context({ async ask() { throw new Error('denied') } })
-  assert.equal((await invoke(s, 'publish', { draftID: d.draftID }, denied)).items[0].status, 'blocked')
+  const denied = context({ async ask() {
+    throw Object.assign(new Error('credential-sentinel'), { code: 'permission_denied' })
+  } })
+  const out = (await invoke(s, 'publish', { draftID: d.draftID }, denied)).items[0]
+  assert.equal(out.status, 'blocked')
+  assert.match(out.reason, /host permission denied/i)
+  assert.doesNotMatch(out.reason, /credential-sentinel/)
+  assert.equal(s.postCount(), 0)
+}
+{
+  const s = setup(), d = await stage(s)
+  approve(s, d)
+  const unavailable = context({ async ask() { throw new Error('credential-sentinel') } })
+  const out = (await invoke(s, 'publish', { draftID: d.draftID }, unavailable)).items[0]
+  assert.equal(out.status, 'blocked')
+  assert.match(out.reason, /requesting host permission/i)
+  assert.doesNotMatch(out.reason, /denied|credential-sentinel/)
+  assert.equal(s.postCount(), 0)
+}
+{
+  const s = setup(), d = await stage(s)
+  approve(s, d)
+  const match = { id: 99, user: { id: 7, login: 'author' }, body: d.items[0].body,
+    html_url: `${url}#issuecomment-99`, issue_url: 'https://api.github.com/repos/owner/repo/issues/1' }
+  const other = { ...match, id: 98, body: 'Different comment\nwith a second line' }
+  s.setListPages(() => `${JSON.stringify([other])}\r\n${JSON.stringify([match])}\r\n`)
+  const out = (await invoke(s, 'publish', { draftID: d.draftID })).items[0]
+  assert.equal(out.status, 'published')
+  assert.equal(out.receipt.id, 99)
+  assert.equal(s.postCount(), 0)
+  // Even a definite match does not establish a receipt if a later page is unreadable.
+  const next = await stage(s)
+  approve(s, next)
+  s.setListPages(() => `${JSON.stringify([match])}\n[`)
+  const incomplete = (await invoke(s, 'publish', { draftID: next.draftID })).items[0]
+  assert.equal(incomplete.status, 'blocked')
+  assert.equal(incomplete.receipt, undefined)
+  assert.equal(s.postCount(), 0)
+}
+for (const listPages of [
+  () => { throw new Error('credential-sentinel') },
+  () => '',
+  () => '[]\n[credential-sentinel',
+  () => '[]\n{}\n',
+  () => `${'[]\n'.repeat(1001)}`,
+  () => `${JSON.stringify(Array(101).fill(null))}\n`,
+]) {
+  const s = setup(), d = await stage(s)
+  approve(s, d)
+  s.setListPages(listPages)
+  const out = (await invoke(s, 'publish', { draftID: d.draftID })).items[0]
+  assert.equal(out.status, 'blocked')
+  assert.match(out.reason, /checking existing GitHub publications/i)
+  assert.doesNotMatch(out.reason, /denied|credential-sentinel/)
+  assert.equal(s.postCount(), 0)
+}
+{
+  const s = setup(), d = await stage(s)
+  approve(s, d)
+  s.setSources({ sources: { app: '/workspace/source' }, origins: {} })
+  const out = (await invoke(s, 'publish', { draftID: d.draftID })).items[0]
+  assert.equal(out.status, 'blocked')
+  assert.match(out.reason, /rechecking the GitHub destination/i)
   assert.equal(s.postCount(), 0)
 }
 {

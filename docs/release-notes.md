@@ -17,22 +17,28 @@ Windows on amd64 and arm64. Each binary is a separate archive, and one
 [installation guide](https://github.com/Novirmor/homonto/blob/main/docs/guides/installation.md).
 Earlier releases: [CHANGELOG.md](https://github.com/Novirmor/homonto/blob/main/CHANGELOG.md).
 
-### v0.37.2 — continue GitHub PRs in batches
+### v0.37.3 — fix GitHub draft publication preflight
 
-All three binaries are stamped v0.37.2. The embedded catalog is 0.37.2
-(onto 0.29.0, to 0.26.0, h 0.16.0, and no 0.4.0).
+All three binaries are stamped v0.37.3. The embedded catalog is 0.37.3
+(onto 0.29.1, to 0.26.1, h 0.16.1, and no 0.4.0).
 
-- Add `/h-continue-batch` to address feedback across selected GitHub PRs,
-  retaining each PR's checkout, verification, and publication safeguards.
-- Both batch workflows ask whether changes are independent or connected unless
-  already specified, and use relevant cross-PR context and dependencies.
+- The OpenCode plugin can check for duplicate GitHub comments and reviews on
+  older `gh` versions without `--slurp`. It still checks every page before
+  posting and blocks publication if a page cannot be read.
+- Publication errors distinguish a host permission denial from a failed check
+  for existing publications or a failed destination recheck.
 
-**Upgrade:** install matching v0.37.2 binaries, run `homonto plan` and
-`homonto apply`, and restart OpenCode.
+**Upgrade:** install matching v0.37.3 binaries, run `homonto plan` and
+`homonto apply`, then reload OpenCode. Create fresh drafts for blocked items.
 
 **Automated release gate:** race tests, vulnerability scanning, all nine Docker
 E2E suites, and release packaging are required before tagging. The release
 workflow repeats the complete gate before publishing.
+
+**Manual verification not run for this tag:** the disposable OpenCode 2 host
+smoke, native draft approval and denial on that host, a real GitHub sandbox
+send and reconciliation (including actor, destination and PR changes), and
+the V1↔V2 migration smoke. These checks were waived for v0.37.3 only.
 
 ## Known limitations
 

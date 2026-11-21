@@ -5,6 +5,20 @@ release page for a tag shows only that release's notes
 ([`docs/release-notes.md`](docs/release-notes.md)) plus the generated commit
 list. Release candidates are folded into their stable release.
 
+## v0.37.3 — fix GitHub draft publication preflight
+
+All three binaries are stamped v0.37.3. The embedded catalog is 0.37.3
+(onto 0.29.1, to 0.26.1, h 0.16.1, and no 0.4.0).
+
+- The OpenCode plugin can check for duplicate GitHub comments and reviews on
+  older `gh` versions without `--slurp`. It still checks every page before
+  posting and blocks publication if a page cannot be read.
+- Publication errors distinguish a host permission denial from a failed check
+  for existing publications or a failed destination recheck.
+
+**Upgrade:** install matching v0.37.3 binaries, run `homonto plan` and
+`homonto apply`, then reload OpenCode. Create fresh drafts for blocked items.
+
 ## v0.37.2 — continue GitHub PRs in batches
 
 All three binaries are stamped v0.37.2. The embedded catalog is 0.37.2

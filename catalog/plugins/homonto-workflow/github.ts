@@ -146,10 +146,11 @@ export function createGithubDrafts({ run, configPath }: { run: Run; configPath: 
     return result
   }
   function argv(host: string, endpoint: string, method = "GET", paginated = false): string[] {
-    return ["gh", "api", "--hostname", host, "--method", method, "-H", "Accept: application/vnd.github+json", "-H", "X-GitHub-Api-Version: 2022-11-28", ...(paginated ? ["--paginate", "--slurp"] : []), endpoint, ...(method === "POST" ? ["--input", "-"] : [])]
+    // gh emits one compact JSON value per page with --jq, including on versions without --slurp.
+    return ["gh", "api", "--hostname", host, "--method", method, "-H", "Accept: application/vnd.github+json", "-H", "X-GitHub-Api-Version: 2022-11-28", ...(paginated ? ["--paginate", "--jq", "."] : []), endpoint, ...(method === "POST" ? ["--input", "-"] : [])]
   }
-  async function api(host: string, endpoint: string, ctx: ToolContext, paginated = false): Promise<unknown> {
-    return JSON.parse(await command(argv(host, endpoint, "GET", paginated), ctx))
+  async function api(host: string, endpoint: string, ctx: ToolContext): Promise<unknown> {
+    return JSON.parse(await command(argv(host, endpoint), ctx))
   }
   async function repo(host: string, name: string, ctx: ToolContext): Promise<Repo> {
     const v = await api(host, `repos/${name}`, ctx)
@@ -213,15 +214,20 @@ export function createGithubDrafts({ run, configPath }: { run: Run; configPath: 
     return { id: v.id, url: v.html_url as string }
   }
   async function existing(i: Item, ctx: ToolContext): Promise<{ id: number; url: string }[]> {
-    const pages = await api(i.target.host, `${endpoint(i)}?per_page=100`, ctx, true)
-    check(Array.isArray(pages) && pages.length > 0 && pages.length <= 1000 && pages.every(p => Array.isArray(p) && p.length <= 100), "invalid paginated destination response")
+    const raw = await command(argv(i.target.host, `${endpoint(i)}?per_page=100`, "GET", true), ctx)
+    const lines = raw.trim().split(/\r?\n/, 1001)
+    check(lines.length <= 1000, "too many pages in destination response")
     const found = new Map<number, { id: number; url: string }>()
-    for (const v of pages.flat()) {
-      check(record(v) && id(v.id) && record(v.user) && id(v.user.id) && text(v.user.login) && text(v.body), "invalid remote publication record")
-      if (v.body !== i.body || v.user.id !== i.snapshot.actor.id || v.user.login !== i.snapshot.actor.login) continue
-      if (i.kind === "pr_review" && (v.commit_id !== i.headOID || v.state !== (i.reviewEvent === "COMMENT" ? "COMMENTED" : "CHANGES_REQUESTED"))) continue
-      const r = receipt(v, i)
-      found.set(r.id, r)
+    for (const line of lines) {
+      const page: unknown = JSON.parse(line)
+      check(Array.isArray(page) && page.length <= 100, "invalid page in destination response")
+      for (const v of page) {
+        check(record(v) && id(v.id) && record(v.user) && id(v.user.id) && text(v.user.login) && text(v.body), "invalid remote publication record")
+        if (v.body !== i.body || v.user.id !== i.snapshot.actor.id || v.user.login !== i.snapshot.actor.login) continue
+        if (i.kind === "pr_review" && (v.commit_id !== i.headOID || v.state !== (i.reviewEvent === "COMMENT" ? "COMMENTED" : "CHANGES_REQUESTED"))) continue
+        const r = receipt(v, i)
+        found.set(r.id, r)
+      }
     }
     return [...found.values()]
   }
@@ -302,30 +308,39 @@ export function createGithubDrafts({ run, configPath }: { run: Run; configPath: 
     for (const i of selected) i.status = "publishing"
     for (const i of selected) {
       let attempted = false
+      let step = "validating the draft"
       try {
         live(ctx, d)
         const cmd = argv(i.target.host, endpoint(i), "POST")
         const pattern = cmd.map(a => /^[A-Za-z0-9_./:-]+$/.test(a) ? a : `'${a.replaceAll("'", "'\\''")}'`).join(" ")
         progress(ctx, "Requesting GitHub publication permission")
         live(ctx, d)
+        step = "requesting host permission"
         await ctx.ask({ permission: "bash", patterns: [pattern], always: [], metadata: { draftID: d.draftID, itemID: i.itemID, url: i.target.url, payload: i.payload } })
+        step = "checking existing GitHub publications"
         live(ctx, d)
         const matches = await existing(i, ctx)
+        step = "rechecking the GitHub destination"
         live(ctx, d)
         const fresh = await snapshot(i.target, ctx)
         live(ctx, d)
         if (!exact(fresh, i.snapshot)) { i.status = "stale"; i.reason = "destination snapshot or authenticated actor changed"; continue }
         if (matches.length > 1) { i.status = "uncertain"; i.reason = "multiple matching remote publications"; continue }
         if (matches.length === 1) { i.receipt = matches[0]; i.status = "published"; continue }
+        step = "validating the draft before sending"
         progress(ctx, "Ready to publish GitHub draft")
         live(ctx, d)
         attempted = true
         const v: unknown = JSON.parse(await command(cmd, ctx, i.payload))
         i.receipt = receipt(v, i)
         i.status = "published"
-      } catch {
+      } catch (error) {
         i.status = attempted ? "uncertain" : "blocked"
-        i.reason = attempted ? "publication outcome uncertain; never resend this item" : "publication preflight denied, invalidated or unavailable; create a new draft"
+        // Report only a classified reason or a fixed step, never raw subprocess output.
+        const denied = step === "requesting host permission" && record(error) && error.code === "permission_denied"
+        i.reason = attempted ? "publication outcome uncertain; never resend this item"
+          : denied ? "Host permission denied; nothing sent."
+          : `Publication stopped while ${step}; nothing sent. Resolve the blocker before creating a new draft.`
         if (attempted) {
           try {
             live(ctx, d)

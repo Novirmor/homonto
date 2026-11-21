@@ -234,7 +234,7 @@ async function githubIntegration() {
     issue_url: "https://api.github.com/repos/owner/repo/issues/1" }
   const api = (endpoint, method = "GET", paginated = false) => ["gh", "api", "--hostname", "github.com", "--method", method,
     "-H", "Accept: application/vnd.github+json", "-H", "X-GitHub-Api-Version: 2022-11-28",
-    ...(paginated ? ["--paginate", "--slurp"] : []), endpoint, ...(method === "POST" ? ["--input", "-"] : [])]
+    ...(paginated ? ["--paginate", "--jq", "."] : []), endpoint, ...(method === "POST" ? ["--input", "-"] : [])]
   let identityToken, sequence = 0
   const invocation = (agent = "custom-agent", overrides = {}) => ({ sessionID: "ses_one", messageID: `msg_${++sequence}`,
     id: `call_${sequence}`, agent, signal: new AbortController().signal,
@@ -303,7 +303,7 @@ async function githubIntegration() {
           [api("user"), { value: actor }],
           [api("repos/owner/repo/issues/1"), { value: { id: 81, number: 1, state: "open", title: "Fixture issue",
             body: "private artifact", updated_at: "2026-09-01T00:00:00Z", locked: false, html_url: item.url } }],
-          [api("repos/owner/repo/issues/1/comments?per_page=100", "GET", true), { value: [[]] }],
+          [api("repos/owner/repo/issues/1/comments?per_page=100", "GET", true), { raw: "[]\n" }],
         ]
         if (JSON.stringify(argv) === JSON.stringify(api("repos/owner/repo/issues/1/comments", "POST"))) {
           assert.deepEqual(JSON.parse(new TextDecoder().decode(options.stdin)), { body: item.body })

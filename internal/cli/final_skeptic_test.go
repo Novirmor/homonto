@@ -58,3 +58,24 @@ func TestFinalSkepticCommandEngineDefaults(t *testing.T) {
 		}
 	}
 }
+
+func TestFinalSkepticCommandEngineOverrides(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "homonto.toml")
+	body := "[workflow]\nfinal_skeptic='auto'\n[workflow.final_skeptic_by_engine]\nno='off'\nto='one'\nonto='two'\n"
+	if err := os.WriteFile(path, []byte(body), 0600); err != nil {
+		t.Fatal(err)
+	}
+	for engine, want := range map[string]string{"no": "off\n", "to": "one\n", "onto": "two\n", "": "one\n"} {
+		cmd := NewRootCmd()
+		var out bytes.Buffer
+		cmd.SetOut(&out)
+		args := []string{"final-skeptic"}
+		if engine != "" {
+			args = append(args, engine)
+		}
+		cmd.SetArgs(append(args, "--config", path))
+		if err := cmd.Execute(); err != nil || out.String() != want {
+			t.Errorf("%q: got %q, err %v", engine, out.String(), err)
+		}
+	}
+}

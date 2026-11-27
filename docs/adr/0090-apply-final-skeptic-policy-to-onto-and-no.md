@@ -1,6 +1,6 @@
 # Apply final skeptic policy to onto and no
 
-- **Status:** Accepted
+- **Status:** Partially superseded by 0092 (per-engine overrides)
 - **Date:** 2026-11-11
 
 ## Context

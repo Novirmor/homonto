@@ -21,7 +21,8 @@ numbering: [`../agents/adr.md`](../agents/adr.md).
 | ADR | Decision | Status |
 |---|---|---|
 | [0089](0089-configure-to-final-skeptic.md) | Configure final skeptic review for to | Partially superseded by 0090 |
-| [0090](0090-apply-final-skeptic-policy-to-onto-and-no.md) | Apply final skeptic policy to onto and no | Accepted |
+| [0090](0090-apply-final-skeptic-policy-to-onto-and-no.md) | Apply final skeptic policy to onto and no | Partially superseded by 0092 |
+| [0092](0092-override-final-skeptic-per-engine.md) | Override final skeptic policy per engine | Accepted |
 | [0001](0001-plan-confirm-apply-pipeline.md) | Adopt a terraform-style plan/confirm/apply pipeline with tool adapters | Accepted |
 | [0002](0002-secrets-referenced-never-stored.md) | Reference secrets by token; never store or print plaintext | Accepted |
 | [0003](0003-owned-content-symlinked-surgical-merge.md) | Symlink owned content; merge unowned keys surgically; never clobber | Accepted |

@@ -26,7 +26,10 @@ completed pass; disabling it does not bypass explicit review requirements.
 
 ```toml
 [workflow]
-final_skeptic = "auto" # optional; applies to to, onto, and no
+final_skeptic = "auto" # optional shared fallback for to, onto, and no
+
+[workflow.final_skeptic_by_engine]
+to = "one" # optional override for to
 
 [engines.to]
 source = "builtin:to"

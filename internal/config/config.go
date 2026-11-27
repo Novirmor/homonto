@@ -386,22 +386,38 @@ func (c *Config) WorkflowContextEnabled() bool {
 // The frameworks share this root; their records stay in disjoint subtrees
 // (changes/ vs tasks/, ADR 0042).
 type Workflow struct {
-	Root         string  `toml:"root"`
-	Git          string  `toml:"git"`
-	FinalSkeptic *string `toml:"final_skeptic"`
+	Root                 string               `toml:"root"`
+	Git                  string               `toml:"git"`
+	FinalSkeptic         *string              `toml:"final_skeptic"`
+	FinalSkepticByEngine FinalSkepticByEngine `toml:"final_skeptic_by_engine"`
 }
 
-// FinalSkepticOrDefault preserves to's existing minimum of one pass.
+// FinalSkepticByEngine contains optional overrides for the shared policy.
+type FinalSkepticByEngine struct {
+	To   *string `toml:"to"`
+	Onto *string `toml:"onto"`
+	No   *string `toml:"no"`
+}
+
+// FinalSkepticOrDefault resolves the policy for to.
 func (w Workflow) FinalSkepticOrDefault() string {
-	if w.FinalSkeptic == nil {
-		return "one"
-	}
-	return *w.FinalSkeptic
+	return w.FinalSkepticFor("to")
 }
 
-// FinalSkepticFor preserves to's existing default while requiring two passes
-// for onto and no when no project-wide policy was explicitly configured.
+// FinalSkepticFor resolves an engine override, shared policy, then default.
 func (w Workflow) FinalSkepticFor(engine string) string {
+	var override *string
+	switch engine {
+	case "to":
+		override = w.FinalSkepticByEngine.To
+	case "onto":
+		override = w.FinalSkepticByEngine.Onto
+	case "no":
+		override = w.FinalSkepticByEngine.No
+	}
+	if override != nil {
+		return *override
+	}
 	if w.FinalSkeptic != nil {
 		return *w.FinalSkeptic
 	}

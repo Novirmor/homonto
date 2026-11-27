@@ -43,7 +43,7 @@ Ask before partial delivery. Native to completion requirements still apply.
    skipped checks as gaps rather than treating one green command as universal
    proof.
 2. **Review the final candidate.** Read the policy with
-   `homonto final-skeptic --config "<configRoot>/homonto.toml"`. If the command
+   `homonto final-skeptic to --config "<configRoot>/homonto.toml"`. If the command
    is unavailable, use `one` and record the fallback. Any other failure is a
    blocker, not a default. Choose the required number of fresh-context
    `to-skeptic` passes:

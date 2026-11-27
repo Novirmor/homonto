@@ -72,8 +72,18 @@ func validate(c *Config) error {
 }
 
 func validateWorkflow(c *Config) error {
-	if v := c.Workflow.FinalSkepticOrDefault(); v != "off" && v != "one" && v != "two" && v != "auto" {
-		return fmt.Errorf("parse config: workflow.final_skeptic %q must be off, one, two, or auto", v)
+	for _, policy := range []struct {
+		name  string
+		value *string
+	}{
+		{"workflow.final_skeptic", c.Workflow.FinalSkeptic},
+		{"workflow.final_skeptic_by_engine.to", c.Workflow.FinalSkepticByEngine.To},
+		{"workflow.final_skeptic_by_engine.onto", c.Workflow.FinalSkepticByEngine.Onto},
+		{"workflow.final_skeptic_by_engine.no", c.Workflow.FinalSkepticByEngine.No},
+	} {
+		if policy.value != nil && *policy.value != "off" && *policy.value != "one" && *policy.value != "two" && *policy.value != "auto" {
+			return fmt.Errorf("parse config: %s %q must be off, one, two, or auto", policy.name, *policy.value)
+		}
 	}
 	if c.SchemaVersion >= 2 {
 		if c.Workflow.Git != "" && c.Workflow.Git != "existing" && c.Workflow.Git != "managed" {

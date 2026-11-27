@@ -495,14 +495,25 @@ chooses two if risk or the full diff is unknown. Higher-risk criteria win.
 The final verification record includes the selection, rationale, candidate and
 outcomes. Changes after review require fresh passes. Tests and explicit review
 requirements still apply when disabled. Inspect the resolved policy with
-`homonto final-skeptic <engine> --config homonto.toml`. When omitted, `to`
-defaults to `one`, while `onto` and `no` default to `two`. The same explicit
-setting applies to all three engines; skeptic dispatch is instruction-enforced.
+`homonto final-skeptic <engine> --config homonto.toml` (omitting the engine
+selects `to`). Each engine-specific setting takes precedence over the shared
+`final_skeptic`; if neither is set, `to` defaults to `one`, while `onto` and
+`no` default to `two`. Skeptic dispatch is instruction-enforced.
 
 ```toml
 [workflow]
 final_skeptic = "auto"
+
+[workflow.final_skeptic_by_engine]
+no = "off"
+to = "one"
+onto = "two"
 ```
+
+Overrides are optional and accept the same four values. In this example each
+engine uses its override; any omitted override falls back to `auto`, or to
+its engine default when the shared setting is also omitted. Unknown engine
+keys and invalid values are rejected.
 
 ```toml
 [workflow]
@@ -513,7 +524,8 @@ root = "docs"        # default
 |---|---|---|
 | `root` | `docs` | Relative to the config root. Schema 2 also accepts external and absolute paths. |
 | `git` | `existing` | Schema 2 only. `existing`: records use their Git owner's normal commit policy. `managed`: a homonto-owned records repository with automatic, path-scoped checkpoints. |
-| `final_skeptic` | `one` for `to`, `two` for `onto` and `no` | `off`, `one`, `two`, or `auto`; an explicit value applies to all three engines. |
+| `final_skeptic` | `one` for `to`, `two` for `onto` and `no` | `off`, `one`, `two`, or `auto`; shared fallback for engines without an override. |
+| `final_skeptic_by_engine` | unset | Optional `to`, `onto`, and `no` overrides; each accepts the same values as `final_skeptic`. |
 
 In schema 0/1 the root must stay below the config root (no absolute paths, no
 `..`, no escaping symlinks). Schema 2 rules and the managed mode are in
